@@ -69,8 +69,8 @@ final class RunOpsHost implements RunCoordinator.Ops {
     }
 
     @Override
-    public boolean saveBuffer(EditorBuffer buffer) {
-        return mc.fileWorkflows.saveSynchronously(buffer);
+    public void saveThen(EditorBuffer buffer, java.util.function.Consumer<Boolean> then) {
+        mc.fileWorkflows.saveThen(buffer, then); // the write off the FX thread, no nested wait (PERF-01)
     }
 
     @Override

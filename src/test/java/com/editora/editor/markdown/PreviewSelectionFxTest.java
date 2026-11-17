@@ -459,7 +459,15 @@ class PreviewSelectionFxTest {
             sel().select(pos("First paragraph", 0), pos("First paragraph", 31));
             assertEquals("First paragraph with bold words", sel().text());
             // Find cuts runs into pieces; the selection is in the flow's text, which is the same text.
-            assertEquals(2, pane.preview().find().search("paragraph", false, false, false));
+            // The preview's text is searched off the FX thread (PERF-01): run in place here, it lands at once.
+            com.editora.perf.OffFx.runnerForTest((name, task) -> task.run());
+            int[] found = {-1};
+            try {
+                pane.preview().find().search("paragraph", false, false, false, n -> found[0] = n);
+            } finally {
+                com.editora.perf.OffFx.runnerForTest(null);
+            }
+            assertEquals(2, found[0]);
             assertEquals("First paragraph with bold words", sel().text());
             assertEquals(
                     "<p>First paragraph with <strong>bold words</strong></p>\n",

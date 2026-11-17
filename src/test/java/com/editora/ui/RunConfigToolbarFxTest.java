@@ -269,7 +269,8 @@ class RunConfigToolbarFxTest {
         try {
             setProjectsEnabled(true);
             setProject(new com.editora.config.Project("t", "t", dir.toString()));
-            assertTrue(FxTestSupport.callOnFx(combo::isVisible), "a makefile makes the project launchable");
+            // The project's build files are looked at off the FX thread (PERF-01): the group shows once they are.
+            SettingsRig.awaitFx("a makefile makes the project launchable", combo::isVisible);
         } finally {
             setProject(null);
             setProjectsEnabled(projectsWereEnabled);

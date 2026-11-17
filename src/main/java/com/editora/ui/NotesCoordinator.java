@@ -527,13 +527,15 @@ final class NotesCoordinator {
         String key = ops.noteKey(buffer);
         var map = ops.notes();
         List<PersonalNote> saved = map.get(key);
-        boolean moved = buffer.applyNotes(saved == null ? List.of() : saved);
         seenInStore.put(buffer, MarkMerge.keys(saved, PersonalNote::id));
-        if (moved) {
-            persistNotes(buffer); // self-heal corrected positions / re-key / orphan status
-        } else {
-            refreshViews();
-        }
+        refreshViews();
+        buffer.applyNotes(saved == null ? List.of() : saved, moved -> {
+            if (moved && !buffer.isDisposed()) {
+                persistNotes(buffer); // self-heal corrected positions / re-key / orphan status
+            } else {
+                refreshViews();
+            }
+        });
         if (saved == null && !map.isEmpty()) {
             // The file may have been renamed/moved outside Editora — match by content hash and re-key. The hash
             // reads the whole file (up to 5 MB), so it is computed only if some stored note's file is gone and had

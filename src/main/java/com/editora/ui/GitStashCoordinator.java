@@ -194,9 +194,13 @@ final class GitStashCoordinator {
      * while the file under them is reset.
      */
     void stash(@Nullable Path root, StashOptions options) {
-        if (root == null || !git.saveUnsaved(root, List.of())) {
+        if (root == null) {
             return;
         }
+        git.saveUnsaved(root, List.of(), () -> stashSaved(root, options));
+    }
+
+    private void stashSaved(Path root, StashOptions options) {
         String[] args = options.args();
         git.aroundWorkingTreeMutation(
                 root,
@@ -286,15 +290,17 @@ final class GitStashCoordinator {
                 paths.add(file.path());
             }
             // An empty pathspec list means "every buffer of the repository": with no file list, save none.
-            if (!paths.isEmpty() && !git.saveUnsaved(root, paths)) {
-                return;
-            }
             String[] args = {"stash", pop ? "pop" : "apply", entry.ref()};
-            git.aroundWorkingTreeMutation(
+            Runnable apply = () -> git.aroundWorkingTreeMutation(
                     root,
                     done -> git.service().runStashMutation(root, entry, git.running(args, done), args),
                     result -> reportApplied(result, pop),
                     null);
+            if (paths.isEmpty()) {
+                apply.run();
+            } else {
+                git.saveUnsaved(root, paths, apply);
+            }
         });
     }
 

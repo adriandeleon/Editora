@@ -942,6 +942,8 @@ final class LspWorkspaceEdits {
         mapped.creates().forEach(c -> created.add(c.file().toAbsolutePath().normalize()));
         lsp.recordEdit(mapped, touched, before, created);
         java.util.List<com.editora.lsp.LspManager.WatchedFile> written = new java.util.ArrayList<>();
+        java.util.Set<EditorBuffer> saving = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        boolean[] looping = {true}; // the watched files are told once, when the loop is done and every save landed
         for (EditorBuffer b : touched) {
             boolean opened = openBefore != null && !openBefore.contains(b);
             Path path = b.getPath();
@@ -955,20 +957,37 @@ final class LspWorkspaceEdits {
                 }
                 continue;
             }
-            boolean saved = b.isDirty() && ops.saveBuffer(b);
-            if (saved && unmanaged && path != null) {
-                written.add(new com.editora.lsp.LspManager.WatchedFile(
-                        path, com.editora.lsp.LspManager.WatchedKind.CHANGED));
-            }
-            if ((saved || !b.isDirty())
-                    && opened
-                    && (path == null || !created.contains(path.toAbsolutePath().normalize()))) {
-                ops.closeBackgroundBuffer(b); // a created file (an extracted interface) stays open to be seen
+            saving.add(b);
+            boolean dirty = b.isDirty();
+            // Written off the FX thread; what follows a save goes on when it has landed (PERF-01, Pauta 6.0.1).
+            java.util.function.Consumer<Boolean> landed = saved -> {
+                if (saved && unmanaged && path != null) {
+                    written.add(new com.editora.lsp.LspManager.WatchedFile(
+                            path, com.editora.lsp.LspManager.WatchedKind.CHANGED));
+                }
+                if ((saved || !b.isDirty())
+                        && opened
+                        && (path == null
+                                || !created.contains(path.toAbsolutePath().normalize()))) {
+                    ops.closeBackgroundBuffer(b); // a created file (an extracted interface) stays open to be seen
+                }
+                saving.remove(b);
+                if (saving.isEmpty() && !looping[0]) {
+                    // A file the server does not have open keeps its old text there until it hears the file
+                    // changed: the next rename skipped it and Find References missed it (re-review BN1).
+                    lspManager.notifyWatchedFiles(written);
+                }
+            };
+            if (dirty) {
+                ops.saveThen(b, landed);
+            } else {
+                landed.accept(false);
             }
         }
-        // A file the server does not have open keeps its old text there until it hears the file changed: the next
-        // rename skipped it and Find References missed it (re-review BN1).
-        lspManager.notifyWatchedFiles(written);
+        looping[0] = false;
+        if (saving.isEmpty()) {
+            lspManager.notifyWatchedFiles(written);
+        }
     }
 
     /** Protects dirty delete victims and every live owner of an overwritten destination. */

@@ -126,10 +126,18 @@ final class GitCoordinator {
         }
 
         /**
-         * Saves {@code buffer} through the window's ordinary save path (encoding, line endings, format on
-         * save) and waits for the write; false when it is not on disk afterwards.
+         * Saves {@code buffer} through the window's ordinary save path (encoding, line endings, format on save) and
+         * tells {@code then}, on the FX thread, whether it is on disk afterwards. The write runs off the FX thread
+         * (PERF-01, Pauta 6.0.1); this default, for test stand-ins, answers {@link #saveBeforeGit} at once.
          */
-        boolean saveBeforeGit(EditorBuffer buffer);
+        default void saveBeforeGitThen(EditorBuffer buffer, Consumer<Boolean> then) {
+            then.accept(saveBeforeGit(buffer));
+        }
+
+        /** A test stand-in's save, answered at once; the app saves through {@link #saveBeforeGitThen}. */
+        default boolean saveBeforeGit(EditorBuffer buffer) {
+            return false;
+        }
 
         /** Opens the Commit tool window. */
         void openCommitWindow();
@@ -630,9 +638,15 @@ final class GitCoordinator {
      * that is still being edited silently recorded its <em>previous</em> text. Each buffer goes through the
      * window's normal save; one that cannot be saved stops the operation, with the reason in the status bar.
      *
-     * @return false when a buffer could not be saved — the caller must not run its command
+     * The writes run off the FX thread (PERF-01, Pauta 6.0.1): {@code then} runs once every one has landed, and not
+     * at all when one could not be saved — the caller's command does not run.
      */
-    boolean saveUnsaved(Path root, List<String> pathspecs) {
+    void saveUnsaved(Path root, List<String> pathspecs, Runnable then) {
+        saveUnsaved(root, pathspecs, then, () -> {});
+    }
+
+    /** As above; {@code failed} runs, after the error is said, when a buffer could not be saved. */
+    void saveUnsaved(Path root, List<String> pathspecs, Runnable then, Runnable failed) {
         List<EditorBuffer> unsaved = new ArrayList<>();
         host.forEachBuffer(buffer -> {
             Path file = buffer.getPath();
@@ -644,13 +658,14 @@ final class GitCoordinator {
                 unsaved.add(buffer);
             }
         });
-        for (EditorBuffer buffer : unsaved) {
-            if (!ops.saveBeforeGit(buffer)) {
-                host.setError(tr("status.git.unsavedFailed", buffer.getTitle()));
-                return false;
+        SaveChain.all(unsaved, ops::saveBeforeGitThen, unsavable -> {
+            if (unsavable != null) {
+                host.setError(tr("status.git.unsavedFailed", unsavable.getTitle()));
+                failed.run();
+            } else {
+                then.run();
             }
-        }
-        return true;
+        });
     }
 
     /**
@@ -766,27 +781,30 @@ final class GitCoordinator {
     }
 
     private void stageIn(Path root, @Nullable GitStatus status, List<String> paths) {
-        if (!saveUnsaved(root, paths)) {
-            return;
-        }
-        confirmStagingMarkers(
+        saveUnsaved(
                 root,
-                status,
                 paths,
-                () -> gitOpIn(
+                () -> confirmStagingMarkers(
                         root,
-                        paths.size() == 1
-                                ? tr("status.git.staged", paths.get(0))
-                                : tr("status.git.stagedMany", paths.size()),
-                        argv(paths, "add", "--")));
+                        status,
+                        paths,
+                        () -> gitOpIn(
+                                root,
+                                paths.size() == 1
+                                        ? tr("status.git.staged", paths.get(0))
+                                        : tr("status.git.stagedMany", paths.size()),
+                                argv(paths, "add", "--"))));
     }
 
     /** {@code git add -A}: the Commit window's Stage All. */
     void gitStageAll() {
         Path root = repoRootOrReport(); // the confirmation below runs a nested event loop: the root is captured first
-        if (root != null && saveUnsaved(root, List.of())) {
-            confirmStagingMarkers(
-                    root, lastStatus, List.of(), () -> gitOpIn(root, tr("status.git.stagedAll"), "add", "-A"));
+        if (root != null) {
+            saveUnsaved(
+                    root,
+                    List.of(),
+                    () -> confirmStagingMarkers(
+                            root, lastStatus, List.of(), () -> gitOpIn(root, tr("status.git.stagedAll"), "add", "-A")));
         }
     }
 
@@ -1352,10 +1370,13 @@ final class GitCoordinator {
             ops.openCommitWindow();
             return;
         }
-        if (!saveUnsaved(root, List.of()) || (op.kind() == GitOperation.Kind.MERGE && ops.commitFromPanel())) {
-            return;
-        }
-        runOperationStep(root, op, op.continueArgs(), tr("status.git.operationContinued", operationName(op.kind())));
+        saveUnsaved(root, List.of(), () -> {
+            if (op.kind() == GitOperation.Kind.MERGE && ops.commitFromPanel()) {
+                return;
+            }
+            runOperationStep(
+                    root, op, op.continueArgs(), tr("status.git.operationContinued", operationName(op.kind())));
+        });
     }
 
     /**
@@ -1488,11 +1509,13 @@ final class GitCoordinator {
                 || com.editora.diff.ConflictParser.hasConflictMarkers(buffer.getContent())) {
             return;
         }
-        if (!ops.saveBeforeGit(buffer)) {
-            host.setError(tr("status.git.unsavedFailed", buffer.getTitle()));
-            return;
-        }
-        gitOpIn(root, tr("status.git.conflictResolved", relative), argv(List.of(relative), "add", "--"));
+        ops.saveBeforeGitThen(buffer, saved -> {
+            if (!saved) {
+                host.setError(tr("status.git.unsavedFailed", buffer.getTitle()));
+                return;
+            }
+            gitOpIn(root, tr("status.git.conflictResolved", relative), argv(List.of(relative), "add", "--"));
+        });
     }
 
     /** Checks out a remote branch (e.g. {@code origin/foo}), creating a local tracking branch. */

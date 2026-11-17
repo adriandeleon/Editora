@@ -68,7 +68,7 @@ class ShellRunWindowFxTest {
                 "the file to open",
                 () -> c.activeBuffer() != null && file.equals(c.activeBuffer().getPath()));
         EditorBuffer b = FxTestSupport.callOnFx(c::activeBuffer);
-        FxTestSupport.runOnFx(b::settleRunScan);
+        FxTestSupport.runOnFx(b::settleRunScanForTest);
         return b;
     }
 
@@ -157,7 +157,7 @@ class ShellRunWindowFxTest {
             });
             async.await(loaded, "document load");
             async.awaitFx();
-            FxTestSupport.runOnFx(b::settleRunScan);
+            FxTestSupport.runOnFx(b::settleRunScanForTest);
             assertTrue(FxTestSupport.callOnFx(b::isShell));
             assertTrue(FxTestSupport.callOnFx(b::isRunnable), "a remote script runs on its host, like a remote .py");
         }

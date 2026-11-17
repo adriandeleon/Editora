@@ -167,6 +167,7 @@ class PreviewOnlyFxTest {
             b.setLanguageOverride("markdown");
             b.setContent(DOC);
             FindReplaceBar bar = new FindReplaceBar(() -> b, statuses::add);
+            bar.searchOn(Runnable::run, Runnable::run, com.editora.text.SearchMatcher.DEFAULT_PAGE); // in place
             stage[0] = new Stage();
             stage[0].setScene(new Scene(new VBox(bar, b.getNode()), 700, 500));
             stage[0].show();
@@ -218,6 +219,8 @@ class PreviewOnlyFxTest {
             bar.findPrevious();
             assertEquals(3, find.current(), "stepping wraps around");
 
+            // The preview's text is searched off the FX thread (PERF-01): from here run in place, so each lands at once.
+            com.editora.perf.OffFx.runnerForTest((name, task) -> task.run());
             FxTestSupport.<javafx.scene.control.CheckBox>field(bar, "caseSensitive")
                     .setSelected(true);
             FxTestSupport.invoke(bar, "recompute");
@@ -244,6 +247,7 @@ class PreviewOnlyFxTest {
                     com.editora.editor.EditorFxBridge.previewText(b)
                             .contains("First needle here, and a second Needle."),
                     "and the text is whole again");
+            com.editora.perf.OffFx.runnerForTest(null);
             stage[0].close();
             b.dispose();
         });

@@ -863,22 +863,19 @@ final class TestRunCoordinator implements TestRunHook {
             return;
         }
         com.editora.editor.EditorBuffer active = host.activeBuffer();
-        int port = mavenDebugPort(tool);
-        List<String> args = TestDebug.debugTaskArgs(
-                tool,
-                target.className(),
-                target.methodName(),
-                gradleDebugInit(tool, active == null ? null : active.getPath()),
-                port);
-        if (args.isEmpty()) {
-            host.setStatus(tr("status.testrunner.debugUnsupported"));
-            return;
-        }
-        int before = runGeneration;
-        launch.accept(args);
-        if (runGeneration != before) { // the run started (not refused as busy / not detected)
-            armDebugger(target.className(), port);
-        }
+        gradleDebugInit(tool, active == null ? null : active.getPath(), init -> {
+            int port = mavenDebugPort(tool);
+            List<String> args = TestDebug.debugTaskArgs(tool, target.className(), target.methodName(), init, port);
+            if (args.isEmpty()) {
+                host.setStatus(tr("status.testrunner.debugUnsupported"));
+                return;
+            }
+            int before = runGeneration;
+            launch.accept(args);
+            if (runGeneration != before) { // the run started (not refused as busy / not detected)
+                armDebugger(target.className(), port);
+            }
+        });
     }
 
     /** The port a Maven test debug forks on (chosen now, polled until it listens); 0 for the banner tools. */
@@ -915,22 +912,27 @@ final class TestRunCoordinator implements TestRunHook {
         if (tool == null) {
             return; // only an external run has no build tool, and it was handled above
         }
-        int port = debug ? mavenDebugPort(tool) : 0;
-        List<String> args = debug
-                ? TestDebug.debugTaskArgs(
-                        tool, node.className(), method, gradleDebugInit(tool, currentRun.workingDir()), port)
-                : TestRunRecognizer.singleTestTask(tool, node.className(), method);
-        if (args.isEmpty()) {
-            host.setStatus(tr(debug ? "status.testrunner.debugUnsupported" : "status.testrunner.rerunUnsupported"));
-            return;
-        }
         Path dir = currentRun.workingDir();
         List<String> toggles = currentRun.toggleArgs();
-        if (debug) {
-            startDebugRun(tool, dir, args, toggles, node.className(), port);
-        } else {
+        String className = java.util.Objects.requireNonNull(node.className()); // checked above
+        if (!debug) {
+            List<String> args = TestRunRecognizer.singleTestTask(tool, className, method);
+            if (args.isEmpty()) {
+                host.setStatus(tr("status.testrunner.rerunUnsupported"));
+                return;
+            }
             ops.runTest(tool, dir, args, toggles);
+            return;
         }
+        gradleDebugInit(tool, dir, init -> {
+            int port = mavenDebugPort(tool);
+            List<String> args = TestDebug.debugTaskArgs(tool, className, method, init, port);
+            if (args.isEmpty()) {
+                host.setStatus(tr("status.testrunner.debugUnsupported"));
+                return;
+            }
+            startDebugRun(tool, dir, args, toggles, className, port);
+        });
     }
 
     /**
@@ -938,12 +940,15 @@ final class TestRunCoordinator implements TestRunHook {
      * attached in turn), or null for {@code --debug-jvm}'s 5005: not Gradle, or a project whose build runs on
      * another machine, where a file written here does not exist.
      */
-    private static @Nullable Path gradleDebugInit(@Nullable BuildTool tool, @Nullable Path where) {
+    private static void gradleDebugInit(
+            @Nullable BuildTool tool, @Nullable Path where, java.util.function.Consumer<@Nullable Path> then) {
         if (tool != BuildTool.GRADLE || where == null || !com.editora.process.ExecTargets.runsHere(where)) {
-            return null;
+            then.accept(null);
+            return;
         }
-        // Written once, ahead of time off the FX thread (the coordinator's start): here it is found (PERF-01).
-        return com.editora.build.GradleDebugInit.prepared(List.of(TestDebug.GRADLE_TEST_TASK));
+        // Written once, ahead of time off the FX thread (the coordinator's start). A press before that write has
+        // landed waits for it off the FX thread; a write that failed is kept, and the run uses --debug-jvm (PERF-01).
+        com.editora.build.GradleDebugInit.whenPrepared(List.of(TestDebug.GRADLE_TEST_TASK), then);
     }
 
     private void startDebugRun(

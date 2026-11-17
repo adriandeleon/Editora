@@ -12,18 +12,22 @@ import org.jspecify.annotations.Nullable;
  * <p>A freshly loaded or saved buffer shares one String between its document snapshot and this baseline, so
  * holding it costs nothing and comparing against it is an identity check. Once the buffer is dirty the
  * snapshot has moved on, and the baseline's String would be a second document-sized copy for as long as the
- * tab stays modified. So the baseline is {@link #seal sealed} then: it keeps the fingerprint (computed from
- * the text at that moment if a save or load worker did not supply it) and lets the text go. A sealed baseline
- * answers {@link #matches} by hashing the current text, which happens only when the lengths already agree —
- * an edit back to the saved text, an undo to it, a line-ending conversion — never per keystroke.
+ * tab stays modified. So the baseline is sealed then: it keeps the fingerprint and lets the text go. The
+ * fingerprint comes from the save or load worker, or is worked out off the JavaFX thread from the held text
+ * ({@link #knowFingerprint}) before the text is let go ({@link #sealIfFingerprinted}). A sealed baseline answers
+ * {@link #matches} by hashing the current text, which the buffer does off the JavaFX thread (PERF-01, Pauta
+ * 6.0.1): on the FX thread it asks {@link #matchesWithoutHashing}, which says when a hash is needed.
+ *
+ * <p>The fields are volatile and nothing here locks: a hash on a worker never makes the FX thread wait. The
+ * fingerprint is written before the text is let go, so a baseline without its text always has its fingerprint.
  */
 final class SavedBaseline {
 
     private final int length;
     /** The text the baseline was taken from, while it is still the buffer's own snapshot; null once sealed. */
-    private @Nullable String text;
-    /** {@link TextFingerprint} of the text; null until sealed when no worker supplied it. */
-    private @Nullable String fingerprint;
+    private volatile @Nullable String text;
+    /** {@link TextFingerprint} of the text; null until worked out when no worker supplied it. */
+    private volatile @Nullable String fingerprint;
 
     private SavedBaseline(int length, @Nullable String text, @Nullable String fingerprint) {
         this.length = length;
@@ -31,7 +35,7 @@ final class SavedBaseline {
         this.fingerprint = fingerprint;
     }
 
-    /** A baseline that holds {@code text} until sealed; the fingerprint is computed at sealing. */
+    /** A baseline that holds {@code text} until sealed; the fingerprint is worked out before sealing. */
     static SavedBaseline of(String text) {
         return new SavedBaseline(text.length(), Objects.requireNonNull(text), null);
     }
@@ -51,43 +55,87 @@ final class SavedBaseline {
         return length;
     }
 
-    /** Whether {@code current} is the baseline text: by identity or equality while the text is held, else by hash. */
-    synchronized boolean matches(String current) {
+    /**
+     * Whether {@code current} is the baseline text, answered without hashing: by length, then by identity or
+     * equality while the text is held. Null when only a hash can tell (the baseline is sealed and the lengths
+     * agree): the FX thread then asks {@link #matches} off the thread.
+     */
+    @Nullable
+    Boolean matchesWithoutHashing(String current) {
         if (current.length() != length) {
-            return false;
+            return Boolean.FALSE;
         }
-        if (text != null) {
-            return current == text || current.equals(text);
+        String held = text;
+        if (held != null) {
+            return current == held || current.equals(held);
+        }
+        return null;
+    }
+
+    /** Whether {@code current} is the baseline text, hashing it when sealed: never on the FX thread. */
+    boolean matches(String current) {
+        Boolean cheap = matchesWithoutHashing(current);
+        if (cheap != null) {
+            return cheap;
         }
         return TextFingerprint.of(current).equals(fingerprint); // sealed, so the fingerprint is known
     }
 
     /**
-     * Lets the text go, keeping its fingerprint. Called once the buffer is dirty and its edits have settled:
-     * the text is no longer the snapshot, so holding it would be the second copy this class exists to avoid.
+     * Lets the text go, keeping its fingerprint, which is worked out here when no worker supplied it: the hash
+     * runs on the calling thread, so the buffer calls {@link #sealIfFingerprinted} on the FX thread instead.
      */
-    synchronized void seal() {
-        if (text == null) {
+    void seal() {
+        String held = text;
+        if (held == null) {
             return;
         }
         if (fingerprint == null) {
-            fingerprint = TextFingerprint.of(text);
+            fingerprint = TextFingerprint.of(held);
         }
         text = null;
     }
 
+    /**
+     * Lets the text go when its fingerprint is known, without hashing; false when the fingerprint must first be
+     * worked out off the FX thread (from {@link #heldText}, then {@link #knowFingerprint}).
+     */
+    boolean sealIfFingerprinted() {
+        if (text == null) {
+            return true;
+        }
+        if (fingerprint == null) {
+            return false;
+        }
+        text = null;
+        return true;
+    }
+
+    /** The fingerprint a worker worked out from {@code held}, kept if {@code held} is still this baseline's text. */
+    void knowFingerprint(String held, String heldFingerprint) {
+        if (fingerprint == null && text == held) {
+            fingerprint = heldFingerprint;
+        }
+    }
+
+    /** Whether the fingerprint is known (from a worker, or worked out already). */
+    boolean hasFingerprint() {
+        return fingerprint != null;
+    }
+
     /** The saved text while it is still held (before sealing), else null. */
-    synchronized @Nullable String heldText() {
+    @Nullable
+    String heldText() {
         return text;
     }
 
     /** Whether the text is still held (tests). */
-    synchronized boolean holdsText() {
+    boolean holdsText() {
         return text != null;
     }
 
     /** The fingerprint, computing it from the held text if needed (tests/diagnostics). */
-    synchronized String fingerprint() {
+    String fingerprint() {
         String known = fingerprint;
         if (known == null) {
             known = TextFingerprint.of(Objects.requireNonNull(text, "a baseline without a fingerprint holds its text"));

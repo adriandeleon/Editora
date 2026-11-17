@@ -465,6 +465,7 @@ class MainControllerTabsFxTest {
         FxTestSupport.runOnFx(() -> {
             EditorBuffer buffer = addBuffer("text", "cat dog cat bird cat\n");
             FindReplaceBar find = FxTestSupport.field(controller, "findBar");
+            find.searchOn(Runnable::run, Runnable::run, com.editora.text.SearchMatcher.DEFAULT_PAGE); // in place
 
             FxTestSupport.invoke(controller, "findNextMatch");
             assertTrue(find.isShown(), "with the bar closed, Find Next opens it");

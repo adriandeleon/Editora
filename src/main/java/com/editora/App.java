@@ -65,7 +65,46 @@ public class App extends Application {
         var rawArgs = getParameters().getRaw();
         // One shared resolver, so this can never disagree with the single-instance claim in main() about
         // which directory (and therefore which instance) this launch belongs to.
-        Bootstrap boot = takeBootstrap(ConfigManager.configDirFor(configDirArg(rawArgs), devFlag(rawArgs)), rawArgs);
+        java.nio.file.Path configDir = ConfigManager.configDirFor(configDirArg(rawArgs), devFlag(rawArgs));
+        Bootstrap boot = takeBootstrap(configDir);
+        if (boot != null) {
+            startWith(stage, rawArgs, boot);
+            return;
+        }
+        // The prefetch failed, or main() was bypassed: the same load runs on a config-prefetch thread of its own,
+        // which start() does not wait for (PERF-01, Pauta 6.0.1), and the first window is built when it lands. The
+        // FX thread touches nothing in the config dir meanwhile; that thread claims the instance lock first, before
+        // the settings are loaded or anything is written, as the prefetch does (loadForFirstWindow).
+        fallbackBootstrap(configDir, rawArgs, landed -> {
+            try {
+                startWith(stage, rawArgs, landed);
+            } catch (IOException | RuntimeException e) {
+                LOG.log(Level.SEVERE, "Could not build the first window", e);
+                Platform.exit();
+            }
+        });
+    }
+
+    /**
+     * The fallback load: {@link #loadForFirstWindow} on a {@code config-prefetch} thread (the instance lock first),
+     * then {@code then} on the FX thread with its result. A load that fails is logged and the app exits, as a failed
+     * {@code start()} did.
+     */
+    static void fallbackBootstrap(
+            java.nio.file.Path configDir, java.util.List<String> args, java.util.function.Consumer<Bootstrap> then) {
+        prefetchConfig(configDir, args, new java.util.concurrent.CountDownLatch(0))
+                .whenComplete((landed, failure) -> Platform.runLater(() -> {
+                    if (failure != null || landed == null) {
+                        LOG.log(Level.SEVERE, "Could not load the configuration", failure);
+                        Platform.exit();
+                    } else {
+                        then.accept(landed);
+                    }
+                }));
+    }
+
+    /** The rest of {@link #start}, once the first window's bootstrap is loaded. */
+    private void startWith(Stage stage, java.util.List<String> rawArgs, Bootstrap boot) throws IOException {
         ConfigManager bootstrap = boot.manager();
         Settings settings = boot.settings();
         SharedConfig shared = bootstrap.shared();
@@ -484,7 +523,7 @@ public class App extends Application {
      * focus a project or untitled window, that window's session ({@code null} otherwise) — all parsed while
      * the toolkit started, so the first window builds without reading them on the FX thread.
      */
-    private record Bootstrap(
+    record Bootstrap(
             ConfigManager manager,
             Settings settings,
             @Nullable String language,
@@ -508,8 +547,8 @@ public class App extends Application {
 
     /**
      * Loads the config on a daemon thread while the caller probes the single-instance endpoint and starts the
-     * FX toolkit. Never throws: a failure is handed to {@link #takeBootstrap}, which falls back to loading
-     * inline so the prefetch can only ever make startup faster, never introduce a failure mode of its own.
+     * FX toolkit. Never throws: a failure is handed to {@link #takeBootstrap}, and start() loads again on a thread
+     * of its own, so the prefetch can only ever make startup faster, never introduce a failure mode of its own.
      *
      * <p>Two stages. Until {@code loadGate} opens only {@link #warmConfigLoad} runs — reads with no side
      * effect — so a launch that is then forwarded (and exits) has changed nothing in a directory another
@@ -539,7 +578,8 @@ public class App extends Application {
     /**
      * Everything the first window needs read, written or decided before it is shown, in order: the
      * config-prefetch thread's work, which {@code start()} waits for once (PERF-01, PERF-16, Pauta 6.0.1).
-     * Blocking. {@link #takeBootstrap}'s fallback runs it inline when the prefetch failed.
+     * Blocking, never on the FX thread: {@link #fallbackBootstrap} runs it on a thread of its own when the prefetch
+     * failed.
      */
     static Bootstrap loadForFirstWindow(java.nio.file.Path configDir, java.util.List<String> args) {
         ConfigManager manager = new ConfigManager(configDir);
@@ -569,7 +609,7 @@ public class App extends Application {
             StartupPrep.forFirstWindow(shared, UI_FONT_CSS);
             return new Bootstrap(manager, settings, language, plugins, projectWindow);
         } catch (RuntimeException | Error e) {
-            // A failed prefetch is loaded again inline by takeBootstrap, on a config of its own: let go of this
+            // A failed prefetch is loaded again by the fallback, on a config of its own: let go of this
             // one's claim (and its writer), or that config would take itself for a second instance.
             try {
                 shared.shutdown();
@@ -622,17 +662,18 @@ public class App extends Application {
     }
 
     /**
-     * The prefetched config when {@link #main} started one for this same directory and it succeeded, else a
-     * plain inline load.
+     * The prefetched config when {@link #main} started one for this same directory and it succeeded, else null:
+     * {@link #start} then loads it on a thread of its own ({@link #fallbackBootstrap}). The one wait {@code start()}
+     * makes (PERF-01, PERF-16, Pauta 6.0.1).
      *
      * <p>The fallback is what keeps this an optimization rather than a second code path: a prefetch that
-     * failed surfaces its error exactly where the inline load always did, and an entry point that does not
+     * failed surfaces its error where the fallback load raises it again, and an entry point that does not
      * run our {@code main} (a test harness constructing the app directly) still works. The directory is
      * re-derived from the FX parameters and compared rather than assumed — both sides use the same resolver
      * on the same arguments, so a mismatch should be impossible, and if it ever were possible, silently
      * using another directory's settings is the worst outcome available.
      */
-    private static Bootstrap takeBootstrap(java.nio.file.Path configDir, java.util.List<String> args) {
+    private static @Nullable Bootstrap takeBootstrap(java.nio.file.Path configDir) {
         CompletableFuture<Bootstrap> future = configPrefetch;
         configPrefetch = null; // one-shot: a second window must not reuse the first launch's load
         if (future != null) {
@@ -642,12 +683,10 @@ public class App extends Application {
                     return boot;
                 }
             } catch (RuntimeException ignored) {
-                // Prefetch failed; fall through so the inline load raises it the way it always has.
+                // Prefetch failed; the fallback load raises it again.
             }
         }
-        // The same work the prefetch thread does, here on the FX thread: PERF-16's gap, and only when the
-        // prefetch failed or the app was entered without main().
-        return loadForFirstWindow(configDir, args);
+        return null;
     }
 
     /**

@@ -68,20 +68,36 @@ public final class GradleDebugInit {
 
     /**
      * {@link #write}, once per set of tasks: the script does not change, so the file written first serves every
-     * later debug run. Written ahead of time off the FX thread ({@link #prepare}), so a debug run on it finds the
-     * file (PERF-01, Pauta 6.0.1).
+     * later debug run, and a write that failed is not tried again (the run falls back to {@code --debug-jvm}).
+     * Writes on the calling thread: the FX thread asks through {@link #whenPrepared} instead (PERF-01, Pauta 6.0.1).
      */
     public static @Nullable Path prepared(Collection<String> taskNames) {
         List<String> key = List.copyOf(taskNames);
-        Path known = PREPARED.get(key);
+        java.util.Optional<Path> known = PREPARED.get(key);
         if (known != null) {
-            return known;
+            return known.orElse(null);
         }
         Path file = write(key);
-        if (file != null) {
-            PREPARED.put(key, file);
-        }
+        PREPARED.put(key, java.util.Optional.ofNullable(file));
         return file;
+    }
+
+    /**
+     * Hands {@code then} {@link #prepared}'s file for {@code taskNames}, or null when it could not be written: at
+     * once when it was written (or failed) already, else after the write, made off the FX thread; {@code then} runs
+     * on the FX thread. A debug command waits for it so (PERF-01, Pauta 6.0.1).
+     */
+    public static void whenPrepared(Collection<String> taskNames, java.util.function.Consumer<@Nullable Path> then) {
+        List<String> key = List.copyOf(taskNames);
+        java.util.Optional<Path> known = PREPARED.get(key);
+        if (known != null) {
+            then.accept(known.orElse(null));
+            return;
+        }
+        com.editora.perf.OffFx.then(
+                "gradle-debug-init",
+                () -> java.util.Optional.ofNullable(prepared(key)),
+                done -> then.accept(done.value() == null ? null : done.value().orElse(null)));
     }
 
     /** Writes {@link #prepared}'s file for {@code taskNames} on a virtual thread of its own. */
@@ -92,7 +108,9 @@ public final class GradleDebugInit {
         }
     }
 
-    private static final java.util.Map<List<String>, Path> PREPARED = new java.util.concurrent.ConcurrentHashMap<>();
+    /** The file written per set of tasks, or empty when its write failed. */
+    private static final java.util.Map<List<String>, java.util.Optional<Path>> PREPARED =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     /** The arguments that apply {@code initScript} to a Gradle run. Pure. */
     public static List<String> args(Path initScript) {

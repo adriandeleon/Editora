@@ -326,8 +326,13 @@ class DiffApplyGuardsFxTest {
             assertEquals("A\nb\nc\nd\ne\nf\ng\nh\ni\nJ\n", Files.readString(file), "not on disk until saved");
 
             FxTestSupport.runOnFx(save::fire);
-            settle(async, fx);
-            assertEquals("a\nb\nc\nd\ne\nf\ng\nh\ni\nJ\n", Files.readString(file));
+            // The save is written off the FX thread (PERF-01): wait for it to land on disk.
+            String saved = "a\nb\nc\nd\ne\nf\ng\nh\ni\nJ\n";
+            for (int attempt = 0; attempt < 200 && !saved.equals(Files.readString(file)); attempt++) {
+                Thread.sleep(25);
+                settle(async, fx);
+            }
+            assertEquals(saved, Files.readString(file));
         }
     }
 

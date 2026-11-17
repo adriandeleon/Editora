@@ -1353,7 +1353,66 @@ final class HttpClientCoordinator {
             boolean all,
             int cancelledOf,
             String environment) {
+        finishRun(buffer, requests, indexes, exchanges, startedAt, unsent, all, cancelledOf, environment, () -> {});
+    }
+
+    /** {@link com.editora.perf.BlockingSites} name of the requests' fingerprints, hashed off the FX thread as a run lands. */
+    static final String FINGERPRINT_SITE = "HttpRerunTarget.fingerprint";
+
+    /**
+     * As above, then {@code after}. The requests' fingerprints are hashed off the FX thread first (PERF-01, Pauta
+     * 6.0.1); the ■ turns back into ▶ at once, and the results land in the view and the history when they are done.
+     */
+    private void finishRun(
+            EditorBuffer buffer,
+            List<HttpFile.Parsed> requests,
+            List<Integer> indexes,
+            List<HttpExchange> exchanges,
+            long[] startedAt,
+            Set<HttpExchange> unsent,
+            boolean all,
+            int cancelledOf,
+            String environment,
+            Runnable after) {
         buffer.setHttpRunning(-1); // the ■ turns back into ▶
+        List<HttpFile.@Nullable Parsed> asked = new ArrayList<>(requests);
+        com.editora.perf.OffFx.then(
+                FINGERPRINT_SITE,
+                () -> {
+                    List<@Nullable String> fingerprints = new ArrayList<>();
+                    for (HttpFile.Parsed req : asked) {
+                        fingerprints.add(req == null ? null : HttpRerunTarget.fingerprint(req));
+                    }
+                    return fingerprints;
+                },
+                done -> {
+                    List<@Nullable String> fingerprints = done.value() == null ? List.of() : done.value();
+                    landRun(
+                            buffer,
+                            requests,
+                            indexes,
+                            exchanges,
+                            startedAt,
+                            unsent,
+                            all,
+                            cancelledOf,
+                            environment,
+                            fingerprints);
+                    after.run();
+                });
+    }
+
+    private void landRun(
+            EditorBuffer buffer,
+            List<HttpFile.Parsed> requests,
+            List<Integer> indexes,
+            List<HttpExchange> exchanges,
+            long[] startedAt,
+            Set<HttpExchange> unsent,
+            boolean all,
+            int cancelledOf,
+            String environment,
+            List<@Nullable String> fingerprints) {
         long now = System.currentTimeMillis();
         Map<String, List<String>> definedIn = null; // read once, and only when a variable was sent empty
         List<HttpHistoryEntry> entries = new ArrayList<>();
@@ -1378,7 +1437,8 @@ final class HttpClientCoordinator {
                     startedAt != null && i < startedAt.length ? startedAt[i] : now,
                     // # @no-log, and an untitled buffer's "not sent — save first": shown now, never written to disk
                     noLog,
-                    environment));
+                    environment,
+                    i < fingerprints.size() ? fingerprints.get(i) : null));
         }
         HttpClientPanel p = panelFor(buffer);
         if (p != null) {
@@ -1429,11 +1489,21 @@ final class HttpClientCoordinator {
         }
         long[] starts = keptStarts.stream().mapToLong(Long::longValue).toArray();
         // A cancelled Run All lists what finished under "Cancelled · 2 of 4 ran", not "all 2 succeeded".
+        int ran = kept.size();
         finishRun(
-                buffer, keptRequests, keptIndexes, kept, starts, unsent, total > 1, total > 1 ? total : 0, environment);
-        // One request whose answer was in before the cancel took effect: "1 of 1 requests had finished" read oddly.
-        host.setStatus(
-                total > 1 ? tr("status.http.cancelledAfter", kept.size(), total) : tr("status.http.cancelledTooLate"));
+                buffer,
+                keptRequests,
+                keptIndexes,
+                kept,
+                starts,
+                unsent,
+                total > 1,
+                total > 1 ? total : 0,
+                environment,
+                // One request whose answer was in before the cancel took effect: "1 of 1 requests had finished" read
+                // oddly.
+                () -> host.setStatus(
+                        total > 1 ? tr("status.http.cancelledAfter", ran, total) : tr("status.http.cancelledTooLate")));
     }
 
     /**

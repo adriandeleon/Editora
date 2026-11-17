@@ -58,7 +58,15 @@ final class RunConfigurationCoordinator {
         @Nullable
         EditorBuffer activeBuffer();
 
-        boolean save(EditorBuffer buffer);
+        /** A test stand-in's save, answered at once; the app saves through {@link #saveThen}. */
+        default boolean save(EditorBuffer buffer) {
+            return false;
+        }
+
+        /** Saves {@code buffer} off the FX thread, then tells {@code then} on it whether it went through (PERF-01). */
+        default void saveThen(EditorBuffer buffer, java.util.function.Consumer<Boolean> then) {
+            then.accept(save(buffer));
+        }
 
         void requestSave();
 
@@ -876,8 +884,16 @@ final class RunConfigurationCoordinator {
                         host.setStatus(tr("debug.error.startFailed", a.why()));
                     } else if (plan.root() == null) {
                         host.setStatus(tr("status.debug.noProject"));
-                    } else if (!b.isDirty() || host.save(b)) {
+                    } else if (!b.isDirty()) {
                         debugViaBuild(routing, gradle, maven, plan);
+                    } else {
+                        host.saveThen(
+                                b,
+                                saved -> { // written off the FX thread (PERF-01)
+                                    if (saved) {
+                                        debugViaBuild(routing, gradle, maven, plan);
+                                    }
+                                });
                     }
                 });
     }

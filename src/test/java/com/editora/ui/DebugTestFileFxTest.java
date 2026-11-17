@@ -89,6 +89,12 @@ class DebugTestFileFxTest {
             CommandRegistry reg = FxTestSupport.field(fx.controller, "registry");
             reg.run("debug.start");
         });
+        // The route is decided once the main class has been parsed off the FX thread (PERF-01).
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (debugged.isEmpty() && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        FxTestSupport.drainFx();
     }
 
     @Test

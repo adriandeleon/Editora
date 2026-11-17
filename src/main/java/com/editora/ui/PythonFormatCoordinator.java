@@ -6,7 +6,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.function.Consumer;
-import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import javafx.application.Platform;
@@ -51,13 +50,16 @@ final class PythonFormatCoordinator {
     /** The window's settings: whether to format on save. */
     private final Supplier<Settings> settings;
 
-    /** Saves a buffer to its file now; false when it could not be saved. */
-    private final Predicate<EditorBuffer> save;
+    /** Saves a buffer to its file off the FX thread, then says on it whether it could (PERF-01). */
+    private final java.util.function.BiConsumer<EditorBuffer, java.util.function.Consumer<Boolean>> save;
 
     /** Buffers being saved again by {@link #afterUserSave}: that save does not start another round. */
     private final Set<EditorBuffer> savingAgain = Collections.newSetFromMap(new WeakHashMap<>());
 
-    PythonFormatCoordinator(Host host, Supplier<Settings> settings, Predicate<EditorBuffer> save) {
+    PythonFormatCoordinator(
+            Host host,
+            Supplier<Settings> settings,
+            java.util.function.BiConsumer<EditorBuffer, java.util.function.Consumer<Boolean>> save) {
         this.host = host;
         this.settings = settings;
         this.save = save;
@@ -124,9 +126,11 @@ final class PythonFormatCoordinator {
                     && buffer.isDirty()
                     && !buffer.getContent().equals(saved)) {
                 savingAgain.add(buffer);
-                if (!save.test(buffer)) {
-                    savingAgain.remove(buffer);
-                }
+                save.accept(buffer, written -> {
+                    if (!written) {
+                        savingAgain.remove(buffer);
+                    }
+                });
             }
         });
     }

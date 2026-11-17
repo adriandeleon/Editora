@@ -146,7 +146,7 @@ class EditorBufferFxTest {
             return buf;
         });
         assertTrue(FxTestSupport.callOnFx(sh::isShell));
-        FxTestSupport.runOnFx(sh::settleRunScan);
+        FxTestSupport.runOnFx(sh::settleRunScanForTest);
         assertTrue(FxTestSupport.callOnFx(sh::isRunnable), "a shell script is runnable with Run on");
 
         // Turning the Run feature off removes the glyph for every language.
@@ -163,10 +163,10 @@ class EditorBufferFxTest {
             buf.setLanguageOverride("java");
             buf.setRunEnabled(true);
             buf.setContent("void main() {\n    IO.println(\"hi\");\n}\n");
-            buf.settleRunScan();
+            buf.settleRunScanForTest();
             return buf.isRunnable() && buf.isCompactSource();
         });
-        assertTrue(runnable, "settleRunScan lands the compact-source scan synchronously");
+        assertTrue(runnable, "settleRunScanForTest lands the compact-source scan synchronously");
     }
 
     /** The load's Run-glyph text scan runs off the FX thread; wait for it to flip the glyph. */

@@ -121,6 +121,9 @@ class LspBashUiFxTest {
                         + ":5:1: `for` statement must end with `done`");
 
         fx.run(() -> fx.coordinator.formatDocument());
+        // The first Format waits for the shfmt look, made off the FX thread (PERF-01).
+        SettingsRig.awaitFx(
+                "the format's answer", () -> !tr("status.lsp.formatting").equals(fx.host.lastStatus()));
 
         assertEquals(
                 tr("status.lsp.bashCannotFormatAt", 5, "`for` statement must end with `done`"), fx.host.lastStatus());
