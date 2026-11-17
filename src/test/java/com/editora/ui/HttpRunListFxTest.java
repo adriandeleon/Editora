@@ -45,6 +45,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * selected and shown, "Only failures", a row's selection filling the tabs, Enter going to the request, a single run or
  * Clear taking the list away, and the row menu's Run again and Copy as cURL.
  */
+// Run again and Enter on a run find their request off the FX thread (PERF-01); the test reads at once.
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 @Tag("fx")
 class HttpRunListFxTest {
 

@@ -783,17 +783,32 @@ final class LspCoordinator {
                 || !com.editora.process.ExecTargets.runsHere(path)) {
             return;
         }
-        String pkg = com.editora.dap.JavaSourceRootFix.declaredPackage(buffer.getContent());
-        Path root = com.editora.dap.JavaSourceRootFix.sourceRoot(path, pkg);
         Path projectRoot = lspRootFor(buffer, LspServerRegistry.JAVA_SERVER_ID);
-        if (root == null || correctedSourceRoots.contains(root) || projectRoot == null) {
+        if (projectRoot == null) {
             return;
         }
-        for (String build : JAVA_BUILD_FILES) {
-            if (java.nio.file.Files.exists(projectRoot.resolve(build))) {
-                return; // a Maven or Gradle project: jdtls reads its source folders from the build
-            }
-        }
+        // The package line is scanned from the buffer's text and, for a Maven or Gradle project (jdtls reads its
+        // source folders from the build), the build files looked at: both off the FX thread (PERF-01, Pauta 6.0.1).
+        String text = buffer.text(); // an immutable snapshot
+        com.editora.perf.OffFx.then(
+                "LspCoordinator.correctPlainFolderSourceRoot",
+                () -> {
+                    String pkg = com.editora.dap.JavaSourceRootFix.declaredPackage(text);
+                    Path root = com.editora.dap.JavaSourceRootFix.sourceRoot(path, pkg);
+                    return root == null || hasJavaBuildFile(projectRoot)
+                            ? null
+                            : new java.util.AbstractMap.SimpleImmutableEntry<>(pkg, root);
+                },
+                looked -> {
+                    var found = looked.value();
+                    if (found == null || buffer.isDisposed() || correctedSourceRoots.contains(found.getValue())) {
+                        return;
+                    }
+                    correctSourceRoot(buffer, path, found.getKey(), found.getValue());
+                });
+    }
+
+    private void correctSourceRoot(EditorBuffer buffer, Path path, String pkg, Path root) {
         com.editora.dap.JavaSourceRootFix.correct(lspManager, path, pkg, () -> !buffer.isDisposed(), fixed -> {
             if (fixed) {
                 correctedSourceRoots.add(root);
@@ -1319,7 +1334,30 @@ final class LspCoordinator {
 
     private void noteNonProjectFile(Path file, List<LspDiagnostic> diagnostics) {
         Path root = file.toString().endsWith(".java") ? lspManager.javaSessionRoot(file) : null;
-        Path build = root == null ? null : buildFolder(root, file); // a build beside others: its own (twelfth CL2)
+        if (root == null) {
+            return;
+        }
+        // The build folder is looked for off the FX thread, per publish (PERF-01, Pauta 6.0.1); the latest
+        // publish's answer for the file wins.
+        long mine = ++nonProjectLooks;
+        nonProjectLook.put(file, mine);
+        com.editora.perf.OffFx.then(
+                "LspCoordinator.buildFolder", () -> java.util.Optional.ofNullable(buildFolder(root, file)), found -> {
+                    if (!Long.valueOf(mine).equals(nonProjectLook.get(file))) {
+                        return; // a later publish for the file is being looked at
+                    }
+                    nonProjectLook.remove(file);
+                    noteNonProjectFile(
+                            file, root, found.or(java.util.Optional.empty()).orElse(null), diagnostics);
+                });
+    }
+
+    /** The latest build-folder look per file ({@link #noteNonProjectFile}). */
+    private final Map<Path, Long> nonProjectLook = new java.util.HashMap<>();
+
+    private long nonProjectLooks;
+
+    private void noteNonProjectFile(Path file, Path root, @Nullable Path build, List<LspDiagnostic> diagnostics) {
         if (build == null || !JavaImportCheck.inSourceFolder(build, file)) {
             return; // a loose file in a project's other folders is a non-project file by rights
         }
@@ -1358,35 +1396,40 @@ final class LspCoordinator {
      */
     private void nonProjectImport(Path folder, String message) {
         if (importFailed.add(importKey(LspServerRegistry.JAVA_SERVER_ID, folder))) {
-            Path root = lspManager.javaSessionRoot(folder);
-            Path sessionRoot = root != null ? root : folder;
-            JavaImportCheck.PomError pomError = JavaImportCheck.unreadablePom(folder.resolve("pom.xml"));
-            String pom =
-                    sessionRoot.relativize(folder.resolve("pom.xml")).toString().replace('\\', '/');
-            JavaImportCheck.Reason why = JavaImportCheck.projectReason(problems, folder);
-            String reason = pomError == null
-                    ? why != null ? why.line() : message // the pom's "Project build error" (thirteenth CK2)
-                    : pomError.line() < 1
-                            ? tr("status.lsp.pomUnreadable", pom, pomError.message())
-                            : tr(
-                                    "status.lsp.pomUnreadableAt",
-                                    pom,
-                                    pomError.message(),
-                                    pomError.line(),
-                                    pomError.column());
-            if (pomError != null) {
-                java.util.logging.Logger.getLogger(LspCoordinator.class.getName())
-                        .info(folder.resolve("pom.xml") + " does not parse: " + pomError.describe()); // Debug Log
-            }
-            host.setError(tr(
-                    "status.lsp.importProblemWhy",
-                    failedServerName( // a module's named (fourteenth check CJ5)
-                            statusServerName(LspServerRegistry.JAVA_SERVER_ID, sessionRoot),
-                            LspServerRegistry.JAVA_SERVER_ID,
-                            sessionRoot),
-                    reason.replaceFirst("[.\\s]+$", "")));
-            refreshImportNotes();
+            // The pom is parsed off the FX thread (PERF-01, Pauta 6.0.1); the failure is said when it lands.
+            com.editora.perf.OffFx.then(
+                    "JavaImportCheck.unreadablePom",
+                    () -> java.util.Optional.ofNullable(JavaImportCheck.unreadablePom(folder.resolve("pom.xml"))),
+                    parsed -> sayImportFailed(
+                            folder,
+                            message,
+                            parsed.or(java.util.Optional.empty()).orElse(null)));
         }
+    }
+
+    private void sayImportFailed(Path folder, String message, JavaImportCheck.@Nullable PomError pomError) {
+        Path root = lspManager.javaSessionRoot(folder);
+        Path sessionRoot = root != null ? root : folder;
+        String pom =
+                sessionRoot.relativize(folder.resolve("pom.xml")).toString().replace('\\', '/');
+        JavaImportCheck.Reason why = JavaImportCheck.projectReason(problems, folder);
+        String reason = pomError == null
+                ? why != null ? why.line() : message // the pom's "Project build error" (thirteenth CK2)
+                : pomError.line() < 1
+                        ? tr("status.lsp.pomUnreadable", pom, pomError.message())
+                        : tr("status.lsp.pomUnreadableAt", pom, pomError.message(), pomError.line(), pomError.column());
+        if (pomError != null) {
+            java.util.logging.Logger.getLogger(LspCoordinator.class.getName())
+                    .info(folder.resolve("pom.xml") + " does not parse: " + pomError.describe()); // Debug Log
+        }
+        host.setError(tr(
+                "status.lsp.importProblemWhy",
+                failedServerName( // a module's named (fourteenth check CJ5)
+                        statusServerName(LspServerRegistry.JAVA_SERVER_ID, sessionRoot),
+                        LspServerRegistry.JAVA_SERVER_ID,
+                        sessionRoot),
+                reason.replaceFirst("[.\\s]+$", "")));
+        refreshImportNotes();
     }
 
     /**
@@ -1407,11 +1450,13 @@ final class LspCoordinator {
      * or diagnostics, under "Loaded and ready" (eleventh review CO2).
      */
     private void checkModulePoms(Path root) {
-        for (Path module : JavaImportCheck.mavenModules(root)) {
-            if (JavaImportCheck.unreadablePom(module.resolve("pom.xml")) != null) {
-                nonProjectImport(module, "");
-            }
-        }
+        // The poms are read and parsed off the FX thread (PERF-01, Pauta 6.0.1).
+        com.editora.perf.OffFx.then(
+                "JavaImportCheck.mavenModules",
+                () -> JavaImportCheck.mavenModules(root).stream()
+                        .filter(module -> JavaImportCheck.unreadablePom(module.resolve("pom.xml")) != null)
+                        .toList(),
+                broken -> broken.or(List.of()).forEach(module -> nonProjectImport(module, "")));
     }
 
     /**
@@ -1523,7 +1568,7 @@ final class LspCoordinator {
                 if (d.severity().ordinal() <= LspDiagnostic.Severity.WARNING.ordinal()
                         && announcedProjectProblems.add(key + "\u0000" + d.message())) {
                     // the project's folder name, not "pom.xml"; a warning is not said as an error (CT8)
-                    Path project = java.nio.file.Files.isDirectory(file) ? file : file.getParent();
+                    Path project = LspManager.isFolder(file) ? file : file.getParent();
                     String text = tr(
                             "status.lsp.projectProblem",
                             project == null ? PathDisplay.fileName(file) : PathDisplay.fileName(project),
@@ -1552,7 +1597,7 @@ final class LspCoordinator {
             modelError(file, diagnostics);
             // The project's error comes after jdtls said the import failed: say the reason again in its words
             // ("Could not find method …", not the Gradle wrapper's "Could not fetch model") (third review CT7).
-            Path project = java.nio.file.Files.isDirectory(file) ? file : file.getParent();
+            Path project = LspManager.isFolder(file) ? file : file.getParent();
             JavaImportCheck.Reason why = project == null ? null : JavaImportCheck.projectReason(problems, project);
             String reason = why == null ? null : why.line();
             String failedKey = importKey(LspServerRegistry.JAVA_SERVER_ID, project);
@@ -1718,6 +1763,13 @@ final class LspCoordinator {
      * init and on every settings apply.
      */
     void applySupport() {
+        // Which servers run Editora's own copy (a stat or two under the config folder each) is looked at off the
+        // FX thread (PERF-01, Pauta 6.0.1): a command or JDK set since is looked at first, and the support applied
+        // when the answers land, never with a command guessed meanwhile.
+        if (!launchCommandsKnown()) {
+            lookAtLaunchCommands();
+            return;
+        }
         String trouble = troubleSignature();
         if (!trouble.equals(appliedTrouble)) { // an install, a trust decision, a command: not a theme (JS B112)
             appliedTrouble = trouble;
@@ -2028,9 +2080,53 @@ final class LspCoordinator {
 
     /** How a server is started: {@link #serverCommand(String)}, a blank one filled in ({@link LspServerCommands#withOwnCopy}). */
     private String launchCommand(String serverId) {
-        return LspServerCommands.withOwnCopy(
-                serverId, serverCommand(serverId), configDir(), host.settings().getMavenJdkHome());
+        String command = serverCommand(serverId);
+        String jdk = host.settings().getMavenJdkHome();
+        if (javafx.application.Platform.isFxApplicationThread()
+                && !LspServerCommands.ownCopyKnown(serverId, command, configDir(), jdk)) {
+            // Not looked at yet (a command typed a moment ago): looked at off the FX thread, and the support
+            // applied again when it lands; until then the command as set (PERF-01, Pauta 6.0.1).
+            lookAtLaunchCommands();
+            return command == null ? "" : command;
+        }
+        return LspServerCommands.withOwnCopy(serverId, command, configDir(), jdk);
     }
+
+    /** Whether every server's launch command has its own-copy answer kept ({@link #launchCommand}). */
+    private boolean launchCommandsKnown() {
+        Path dir = configDir();
+        String jdk = host.settings().getMavenJdkHome();
+        for (String serverId : LspServerCommands.SERVER_IDS) {
+            if (!LspServerCommands.ownCopyKnown(serverId, serverCommand(serverId), dir, jdk)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Looks at every server's own copy off the FX thread, then applies the support again; one look at a time. */
+    private void lookAtLaunchCommands() {
+        if (lookingAtLaunchCommands) {
+            return;
+        }
+        lookingAtLaunchCommands = true;
+        Path dir = configDir();
+        String jdk = host.settings().getMavenJdkHome();
+        Map<String, String> commands = new java.util.LinkedHashMap<>();
+        for (String serverId : LspServerCommands.SERVER_IDS) {
+            commands.put(serverId, serverCommand(serverId));
+        }
+        com.editora.perf.OffFx.run(
+                "lsp-own-copies",
+                () -> commands.forEach((id, command) -> LspServerCommands.prepareOwnCopy(id, command, dir, jdk)),
+                failure -> {
+                    lookingAtLaunchCommands = false;
+                    applySupport();
+                });
+    }
+
+    /** Whether {@link #lookAtLaunchCommands} is under way. */
+    private boolean lookingAtLaunchCommands;
 
     private @Nullable Path configDir() {
         com.editora.config.ConfigManager config = ops.config();
@@ -2254,10 +2350,11 @@ final class LspCoordinator {
                 return;
             }
             String id = serverIdForBuffer(b);
-            if (tsOn && ts.equals(id)) {
-                tsStarts.add(lspRootFor(b, ts));
-            } else if (astroOn && ASTRO_SERVER_ID.equals(id)) {
-                astroStarts.add(lspRootFor(b, ASTRO_SERVER_ID));
+            Path start = tsOn && ts.equals(id)
+                    ? lspRootFor(b, ts)
+                    : astroOn && ASTRO_SERVER_ID.equals(id) ? lspRootFor(b, ASTRO_SERVER_ID) : null;
+            if (start != null) { // null: not known yet, so not started yet either
+                (ts.equals(id) ? tsStarts : astroStarts).add(start);
             }
         });
         trustLooking = true;
@@ -2443,6 +2540,26 @@ final class LspCoordinator {
     boolean pomWithheldUntrusted(EditorBuffer b) {
         return xmlTrust.pomWithheldUntrusted(b);
     }
+
+    /** Whether {@code b}'s pom root, which its folder's trust is asked by, is not known yet (looked for off FX). */
+    boolean pomTrustUnknown(EditorBuffer b) {
+        int coldBefore = rootColdAsks;
+        return xmlTrust.pomTrust(b) == null && rootColdAsks != coldBefore; // null and not known: still looking
+    }
+
+    /**
+     * Runs {@code then} on the FX thread once a server root for {@code b}'s file lands from its look off the FX
+     * thread (PERF-01, Pauta 6.0.1): for a caller that must not decide on a root not known yet.
+     */
+    void afterRootLearned(EditorBuffer b, Runnable then) {
+        Path file = lspPath(b);
+        if (file != null) {
+            afterRoot.computeIfAbsent(file, k -> new java.util.ArrayList<>()).add(then);
+        }
+    }
+
+    /** What waits for a file's root ({@link #afterRootLearned}). */
+    private final Map<Path, java.util.List<Runnable>> afterRoot = new java.util.HashMap<>();
 
     /** Folder trust for the lemminx servers: {@code workspace.trustFolder} and its broadcast (E1, C6). */
     XmlFolderTrust xmlTrust() {
@@ -2817,6 +2934,7 @@ final class LspCoordinator {
         if (ops.lspFeatureEnabled() && overridesReapplied()) {
             return;
         }
+        int coldBefore = rootColdAsks;
         // An untitled Python buffer is served under a made-up path; saved, its file takes over (review B14).
         Path path = ops.lspFeatureEnabled() ? untitledLspPath(buffer) : lspPath(buffer);
         String serverId = serverIdForBuffer(buffer); // pom.xml → maven-pom (when available), else the language's server
@@ -2848,6 +2966,15 @@ final class LspCoordinator {
                 && (remote
                         ? remoteServerAvailable(buffer, path, serverId)
                         : Boolean.TRUE.equals(serverAvailable.get(serverId)));
+        if (eligible && serverId != null) {
+            lspRootFor(buffer, serverId); // asked now, so a root not known yet is seen here
+            if (rootColdAsks != coldBefore) {
+                waitingForRoot.add(buffer);
+                // The server's root is being looked for off the FX thread (PERF-01, Pauta 6.0.1): the buffer
+                // syncs again when it lands (rootLearned), as it is, rather than opening under a guessed root.
+                return;
+            }
+        }
         // eligible implies path and serverId are set; restated below where they are used, for the null checker
         if (eligible
                 && path != null
@@ -2920,7 +3047,7 @@ final class LspCoordinator {
                         path,
                         lspRootFor(buffer, serverId),
                         host.settings().isTypescriptTypeAcquisition(),
-                        lspManager.isReady(path),
+                        () -> lspManager.isReady(path),
                         host::setStatus);
             }
         } else {
@@ -2982,42 +3109,98 @@ final class LspCoordinator {
         if (origin != null) {
             return origin.root(); // a library file reached from the project: read in the project's server (B4)
         }
-        Path loose = lspManager.looseRoot();
-        if (loose != null && com.editora.lsp.XmlServer.isXml(serverId)) {
-            return com.editora.lsp.XmlServer.sharedRoot(ops.lspProjectRoot(), file, loose); // one lemminx (A7)
+        // The rest asks the disk (marker files up the folders): answered from a memory a look off the FX thread
+        // fills; a key not looked at yet answers null ("not known yet") and syncs the buffer when it lands
+        // (PERF-01, Pauta 6.0.1).
+        LspRootMemo.Key key = new LspRootMemo.Key(ops.lspProjectRoot(), file, serverId, lspManager.looseRoot());
+
+        // Only a loose Java file reads its package line from the text (an immutable snapshot: no copy here).
+        String head = com.editora.lsp.LspServerRegistry.JAVA_SERVER_ID.equals(serverId) ? buffer.text() : "";
+        Path root = lspRoots.root(key, head);
+        if (root == null && !lspRoots.knows(key) && javafx.application.Platform.isFxApplicationThread()) {
+            rootColdAsks++;
         }
-        if (loose != null && com.editora.lsp.BashLsp.sharesLooseRoot(serverId, ops.lspProjectRoot(), file)) {
+        return root;
+    }
+
+    /** Counts the {@link #lspRootFor} asks that found no root known yet, so a sync can tell it must wait. */
+    private int rootColdAsks;
+
+    /** The disk part of {@link #lspRootFor}, by key; see {@link LspRootMemo}. */
+    private final LspRootMemo lspRoots = new LspRootMemo(LspCoordinator::diskRoot, this::rootLearned);
+
+    /** A root became known for {@code file}: the buffers whose sync waits for it sync now. */
+    private void rootLearned(Path file) {
+        java.util.List<Runnable> waiting = afterRoot.remove(file);
+        if (waiting != null) {
+            waiting.forEach(Runnable::run);
+        }
+        host.forEachBuffer(b -> {
+            if (!b.isDisposed() && file.equals(lspPath(b)) && waitingForRoot.remove(b)) {
+                syncBuffer(b);
+            }
+        });
+    }
+
+    /** Buffers whose sync waits for their server's root ({@link #rootLearned}). */
+    private final java.util.Set<EditorBuffer> waitingForRoot =
+            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    /** Starts the look for {@code buffer}'s server root, so a later sync or {@link #ensureManaged} finds it. */
+    private void warmRoot(EditorBuffer buffer) {
+        if (ops.lspFeatureEnabled() && lspPath(buffer) != null) {
+            String serverId = serverIdForBuffer(buffer);
+            if (serverId != null) {
+                lspRootFor(buffer, serverId);
+            }
+        }
+    }
+
+    /** The disk part of a buffer's server root (off the FX thread): markers, builds, site and package roots. */
+    static @Nullable Path diskRoot(LspRootMemo.Key key, String head) {
+        Path projectRoot = key.project();
+        Path file = key.file();
+        String serverId = key.serverId();
+        Path loose = key.looseRoot();
+        com.editora.perf.BlockingSites.enter("LspCoordinator.lspRootFor");
+        if (com.editora.lsp.LspServerRegistry.JAVA_SERVER_ID.equals(serverId)) {
+            JavaProjectRoot.warm(file); // its FX askers (Debug File's menu row, the run gates) answer from memory
+        }
+        if (loose != null && com.editora.lsp.XmlServer.isXml(serverId)) {
+            return com.editora.lsp.XmlServer.sharedRoot(projectRoot, file, loose); // one lemminx (A7)
+        }
+        if (loose != null && com.editora.lsp.BashLsp.sharesLooseRoot(serverId, projectRoot, file)) {
             return loose; // one server for every loose script, wherever it is (TypeScript B7, Bash A9)
         }
         Path resolved = com.editora.lsp.RootResolver.resolveTiered(
-                ops.lspProjectRoot(), file, com.editora.lsp.LspServerRegistry.rootMarkerTiersForServer(serverId));
+                projectRoot, file, com.editora.lsp.LspServerRegistry.rootMarkerTiersForServer(serverId));
         if (resolved != null && "html".equals(serverId)) {
-            return com.editora.lsp.RootResolver.siteRoot(resolved, file, ops.lspProjectRoot()); // `/` links (A6)
+            return com.editora.lsp.RootResolver.siteRoot(resolved, file, projectRoot); // `/` links (A6)
         }
         if (resolved != null && "python".equals(serverId)) { // a sub-project's own Pyright (Python review 2, B101)
-            return com.editora.lsp.RootResolver.pythonProjectRoot(resolved, file, ops.lspProjectRoot());
+            return com.editora.lsp.RootResolver.pythonProjectRoot(resolved, file, projectRoot);
         }
         if (resolved != null && com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId)) {
-            return com.editora.lsp.RootResolver.typeScriptWorkspaceRoot(resolved, ops.lspProjectRoot()); // JS B106
+            return com.editora.lsp.RootResolver.typeScriptWorkspaceRoot(resolved, projectRoot); // JS B106
         }
         if (resolved != null && com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
             // A module pom's root is its reactor's: one lemminx-maven JVM per reactor, not per module (C11).
-            return com.editora.lsp.RootResolver.outermostContiguous(resolved, "pom.xml", ops.lspProjectRoot());
+            return com.editora.lsp.RootResolver.outermostContiguous(resolved, "pom.xml", projectRoot);
         }
         if (com.editora.lsp.LspServerRegistry.JAVA_SERVER_ID.equals(serverId)
                 && com.editora.lsp.RootResolver.isLoose(
-                        ops.lspProjectRoot(), file, com.editora.lsp.LspServerRegistry.rootMarkersForServer(serverId))) {
+                        projectRoot, file, com.editora.lsp.LspServerRegistry.rootMarkersForServer(serverId))) {
             // A loose `package demo;` file in …/src/demo is rooted where its package says, not in its own folder,
             // where jdtls expected the default package and marked every declaration (re-review C6).
             Path implied = com.editora.dap.JavaSourceRootFix.sourceRoot(
-                    file, com.editora.dap.JavaSourceRootFix.declaredPackage(packageSource(buffer.getContent(), file)));
+                    file, com.editora.dap.JavaSourceRootFix.declaredPackage(packageSource(head, file)));
             if (implied != null && !com.editora.lsp.RootResolver.isBroadRoot(implied)) {
                 return implied;
             }
         }
         if (resolved != null && com.editora.lsp.LspServerRegistry.JAVA_SERVER_ID.equals(serverId)) {
             // A module's root is its build's: one jdtls per reactor or Gradle build, as a project gets (C10).
-            return com.editora.lsp.RootResolver.javaBuildRoot(resolved, ops.lspProjectRoot());
+            return com.editora.lsp.RootResolver.javaBuildRoot(resolved, projectRoot);
         }
         return resolved;
     }
@@ -3298,18 +3481,39 @@ final class LspCoordinator {
         if (!buffer.isPython()) {
             return untitledLspPaths.get(buffer);
         }
-        return untitledLspPaths.computeIfAbsent(buffer, b -> {
-            try {
-                if (untitledLspFolder == null) {
-                    untitledLspFolder = java.nio.file.Files.createTempDirectory("editora-untitled-");
-                    untitledLspFolder.toFile().deleteOnExit();
-                }
-            } catch (java.io.IOException e) {
-                return null;
+        Path folder = untitledLspFolder;
+        if (folder == null) {
+            // The made-up folder is made off the FX thread (PERF-01, Pauta 6.0.1): the buffer is served once it is
+            // there, and syncs again then.
+            if (!untitledFolderMaking) {
+                untitledFolderMaking = true;
+                com.editora.perf.OffFx.then(
+                        "LspCoordinator.untitledLspPath",
+                        () -> {
+                            Path made = java.nio.file.Files.createTempDirectory("editora-untitled-");
+                            made.toFile().deleteOnExit();
+                            return made;
+                        },
+                        made -> {
+                            untitledFolderMaking = false;
+                            if (made.ok() && made.value() != null) {
+                                untitledLspFolder = made.value();
+                                host.forEachBuffer(b -> {
+                                    if (b.getPath() == null && b.isPython() && !b.isDisposed()) {
+                                        syncBuffer(b);
+                                    }
+                                });
+                            }
+                        });
             }
-            return untitledLspFolder.resolve("Untitled-" + (++untitledLspCounter) + ".py");
-        });
+            return null;
+        }
+        return untitledLspPaths.computeIfAbsent(
+                buffer, b -> folder.resolve("Untitled-" + (++untitledLspCounter) + ".py"));
     }
+
+    /** Set while {@link #untitledLspFolder} is being made. */
+    private boolean untitledFolderMaking;
 
     /** The window's Python interpreter: status-bar item, picker, and what Pyright is told (review B1). */
     final PythonInterpreterCoordinator pythonInterpreters;
@@ -3514,6 +3718,7 @@ final class LspCoordinator {
     }
 
     void buildAfterImport() {
+        Map<Path, Path> roots = new java.util.LinkedHashMap<>(); // root → a file of it
         host.forEachBuffer(b -> {
             Path path = lspPath(b);
             if (path == null
@@ -3522,15 +3727,28 @@ final class LspCoordinator {
                 return;
             }
             Path root = lspRootFor(b, LspServerRegistry.JAVA_SERVER_ID);
-            // Maven only: jdtls compiles a Gradle project into Buildship's bin/, which then shows in `git status`;
-            // that is for Build Project, run on purpose, to do (re-review CN3, owner decision).
-            if (root != null
-                    && hasJavaBuildFile(root)
-                    && java.nio.file.Files.isRegularFile(root.resolve("pom.xml"))
-                    && builtAfterImport.add(root)) {
-                lspManager.buildJavaWorkspace(path, false, outcome -> {});
+            if (root != null && !builtAfterImport.contains(root)) {
+                roots.putIfAbsent(root, path);
             }
         });
+        if (roots.isEmpty()) {
+            return;
+        }
+        // Maven only: jdtls compiles a Gradle project into Buildship's bin/, which then shows in `git status`;
+        // that is for Build Project, run on purpose, to do (re-review CN3, owner decision). The pom is looked for
+        // off the FX thread (PERF-01, Pauta 6.0.1).
+        com.editora.perf.OffFx.then(
+                "LspCoordinator.buildAfterImport",
+                () -> roots.keySet().stream()
+                        .filter(root -> !com.editora.vfs.Vfs.isRemote(root)
+                                && java.nio.file.Files.isRegularFile(root.resolve("pom.xml")))
+                        .toList(),
+                maven -> maven.or(List.of()).forEach(root -> {
+                    if (builtAfterImport.add(root)) {
+                        lspManager.buildJavaWorkspace(
+                                java.util.Objects.requireNonNull(roots.get(root)), false, outcome -> {});
+                    }
+                }));
     }
 
     /**
@@ -3703,10 +3921,21 @@ final class LspCoordinator {
         Path root = lspManager.javaSessionRoot(folder);
         if (root == null
                 || folder.equals(root)
-                || JavaImportCheck.unreadablePom(root.resolve("pom.xml")) != null
                 || lspManager.startupError(LspServerRegistry.JAVA_SERVER_ID, root) != null) { // the whole import threw
             return;
         }
+        // The root's pom is parsed off the FX thread (PERF-01, Pauta 6.0.1).
+        com.editora.perf.OffFx.then(
+                "JavaImportCheck.unreadablePom",
+                () -> JavaImportCheck.unreadablePom(root.resolve("pom.xml")) != null,
+                broken -> {
+                    if (broken.ok() && !Boolean.TRUE.equals(broken.value())) {
+                        moveFailure(root, folder);
+                    }
+                });
+    }
+
+    private void moveFailure(Path root, Path folder) {
         if (importFailed.remove(importKey(LspServerRegistry.JAVA_SERVER_ID, root))) {
             importFailed.add(importKey(LspServerRegistry.JAVA_SERVER_ID, folder));
             refreshImportNotes();
@@ -3763,21 +3992,34 @@ final class LspCoordinator {
             if (line.ready() && root != null && LspServerRegistry.JAVA_SERVER_ID.equals(serverId)) {
                 nonProjectFiles.getOrDefault(key, Map.of()).entrySet().stream()
                         .findFirst()
-                        .ifPresent(e -> nonProjectImport(
-                                java.util.Objects.requireNonNullElse(buildFolder(root, e.getKey()), root),
-                                e.getValue())); // CO2, CL2
+                        .ifPresent(e -> com.editora.perf.OffFx.then( // the folders are looked at off FX (PERF-01)
+                                "LspCoordinator.buildFolder",
+                                () -> java.util.Optional.ofNullable(buildFolder(root, e.getKey())),
+                                found -> nonProjectImport(
+                                        found.or(java.util.Optional.empty()).orElse(root), e.getValue()))); // CO2, CL2
                 checkModulePoms(root);
                 if (lspManager.startupError(serverId, root) == null) { // else the whole import's, said below
                     problems.forEach((at, listed) -> modelError(at, listed)); // its pom's model failed (CK2, CJ2)
                 }
-                host.forEachBuffer(
-                        b -> { // a source file of a pom-packaging module is never checked (fourteenth CJ3)
-                            Path module = JavaImportCheck.pomPackagingModule(root, lspPath(b));
-                            if (module != null) {
-                                nonProjectImport(
-                                        module, tr("status.lsp.pomPackaging", JavaImportCheck.pomOf(root, module)));
-                            }
-                        });
+                // A source file of a pom-packaging module is never checked (fourteenth CJ3): the poms are read off
+                // the FX thread (PERF-01, Pauta 6.0.1).
+                List<Path> files = new java.util.ArrayList<>();
+                host.forEachBuffer(b -> {
+                    Path p = lspPath(b);
+                    if (p != null) {
+                        files.add(p);
+                    }
+                });
+                com.editora.perf.OffFx.then(
+                        "JavaImportCheck.pomPackagingModule",
+                        () -> files.stream()
+                                .map(p -> JavaImportCheck.pomPackagingModule(root, p))
+                                .filter(java.util.Objects::nonNull)
+                                .distinct()
+                                .toList(),
+                        modules -> modules.or(List.<Path>of())
+                                .forEach(module -> nonProjectImport(
+                                        module, tr("status.lsp.pomPackaging", JavaImportCheck.pomOf(root, module)))));
                 String threw = lspManager.startupError(serverId, root);
                 if (threw != null && importFailed.add(key)) { // a pom with a model error (thirteenth review CK2)
                     JavaImportCheck.Reason why = JavaImportCheck.projectReason(problems, root);
@@ -4073,15 +4315,34 @@ final class LspCoordinator {
                         && (projectWideProblems || lspManager.otherJavaDocumentOpen(path))
                         && ops.lspFeatureEnabled()) {
                     built.add(path);
-                    Path root = lspManager.javaSessionRoot(path);
-                    if (projectWideProblems
-                            || (root != null && java.nio.file.Files.isRegularFile(root.resolve("pom.xml")))) {
-                        lspManager.buildJavaWorkspace(path, false, outcome -> {});
-                    } else {
-                        lspManager.revalidateOtherJavaDocuments(path);
-                    }
                 }
             }
+            if (built.isEmpty()) {
+                return;
+            }
+            // Whether each root is a Maven project is looked at off the FX thread (PERF-01, Pauta 6.0.1).
+            Map<Path, @Nullable Path> roots = new java.util.LinkedHashMap<>();
+            built.forEach(path -> roots.put(path, lspManager.javaSessionRoot(path)));
+            boolean wide = projectWideProblems;
+            com.editora.perf.OffFx.then(
+                    "LspCoordinator.projectRecheck",
+                    () -> roots.entrySet().stream()
+                            .filter(r -> wide
+                                    || (r.getValue() != null
+                                            && java.nio.file.Files.isRegularFile(
+                                                    r.getValue().resolve("pom.xml"))))
+                            .map(Map.Entry::getKey)
+                            .collect(java.util.stream.Collectors.toSet()),
+                    maven -> {
+                        java.util.Set<Path> builds = maven.or(java.util.Set.of());
+                        for (Path path : roots.keySet()) {
+                            if (builds.contains(path)) {
+                                lspManager.buildJavaWorkspace(path, false, outcome -> {});
+                            } else {
+                                lspManager.revalidateOtherJavaDocuments(path);
+                            }
+                        }
+                    });
         });
         return recheck;
     }
@@ -4089,6 +4350,7 @@ final class LspCoordinator {
     /** Wires every LSP hook onto a freshly-added buffer (didChange/diagnostics/completion/format/nav), then
      *  opens+activates it if eligible. Called from {@code MainController.addBuffer}. */
     void wireBuffer(EditorBuffer buffer) {
+        warmRoot(buffer); // a tab deferred until shown finds its server's root known then (PERF-01)
         html.wire(buffer); // the HTML markup check for a page no server serves (D5)
         eslint.wire(buffer); // checked when shown, after a pause in typing and on save
         // Debounced didChange sink + keep the Structure outline live as the document changes.

@@ -12,7 +12,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermissions;
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -193,7 +192,18 @@ public final class RecoveryStore implements AutoCloseable {
                 + "-"
                 + ProcessHandle.current().pid()
                 + "-"
-                + Long.toString(new SecureRandom().nextLong() & Long.MAX_VALUE, 36);
+                + Long.toString(java.util.concurrent.ThreadLocalRandom.current().nextLong() & Long.MAX_VALUE, 36);
+    }
+
+    /**
+     * A new buffer's recovery id, unique among the session's files. Not {@code UUID.randomUUID()}: its secure
+     * generator reads {@code /dev/urandom} on the calling thread, which is the FX thread for every tab opened
+     * (PERF-01, Pauta 6.0.1). A file name needs no secret, only no collision, which the session directory and a
+     * 128-bit random already give.
+     */
+    public static String newBufferId() {
+        var r = java.util.concurrent.ThreadLocalRandom.current();
+        return new java.util.UUID(r.nextLong(), r.nextLong()).toString();
     }
 
     private static String fileName(String bufferId) {

@@ -44,6 +44,11 @@ final class InstallCoordinator {
         /** Whether a debug adapter for {@code language} (java/python/javascript) is currently detected. */
         boolean dapAvailable(String language);
 
+        /** The java-debug path the debugger was configured with (what "is java-debug there" asks about). */
+        default String javaDebugPluginPath() {
+            return "";
+        }
+
         /** Whether the Mermaid {@code mmdc} CLI is currently detected. */
         boolean mmdcAvailable();
 
@@ -731,8 +736,12 @@ final class InstallCoordinator {
     }
 
     /** The inputs of a {@link StepDisk} read, taken on the FX thread. */
-    record StepLook(List<Step> steps, Path config, String typeScriptCommand) {
+    record StepLook(List<Step> steps, Path config, String typeScriptCommand, String javaDebugPath) {
         StepDisk read() {
+            // what "is java-debug there" asks on the FX thread next, looked at here (PERF-01, Pauta 6.0.1): every
+            // path kept, and the one configured now
+            com.editora.dap.DebugAdapterLocator.relocateKept();
+            com.editora.dap.DapManager.prepareLocate(javaDebugPath);
             Set<String> outdated = new java.util.HashSet<>();
             boolean debugpy = false;
             boolean ownTs = false;
@@ -763,7 +772,7 @@ final class InstallCoordinator {
 
     private StepLook stepLook(List<Step> steps) {
         String command = host.settings() == null ? "" : host.settings().getTypescriptLspCommand();
-        return new StepLook(steps, ops.configDir(), command == null ? "" : command);
+        return new StepLook(steps, ops.configDir(), command == null ? "" : command, ops.javaDebugPluginPath());
     }
 
     /** Maps a catalog step to its current detected-availability via the existing per-feature detectors. */

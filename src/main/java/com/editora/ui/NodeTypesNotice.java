@@ -51,13 +51,35 @@ final class NodeTypesNotice {
             Path path,
             @Nullable Path root,
             boolean typeAcquisition,
-            boolean ready,
+            java.util.function.BooleanSupplier ready,
             Consumer<String> say) {
         Path folder = path.getParent();
-        if (folder == null || hinted.contains(folder) || !wanted(language, text, path, typeAcquisition)) {
+        if (folder == null
+                || hinted.contains(folder)
+                || typeAcquisition
+                || !("javascript".equals(language) || "javascriptreact".equals(language))
+                || !NodeTypesHint.usesNodeApis(text)) {
             return;
         }
-        hinted.add(folder);
+        hinted.add(folder); // asked once per folder, whatever the look finds
+        // Whether @types/node is installed above it is looked at off the FX thread (PERF-01, Pauta 6.0.1).
+        typesLook.accept(path, typed -> {
+            if (!typed) {
+                hint(root, ready.getAsBoolean(), say);
+            }
+        });
+    }
+
+    /**
+     * Looks whether {@code @types/node} is installed above a file and answers on the FX thread: off it (PERF-01,
+     * Pauta 6.0.1); a failed look answers "installed", so nothing is said. TEST SEAM — a test looks in place.
+     */
+    java.util.function.BiConsumer<Path, Consumer<Boolean>> typesLook = (path, then) -> com.editora.perf.OffFx.then(
+            "NodeTypesHint.hasNodeTypes",
+            () -> NodeTypesHint.hasNodeTypes(path),
+            typed -> then.accept(typed.or(Boolean.TRUE)));
+
+    private void hint(@Nullable Path root, boolean ready, Consumer<String> say) {
         if (ready || root == null) {
             Platform.runLater(() -> say.accept(tr("status.lsp.nodeTypesHint"))); // after this open's "Opened …"
         } else {

@@ -61,6 +61,9 @@ import static com.editora.i18n.Messages.tr;
  */
 final class PluginCoordinator {
 
+    /** The plugin data folders already made this run: {@code dataDir()} makes each once. */
+    private static final java.util.Set<Path> MADE_DATA_DIRS = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     private static final Logger LOG = Logger.getLogger(PluginCoordinator.class.getName());
 
     /** A {@code start()} slower than this on the UI thread is named in the Message Log and on its Settings row. */
@@ -1248,10 +1251,23 @@ final class PluginCoordinator {
         @Override
         public Path dataDir() {
             Path data = desc.dir().resolve("data");
-            try {
-                Files.createDirectories(data);
-            } catch (IOException ignored) {
-                // best-effort
+            if (!MADE_DATA_DIRS.add(data)) {
+                return data;
+            }
+            Runnable make = () -> {
+                com.editora.perf.BlockingSites.enter("PluginCoordinator.dataDir");
+                try {
+                    Files.createDirectories(data);
+                } catch (IOException ignored) {
+                    // best-effort
+                }
+            };
+            if (javafx.application.Platform.isFxApplicationThread()) {
+                // Asked from a plugin's start or command on the FX thread: made on a thread of its own (PERF-01,
+                // Pauta 6.0.1). A plugin writes into it from its own thread, as it should any file.
+                Thread.ofVirtual().name("plugin-data-dir").start(make);
+            } else {
+                make.run();
             }
             return data;
         }

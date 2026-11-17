@@ -228,6 +228,18 @@ final class LibrarySources {
                 tab.anchor(),
                 JavaLibrarySources.RESOLVE,
                 JavaLibrarySources.request(tab.uri(), null, null),
-                (result, error) -> cb.accept(error == null ? JavaLibrarySources.attachment(result) : null));
+                (result, error) -> {
+                    JavaLibrarySources.Attachment attachment =
+                            error == null ? JavaLibrarySources.attachment(result) : null;
+                    if (attachment == null) {
+                        cb.accept(null);
+                        return;
+                    }
+                    // Whether its sources jar is there is looked at off the FX thread (PERF-01, Pauta 6.0.1).
+                    com.editora.perf.OffFx.then(
+                            "JavaLibrarySources.attached",
+                            () -> attachment.look(),
+                            looked -> cb.accept(looked.or(attachment)));
+                });
     }
 }

@@ -801,6 +801,37 @@ class BuildCoordinatorFxTest {
     }
 
     /**
+     * PERF-01 (Pauta 6.0.1): whether a launch may ask a root's trust and executable at once is worked out without
+     * looking at anything on the FX thread; a root no look has filled is not known until a look off the FX thread
+     * fills it, after which the FX thread answers from memory.
+     */
+    @Test
+    void aRootsTrustFactsAreKnownOnlyOnceALookOffTheFxThreadFilledThem(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        FakeOps ops = new FakeOps();
+        Path ran = dir.resolve("launcher-ran");
+        Path other = Files.createDirectories(dir.resolve("other"));
+        Files.writeString(other.resolve("build.mill"), "package build\n");
+        BuildCoordinator c = untrustedMill(host, ops, dir, ran);
+        java.util.List<String> onFx = new java.util.concurrent.CopyOnWriteArrayList<>();
+        com.editora.perf.BlockingSites.listenForTest((site, thread) -> {
+            if (javafx.application.Platform.isFxApplicationThread()) {
+                onFx.add(site);
+            }
+        });
+        try {
+            assertFalse(FxTestSupport.callOnFx(() -> c.trustedExecutableKnown(other)), "nothing looked at yet");
+            assertEquals(List.of(), onFx, "the check looks at nothing on the FX thread");
+            c.trustFacts(other); // as a launch's plan does, off the FX thread
+            assertTrue(FxTestSupport.callOnFx(() -> c.trustedExecutableKnown(other)));
+            assertTrue(FxTestSupport.callOnFx(() -> c.trustedExecutableKnown(dir)), "detection looked at its root");
+            assertEquals(List.of(), onFx);
+        } finally {
+            com.editora.perf.BlockingSites.listenForTest(null);
+        }
+    }
+
+    /**
      * A cloned repository's {@code ./mill} used to run on the first build with no question (only Maven and
      * Gradle were gated). It now asks like {@code ./mvnw}, naming the launcher and the build script, and
      * declining runs nothing — not the launcher, not a fallback to {@code mill} on PATH.
@@ -831,6 +862,8 @@ class BuildCoordinatorFxTest {
         FxTestSupport.runOnFx(() -> c.runTaskAt(dir, List.of("app.runMain", "demo.hello"), List.of()));
         assertNull(FxTestSupport.callOnFx(() -> c.trustedExecutable(dir)), "no argv for a build before a launch");
         FxTestSupport.runOnFx(() -> FxTestSupport.call(c, "loadAllTasks", new Class<?>[] {}));
+        // "Load all tasks…" looks at the trust question's facts off the FX thread, then asks (PERF-01).
+        SettingsRig.awaitFx("the fourth question", () -> ops.promptCount == 4);
         assertEquals(4, ops.promptCount, "each asks, since the folder is still not trusted");
         assertEquals(0, ops.openConsoleCount);
         Thread.sleep(300); // a launch would be asynchronous: give one the time to leave its mark

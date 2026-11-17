@@ -58,7 +58,9 @@ final class FontChoices {
 
     /** The picker's choices on this machine. */
     static List<String> forThisMachine() {
-        Fonts.ensureAllLoaded(); // the deferred families must be registered before the picker lists them
+        // The bundled families are listed by name whether registered yet or not; the rest register on fonts-load,
+        // never on the FX thread (PERF-01, Pauta 6.0.1).
+        Fonts.ensureAllLoaded();
         return choices(Fonts.BUNDLED, monospaceFamilies());
     }
 

@@ -31,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * is no build tool to run a test with.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the commands' disk looks land as they return
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TestNavigationFallbacksFxTest {
 
@@ -45,6 +46,7 @@ class TestNavigationFallbacksFxTest {
         fx = FxWindowFixture.create();
         dir = Files.createTempDirectory(fx.configDir, "nav-fallbacks").toRealPath();
         nav = FxTestSupport.callOnFx(() -> FxTestSupport.field(fx.controller, "testNavigation"));
+        nav.lookupRunner = Runnable::run; // a link's disk look lands as the command returns, as the OffFx work does
         statusBar = FxTestSupport.field(fx.controller, "statusBar");
     }
 

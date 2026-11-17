@@ -490,6 +490,9 @@ final class GitWindowCoordinator {
         return root.resolve(repoRel);
     }
 
+    /** The working side of a history row and whether it is on disk, as looked at off the FX thread. */
+    private record WorkingSide(Path file, boolean there) {}
+
     /** The {@link GitLogPanel.Actions} the Git Log tool window routes user actions through. */
     GitLogPanel.Actions gitLogActions() {
         return new GitLogPanel.Actions() {
@@ -532,18 +535,37 @@ final class GitWindowCoordinator {
                 if (root == null) {
                     return;
                 }
-                Path working = historyWorkingFile(
-                        root, gitLogFilter, repoRel, host.gitLogPanel().followedPath(hash));
-                if (!Files.isRegularFile(working) && host.openBufferFor(working) == null) {
-                    // A deleted file has nothing to compare with: show what the commit did to it instead
-                    // of answering only that the file is gone.
-                    host.diffCoordinator()
-                            .diffCommitFile(
-                                    root, hash, repoRel, host.gitLogPanel().followedOrigPath(hash, repoRel));
-                    host.setStatus(tr("status.git.history.noWorkingCopy", repoRel));
-                    return;
-                }
-                host.diffCoordinator().diffCommitFileVsWorking(root, hash, repoRel, working);
+                Path filter = gitLogFilter;
+                String followed = host.gitLogPanel().followedPath(hash);
+                // Which file is the working side, and whether it is there: looked at off the FX thread (PERF-01,
+                // Pauta 6.0.1).
+                com.editora.perf.OffFx.then(
+                        "GitWindowCoordinator.compareFileWithWorking",
+                        () -> {
+                            Path working = historyWorkingFile(root, filter, repoRel, followed);
+                            return new WorkingSide(working, Files.isRegularFile(working));
+                        },
+                        side -> {
+                            WorkingSide known = side.value();
+                            if (known == null) {
+                                host.setStatus(tr("status.git.history.noWorkingCopy", repoRel));
+                                return;
+                            }
+                            Path working = known.file();
+                            if (!known.there() && host.openBufferFor(working) == null) {
+                                // A deleted file has nothing to compare with: show what the commit did to it
+                                // instead of answering only that the file is gone.
+                                host.diffCoordinator()
+                                        .diffCommitFile(
+                                                root,
+                                                hash,
+                                                repoRel,
+                                                host.gitLogPanel().followedOrigPath(hash, repoRel));
+                                host.setStatus(tr("status.git.history.noWorkingCopy", repoRel));
+                                return;
+                            }
+                            host.diffCoordinator().diffCommitFileVsWorking(root, hash, repoRel, working);
+                        });
             }
 
             @Override
@@ -553,11 +575,13 @@ final class GitWindowCoordinator {
                     return;
                 }
                 Path file = root.resolve(repoRel);
-                if (Files.exists(file)) {
-                    host.fileWorkflows().openPath(file);
-                } else {
-                    host.setStatus(tr("status.git.fileGone", repoRel));
-                }
+                com.editora.perf.OffFx.then("GitWindowCoordinator.openFile", () -> Files.exists(file), there -> {
+                    if (Boolean.TRUE.equals(there.value())) {
+                        host.fileWorkflows().openPath(file);
+                    } else {
+                        host.setStatus(tr("status.git.fileGone", repoRel));
+                    }
+                });
             }
 
             @Override
@@ -1378,11 +1402,19 @@ final class GitWindowCoordinator {
 
     /** Project-tree Git ▸ Show File History for {@code file}: loads that file's Git log + opens the window. */
     void gitFileHistoryForPath(@Nullable Path file) {
-        if (file == null || Files.isDirectory(file)) {
+        if (file == null) {
             host.setStatus(tr("status.git.history.noFile"));
             return;
         }
-        openGitLog(file);
+        // A folder has no file history: looked at off the FX thread (PERF-01, Pauta 6.0.1).
+        com.editora.perf.OffFx.then(
+                "GitWindowCoordinator.gitFileHistoryForPath", () -> Files.isDirectory(file), dir -> {
+                    if (!Boolean.FALSE.equals(dir.value())) {
+                        host.setStatus(tr("status.git.history.noFile"));
+                    } else {
+                        openGitLog(file);
+                    }
+                });
     }
 
     /**

@@ -26,6 +26,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
  * download, or one asked for), the open tab shows them.
  */
 @Tag("fx")
+// Whether the sources jar is there is looked at off the FX thread (PERF-01, Pauta 6.0.1); here in place, so a
+// command's answer is in when it returns, as the assertions read it.
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class LibrarySourcesFxTest {
 
     private static final String JAR = "/home/u/.m2/lib-1.0.jar";

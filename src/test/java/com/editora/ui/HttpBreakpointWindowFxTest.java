@@ -52,6 +52,8 @@ class HttpBreakpointWindowFxTest {
             FxTestSupport.runOnFx(debug::applyGating);
             assertTrue(FxTestSupport.callOnFx(b::isBreakpointsEnabled), "a .http file has the breakpoint gutter");
             CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
+            // The script lines are parsed off the FX thread (PERF-01); a toggle before they land waits for them.
+            SettingsRig.awaitFx("the script lines", () -> b.httpScriptMap() != null);
 
             FxTestSupport.runOnFx(() -> {
                 b.getArea().moveTo(1, 0); // the request line

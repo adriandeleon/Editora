@@ -140,10 +140,25 @@ final class LoadedSourcesPicker {
     /** Opens {@code s}: a file in a tab; anything else read-only, with the text the adapter gives for it. */
     void open(DapModels.LoadedSource s) {
         Path file = s.file();
-        if (file != null && (file.getFileSystem() != java.nio.file.FileSystems.getDefault() || Files.exists(file))) {
+        if (file != null && file.getFileSystem() != java.nio.file.FileSystems.getDefault()) {
             ops.openPath(file);
             return;
         }
+        if (file != null) {
+            // Whether the local file is there: looked at off the FX thread (PERF-01, Pauta 6.0.1).
+            com.editora.perf.OffFx.then("LoadedSourcesPicker.open", () -> Files.exists(file), there -> {
+                if (Boolean.TRUE.equals(there.value())) {
+                    ops.openPath(file);
+                } else {
+                    openWithoutFile(s);
+                }
+            });
+            return;
+        }
+        openWithoutFile(s);
+    }
+
+    private void openWithoutFile(DapModels.LoadedSource s) {
         if (s.sourceReference() <= 0) {
             host.setStatus(tr("status.debug.sourceUnavailable", s.name()));
             return;
