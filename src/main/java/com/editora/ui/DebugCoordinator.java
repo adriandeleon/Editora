@@ -537,6 +537,8 @@ final class DebugCoordinator {
         triggered = new TriggeredBreakpoints(host, ops);
         groups = new BreakpointGroups(host, ops, this::breakpointsPicker, memberBreakpoints, this::sendClosed);
         stacks = new DebugStacks(this);
+        // Delve's binaries of earlier sessions (it leaves them when Stop ends one) go; a recent one may still run.
+        Thread.ofVirtual().name("editora-dlv-cleanup").start(com.editora.dap.GoLaunch::deleteStaleDebugBinaries);
         pinnedValues = new PinnedValues(host, ops, this::dap);
         // Each stop's pinned values are kept with it in Debug History.
         pinnedValues.setOnPainted((b, shown) -> {
