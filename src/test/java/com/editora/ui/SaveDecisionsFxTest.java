@@ -44,6 +44,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * what the buffer still considers unsaved.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class SaveDecisionsFxTest {
 
     @TempDir

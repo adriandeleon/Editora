@@ -54,6 +54,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * and the unknown-host question. No SSH connection is attempted.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class RemoteSitesFxTest {
 
     private static final RemoteConnection BUILD = new RemoteConnection(

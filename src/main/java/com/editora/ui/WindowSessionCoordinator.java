@@ -711,25 +711,10 @@ final class WindowSessionCoordinator {
         if (targets == null || targets.isEmpty()) {
             return;
         }
-        // Which named files are new (a folder that exists, no file yet) is looked at off the FX thread (PERF-01,
-        // Pauta 6.0.1); then they open in order, as named.
-        List<Path> files =
-                targets.stream().map(t -> t.file().toAbsolutePath().normalize()).toList();
-        com.editora.perf.OffFx.then(
-                "startup-targets-look",
-                () -> files.stream()
-                        .map(FileWorkflowCoordinator::isNewFileTarget)
-                        .toList(),
-                looked -> openStartupTargets(targets, files, looked.or(List.of())));
-    }
-
-    private void openStartupTargets(List<OpenTarget> targets, List<Path> files, List<Boolean> fresh) {
-        for (int i = 0; i < files.size(); i++) {
-            Path file = files.get(i);
-            boolean isNew = i < fresh.size() && Boolean.TRUE.equals(fresh.get(i));
-            if (!isNew || !host.fileWorkflows().openNewFileAtLooked(file)) {
-                host.fileWorkflows().openPath(file, true);
-            }
+        // Each opens at once, in order, so the first frame shows them; whether one is a new file (a folder that
+        // exists, no file yet) is found out off the FX thread as its read finds it missing (PERF-01, Pauta 6.0.1).
+        for (OpenTarget t : targets) {
+            host.fileWorkflows().openStartupTarget(t.file().toAbsolutePath().normalize());
         }
         if (targets.stream().anyMatch(t -> t.line() > 0)) {
             // Defer once more so it runs after openPath's own goToStart for any newly-opened file.

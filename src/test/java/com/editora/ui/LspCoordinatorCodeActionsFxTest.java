@@ -47,6 +47,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * holds afterwards, and what the user is told when a step ends it.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class LspCoordinatorCodeActionsFxTest {
 
     private static final String SOURCE = "class A {\n    int count;\n}\n";

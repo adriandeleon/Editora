@@ -2411,13 +2411,34 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
         Path styleRoot = root != null && !com.editora.vfs.Vfs.isRemote(root) ? root : null;
         java.nio.file.WatchService service = watchService;
+        boolean hidden = showHidden;
+        // The polling watcher lists each folder it is given and stats every entry: that registration is made off the
+        // FX thread (PERF-01, Pauta 6.0.1), and a folder that changed before it landed is listed again. The system's
+        // watcher registers a folder with one call, in place, as before: the Map relies on knowing at once which
+        // folders are watched.
+        boolean polling = com.editora.io.WatchServices.isPolling(service);
+        if (!polling) {
+            mapView.setWatchedDirectories(registerWatches(service, wanted, styleRoot, new ArrayList<>()));
+            return;
+        }
         try {
             watchWork.execute(() -> {
-                java.util.Set<Path> followed = registerWatches(service, wanted, styleRoot);
+                java.util.List<Path> added = new ArrayList<>();
+                java.util.Set<Path> followed = registerWatches(service, wanted, styleRoot, added);
+                // Watched a moment after the folder was listed: what came or went in between sent no event. What
+                // each newly watched folder holds now is listed here, and compared with its rows below.
+                Map<Path, java.util.Set<Path>> now = new java.util.HashMap<>();
+                for (Path dir : added) {
+                    java.util.Set<Path> names = new java.util.HashSet<>();
+                    listDir(dir, hidden).forEach(e -> names.add(e.path()));
+                    now.put(dir, names);
+                }
                 Platform.runLater(() -> {
-                    if (!disposed) {
-                        mapView.setWatchedDirectories(followed);
+                    if (disposed) {
+                        return;
                     }
+                    mapView.setWatchedDirectories(followed);
+                    relistWhereRowsDiffer(now);
                 });
             });
         } catch (java.util.concurrent.RejectedExecutionException disposedMeanwhile) {
@@ -2425,13 +2446,45 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
     }
 
+    /** Lists again each folder in {@code now} whose loaded rows are not the entries it holds. */
+    private void relistWhereRowsDiffer(Map<Path, java.util.Set<Path>> now) {
+        TreeItem<Path> top = tree.getRoot();
+        if (top == null || now.isEmpty() || filtering || isMapShowing()) {
+            return; // a filtered tree, or the Map's own rows, do not show a folder whole
+        }
+        boolean any = false;
+        for (Map.Entry<Path, java.util.Set<Path>> e : now.entrySet()) {
+            TreeItem<Path> item = findVisible(top, e.getKey());
+            if (!(item instanceof PathItem dir) || !dir.childrenReady) {
+                continue; // not listed yet: its own listing comes after the watch
+            }
+            java.util.Set<Path> rows = new java.util.HashSet<>();
+            for (TreeItem<Path> child : dir.getChildren()) {
+                rows.add(child.getValue());
+            }
+            if (!rows.equals(e.getValue())) {
+                watchChanges.add(e.getKey(), List.of(), true);
+                any = true;
+            }
+        }
+        if (any) {
+            watchDebounce.playFromStart();
+        }
+    }
+
     /**
      * Registers {@code desired} (and the Java style's folders under {@code styleRoot}) with {@code service} and
-     * cancels the rest, on {@link #watchWork}; the folders whose changes the Map follows.
+     * cancels the rest, on {@link #watchWork}; the folders whose changes the Map follows. Each folder watched anew
+     * goes into {@code added}.
      */
     private java.util.Set<Path> registerWatches(
-            java.nio.file.WatchService service, java.util.Set<Path> desired, @Nullable Path styleRoot) {
-        com.editora.perf.BlockingSites.enter("ProjectPanel.watch");
+            java.nio.file.WatchService service,
+            java.util.Set<Path> desired,
+            @Nullable Path styleRoot,
+            java.util.List<Path> added) {
+        if (com.editora.io.WatchServices.isPolling(service)) {
+            com.editora.perf.BlockingSites.enter("ProjectPanel.watch"); // the polling watcher lists each folder
+        }
         // The folders the project's Java style is read from, open in the tree or not: an outside edit to a profile
         // in .settings went unseen in a project window (fifth review DN4). Their changes refresh no tree.
         java.util.Set<Path> style = new java.util.HashSet<>();
@@ -2463,20 +2516,26 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                         java.nio.file.StandardWatchEventKinds.ENTRY_DELETE,
                         java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY);
                 watchKeys.put(key, dir);
+                added.add(dir);
             } catch (IOException | RuntimeException ignored) {
                 // a dir we can't watch (perms, vanished) is simply not watched
             }
         }
         // The Map reuses a folder's listing only while this watcher would tell it the folder changed. The
         // style-only folders' events refresh nothing, so they do not count.
+        added.removeAll(style); // their changes refresh no tree
         java.util.Set<Path> followed = new java.util.HashSet<>(watchKeys.values());
         followed.removeAll(style);
         return java.util.Set.copyOf(followed);
     }
 
     private void cancelAllWatches() {
+        java.nio.file.WatchService service = watchService;
+        // in order with the registrations: on the polling watcher's worker when they are made there
+        java.util.concurrent.Executor work =
+                service != null && com.editora.io.WatchServices.isPolling(service) ? watchWork : Runnable::run;
         try {
-            watchWork.execute(() -> {
+            work.execute(() -> {
                 for (java.nio.file.WatchKey key : watchKeys.keySet()) {
                     key.cancel();
                 }

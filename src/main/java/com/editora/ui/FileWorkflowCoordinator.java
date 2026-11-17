@@ -480,6 +480,28 @@ final class FileWorkflowCoordinator {
      * one RichTextFX insertion back on the FX thread. {@code classifyBinary} is false for Open as Text.
      */
     void openTextBufferAsync(Path file, boolean classifyBinary) {
+        openTextBufferAsync(file, classifyBinary, false);
+    }
+
+    /**
+     * A command-line {@code FILE} target: its tab is there at once, on the first frame, as any open's; a file that
+     * is not there yet, in a local folder that is, becomes a new empty buffer bound to it ({@link #openNewFileAt}) —
+     * which the read finds out, off the FX thread (PERF-01, Pauta 6.0.1).
+     */
+    void openStartupTarget(Path file) {
+        String name = file.getFileName() == null ? "" : file.getFileName().toString();
+        if (host.tabForPath(file) != null
+                || !com.editora.vfs.Vfs.isLocal(file)
+                || name.isEmpty()
+                || ImageFormats.isSupported(name)
+                || PdfViewerPane.isPdf(name)) {
+            openPath(file, true);
+            return;
+        }
+        openTextBufferAsync(file, true, true);
+    }
+
+    private void openTextBufferAsync(Path file, boolean classifyBinary, boolean newIfMissing) {
         EditorBuffer buffer = new EditorBuffer();
         buffer.setPath(file);
         // Prevent the empty shell from starting LSP/minimap work or accepting edits before its document lands.
@@ -492,7 +514,13 @@ final class FileWorkflowCoordinator {
                 PreparedLoad load = prepareLoad(file, classifyBinary).preparedFor(buffer);
                 Platform.runLater(() -> ifWindowOpen(() -> host.finishAsyncOpen(tab, buffer, load)));
             } catch (IOException | RuntimeException e) {
-                Platform.runLater(() -> ifWindowOpen(() -> host.failAsyncOpen(tab, buffer, file, e)));
+                boolean fresh = newIfMissing && isNewFileTarget(file);
+                Platform.runLater(() -> ifWindowOpen(() -> {
+                    host.failAsyncOpen(tab, buffer, file, e);
+                    if (fresh) {
+                        openNewFileAtLooked(file); // its status replaces the failure's
+                    }
+                }));
             }
         });
     }

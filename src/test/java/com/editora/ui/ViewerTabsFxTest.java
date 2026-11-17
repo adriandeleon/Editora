@@ -35,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * operations too, and Previous Tab goes the other way round from Next.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class ViewerTabsFxTest {
 
     private static FxWindowFixture fx;

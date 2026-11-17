@@ -124,25 +124,36 @@ public final class PreviewImageLoader {
      */
     static void loadInto(ImageView view, String url, double maxWidth, boolean exactWidth, @Nullable Runnable onFail) {
         Loaded hit = CACHE.get(url);
-        if (hit != null && !fileStamp(url).equals(STAMPS.getOrDefault(url, ""))) {
-            CACHE.remove(url); // the file behind a file: URL was replaced since it was decoded
-            hit = null;
-        }
         if (hit != null) {
             apply(view, hit, maxWidth, exactWidth);
+            if (!isFileUrl(url)) {
+                return;
+            }
+            // Whether the file was replaced since it was decoded is looked at off the FX thread (PERF-01, Pauta
+            // 6.0.1): the picture it holds now replaces the one shown when it differs.
+            EXEC.submit(() -> {
+                if (!fileStamp(url).equals(STAMPS.getOrDefault(url, ""))) {
+                    CACHE.remove(url);
+                    Loaded fresh = loadAndCache(url);
+                    if (fresh != null) {
+                        Platform.runLater(() -> apply(view, fresh, maxWidth, exactWidth));
+                    } else if (onFail != null) {
+                        Platform.runLater(onFail);
+                    }
+                }
+            });
             return;
         }
         Long failedAt = FAILED.get(url);
-        if (failedAt != null
-                && System.currentTimeMillis() - failedAt < FAILURE_TTL_MS
-                && fileStamp(url).isEmpty()) {
-            // recently unreachable — don't refetch on every re-render (a local file is cheap to try again)
-            if (onFail != null) {
-                onFail.run();
-            }
-            return;
-        }
+        boolean recentlyFailed = failedAt != null && System.currentTimeMillis() - failedAt < FAILURE_TTL_MS;
         EXEC.submit(() -> {
+            // recently unreachable — don't refetch on every re-render (a local file is cheap to try again)
+            if (recentlyFailed && fileStamp(url).isEmpty()) {
+                if (onFail != null) {
+                    Platform.runLater(onFail);
+                }
+                return;
+            }
             Loaded loaded = loadAndCache(url);
             if (loaded != null) {
                 Platform.runLater(() -> apply(view, loaded, maxWidth, exactWidth));
@@ -150,6 +161,10 @@ public final class PreviewImageLoader {
                 Platform.runLater(onFail);
             }
         });
+    }
+
+    private static boolean isFileUrl(String url) {
+        return url.regionMatches(true, 0, "file:", 0, 5);
     }
 
     private static final String BASE_WIDTH = "editora.md.baseWidth";
@@ -201,7 +216,7 @@ public final class PreviewImageLoader {
      * What identifies the current content of the local file behind a {@code file:} URL — its size and
      * modification time — or "" for any other URL, or a file that is not there. The cache is keyed by URL, and
      * a URL says nothing about a file that was exported again: without this a changed image kept showing its
-     * old picture until the app restarted. A {@code stat}; cheap enough for the FX thread on a local disk.
+     * old picture until the app restarted. A {@code stat}, made off the FX thread (PERF-01, Pauta 6.0.1).
      */
     static String fileStamp(@Nullable String url) {
         if (url == null || !url.regionMatches(true, 0, "file:", 0, 5)) {
@@ -212,27 +227,14 @@ public final class PreviewImageLoader {
             if (file.getFileSystem() != java.nio.file.FileSystems.getDefault()) {
                 return "";
             }
-            String stamp = FILE_STAMPS.get(file);
-            return stamp == null ? "" : stamp;
-        } catch (RuntimeException e) {
+            com.editora.perf.BlockingSites.enter("PreviewImageLoader.fileStamp");
+            java.nio.file.attribute.BasicFileAttributes a =
+                    Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class);
+            return a.size() + ":" + a.lastModifiedTime().toMillis();
+        } catch (IOException | RuntimeException e) {
             return "";
         }
     }
-
-    /**
-     * {@link #fileStamp} by file: looked at off the FX thread when the preview plans its blocks, answered from memory
-     * when an image node is built on it (PERF-01, Pauta 6.0.1).
-     */
-    private static final com.editora.perf.Looked<Path, String> FILE_STAMPS =
-            new com.editora.perf.Looked<>("PreviewImageLoader.fileStamp", file -> {
-                try {
-                    java.nio.file.attribute.BasicFileAttributes a =
-                            Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class);
-                    return a.size() + ":" + a.lastModifiedTime().toMillis();
-                } catch (IOException | RuntimeException e) {
-                    return "";
-                }
-            });
 
     /** Loads {@code url} on the calling thread and records the outcome in the cache or the failure memory. */
     private static @Nullable Loaded loadAndCache(String url) {
