@@ -60,6 +60,13 @@ class IndexCoordinatorStaleFxTest {
         FxTestSupport.drainFx();
     }
 
+    /** Lets the index worker finish what was queued, then the FX callback it posted. */
+    private static void settle(IndexCoordinator c) throws Exception {
+        java.util.concurrent.ExecutorService worker = FxTestSupport.field(c, "worker");
+        worker.submit(() -> {}).get(20, TimeUnit.SECONDS);
+        FxTestSupport.drainFx();
+    }
+
     private static List<String> files(IndexCoordinator c, String query) throws Exception {
         return FxTestSupport.callOnFx(() -> c.searchFiles(query, 40).stream()
                 .map(IndexCoordinator.FileHit::relativePath)
@@ -86,6 +93,7 @@ class IndexCoordinatorStaleFxTest {
                 c.onBufferSaved(buffer);
                 c.onBufferSaved(buffer); // a second save must not list it twice
             });
+            settle(c); // a save's declarations are scanned on the index's thread and land on the FX thread (PERF-01)
             assertEquals(List.of("Fresh.java"), files(c, "Fresh"));
             assertEquals(List.of("Fresh"), symbols(c, "Fresh"));
         } finally {
