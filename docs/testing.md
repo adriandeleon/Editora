@@ -26,7 +26,9 @@ Some tests check the repository, not the program: no Javadoc comment stacked on 
 message catalogs in step (`MessagesTest`), every shipped dependency named in `NOTICE`
 (`NoticeCoverageTest`), every place that starts a process classified by locale
 (`ChildLocalePolicyTest`), the workflows' pinned actions (`ReleaseSupplyChainTest`), the `fx` tag on every
-test class that starts the toolkit (`FxTestTagsTest`), the shape of `CHANGELOG.md` (`ChangelogFormatTest`). A change anywhere can
+test class that starts the toolkit (`FxTestTagsTest`), the shape of `CHANGELOG.md` (`ChangelogFormatTest`), colours
+from the state tokens, no fixed colour in a component rule and no contrast ratio in an FX test
+(`StyleColourGuardTest`). A change anywhere can
 break one, and the narrow tests for the change never run them, so they failed first in CI: in the week to
 12 November 2026 they were the only failure in 17 of the 35 pull-request runs that failed, each a
 fifteen-minute run spent on something that takes seconds to check.
@@ -37,7 +39,7 @@ They carry `@Tag("guard")`. Run them before every push:
 mvn test -Dgroups=guard
 ```
 
-That is 28 classes and 110 tests, about half a minute once the project is compiled, most of it Maven
+That is 30 classes and 117 tests, about half a minute once the project is compiled, most of it Maven
 starting.
 
 A new test of this kind gets the tag. It qualifies when it is pure (no toolkit), reads source files,

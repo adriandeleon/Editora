@@ -275,7 +275,7 @@ final class TodoSettingsPane {
         try {
             return Color.web(web == null || web.isBlank() ? "#E5C07B" : web);
         } catch (RuntimeException e) {
-            return Color.web("#E5C07B");
+            return com.editora.editor.todo.TodoColors.solid(null); // not a colour: the neutral fallback
         }
     }
 

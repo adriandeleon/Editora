@@ -57,7 +57,9 @@ class MinimapGitMarksFxTest {
             });
             drain();
 
-            // Painted: the left edge of the column, at the rows of lines 100-102, is the "added" green.
+            // Painted: the left edge of the column, at the rows of lines 100-102, is the "added" colour: the theme's
+            // green through the minimap's palette (here, with no stylesheet, the neutral it falls back to).
+            Color added = FxTestSupport.callOnFx(() -> FxTestSupport.<Color[]>field(minimap, "gitColors")[0]);
             Color edge = FxTestSupport.callOnFx(() -> {
                 Canvas canvas = FxTestSupport.field(minimap, "canvas");
                 WritableImage image = canvas.snapshot(null, null);
@@ -67,7 +69,10 @@ class MinimapGitMarksFxTest {
                 return image.getPixelReader().getColor(1, (int) (101 * rowHeight));
             });
             assertTrue(
-                    edge.getGreen() > edge.getRed() + 0.15 && edge.getGreen() > edge.getBlue() + 0.15, edge::toString);
+                    Math.abs(edge.getRed() - added.getRed()) < 0.05
+                            && Math.abs(edge.getGreen() - added.getGreen()) < 0.05
+                            && Math.abs(edge.getBlue() - added.getBlue()) < 0.05,
+                    () -> edge + " is the added colour " + added);
 
             // Read once per change, never per scroll repaint.
             AtomicInteger reads = new AtomicInteger();

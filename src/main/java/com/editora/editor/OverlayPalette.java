@@ -2,6 +2,8 @@ package com.editora.editor;
 
 import java.util.function.Consumer;
 
+import javafx.collections.ObservableList;
+import javafx.scene.Node;
 import javafx.scene.layout.Background;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
@@ -11,15 +13,17 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Colours for the Canvas-drawn editor overlays (whitespace markers, diagnostic squiggles, search washes,
- * inline debug values). A Canvas cannot be styled from CSS, and the overlays used one fixed colour each —
- * so a whitespace dot that was nearly invisible on a white editor (1.9:1) shouted on a dark one (9.2:1),
- * and an amber squiggle sat at 2.3:1 on white.
+ * inline debug values). A Canvas cannot be styled from CSS, so the overlays read the theme through
+ * {@link ThemeProbes}: its error, warning and success tokens ({@code -state-red}, {@code -state-amber},
+ * {@code -state-green}) and its accent ({@code -color-accent-emphasis}, {@code -color-accent-fg}) are the
+ * {@link Seeds} every role starts from.
  *
- * <p>The palette is derived from the editor's <em>actual</em> background instead: each role starts from a
- * hue suited to a light or a dark ground and is then moved toward the ground's ink (black on light, white
- * on dark) only as far as its contrast target requires. That holds for every bundled and user theme,
- * including the mid-tone ones, without a per-theme table. Resolved when the editor background changes
- * (a theme switch), never per paint.
+ * <p>Each role is then moved toward the editor ground's ink (black on light, white on dark) only as far as its
+ * contrast target requires, so it holds on every bundled and user theme and under an editor theme whose ground
+ * differs from the app theme's. Where no stylesheet reaches the probes, every seed is the ground's own mid ink:
+ * a neutral, no fixed hue (ICON-08). Amber and red mark only warnings and errors, green only a success; a search
+ * match and an assignment are the accent (ICON-18, Pauta 6.0.1). Resolved when the editor background or the theme
+ * changes, never per paint.
  */
 public final class OverlayPalette {
 
@@ -32,6 +36,27 @@ public final class OverlayPalette {
     /** Contrast of text the user reads (inline debug values). */
     static final double TEXT = 4.5;
 
+    /** The theme colours the palette starts from. */
+    public record Seeds(Color error, Color warning, Color success, Color accent, Color info) {
+
+        /** No theme to read: every seed the ground's mid ink, which no theme owns. */
+        public static Seeds neutral(Color ground) {
+            Color mid = ground.interpolate(ink(ground), 0.6);
+            return new Seeds(mid, mid, mid, mid, mid);
+        }
+
+        /** The seeds {@code probes} resolved to, each one {@link #neutral} where none did. */
+        static Seeds of(ThemeProbes probes, Color ground) {
+            Seeds none = neutral(ground);
+            return new Seeds(
+                    probes.get(ThemeProbes.RED, none.error()),
+                    probes.get(ThemeProbes.AMBER, none.warning()),
+                    probes.get(ThemeProbes.GREEN, none.success()),
+                    probes.get(ThemeProbes.ACCENT, none.accent()),
+                    probes.get(ThemeProbes.ACCENT_FG, none.info()));
+        }
+    }
+
     /** One resolved set of overlay colours. */
     public record Colors(
             Color whitespace,
@@ -43,31 +68,58 @@ public final class OverlayPalette {
             Color searchActive,
             Color searchActiveBorder,
             Color indentGuide,
-            Color ground) {}
+            Color ground,
+            Color success,
+            Color occurrenceRead,
+            Color occurrenceWrite,
+            Color occurrenceWriteBorder,
+            Color jumpPill,
+            Color jumpInk) {}
 
-    private static @Nullable Color cachedFor;
+    private record Key(Color ground, Seeds seeds) {}
+
+    private static @Nullable Key cachedFor;
     private static @Nullable Colors cached;
 
     private OverlayPalette() {}
 
-    /** The overlay colours for an editor painted on {@code background}. Pure. */
-    public static Colors of(Color background) {
-        Color ground = background == null
-                ? Color.WHITE
-                : Color.color(background.getRed(), background.getGreen(), background.getBlue());
+    /** The overlay colours for an editor painted on {@code background}, with no theme to read. Pure. */
+    public static Colors of(@Nullable Color background) {
+        Color ground = opaque(background);
+        return of(ground, Seeds.neutral(ground));
+    }
+
+    /** The overlay colours for an editor painted on {@code background}, starting from {@code seeds}. Pure. */
+    public static Colors of(@Nullable Color background, Seeds seeds) {
+        Color ground = opaque(background);
         boolean dark = isDark(ground);
         Color neutral = ground.interpolate(ink(ground), 0.2);
+        Color accent = seeds.accent();
+        Color pill = reach(accent, ground, INDICATOR);
         return new Colors(
                 reach(neutral, ground, SUBTLE),
                 reach(neutral, ground, TEXT),
-                reach(Color.web(dark ? "#f0666b" : "#e5484d"), ground, INDICATOR),
-                reach(Color.web(dark ? "#e2a03f" : "#b7791f"), ground, INDICATOR),
-                reach(Color.web(dark ? "#5c9ce6" : "#2f73c9"), ground, INDICATOR),
-                Color.web("#ffd54f", dark ? 0.30 : 0.40),
-                Color.web("#ff9800", dark ? 0.45 : 0.55),
-                reach(Color.web(dark ? "#ff9800" : "#c2410c"), ground, INDICATOR),
+                reach(seeds.error(), ground, INDICATOR),
+                reach(seeds.warning(), ground, INDICATOR),
+                reach(seeds.info(), ground, INDICATOR),
+                alpha(accent, dark ? 0.26 : 0.32), // text sits under it: a dark ground shows a tint more
+                alpha(accent, dark ? 0.45 : 0.55),
+                reach(accent, ground, INDICATOR),
                 reach(ground.interpolate(ink(ground), 0.08), ground, GUIDE),
-                ground);
+                ground,
+                reach(seeds.success(), ground, INDICATOR),
+                alpha(ground.interpolate(ink(ground), 0.5), 0.22),
+                alpha(accent, 0.32),
+                alpha(reach(accent, ground, INDICATOR), 0.9),
+                pill,
+                ink(pill));
+    }
+
+    private static Color opaque(@Nullable Color background) {
+        if (background == null) {
+            return Color.WHITE; // the stylesheet default is a white editor
+        }
+        return Color.color(background.getRed(), background.getGreen(), background.getBlue());
     }
 
     /** Whether light ink reads better than dark ink on {@code ground}. Pure. */
@@ -117,19 +169,35 @@ public final class OverlayPalette {
     }
 
     /**
-     * Feeds {@code sink} the colours for {@code area}'s current background, and again whenever the editor
-     * theme repaints it. The listener is on the area itself, which the overlay already lives and dies with.
+     * Feeds {@code sink} the colours for {@code area}'s current background and the theme, and again whenever the
+     * editor theme repaints the area or the app theme changes. The theme is read through probes added to
+     * {@code host}, the painter's own children, which it lives and dies with; so is the area listener.
      */
-    public static void track(Region area, Consumer<Colors> sink) {
-        sink.accept(forRegion(area));
-        area.backgroundProperty().addListener((obs, was, now) -> sink.accept(forRegion(area)));
+    public static void track(Region area, ObservableList<Node> host, Consumer<Colors> sink) {
+        ThemeProbes[] probes = new ThemeProbes[1];
+        Runnable refresh = () -> {
+            if (probes[0] != null) {
+                sink.accept(forRegion(area, probes[0]));
+            }
+        };
+        probes[0] = new ThemeProbes(
+                host,
+                refresh,
+                ThemeProbes.RED,
+                ThemeProbes.AMBER,
+                ThemeProbes.GREEN,
+                ThemeProbes.ACCENT,
+                ThemeProbes.ACCENT_FG);
+        refresh.run();
+        area.backgroundProperty().addListener((obs, was, now) -> refresh.run());
     }
 
-    private static Colors forRegion(Region area) {
+    private static Colors forRegion(Region area, ThemeProbes probes) {
         Color ground = backgroundOf(area);
-        if (cached == null || !ground.equals(cachedFor)) { // every overlay of every buffer asks for the same one
-            cachedFor = ground;
-            cached = of(ground);
+        Key key = new Key(ground, Seeds.of(probes, ground));
+        if (cached == null || !key.equals(cachedFor)) { // every overlay of every buffer asks for the same one
+            cachedFor = key;
+            cached = of(ground, key.seeds());
         }
         return cached;
     }
@@ -150,13 +218,20 @@ public final class OverlayPalette {
             Color errorWash,
             Color warnWash) {}
 
-    /** The log tints for an editor painted on {@code background}. Pure. */
-    public static LogTints logTints(Color background) {
-        Color ground = background == null
-                ? Color.WHITE
-                : Color.color(background.getRed(), background.getGreen(), background.getBlue());
+    /** The log tints for an editor painted on {@code background}, with no theme to read. Pure. */
+    public static LogTints logTints(@Nullable Color background) {
+        Color ground = opaque(background);
+        return logTints(ground, Seeds.neutral(ground));
+    }
+
+    /**
+     * The log tints for an editor painted on {@code background}, from {@code seeds}: FATAL and ERROR are the error
+     * colour, WARN the warning colour, INFO the accent's text tint (an INFO line is no success, ICON-18). Pure.
+     */
+    public static LogTints logTints(@Nullable Color background, Seeds seeds) {
+        Color ground = opaque(background);
         boolean dark = isDark(ground);
-        Colors base = of(ground);
+        Colors base = of(ground, seeds);
         Color neutral = ground.interpolate(ink(ground), 0.5);
         // A wash is a tint under text, so it is weighed by what is left of the ground, not by contrast: a dark
         // ground swallows a translucent colour that is plain on a light one.
@@ -165,7 +240,7 @@ public final class OverlayPalette {
                 base.error(),
                 base.error(),
                 base.warning(),
-                reach(Color.web(dark ? "#4cc38a" : "#2da44e"), ground, INDICATOR),
+                base.info(),
                 reach(neutral, ground, INDICATOR),
                 reach(ground.interpolate(ink(ground), 0.25), ground, 1.6),
                 alpha(base.error(), wash * 1.8),
@@ -173,9 +248,25 @@ public final class OverlayPalette {
                 alpha(base.warning(), wash * 0.85));
     }
 
-    /** {@link #logTints(Color)} for {@code area}'s current background. */
-    public static LogTints logTints(Region area) {
-        return logTints(backgroundOf(area));
+    /** Feeds {@code sink} the log tints for {@code area}, as {@link #track} feeds the overlay colours. */
+    public static void trackLogTints(Region area, ObservableList<Node> host, Consumer<LogTints> sink) {
+        ThemeProbes[] probes = new ThemeProbes[1];
+        Runnable refresh = () -> {
+            if (probes[0] != null) {
+                Color ground = backgroundOf(area);
+                sink.accept(logTints(ground, Seeds.of(probes[0], ground)));
+            }
+        };
+        probes[0] = new ThemeProbes(
+                host,
+                refresh,
+                ThemeProbes.RED,
+                ThemeProbes.AMBER,
+                ThemeProbes.GREEN,
+                ThemeProbes.ACCENT,
+                ThemeProbes.ACCENT_FG);
+        refresh.run();
+        area.backgroundProperty().addListener((obs, was, now) -> refresh.run());
     }
 
     private static Color alpha(Color c, double opacity) {

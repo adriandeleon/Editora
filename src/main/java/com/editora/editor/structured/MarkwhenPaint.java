@@ -9,19 +9,29 @@ import com.editora.markwhen.Timeline;
 import org.jspecify.annotations.Nullable;
 
 /** Shared color resolution for the Markwhen timeline + calendar renderers: an event's fill from its first
- *  tag's {@code #Tag: color} declaration, else a stable fallback palette; {@code null} means "no tag →
- *  use the default {@code .markwhen-*} style-class color (theme accent)". */
+ *  tag's {@code #Tag: color} declaration (the document's own colour), else one of the theme's six lane hues
+ *  ({@code .markwhen-lane-N}, {@code -lane-N} in app.css: none amber, red or green, ICON-18); an event with no tag
+ *  takes the default {@code .markwhen-*} style-class colour (the theme's accent). */
 final class MarkwhenPaint {
 
     private MarkwhenPaint() {}
 
-    /** Fallback bar/chip colors for tags without an explicit declaration (GitHub-ish hues). */
-    private static final Color[] PALETTE = {
-        Color.web("#0969da"), Color.web("#1a7f37"), Color.web("#9a6700"), Color.web("#cf222e"),
-        Color.web("#8250df"), Color.web("#bf3989"), Color.web("#0550ae"), Color.web("#6e7781")
-    };
+    /** The theme's lane hues a tag without a declared colour cycles through ({@code .markwhen-lane-0} to 5). */
+    static final int LANES = 6;
 
-    /** The event's fill color, or {@code null} when it has no tag (caller uses the default style class). */
+    /**
+     * The lane style class for an event whose first tag declares no colour, or {@code null} when it has no tag or
+     * its tag declares one.
+     */
+    static @Nullable String laneClass(MwNode.Event e, Timeline model) {
+        if (e.tags().isEmpty() || colorFor(e, model) != null) {
+            return null;
+        }
+        return "markwhen-lane-"
+                + Math.floorMod(e.tags().get(0).toLowerCase(Locale.ROOT).hashCode(), LANES);
+    }
+
+    /** The event's fill color as its document declares it, or {@code null} (caller uses a style class). */
     static @Nullable Color colorFor(MwNode.Event e, Timeline model) {
         if (e.tags().isEmpty()) {
             return null;
@@ -35,7 +45,7 @@ final class MarkwhenPaint {
                 }
             }
         }
-        return PALETTE[Math.floorMod(tag.toLowerCase(Locale.ROOT).hashCode(), PALETTE.length)];
+        return null;
     }
 
     static @Nullable Color webColor(String s) {

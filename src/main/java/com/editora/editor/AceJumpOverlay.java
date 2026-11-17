@@ -30,8 +30,11 @@ import org.jspecify.annotations.Nullable;
  */
 final class AceJumpOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
-    private static final Color PILL = Color.web("#ffe0b2"); // pastel peach/amber
-    private static final Color PILL_TEXT = Color.web("#5a3a00"); // dark brown for contrast
+    /**
+     * A jump label: the theme's accent as a pill, in whichever of black or white reads on it (not peach: amber means
+     * a warning, ICON-18). The theme's, through {@link OverlayPalette}, re-read on a theme change.
+     */
+    private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
 
     private final CodeArea area;
     private final Canvas canvas = new Canvas(1, 1);
@@ -63,6 +66,7 @@ final class AceJumpOverlay extends Region implements SecondaryPane.Followed, Tab
         setMouseTransparent(true);
         setVisible(false);
         getChildren().add(canvas);
+        OverlayPalette.track(area, getChildren(), palette -> colors = palette);
         // Scrolling/edits move offsets out from under the labels — cancel rather than mis-jump.
         area.viewportDirtyEvents().subscribe(ignore -> {
             if (active && !awaitingChar) {
@@ -326,9 +330,9 @@ final class AceJumpOverlay extends Region implements SecondaryPane.Followed, Tab
                 continue;
             }
             double pillW = label.length() * 8.0 + 6;
-            g.setFill(PILL);
+            g.setFill(colors.jumpPill());
             g.fillRoundRect(b.getMinX(), b.getMinY(), pillW, b.getHeight(), 4, 4);
-            g.setFill(PILL_TEXT);
+            g.setFill(colors.jumpInk());
             g.fillText(label, b.getMinX() + 3, b.getMinY() + b.getHeight() * 0.78);
         }
     }

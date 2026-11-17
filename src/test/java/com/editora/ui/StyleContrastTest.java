@@ -27,14 +27,14 @@ class StyleContrastTest {
 
     private static final String STYLES = "/com/editora/styles/";
 
-    private static String read(String path) throws Exception {
+    static String read(String path) throws Exception {
         try (var in = StyleContrastTest.class.getResourceAsStream(STYLES + path)) {
             return new String(in.readAllBytes(), StandardCharsets.UTF_8).replaceAll("(?s)/\\*.*?\\*/", "");
         }
     }
 
     /** {@code -color-*} tokens of a control theme's {@code .root} palette, aliases resolved. */
-    private static Map<String, String> palette(String base) throws Exception {
+    static Map<String, String> palette(String base) throws Exception {
         String css = read("atlantafx-themes/" + base + ".css");
         int start = css.indexOf(".root {");
         String block = css.substring(start, css.indexOf("\n}", start));
@@ -46,7 +46,7 @@ class StyleContrastTest {
         return tokens;
     }
 
-    private static Color color(Map<String, String> palette, String token) {
+    static Color color(Map<String, String> palette, String token) {
         String value = palette.get(token);
         while (palette.containsKey(value)) {
             value = palette.get(value);
@@ -69,7 +69,7 @@ class StyleContrastTest {
     }
 
     /** Declarations of every rule whose selector list contains {@code selector} exactly. */
-    private static List<String> rules(String css, String selector) {
+    static List<String> rules(String css, String selector) {
         List<String> bodies = new ArrayList<>();
         Matcher m = Pattern.compile("([^{}]+)\\{([^{}]*)\\}").matcher(css);
         while (m.find()) {
@@ -144,8 +144,35 @@ class StyleContrastTest {
         }
     }
 
+    /**
+     * The only selectors whose text may be the ~3:1 subtle ink (ICON-09, Pauta 6.0.1): decorative text a person
+     * does not read. The test walks every rule of the sheets that colour by role and fails any other that sets a
+     * text fill to it, so a readable selector it does not name cannot slip through.
+     */
+    private static final java.util.Set<String> SUBTLE_TEXT = java.util.Set.of(
+            ".status-bar .status-format-sep", // the dot between the status bar's format segments
+            ".text.csv-delimiter", // a CSV file's separators: they mark the columns, the fields are what is read
+            ".editor-area .fold-chevron"); // the adaptive theme's fold chevron, a glyph
+
     @Test
     void textThatMustBeReadUsesTheMutedRoleNotSubtle() throws Exception {
+        Pattern subtle = Pattern.compile("-fx-(text-)?fill\\s*:\\s*-color-fg-subtle\\b");
+        List<String> problems = new ArrayList<>();
+        for (String sheet : List.of("app.css", "syntax.css", "editor-themes/adaptive.css")) {
+            Matcher rule = Pattern.compile("([^{}]+)\\{([^{}]*)\\}").matcher(read(sheet));
+            while (rule.find()) {
+                if (!subtle.matcher(rule.group(2)).find()) {
+                    continue;
+                }
+                for (String selector : rule.group(1).split(",")) {
+                    String s = selector.strip().replaceAll("\\s+", " ");
+                    if (!SUBTLE_TEXT.contains(s)) {
+                        problems.add(sheet + ": " + s);
+                    }
+                }
+            }
+        }
+        assertTrue(problems.isEmpty(), "readable text in the ~3:1 subtle role:\n" + String.join("\n", problems));
         String app = read("app.css");
         for (String selector : List.of(
                 ".command-palette .palette-hint",
@@ -177,7 +204,8 @@ class StyleContrastTest {
                 ".problems-panel .problem-info", "-state-accent",
                 ".debug-panel .debug-start", "-state-green",
                 ".run-marker", "-state-green",
-                ".dev-mode-badge", "-state-red");
+                ".breakpoint-marker", "-state-red-emphasis",
+                ".dev-mode-badge", "-color-accent-fg");
         Pattern hex = Pattern.compile("#[0-9a-fA-F]{3,8}\\b");
         expected.forEach((selector, token) -> {
             String body = String.join(";", rules(app, selector));
@@ -221,7 +249,7 @@ class StyleContrastTest {
             assertTrue(bodies.get(0).contains("-fx-background-color"), state);
             assertTrue(app.indexOf(state) > base, state + " must follow the base rule");
         }
-        assertTrue(rules(app, ".combo-box-base:danger").get(0).contains("-color-danger-emphasis"));
+        assertTrue(rules(app, ".combo-box-base:danger").get(0).contains("-state-red-emphasis"));
         assertTrue(rules(app, ".settings-search:focused").get(0).contains("-color-input-border-focused"));
     }
 
@@ -242,7 +270,7 @@ class StyleContrastTest {
     }
 
     /** The {@code .root} palette of an AtlantaFX built-in theme, read from the library. */
-    private static Map<String, String> builtInPalette(String base) throws Exception {
+    static Map<String, String> builtInPalette(String base) throws Exception {
         try (var in = StyleContrastTest.class.getResourceAsStream("/atlantafx/base/theme/" + base + ".css")) {
             String css = new String(in.readAllBytes(), StandardCharsets.UTF_8).replaceAll("(?s)/\\*.*?\\*/", "");
             int start = css.indexOf(".root {");
@@ -257,7 +285,7 @@ class StyleContrastTest {
     }
 
     /** JavaFX's ladder(): the stop colours, interpolated at the reference colour's brightness (.3r+.59g+.11b). */
-    private static Color ladder(Color ref, List<double[]> offsets, List<Color> colors) {
+    static Color ladder(Color ref, List<double[]> offsets, List<Color> colors) {
         double b = 0.3 * ref.getRed() + 0.59 * ref.getGreen() + 0.11 * ref.getBlue();
         if (b <= offsets.get(0)[0]) {
             return colors.get(0);
@@ -400,8 +428,8 @@ class StyleContrastTest {
     @Test
     void theMapsHeatTintKeepsItsRowsReadableInEveryTheme() throws Exception {
         String app = read("app.css");
-        assertTrue(String.join(";", rules(app, ".project-map-probe-heat")).contains("-fx-fill: -state-amber"));
-        assertTrue(String.join(";", rules(app, ".root")).contains("-state-amber: -color-warning-fg"));
+        // The heat is the accent, not amber: recent change is not "not durable yet" (ICON-18).
+        assertTrue(String.join(";", rules(app, ".project-map-probe-heat")).contains("-fx-fill: -color-accent-fg"));
         assertTrue(String.join(";", rules(app, ".project-map-probe-surface")).contains("-color-bg-subtle"));
         double hottest = ProjectMapActivity.HEAT_TINT[ProjectMapActivity.LEVELS];
         List<String> problems = new ArrayList<>();
@@ -412,7 +440,7 @@ class StyleContrastTest {
                     : name.toLowerCase(java.util.Locale.ROOT).replace(' ', '-');
             Map<String, String> p = bundled != null ? palette(base) : builtInPalette(base);
             Color row = color(p, "-color-bg-subtle");
-            Color heat = color(p, "-color-warning-fg");
+            Color heat = color(p, "-color-accent-fg");
             Color ink = color(p, "-color-fg-default");
             Color mutedInk = color(p, "-color-fg-muted");
             Color tinted = ProjectMapActivity.tinted(row, heat, ProjectMapActivity.LEVELS, ink, mutedInk);
@@ -436,5 +464,237 @@ class StyleContrastTest {
             }
         }
         assertTrue(problems.isEmpty(), "heat tint under its floor:\n" + String.join("\n", problems));
+    }
+
+    /** A role's colour laid over {@code ground}, its opacity applied (a see-through tint as it is drawn). */
+    static Color over(Color ground, Color tint) {
+        return ground.interpolate(Color.color(tint.getRed(), tint.getGreen(), tint.getBlue()), tint.getOpacity());
+    }
+
+    /** Every bundled app theme's {@code .root} palette, by name: Editora's own sheets and AtlantaFX's built-ins. */
+    static Map<String, Map<String, String>> bundledPalettes() throws Exception {
+        Map<String, Map<String, String>> out = new LinkedHashMap<>();
+        for (String name : Themes.NAMES) {
+            String[] bundled = Themes.BUNDLED.get(name);
+            out.put(
+                    name,
+                    bundled != null
+                            ? palette(bundled[0])
+                            : builtInPalette(
+                                    name.toLowerCase(java.util.Locale.ROOT).replace(' ', '-')));
+        }
+        return out;
+    }
+
+    /**
+     * A popup's ink on its overlay ground (the debugger's value popup, the hover cards) reads at 4.5:1 in both
+     * flagship themes. DebugValuePopupThemeFxTest checks the popup takes these two roles; this checks the roles.
+     */
+    @Test
+    void popupInkReadsOnTheOverlayGround() throws Exception {
+        for (String base : List.of("editora-light", "editora-dark")) {
+            Map<String, String> p = palette(base);
+            double ratio = contrast(color(p, "-color-fg-default"), color(p, "-color-bg-overlay"));
+            assertTrue(ratio >= 4.5, base + ": ink on the overlay ground is " + ratio);
+        }
+    }
+
+    /**
+     * The Project Map's row border and connector stand 3:1 off their grounds, an open file's accent label and the
+     * unfocused selection's label read at 4.5:1, in both Editora themes (moved here from ProjectMapLayoutFxTest:
+     * the arithmetic needs no toolkit, ICON-14).
+     */
+    @Test
+    void mapRowAndConnectorInkReachesThreeToOneInBothEditoraThemes() throws Exception {
+        for (String theme : List.of("editora-light", "editora-dark")) {
+            Map<String, String> palette = palette(theme);
+            Color background = color(palette, "-color-bg-default");
+            Color card = color(palette, "-color-bg-subtle");
+            Color border = ProjectMapView.rowBorderColor(
+                    color(palette, "-color-border-default"), color(palette, "-color-fg-muted"));
+            assertTrue(contrast(border, card) >= 3.0, theme + ": a row's border on its card " + contrast(border, card));
+            Color connector = background.interpolate(
+                    color(palette, "-color-accent-emphasis"), ProjectMapView.connectorOpacity(false, true));
+            assertTrue(
+                    contrast(connector, background) >= 3.0, theme + ": a connector " + contrast(connector, background));
+            assertTrue(contrast(color(palette, "-color-accent-fg"), card) >= 4.5, theme + ": an open file's label");
+            assertTrue(
+                    contrast(color(palette, "-color-fg-default"), color(palette, "-color-accent-subtle")) >= 4.5,
+                    theme + ": the unfocused selection's label");
+        }
+    }
+
+    /** A faded Map label recedes but keeps 3.5:1 (Map review B19); moved from ProjectMapLayoutReviewFxTest. */
+    @Test
+    void aFadedMapLabelRecedesButStaysReadableInBothEditoraThemes() throws Exception {
+        for (String theme : List.of("editora-light", "editora-dark")) {
+            Map<String, String> palette = palette(theme);
+            Color ground = color(palette, "-color-bg-subtle");
+            Color text = color(palette, "-color-fg-default");
+            Color faded = ProjectMapView.fadedInk(text, ground, 3.5, 0.62);
+            double ratio = ProjectMapView.contrastRatio(faded, ground);
+            assertTrue(ratio >= 3.5, theme + ": " + ratio);
+            assertTrue(ratio < ProjectMapView.contrastRatio(text, ground) - 2, theme + ": visibly fainter: " + ratio);
+        }
+        Color weak = Color.web("#999999");
+        assertEquals(weak, ProjectMapView.fadedInk(weak, Color.WHITE, 3.5, 0.62), "ink already under the floor stays");
+    }
+
+    /**
+     * A note's sheet (the Map's note card and sticky notes, -note-paper over the opaque ground) carries the theme's ink
+     * at 7:1 in both Editora themes; moved from ProjectMapLayoutFxTest when the sheet left amber for the accent wash.
+     */
+    @Test
+    void noteSheetsCarryTheThemesInk() throws Exception {
+        String app = read("app.css");
+        assertTrue(String.join(";", rules(app, ".root")).contains("-note-paper: -color-accent-subtle"));
+        for (String theme : List.of("editora-light", "editora-dark")) {
+            Map<String, String> p = palette(theme);
+            Color sheet = over(color(p, "-color-bg-default"), color(p, "-color-accent-subtle"));
+            double ratio = contrast(color(p, "-color-fg-default"), sheet);
+            assertTrue(ratio >= 7.0, theme + ": note text on its sheet is " + ratio);
+        }
+    }
+
+    /**
+     * "Show recent changes": the heat meter on a selected row (the unfocused selection's accent wash over the card)
+     * stands off it, in both Editora themes. ProjectMapActivityFxTest checks the meter is drawn; this its ink.
+     */
+    @Test
+    void theHeatMeterStandsOffASelectedRow() throws Exception {
+        for (String theme : List.of("editora-light", "editora-dark")) {
+            Map<String, String> p = palette(theme);
+            Color raw = color(p, "-color-accent-subtle");
+            Color drawn = over(color(p, "-color-bg-subtle"), raw);
+            Color ink = ProjectMapActivity.meterInk(color(p, "-color-accent-fg"), raw, color(p, "-color-fg-default"));
+            double ratio = contrast(ink, drawn);
+            assertTrue(ratio >= 2.5, theme + ": the meter on a selected row is " + ratio);
+        }
+    }
+
+    /**
+     * The gutter's marks — a bookmark, a note, the quick-action bulb — stand 3:1 off the gutter of every editor theme
+     * that draws them in its own colours (a graphic's floor), and the default theme's (Primer Light) line numbers
+     * read at 4.5:1 on its gutter. Bookmarks and notes are each theme's accent, not amber or red (ICON-18).
+     */
+    @Test
+    void theGutterMarksStandOffEveryEditorThemesGutter() throws Exception {
+        List<String> problems = new ArrayList<>();
+        for (String name : List.of(
+                "editora-light",
+                "editora-dark",
+                "primer-dark",
+                "nord-light",
+                "nord-dark",
+                "cupertino-light",
+                "cupertino-dark",
+                "dracula",
+                "islands-light",
+                "islands-dark")) {
+            String css = read("editor-themes/" + name + ".css");
+            Color gutter = Color.web(fill(css, ".editor-area .fold-gutter", "-fx-background-color"));
+            for (String mark : List.of(
+                    ".editor-area .fold-gutter .bookmark-marker",
+                    ".editor-area .fold-gutter .note-marker",
+                    ".editor-area .fold-gutter .bulb-marker",
+                    ".editor-area .fold-gutter .bulb-marker.fix")) {
+                double ratio = contrast(Color.web(fill(css, mark, "-fx-fill")), gutter);
+                if (ratio < 3) {
+                    problems.add(String.format("%s %s: %.2f", name, mark, ratio));
+                }
+            }
+            assertEquals(
+                    fill(css, ".editor-area .fold-gutter .bookmark-marker", "-fx-fill"),
+                    fill(css, ".editor-area .fold-chevron:hover", "-fx-text-fill"),
+                    name + ": a bookmark is the theme's accent");
+        }
+        assertTrue(problems.isEmpty(), "gutter marks under 3:1:\n" + String.join("\n", problems));
+        Map<String, String> primer = new HashMap<>();
+        Matcher token = Pattern.compile("(-primer-[a-z-]+)\\s*:\\s*([^;]+);")
+                .matcher(String.join(";", rules(read("app.css"), ".root")));
+        while (token.find()) {
+            primer.put(token.group(1), token.group(2).strip());
+        }
+        double lineNumbers = contrast(color(primer, "-primer-lineno"), color(primer, "-primer-gutter"));
+        assertTrue(lineNumbers >= 4.5, "Primer Light's line numbers are " + lineNumbers);
+        double link = contrast(color(primer, "-primer-link"), color(primer, "-primer-gutter"));
+        assertTrue(link >= 3, "Primer Light's bookmark is " + link);
+    }
+
+    /** The value of {@code property} in the one rule for {@code selector}. */
+    private static String fill(String css, String selector, String property) {
+        List<String> bodies = rules(css, selector);
+        assertEquals(1, bodies.size(), selector);
+        Matcher m =
+                Pattern.compile(Pattern.quote(property) + "\\s*:\\s*([^;]+);").matcher(bodies.get(0));
+        assertTrue(m.find(), selector + " " + property);
+        return m.group(1).strip();
+    }
+
+    /**
+     * A view-mode banner (a file opened read-only) and the narrowing strip are amber: their title in -state-amber
+     * on -state-amber-bg, their text in the theme's ink, readable in both flagship themes; and a Stop glyph is the
+     * ink, not red (ICON-18).
+     */
+    @Test
+    void readOnlyBannersAreAmberAndStopIsTheInk() throws Exception {
+        String app = read("app.css");
+        assertTrue(String.join(";", rules(app, ".view-mode-bar")).contains("-state-amber-bg"));
+        assertTrue(
+                String.join(";", rules(app, ".view-mode-bar .view-mode-title")).contains("-state-amber"));
+        assertTrue(
+                String.join(";", rules(app, ".view-mode-bar .view-mode-desc")).contains("-color-fg-default"));
+        for (String stop :
+                List.of(".icon-line.icon-stop", ".run-config-stop .icon-line", ".run-marker.http-running-marker")) {
+            assertTrue(String.join(";", rules(app, stop)).contains("-color-fg-default"), stop);
+        }
+        for (String base : List.of("editora-light", "editora-dark")) {
+            Map<String, String> p = palette(base);
+            Color band = over(color(p, "-color-bg-default"), color(p, "-color-warning-subtle"));
+            assertTrue(contrast(color(p, "-color-warning-fg"), band) >= 4.5, base + ": the banner's title");
+            assertTrue(contrast(color(p, "-color-fg-default"), band) >= 4.5, base + ": the banner's text");
+        }
+    }
+
+    /**
+     * The six lane hues (the Git log's graph, a timeline's tags, read by canvas painters through probes) stand 3:1 off
+     * the default and subtle grounds of every bundled app theme, and none is a state's hue (ICON-18): each is a ladder
+     * of the ground, as the Git olive and violet are.
+     */
+    @Test
+    void theLaneHuesStandOffEveryBundledThemesGround() throws Exception {
+        String app = read("app.css");
+        List<String> problems = new ArrayList<>();
+        for (int lane = 0; lane < 6; lane++) {
+            Matcher decl = Pattern.compile("-lane-" + lane + ":\\s*ladder\\(-color-bg-default,([^;]+)\\);")
+                    .matcher(app);
+            assertTrue(decl.find(), "-lane-" + lane + " is a ladder of the ground");
+            List<double[]> offsets = new ArrayList<>();
+            List<Color> colors = new ArrayList<>();
+            Matcher stop = Pattern.compile("(#[0-9a-fA-F]{6})\\s+([0-9.]+)%").matcher(decl.group(1));
+            while (stop.find()) {
+                colors.add(Color.web(stop.group(1)));
+                offsets.add(new double[] {Double.parseDouble(stop.group(2)) / 100});
+            }
+            for (Color c : colors) {
+                double hue = c.getHue();
+                assertFalse(
+                        c.getSaturation() > 0.25
+                                && (hue < 20 || hue > 345 || (hue > 25 && hue < 65) || (hue > 85 && hue < 165)),
+                        "-lane-" + lane + " " + c + " is a red, amber or green hue");
+            }
+            for (Map.Entry<String, Map<String, String>> theme :
+                    bundledPalettes().entrySet()) {
+                Map<String, String> p = theme.getValue();
+                Color ink = ladder(color(p, "-color-bg-default"), offsets, colors);
+                for (String surface : List.of("-color-bg-default", "-color-bg-subtle")) {
+                    double ratio = contrast(ink, color(p, surface));
+                    if (ratio < 3) {
+                        problems.add(String.format("-lane-%d %s %s: %.2f", lane, theme.getKey(), surface, ratio));
+                    }
+                }
+            }
+        }
+        assertTrue(problems.isEmpty(), "lane hues under 3:1:\n" + String.join("\n", problems));
     }
 }

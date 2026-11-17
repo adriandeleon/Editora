@@ -60,7 +60,7 @@ public final class SnippetFieldOverlay extends Region implements SecondaryPane.F
         area.viewportDirtyEvents().subscribe(ignore -> scheduleRedraw());
         area.estimatedScrollXProperty().addListener((o, a, b) -> scheduleRedraw());
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
-        OverlayPalette.track(area, palette -> {
+        OverlayPalette.track(area, getChildren(), palette -> {
             colors = palette;
             scheduleRedraw();
         });
