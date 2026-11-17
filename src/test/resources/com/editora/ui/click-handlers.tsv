@@ -64,6 +64,7 @@ com/editora/ui/GitLogPanel.java	files	setOnMouseClicked	a Control: its own role 
 com/editora/ui/GitPanel.java	tree	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
 com/editora/ui/GitStashPopup.java	this	setOnMouseClicked	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
 com/editora/ui/HierarchyPanel.java	tree	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/HttpEmptyState.java	this	addEventHandler	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
 com/editora/ui/HttpRunList.java	this	setOnMouseClicked	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
 com/editora/ui/MacroCoordinator.java	scene	addEventFilter	scene filter that records mouse use while a macro records; not an action
 com/editora/ui/MacroSettingsPane.java	commands	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
