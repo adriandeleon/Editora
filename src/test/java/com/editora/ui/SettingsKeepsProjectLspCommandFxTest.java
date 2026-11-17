@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * project's.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxTracked.class)
 class SettingsKeepsProjectLspCommandFxTest {
 
     @TempDir
@@ -63,8 +64,9 @@ class SettingsKeepsProjectLspCommandFxTest {
             SettingsWindow settings = FxTestSupport.field(window, "settingsWindow");
             javafx.stage.Stage stage = FxTestSupport.field(window, "stage");
             FxTestSupport.runOnFx(() -> settings.show(stage)); // the user opens Settings and changes nothing
-            Thread.sleep(300);
-            FxTestSupport.drainFx();
+            // Whatever opening it started lands: its looks off the FX thread (a command applied again is looked at
+            // there first, PERF-01) and their answers back on it.
+            OffFxTracked.awaitIdle();
 
             assertEquals(
                     override,

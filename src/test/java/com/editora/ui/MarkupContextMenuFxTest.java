@@ -218,10 +218,11 @@ class MarkupContextMenuFxTest {
             setUp.accept(b);
             return b;
         });
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
-        while (runnable && !FxTestSupport.callOnFx(buffer::isRunnable)) {
-            assertTrue(System.nanoTime() < deadline, "the load's Run scan never found the file runnable");
-            Thread.sleep(10);
+        if (runnable) {
+            OnFx.until(
+                    buffer::isRunnable,
+                    "the load's Run scan to find the file runnable",
+                    java.time.Duration.ofSeconds(20));
         }
         return FxTestSupport.callOnFx(() -> {
             Stage stage = new Stage();

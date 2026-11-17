@@ -42,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** What the first Settings fix round left open: late commits, late reloads and the last plain checkboxes. */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxTracked.class)
 class SettingsFollowUpsFxTest {
 
     @BeforeAll
@@ -770,10 +771,7 @@ class SettingsFollowUpsFxTest {
      * disk (PERF-01 moved both off the FX thread), so a file check sees only what the step under test did.
      */
     private static void settle(FxWindowFixture fx) throws Exception {
-        for (int i = 0; i < 3; i++) {
-            Thread.sleep(50);
-            FxTestSupport.drainFx();
-            fx.shared.awaitWrites();
-        }
+        OffFxTracked.awaitIdle();
+        fx.shared.awaitWrites();
     }
 }

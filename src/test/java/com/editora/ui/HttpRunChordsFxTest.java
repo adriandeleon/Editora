@@ -79,11 +79,10 @@ class HttpRunChordsFxTest {
                         press(b, KeyCode.R, false, true, false, false);
                     }
                 });
-                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-                while (hits.isEmpty()) {
-                    assertTrue(System.nanoTime() < deadline, keymap + ": Run All never reached the server");
-                    Thread.sleep(20);
-                }
+                com.editora.testkit.Await.until(
+                        () -> !hits.isEmpty(),
+                        keymap + ": Run All to reach the server",
+                        java.time.Duration.ofSeconds(20));
                 assertTrue(FxTestSupport.callOnFx(() -> http.isRunningForTest(b)), keymap + ": running");
                 FxTestSupport.runOnFx(() -> {
                     if (keymap.equals("cua")) {

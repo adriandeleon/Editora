@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import java.time.Duration;
+
 import javafx.scene.Node;
 
 import com.editora.editor.EditorBuffer;
@@ -171,11 +173,7 @@ class EditorBufferFxTest {
 
     /** The load's Run-glyph text scan runs off the FX thread; wait for it to flip the glyph. */
     private static void awaitRunnable(EditorBuffer buffer, String message) throws Exception {
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
-        while (!FxTestSupport.callOnFx(buffer::isRunnable)) {
-            assertTrue(System.nanoTime() < deadline, message);
-            Thread.sleep(10);
-        }
+        EventuallyFx.untilOnFx(message, Duration.ofSeconds(20), buffer::isRunnable);
     }
 
     @Test

@@ -187,10 +187,10 @@ class PrintPreviewFxTest {
         }
     }
 
+    /** Lets the window lay out (in a pulse) and the FX thread run what it queued (a page printed per turn). */
     private static void settle() throws Exception {
         for (int i = 0; i < 3; i++) {
-            Thread.sleep(60);
-            FxTestSupport.drainFx();
+            PulseChecks.pulses(1);
         }
     }
 

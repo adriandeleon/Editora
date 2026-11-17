@@ -2,11 +2,13 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -42,32 +44,30 @@ class MarkdownBacklinksFxTest {
      * the previous, finished one — on a loaded machine the list was read empty.
      */
     private static List<String> shownOnce(MarkdownBacklinks backlinks, List<String> expected) throws Exception {
-        long deadline = System.nanoTime() + 20_000_000_000L;
-        List<String> rows = shown(backlinks);
-        while (!rows.equals(expected) && System.nanoTime() < deadline) {
-            Thread.sleep(20);
-            FxTestSupport.drainFx();
-            rows = shown(backlinks);
-        }
-        return rows;
+        Await.holdsWithin(OnFx.checked(() -> shown(backlinks).equals(expected)), Duration.ofSeconds(20));
+        return shown(backlinks);
     }
 
     private static EditorBuffer open(AsyncTestScope async, MainController window, Path file) throws Exception {
         FileWorkflowCoordinator workflows = FxTestSupport.field(window, "fileWorkflows");
         FxTestSupport.runOnFx(() -> workflows.openPath(file));
-        long deadline = System.nanoTime() + 20_000_000_000L;
-        while (true) {
-            EditorBuffer b = FxTestSupport.callOnFx(() -> {
-                EditorBuffer active = (EditorBuffer) FxTestSupport.call(window, "activeBuffer", new Class<?>[] {});
-                return active != null && file.equals(active.getPath()) && !active.isLoading() ? active : null;
-            });
-            if (b != null) {
-                async.awaitFx();
-                return b;
-            }
-            assertTrue(System.nanoTime() < deadline, "never opened: " + file);
-            Thread.sleep(5);
-        }
+        EditorBuffer b = Await.value(
+                () -> {
+                    try {
+                        return FxTestSupport.callOnFx(() -> {
+                            EditorBuffer active =
+                                    (EditorBuffer) FxTestSupport.call(window, "activeBuffer", new Class<?>[] {});
+                            return active != null && file.equals(active.getPath()) && !active.isLoading()
+                                    ? active
+                                    : null;
+                        });
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                },
+                "opened: " + file);
+        async.awaitFx();
+        return b;
     }
 
     @Test
@@ -132,11 +132,7 @@ class MarkdownBacklinksFxTest {
             FxTestSupport.runOnFx(() -> index.onExternalChanges(
                     List.of(new ProjectPanel.FsChange(root.resolve("unrelated.md"), ProjectPanel.FsKind.CHANGED)),
                     true));
-            long deadline = System.nanoTime() + 20_000_000_000L;
-            while (!shown(backlinks).isEmpty()) {
-                assertTrue(System.nanoTime() < deadline, "the list never followed the index");
-                Thread.sleep(10);
-            }
+            Await.until(OnFx.checked(() -> shown(backlinks).isEmpty()), "the list to follow the index");
             assertEquals(1, index.linkGraph.builds);
 
             FxTestSupport.runOnFx(() -> registry.run("tool.backlinks"));

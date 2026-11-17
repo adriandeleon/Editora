@@ -61,6 +61,7 @@ class DebugScriptsIntegrationTest {
 
     @AfterEach
     void stop() throws Exception {
+        NodeResponseScripts.debuggedPastTimeoutForTest = null;
         if (manager != null) {
             DapManager m = manager;
             CountDownLatch done = new CountDownLatch(1);
@@ -201,6 +202,8 @@ class DebugScriptsIntegrationTest {
                 },
                 httpFile,
                 dir);
+        CountDownLatch pastTimeout = new CountDownLatch(1);
+        NodeResponseScripts.debuggedPastTimeoutForTest = pastTimeout::countDown;
         svc = new HttpClientService();
         AtomicReference<List<HttpExchange>> got = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
@@ -221,8 +224,8 @@ class DebugScriptsIntegrationTest {
         assertNotNull(inline, "the .http breakpoint never hit; errors: " + errors);
         assertEquals(httpFile, inline.frames().get(0).file().toRealPath(), "the frame is the .http file");
         assertEquals(5, inline.frames().get(0).line(), "at the breakpoint's line of the .http file");
-        // Longer than the 5 s timeout: a paused script is not stopped.
-        Thread.sleep(6000);
+        // Past the 5 s timeout: a paused script is not stopped. The launch says when its timeout has passed.
+        assertTrue(pastTimeout.await(30, TimeUnit.SECONDS), "the script's timeout passed while it was paused");
         Platform.runLater(manager::resume);
 
         Stop inFile = stops.poll(60, TimeUnit.SECONDS);

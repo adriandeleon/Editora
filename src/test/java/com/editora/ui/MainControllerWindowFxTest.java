@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 
 import javafx.scene.control.ButtonBar;
@@ -15,6 +16,7 @@ import javafx.scene.input.ScrollEvent;
 import com.editora.config.Project;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import com.editora.update.ReleaseInfo;
 import com.editora.update.UpdateService;
 import org.junit.jupiter.api.AfterEach;
@@ -334,15 +336,10 @@ class MainControllerWindowFxTest {
 
     /** Waits, off the FX thread, for the server's start or stop made in the background to land. */
     private void awaitRunning(com.editora.mcp.McpServer server, boolean running) throws Exception {
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
-        while (server.isRunning() != running && System.nanoTime() < deadline) {
-            Thread.sleep(10);
-        }
+        Await.holdsWithin(() -> server.isRunning() == running, Duration.ofSeconds(10));
         assertEquals(running, server.isRunning(), running ? "the server started" : "the server stopped");
         if (running) { // the status bar is told on the FX thread just after
-            while (!FxTestSupport.callOnFx(() -> statusSegment("mcp").isVisible()) && System.nanoTime() < deadline) {
-                Thread.sleep(10);
-            }
+            OnFx.holdsWithin(() -> statusSegment("mcp").isVisible(), Duration.ofSeconds(10));
         }
         FxTestSupport.drainFx();
     }

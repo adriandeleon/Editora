@@ -82,6 +82,9 @@ public final class FoldManager {
     private long recomputeGeneration;
     /** The generation the last scan (synchronous or in flight) was made for; a debounced pass for it is redundant. */
     private long detectedGeneration = -1;
+
+    /** The generation whose scan last answered (see {@link #scansSettledForTest}). */
+    private long landedGeneration = -1;
     /** Max number of lines shown in a collapsed region's hover preview. */
     private static final int PREVIEW_LINES = 40;
     /** Minimum digit width the line-number gutter pads to, so a file of fewer than 10 lines still reserves
@@ -258,7 +261,9 @@ public final class FoldManager {
         area.multiPlainChanges().successionEnds(Duration.ofMillis(250)).subscribe(ignore -> {
             // A load's own insertion settles here too; its restore already scanned (or is scanning) this very
             // generation, so the pass would only repeat that detection. Any edit since bumps the generation.
+            settles++;
             if (heuristicEnabled && recomputeGeneration != detectedGeneration) {
+                settleDetections++;
                 recomputeAsync();
             }
         });
@@ -285,6 +290,24 @@ public final class FoldManager {
             }
         });
         installHoverPreview();
+    }
+
+    /** How many 250 ms settles have run and started a detection, and detections started and answered (tests). */
+    private int settles;
+
+    private int settleDetections;
+
+    private int detectionsStarted;
+
+    private int detectionsAnswered;
+
+    /**
+     * TEST SEAM — {@code {settles run, detections they started, detections started off the FX thread, detections
+     * answered}}, read on the FX thread: a test waits for a settle and for the detections to land instead of for a
+     * fixed time, then checks what they did.
+     */
+    public int[] settlesForTest() {
+        return new int[] {settles, settleDetections, detectionsStarted, detectionsAnswered};
     }
 
     /** User-defined fold ranges with no syntactic basis (see {@link ManualFolds}); merged into
@@ -484,6 +507,7 @@ public final class FoldManager {
     private void recomputeWithoutScan() {
         recomputeGeneration++; // invalidate a debounced result captured before this explicit recompute
         detectedGeneration = recomputeGeneration;
+        landedGeneration = recomputeGeneration;
         detecting = false;
         applyRegions(detectRegions("", language, serverRegions, manualRegions, false));
         runWaiters();
@@ -497,6 +521,16 @@ public final class FoldManager {
 
     /** Fold commands asked for while {@link #detecting}, run in order when the regions land. */
     private final List<Runnable> waiters = new ArrayList<>();
+
+    /**
+     * TEST SEAM — whether the regions are those of the current text: no debounced scan is still owed for an edit and
+     * none is still out (QUAL-07, Pauta 6.0.1: a test waits for the scan, not for a time). FX thread.
+     */
+    public boolean scansSettledForTest() {
+        return !heuristicEnabled
+                || recomputeGeneration == 0 // no text yet: nothing to scan
+                || (recomputeGeneration == detectedGeneration && landedGeneration == detectedGeneration);
+    }
 
     /** Runs {@code then} once the regions are known: now, or when the detection a command would wait for lands. */
     public void whenRegionsKnown(Runnable then) {
@@ -560,11 +594,14 @@ public final class FoldManager {
         String languageSnapshot = language;
         List<Region> serverSnapshot = serverRegions;
         List<Region> manualSnapshot = manualRegions;
+        detectionsStarted++;
         com.editora.perf.OffFx.then(
                 DETECT_SITE,
                 () -> detectRegions(text, languageSnapshot, serverSnapshot, manualSnapshot, true),
                 answer -> {
+                    detectionsAnswered++;
                     if (generation == recomputeGeneration && heuristicEnabled) {
+                        landedGeneration = generation;
                         detecting = false;
                         applyRegions(answer.or(List.of()));
                         runWaiters();

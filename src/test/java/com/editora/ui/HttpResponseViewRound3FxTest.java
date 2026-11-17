@@ -180,11 +180,7 @@ class HttpResponseViewRound3FxTest {
     }
 
     private static void await(java.util.concurrent.Callable<Boolean> check) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
-        while (!FxTestSupport.callOnFx(check)) {
-            assertTrue(System.nanoTime() < deadline, "timed out");
-            Thread.sleep(20);
-        }
+        FxTestSupport.awaitFxCondition(check, "the condition", java.time.Duration.ofSeconds(WAIT_SECONDS));
     }
 
     private String finished() throws InterruptedException {

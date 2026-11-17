@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
@@ -9,6 +10,7 @@ import javafx.scene.control.Tab;
 
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -31,12 +33,7 @@ class ScalaBuildRunProbeFxTest {
     Path dir;
 
     private static void await(String what, BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.MINUTES.toNanos(10);
-        while (!FxTestSupport.callOnFx(condition::getAsBoolean)) {
-            assertTrue(System.nanoTime() < deadline, what + " never happened");
-            FxTestSupport.drainFx();
-            Thread.sleep(200);
-        }
+        Await.until(() -> onFx(condition::getAsBoolean), what + " never happened", Duration.ofMinutes(10));
     }
 
     /** All the build consoles' text. */
@@ -121,6 +118,15 @@ class ScalaBuildRunProbeFxTest {
             runFile(c, millMain);
             await("Mill to run the main", () -> consoles(c).split("n = 42", -1).length > before);
             System.out.println("probe: consoles:\n" + FxTestSupport.callOnFx(() -> consoles(c)));
+        }
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

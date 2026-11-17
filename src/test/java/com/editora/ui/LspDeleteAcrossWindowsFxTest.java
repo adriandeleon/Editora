@@ -63,15 +63,11 @@ class LspDeleteAcrossWindowsFxTest {
     private EditorBuffer openInB() throws Exception {
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
                 FxTestSupport.field(b, "fileWorkflows"), "openPath", new Class<?>[] {Path.class}, file));
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (System.nanoTime() < deadline) {
-            EditorBuffer buffer = FxTestSupport.callOnFx(() -> bufferInB());
-            if (buffer != null && FxTestSupport.callOnFx(() -> "saved\n".equals(buffer.getContent()))) {
-                return buffer;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("the file did not open in window B");
+        OnFx.until(
+                () -> bufferInB() != null && "saved\n".equals(bufferInB().getContent()),
+                "the file to open in window B",
+                java.time.Duration.ofSeconds(20));
+        return FxTestSupport.callOnFx(() -> bufferInB());
     }
 
     private EditorBuffer bufferInB() {

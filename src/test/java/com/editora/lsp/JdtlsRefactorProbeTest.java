@@ -143,8 +143,7 @@ class JdtlsRefactorProbeTest {
         try {
             assertTrue(s.start());
             s.didOpen(uri, "java", APP);
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(70);
-            while (!s.isInitialized() && System.nanoTime() < deadline) Thread.sleep(100);
+            com.editora.testkit.Await.holdsWithin(s::isInitialized, java.time.Duration.ofSeconds(70));
             assertTrue(s.isInitialized());
             get(s.documentSymbol(uri)); // serializes behind the project import
 

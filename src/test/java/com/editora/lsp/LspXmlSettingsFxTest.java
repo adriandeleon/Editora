@@ -113,13 +113,12 @@ class LspXmlSettingsFxTest {
         wrap.setXmlFormatWrap(true); // a changed setting is pushed with the whole object, enabled included
         manager.setXmlSettings(XmlServerSettings.of(wrap, config));
         Integer width = wrap.getFillColumn();
-        long until = System.nanoTime() + 10_000_000_000L; // the push is a notification: it lands on another thread
-        while (System.nanoTime() < until
-                && (FakeLanguageServer.last(fakes.get(0).configurations) == null
-                        || !width.equals(
-                                ((Map<String, Object>) pushedXml(fakes.get(0)).get("format")).get("maxLineWidth")))) {
-            Thread.sleep(20);
-        }
+        // the push is a notification: it lands on another thread
+        com.editora.testkit.Await.holdsWithin(
+                () -> FakeLanguageServer.last(fakes.get(0).configurations) != null
+                        && width.equals(
+                                ((Map<String, Object>) pushedXml(fakes.get(0)).get("format")).get("maxLineWidth")),
+                java.time.Duration.ofSeconds(10));
         Map<String, Object> format =
                 (Map<String, Object>) pushedXml(fakes.get(0)).get("format");
         assertEquals(width, format.get("maxLineWidth"));

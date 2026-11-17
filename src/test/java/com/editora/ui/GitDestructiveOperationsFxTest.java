@@ -478,9 +478,15 @@ class GitDestructiveOperationsFxTest {
     }
 
     private static void awaitLogRows(FxWindowFixture fx, List<String> expected) throws Exception {
-        for (int i = 0; i < 100 && !expected.equals(logRows(fx)); i++) {
-            Thread.sleep(50);
-        }
+        com.editora.testkit.Await.holdsWithin(
+                () -> {
+                    try {
+                        return expected.equals(logRows(fx));
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                },
+                java.time.Duration.ofSeconds(5));
         assertEquals(expected, logRows(fx));
     }
 
@@ -747,23 +753,20 @@ class GitDestructiveOperationsFxTest {
      * the same JVM can still be listed.
      */
     private static void awaitDialog(String content) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (!FxTestSupport.callOnFx(() -> {
-            for (Window window : new ArrayList<>(Window.getWindows())) {
-                if (window.isShowing()
-                        && window.getScene() != null
-                        && window.getScene().getRoot() instanceof DialogPane pane
-                        && content.equals(pane.getContentText())) {
-                    return true;
-                }
-            }
-            return false;
-        })) {
-            if (System.nanoTime() > deadline) {
-                throw new AssertionError("no confirmation dialog saying: " + content);
-            }
-            Thread.sleep(20);
-        }
+        FxTestSupport.awaitFxCondition(
+                () -> {
+                    for (Window window : new ArrayList<>(Window.getWindows())) {
+                        if (window.isShowing()
+                                && window.getScene() != null
+                                && window.getScene().getRoot() instanceof DialogPane pane
+                                && content.equals(pane.getContentText())) {
+                            return true;
+                        }
+                    }
+                    return false;
+                },
+                "a confirmation dialog saying: " + content,
+                java.time.Duration.ofSeconds(20));
     }
 
     /** Asserts that the confirmation on screen names the consequence the caller expects. */
@@ -783,10 +786,9 @@ class GitDestructiveOperationsFxTest {
      * FX thread, so draining the FX queue after the status is not enough. Generous, for a loaded full build.
      */
     private static void awaitBufferContent(EditorBuffer buffer, String expected) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (!expected.equals(FxTestSupport.callOnFx(buffer::getContent)) && System.nanoTime() < deadline) {
-            Thread.sleep(20);
-        }
+        com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.fxCondition(() -> expected.equals(buffer.getContent())),
+                java.time.Duration.ofSeconds(20));
         assertEquals(expected, FxTestSupport.callOnFx(buffer::getContent));
     }
 

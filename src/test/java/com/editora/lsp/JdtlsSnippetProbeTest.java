@@ -75,8 +75,8 @@ class JdtlsSnippetProbeTest {
         ProcessBuilder pb = new ProcessBuilder(JDTLS, "-data", data.toString());
         pb.redirectError(ProcessBuilder.Redirect.DISCARD);
         Process proc = pb.start();
-        var launcher =
-                LSPLauncher.createClientLauncher(new ProbeClient(), proc.getInputStream(), proc.getOutputStream());
+        ProbeClient client = new ProbeClient();
+        var launcher = LSPLauncher.createClientLauncher(client, proc.getInputStream(), proc.getOutputStream());
         launcher.startListening();
         LanguageServer server = launcher.getRemoteProxy();
 
@@ -98,8 +98,9 @@ class JdtlsSnippetProbeTest {
 
         server.getTextDocumentService()
                 .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(uri, "java", 1, halfImport)));
-        System.out.println("waiting 45s for the project import…");
-        Thread.sleep(45_000);
+        System.out.println("waiting for the project import…");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                client.ready.await(180, TimeUnit.SECONDS), "jdtls never said the project was imported");
 
         System.out.println("\n=== 1. `import java.uti` (line 3, char 15) ===");
         report(server, uri, halfImport, 3, 15);
@@ -121,7 +122,7 @@ class JdtlsSnippetProbeTest {
                 .didClose(new org.eclipse.lsp4j.DidCloseTextDocumentParams(new TextDocumentIdentifier(uri)));
         server.getTextDocumentService()
                 .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(uri, "java", 2, text)));
-        Thread.sleep(2_000);
+        // the completion asked next is handled after this didOpen
     }
 
     private static void report(LanguageServer server, String uri, String text, int line, int character)
@@ -158,6 +159,17 @@ class JdtlsSnippetProbeTest {
     }
 
     private static final class ProbeClient implements LanguageClient {
+
+        /** Counted down when jdtls says the project is imported ({@code language/status} ServiceReady). */
+        final java.util.concurrent.CountDownLatch ready = new java.util.concurrent.CountDownLatch(1);
+
+        @org.eclipse.lsp4j.jsonrpc.services.JsonNotification("language/status")
+        public void languageStatus(java.util.Map<String, Object> status) {
+            if ("ServiceReady".equals(status.get("type"))) {
+                ready.countDown();
+            }
+        }
+
         @Override
         public void telemetryEvent(Object o) {}
 

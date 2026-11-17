@@ -63,10 +63,17 @@ class JavaExitCodeWrapperTest {
         JavaExitCodeWrapper w = JavaExitCodeWrapper.create(java.toString());
         try {
             Process p = new ProcessBuilder(w.script().toString()).start();
-            long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-            while (!(Files.isRegularFile(pidFile) && !Files.readString(pidFile).isBlank()) && System.nanoTime() < end) {
-                Thread.onSpinWait();
-            }
+            // The script (another process) writes its pid: nothing in this JVM announces it.
+            com.editora.testkit.Await.holdsWithin(
+                    () -> {
+                        try {
+                            return Files.isRegularFile(pidFile)
+                                    && !Files.readString(pidFile).isBlank();
+                        } catch (java.io.IOException e) {
+                            return false;
+                        }
+                    },
+                    Duration.ofSeconds(10));
             long child = Long.parseLong(Files.readString(pidFile).strip());
             p.destroy();
             assertTrue(p.waitFor(10, TimeUnit.SECONDS));

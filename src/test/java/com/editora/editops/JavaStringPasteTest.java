@@ -64,4 +64,73 @@ class JavaStringPasteTest {
         assertTrue(JavaStringPaste.withinLiteral(text, a, a + 4));
         assertFalse(JavaStringPaste.withinLiteral(text, a, text.indexOf('c')), "across two literals");
     }
+
+    @Test
+    void anEmptyPasteIsLeftAsItIs() {
+        JavaStringPaste.copied(null, false);
+        assertEquals("", JavaStringPaste.forPaste(LINE, IN, ""));
+    }
+
+    @Test
+    void aLoneCarriageReturnBreaksTheLineAndAControlCharIsEscaped() {
+        JavaStringPaste.copied(null, false);
+        assertEquals("a\\n\" +\n            \"b", JavaStringPaste.forPaste(LINE, IN, "a\rb"), "an old Mac line end");
+        assertEquals("a\\n", JavaStringPaste.forPaste(LINE, IN, "a\r"), "a trailing one: no empty literal after");
+        assertEquals("\\b\\f", JavaStringPaste.forPaste(LINE, IN, "\b\f"));
+    }
+
+    @Test
+    void theNextLiteralIsIndentedPastTheLinesOwnTabs() {
+        JavaStringPaste.copied(null, false);
+        String tabbed = "\tString s = \"\";\n";
+        int in = tabbed.indexOf("\"\"") + 1;
+        assertEquals("a\\n\" +\n\t        \"b", JavaStringPaste.forPaste(tabbed, in, "a\nb"), "the tab kept");
+    }
+
+    @Test
+    void aSelectionOutsideALiteralOrBackwardsOrOverALineBreakIsNotWithinOne() {
+        String text = "x = \"ab\ncd\"";
+        int a = text.indexOf('a');
+        assertFalse(JavaStringPaste.withinLiteral(text, 0, 2), "code");
+        assertFalse(JavaStringPaste.withinLiteral(text, a + 1, a), "backwards");
+        assertFalse(JavaStringPaste.withinLiteral(text, a, text.indexOf('c')), "an unclosed literal ends at the line");
+        String open = "x = \"abc";
+        assertTrue(JavaStringPaste.withinLiteral(open, open.indexOf('a'), 100), "to the end of the text");
+    }
+
+    @Test
+    void theLiteralAnOffsetIsInIsFoundPastEscapesCommentsBlocksAndChars() {
+        String escaped = "x = \"a\\\"b\" + y;";
+        assertEquals(JavaStringPaste.Literal.STRING, JavaStringPaste.literalAt(escaped, escaped.indexOf('b')));
+        assertEquals(
+                JavaStringPaste.Literal.NONE,
+                JavaStringPaste.literalAt(escaped, escaped.indexOf('\\') + 1),
+                "between a backslash and the char it escapes");
+        assertEquals(JavaStringPaste.Literal.NONE, JavaStringPaste.literalAt(escaped, escaped.indexOf('+')));
+        String unclosed = "\"ab\ncd";
+        assertEquals(
+                JavaStringPaste.Literal.NONE,
+                JavaStringPaste.literalAt(unclosed, unclosed.indexOf('d')),
+                "a literal ends at its line");
+
+        String lineComment = "// c\nx = \"";
+        assertEquals(JavaStringPaste.Literal.STRING, JavaStringPaste.literalAt(lineComment, lineComment.length()));
+        String blockComment = "/* \" */ s = \"";
+        assertEquals(JavaStringPaste.Literal.STRING, JavaStringPaste.literalAt(blockComment, blockComment.length()));
+        assertEquals(JavaStringPaste.Literal.NONE, JavaStringPaste.literalAt(blockComment, 4), "inside the comment");
+        assertEquals(JavaStringPaste.Literal.NONE, JavaStringPaste.literalAt("/* \"", 4), "an unclosed comment");
+
+        String afterBlock = "t = \"\"\"\nx\n\"\"\"; s = \"";
+        assertEquals(JavaStringPaste.Literal.STRING, JavaStringPaste.literalAt(afterBlock, afterBlock.length()));
+        assertEquals(
+                JavaStringPaste.Literal.NONE,
+                JavaStringPaste.literalAt("t = \"\"\"", 5),
+                "between the quotes that open a text block");
+
+        String escapedChar = "c = '\\''; s = \"";
+        assertEquals(JavaStringPaste.Literal.STRING, JavaStringPaste.literalAt(escapedChar, escapedChar.length()));
+        String brokenChar = "c = '\nx = \"";
+        assertEquals(JavaStringPaste.Literal.STRING, JavaStringPaste.literalAt(brokenChar, brokenChar.length()));
+        assertEquals(JavaStringPaste.Literal.CHAR, JavaStringPaste.literalAt("c = 'ab", 7), "to the end of the text");
+    }
 }

@@ -66,14 +66,20 @@ class XmlGrammarWatchFxTest {
         Files.writeString(root.resolve("readme.txt"), "not a grammar\n");
         Files.writeString(xsd, "<xs:schema><!-- urgent added --></xs:schema>\n");
         String uri = xsd.toUri().toString();
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-        List<org.eclipse.lsp4j.FileEvent> seen = List.of();
-        while (seen.stream().noneMatch(e -> e.getUri().equals(uri)) && System.nanoTime() < deadline) {
-            Thread.sleep(50);
-            seen = onFx(() -> List.copyOf(fakes.get(0).watchedFiles)).stream()
-                    .flatMap(p -> p.getChanges().stream())
-                    .toList();
-        }
+        List<org.eclipse.lsp4j.FileEvent> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
+        com.editora.testkit.Await.holdsWithin(
+                () -> {
+                    try {
+                        seen.clear();
+                        seen.addAll(onFx(() -> List.copyOf(fakes.get(0).watchedFiles)).stream()
+                                .flatMap(p -> p.getChanges().stream())
+                                .toList());
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                    return seen.stream().anyMatch(e -> e.getUri().equals(uri));
+                },
+                java.time.Duration.ofSeconds(15));
         assertTrue(seen.stream().anyMatch(e -> e.getUri().equals(uri)), "the schema change: " + seen);
 
         manager.close();

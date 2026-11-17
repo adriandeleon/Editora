@@ -531,9 +531,9 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
             Duration timeout,
             java.util.function.LongSupplier promptElapsedNanos)
             throws IOException {
-        long start = System.nanoTime();
+        long start = PromptClock.now();
         while (!auth.await(POLL_MILLIS)) {
-            if (handshakeExpired(System.nanoTime() - start, promptElapsedNanos.getAsLong(), timeout)) {
+            if (handshakeExpired(PromptClock.now() - start, promptElapsedNanos.getAsLong(), timeout)) {
                 throw new SocketTimeoutException("Authentication timed out after " + timeout.toSeconds() + "s");
             }
         }

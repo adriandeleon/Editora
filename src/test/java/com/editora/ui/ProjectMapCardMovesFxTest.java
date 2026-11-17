@@ -2,11 +2,14 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
 
+import javafx.animation.Animation;
+import javafx.animation.PauseTransition;
 import javafx.event.Event;
 import javafx.scene.Node;
 import javafx.scene.Scene;
@@ -282,11 +285,16 @@ class ProjectMapCardMovesFxTest {
             card.editor().moveTo(card.editor().getText().indexOf("a += 0"));
         });
         await("the uses of a are washed", () -> card.moves().usesShown());
+        PauseTransition idle = FxTestSupport.field(card.moves(), "usesIdle");
         FxTestSupport.runOnFx(() -> {
             card.editor().moveTo(keyword); // on return: a keyword
             assertFalse(card.moves().usesShown(), "a caret move clears the wash at once");
+            assertEquals(Animation.Status.RUNNING, idle.getStatus(), "the card waits for the caret to rest");
         });
-        Thread.sleep(400);
+        // the caret has rested: the wait is over and the card has looked at the word under it
+        PulseChecks.untilOnFx(
+                () -> idle.getStatus() == Animation.Status.STOPPED, "the caret's rest", Duration.ofSeconds(10));
+        FxTestSupport.drainFx();
         FxTestSupport.runOnFx(() -> assertFalse(card.moves().usesShown(), "a keyword's uses are not washed"));
     }
 

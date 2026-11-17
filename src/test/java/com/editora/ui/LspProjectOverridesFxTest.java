@@ -13,6 +13,7 @@ import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.LspTestHooks;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -320,9 +321,7 @@ class LspProjectOverridesFxTest {
         host.settings.setLspOnTypeFormatting(false);
         FxTestSupport.runOnFx(coordinator::applyOnTypeFormatting);
         // jdtls's push reads the project's style on a thread of its own (PERF-01, Pauta 6.0.1): wait for it
-        for (int i = 0; i < 500 && fakes.get(0).configurations.size() < pushed + 1; i++) {
-            Thread.sleep(10);
-        }
+        Await.holdsWithin(() -> fakes.get(0).configurations.size() >= pushed + 1, java.time.Duration.ofSeconds(10));
 
         assertEquals(pushed + 1, fakes.get(0).configurations.size(), "a running jdtls is told when it flips");
         @SuppressWarnings("unchecked")

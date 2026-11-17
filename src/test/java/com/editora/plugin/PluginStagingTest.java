@@ -206,18 +206,14 @@ class PluginStagingTest {
 
             @Override
             public int read(byte[] b, int off, int len) {
-                try {
-                    Thread.sleep(5);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-                b[off] = 'x';
+                b[off] = 'x'; // a byte at a time, and never the end: it is still coming when the deadline passes
                 return 1;
             }
         };
+        // No cap to hit first: only the deadline can end it.
         java.io.IOException e = org.junit.jupiter.api.Assertions.assertThrows(
                 java.io.IOException.class,
-                () -> PluginRegistry.readCapped(drip, 1_000_000, java.time.Duration.ofMillis(60)));
+                () -> PluginRegistry.readCapped(drip, Long.MAX_VALUE, java.time.Duration.ofMillis(60)));
         assertTrue(e.getMessage().startsWith(PluginProblem.DEADLINE), e.getMessage());
         assertEquals(
                 PluginProblem.Kind.TIMED_OUT,

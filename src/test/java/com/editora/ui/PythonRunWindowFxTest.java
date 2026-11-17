@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
@@ -146,26 +147,24 @@ class PythonRunWindowFxTest {
     }
 
     private static MainController projectWindow(FxWindowFixture fx, Path root) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
-        while (System.nanoTime() < deadline) {
-            MainController found = FxTestSupport.callOnFx(() -> {
-                List<?> holders = FxTestSupport.field(fx.windowManager, "windows");
-                for (Object holder : holders) {
-                    MainController c = (MainController) FxTestSupport.call(holder, "controller", new Class<?>[] {});
-                    Path active = (Path) FxTestSupport.call(c, "windowProjectRoot", new Class<?>[] {});
-                    if (active != null && Files.isSameFile(active, root)) {
-                        return c;
-                    }
-                }
-                return null;
-            });
-            if (found != null) {
-                return found;
-            }
-            FxTestSupport.drainFx();
-            Thread.sleep(20);
-        }
-        throw new AssertionError("the project's window never opened");
+        MainController[] found = new MainController[1];
+        PulseChecks.until(
+                () -> (found[0] = FxTestSupport.callOnFx(() -> {
+                            List<?> holders = FxTestSupport.field(fx.windowManager, "windows");
+                            for (Object holder : holders) {
+                                MainController c =
+                                        (MainController) FxTestSupport.call(holder, "controller", new Class<?>[] {});
+                                Path active = (Path) FxTestSupport.call(c, "windowProjectRoot", new Class<?>[] {});
+                                if (active != null && Files.isSameFile(active, root)) {
+                                    return c;
+                                }
+                            }
+                            return null;
+                        }))
+                        != null,
+                "the project's window never opened",
+                Duration.ofSeconds(60));
+        return found[0];
     }
 
     private static TestRun testRun(MainController c) throws Exception {

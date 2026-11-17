@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -22,6 +23,7 @@ import com.editora.macro.MacroStep;
 import com.editora.snippet.SnippetManager;
 import com.editora.template.Template;
 import com.editora.template.TemplateRegistry;
+import com.editora.testkit.Await;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -66,13 +68,7 @@ class SettingsListPagesFxTest {
 
     /** Waits (polling, up to 5 s) for {@code condition} to hold on the FX thread. */
     static void waitFor(Callable<Boolean> condition, String what) throws Exception {
-        long end = System.nanoTime() + 5_000_000_000L;
-        while (!FxTestSupport.callOnFx(condition)) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out: " + what);
-            }
-            Thread.sleep(20);
-        }
+        Await.until(() -> onFx(condition), what, Duration.ofSeconds(5));
     }
 
     // --- C17: no Save buttons; the pages apply as you type -------------------------------------------
@@ -335,6 +331,15 @@ class SettingsListPagesFxTest {
                 assertFalse(scroll.getPrefHeight() < 320);
                 stage(w).hide();
             });
+        }
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

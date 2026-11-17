@@ -5,7 +5,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
@@ -21,7 +20,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The window's {@code {{variable}}} marks follow the file's environment: the env files found for the file, the
@@ -99,11 +97,7 @@ class HttpVariableHintsFxTest {
     }
 
     private static void await(BooleanSupplier done) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (!FxTestSupport.callOnFx(done::getAsBoolean)) {
-            assertTrue(System.nanoTime() < deadline, "the marks should settle");
-            Thread.sleep(20);
-        }
+        FxTestSupport.awaitFxCondition(done::getAsBoolean, "the marks should settle", java.time.Duration.ofSeconds(20));
     }
 
     @Test

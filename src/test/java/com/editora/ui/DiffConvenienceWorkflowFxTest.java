@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 
 import javafx.scene.input.Clipboard;
@@ -95,13 +96,11 @@ class DiffConvenienceWorkflowFxTest {
 
     @SuppressWarnings("unchecked")
     private static List<DiffViewerPane> awaitPanes(Object ops, int count) throws Exception {
-        for (int i = 0; i < 100; i++) {
-            List<DiffViewerPane> panes = FxTestSupport.callOnFx(
-                    () -> (List<DiffViewerPane>) FxTestSupport.call(ops, "openDiffPanes", new Class<?>[] {}));
-            if (panes.size() >= count) {
-                return panes;
-            }
-            Thread.sleep(50);
+        java.util.concurrent.Callable<List<DiffViewerPane>> open =
+                () -> (List<DiffViewerPane>) FxTestSupport.call(ops, "openDiffPanes", new Class<?>[] {});
+        if (EventuallyFx.holdsWithin(
+                Duration.ofSeconds(5), () -> FxTestSupport.callOnFx(open).size() >= count)) {
+            return FxTestSupport.callOnFx(open);
         }
         return List.of();
     }
@@ -114,12 +113,7 @@ class DiffConvenienceWorkflowFxTest {
     }
 
     private static void awaitCondition(CheckedBoolean condition) throws Exception {
-        for (int i = 0; i < 100; i++) {
-            if (condition.get()) {
-                return;
-            }
-            Thread.sleep(50);
-        }
+        EventuallyFx.holdsWithin(Duration.ofSeconds(5), condition::get);
         assertTrue(condition.get(), "condition did not become true");
     }
 

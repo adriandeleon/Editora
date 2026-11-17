@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import com.editora.config.ConfigManager;
+import com.editora.editor.EditorBuffer;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.LspTestHooks;
 import org.junit.jupiter.api.Tag;
@@ -12,7 +13,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Session restore honours the "start a server only when its tab is shown" deferral.
@@ -63,14 +63,23 @@ class LspSessionRestoreDeferralFxTest {
             coordinator.applySupport();
         });
         try {
-            long deadline = System.nanoTime() + 20_000_000_000L;
-            while (!FxTestSupport.callOnFx(() -> manager[0].isManaged(files[0]))) {
-                assertTrue(System.nanoTime() < deadline, "the visible restored tab never reached its server");
-                Thread.sleep(50);
+            OnFx.until(
+                    () -> manager[0].isManaged(files[0]),
+                    "the visible restored tab to reach its server",
+                    java.time.Duration.ofSeconds(20));
+            // let every background tab's content land and its restore finish
+            FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+            OnFx.until(
+                    () -> workflows.loadingBuffers.isEmpty()
+                            && java.util.Arrays.stream(files).allMatch(f -> {
+                                EditorBuffer b = fx.controller.openBufferFor(f);
+                                return b != null && !b.isLoading();
+                            }),
+                    "every restored tab's content",
+                    java.time.Duration.ofSeconds(20));
+            for (int i = 0; i < 3; i++) {
                 FxTestSupport.drainFx();
             }
-            Thread.sleep(700); // let every background tab's content land and its restore finish
-            FxTestSupport.drainFx();
 
             for (int i = 1; i < files.length; i++) {
                 Path background = files[i];

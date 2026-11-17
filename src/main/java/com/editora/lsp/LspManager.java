@@ -127,6 +127,34 @@ public final class LspManager {
         return t;
     });
 
+    /** Tasks handed to {@link #startExec} that have not finished (see {@link #startsIdleForTest}). */
+    private final java.util.concurrent.atomic.AtomicInteger startsRunning =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    private void onStartExec(Runnable task) {
+        startsRunning.incrementAndGet();
+        try {
+            startExec.execute(() -> {
+                try {
+                    task.run();
+                } finally {
+                    startsRunning.decrementAndGet();
+                }
+            });
+        } catch (RuntimeException e) {
+            startsRunning.decrementAndGet();
+            throw e;
+        }
+    }
+
+    /**
+     * TEST SEAM — whether no server start is under way on this manager's start threads, so a test can tell that a
+     * start which was going to happen has happened (QUAL-07, Pauta 6.0.1: tests wait on the thing, not a time).
+     */
+    public boolean startsIdleForTest() {
+        return startsRunning.get() == 0;
+    }
+
     final Map<String, LanguageServerSession> sessionsByRoot = new ConcurrentHashMap<>();
     final Map<String, LanguageServerSession> sessionByDocUri = new ConcurrentHashMap<>();
 
@@ -507,7 +535,7 @@ public final class LspManager {
                     .filter(session -> com.editora.process.ExecTargets.runsHere(session.root()))
                     .toList();
             if (!running.isEmpty()) {
-                startExec.execute(() -> {
+                onStartExec(() -> {
                     List<Map<String, Object>> runtimes =
                             JavaRuntimes.runtimes(JavaRuntimes.discover(), javaPreferredHome(next), true);
                     running.forEach(session -> session.setJavaRuntimes(runtimes));
@@ -1882,6 +1910,12 @@ public final class LspManager {
         return commands.get(serverId);
     }
 
+    /** TEST SEAM — whether an idle-eviction timer is pending for {@code (serverId, root)}: with none pending, nothing
+     *  can evict the session, so a test sees "not evicted" without waiting out the grace (QUAL-07, Pauta 6.0.1). */
+    boolean evictionPendingForTest(String serverId, Path root) {
+        return pendingEvictions.containsKey(sessionKey(serverId, root));
+    }
+
     /** TEST SEAM — whether a session is currently cached for {@code (serverId, root)}. Lets a test observe
      *  idle eviction (#669) and crash-drop (#666) without reflecting into the session maps. */
     boolean hasSessionForTest(String serverId, Path root) {
@@ -2246,7 +2280,7 @@ public final class LspManager {
         boolean typeAcquisition = typeScriptTypeAcquisition;
         String nodeSetting = nodePathSetting;
         boolean loose = root.toAbsolutePath().normalize().equals(looseRoot);
-        startExec.execute(() -> {
+        onStartExec(() -> {
             awaitPriorExit(key); // a restart: let the server being replaced release what it holds
             String javaPreferredHome = javaPreferredHome(javaJdkSetting);
             if (closed || session.isDisposed()) {

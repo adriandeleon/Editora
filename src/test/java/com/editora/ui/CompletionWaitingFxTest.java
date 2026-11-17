@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
@@ -85,9 +86,7 @@ class CompletionWaitingFxTest {
     }
 
     private void waitForWaitingLine() throws Exception {
-        for (int i = 0; i < 100 && waitingText() == null; i++) {
-            Thread.sleep(20);
-        }
+        EventuallyFx.holdsWithin(Duration.ofSeconds(2), () -> waitingText() != null);
     }
 
     @Test
@@ -100,9 +99,7 @@ class CompletionWaitingFxTest {
 
         FxTestSupport.runOnFx(() -> pending.getLast()
                 .accept(new CompletionResult(List.of(Completion.lsp("getcwd", "getcwd", "function")), false)));
-        for (int i = 0; i < 100 && !FxTestSupport.callOnFx(() -> popup().hasRows()); i++) {
-            Thread.sleep(20);
-        }
+        EventuallyFx.holdsWithin(Duration.ofSeconds(2), () -> FxTestSupport.callOnFx(() -> popup().hasRows()));
         assertNull(waitingText(), "the answer replaces the waiting line");
         assertEquals("getcwd", FxTestSupport.callOnFx(() -> popup().selected().label()));
     }

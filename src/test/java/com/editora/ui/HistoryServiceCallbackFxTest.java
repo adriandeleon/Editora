@@ -90,19 +90,14 @@ class HistoryServiceCallbackFxTest {
             svc.gc(Set.of(rev.sha256()));
             published.countDown();
         });
-        long blobDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (blobs.get(sha) == null && System.nanoTime() < blobDeadline) {
-            Thread.sleep(10);
-        }
+        drainWorker(svc); // the record's blob is written on the history worker
         assertTrue(blobs.get(sha) != null, "the blob must have reached disk before testing the publish gap");
 
         svc.gc(Set.of());
         releaseFx.countDown();
         assertTrue(published.await(5, TimeUnit.SECONDS));
-        long gcDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (blobs.get(sha) == null && System.nanoTime() < gcDeadline) {
-            Thread.sleep(10);
-        }
+        FxTestSupport.drainFx();
+        drainWorker(svc); // every collection asked for so far has run
         assertEquals(content, blobs.get(sha), "the post-publication live set must replace the stale GC request");
         svc.shutdown();
     }
@@ -155,5 +150,11 @@ class HistoryServiceCallbackFxTest {
 
             assertEquals(content, restored.get());
         }
+    }
+
+    /** Waits until the history worker has run everything queued on it so far (it is a single thread). */
+    private static void drainWorker(HistoryService svc) throws Exception {
+        java.util.concurrent.ExecutorService worker = FxTestSupport.field(svc, "exec");
+        worker.submit(() -> {}).get(10, TimeUnit.SECONDS);
     }
 }

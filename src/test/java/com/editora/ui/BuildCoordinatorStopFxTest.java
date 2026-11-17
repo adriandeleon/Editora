@@ -10,6 +10,7 @@ import javafx.scene.control.Label;
 
 import com.editora.build.BuildTool;
 import com.editora.config.Settings;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -302,14 +303,17 @@ class BuildCoordinatorStopFxTest {
     }
 
     private static void waitUntil(FxCheck condition, String what) throws Exception {
-        long deadline = System.currentTimeMillis() + 10_000;
-        while (System.currentTimeMillis() < deadline) {
-            if (FxTestSupport.callOnFx(condition::check)) {
-                return;
-            }
-            Thread.sleep(25);
+        if (!Await.holdsWithin(
+                () -> {
+                    try {
+                        return FxTestSupport.callOnFx(condition::check);
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                },
+                java.time.Duration.ofSeconds(10))) {
+            fail("Timed out waiting for: " + what);
         }
-        fail("Timed out waiting for: " + what);
     }
 
     @FunctionalInterface

@@ -2,11 +2,11 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import com.editora.config.Breakpoint;
@@ -301,16 +301,17 @@ class DebugJavaLaunchFxTest {
         FxTestSupport.runOnFx(() -> debug.attachToPort(file, "localhost", 5005));
         FakeDebugAdapter.Session session = adapter.awaitSession();
         session.awaitRequest("attach");
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (FxTestSupport.callOnFx(dap::state) != DapManager.State.RUNNING) {
-            assertTrue(System.nanoTime() < deadline, "the attach never reached RUNNING");
-            Thread.sleep(10);
-        }
+        EventuallyFx.untilOnFx(
+                "the attach never reached RUNNING",
+                Duration.ofSeconds(10),
+                () -> dap.state() == DapManager.State.RUNNING);
         statuses.clear();
 
         FxTestSupport.runOnFx(() -> debug.restart());
         FxTestSupport.drainFx();
-        Thread.sleep(300); // a re-attach would have reached the adapter by now
+        // A restart would have stopped this session first, from the FX turn above: the client answers the
+        // adapter's ping after anything it sent before it, so a disconnect would have reached the adapter now.
+        session.awaitDelivered();
         FxTestSupport.drainFx();
 
         assertEquals(List.of(tr("status.debug.cannotRestartAttached")), statuses);
@@ -333,11 +334,10 @@ class DebugJavaLaunchFxTest {
 
         FxTestSupport.runOnFx(() -> debug.attachToPort(file, "localhost", 5005));
         adapter.awaitSession().awaitRequest("attach");
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (FxTestSupport.callOnFx(dap::state) != DapManager.State.RUNNING) {
-            assertTrue(System.nanoTime() < deadline, "the attach never reached RUNNING");
-            Thread.sleep(10);
-        }
+        EventuallyFx.untilOnFx(
+                "the attach never reached RUNNING",
+                Duration.ofSeconds(10),
+                () -> dap.state() == DapManager.State.RUNNING);
         FxTestSupport.drainFx();
 
         assertTrue(FxTestSupport.callOnFx(restart::isDisabled), "Restart cannot do anything for this session");
@@ -371,11 +371,8 @@ class DebugJavaLaunchFxTest {
                 List.of(Map.of("mainClass", "demo.Args", "projectName", "proj", "filePath", main.toString())));
         FxTestSupport.runOnFx(() -> debug.debugStart());
         adapter.awaitSession().awaitRequest("launch");
-        deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (FxTestSupport.callOnFx(restart::isDisabled)) {
-            assertTrue(System.nanoTime() < deadline, "Restart stayed disabled for a launched session");
-            Thread.sleep(10);
-        }
+        EventuallyFx.untilOnFx(
+                "Restart stayed disabled for a launched session", Duration.ofSeconds(10), () -> !restart.isDisabled());
         assertTrue(FxTestSupport.callOnFx(debug::restartAvailable));
         assertNull(FxTestSupport.callOnFx(() -> holder.getProperties().get("javafx.scene.control.Tooltip")));
     }

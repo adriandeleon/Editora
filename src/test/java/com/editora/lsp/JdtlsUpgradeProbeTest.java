@@ -185,8 +185,7 @@ class JdtlsUpgradeProbeTest {
         try {
             assertTrue(s.start());
             s.didOpen(uri, "java", SOURCE);
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(120);
-            while (!s.isInitialized() && System.nanoTime() < deadline) Thread.sleep(100);
+            com.editora.testkit.Await.holdsWithin(s::isInitialized, java.time.Duration.ofSeconds(120));
             assertTrue(s.isInitialized(), "handshake");
             // Document requests queue behind the import; one answered request means the project is in.
             get(s.documentSymbol(uri));
@@ -213,12 +212,18 @@ class JdtlsUpgradeProbeTest {
         int lastLine = lineCount - 1;
         Range clamped = LspInlineHints.inclusiveLineRange(0, lastLine, lineCount, lines[lastLine].length());
         // Hints can lag the import; poll the range that is known to work before comparing.
-        int inRange = 0;
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
-        while (inRange == 0 && System.nanoTime() < deadline) {
-            inRange = get(s.inlayHint(uri, clamped)).size();
-            if (inRange == 0) Thread.sleep(1_000);
-        }
+        int[] hints = {0};
+        com.editora.testkit.Await.holdsWithin(
+                () -> {
+                    try {
+                        hints[0] = get(s.inlayHint(uri, clamped)).size();
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                    return hints[0] != 0;
+                },
+                java.time.Duration.ofSeconds(60));
+        int inRange = hints[0];
         int pastTheEnd = get(s.inlayHint(uri, new Range(new Position(0, 0), new Position(lineCount, 0))))
                 .size();
         int padded = get(s.inlayHint(

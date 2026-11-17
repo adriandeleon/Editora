@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.editora.build.BuildTool;
 import com.editora.config.Settings;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -261,8 +263,7 @@ class BuildCoordinatorFxTest {
         BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
 
         FxTestSupport.runOnFx(c::refresh);
-        // Give the (short-lived) detect thread a moment even though nothing should ever flip true.
-        Thread.sleep(300);
+        detectionsDone(); // the (short-lived) detect thread has run and posted its answer, though nothing flips true
         assertFalse(FxTestSupport.callOnFx(c::isDetected));
         assertNull(FxTestSupport.callOnFx(c::detectedLabel));
     }
@@ -515,6 +516,7 @@ class BuildCoordinatorFxTest {
 
         FxTestSupport.runOnFx(c::refresh);
         waitUntil(() -> c.isDetected() && c.detectedLabel() != null, "package.json parses");
+        int planned = NpmRunSupport.PREPARED_FOR_TEST.get();
         FxTestSupport.runOnFx(() -> c.runTask(List.of("run", "build"), List.of()));
 
         assertEquals(1, ops.promptCount, "an npm script runs the folder's code: the first build asks");
@@ -526,7 +528,8 @@ class BuildCoordinatorFxTest {
                 "then the test's own npm command, as an override");
         assertEquals(0, ops.trustCount, "declining must not record trust");
         assertEquals(tr("status.build.untrusted", disp(BuildTool.NPM)), host.lastStatus);
-        Thread.sleep(300); // npm picks its Node off the FX thread before it starts: give a launch the time to show
+        // npm picks its Node off the FX thread before it starts: a launch would have been planned by now
+        assertEquals(planned, NpmRunSupport.PREPARED_FOR_TEST.get(), "declining plans no launch");
         assertEquals(0, ops.openConsoleCount, "declining must not run anything");
 
         ops.promptAnswer = true;
@@ -866,7 +869,10 @@ class BuildCoordinatorFxTest {
         SettingsRig.awaitFx("the fourth question", () -> ops.promptCount == 4);
         assertEquals(4, ops.promptCount, "each asks, since the folder is still not trusted");
         assertEquals(0, ops.openConsoleCount);
-        Thread.sleep(300); // a launch would be asynchronous: give one the time to leave its mark
+        // A launch is asynchronous, but each way to one starts it on the FX thread with the answer: nothing started.
+        FxTestSupport.drainFx();
+        assertFalse(FxTestSupport.callOnFx(c::isRunning), "no build was started");
+        assertNotEquals(tr("status.build.loadingTasks", disp(BuildTool.MILL)), host.lastStatus, "no task load started");
         assertFalse(Files.exists(ran), "the repository's launcher never ran");
     }
 
@@ -1061,14 +1067,25 @@ class BuildCoordinatorFxTest {
 
     /** Polls {@code condition} (each check on the FX thread) until it's true or a few seconds elapse. */
     private static void waitUntil(FxCheck condition, String what) throws Exception {
-        long deadline = System.currentTimeMillis() + 5000;
-        while (System.currentTimeMillis() < deadline) {
-            if (FxTestSupport.callOnFx(condition::check)) {
-                return;
-            }
-            Thread.sleep(25);
+        if (!Await.holdsWithin(
+                () -> {
+                    try {
+                        return FxTestSupport.callOnFx(condition::check);
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                },
+                java.time.Duration.ofSeconds(5))) {
+            fail("Timed out waiting for: " + what);
         }
-        fail("Timed out waiting for: " + what);
+    }
+
+    /** Waits until the detections queued so far have run and their answers have landed on the FX thread. */
+    private static void detectionsDone() throws Exception {
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        BuildDetection.execute(done::countDown);
+        assertTrue(done.await(10, java.util.concurrent.TimeUnit.SECONDS), "the detections ran");
+        FxTestSupport.drainFx();
     }
 
     @FunctionalInterface

@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -14,14 +15,13 @@ import javafx.stage.Window;
 import com.editora.command.CommandRegistry;
 import com.editora.dap.DapManager;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import com.editora.text.LspDiagnostic;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
-
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * MANUAL PROBE (not part of the suite): Metals in a real window on a two-project sbt build. Metals asks to
@@ -40,12 +40,7 @@ class ScalaMetalsProbeFxTest {
     Path dir;
 
     private static void await(String what, long minutes, BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.MINUTES.toNanos(minutes);
-        while (!FxTestSupport.callOnFx(condition::getAsBoolean)) {
-            assertTrue(System.nanoTime() < deadline, what + " never happened");
-            FxTestSupport.drainFx();
-            Thread.sleep(200);
-        }
+        Await.until(() -> onFx(condition::getAsBoolean), what + " never happened", Duration.ofMinutes(minutes));
     }
 
     /** Presses the button called {@code label} in any open dialog; true when there was one. */
@@ -151,6 +146,15 @@ class ScalaMetalsProbeFxTest {
                     2,
                     () -> manager.state() == DapManager.State.TERMINATED
                             || manager.state() == DapManager.State.INACTIVE);
+        }
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -14,6 +15,7 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Spinner;
 import javafx.stage.Stage;
 
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -91,15 +93,8 @@ class SettingsRoundTripFxTest {
 
     /** Lets the JDK combos' look off the FX thread land: a JDK's version is known only then (PERF-01). */
     private static void awaitJdks() throws Exception {
-        long until = System.nanoTime() + 30_000_000_000L;
-        do {
-            FxTestSupport.drainFx();
-            if (!FxTestSupport.callOnFx(JdkChoice::looking)) {
-                return;
-            }
-            Thread.sleep(20);
-        } while (System.nanoTime() < until);
-        throw new AssertionError("the JDK look never landed");
+        FxTestSupport.drainFx();
+        Await.until(() -> !onFx(JdkChoice::looking), "the JDK look never landed", Duration.ofSeconds(30));
     }
 
     @Test
@@ -149,6 +144,15 @@ class SettingsRoundTripFxTest {
                 FxTestSupport.<Stage>field(window, "stage").hide();
             });
             assertTrue(lost.isEmpty(), "not saved and read back:\n" + String.join("\n", lost));
+        }
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

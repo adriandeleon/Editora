@@ -20,7 +20,6 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The saved HTTP history in a real window when its file moves the way the Project tree moves it, and when Editora
@@ -87,11 +86,7 @@ class HttpHistoryFileMoveFxTest {
     }
 
     private static void await(java.util.concurrent.Callable<Boolean> check) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
-        while (!FxTestSupport.callOnFx(check)) {
-            assertTrue(System.nanoTime() < deadline, "timed out");
-            Thread.sleep(10);
-        }
+        FxTestSupport.awaitFxCondition(check, "the condition", java.time.Duration.ofSeconds(WAIT_SECONDS));
     }
 
     private static void run(MainController c, int line) throws Exception {

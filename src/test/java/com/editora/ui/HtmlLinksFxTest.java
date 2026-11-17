@@ -189,12 +189,13 @@ class HtmlLinksFxTest {
         try (WindowRig w = new WindowRig()) {
             EditorBuffer b = w.open(index);
             w.await("the page's marks", () -> marks(b).size() == 2);
-            Thread.sleep(1500); // every check the opening queued has run: what follows is the file event's
-            w.async.awaitFx();
+            // every check the opening queued has run: what follows is the file event's
+            settleChecks(b);
             FxTestSupport.runOnFx(() -> assertEquals(2, marks(b).size()));
+            int checksAsked = checksAsked(b);
             Path created = Files.writeString(dir.resolve("missing.html"), "<p>here</p>\n");
-            Thread.sleep(1500);
-            w.async.awaitFx();
+            settleChecks(b);
+            assertEquals(checksAsked, checksAsked(b), "nothing asks for a check without the event");
             FxTestSupport.runOnFx(() -> assertEquals(2, marks(b).size(), "nothing re-checks without the event"));
             FxTestSupport.runOnFx(() -> {
                 LspCoordinator lsp = w.field("lspCoordinator");
@@ -314,6 +315,26 @@ class HtmlLinksFxTest {
                 assertEquals(java.util.Set.of(1, 2), byLine.keySet(), "a line added above moves them down");
             });
         }
+    }
+
+    /**
+     * Every check under way for {@code b} has landed: its settled-edit pulse has fired, the markup check's worker has
+     * run what it was given, and the FX turns that show the answers are done.
+     */
+    private static void settleChecks(EditorBuffer b) throws Exception {
+        FxTestSupport.awaitSettled(b);
+        java.lang.reflect.Field field = HtmlLspAids.class.getDeclaredField("CHECKS");
+        field.setAccessible(true);
+        ((java.util.concurrent.ExecutorService) field.get(null))
+                .submit(() -> {})
+                .get(20, java.util.concurrent.TimeUnit.SECONDS);
+        FxTestSupport.drainFx();
+    }
+
+    /** How many checks of {@code b}'s marks have been asked for (each request takes a new generation). */
+    private static int checksAsked(EditorBuffer b) throws Exception {
+        return FxTestSupport.callOnFx(
+                () -> FxTestSupport.<Integer>field(FxTestSupport.field(b, "httpVariableMarks"), "generation"));
     }
 
     private static List<com.editora.markdown.MarkdownLint.Diagnostic> marks(EditorBuffer b) {

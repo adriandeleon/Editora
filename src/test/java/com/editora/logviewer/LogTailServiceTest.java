@@ -64,11 +64,9 @@ class LogTailServiceTest {
     }
 
     private static void await(BooleanSupplier condition, String what) throws InterruptedException {
-        long deadline = System.nanoTime() + 5_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            assertTrue(System.nanoTime() < deadline, "timed out waiting for " + what);
-            Thread.sleep(10);
-        }
+        assertTrue(
+                com.editora.testkit.Await.holdsWithin(condition, java.time.Duration.ofSeconds(5)),
+                "timed out waiting for " + what);
     }
 
     private static void append(Path file, String text) throws Exception {
@@ -124,7 +122,8 @@ class LogTailServiceTest {
 
         handle.stop();
         append(file, "written while paused\n");
-        Thread.sleep(120);
+        service.awaitIdleForTest(); // a poll that was running has finished
+        assertFalse(handle.pollingForTest(), "and none will run again");
 
         assertEquals("one\n", events.text());
         assertEquals(4, handle.offset(), "a later follow resumes here and reads the paused lines");
@@ -136,10 +135,12 @@ class LogTailServiceTest {
         Path file = dir.resolve("a.log");
         Files.writeString(file, "");
         Events events = new Events();
-        service.follow(file, 0, StandardCharsets.UTF_8, events);
+        LogTailService.Handle handle = service.follow(file, 0, StandardCharsets.UTF_8, events);
 
         append(file, "one\r");
-        Thread.sleep(80); // the \r is read alone
+        long polled = handle.pollsForTest();
+        // the \r is read alone: a whole poll starts after the append and finishes
+        await(() -> handle.pollsForTest() >= polled + 2, "a poll after the \\r");
         append(file, "\ntwo\r\n");
         await(() -> events.text().endsWith("two\n"), "both lines");
 
@@ -176,7 +177,8 @@ class LogTailServiceTest {
         assertTrue(handle.isStopped());
         assertTrue(events.seen.get(0).matches("!\\w+(Exception|Error).*"), "names the failure: " + events.seen.get(0));
         int count = events.seen.size();
-        Thread.sleep(80);
+        service.awaitIdleForTest();
+        assertFalse(handle.pollingForTest(), "the follow stopped polling");
         assertEquals(count, events.seen.size(), "and is not reported again on every poll");
     }
 }

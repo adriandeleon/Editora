@@ -137,14 +137,10 @@ class PythonDebugLaunchFxTest {
     }
 
     private void awaitStop() throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (stops.isEmpty()) {
-            assertTrue(errors.isEmpty(), errors.toString());
-            assertTrue(
-                    System.nanoTime() < deadline,
-                    "never stopped; adapter was told " + (Files.exists(log) ? Files.readString(log) : "nothing"));
-            Thread.sleep(50);
-        }
+        boolean ended = com.editora.testkit.Await.holdsWithin(
+                () -> !stops.isEmpty() || !errors.isEmpty(), java.time.Duration.ofSeconds(30));
+        assertTrue(errors.isEmpty(), errors.toString());
+        assertTrue(ended, "never stopped; adapter was told " + (Files.exists(log) ? Files.readString(log) : "nothing"));
     }
 
     private JsonObject logged(String command) throws Exception {
@@ -343,10 +339,7 @@ class PythonDebugLaunchFxTest {
 
         debugTest(project, test, List.of());
 
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (errors.isEmpty() && System.nanoTime() < deadline) {
-            Thread.sleep(50);
-        }
+        com.editora.testkit.Await.holdsWithin(() -> !errors.isEmpty(), java.time.Duration.ofSeconds(30));
         assertEquals(1, errors.size(), errors.toString());
         assertTrue(
                 errors.get(0).contains("pytest is not installed for " + project.resolve(".venv/bin/python")),

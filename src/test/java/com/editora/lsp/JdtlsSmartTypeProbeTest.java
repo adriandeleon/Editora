@@ -94,15 +94,18 @@ class JdtlsSmartTypeProbeTest {
 
     private static List<String> kept(LanguageServerSession s, String uri, String marker, List<String> type)
             throws Exception {
-        List<CompletionItem> items = List.of();
-        for (int attempt = 0;
-                attempt < 20 && items.isEmpty();
-                attempt++) { // the index is still filling just after import
-            items = CompletionMapper.itemsOf(get(s.completion(uri, position(marker))));
-            if (items.isEmpty()) {
-                Thread.sleep(500);
-            }
-        }
+        List<CompletionItem> items = new java.util.ArrayList<>();
+        com.editora.testkit.Await.holdsWithin( // the index is still filling just after import: ask again
+                () -> {
+                    try {
+                        items.clear();
+                        items.addAll(CompletionMapper.itemsOf(get(s.completion(uri, position(marker)))));
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                    return !items.isEmpty();
+                },
+                java.time.Duration.ofSeconds(10));
         List<Completion> mapped = CompletionMapper.map(items);
         List<String> labels = SmartTypeFilter.filter(mapped, type, false).stream()
                 .map(Completion::label)
@@ -139,10 +142,7 @@ class JdtlsSmartTypeProbeTest {
                 ServerInitOptions.withProjectSettings("java", ServerInitOptions.javaInitOptions(List.of()), project));
         try {
             assertTrue(s.start());
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(90);
-            while (!s.isInitialized() && System.nanoTime() < deadline) {
-                Thread.sleep(100);
-            }
+            com.editora.testkit.Await.holdsWithin(() -> s.isInitialized(), java.time.Duration.ofSeconds(90));
             assertTrue(imported.await(120, TimeUnit.SECONDS), "the project imported");
             String uri = src.resolve("Smart.java").toUri().toString();
             s.didOpen(uri, "java", SMART);

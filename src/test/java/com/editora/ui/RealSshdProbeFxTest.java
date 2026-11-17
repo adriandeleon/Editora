@@ -15,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 
@@ -32,6 +33,7 @@ import com.editora.process.ProcessRunner;
 import com.editora.process.RemoteProcess;
 import com.editora.run.RunService;
 import com.editora.search.RemoteFiles;
+import com.editora.testkit.Await;
 import com.editora.text.LspDiagnostic;
 import com.editora.vfs.RemoteConnection;
 import com.editora.vfs.RemoteFileSystems;
@@ -119,10 +121,7 @@ class RealSshdProbeFxTest {
 
     /** Waits for a terminal to print {@code needle}; the failure says what it printed instead. */
     private static void awaitOutput(StringBuffer seen, String needle) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (System.nanoTime() < deadline && !seen.toString().contains(needle)) {
-            Thread.sleep(50);
-        }
+        Await.holdsWithin(() -> seen.toString().contains(needle), java.time.Duration.ofSeconds(20));
         check(seen.toString().contains(needle), "\"" + needle + "\" in the terminal's output: [" + seen + "]");
     }
 
@@ -151,13 +150,19 @@ class RealSshdProbeFxTest {
     }
 
     private static void await(String what, long seconds, BooleanSupplier done) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
-        while (!done.getAsBoolean()) {
-            if (System.nanoTime() > deadline) {
-                throw new AssertionError("timed out: " + what);
-            }
-            Thread.sleep(50);
-        }
+        Await.until(done, what, java.time.Duration.ofSeconds(seconds));
+    }
+
+    /** Waits until jdtls outlines {@code file}: it has the file in a project (an invisible one for a loose file). */
+    private static void awaitOutline(LspManager lsp, Path file) throws Exception {
+        PulseChecks.until(
+                () -> {
+                    CompletableFuture<List<com.editora.lsp.SymbolNode>> got = new CompletableFuture<>();
+                    onFx(() -> lsp.documentSymbols(file, got::complete));
+                    return !got.get(60, TimeUnit.SECONDS).isEmpty();
+                },
+                "jdtls outlines " + file.getFileName(),
+                Duration.ofSeconds(120));
     }
 
     private static void onFx(Runnable task) throws Exception {
@@ -594,8 +599,21 @@ class RealSshdProbeFxTest {
             RemoteWatcher watcher = RemoteWatcher.start(app, seen::addAll);
             check(watcher != null, "started");
             try {
-                Thread.sleep(1500);
-                ProcessRunner.run(app, Duration.ofSeconds(30), List.of("sh", "-c", "echo x > made-outside.txt"));
+                // the watch's command has started on the host; a poll's stamp is made as it starts, so the file is
+                // dated a minute ahead (where touch can) to be newer than it whenever it was made
+                Await.until(
+                        () -> FxTestSupport.field(watcher, "process") != null,
+                        "the watch's command started",
+                        Duration.ofSeconds(30));
+                long ahead = System.currentTimeMillis() / 1000 + 60;
+                ProcessRunner.run(
+                        app,
+                        Duration.ofSeconds(30),
+                        List.of(
+                                "sh",
+                                "-c",
+                                "echo x > made-outside.txt; touch -d @" + ahead
+                                        + " made-outside.txt 2>/dev/null; true"));
                 await(
                         "the change reported",
                         20,
@@ -681,18 +699,35 @@ class RealSshdProbeFxTest {
         step("pyright on the host: diagnostics for a remote file", () -> {
             Path py = Files.writeString(app.resolve("bad.py"), "x: int = 'text'\n");
             Map<Path, List<LspDiagnostic>> diags = new ConcurrentHashMap<>();
-            LspManager lsp = new LspManager(diags::put, (t, m) -> {});
+            AtomicInteger answers = new AtomicInteger();
+            LspManager lsp = new LspManager(
+                    (f, d) -> {
+                        diags.put(f, d);
+                        answers.incrementAndGet();
+                    },
+                    (t, m) -> {});
             lsp.setFolderTrust(folder ->
                     true); // a probe's project is one its user trusts: jdtls loads the build (lsp.UntrustedBuilds)
             try {
                 lsp.configure(true, Map.of());
                 onFx(() -> lsp.openDocument(py, app, "python", "x: int = 'text'\n"));
                 // pyright answers diagnostic pulls; the editor asks after typing settles, so ask the same way.
-                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(90);
-                while (diags.values().stream().allMatch(List::isEmpty) && System.nanoTime() < deadline) {
-                    onFx(() -> lsp.pullDiagnostics(py));
-                    Thread.sleep(1000);
-                }
+                // Asked again each time an answer of nothing comes back, once the server has answered initialize.
+                Await.holdsWithin(() -> lsp.isReady(py), Duration.ofSeconds(90));
+                int[] askedAt = {-1};
+                PulseChecks.holdsWithin(
+                        () -> {
+                            if (diags.values().stream().anyMatch(l -> !l.isEmpty())) {
+                                return true;
+                            }
+                            int heard = answers.get();
+                            if (heard != askedAt[0]) {
+                                askedAt[0] = heard;
+                                onFx(() -> lsp.pullDiagnostics(py));
+                            }
+                            return false;
+                        },
+                        Duration.ofSeconds(90));
                 check(diags.values().stream().anyMatch(l -> !l.isEmpty()), "diagnostics arrived");
                 return diags.values().stream()
                         .flatMap(List::stream)
@@ -739,7 +774,7 @@ class RealSshdProbeFxTest {
             try {
                 onFx(() -> lsp.openDocument(main, app, "java", text));
                 await("jdtls ready", 240, () -> seen.contains("READY"));
-                Thread.sleep(3000);
+                awaitOutline(lsp, main);
                 debug(dap, main, "java", app, seen, 3, () -> dap.configure(true, javaDebug));
                 // And Run (not Debug): jdtls resolves the class path on the host; the program runs there.
                 CompletableFuture<DapManager.ResolvedLaunch> launch = new CompletableFuture<>();
@@ -769,7 +804,7 @@ class RealSshdProbeFxTest {
                         "public class Loose {\n  public static void main(String[] a) {\n    int x = 1;\n    System.out.println(\"sum \" + (x + 1));\n  }\n}\n";
                 Path looseFile = Files.writeString(loose.resolve("Loose.java"), looseText);
                 onFx(() -> lsp.openDocument(looseFile, loose, "java", looseText));
-                Thread.sleep(3000);
+                awaitOutline(lsp, looseFile);
                 debug(dap, looseFile, "java", null, seen, 2, () -> dap.configure(true, javaDebug));
                 return String.join(" | ", seen);
             } finally {

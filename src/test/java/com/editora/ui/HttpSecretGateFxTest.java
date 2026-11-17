@@ -7,7 +7,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import com.editora.config.Settings;
@@ -103,12 +102,10 @@ class HttpSecretGateFxTest {
     }
 
     private void awaitIdle(EditorBuffer b) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (FxTestSupport.callOnFx(() -> coordinator.isRunningForTest(b))) {
-            assertTrue(System.nanoTime() < deadline, "the run never ended");
-            Thread.sleep(20);
-        }
-        Thread.sleep(150); // anything sent has reached the server by now
+        FxTestSupport.awaitFxCondition(
+                () -> coordinator.idleForTest(b), "the run to end", java.time.Duration.ofSeconds(30));
+        // Anything sent has reached the server by now: the run ends when its last answer is in, and the server
+        // records a request before it answers it.
         FxTestSupport.drainFx();
     }
 

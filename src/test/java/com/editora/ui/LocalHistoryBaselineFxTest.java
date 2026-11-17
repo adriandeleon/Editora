@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.Callable;
 
@@ -10,6 +11,7 @@ import com.editora.config.HistoryRevision;
 import com.editora.config.PathKeys;
 import com.editora.editor.EditorBuffer;
 import com.editora.history.HistoryBlobStore;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -171,13 +173,7 @@ class LocalHistoryBaselineFxTest {
     }
 
     private static void await(Callable<Boolean> condition, String what) throws Exception {
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
-        while (!condition.call()) {
-            if (System.nanoTime() > deadline) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(20);
-        }
+        Await.until(OnFx.checked(condition), what, Duration.ofSeconds(10));
     }
 
     /** Lets a record travel FX → history worker → FX, so "nothing was recorded" is a real observation. */

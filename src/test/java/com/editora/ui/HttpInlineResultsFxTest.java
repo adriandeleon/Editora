@@ -130,15 +130,16 @@ class HttpInlineResultsFxTest {
     }
 
     private static <T> T await(Callable<T> read, Predicate<T> done, String what) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
-        while (true) {
-            T value = FxTestSupport.callOnFx(read);
-            if (done.test(value)) {
-                return value;
-            }
-            assertTrue(System.nanoTime() < deadline, what + ": " + value);
-            Thread.sleep(20);
-        }
+        java.util.concurrent.atomic.AtomicReference<T> last = new java.util.concurrent.atomic.AtomicReference<>();
+        boolean held = com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.fxCondition(() -> {
+                    T value = read.call();
+                    last.set(value);
+                    return done.test(value);
+                }),
+                java.time.Duration.ofSeconds(WAIT_SECONDS));
+        assertTrue(held, what + ": " + last.get());
+        return last.get();
     }
 
     private static List<String> shown(EditorBuffer b) throws Exception {
@@ -199,6 +200,7 @@ class HttpInlineResultsFxTest {
             coordinator.runFile();
         });
         await(b::httpResults, r -> r.size() == 2, "both results");
+        FxTestSupport.awaitFxCondition(() -> coordinator.idleForTest(b), "the run to land");
         HttpClientPanel p = coordinator.panelForTest(b);
         assertEquals(
                 404,
@@ -211,8 +213,11 @@ class HttpInlineResultsFxTest {
             b.getNode().layout();
         });
         FxTestSupport.drainFx();
-        Node first = FxTestSupport.callOnFx(() -> resultLabel(b, "200 OK"));
-        assertNotNull(first, "the first request's result is a node in its paragraph");
+        // the result nodes are made by the layout pass that shows their paragraphs: looked for after each pulse
+        Node first = FxTestSupport.awaitFxValue(
+                () -> resultLabel(b, "200 OK"),
+                "the first request's result to be a node in its paragraph",
+                java.time.Duration.ofSeconds(10));
         FxTestSupport.runOnFx(() -> Event.fireEvent(b.getArea(), click(b, first)));
 
         assertEquals(

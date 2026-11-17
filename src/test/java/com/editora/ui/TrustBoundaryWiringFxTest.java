@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -11,6 +12,7 @@ import java.util.function.Consumer;
 import javafx.scene.control.Tab;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -85,6 +87,15 @@ class TrustBoundaryWiringFxTest {
         });
     }
 
+    /** {@link #echo()}, for a condition {@link Await} checks. */
+    private String echoNow() {
+        try {
+            return echo();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     private void click(EditorBuffer buffer, String link) throws Exception {
         Consumer<String> handler = FxTestSupport.field(buffer, "openUrlHandler");
         // A link is classified off the FX thread (it stats the target); here that look runs in place.
@@ -124,10 +135,8 @@ class TrustBoundaryWiringFxTest {
         assertTrue(echo().contains("outside the project"), echo());
 
         click(buffer, "smb://attacker/share");
-        for (int i = 0; i < 100 && !echo().contains("smb"); i++) {
-            Thread.sleep(20); // the refusal is said when the link's classification lands
-            FxTestSupport.drainFx();
-        }
+        // the refusal is said when the link's classification lands
+        Await.holdsWithin(() -> echoNow().contains("smb"), Duration.ofSeconds(2));
         assertTrue(echo().contains("smb"), echo());
 
         // The window-level opener (tool output URLs, plugin openUrl, update page) has no document: a
@@ -141,10 +150,8 @@ class TrustBoundaryWiringFxTest {
                 throw new IllegalStateException(e);
             }
         });
-        for (int i = 0; i < 100 && !echo().contains("setup.command"); i++) {
-            Thread.sleep(20); // the refusal is said when the link's classification lands
-            FxTestSupport.drainFx();
-        }
+        // the refusal is said when the link's classification lands
+        Await.holdsWithin(() -> echoNow().contains("setup.command"), Duration.ofSeconds(2));
         assertTrue(echo().contains("setup.command"), echo());
     }
 

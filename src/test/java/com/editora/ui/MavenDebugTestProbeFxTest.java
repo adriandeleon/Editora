@@ -3,11 +3,14 @@ package com.editora.ui;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import com.editora.dap.DapManager;
 import com.editora.dap.DebugAdapterLocator;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -17,7 +20,6 @@ import org.junit.jupiter.api.Timeout;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * MANUAL PROBE (opt-in, {@code @Tag("probe")}) — Debug Test on a real Maven project with a real Surefire 3 fork,
@@ -29,8 +31,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@code JAVA_HOME=<jdk 25> mvn test -Dtest=MavenDebugTestProbeFxTest -Dgroups=probe -Dlsp.probe=true
  * -Dsurefire.failIfNoSpecifiedTests=false}; {@code -Ddebug.probe.sample=<dir>} names another project whose
  * {@code src/test/java/com/example/shelf/ShelfTest.java} has {@code checkoutStopsAtTheLimit} at line 21,
- * {@code -Ddebug.probe.mvn=<path>} a Maven not on PATH, {@code -Ddebug.probe.importWait=<ms>} the time given
- * to jdtls to import the project (25 s). Needs {@code ~/.editora/plugins/lsp/java} and {@code dap/java}.
+ * {@code -Ddebug.probe.mvn=<path>} a Maven not on PATH, {@code -Ddebug.probe.importWait=<ms>} the longest wait given
+ * to jdtls to import the project (180 s; the wait ends at its ready line). Needs {@code ~/.editora/plugins/lsp/java} and {@code dap/java}.
  */
 @Tag("probe")
 @Tag("fx")
@@ -81,16 +83,25 @@ class MavenDebugTestProbeFxTest {
                     .trust(root); // the user's own project: jdtls loads its build (lsp.UntrustedBuilds)
             copyTree(sample, root);
             MainController c = fx.controller;
+            // What the status bar says, as it says it: jdtls's ready line ends its import of the Maven project.
+            List<String> said = new java.util.concurrent.CopyOnWriteArrayList<>();
+            FxTestSupport.runOnFx(
+                    () -> FxTestSupport.<javafx.scene.control.Label>field(FxTestSupport.field(c, "statusBar"), "echo")
+                            .textProperty()
+                            .addListener((o, was, now) -> said.add(String.valueOf(now))));
             Path test = root.resolve("src/test/java/com/example/shelf/ShelfTest.java");
             FxTestSupport.runOnFx(() -> c.openAndNavigate(test, 22)); // the assertEquals of checkoutStopsAtTheLimit
             DebugCoordinator debug = FxTestSupport.field(c, "debugCoordinator");
-            boolean effective = false;
-            for (int i = 0; i < 600 && !effective; i++) {
-                effective = FxTestSupport.callOnFx(debug::debugEffective);
-                Thread.sleep(100);
-            }
-            assertTrue(effective, "Java debugging never became available (jdtls + java-debug)");
-            Thread.sleep(Long.getLong("debug.probe.importWait", 25_000)); // jdtls imports the Maven project
+            OnFx.until(
+                    debug::debugEffective,
+                    "Java debugging to become available (jdtls + java-debug)",
+                    Duration.ofSeconds(60));
+            String ready =
+                    com.editora.i18n.Messages.tr("status.lsp.ready", "\u0000").split("\u0000", -1)[1];
+            Await.until(
+                    () -> said.stream().anyMatch(line -> line.endsWith(ready)),
+                    "jdtls to import the Maven project",
+                    Duration.ofMillis(Long.getLong("debug.probe.importWait", 180_000)));
             FxTestSupport.runOnFx(() -> c.activeBuffer().toggleBreakpoint(22));
 
             DapManager dap = FxTestSupport.field(c, "dapManager");
@@ -102,14 +113,8 @@ class MavenDebugTestProbeFxTest {
                 assertEquals("checkoutStopsAtTheLimit", target.methodName());
                 navigation.debugSingleTest(target);
             });
-            DapManager.State state = null;
-            for (int i = 0; i < 1800; i++) {
-                state = FxTestSupport.callOnFx(dap::state);
-                if (state == DapManager.State.SUSPENDED) {
-                    break;
-                }
-                Thread.sleep(100);
-            }
+            OnFx.holdsWithin(() -> dap.state() == DapManager.State.SUSPENDED, Duration.ofSeconds(180));
+            DapManager.State state = FxTestSupport.callOnFx(dap::state);
             long took = System.currentTimeMillis() - t0;
             System.out.println("[MavenDebugTestProbe] state=" + state + " after " + took + " ms");
             assertEquals(
@@ -124,11 +129,8 @@ class MavenDebugTestProbeFxTest {
                             .findFirst()
                             .orElseThrow();
             FxTestSupport.runOnFx(debug::stop);
-            boolean running = true;
-            for (int i = 0; i < 300 && running; i++) {
-                running = FxTestSupport.callOnFx(() -> dap.isActive() || maven.isRunning());
-                Thread.sleep(100);
-            }
+            OnFx.holdsWithin(() -> !dap.isActive() && !maven.isRunning(), Duration.ofSeconds(30));
+            boolean running = FxTestSupport.callOnFx(() -> dap.isActive() || maven.isRunning());
             assertFalse(running, "Stop ended the session and the Maven run");
         } finally {
             fx.dispose();

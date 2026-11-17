@@ -408,33 +408,42 @@ final class FxWindowFixture implements AutoCloseable {
     }
 
     private static void deleteRecursively(Path root) throws IOException {
-        IOException failure = null;
-        // A language server asked to stop may still write its workspace under root for a moment (jdtls's .metadata):
-        // a failed pass waits a little before the next, for up to about five seconds, rather than racing it.
-        for (int attempt = 0; attempt < 50 && Files.exists(root); attempt++) {
-            if (failure != null) {
-                try {
-                    Thread.sleep(100);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            }
-            try (Stream<Path> paths = Files.walk(root)) {
-                for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
-                    Files.deleteIfExists(path);
-                }
-                failure = null;
-            } catch (IOException e) {
-                failure = e;
-            } catch (UncheckedIOException e) {
-                // Files.walk wraps a file disappearing during traversal. Retry the whole tree; a persistent
-                // resource leak still fails below when the root remains after the bounded attempts.
-                failure = e.getCause();
+        IOException[] failure = {null};
+        java.util.function.BooleanSupplier deleted = () -> {
+            failure[0] = deletePass(root);
+            return !Files.exists(root);
+        };
+        // A language server asked to stop may still write its workspace under root for a moment (jdtls's .metadata),
+        // and nothing tells when it is done: a failed pass is tried again after each FX pulse, for up to about five
+        // seconds, rather than racing it (QUAL-07: no sleep).
+        if (!deleted.getAsBoolean() && !javafx.application.Platform.isFxApplicationThread()) {
+            try {
+                com.editora.testkit.Await.holdsWithin(deleted, java.time.Duration.ofSeconds(5));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
         }
         if (Files.exists(root)) {
-            throw failure == null ? new IOException("Failed to delete test directory " + root) : failure;
+            throw failure[0] == null ? new IOException("Failed to delete test directory " + root) : failure[0];
+        }
+    }
+
+    /** One pass over the tree, deepest first; the failure that stopped it, or null. */
+    private static IOException deletePass(Path root) {
+        if (!Files.exists(root)) {
+            return null;
+        }
+        try (Stream<Path> paths = Files.walk(root)) {
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(path);
+            }
+            return null;
+        } catch (IOException e) {
+            return e;
+        } catch (UncheckedIOException e) {
+            // Files.walk wraps a file disappearing during traversal. Retry the whole tree; a persistent
+            // resource leak still fails when the root remains after the bounded attempts.
+            return e.getCause();
         }
     }
 }

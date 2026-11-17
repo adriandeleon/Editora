@@ -77,16 +77,22 @@ class FxCallTest {
         CountDownLatch release = new CountDownLatch(1);
         AtomicInteger applied = new AtomicInteger();
         // Started within the timeout, finished within the second period: the real result, not a timeout.
+        CountDownLatch secondPeriod = new CountDownLatch(1);
         assertEquals(
                 1,
                 FxCall.call(
                         fx,
                         () -> false,
                         () -> {
-                            sleep(450);
+                            try {
+                                secondPeriod.await(); // still running when the first period runs out
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
                             return applied.incrementAndGet();
                         },
-                        300));
+                        300,
+                        secondPeriod::countDown));
 
         FxCall.StillRunning running = assertThrows(
                 FxCall.StillRunning.class,
@@ -104,13 +110,5 @@ class FxCallTest {
                         50));
         assertTrue(running.getMessage().contains("do not repeat it"), running.getMessage());
         release.countDown();
-    }
-
-    private static void sleep(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
     }
 }

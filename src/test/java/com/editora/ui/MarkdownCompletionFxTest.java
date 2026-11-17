@@ -39,6 +39,8 @@ class MarkdownCompletionFxTest {
         Files.writeString(dir.resolve("docs/my notes.md"), "# Notes\n");
         Path file = dir.resolve("README.md");
         Files.writeString(file, "# Readme\n\n## Set up\n\n");
+        // A structural offer is worked out in place, so it has landed once the FX thread has drained.
+        com.editora.editor.completion.BufferCompletion.offerRunnerForTest(Runnable::run);
         fx = FxWindowFixture.create();
         FxTestSupport.runOnFx(() -> {
             javafx.stage.Stage stage = FxTestSupport.field(fx.controller, "stage");
@@ -47,7 +49,14 @@ class MarkdownCompletionFxTest {
             stage.show();
             fx.controller.openAndNavigate(file, 0);
         });
-        settle(1000);
+        OnFx.until(
+                () -> {
+                    EditorBuffer active =
+                            (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
+                    return active != null && file.equals(active.getPath()) && !active.isLoading();
+                },
+                "README.md to open");
+        settle();
         buf = (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
         assertEquals(file, buf.getPath());
         actions = FxTestSupport.field(buf, "completionActions");
@@ -59,10 +68,10 @@ class MarkdownCompletionFxTest {
             FxTestSupport.runOnFx(buf::markClean);
             fx.dispose();
         }
+        com.editora.editor.completion.BufferCompletion.offerRunnerForTest(null);
     }
 
-    private static void settle(int ms) throws Exception {
-        Thread.sleep(ms);
+    private static void settle() throws Exception {
         FxTestSupport.drainFx();
         FxTestSupport.drainFx();
     }
@@ -77,7 +86,7 @@ class MarkdownCompletionFxTest {
             a.requestFocus();
             FxTestSupport.call(actions, "updateCompletion", new Class<?>[] {CodeArea.class, boolean.class}, a, true);
         });
-        settle(100);
+        settle();
         return FxTestSupport.callOnFx(() -> {
             if (!buf.completionShowing()) {
                 return List.of();

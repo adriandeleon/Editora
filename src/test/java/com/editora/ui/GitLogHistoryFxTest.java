@@ -178,10 +178,12 @@ class GitLogHistoryFxTest {
             // Eight commits in pages of three all fit on screen, so the end of the loaded rows is always in
             // view: the pages follow one another without a click until the history is exhausted.
             Log log = Log.open(async, repo, repo.root.resolve("work.txt"), 3, true);
-            for (int i = 0; i < 100 && log.subjects().size() < 8; i++) {
-                Thread.sleep(50);
-                log.settle();
-            }
+            com.editora.testkit.Await.holdsWithin(
+                    FxTestSupport.unchecked(() -> {
+                        log.settle();
+                        return log.subjects().size() >= 8;
+                    }),
+                    java.time.Duration.ofSeconds(5));
             assertEquals(commitSubjects(8, 1), log.subjects());
             assertFalse(FxTestSupport.callOnFx(log.panel::hasMore));
         }
@@ -348,17 +350,16 @@ class GitLogHistoryFxTest {
 
     private static Object awaitTab(MainController controller, Class<?> type) throws Exception {
         EditorArea area = FxTestSupport.field(controller, "editorArea");
-        for (int i = 0; i < 120; i++) {
-            Object data = FxTestSupport.callOnFx(() -> {
-                Tab selected = area.selectedTab();
-                return selected == null ? null : selected.getUserData();
-            });
-            if (type.isInstance(data)) {
-                return data;
-            }
-            Thread.sleep(50);
-        }
-        return null;
+        Object[] found = {null};
+        com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.fxCondition(() -> {
+                    Tab selected = area.selectedTab();
+                    Object data = selected == null ? null : selected.getUserData();
+                    found[0] = type.isInstance(data) ? data : null;
+                    return found[0] != null;
+                }),
+                java.time.Duration.ofSeconds(6));
+        return found[0];
     }
 
     @Test
@@ -459,17 +460,16 @@ class GitLogHistoryFxTest {
     private static DirectoryReviewPane awaitOther(MainController controller, DirectoryReviewPane previous)
             throws Exception {
         EditorArea area = FxTestSupport.field(controller, "editorArea");
-        for (int i = 0; i < 120; i++) {
-            Object data = FxTestSupport.callOnFx(() -> {
-                Tab selected = area.selectedTab();
-                return selected == null ? null : selected.getUserData();
-            });
-            if (data instanceof DirectoryReviewPane review && review != previous) {
-                return review;
-            }
-            Thread.sleep(50);
-        }
-        return null;
+        Object[] found = {null};
+        com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.fxCondition(() -> {
+                    Tab selected = area.selectedTab();
+                    Object data = selected == null ? null : selected.getUserData();
+                    found[0] = data instanceof DirectoryReviewPane && data != previous ? data : null;
+                    return found[0] != null;
+                }),
+                java.time.Duration.ofSeconds(6));
+        return (DirectoryReviewPane) found[0];
     }
 
     private static List<String> labels(DirectoryReviewPane review) {

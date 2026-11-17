@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.Callable;
-import java.util.concurrent.TimeUnit;
 
 import javafx.scene.control.Tab;
 
@@ -14,7 +13,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 
 /**
  * Clicking the blame annotation of a line whose commit predates a move of the file. Blame follows the rename;
@@ -78,10 +76,6 @@ class GitBlameRenamedFileFxTest {
     }
 
     private static void await(String what, Callable<Boolean> condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-        while (!FxTestSupport.callOnFx(condition)) {
-            assertFalse(System.nanoTime() > deadline, "timed out waiting for " + what);
-            Thread.sleep(25);
-        }
+        FxTestSupport.awaitFxCondition(condition, what, java.time.Duration.ofSeconds(15));
     }
 }

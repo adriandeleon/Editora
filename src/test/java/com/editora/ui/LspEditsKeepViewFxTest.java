@@ -58,19 +58,21 @@ class LspEditsKeepViewFxTest {
             buf.setContent(source);
             return buf;
         });
-        settle();
+        settle(b);
         FxTestSupport.runOnFx(() -> {
             CodeArea area = b.getArea();
             area.moveTo(300, 8);
             area.showParagraphAtTop(290);
         });
-        settle();
+        settle(b);
         return b;
     }
 
-    private static void settle() throws Exception {
+    /** The edit's settled-edit work has run and the view has been laid out after it. */
+    private static void settle(EditorBuffer b) throws Exception {
         FxTestSupport.drainFx();
-        Thread.sleep(400);
+        OnFx.untilEditsSettled(b);
+        OnFx.pulses(2);
         FxTestSupport.drainFx();
     }
 
@@ -97,7 +99,7 @@ class LspEditsKeepViewFxTest {
         int lastLine = lines.length - 1;
 
         FxTestSupport.runOnFx(() -> b.applyLspEdits(List.of(new LspTextEdit(0, 0, lastLine, 0, formatted))));
-        settle();
+        settle(b);
 
         assertEquals(formatted, FxTestSupport.callOnFx(b::getContent));
         assertEquals(300, caretLine(b), "not the end of the file");
@@ -118,7 +120,7 @@ class LspEditsKeepViewFxTest {
         }
 
         FxTestSupport.runOnFx(() -> b.applyLspEdits(edits));
-        settle();
+        settle(b);
 
         assertEquals(300, caretLine(b));
         assertLine300StillVisible(b, 300);
@@ -135,7 +137,7 @@ class LspEditsKeepViewFxTest {
         String selected = FxTestSupport.callOnFx(() -> b.getArea().getSelectedText());
 
         FxTestSupport.runOnFx(() -> b.applyLspEdits(List.of(new LspTextEdit(3, 0, 3, 0, "import java.util.Map;\n"))));
-        settle();
+        settle(b);
 
         assertEquals(301, caretLine(b), "the same line, one further down — not the import block");
         assertEquals(selected, FxTestSupport.callOnFx(() -> b.getArea().getSelectedText()), "selection kept");

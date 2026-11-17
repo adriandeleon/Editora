@@ -335,16 +335,6 @@ class FindLargeDocumentFxTest {
 
     /** Polls a value on the FX thread until it is there: rendering has no barrier to wait on. */
     private static <T> T await(java.util.concurrent.Callable<T> probe) throws Exception {
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
-        while (true) {
-            T value = FxTestSupport.callOnFx(probe);
-            if (value != null) {
-                return value;
-            }
-            if (System.nanoTime() > deadline) {
-                throw new AssertionError("timed out waiting for the editor");
-            }
-            Thread.sleep(25);
-        }
+        return FxTestSupport.awaitFxValue(probe, "the editor", java.time.Duration.ofSeconds(30));
     }
 }

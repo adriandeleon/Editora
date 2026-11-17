@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -27,6 +28,7 @@ import com.editora.config.NoteScope;
 import com.editora.config.PersonalNote;
 import com.editora.config.TextAnchor;
 import com.editora.git.GitService;
+import com.editora.testkit.Await;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -294,9 +296,12 @@ class ProjectMapCardsExploreFxTest {
             await("m5's by Bob", () -> m5.lastChangeText().startsWith(lastChange("Bob")));
 
             int runs = service.lastChangeRunsForTest();
+            int asksBefore = LAST_CHANGE_ASKS.get();
             FxTestSupport.runOnFx(
                     () -> FxTestSupport.<MapCards>field(map.view(), "cards").refresh(false));
-            Thread.sleep(400);
+            int asked = LAST_CHANGE_ASKS.get();
+            assertTrue(asked > asksBefore, "the refresh asks each card's last change again");
+            Await.until(() -> LAST_CHANGE_ANSWERS.get() >= asked, "every card's ask answered");
             FxTestSupport.drainFx();
             assertEquals(runs, service.lastChangeRunsForTest(), "asked again, the answers come from the cache");
 
@@ -355,8 +360,9 @@ class ProjectMapCardsExploreFxTest {
                 assertTrue(structure.outlinedByServer(demo));
                 structure.refresh(java.util.Set.of(demo));
             });
-            FxTestSupport.drainFx();
-            Thread.sleep(200);
+            // the refresh's look at the file ran on the outline thread, and its answer came back to the FX thread
+            ExecutorService loader = FxTestSupport.field(structure, "loader");
+            loader.submit(() -> null).get(10, TimeUnit.SECONDS);
             FxTestSupport.drainFx();
             assertEquals(1, asked.size(), "an unchanged file is not asked about again");
 
@@ -540,6 +546,13 @@ class ProjectMapCardsExploreFxTest {
         }
     }
 
+    /** The last-change asks the cards made through {@link #followCode}, and the answers they got. */
+    private static final java.util.concurrent.atomic.AtomicInteger LAST_CHANGE_ASKS =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    private static final java.util.concurrent.atomic.AtomicInteger LAST_CHANGE_ANSWERS =
+            new java.util.concurrent.atomic.AtomicInteger();
+
     private static ProjectMapView.FollowCode followCode(GitService service) {
         return new ProjectMapView.FollowCode() {
             @Override
@@ -556,7 +569,11 @@ class ProjectMapCardsExploreFxTest {
             @Override
             public void lastChange(
                     Path file, int startLine, int endLine, Consumer<GitService.@Nullable LastChange> found) {
-                service.lastChange(file, startLine, endLine, found);
+                LAST_CHANGE_ASKS.incrementAndGet();
+                service.lastChange(file, startLine, endLine, change -> {
+                    found.accept(change);
+                    LAST_CHANGE_ANSWERS.incrementAndGet();
+                });
             }
         };
     }

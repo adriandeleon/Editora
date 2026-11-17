@@ -28,7 +28,8 @@ message catalogs in step (`MessagesTest`), every shipped dependency named in `NO
 (`ChildLocalePolicyTest`), the workflows' pinned actions (`ReleaseSupplyChainTest`), the `fx` tag on every
 test class that starts the toolkit (`FxTestTagsTest`), the shape of `CHANGELOG.md` (`ChangelogFormatTest`), colours
 from the state tokens, no fixed colour in a component rule and no contrast ratio in an FX test
-(`StyleColourGuardTest`), no NullAway report suppressed in `src/main` (`NullAwaySuppressionTest`). A change anywhere can
+(`StyleColourGuardTest`), no NullAway report suppressed in `src/main` (`NullAwaySuppressionTest`), no test that sleeps
+(`NoSleepInTestsTest`, see [waiting](#waiting-tests-do-not-sleep)). A change anywhere can
 break one, and the narrow tests for the change never run them, so they failed first in CI: in the week to
 12 November 2026 they were the only failure in 17 of the 35 pull-request runs that failed, each a
 fifteen-minute run spent on something that takes seconds to check.
@@ -39,7 +40,7 @@ They carry `@Tag("guard")`. Run them before every push:
 mvn test -Dgroups=guard
 ```
 
-That is 31 classes and 119 tests, about half a minute once the project is compiled, most of it Maven
+That is 32 classes and 120 tests, about half a minute once the project is compiled, most of it Maven
 starting.
 
 A new test of this kind gets the tag. It qualifies when it is pure (no toolkit), reads source files,
@@ -77,6 +78,35 @@ prototype platform's input/rendering limitations don't apply.
   **`AsyncTestScope`**. Use its worker/Future, latch, and FX barriers instead of `Thread.sleep`; the
   scope reports exceptions from its threads and uncaught FX callbacks before closing every owned
   resource.
+### Waiting: tests do not sleep
+
+QUAL-07 (Pauta 6.0.1): no test calls `Thread.sleep`, a `TimeUnit` sleep or a timed `LockSupport` park, and
+`NoSleepInTestsTest` (guard) fails on one anywhere in `src/test/java`. A sleep waits for a guess at how long
+something takes: too short on a loaded machine (a flake), too long everywhere else. Wait on the thing itself,
+in this order:
+
+1. **The event.** A latch or `CompletableFuture` the code or a test hook completes, a listener, a process's
+   output line or `onExit()`, a port that accepts, `AsyncTestScope.await` / `awaitWorker` / `awaitFx`,
+   `SharedConfig.awaitWrites()`, `drainFx()` after work that answers on the FX thread, `OffFx.runnerForTest`
+   (or `OffFxInPlace`) so off-FX work lands before the call returns, `EditorBuffer.settlingForTest()` /
+   `settledEditsPendingForTest()` for the settled-edit milestones, a thread's `join()`.
+2. **`com.editora.testkit.Await`**, for state nothing announces (a row the FX thread added, a line a fake
+   recorded): `Await.until(() -> cond, "what")`, `holdsWithin`, `value`. It re-checks after each FX pulse while
+   the toolkit runs, at once when a fake calls `Await.changed()`, and otherwise every 20 ms: the one wait on a
+   clock, for a pure test with no event or an FX thread held on purpose. Never call it on the FX thread. The
+   package-local wrappers (`FxTestSupport.awaitFxCondition`, `OnFx`, `PulseChecks`, `EventuallyFx`, `FxPulses`)
+   read the condition on the FX thread or count pulses on top of it.
+
+- **"Nothing happened" needs a witness**, not a pause: wait for something that proves it would have happened by
+  now (the worker drained, the debounce's timer stopped, a later request answered in order), and add a small
+  documented `…ForTest` seam when none exists.
+- **A fake that must be slow** holds on a latch the test releases (in a `finally` or `scope.onClose`).
+- **A file time that must differ** is set with `Files.setLastModifiedTime`, or the code takes a test clock
+  (`DiskFacts.clockForTest`, `GitService.setNanoClockForTest`).
+- A sleep inside a script or program a test runs (Python's `time.sleep`, a shell `sleep 60`) is not the test
+  waiting and is allowed; a Java program compiled from a test's text block waits with `join(ms)` or a monitor so
+  the guard stays exact.
+
 - Persistence tests should hold work at a real commit boundary and assert the surviving bytes and editor
   state, rather than merely checking that an exception was thrown. The save-ordering, atomic-write, Replace
   in Files, and Local History restore tests use the app-wide document-write sequencer and injected I/O
@@ -440,7 +470,7 @@ garbage collection it was meant to race: hold the FX thread), `LocalHistoryRecor
 collection resets the store's permissions and so repaired the store the test had broken: let the first
 one run before breaking it) and `FileWorkflowSaveLifecycleFxTest` (the tab-open "changed on disk?" check
 answered with Keep Mine). To look for more, run `mvn -DforkCount=4 verify`, or pin a run to one core with
-`taskset -c 0` and add a short sleep on the test thread where a test waits.
+`taskset -c 0` and, in a local change you do not commit, slow the test thread down where a test waits.
 
 A new push to a pull request cancels the run in progress for the previous push, and every test job
 uploads `target/surefire-reports` as an artifact (the Linux shards always, the other lanes when they fail).

@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -30,6 +31,7 @@ import com.editora.terminal.TerminalCursor;
 import com.editora.terminal.TerminalPalette;
 import com.editora.terminal.TerminalPalettes;
 import com.editora.terminal.TerminalThemes;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -895,8 +897,19 @@ class TerminalPanelFxTest {
             return null;
         });
         assertEquals(2, (int) fx(() -> panel.tabsForTest().getSelectionModel().getSelectedIndex()));
-        Thread.sleep(200);
-        assertTrue(shells.stream().allMatch(c -> c.written().isEmpty()), "the shells got nothing");
+        // The emulators write on their own threads, so a leaked chord would arrive late: type a key into every
+        // terminal after the chords and wait for those, then nothing else may be there.
+        fx(() -> {
+            for (javafx.scene.control.Tab tab : List.copyOf(panel.tabsForTest().getTabs())) {
+                panel.tabsForTest().getSelectionModel().select(tab);
+                Event.fireEvent(
+                        panel.activeView(),
+                        new KeyEvent(KeyEvent.KEY_TYPED, "z", "z", KeyCode.UNDEFINED, false, false, false, false));
+            }
+            return null;
+        });
+        await(() -> shells.stream().allMatch(c -> c.written().contains("z")), "the key sent after the chords");
+        assertTrue(shells.stream().allMatch(c -> c.written().equals("z")), "the shells got nothing");
     }
 
     @Test
@@ -930,8 +943,10 @@ class TerminalPanelFxTest {
                     new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.V, !mac, !mac, false, mac));
             return null;
         });
-        Thread.sleep(200);
-        assertEquals("", shells.get(0).written(), "nothing reached the shell");
+        // A paste that leaked would reach the shell on the emulator's thread: type a key after it and wait for
+        // that, then nothing else may be there.
+        typeMarker();
+        assertEquals("z", shells.get(0).written(), "nothing reached the shell");
     }
 
     @Test
@@ -1071,8 +1086,8 @@ class TerminalPanelFxTest {
             return null;
         });
         assertEquals(1, asked.size(), "asked");
-        Thread.sleep(200);
-        assertEquals("", shells.get(0).written(), "and Cancel pasted nothing");
+        typeMarker(); // a paste would have reached the shell before the key typed after it
+        assertEquals("z", shells.get(0).written(), "and Cancel pasted nothing");
 
         shells.get(0).emit("\u001b[?2004h"); // bash turns bracketed paste on
         await(() -> call(() -> panel.activeView().getDisplay().isBracketedPaste()), "bracketed paste");
@@ -1134,7 +1149,10 @@ class TerminalPanelFxTest {
             return null;
         });
         await(() -> call(() -> panel.activeView() != null), "the quiet shell started");
-        Thread.sleep(200);
+        // The shell opens on another thread and is attached in an FX turn after: wait for it to open, then let the
+        // turns it queued and the pulse a focus change lands on run.
+        await(() -> !shells.isEmpty(), "the quiet shell's connection");
+        FxPulses.await(2);
         assertTrue(fx(editor::isFocused), "a quiet start leaves the editor the keyboard");
 
         fx(() -> {
@@ -1258,8 +1276,19 @@ class TerminalPanelFxTest {
             return null;
         });
         assertEquals(1, fx(panel::terminalCount));
-        Thread.sleep(200);
+        FxPulses.await(2); // the turns the start queued, and the pulse a focus change lands on
         assertTrue(fx(editor::isFocused), "the editor kept the keyboard");
+    }
+
+    /** Types {@code z} into the active terminal and waits until it reached the first shell. */
+    private void typeMarker() throws Exception {
+        fx(() -> {
+            Event.fireEvent(
+                    panel.activeView(),
+                    new KeyEvent(KeyEvent.KEY_TYPED, "z", "z", KeyCode.UNDEFINED, false, false, false, false));
+            return null;
+        });
+        await(() -> shells.get(0).written().contains("z"), "the key typed after it");
     }
 
     private void show(TerminalPanel.Shells source, TerminalPanel.CloseGuard guard, Path dir) throws Exception {
@@ -1306,11 +1335,6 @@ class TerminalPanelFxTest {
     }
 
     private static void await(BooleanSupplier condition, String what) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (System.nanoTime() < deadline) {
-            if (condition.getAsBoolean()) return;
-            Thread.sleep(20);
-        }
-        throw new AssertionError("timed out waiting for " + what);
+        Await.until(condition, what, Duration.ofSeconds(10));
     }
 }

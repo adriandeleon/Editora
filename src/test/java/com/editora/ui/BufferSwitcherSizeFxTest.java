@@ -9,6 +9,7 @@ import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.layout.VBox;
 
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -65,10 +66,8 @@ class BufferSwitcherSizeFxTest {
             return f;
         });
         ObservableList<Path> found = FxTestSupport.field(finder, "items");
-        for (int i = 0; i < 200 && found.size() < names.size(); i++) {
-            Thread.sleep(20);
-            FxTestSupport.drainFx();
-        }
+        Await.holdsWithin(() -> found.size() >= names.size(), java.time.Duration.ofSeconds(4));
+        FxTestSupport.drainFx();
         assertEquals(names.size(), found.size(), "the finder lists the folder");
         double[] finderSize = measure(FxTestSupport.field(finder, "content"), FxTestSupport.field(finder, "list"));
         FxTestSupport.runOnFx(finder::hide);
@@ -95,25 +94,30 @@ class BufferSwitcherSizeFxTest {
      * later pulse than the one that shows the card, so this waits for a filled row with a height.
      */
     private static double[] measure(VBox card, ListView<?> list) throws Exception {
-        double[] size = {0, 0, 0};
-        for (int i = 0; i < 100 && size[2] == 0; i++) {
-            FxTestSupport.drainFx();
-            size = FxTestSupport.callOnFx(() -> {
-                card.applyCss();
-                card.layout();
-                double row = list.lookupAll(".list-cell").stream()
-                        .map(n -> (ListCell<?>) n)
-                        .filter(c -> !c.isEmpty())
-                        .mapToDouble(ListCell::getHeight)
-                        .filter(h -> h > 0)
-                        .findFirst()
-                        .orElse(0);
-                return new double[] {card.getWidth(), card.getHeight(), row};
-            });
-            if (size[2] == 0) {
-                Thread.sleep(20);
-            }
-        }
+        double[][] measured = {{0, 0, 0}};
+        Await.holdsWithin(
+                () -> {
+                    try {
+                        FxTestSupport.drainFx();
+                        measured[0] = FxTestSupport.callOnFx(() -> {
+                            card.applyCss();
+                            card.layout();
+                            double row = list.lookupAll(".list-cell").stream()
+                                    .map(n -> (ListCell<?>) n)
+                                    .filter(c -> !c.isEmpty())
+                                    .mapToDouble(ListCell::getHeight)
+                                    .filter(h -> h > 0)
+                                    .findFirst()
+                                    .orElse(0);
+                            return new double[] {card.getWidth(), card.getHeight(), row};
+                        });
+                        return measured[0][2] != 0;
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                },
+                java.time.Duration.ofSeconds(2));
+        double[] size = measured[0];
         assertFalse(size[2] == 0, "a row was laid out");
         return size;
     }

@@ -1,10 +1,12 @@
 package com.editora.ui;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -80,11 +82,8 @@ class XmlFormatCoordinatorFxTest {
     }
 
     private void waitForStatus(String message) throws Exception {
-        long until = System.currentTimeMillis() + 10_000;
-        while (!status.contains(message) && System.currentTimeMillis() < until) {
-            FxTestSupport.runOnFx(() -> {});
-            Thread.sleep(20);
-        }
+        FxTestSupport.drainFx();
+        Await.holdsWithin(() -> status.contains(message), Duration.ofSeconds(10));
         assertTrue(status.contains(message), String.valueOf(status));
     }
 

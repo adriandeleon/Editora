@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
@@ -52,14 +53,15 @@ class ProjectPanelIncrementalRefreshFxTest {
     }
 
     private static <T> T await(Callable<T> probe) throws Exception {
-        for (int i = 0; i < 250; i++) {
-            T value = FxTestSupport.callOnFx(probe::call);
-            if (value != null) {
-                return value;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("timed out");
+        List<T> value = new java.util.ArrayList<>(java.util.Collections.singletonList(null));
+        PulseChecks.until(
+                () -> {
+                    value.set(0, FxTestSupport.callOnFx(probe::call));
+                    return value.get(0) != null;
+                },
+                "timed out",
+                Duration.ofSeconds(5));
+        return value.get(0);
     }
 
     private static TreeItem<Path> child(TreeItem<Path> parent, Path path) {

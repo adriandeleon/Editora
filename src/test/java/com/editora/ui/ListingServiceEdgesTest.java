@@ -164,30 +164,19 @@ class ListingServiceEdgesTest {
                 Thread.currentThread().interrupt();
             }
         })) {
-            Thread canceller = new Thread(() -> {
-                try {
-                    Thread.sleep(150);
-                } catch (InterruptedException e) {
-                    return;
-                }
+            // A load is asked whether it was superseded only while it waits for the listing: the newer load comes then.
+            ListingService.Listed cancelled = service.list(folder, false, () -> {
                 superseded.set(true);
+                return true;
             });
-            canceller.start();
-            ListingService.Listed cancelled = service.list(folder, false, superseded::get);
-            canceller.join();
+            assertTrue(superseded.get(), "it was waiting when the newer load came");
             assertTrue(cancelled.cancelled(), "a newer load came: this one stops waiting");
             assertNull(cancelled.items());
-            Thread releaser = new Thread(() -> {
-                try {
-                    Thread.sleep(150);
-                } catch (InterruptedException e) {
-                    return;
-                }
+            // The listing is let go once the next load is waiting on it (it is asked while it waits).
+            ListingService.Listed next = service.list(folder, false, () -> {
                 release.countDown();
-            });
-            releaser.start();
-            ListingService.Listed next = service.list(folder, false, () -> false); // joins it while it still runs
-            releaser.join();
+                return false;
+            }); // joins it while it still runs
             assertEquals(List.of("b.txt"), names(next));
             assertEquals(1, service.listedForTest.get(), "the running listing's answer, not a second listing");
         }
@@ -217,18 +206,12 @@ class ListingServiceEdgesTest {
             assertTrue(inFirst.await(10, TimeUnit.SECONDS), "the first listing is under way");
             Files.writeString(folder.resolve("new.txt"), "n");
             service.invalidate(List.of(folder)); // the watcher's event, while that listing runs
-            Thread releaser = new Thread(() -> {
-                try {
-                    Thread.sleep(150);
-                } catch (InterruptedException e) {
-                    return;
-                }
+            // The first listing is let go once this load is waiting on it (it is asked while it waits).
+            ListingService.Listed joined = service.list(folder, false, () -> {
                 release.countDown();
-            });
-            releaser.start();
-            ListingService.Listed joined = service.list(folder, false, () -> false); // joins the running one
+                return false;
+            }); // joins the running one
             first.join();
-            releaser.join();
             assertEquals(2, listed.get(), "the joining load listed again once the earlier listing finished");
             assertEquals(List.of("new.txt", "old.txt"), names(joined));
             assertEquals(1, early.size());

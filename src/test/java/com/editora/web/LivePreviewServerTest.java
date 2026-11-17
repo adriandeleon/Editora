@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -693,7 +694,8 @@ class LivePreviewServerTest {
         var pending =
                 client.sendAsync(HttpRequest.newBuilder(URI.create(url)).build(), HttpResponse.BodyHandlers.ofString());
         try {
-            Thread.sleep(700); // well past the time an unblocked answer takes
+            // the request has reached the server, which waits for a permit
+            Await.until(permits::hasQueuedThreads, "the page waits for a permit");
             assertFalse(pending.isDone(), "no permit, no in-memory page");
         } finally {
             permits.release(LivePreviewServer.MAX_BUFFERED);
@@ -734,13 +736,12 @@ class LivePreviewServerTest {
                 out.flush();
                 held.add(s); // never read
             }
-            long deadline = System.nanoTime() + 10_000_000_000L;
-            int stillTaken = 0;
-            while (stillTaken < 10) { // all taken, and still taken half a second later: those writes are stuck
-                stillTaken = permits.availablePermits() == 0 ? stillTaken + 1 : 0;
-                assertTrue(System.nanoTime() < deadline, "the stalled clients hold every permit");
-                Thread.sleep(50);
-            }
+            // All taken. Each is held until its 12 MB body is written, which a client that never reads never lets
+            // finish: once taken, they stay taken.
+            Await.until(
+                    () -> permits.availablePermits() == 0,
+                    "the stalled clients hold every permit",
+                    java.time.Duration.ofSeconds(10));
             long t0 = System.nanoTime();
             HttpResponse<String> busy = get(url);
             long waited = (System.nanoTime() - t0) / 1_000_000;
@@ -753,11 +754,10 @@ class LivePreviewServerTest {
                 s.close();
             }
         }
-        long deadline = System.nanoTime() + 10_000_000_000L;
-        while (permits.availablePermits() < LivePreviewServer.MAX_BUFFERED) {
-            assertTrue(System.nanoTime() < deadline, "the permits come back once those clients are gone");
-            Thread.sleep(20);
-        }
+        Await.until(
+                () -> permits.availablePermits() >= LivePreviewServer.MAX_BUFFERED,
+                "the permits come back once those clients are gone",
+                java.time.Duration.ofSeconds(10));
         HttpResponse<String> again = get(url);
         assertEquals(200, again.statusCode());
         assertTrue(again.body().contains("small"));

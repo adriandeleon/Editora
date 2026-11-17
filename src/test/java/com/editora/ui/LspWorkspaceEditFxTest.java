@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.CopyOption;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -22,6 +23,7 @@ import com.editora.io.DocumentWriteSequencer;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.LspTestHooks;
 import com.editora.lsp.WorkspaceEditMapper;
+import com.editora.testkit.Await;
 import com.editora.text.LspTextEdit;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -322,6 +324,15 @@ class LspWorkspaceEditFxTest {
         });
     }
 
+    /** The file's text, or "" while it is not there (or is being replaced). */
+    private static String readOrEmpty(Path file) {
+        try {
+            return Files.exists(file) ? Files.readString(file) : "";
+        } catch (java.io.IOException e) {
+            return "";
+        }
+    }
+
     private CompletableFuture<Boolean> applyAsync(WorkspaceEditMapper.Mapped mapped) throws Exception {
         CompletableFuture<Boolean> result = new CompletableFuture<>();
         FxTestSupport.runOnFx(() -> coordinator.applyWorkspaceEditsAsync(mapped, result::complete));
@@ -580,11 +591,7 @@ class LspWorkspaceEditFxTest {
             return LspRefactoringUndo.RefactoringUndoChoice.ALL_FILES;
         });
         assertTrue(FxTestSupport.callOnFx(() -> coordinator.offerRefactoringUndo(use)));
-        long deadline = System.currentTimeMillis() + 10_000;
-        while (!Files.exists(from) && System.currentTimeMillis() < deadline) {
-            Thread.sleep(20);
-            FxTestSupport.runOnFx(() -> {});
-        }
+        Await.holdsWithin(() -> Files.exists(from), Duration.ofSeconds(10));
         FxTestSupport.runOnFx(() -> {}); // let the finish step on the FX thread run
         assertTrue(Files.exists(from), "moved back");
         assertFalse(Files.exists(to));
@@ -1636,6 +1643,8 @@ class LspWorkspaceEditFxTest {
         Files.move(lost, stage);
         journal.abandon(); // the process died here
 
+        // The journal is read, and the files restored, in place: each step has run once the FX thread has drained.
+        useControlledCoordinator(LspCoordinator.WorkspaceFileOperations.SYSTEM, Runnable::run);
         List<List<Path>> offered = new ArrayList<>();
         ops.projectRoot = root.resolve("another-project");
         FxTestSupport.runOnFx(() -> {
@@ -1646,16 +1655,14 @@ class LspWorkspaceEditFxTest {
             };
             coordinator.offerInterruptedEdits();
         });
-        Thread.sleep(300);
+        FxTestSupport.drainFx();
         FxTestSupport.drainFx();
         assertTrue(offered.isEmpty(), "another project's leftovers are not this window's to offer");
         assertTrue(Files.exists(stage), "and nothing is touched without being asked");
 
         ops.projectRoot = project;
         FxTestSupport.runOnFx(() -> coordinator.offerInterruptedEdits());
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
-        while (!Files.exists(lost) && System.nanoTime() < deadline) {
-            Thread.sleep(20);
+        for (int i = 0; i < 3; i++) { // the question, the restore, its answer
             FxTestSupport.drainFx();
         }
 
@@ -1784,10 +1791,9 @@ class LspWorkspaceEditFxTest {
         assertTrue(fakes.get(0).fileEvents().containsAll(List.of("Deleted " + from.toUri(), "Created " + to.toUri())));
 
         FxTestSupport.runOnFx(coordinator::undoRefactoring);
-        for (int i = 0; i < 100 && !"class Circle {}\n".equals(Files.exists(from) ? Files.readString(from) : ""); i++) {
-            Thread.sleep(20); // the inverse edit commits on the workspace executor
-            FxTestSupport.drainFx();
-        }
+        // the inverse edit commits on the workspace executor
+        Await.holdsWithin(() -> "class Circle {}\n".equals(readOrEmpty(from)), Duration.ofSeconds(10));
+        FxTestSupport.drainFx();
         assertTrue(Files.exists(from) && !Files.exists(to), "Undo moves the file back");
         assertEquals("class Circle {}\n", Files.readString(from));
         assertEquals("class Canvas { Circle c; }\n", Files.readString(canvas));
@@ -1900,10 +1906,9 @@ class LspWorkspaceEditFxTest {
 
         FxTestSupport.runOnFx(coordinator::undoRefactoring);
         // The moves back and Canvas's text land separately; under CI load the files were back before the text was.
-        for (int i = 0; i < 250 && !(Files.exists(big) && "class Canvas {}\n".equals(Files.readString(canvas))); i++) {
-            Thread.sleep(20);
-            FxTestSupport.drainFx();
-        }
+        Await.holdsWithin(
+                () -> Files.exists(big) && "class Canvas {}\n".equals(readOrEmpty(canvas)), Duration.ofSeconds(10));
+        FxTestSupport.drainFx();
         assertTrue(Files.exists(big) && Files.exists(circle), "both files went back");
         assertEquals("class Canvas {}\n", Files.readString(canvas));
         assertEquals(1, treeForgot.get(), "Undo Move is no longer offered");
@@ -2025,10 +2030,8 @@ class LspWorkspaceEditFxTest {
                 .contains(new WorkspaceEditMapper.FileRename(notes, docs.resolve("notes.txt"), false)));
 
         FxTestSupport.runOnFx(coordinator::undoRefactoring);
-        for (int i = 0; i < 100 && !Files.exists(notes); i++) {
-            Thread.sleep(20);
-            FxTestSupport.drainFx();
-        }
+        Await.holdsWithin(() -> Files.exists(notes), Duration.ofSeconds(10));
+        FxTestSupport.drainFx();
         assertTrue(Files.exists(notes) && Files.exists(big), "moved back with the drag");
 
         // a drag of a text file alone: no refactoring, so it does not replace the last one

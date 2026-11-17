@@ -25,6 +25,13 @@ final class NpmRunSupport {
     }
 
     /**
+     * TEST SEAM — how many npm runs have been planned: every npm launch is, before it starts (off the FX thread), so
+     * a test that declined one checks no plan was made instead of waiting a fixed time for a launch to show.
+     */
+    static final java.util.concurrent.atomic.AtomicInteger PREPARED_FOR_TEST =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    /**
      * Plans an npm / pnpm / yarn / bun run of {@code managerArgv} in {@code root} on the Node.js Run File would
      * pick there ({@link com.editora.run.NodeRuntimes}: a project's {@code .nvmrc}, the Node.js setting, PATH) and
      * hands it to {@code onReady} on the FX thread. Which Node is a disk and PATH question, so a local run is
@@ -36,6 +43,7 @@ final class NpmRunSupport {
             String nodeSetting,
             java.util.List<String> managerArgv,
             Consumer<com.editora.run.NpmLaunch> onReady) {
+        PREPARED_FOR_TEST.incrementAndGet();
         if (!com.editora.process.ExecTargets.runsHere(root)) {
             onReady.accept(com.editora.run.NpmLaunch.plan(managerArgv, null, null, false, false, p -> false));
             return;

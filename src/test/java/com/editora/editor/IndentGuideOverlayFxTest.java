@@ -1,5 +1,6 @@
 package com.editora.editor;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -11,6 +12,7 @@ import javafx.scene.image.WritableImage;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -149,13 +151,16 @@ class IndentGuideOverlayFxTest {
      * an old layout that nothing asks to redo stays wrong however long one waits — which is the failure.
      */
     private static void assertGuides(EditorBuffer buffer, int line, Expected expected, String what) throws Exception {
-        List<Double> want = expected.get();
-        List<Double> got = painted(buffer, line);
-        for (int attempt = 0; attempt < 60 && !matches(got, want); attempt++) {
-            Thread.sleep(50);
-            want = expected.get();
-            got = painted(buffer, line);
-        }
+        List<List<Double>> last = new ArrayList<>(List.of(List.of(), List.of()));
+        Await.holdsWithin(
+                EditorFx.check(() -> {
+                    last.set(0, painted(buffer, line));
+                    last.set(1, expected.get());
+                    return matches(last.get(0), last.get(1));
+                }),
+                Duration.ofSeconds(3));
+        List<Double> got = last.get(0);
+        List<Double> want = last.get(1);
         assertTrue(matches(got, want), what + ": painted " + got + ", the text's columns " + want);
     }
 
@@ -176,9 +181,8 @@ class IndentGuideOverlayFxTest {
 
             // 990 -> 1,010 lines, out of view: the line numbers gain a digit, nothing on screen is edited.
             EditorFx.onFx(() -> buffer.getArea().appendText(nested(20)));
-            for (int attempt = 0; attempt < 60 && columns.get().get(0) <= before + 2; attempt++) {
-                Thread.sleep(50); // the gutter is laid out wider in a later pulse
-            }
+            // the gutter is laid out wider in a later pulse
+            Await.holdsWithin(EditorFx.check(() -> columns.get().get(0) > before + 2), Duration.ofSeconds(3));
             assertTrue(columns.get().get(0) > before + 2, "the fixture widens the gutter");
             assertGuides(buffer, line, columns, "after the gutter gained a digit");
 
@@ -226,18 +230,17 @@ class IndentGuideOverlayFxTest {
             // Lines 1, 6 and 9 are a space and a digit in the gutter, 20 two digits: in a proportional font a
             // space is narrower than a digit, and on macOS a 1 is narrower than a 6, so a gutter in the editor
             // font would be ragged however long one waits. Polled: the new font is laid out a pulse or two later.
-            List<Double> starts = charX(buffer, 0, 0);
-            for (int attempt = 0; attempt < 60; attempt++) {
-                EditorFx.drain();
-                starts = new ArrayList<>();
-                for (int line : new int[] {0, 5, 8, 19}) {
-                    starts.add(charX(buffer, line, 0).get(0));
-                }
-                if (starts.stream().distinct().count() == 1) {
-                    break;
-                }
-                Thread.sleep(50);
-            }
+            List<Double> starts = new ArrayList<>();
+            Await.holdsWithin(
+                    EditorFx.check(() -> {
+                        EditorFx.drain();
+                        starts.clear();
+                        for (int line : new int[] {0, 5, 8, 19}) {
+                            starts.add(charX(buffer, line, 0).get(0));
+                        }
+                        return starts.stream().distinct().count() == 1;
+                    }),
+                    Duration.ofSeconds(3));
             assertEquals(1, starts.stream().distinct().count(), "where each line's text starts: " + starts);
         } finally {
             close(buffer, stage[0]);
@@ -252,7 +255,18 @@ class IndentGuideOverlayFxTest {
             int line = 6; // six levels
             Expected all = () -> charX(buffer, line, 0, 4, 8, 12, 16, 20);
             assertGuides(buffer, line, all, "before scrolling");
-            double textLeft = all.get().get(0);
+            // where the text starts once the gutter is laid out: the same on three reads a pulse apart
+            double[] left = {Double.NaN};
+            int[] same = {0};
+            Await.holdsWithin(
+                    EditorFx.check(() -> {
+                        double now = all.get().get(0);
+                        same[0] = now == left[0] ? same[0] + 1 : 0;
+                        left[0] = now;
+                        return same[0] >= 2;
+                    }),
+                    Duration.ofSeconds(3));
+            double textLeft = left[0];
 
             EditorFx.onFx(() -> buffer.getArea().scrollXToPixel(60));
             // Columns 0 and 4 went under the gutter; the rest moved left with the text.
@@ -265,6 +279,20 @@ class IndentGuideOverlayFxTest {
                 }
                 return out;
             };
+            // The scroll is laid out a pulse later, and a layout still pending from the open can put it back: wait
+            // until it holds, columns gone under the gutter, on two reads a pulse apart (scrolling again if undone).
+            int[] held = {0};
+            Await.holdsWithin(
+                    EditorFx.check(() -> {
+                        if (EditorFx.callFx(() -> buffer.getArea().getEstimatedScrollX()) < 59) {
+                            EditorFx.onFx(() -> buffer.getArea().scrollXToPixel(60));
+                            held[0] = 0;
+                            return false;
+                        }
+                        held[0] = visible.get().size() < all.get().size() ? held[0] + 1 : 0;
+                        return held[0] >= 2;
+                    }),
+                    Duration.ofSeconds(3));
             assertGuides(buffer, line, visible, "scrolled sideways");
             List<Double> got = painted(buffer, line);
             assertFalse(got.isEmpty(), "some guides are still on screen");

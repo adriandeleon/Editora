@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -17,6 +18,7 @@ import javafx.stage.Stage;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.FrameWatch;
 import com.editora.lsp.SymbolNode;
+import com.editora.testkit.Await;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -69,12 +71,8 @@ class StructureClickFramesFxTest {
         });
         // The minimap's first render (a snapshot) is paced; wait until it has painted its box.
         Object minimap = FxTestSupport.field(buffer, "minimap");
-        for (int i = 0;
-                i < 100 && FxTestSupport.callOnFx(() -> FxTestSupport.field(minimap, "paintedViewport")) == null;
-                i++) {
-            FxTestSupport.runOnFx(() -> {});
-            Thread.sleep(30);
-        }
+        Await.holdsWithin(
+                () -> onFx(() -> FxTestSupport.field(minimap, "paintedViewport")) != null, Duration.ofSeconds(3));
     }
 
     @AfterEach
@@ -148,5 +146,14 @@ class StructureClickFramesFxTest {
             methods.add(new SymbolNode("m" + i + "()", null, "method", 1 + 12 * i, 12 + 12 * i, List.of()));
         }
         return List.of(new SymbolNode("Big", null, "class", 0, 1 + 12 * METHODS, methods));
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

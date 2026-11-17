@@ -47,15 +47,11 @@ class JumpFramesFxTest {
         assertNotNull(buffer, "the file opened");
         // Wait for the fold regions (the sticky rows come from them) and the minimap's first paint.
         Object minimap = FxTestSupport.field(buffer, "minimap");
-        for (int i = 0; i < 200; i++) {
-            boolean ready = FxTestSupport.callOnFx(
-                    () -> !buffer.getFoldManager().regions().isEmpty()
-                            && FxTestSupport.field(minimap, "paintedViewport") != null);
-            if (ready) {
-                break;
-            }
-            Thread.sleep(25);
-        }
+        com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.fxCondition(
+                        () -> !buffer.getFoldManager().regions().isEmpty()
+                                && FxTestSupport.field(minimap, "paintedViewport") != null),
+                java.time.Duration.ofSeconds(5));
         assertFalse(
                 FxTestSupport.callOnFx(() -> buffer.getFoldManager().regions().isEmpty()), "folds computed");
     }

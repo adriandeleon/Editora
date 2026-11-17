@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import com.editora.testkit.Await;
 import com.jediterm.core.util.TermSize;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
@@ -57,11 +58,8 @@ class LocalShellWindowsPtyTest {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
         while (System.nanoTime() < deadline) {
             shell.write(line.getBytes(StandardCharsets.UTF_8));
-            long wait = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-            while (System.nanoTime() < wait) {
-                if (seen.toString().contains(needle)) return;
-                Thread.sleep(50);
-            }
+            // each try waits up to five seconds for the needle, then types the line again
+            if (Await.holdsWithin(() -> seen.toString().contains(needle), java.time.Duration.ofSeconds(5))) return;
         }
         assertTrue(seen.toString().contains(needle), () -> needle + " in: " + seen);
     }

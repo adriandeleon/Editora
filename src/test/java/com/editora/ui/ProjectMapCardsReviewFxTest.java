@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -908,21 +909,19 @@ class ProjectMapCardsReviewFxTest {
 
     private static Path awaitSymbol(ProjectMapStructure structure, ProjectMapModel.Entry file, String label)
             throws Exception {
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
-        while (System.nanoTime() < deadline) {
-            Path found = FxTestSupport.callOnFx(() -> structure.withStructure(List.of(file)).stream()
-                    .filter(row -> row.isSymbol()
-                            && row.symbol() != null
-                            && label.equals(row.symbol().label()))
-                    .map(ProjectMapModel.Entry::path)
-                    .findFirst()
-                    .orElse(null));
-            if (found != null) {
-                return found;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("no declaration " + label);
+        Path[] found = new Path[1];
+        PulseChecks.until(
+                () -> (found[0] = FxTestSupport.callOnFx(() -> structure.withStructure(List.of(file)).stream()
+                                .filter(row -> row.isSymbol()
+                                        && row.symbol() != null
+                                        && label.equals(row.symbol().label()))
+                                .map(ProjectMapModel.Entry::path)
+                                .findFirst()
+                                .orElse(null)))
+                        != null,
+                "no declaration " + label,
+                Duration.ofSeconds(10));
+        return found[0];
     }
 
     // ---- C11: one-line members, CSS rules, YAML keys ----
@@ -1097,14 +1096,7 @@ class ProjectMapCardsReviewFxTest {
     }
 
     private static void awaitFx(String what, java.util.function.BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("timed out waiting for " + what);
+        PulseChecks.untilOnFx(condition, "timed out waiting for " + what, Duration.ofSeconds(10));
     }
 
     private static Object rowBox(javafx.scene.layout.Region surface, Path path) {

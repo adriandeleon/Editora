@@ -178,13 +178,9 @@ class DebugProgramConsoleFxTest {
     }
 
     private void await(String what, BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > deadline) {
-                throw new AssertionError(
-                        what + " never happened; events=" + events + " errors=" + errors + " output=" + text(null));
-            }
-            Thread.sleep(20);
+        if (!com.editora.testkit.Await.holdsWithin(condition, java.time.Duration.ofSeconds(30))) {
+            throw new AssertionError(
+                    what + " never happened; events=" + events + " errors=" + errors + " output=" + text(null));
         }
     }
 
@@ -240,12 +236,17 @@ class DebugProgramConsoleFxTest {
                 probed.get(20, TimeUnit.SECONDS).label().startsWith("Java " + System.getProperty("java.version")),
                 probed.get().label());
 
+        long runningBefore = events.stream().filter("RUNNING"::equals).count();
         onFx(() -> dap.startAttach(file, "localhost", 5005));
         FakeDebugAdapter.Session attached = adapter.awaitSession();
         attached.awaitRequest("attach");
         assertNotEquals(Boolean.TRUE, attached.initializeArgs.getSupportsRunInTerminalRequest());
         assertFalse(attached.launchArgs.containsKey("console"));
-        Thread.sleep(200); // the launch reported its runtime from the FX thread; an attach has none to report
+        // A launch reports its runtime in the FX turn that says Running; an attach has none to report.
+        await(
+                "the attach running",
+                () -> events.stream().filter("RUNNING"::equals).count() > runningBefore);
+        onFx(() -> {});
         assertEquals(1, runtimes.size(), runtimes.toString());
         // An attach has no program of its own: asked anyway, it answers with an error, as every session did.
         assertThrows(

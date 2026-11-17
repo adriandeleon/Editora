@@ -75,9 +75,21 @@ public final class LogTailService {
         private volatile @Nullable ScheduledFuture<?> future;
         private final AtomicBoolean stopped = new AtomicBoolean();
         private final AtomicLong delivered;
+        private final AtomicLong polls = new AtomicLong();
 
         private Handle(long startOffset) {
             delivered = new AtomicLong(startOffset);
+        }
+
+        /** TEST SEAM — how many polls of this follow have finished (QUAL-07, Pauta 6.0.1: a test waits on them). */
+        long pollsForTest() {
+            return polls.get();
+        }
+
+        /** TEST SEAM — whether this follow's poll is still scheduled to run again. */
+        boolean pollingForTest() {
+            ScheduledFuture<?> f = future;
+            return f != null && !f.isDone();
         }
 
         public void stop() {
@@ -139,6 +151,14 @@ public final class LogTailService {
 
         @Override
         public void run() {
+            try {
+                poll();
+            } finally {
+                handle.polls.incrementAndGet();
+            }
+        }
+
+        private void poll() {
             if (handle.isStopped()) {
                 return;
             }
@@ -219,6 +239,11 @@ public final class LogTailService {
             }
             return text.replace("\r\n", "\n").replace('\r', '\n');
         }
+    }
+
+    /** TEST SEAM — waits for a poll in progress to finish: the poll thread runs one task at a time. */
+    void awaitIdleForTest() throws Exception {
+        scheduler.submit(() -> {}).get(10, TimeUnit.SECONDS);
     }
 
     /** Shuts the poll thread down (window close). */

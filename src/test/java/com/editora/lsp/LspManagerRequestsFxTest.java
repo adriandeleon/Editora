@@ -153,9 +153,7 @@ class LspManagerRequestsFxTest {
         current.setVersion(2);
         sessionRef.get().publishDiagnostics(current);
 
-        for (int i = 0; i < 50 && delivered.isEmpty(); i++) {
-            Thread.sleep(20);
-        }
+        com.editora.testkit.Await.holdsWithin(() -> !delivered.isEmpty(), java.time.Duration.ofSeconds(10));
         assertEquals(1, delivered.size(), "only diagnostics for the current document version should arrive");
         local.shutdownAll();
     }

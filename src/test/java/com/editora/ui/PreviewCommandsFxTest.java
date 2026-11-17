@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -483,16 +484,15 @@ class PreviewCommandsFxTest {
     /** The buffer's diagnostics once the debounced re-lint after an edit has left {@code expected} of them. */
     private List<com.editora.markdown.MarkdownLint.Diagnostic> diagnosticsAfterRelint(EditorBuffer b, int expected)
             throws Exception {
-        List<com.editora.markdown.MarkdownLint.Diagnostic> now = List.of();
-        for (int attempt = 0; attempt < 100; attempt++) {
-            lintSettled();
-            now = FxTestSupport.callOnFx(b::markdownLintDiagnostics);
-            if (now.size() == expected) {
-                break;
-            }
-            Thread.sleep(50);
-        }
-        return now;
+        List<List<com.editora.markdown.MarkdownLint.Diagnostic>> now = new java.util.ArrayList<>(List.of(List.of()));
+        PulseChecks.holdsWithin(
+                () -> {
+                    lintSettled();
+                    now.set(0, FxTestSupport.callOnFx(b::markdownLintDiagnostics));
+                    return now.get(0).size() == expected;
+                },
+                Duration.ofSeconds(5));
+        return now.get(0);
     }
 
     private void caretAt(EditorBuffer b, int line, int column) throws Exception {
@@ -758,18 +758,22 @@ class PreviewCommandsFxTest {
             assertEquals(List.of(), FxTestSupport.callOnFx(b::markdownLintDiagnostics), "no lint by a guess");
 
             first.run(); // the look, off the FX thread
-            List<String> codes = List.of();
-            for (int attempt = 0; attempt < 100 && !codes.equals(List.of("MD012")); attempt++) {
-                for (Runnable more; (more = looks.poll()) != null; ) {
-                    more.run();
-                }
-                lintSettled();
-                codes = FxTestSupport.callOnFx(b::markdownLintDiagnostics).stream()
-                        .map(com.editora.markdown.MarkdownLint.Diagnostic::code)
-                        .toList();
-                Thread.sleep(20);
-            }
-            assertEquals(List.of("MD012"), codes, "linted once the config is known: MD009 is the project's off");
+            List<List<String>> codes = new java.util.ArrayList<>(List.of(List.of()));
+            PulseChecks.holdsWithin(
+                    () -> {
+                        for (Runnable more; (more = looks.poll()) != null; ) {
+                            more.run();
+                        }
+                        lintSettled();
+                        codes.set(
+                                0,
+                                FxTestSupport.callOnFx(b::markdownLintDiagnostics).stream()
+                                        .map(com.editora.markdown.MarkdownLint.Diagnostic::code)
+                                        .toList());
+                        return codes.get(0).equals(List.of("MD012"));
+                    },
+                    Duration.ofSeconds(5));
+            assertEquals(List.of("MD012"), codes.get(0), "linted once the config is known: MD009 is the project's off");
             assertEquals(List.of(), heardOnFx, "the config is never looked at on the FX thread");
         } finally {
             com.editora.perf.BlockingSites.listenForTest(null);
@@ -979,11 +983,7 @@ class PreviewCommandsFxTest {
         assertEquals("# T\n\ntext\nmore\n", text(b));
         // The write happens on the save executor: wait for it to be acknowledged before reading the file. Read
         // straight away, the file still held the old text on the macOS runner.
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
-        while (FxTestSupport.callOnFx(b::isDirty) && System.nanoTime() < deadline) {
-            Thread.sleep(20);
-            FxTestSupport.drainFx();
-        }
+        PulseChecks.holdsOnFxWithin(() -> !b.isDirty(), Duration.ofSeconds(10));
         assertFalse(FxTestSupport.callOnFx(b::isDirty), "the save was acknowledged");
         assertEquals("# T\n\ntext\nmore\n", Files.readString(b.getPath()), "what was written is what was fixed");
         FxTestSupport.runOnFx(() -> b.getArea().undo());

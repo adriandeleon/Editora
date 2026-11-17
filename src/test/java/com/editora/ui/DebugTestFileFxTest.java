@@ -2,8 +2,10 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import com.editora.command.CommandRegistry;
@@ -75,24 +77,34 @@ class DebugTestFileFxTest {
             debug.setTestDebugger(debugged::add);
             b.setTestGutterEnabled(true); // what a detected Maven/Gradle build turns on (applyTestGutter)
         });
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (FxTestSupport.callOnFx(() -> b.testClassTarget() == null)) {
-            assertTrue(System.nanoTime() < deadline, "the load's test scan never landed");
-            Thread.sleep(10);
-        }
+        EventuallyFx.untilOnFx(
+                "the load's test scan never landed", Duration.ofSeconds(20), () -> b.testClassTarget() != null);
         return b;
     }
 
     private void debugAt(EditorBuffer b, int paragraph) throws Exception {
-        FxTestSupport.runOnFx(() -> {
-            b.getArea().moveTo(paragraph, 0);
-            CommandRegistry reg = FxTestSupport.field(fx.controller, "registry");
-            reg.run("debug.start");
+        // The route is decided once the main class has been parsed off the FX thread (PERF-01): wait for that
+        // parse to end, then for its answer to run on the FX thread.
+        CountDownLatch parsed = new CountDownLatch(1);
+        java.util.function.BiConsumer<String, Runnable> planner = DebugPlanning.planner;
+        DebugPlanning.planner = (name, task) -> planner.accept(name, () -> {
+            try {
+                task.run();
+            } finally {
+                if (name.equals("debug-own-main")) {
+                    parsed.countDown();
+                }
+            }
         });
-        // The route is decided once the main class has been parsed off the FX thread (PERF-01).
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (debugged.isEmpty() && System.nanoTime() < deadline) {
-            Thread.sleep(10);
+        try {
+            FxTestSupport.runOnFx(() -> {
+                b.getArea().moveTo(paragraph, 0);
+                CommandRegistry reg = FxTestSupport.field(fx.controller, "registry");
+                reg.run("debug.start");
+            });
+            assertTrue(parsed.await(10, TimeUnit.SECONDS), "the main class was parsed");
+        } finally {
+            DebugPlanning.planner = planner;
         }
         FxTestSupport.drainFx();
     }

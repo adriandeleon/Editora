@@ -92,14 +92,9 @@ class MarkdownRendererFxTest {
                     .filter(f -> f.getStyleClass().contains("md-code-block"))
                     .findFirst()
                     .orElseThrow(() -> new AssertionError(info + " renders as a highlightable code block"));
-            List<Text> runs = List.of();
-            for (int i = 0; i < 400; i++) { // the tokens land from a background thread
-                runs = FxTestSupport.callOnFx(() -> collect(flow, Text.class));
-                if (runs.size() > 1) {
-                    break;
-                }
-                Thread.sleep(10);
-            }
+            // the tokens land from a background thread
+            OnFx.holdsWithin(() -> collect(flow, Text.class).size() > 1, java.time.Duration.ofSeconds(10));
+            List<Text> runs = FxTestSupport.callOnFx(() -> collect(flow, Text.class));
             List<Text> found = runs;
             java.util.function.Function<String, List<String>> classesOf = text -> found.stream()
                     .filter(t -> t.getText().equals(text))

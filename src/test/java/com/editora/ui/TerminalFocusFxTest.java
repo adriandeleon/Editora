@@ -1,8 +1,8 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.Callable;
-import java.util.concurrent.TimeUnit;
 
 import javafx.event.Event;
 import javafx.scene.Node;
@@ -12,6 +12,7 @@ import javafx.scene.input.KeyEvent;
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
 import com.editora.terminal.TerminalView;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -160,11 +161,6 @@ class TerminalFocusFxTest {
     }
 
     private static void await(java.util.function.BooleanSupplier condition, String what) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (System.nanoTime() < deadline) {
-            if (condition.getAsBoolean()) return;
-            Thread.sleep(20);
-        }
-        throw new AssertionError("timed out waiting for " + what);
+        Await.until(condition, what, Duration.ofSeconds(10));
     }
 }

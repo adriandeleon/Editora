@@ -88,13 +88,7 @@ class GoroutinesWindowFxTest {
     }
 
     private static void await(String what, BooleanSupplier condition) throws InterruptedException {
-        long end = System.nanoTime() + 20_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(25);
-        }
+        com.editora.testkit.Await.until(condition, what, java.time.Duration.ofSeconds(20));
     }
 
     private void run(String command) throws Exception {

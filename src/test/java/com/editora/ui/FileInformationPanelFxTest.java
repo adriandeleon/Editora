@@ -46,17 +46,11 @@ class FileInformationPanelFxTest {
     }
 
     static void awaitValue(FileInformationPanel panel, String field, String expected) throws Exception {
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
-        String seen;
-        while (true) {
-            seen = FxTestSupport.callOnFx(
-                    () -> FxTestSupport.<TextField>field(panel, field + "Value").getText());
-            if (expected.equals(seen)) {
-                return;
-            }
-            assertTrue(System.nanoTime() < deadline, field + " never showed " + expected + " (last: " + seen + ")");
-            Thread.sleep(10);
-        }
+        FxTestSupport.awaitFxCondition(
+                () -> expected.equals(
+                        FxTestSupport.<TextField>field(panel, field + "Value").getText()),
+                field + " to show " + expected,
+                java.time.Duration.ofSeconds(20));
     }
 
     /** A panel in a shown stage (so it refreshes) and a buffer to attach. */

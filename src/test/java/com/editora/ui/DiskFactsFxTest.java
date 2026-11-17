@@ -2,9 +2,11 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.editora.perf.BlockingSites;
 import org.junit.jupiter.api.AfterEach;
@@ -49,10 +51,8 @@ class DiskFactsFxTest {
     }
 
     private static void waitFor(java.util.function.BooleanSupplier condition) throws Exception {
-        for (int i = 0; i < 200 && !condition.getAsBoolean(); i++) {
-            Thread.sleep(10);
-            FxTestSupport.drainFx();
-        }
+        com.editora.testkit.Await.holdsWithin(condition, Duration.ofSeconds(5));
+        FxTestSupport.drainFx();
         assertTrue(condition.getAsBoolean(), "timed out");
     }
 
@@ -74,15 +74,17 @@ class DiskFactsFxTest {
     void aChangeOnDiskIsSeenOnceTheAnswerIsOld() throws Exception {
         Path folder = dir.resolve("later");
         AtomicInteger learned = new AtomicInteger();
+        AtomicLong now = new AtomicLong(System.nanoTime());
         DiskFacts<Path, Boolean> facts =
                 FxTestSupport.callOnFx(() -> new DiskFacts<Path, Boolean>("test.isDirectory", Files::isDirectory)
+                        .clockForTest(now::get)
                         .onLearned(learned::incrementAndGet));
         FxTestSupport.callOnFx(() -> facts.get(folder));
         waitFor(() -> learned.get() == 1);
         assertEquals(Boolean.FALSE, FxTestSupport.callOnFx(() -> facts.get(folder)));
 
         Files.createDirectory(folder);
-        Thread.sleep(DiskFacts.FRESH_NANOS / 1_000_000 + 50);
+        now.addAndGet(DiskFacts.FRESH_NANOS + 50_000_000L); // the answer is now older than it may be
         assertEquals(
                 Boolean.FALSE, FxTestSupport.callOnFx(() -> facts.get(folder)), "the old answer, asked again behind");
         waitFor(() -> learned.get() == 2);

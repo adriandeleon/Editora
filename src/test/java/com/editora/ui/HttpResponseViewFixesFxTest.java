@@ -150,11 +150,7 @@ class HttpResponseViewFixesFxTest {
     }
 
     private static void await(java.util.concurrent.Callable<Boolean> check) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
-        while (!FxTestSupport.callOnFx(check)) {
-            assertTrue(System.nanoTime() < deadline, "timed out");
-            Thread.sleep(20);
-        }
+        FxTestSupport.awaitFxCondition(check, "the condition", java.time.Duration.ofSeconds(WAIT_SECONDS));
     }
 
     private String finished() throws InterruptedException {
@@ -163,16 +159,17 @@ class HttpResponseViewFixesFxTest {
 
     /** The saved history file of {@code file} once {@code check} holds for its text. */
     private String awaitSaved(Ops ops, Path file, Predicate<String> check) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
-        while (true) {
-            Path saved = ops.store.fileFor(file);
-            String text = Files.exists(saved) ? Files.readString(saved) : "";
-            if (check.test(text)) {
-                return text;
-            }
-            assertTrue(System.nanoTime() < deadline, "timed out waiting for the saved history: " + text);
-            Thread.sleep(20);
-        }
+        String[] last = {""};
+        // the history is saved by its own writer thread: the file is all there is to look at
+        boolean held = com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.unchecked(() -> {
+                    Path saved = ops.store.fileFor(file);
+                    last[0] = Files.exists(saved) ? Files.readString(saved) : "";
+                    return check.test(last[0]);
+                }),
+                java.time.Duration.ofSeconds(WAIT_SECONDS));
+        assertTrue(held, "timed out waiting for the saved history: " + last[0]);
+        return last[0];
     }
 
     // --- U2: Run re-sends the same request, found by name or method + URL template, never by position ----------

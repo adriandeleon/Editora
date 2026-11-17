@@ -263,6 +263,12 @@ public final class DapManager {
     private volatile @Nullable SourceAlias sourceAlias;
 
     private volatile @Nullable Path compilationDirectory;
+
+    /**
+     * TEST SEAM — run on the compile thread once a loose file's classes are compiled and kept, before the launch goes
+     * on to its adapter: a test holds the launch there instead of spinning on the FX thread (QUAL-07, Pauta 6.0.1).
+     */
+    volatile @Nullable Runnable compiledForTest;
     /** Removes {@link #compilationDirectory} on its target ({@code null}: a folder of this machine). */
     private volatile @Nullable Runnable compilationRemoval;
 
@@ -1914,6 +1920,10 @@ public final class DapManager {
                     // path (jdtls cannot always place it): either way its frames are this file's.
                     sourceAlias = new SourceAlias(epoch, file, compileFile);
                     retained = true;
+                }
+                Runnable compiled = compiledForTest;
+                if (compiled != null) {
+                    compiled.run();
                 }
                 Path runIn = workingDir != null ? workingDir : file.getParent();
                 String cwd = runIn == null ? null : paths.toAdapter(runIn);
@@ -5427,6 +5437,12 @@ public final class DapManager {
                 }));
     }
 
+    /** TEST SEAM — {@code setBreakpoints} requests the live session has not had answered yet (0 without one). */
+    public int unansweredBreakpointsForTest() {
+        DapClient c = client;
+        return c == null ? 0 : c.unansweredBreakpointsForTest();
+    }
+
     /** (Re)sends a file's breakpoints to the live adapter (after the user toggled one while running). */
     public void updateBreakpoints(DapModels.FileBreakpoints fb) {
         if (client != null && state != State.INACTIVE) {
@@ -5673,6 +5689,15 @@ public final class DapManager {
     private record OutputStamp(long epoch, long nanos) {}
 
     private volatile OutputStamp lastOutput = new OutputStamp(-1, 0);
+
+    /**
+     * TEST SEAM — makes the last program output {@code millis} older, so a test sees output that has stopped without
+     * waiting for it to (QUAL-07, Pauta 6.0.1).
+     */
+    void ageLastOutputForTest(long millis) {
+        OutputStamp last = lastOutput;
+        lastOutput = new OutputStamp(last.epoch(), last.nanos() - TimeUnit.MILLISECONDS.toNanos(millis));
+    }
 
     /** A program java-debug started itself (the program console off): its output trails its exit (E104). */
     private boolean outputTrails(long epoch) {

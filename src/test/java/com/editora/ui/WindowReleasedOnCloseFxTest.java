@@ -3,11 +3,13 @@ package com.editora.ui;
 import java.lang.ref.WeakReference;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 
 import javafx.stage.Stage;
 
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -179,26 +181,30 @@ class WindowReleasedOnCloseFxTest {
     }
 
     private static void awaitBuffer(MainController controller) throws Exception {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            boolean open = FxTestSupport.callOnFx(
-                    () -> FxTestSupport.call(controller, "activeBuffer", new Class<?>[] {}) != null);
-            if (open) {
-                return;
-            }
-            Thread.sleep(20); // the file loads off the FX thread; this only waits for that hand-back
-        }
+        // the file loads off the FX thread; this only waits for that hand-back
+        Await.holdsWithin(
+                () -> onFx(() -> FxTestSupport.call(controller, "activeBuffer", new Class<?>[] {}) != null),
+                Duration.ofSeconds(2));
     }
 
     /** Waits, with GC pressure, for the referent to be cleared. Generous: this is a liveness assertion. */
     private static boolean collected(WeakReference<?> ref) throws Exception {
-        for (int attempt = 0; attempt < 60; attempt++) {
-            FxTestSupport.runOnFx(() -> {}); // drain the FX queue: a pending event can hold the last edge
-            System.gc();
-            if (ref.get() == null) {
-                return true;
-            }
-            Thread.sleep(100);
+        // A collection after each FX pulse (the drain first: a pending event can hold the last edge).
+        return Await.holdsWithin(
+                () -> {
+                    FxTestSupport.runOnFxUnchecked(() -> {});
+                    System.gc();
+                    return ref.get() == null;
+                },
+                Duration.ofSeconds(6));
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
-        return ref.get() == null;
     }
 }

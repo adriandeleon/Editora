@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -103,18 +104,16 @@ class PanelCommandsWindowFxTest {
         Path file = Files.writeString(dir.resolve("Main.java"), "class Main {\n    Runnable r = () -> {};\n}\n");
         window(dir);
         FxTestSupport.runOnFx(() -> fx.controller.fileWorkflows.openPath(file));
-        for (int i = 0;
-                i < 100
-                        && FxTestSupport.callOnFx(() -> fx.controller.activeBuffer() == null
-                                || fx.controller
-                                                .activeBuffer()
-                                                .getArea()
-                                                .getParagraphs()
-                                                .size()
-                                        < 3);
-                i++) {
-            Thread.sleep(50); // the file is read off the FX thread
-        }
+        PulseChecks.untilOnFx( // the file is read off the FX thread
+                () -> fx.controller.activeBuffer() != null
+                        && fx.controller
+                                        .activeBuffer()
+                                        .getArea()
+                                        .getParagraphs()
+                                        .size()
+                                >= 3,
+                "the file's text",
+                Duration.ofSeconds(5));
         FxTestSupport.runOnFx(() -> {
             assertEquals(tr("status.debug.noLambdaBreakpointHere", 1), run("debug.toggleStopOnLine"));
             com.editora.editor.EditorBuffer b = fx.controller.activeBuffer();
@@ -193,9 +192,7 @@ class PanelCommandsWindowFxTest {
             assertEquals(tr("palette.disabled.needsSuspended"), run("debug.quickEvaluate"), "nothing is paused");
             fx.controller.fileWorkflows.openPath(notes);
         });
-        for (int i = 0; i < 100 && FxTestSupport.callOnFx(() -> fx.controller.activeBuffer() == null); i++) {
-            Thread.sleep(50);
-        }
+        PulseChecks.untilOnFx(() -> fx.controller.activeBuffer() != null, "the file open", Duration.ofSeconds(5));
         FxTestSupport.runOnFx(() -> {
             assertEquals(
                     tr("palette.disabled.needsSuspended"), run("debug.quickEvaluate"), "a file open, nothing paused");

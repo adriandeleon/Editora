@@ -4092,15 +4092,30 @@ final class LspCoordinator {
         }
     }
 
+    /** {@link #sayOnceReasoned} waits not yet ended (FX thread only). */
+    private int reasonedSaysPending;
+
+    /**
+     * TEST SEAM — how many failed imports are still waiting to be said ({@link #sayOnceReasoned}), so a test can tell
+     * that what one was going to say has been said (QUAL-07, Pauta 6.0.1). FX thread only.
+     */
+    int reasonedSaysPendingForTest() {
+        return reasonedSaysPending;
+    }
+
     /**
      * Runs {@code say} once a project diagnostic names the failed import's cause, its folder with it, or after six
      * seconds: Gradle's names it seconds after its WARNING, and the generic wrapper said first left the folder out
      * (thirteenth review CK5).
      */
     private void sayOnceReasoned(@Nullable Path root, int tries, Runnable say) {
+        if (tries == 0) {
+            reasonedSaysPending++;
+        }
         var wait = new javafx.animation.PauseTransition(javafx.util.Duration.millis(tries == 0 ? 600 : 500));
         wait.setOnFinished(e -> {
             if (tries >= 11 || JavaImportCheck.projectReason(problems, root) != null) {
+                reasonedSaysPending--;
                 say.run();
             } else {
                 sayOnceReasoned(root, tries + 1, say);

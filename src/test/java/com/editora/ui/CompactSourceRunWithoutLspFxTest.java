@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 
 import javafx.scene.control.Label;
@@ -34,19 +35,7 @@ class CompactSourceRunWithoutLspFxTest {
         FxWindowFixture fx = FxWindowFixture.create(
                 dir, false, false, true, List.of(new MainController.OpenTarget(file, 0, 0)), true, c -> {});
         try {
-            boolean runnable = false;
-            for (int i = 0; i < 100; i++) {
-                runnable = FxTestSupport.callOnFx(() -> {
-                    EditorBuffer buffer =
-                            (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
-                    return buffer != null && buffer.isRunnable();
-                });
-                if (runnable) {
-                    break;
-                }
-                Thread.sleep(20);
-            }
-            assertTrue(runnable, "compact-file Run should appear with LSP disabled by Simple mode");
+            awaitRunnable(fx, "compact-file Run should appear with LSP disabled by Simple mode");
         } finally {
             fx.dispose();
         }
@@ -61,33 +50,18 @@ class CompactSourceRunWithoutLspFxTest {
                 dir, false, false, true, List.of(new MainController.OpenTarget(file, 0, 0)), true, c -> {});
         try {
             FxTestSupport.runOnFx(() -> fx.shared.getSettings().setMavenJdkHome(System.getProperty("java.home")));
-            boolean ready = false;
-            for (int i = 0; i < 100; i++) {
-                ready = FxTestSupport.callOnFx(() -> {
-                    EditorBuffer buffer =
-                            (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
-                    return buffer != null && buffer.isRunnable();
-                });
-                if (ready) break;
-                Thread.sleep(20);
-            }
-            assertTrue(ready);
+            awaitRunnable(fx, "compact source did not become runnable");
             FxTestSupport.runOnFx(() -> {
                 CommandRegistry commands = FxTestSupport.field(fx.controller, "registry");
                 commands.run("file.run");
             });
             RunCoordinator run = FxTestSupport.field(fx.controller, "runCoordinator");
             String expected = "SELECTED_JDK=" + Runtime.version().feature();
-            boolean printed = false;
-            for (int i = 0; i < 200; i++) {
-                printed = FxTestSupport.callOnFx(() -> {
-                    CodeArea output = FxTestSupport.field(run.panel(), "output");
-                    return output.getText().contains(expected);
-                });
-                if (printed) break;
-                Thread.sleep(50);
-            }
-            assertTrue(printed, "selected JDK should compile and run the compact file");
+            EventuallyFx.untilOnFx(
+                    "selected JDK should compile and run the compact file", Duration.ofSeconds(30), () -> {
+                        CodeArea output = FxTestSupport.field(run.panel(), "output");
+                        return output.getText().contains(expected);
+                    });
             List<String> command = FxTestSupport.field(run, "lastRunCommand");
             assertEquals(
                     Path.of(System.getProperty("java.home"), "bin", isWindows() ? "java.exe" : "java")
@@ -108,34 +82,14 @@ class CompactSourceRunWithoutLspFxTest {
                 dir, false, false, true, List.of(new MainController.OpenTarget(file, 0, 0)), true, c -> {});
         try {
             FxTestSupport.runOnFx(() -> fx.shared.getSettings().setMavenJdkHome(System.getProperty("java.home")));
-            boolean ready = false;
-            for (int i = 0; i < 100; i++) {
-                ready = FxTestSupport.callOnFx(() -> {
-                    EditorBuffer buffer =
-                            (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
-                    return buffer != null && buffer.isRunnable();
-                });
-                if (ready) break;
-                Thread.sleep(20);
-            }
-            assertTrue(ready);
+            awaitRunnable(fx, "compact source did not become runnable");
             FxTestSupport.runOnFx(() -> {
                 CommandRegistry commands = FxTestSupport.field(fx.controller, "registry");
                 commands.run("file.run");
             });
             String expected = Messages.tr(
                     "status.run.needJdkVersion", requested, Runtime.version().feature());
-            boolean explained = false;
-            for (int i = 0; i < 100; i++) {
-                explained = FxTestSupport.callOnFx(() -> {
-                    StatusBar status = FxTestSupport.field(fx.controller, "statusBar");
-                    Label echo = FxTestSupport.field(status, "echo");
-                    return expected.equals(echo.getText());
-                });
-                if (explained) break;
-                Thread.sleep(20);
-            }
-            assertTrue(explained, "the selected JDK is too old for the shebang's --source release");
+            assertStatus(fx, expected); // the selected JDK is too old for the shebang's --source release
         } finally {
             fx.dispose();
         }
@@ -184,29 +138,22 @@ class CompactSourceRunWithoutLspFxTest {
     }
 
     private static void awaitRunnable(FxWindowFixture fx) throws Exception {
-        for (int i = 0; i < 100; i++) {
-            boolean runnable = FxTestSupport.callOnFx(() -> {
-                EditorBuffer buffer =
-                        (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
-                return buffer != null && buffer.isRunnable();
-            });
-            if (runnable) return;
-            Thread.sleep(20);
-        }
-        throw new AssertionError("compact source did not become runnable");
+        awaitRunnable(fx, "compact source did not become runnable");
+    }
+
+    private static void awaitRunnable(FxWindowFixture fx, String why) throws Exception {
+        EventuallyFx.untilOnFx(why, Duration.ofSeconds(10), () -> {
+            EditorBuffer buffer = (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
+            return buffer != null && buffer.isRunnable();
+        });
     }
 
     private static void assertStatus(FxWindowFixture fx, String expected) throws Exception {
-        for (int i = 0; i < 100; i++) {
-            boolean matches = FxTestSupport.callOnFx(() -> {
-                StatusBar status = FxTestSupport.field(fx.controller, "statusBar");
-                Label echo = FxTestSupport.field(status, "echo");
-                return expected.equals(echo.getText());
-            });
-            if (matches) return;
-            Thread.sleep(20);
-        }
-        throw new AssertionError("status did not show: " + expected);
+        EventuallyFx.untilOnFx("status did not show: " + expected, Duration.ofSeconds(10), () -> {
+            StatusBar status = FxTestSupport.field(fx.controller, "statusBar");
+            Label echo = FxTestSupport.field(status, "echo");
+            return expected.equals(echo.getText());
+        });
     }
 
     private static boolean isWindows() {

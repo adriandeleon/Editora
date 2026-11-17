@@ -5,6 +5,7 @@ import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ScheduledExecutorService;
@@ -32,6 +33,7 @@ import com.editora.test.TestNode;
 import com.editora.test.TestNodeKind;
 import com.editora.test.TestRun;
 import com.editora.test.TestStatus;
+import com.editora.testkit.Await;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -167,11 +169,19 @@ class TestRunCoordinatorActionsFxTest {
         return calls.stream().filter(c -> c.startsWith("attach")).toList();
     }
 
+    /**
+     * Waits for the poller to report {@code what} ("ACCEPTING KEEP_WAITING", …) after now: a probe that saw the
+     * state the test just set up, and the decision it led to, all in the FX turn that heard it.
+     */
+    private static void awaitHeard(List<String> heard, String what) throws Exception {
+        int from = heard.size();
+        Await.until(() -> heard.subList(from, heard.size()).contains(what), "the poller to hear " + what);
+        FxTestSupport.drainFx();
+    }
+
     /** Waits up to {@code seconds} for the attach calls to number {@code count}. */
     private void awaitAttaches(int count, int seconds) throws Exception {
-        for (int i = 0; i < seconds * 20 && attaches().size() < count; i++) {
-            Thread.sleep(50);
-        }
+        Await.holdsWithin(() -> onFx(() -> attaches().size() >= count), Duration.ofSeconds(seconds));
         FxTestSupport.drainFx();
     }
 
@@ -701,6 +711,9 @@ class TestRunCoordinatorActionsFxTest {
         debugAvailable = true;
         int port = com.editora.test.JdwpAttachRetry.freeLoopbackPort();
         coordinator.debugPortPicker = () -> port;
+        // What the poller saw, in order: "ACCEPTING ATTACH", "REFUSED KEEP_WAITING", …
+        List<String> heard = new java.util.concurrent.CopyOnWriteArrayList<>();
+        coordinator.attachProbeHeardForTest = (probe, decision) -> heard.add(probe + " " + decision);
         JavaTestScanner.TestTarget target = new JavaTestScanner.TestTarget(4, "demo.CalcTest", "adds", false);
         FxTestSupport.runOnFx(() -> coordinator.debugSingleTest(
                 BuildTool.MAVEN,
@@ -716,27 +729,28 @@ class TestRunCoordinatorActionsFxTest {
             coordinator.onTestOutput("[INFO] --- surefire:3.5.3:test (default-test) @ demo ---", false);
             coordinator.onTestOutput("[INFO]  T E S T S", false);
         });
-        Thread.sleep(600);
+        awaitHeard(heard, "REFUSED KEEP_WAITING"); // a probe of the port after the test phase began
         assertEquals(List.of(), attaches(), "nothing listens yet: no attach");
 
         try (ServerSocket fork = new ServerSocket(port, 1, InetAddress.getLoopbackAddress())) {
             awaitAttaches(1, 5);
             assertEquals(List.of("attach demo.CalcTest localhost:" + port), attaches(), "the fork listens");
             sessionActive = true; // the adapter connected …
-            Thread.sleep(600);
+            awaitHeard(heard, "ACCEPTING KEEP_WAITING"); // a probe with the session on, the fork still listening
             assertEquals(1, attaches().size(), "attached once while it keeps listening");
         }
         // … and the agent stopped listening for it. Debug ▸ Stop then disconnects the adapter, and the same
         // agent listens again while its JVM runs the test to the end: not a new fork, nothing to attach.
-        Thread.sleep(600);
-        sessionActive = false;
+        awaitHeard(heard, "REFUSED KEEP_WAITING"); // the poller saw it stop listening while the session was on
         try (ServerSocket again = new ServerSocket(port, 1, InetAddress.getLoopbackAddress())) {
-            Thread.sleep(800);
+            // Listening again before the session is over, so no probe can see the port closed with it over.
+            sessionActive = false;
+            awaitHeard(heard, "ACCEPTING KEEP_WAITING"); // a probe of it listening again, the session over
             FxTestSupport.drainFx();
             assertEquals(1, attaches().size(), "the JVM that was debugged is not attached a second time");
         }
         // That JVM exited; a second fork of the same run binds the same port and waits suspended: attached.
-        Thread.sleep(600);
+        awaitHeard(heard, "REFUSED PORT_CLOSED");
         try (ServerSocket secondFork = new ServerSocket(port, 1, InetAddress.getLoopbackAddress())) {
             awaitAttaches(2, 5);
             assertEquals(
@@ -764,10 +778,7 @@ class TestRunCoordinatorActionsFxTest {
                 args -> coordinator.onTestRunStart(BuildTool.MAVEN, dir, args, List.of(), List.of("mvn"))));
 
         String noAttach = tr("status.testrunner.debugNoAttach", port, 0L);
-        for (int i = 0; i < 100 && !statuses.contains(noAttach); i++) {
-            Thread.sleep(50);
-            FxTestSupport.drainFx();
-        }
+        Await.holdsWithin(() -> onFx(() -> statuses.contains(noAttach)), Duration.ofSeconds(5));
         assertEquals(List.of(tr("status.testrunner.debugWaiting"), noAttach), statuses);
         assertEquals(noAttach, header());
         assertEquals(List.of(), attaches());
@@ -881,5 +892,14 @@ class TestRunCoordinatorActionsFxTest {
 
         assertEquals(List.of("open", "open", "open"), calls);
         assertEquals(List.of(tr("status.testrunner.filterNotPassed"), tr("status.testrunner.filterCleared")), statuses);
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

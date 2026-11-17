@@ -11,6 +11,7 @@ import javafx.scene.image.WritableImage;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 
+import com.editora.testkit.Await;
 import com.editora.text.OccurrenceSpan;
 import com.editora.text.SearchMatches;
 import org.junit.jupiter.api.BeforeAll;
@@ -102,17 +103,18 @@ class OverlaysFollowTheTextFxTest {
 
     /** The painted-minus-text offset on the first line, once it reads the same twice (up to three seconds). */
     private static double settledOffset(EditorBuffer b, String field, int column) throws Exception {
-        double last = Double.NaN;
-        for (int attempt = 0; attempt < 60; attempt++) {
-            EditorFx.drain();
-            double now = EditorFx.callFx(() -> paintedLeft(b, field) - charX(b, field, column));
-            if (now == last) {
-                return now;
-            }
-            last = now;
-            Thread.sleep(50);
-        }
-        return last;
+        // the same in two reads a pulse apart: laid out
+        double[] last = {Double.NaN};
+        Await.holdsWithin(
+                EditorFx.check(() -> {
+                    EditorFx.drain();
+                    double now = EditorFx.callFx(() -> paintedLeft(b, field) - charX(b, field, column));
+                    boolean settled = now == last[0];
+                    last[0] = now;
+                    return settled;
+                }),
+                java.time.Duration.ofSeconds(3));
+        return last[0];
     }
 
     /** The x of the leftmost painted pixel across the middle of the first line, in the overlay's coordinates. */

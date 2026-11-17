@@ -28,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@org.junit.jupiter.api.extension.ExtendWith(OffFxTracked.class)
 class ExpandSelectionChainFxTest {
 
     private static final String SRC =
@@ -124,30 +125,22 @@ class ExpandSelectionChainFxTest {
         fx.shared.getSettings().setLspSupport(true);
         fx.shared.getSettings().setJavaLspEnabled(true);
         manager.configure(true, Map.of("java", "jdtls"));
+        // The window probes whether jdtls is installed and gates the buffer on the answer: on a machine without it
+        // (CI) the answer took the buffer off the fake. The fake stands in for it, so it counts as installed whatever
+        // the machine has. A probe begun before this answers on the detection thread: let it, then answer again.
+        com.editora.lsp.LspTestHooks.cacheAvailability(manager, "java", true);
+        java.util.concurrent.ExecutorService detection = FxTestSupport.field(manager, "detectExec");
+        detection.submit(() -> {}).get(20, java.util.concurrent.TimeUnit.SECONDS);
+        FxTestSupport.drainFx();
+        com.editora.lsp.LspTestHooks.cacheAvailability(manager, "java", true);
         // The server's root is looked for off the FX thread (PERF-01, Pauta 6.0.1), and the buffer opens on the server
-        // when it lands; LspRootMemoFxTest and ChecksOffFxThreadFxTest cover that. Here the look runs in place, so the
-        // buffer opens on the fake within the sync: this test is about the ladder, not about when a root lands.
-        com.editora.perf.OffFx.runnerForTest((name, task) -> task.run());
-        EditorBuffer b;
-        try {
-            b = open(coordinator, file);
-            // The server's start answers later on a slow runner, and the settings just changed may restart it once
-            // more (queued on the FX thread): attached only once what is queued has run, with the buffer synced again
-            // meanwhile, as an edit would.
-            for (int i = 0; i < 20; i++) {
-                com.editora.testkit.Await.holdsWithin(
-                        () -> manager.supportsSelectionRanges(file), Duration.ofSeconds(1));
-                FxTestSupport.drainFx();
-                if (manager.supportsSelectionRanges(file)) {
-                    break;
-                }
-                EditorBuffer opened = b;
-                FxTestSupport.runOnFx(() ->
-                        FxTestSupport.call(coordinator, "syncBuffer", new Class<?>[] {EditorBuffer.class}, opened));
-            }
-        } finally {
-            com.editora.perf.OffFx.runnerForTest(null);
-        }
+        // when it lands; LspRootMemoFxTest and ChecksOffFxThreadFxTest cover that. Here the test waits until every
+        // look the open and the window set off has landed, so the buffer sits on the fake for good: this test is
+        // about the ladder, not about when a root lands.
+        EditorBuffer b = open(coordinator, file);
+        OffFxTracked.awaitIdle();
+        com.editora.testkit.Await.holdsWithin(() -> manager.supportsSelectionRanges(file), Duration.ofSeconds(5));
+        OffFxTracked.awaitIdle();
         assertTrue(
                 manager.supportsSelectionRanges(file),
                 () -> "the fake server is attached (held for install: "

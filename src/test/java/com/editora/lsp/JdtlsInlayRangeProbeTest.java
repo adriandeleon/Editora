@@ -90,8 +90,8 @@ class JdtlsInlayRangeProbeTest {
         ProcessBuilder pb = new ProcessBuilder(JDTLS, "-data", data.toString());
         pb.redirectError(ProcessBuilder.Redirect.DISCARD);
         Process proc = pb.start();
-        var launcher =
-                LSPLauncher.createClientLauncher(new ProbeClient(), proc.getInputStream(), proc.getOutputStream());
+        ProbeClient client = new ProbeClient();
+        var launcher = LSPLauncher.createClientLauncher(client, proc.getInputStream(), proc.getOutputStream());
         launcher.startListening();
         LanguageServer server = launcher.getRemoteProxy();
 
@@ -106,12 +106,13 @@ class JdtlsInlayRangeProbeTest {
         server.getTextDocumentService()
                 .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(uri, "java", 1, text)));
 
-        System.out.println("waiting 45s for the project import…");
-        Thread.sleep(45_000);
+        System.out.println("waiting for the project import…");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                client.ready.await(180, TimeUnit.SECONDS), "jdtls never said the project was imported");
         server.getWorkspaceService()
                 .didChangeConfiguration(new DidChangeConfigurationParams(
                         Map.of("java", Map.of("signatureHelp", Map.of("enabled", true, "description", true)))));
-        Thread.sleep(3_000);
+        // the requests sent next are handled after this notification
 
         System.out.println("\ndocument: " + lineCount + " lines ⇒ last line index " + lastLine + ", last line "
                 + lastLineLength + " chars");
@@ -180,6 +181,17 @@ class JdtlsInlayRangeProbeTest {
     }
 
     private static final class ProbeClient implements LanguageClient {
+
+        /** Counted down when jdtls says the project is imported ({@code language/status} ServiceReady). */
+        final java.util.concurrent.CountDownLatch ready = new java.util.concurrent.CountDownLatch(1);
+
+        @org.eclipse.lsp4j.jsonrpc.services.JsonNotification("language/status")
+        public void languageStatus(java.util.Map<String, Object> status) {
+            if ("ServiceReady".equals(status.get("type"))) {
+                ready.countDown();
+            }
+        }
+
         @Override
         public void telemetryEvent(Object o) {}
 

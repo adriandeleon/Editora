@@ -1,9 +1,12 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BooleanSupplier;
 
+import javafx.animation.Animation;
+import javafx.animation.PauseTransition;
 import javafx.event.Event;
 import javafx.scene.Node;
 import javafx.scene.Scene;
@@ -84,14 +87,7 @@ class PrefixKeyHintFxTest {
     }
 
     private static boolean await(BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + 5_000_000_000L;
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return true;
-            }
-            Thread.sleep(25);
-        }
-        return false;
+        return PulseChecks.holdsOnFxWithin(condition, Duration.ofSeconds(5));
     }
 
     private static String title(String commandId) {
@@ -149,11 +145,17 @@ class PrefixKeyHintFxTest {
 
     @Test
     void aCompletedSequenceNeverShowsTheHint() throws Exception {
+        PauseTransition wait = FxTestSupport.field(hint(), "wait");
         press(KeyCode.X, true);
+        FxTestSupport.runOnFx(() -> assertEquals(
+                Animation.Status.RUNNING, wait.getStatus(), "the prefix waits " + PrefixKeyHint.DELAY + " to show"));
         press(KeyCode.H, false); // C-x h: Select All, long before the delay
-        Thread.sleep((long) PrefixKeyHint.DELAY.toMillis() + 300);
+        // The sequence is complete: the wait is called off, and only its end shows the hint.
         FxTestSupport.drainFx();
-        assertFalse(FxTestSupport.callOnFx(() -> hint().isShowing()));
+        FxTestSupport.runOnFx(() -> {
+            assertEquals(Animation.Status.STOPPED, wait.getStatus(), "the wait is called off");
+            assertFalse(hint().isShowing());
+        });
     }
 
     @Test

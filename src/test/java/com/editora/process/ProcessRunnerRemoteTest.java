@@ -136,9 +136,8 @@ class ProcessRunnerRemoteTest {
         withTarget(dir, spec -> child, (remote, target) -> {
             ProcessRunner.run(remote, Duration.ofSeconds(5), List.of("git", "apply"), Map.of(), "patch\n");
 
-            for (int i = 0; i < 200 && child.stdin.size() == 0; i++) {
-                Thread.sleep(10); // the stdin writer is its own thread
-            }
+            // the stdin writer is its own thread: it closes the stream once it has written it all
+            assertTrue(child.stdinClosed.await(5, java.util.concurrent.TimeUnit.SECONDS), "stdin was closed");
             assertEquals("patch\n", child.stdin.toString());
         });
     }

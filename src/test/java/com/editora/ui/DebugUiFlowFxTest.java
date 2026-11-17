@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -131,19 +132,12 @@ class DebugUiFlowFxTest {
     private EditorBuffer open(Path file) throws Exception {
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
                 FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, file));
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (true) {
-            FxTestSupport.drainFx();
-            EditorBuffer b = active();
-            if (b != null
-                    && file.equals(b.getPath())
-                    && !FxTestSupport.callOnFx(b::getContent).isEmpty()) {
-                FxTestSupport.runOnFx(debug::applyGating);
-                return b;
-            }
-            assertTrue(System.nanoTime() < deadline, "the file never opened: " + file);
-            Thread.sleep(20);
-        }
+        EditorBuffer b = EventuallyFx.valueOnFx("the file to open: " + file, Duration.ofSeconds(10), () -> {
+            EditorBuffer a = (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {});
+            return a != null && file.equals(a.getPath()) && !a.getContent().isEmpty() ? a : null;
+        });
+        FxTestSupport.runOnFx(debug::applyGating);
+        return b;
     }
 
     /** Puts the window's own manager into a live session with {@code adapter}, as after a launch of {@code file}. */
@@ -173,16 +167,8 @@ class DebugUiFlowFxTest {
 
     /** Waits until {@code condition} holds on the FX thread. */
     private void await(String what, Callable<Boolean> condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (true) {
-            FxTestSupport.drainFx();
-            if (FxTestSupport.callOnFx(condition)) {
-                FxTestSupport.drainFx();
-                return;
-            }
-            assertTrue(System.nanoTime() < deadline, what);
-            Thread.sleep(15);
-        }
+        EventuallyFx.untilOnFx(what, Duration.ofSeconds(10), condition);
+        FxTestSupport.drainFx();
     }
 
     private void stopAt(FakeDebugAdapter.Session session, Path file, int line1) throws Exception {
@@ -407,7 +393,7 @@ class DebugUiFlowFxTest {
         try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
             FakeDebugAdapter.Session session = connect(adapter, util);
             session.frames = List.of(
-                    FakeDebugAdapter.Session.frame(1, "Thread.sleep", jdt, 509),
+                    FakeDebugAdapter.Session.frame(1, "Thread.join", jdt, 509),
                     FakeDebugAdapter.Session.frame(2, "work", util.toString(), 3));
             List<Integer> tabCounts = new ArrayList<>();
             int before = FxTestSupport.callOnFx(() -> tabs().size());
@@ -426,7 +412,7 @@ class DebugUiFlowFxTest {
             await("no execution line", () -> !execLines(b).isEmpty());
             assertEquals(List.of(2), execLines(b));
             // A jdt:// frame is library code jdtls can show, not "no source" (review 2, B107).
-            assertEquals(tr("status.debug.stoppedInLibrary", "Thread.sleep"), status());
+            assertEquals(tr("status.debug.stoppedInLibrary", "Thread.join"), status());
 
             // The frame itself stays selectable: its variables load, nothing is opened, nothing fails.
             int scopes = java.util.Collections.frequency(session.requests, "scopes");
@@ -437,7 +423,8 @@ class DebugUiFlowFxTest {
             // B5: a jdt:// frame asks jdtls for the class's source; with none to give (no jdtls here) it says so
             assertEquals(tr("status.lsp.libraryUnavailable"), status());
             assertEquals(List.of(), execLines(b), "the line of another frame is not where this one is");
-            Thread.sleep(200);
+            int seen = FxTestSupport.callOnFx(tabCounts::size);
+            await("a dozen more frames watched", () -> tabCounts.size() >= seen + 12);
             FxTestSupport.runOnFx(watch::stop);
             assertEquals(List.of(before), tabCounts.stream().distinct().toList(), "no tab may flash open");
             assertFalse(
@@ -686,7 +673,10 @@ class DebugUiFlowFxTest {
                 stack().getSelectionModel().select(1);
                 obj.setExpanded(true);
             });
-            Thread.sleep(150);
+            FxTestSupport.drainFx();
+            // The adapter answers its ping after reading all the client sent before: a scopes or variables
+            // request the click made has been heard by now.
+            session.awaitDelivered();
             FxTestSupport.drainFx();
             assertEquals(List.of(), execLines(b), "a running program is not 'here'");
             assertEquals(scopes, java.util.Collections.frequency(session.requests, "scopes"));

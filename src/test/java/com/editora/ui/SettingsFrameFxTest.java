@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Set;
 
@@ -13,6 +14,7 @@ import javafx.scene.input.KeyEvent;
 import javafx.stage.Stage;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -270,13 +272,7 @@ class SettingsFrameFxTest {
 
     /** Polls {@code condition} on the FX thread until it holds (10 s at most). */
     static void await(java.util.concurrent.Callable<Boolean> condition, String what) throws Exception {
-        long end = System.nanoTime() + 10_000_000_000L;
-        while (!FxTestSupport.callOnFx(condition)) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(20);
-        }
+        Await.until(() -> onFx(condition), what, Duration.ofSeconds(10));
     }
 
     @Test
@@ -430,38 +426,39 @@ class SettingsFrameFxTest {
             java.util.function.Consumer<javafx.scene.control.DialogPane> inspect,
             javafx.scene.control.ButtonType button) {
         Thread t = new Thread(() -> {
-            for (int i = 0; i < 500; i++) {
-                boolean[] done = {false};
-                try {
-                    FxTestSupport.runOnFx(() -> {
-                        for (javafx.stage.Window w :
-                                javafx.stage.Window.getWindows().stream().toList()) {
-                            if (w.isShowing()
-                                    && w.getScene().getRoot() instanceof javafx.scene.control.DialogPane pane) {
-                                inspect.accept(pane);
-                                javafx.scene.control.ButtonType match = pane.getButtonTypes().stream()
-                                        .filter(bt -> bt.getText().equals(button.getText()))
-                                        .findFirst()
-                                        .orElseThrow();
-                                javafx.application.Platform.runLater(
-                                        () -> ((javafx.scene.control.Button) pane.lookupButton(match)).fire());
-                                done[0] = true;
-                                return;
-                            }
-                        }
-                    });
-                    if (done[0]) {
-                        return;
-                    }
-                    Thread.sleep(20);
-                } catch (Exception e) {
-                    return;
-                }
+            try {
+                Await.holdsWithin(() -> answered(inspect, button), Duration.ofSeconds(10));
+            } catch (Exception e) {
+                // no dialog to answer, or the inspection failed: the test's own checks say which
             }
         });
         t.setDaemon(true);
         t.start();
         return t;
+    }
+
+    /** Answers the showing dialog, if there is one, with {@code button} after {@code inspect} looked at it. */
+    private static boolean answered(
+            java.util.function.Consumer<javafx.scene.control.DialogPane> inspect,
+            javafx.scene.control.ButtonType button) {
+        boolean[] done = {false};
+        FxTestSupport.runOnFxUnchecked(() -> {
+            for (javafx.stage.Window w :
+                    javafx.stage.Window.getWindows().stream().toList()) {
+                if (w.isShowing() && w.getScene().getRoot() instanceof javafx.scene.control.DialogPane pane) {
+                    inspect.accept(pane);
+                    javafx.scene.control.ButtonType match = pane.getButtonTypes().stream()
+                            .filter(bt -> bt.getText().equals(button.getText()))
+                            .findFirst()
+                            .orElseThrow();
+                    javafx.application.Platform.runLater(
+                            () -> ((javafx.scene.control.Button) pane.lookupButton(match)).fire());
+                    done[0] = true;
+                    return;
+                }
+            }
+        });
+        return done[0];
     }
 
     @Test
@@ -673,6 +670,15 @@ class SettingsFrameFxTest {
                 git.setSelected(!git.isSelected());
                 FxTestSupport.<Stage>field(window, "stage").hide();
             });
+        }
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

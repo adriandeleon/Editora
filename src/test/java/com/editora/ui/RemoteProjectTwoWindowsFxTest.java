@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 
 import com.editora.config.Project;
 import com.editora.config.ProjectManager;
@@ -71,11 +72,9 @@ class RemoteProjectTwoWindowsFxTest {
 
             FxTestSupport.runOnFx(() -> remote.connected(sftp.connection(), found, "password".toCharArray()));
 
-            Path shown = null;
-            for (int i = 0; i < 400 && shown == null; i++) {
-                Thread.sleep(25);
-                shown = FxTestSupport.callOnFx(() -> FxTestSupport.<Path>field(second, "projectRoot"));
-            }
+            PulseChecks.holdsOnFxWithin(
+                    () -> FxTestSupport.<Path>field(second, "projectRoot") != null, Duration.ofSeconds(10));
+            Path shown = FxTestSupport.callOnFx(() -> FxTestSupport.<Path>field(second, "projectRoot"));
             assertNotNull(shown, "the project's window never showed the folder");
             assertEquals("/app", shown.toString());
             assertEquals("sftp://" + authority + "/app", Vfs.toStorableString(shown));

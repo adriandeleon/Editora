@@ -103,11 +103,9 @@ class JsDebugStartFxTest {
     }
 
     private void awaitError() throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT);
-        while (errors.isEmpty()) {
-            assertTrue(System.nanoTime() < deadline, "no error was reported; states " + states);
-            Thread.sleep(20);
-        }
+        assertTrue(
+                com.editora.testkit.Await.holdsWithin(() -> !errors.isEmpty(), java.time.Duration.ofSeconds(WAIT)),
+                "no error was reported; states " + states);
     }
 
     /** A stand-in {@code node}: answers {@code --version}, and otherwise runs {@code body} as the "js-debug". */
@@ -138,11 +136,10 @@ class JsDebugStartFxTest {
 
         onFx(() -> dap.startJsAttach(9229, "Debug request", dir, List.of("<node_internals>/**")));
         FakeDebugAdapter.Session session = adapter.awaitSession();
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT);
-        while (!session.requests.contains("attach")) {
-            assertTrue(System.nanoTime() < deadline, "no attach; requests " + session.requests + ", errors " + errors);
-            Thread.sleep(20);
-        }
+        assertTrue(
+                com.editora.testkit.Await.holdsWithin(
+                        () -> session.requests.contains("attach"), java.time.Duration.ofSeconds(WAIT)),
+                "no attach; requests " + session.requests + ", errors " + errors);
         assertEquals(9229, ((Number) session.launchArgs.get("port")).intValue(), session.launchArgs.toString());
         assertEquals("127.0.0.1", session.launchArgs.get("address"), session.launchArgs.toString());
         assertEquals(DapManager.State.STARTING, states.get(0));
@@ -194,11 +191,10 @@ class JsDebugStartFxTest {
             dap.startLaunch(file, "javascript", (options, chosen) -> {});
         });
         FakeDebugAdapter.Session session = adapter.awaitSession();
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT);
-        while (!session.requests.contains("launch")) {
-            assertTrue(System.nanoTime() < deadline, "no launch; requests " + session.requests + ", errors " + errors);
-            Thread.sleep(20);
-        }
+        assertTrue(
+                com.editora.testkit.Await.holdsWithin(
+                        () -> session.requests.contains("launch"), java.time.Duration.ofSeconds(WAIT)),
+                "no launch; requests " + session.requests + ", errors " + errors);
         assertEquals(file.toString(), session.launchArgs.get("program"), session.launchArgs.toString());
         assertEquals(project.toString(), session.launchArgs.get("cwd"), session.launchArgs.toString());
         assertEquals(node.toString(), session.launchArgs.get("runtimeExecutable"), session.launchArgs.toString());
@@ -224,7 +220,10 @@ class JsDebugStartFxTest {
         Path built = Files.writeString(project.resolve("main.js"), "console.log('hi');\n");
         CountDownLatch checking = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<Thread> checker =
+                new java.util.concurrent.atomic.AtomicReference<>();
         dap.setFileTimesForTest(f -> {
+            checker.set(Thread.currentThread());
             checking.countDown();
             try {
                 release.await(WAIT, TimeUnit.SECONDS);
@@ -237,11 +236,8 @@ class JsDebugStartFxTest {
             dap.setProgramConsole(true);
             dap.startLaunch(source, "javascript", (options, chosen) -> {});
         });
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT);
-        while (adapter.sessionCount() == 0) {
-            assertTrue(System.nanoTime() < deadline, "no session; errors " + errors + ", output " + output);
-            Thread.sleep(20);
-        }
+        com.editora.testkit.Await.holdsWithin(() -> adapter.sessionCount() > 0, java.time.Duration.ofSeconds(WAIT));
+        assertTrue(adapter.sessionCount() > 0, "no session; errors " + errors + ", output " + output);
         FakeDebugAdapter.Session session = adapter.awaitSession();
         session.awaitRequest("launch");
         Path marker = dir.resolve("program-ran");
@@ -252,8 +248,12 @@ class JsDebugStartFxTest {
         onFx(dap::stop);
         release.countDown();
 
-        Thread.sleep(1_000); // the check's answer reaches the FX thread, which would start the program
-        onFx(() -> {}); // and whatever it queued has run
+        // The check's thread ends by handing its answer to the FX thread, which would start the program: wait for
+        // that thread, then for what it queued.
+        checker.get().join(TimeUnit.SECONDS.toMillis(WAIT));
+        assertTrue(!checker.get().isAlive(), "the check finished");
+        onFx(() -> {});
+        onFx(() -> {}); // and whatever that queued has run
         assertTrue(Files.notExists(marker), "a program was started for a session that had ended");
     }
 
@@ -284,11 +284,10 @@ class JsDebugStartFxTest {
         Path file = Files.writeString(dir.resolve("main.js"), "console.log('hi');\n");
         onFx(() -> dap.startLaunch(file, "javascript", (options, chosen) -> {}));
         FakeDebugAdapter.Session session = adapter.awaitSession();
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT);
-        while (!session.requests.contains("launch")) {
-            assertTrue(System.nanoTime() < deadline, "no launch; requests " + session.requests + ", errors " + errors);
-            Thread.sleep(20);
-        }
+        assertTrue(
+                com.editora.testkit.Await.holdsWithin(
+                        () -> session.requests.contains("launch"), java.time.Duration.ofSeconds(WAIT)),
+                "no launch; requests " + session.requests + ", errors " + errors);
         assertEquals(old.toString(), session.launchArgs.get("runtimeExecutable"), session.launchArgs.toString());
         assertTrue(errors.isEmpty(), errors.toString());
         onFx(dap::stop);

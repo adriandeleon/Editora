@@ -198,7 +198,10 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public final List<Raw> rawNotifications = new ArrayList<>();
     /** The value a raw request answers with (null unless a test sets it). */
     public Object rawResponse;
-    /** When set, answers each raw request per method instead of the canned value above. */
+    /**
+     * When set, answers each raw request per method instead of the canned value above. A {@code CompletableFuture} it
+     * returns is the answer itself: a test completes it when the server is to answer (a slow server, without a sleep).
+     */
     public volatile java.util.function.Function<Raw, Object> rawHandler;
 
     /** Installs this fake as the session's raw sink, so custom requests/notifications are recorded. */
@@ -210,7 +213,11 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
                 rawRequests.add(raw);
                 var handler = rawHandler;
                 if (handler != null && !failEverything) {
-                    return CompletableFuture.completedFuture(handler.apply(raw));
+                    Object answer = handler.apply(raw);
+                    if (answer instanceof CompletableFuture<?> later) {
+                        return later.thenApply(value -> (Object) value);
+                    }
+                    return CompletableFuture.completedFuture(answer);
                 }
                 return failEverything ? failed() : CompletableFuture.completedFuture(rawResponse);
             }

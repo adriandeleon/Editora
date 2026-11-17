@@ -2,10 +2,13 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import com.editora.process.ExecTargets;
+import com.editora.testkit.Await;
 import com.editora.vfs.EmbeddedSftpFixture;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -69,24 +72,26 @@ class RemoteWatcherFxTest {
     }
 
     private void awaitChange(Path path, ProjectPanel.FsKind kind) throws InterruptedException {
-        for (int i = 0; i < 300; i++) {
-            if (seen.stream().anyMatch(c -> c.path().equals(path) && c.kind() == kind)) {
-                return;
-            }
-            Thread.sleep(50);
+        if (!Await.holdsWithin(
+                () -> seen.stream().anyMatch(c -> c.path().equals(path) && c.kind() == kind), Duration.ofSeconds(15))) {
+            throw new AssertionError("never reported " + kind + " " + path + "; saw " + seen);
         }
-        throw new AssertionError("never reported " + kind + " " + path + "; saw " + seen);
     }
 
     @Test
     void whatAnotherProgramChangesOnTheHostIsReported() throws Exception {
         watcher = RemoteWatcher.start(remoteApp, seen::addAll);
         assertNotNull(watcher);
-        Thread.sleep(1500); // the poll's first stamp must predate the changes
 
         Files.writeString(serverApp.resolve("src/New.java"), "class New {}\n");
         Files.delete(serverApp.resolve("src/Old.java"));
         Files.writeString(serverApp.resolve(".git/index"), "churn");
+        // The poll reports what is newer than its stamp, made as it starts (on a thread of its own): the changes are
+        // dated after any stamp this test can see made, so they are newer than the first one whenever it was made.
+        FileTime later = FileTime.fromMillis(System.currentTimeMillis() + 60_000);
+        Files.setLastModifiedTime(serverApp.resolve("src/New.java"), later);
+        Files.setLastModifiedTime(serverApp.resolve("src"), later);
+        Files.setLastModifiedTime(serverApp.resolve(".git/index"), later);
 
         awaitChange(remoteApp.resolve("src/New.java"), ProjectPanel.FsKind.CHANGED);
         awaitChange(remoteApp.resolve("src"), ProjectPanel.FsKind.CHANGED); // a deletion shows as its folder
@@ -103,9 +108,7 @@ class RemoteWatcherFxTest {
 
         watcher.stop();
 
-        for (int i = 0; i < 100 && watcher.isRunning(); i++) {
-            Thread.sleep(50);
-        }
+        Await.holdsWithin(() -> !watcher.isRunning(), Duration.ofSeconds(5));
         assertFalse(watcher.isRunning());
     }
 

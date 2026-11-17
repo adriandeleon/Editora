@@ -118,10 +118,16 @@ class NarrowingFxTest {
                     FxTestSupport.field(fx.controller, "fileWorkflows"), "save", new Class[] {EditorBuffer.class}, b);
         });
         String expected = "one\nXtwo\nthree\nfour\nfive";
-        for (int i = 0; i < 100 && !expected.equals(Files.readString(file)); i++) {
-            Thread.sleep(20);
-            FxTestSupport.runOnFx(() -> {});
-        }
+        com.editora.testkit.Await.holdsWithin(
+                () -> {
+                    try {
+                        return expected.equals(Files.readString(file));
+                    } catch (java.io.IOException e) {
+                        return false;
+                    }
+                },
+                java.time.Duration.ofSeconds(10));
+        FxTestSupport.drainFx();
         assertEquals(
                 expected,
                 Files.readString(file),
@@ -218,13 +224,9 @@ class NarrowingFxTest {
      * {@code [2, 3]}), so one read can miss a row that the next pulse builds.
      */
     private List<String> settledGutterNumbers(EditorBuffer b, List<String> expected) throws Exception {
-        List<String> numbers = gutterNumbers(b);
-        for (int attempt = 0; attempt < 100 && !numbers.equals(expected); attempt++) {
-            Thread.sleep(30);
-            FxTestSupport.drainFx();
-            numbers = gutterNumbers(b);
-        }
-        return numbers;
+        com.editora.testkit.Await.holdsWithin(
+                OnFx.checked(() -> gutterNumbers(b).equals(expected)), java.time.Duration.ofSeconds(5));
+        return gutterNumbers(b);
     }
 
     @Test
@@ -254,10 +256,11 @@ class NarrowingFxTest {
         String text = doc.toString();
         EditorBuffer b = open(text);
         FxTestSupport.runOnFx(() -> assertTrue(b.narrowTo(at(text, 150, 0), at(text, 160, 8))));
-        for (int i = 0; i < 4; i++) {
-            Thread.sleep(30);
-            FxTestSupport.drainFx();
-        }
+        // the narrowed text laid out and painted
+        FxTestSupport.drainFx();
+        OnFx.untilHighlightAndFoldsSettled(b);
+        OnFx.pulses(4);
+        FxTestSupport.drainFx();
         FxTestSupport.runOnFx(() -> {
             b.getArea().moveTo(2, 0); // line 152 of the file
             b.getArea().showParagraphAtTop(0);

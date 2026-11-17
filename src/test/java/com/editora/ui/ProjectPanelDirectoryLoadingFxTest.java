@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -61,14 +62,10 @@ class ProjectPanelDirectoryLoadingFxTest {
             releaseRead.countDown();
 
             TreeView<Path> tree = FxTestSupport.field(panel, "tree");
-            for (int i = 0; i < 100; i++) {
-                boolean loaded = FxTestSupport.callOnFx(() -> tree.getRoot().getChildren().stream()
-                        .anyMatch(item -> item.getValue().equals(newRoot.resolve("new.txt"))));
-                if (loaded) {
-                    break;
-                }
-                Thread.sleep(20);
-            }
+            PulseChecks.holdsOnFxWithin(
+                    () -> tree.getRoot().getChildren().stream()
+                            .anyMatch(item -> item.getValue().equals(newRoot.resolve("new.txt"))),
+                    Duration.ofSeconds(5));
             assertEquals(newRoot, FxTestSupport.callOnFx(() -> tree.getRoot().getValue()));
             assertEquals(
                     java.util.List.of(newRoot.resolve("new.txt")),
@@ -97,16 +94,7 @@ class ProjectPanelDirectoryLoadingFxTest {
 
             FxTestSupport.runOnFx(panel::refreshTree);
 
-            for (int i = 0; i < 100; i++) {
-                Path selected = FxTestSupport.callOnFx(() -> {
-                    TreeItem<Path> item = tree.getSelectionModel().getSelectedItem();
-                    return item == null ? null : item.getValue();
-                });
-                if (file.equals(selected)) {
-                    break;
-                }
-                Thread.sleep(20);
-            }
+            PulseChecks.holdsOnFxWithin(() -> selected(tree, file), Duration.ofSeconds(5));
             assertEquals(
                     file,
                     FxTestSupport.callOnFx(
@@ -131,16 +119,7 @@ class ProjectPanelDirectoryLoadingFxTest {
                 panel.revealPath(file);
             });
             TreeView<Path> tree = FxTestSupport.field(panel, "tree");
-            for (int i = 0; i < 150; i++) {
-                Path selected = FxTestSupport.callOnFx(() -> {
-                    TreeItem<Path> item = tree.getSelectionModel().getSelectedItem();
-                    return item == null ? null : item.getValue();
-                });
-                if (file.equals(selected)) {
-                    break;
-                }
-                Thread.sleep(20);
-            }
+            PulseChecks.holdsOnFxWithin(() -> selected(tree, file), Duration.ofSeconds(5));
             assertEquals(
                     file,
                     FxTestSupport.callOnFx(
@@ -177,17 +156,26 @@ class ProjectPanelDirectoryLoadingFxTest {
         assertTrue(FxTestSupport.callOnFx(() -> unloaded.getChildren().isEmpty()), "nothing is listed any more");
     }
 
+    /** Whether {@code file} is the tree's selection. FX thread. */
+    private static boolean selected(TreeView<Path> tree, Path file) {
+        TreeItem<Path> item = tree.getSelectionModel().getSelectedItem();
+        return item != null && file.equals(item.getValue());
+    }
+
     private static TreeItem<Path> awaitChild(TreeItem<Path> parent, Path path) throws Exception {
-        for (int i = 0; i < 100; i++) {
-            TreeItem<Path> match = FxTestSupport.callOnFx(() -> parent.getChildren().stream()
-                    .filter(item -> path.equals(item.getValue()))
-                    .findFirst()
-                    .orElse(null));
-            if (match != null) {
-                return match;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("child did not load: " + path);
+        java.util.List<TreeItem<Path>> match = new java.util.ArrayList<>(java.util.Collections.singletonList(null));
+        PulseChecks.untilOnFx(
+                () -> {
+                    match.set(
+                            0,
+                            parent.getChildren().stream()
+                                    .filter(item -> path.equals(item.getValue()))
+                                    .findFirst()
+                                    .orElse(null));
+                    return match.get(0) != null;
+                },
+                "child did not load: " + path,
+                Duration.ofSeconds(5));
+        return match.get(0);
     }
 }

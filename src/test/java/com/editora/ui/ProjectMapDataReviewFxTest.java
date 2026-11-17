@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -131,8 +132,14 @@ class ProjectMapDataReviewFxTest {
                 assertEquals(renamed, card.path());
             });
             waitFor(() -> contains(map, renamed), "the renamed row is listed");
+            // A card refresh (its look at the file, off the FX thread) would mark a missing file once it lands.
+            FxTestSupport.runOnFx(
+                    () -> FxTestSupport.<MapCards>field(map.view(), "cards").refresh(false));
+            waitFor(
+                    () -> !FxTestSupport.<Boolean>field(card, "loading")
+                            && !FxTestSupport.<Boolean>field(card, "statPending"),
+                    "the card's look at its file");
             FxTestSupport.drainFx();
-            TimeUnit.MILLISECONDS.sleep(300); // a card refresh would mark a missing file by now
             FxTestSupport.runOnFx(() -> {
                 assertTrue(previews(map.view()).containsKey(renamed), "the card is still open");
                 assertFalse(
@@ -321,7 +328,11 @@ class ProjectMapDataReviewFxTest {
         waitFor(() -> child(rootItem, docs) != null, "docs/");
         FxTestSupport.runOnFx(() -> child(rootItem, docs).setExpanded(true));
         waitFor(() -> child(child(rootItem, docs), untracked) != null, "docs/untracked.txt");
-        TimeUnit.MILLISECONDS.sleep(300); // the watch on docs/ is registered
+        java.util.Map<?, Path> watched = FxTestSupport.field(panel, "watchKeys");
+        PulseChecks.until(
+                () -> watched.values().stream().anyMatch(dir -> dir.endsWith("docs")),
+                "the watch on docs/",
+                Duration.ofSeconds(10));
 
         // The rename's move is made off the FX thread now (PERF-01, Pauta 6.0.1); the row waits for it below.
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
@@ -473,13 +484,6 @@ class ProjectMapDataReviewFxTest {
     }
 
     private static void waitFor(BooleanSupplier condition, String message) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return;
-            }
-            TimeUnit.MILLISECONDS.sleep(20);
-        }
-        throw new AssertionError("timed out: " + message);
+        PulseChecks.untilOnFx(condition, "timed out: " + message, Duration.ofSeconds(10));
     }
 }

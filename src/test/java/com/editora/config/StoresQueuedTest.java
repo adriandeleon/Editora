@@ -36,6 +36,15 @@ class StoresQueuedTest {
         return gate;
     }
 
+    /** Waits until {@code saver} has queued its write and waits for it (a caller off the FX thread does). */
+    private static void awaitQueued(Thread saver) throws InterruptedException {
+        com.editora.testkit.Await.until(
+                () -> java.util.Arrays.stream(saver.getStackTrace())
+                        .anyMatch(f -> f.getClassName().endsWith("ConfigWriter")
+                                && f.getMethodName().equals("awaitQueued")),
+                "the save to be queued");
+    }
+
     @Test
     void aSaveMadeWhileTheWriterIsBusyIsCopiedNotSerializedLiveAndTheNewerOneWins(@TempDir Path dir) throws Exception {
         ConfigManager config = new ConfigManager(dir);
@@ -45,12 +54,12 @@ class StoresQueuedTest {
                 .computeIfAbsent("/x/a.txt", k -> new ArrayList<>())
                 .add(new Bookmark(1, "first", "l"));
         Thread first = Thread.ofVirtual().start(config::saveBookmarks); // queued behind the held task
-        Thread.sleep(50);
+        awaitQueued(first);
         // The live store goes on changing while that save waits: its copy was taken when it was made.
         config.getBookmarks().get("/x/a.txt").add(new Bookmark(2, "second", "l"));
         config.getBookmarks().get("/x/a.txt").remove(0);
         Thread saver = Thread.ofVirtual().start(config::saveBookmarks); // the newer save of the same file
-        Thread.sleep(50);
+        awaitQueued(saver);
         gate.countDown();
         saver.join();
         first.join();
@@ -71,8 +80,7 @@ class StoresQueuedTest {
         config.getNotes()
                 .computeIfAbsent("/x/n.txt", k -> new ArrayList<>())
                 .add(PersonalNote.create(null, NoteScope.LINE, null, "LAST-NOTE", List.of()));
-        Thread.ofVirtual().start(config::saveNotes);
-        Thread.sleep(50);
+        awaitQueued(Thread.ofVirtual().start(config::saveNotes));
         gate.countDown();
         assertTrue(config.shared().shutdown(), "the quit's wait makes them durable");
         assertTrue(Files.readString(config.getSettingsFile()).contains("\"tabSize\" : 11"));
@@ -214,9 +222,7 @@ class StoresQueuedTest {
         shared.agentSessions(h -> order.add("first"));
         shared.agentSessions(h -> order.add("second"));
         shared.readAgentSessionsAhead().get(10, TimeUnit.SECONDS);
-        for (int i = 0; i < 50 && toFx.isEmpty(); i++) {
-            Thread.sleep(10);
-        }
+        com.editora.testkit.Await.holdsWithin(() -> !toFx.isEmpty(), java.time.Duration.ofSeconds(10));
         toFx.forEach(Runnable::run);
         assertEquals(List.of("first", "second"), order);
         shared.agentSessions(h -> order.add("third")); // read: at once

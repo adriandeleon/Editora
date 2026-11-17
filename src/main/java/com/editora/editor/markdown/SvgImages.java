@@ -234,6 +234,9 @@ public final class SvgImages {
         canvas.setPrefSize(w, h);
         canvas.setMinSize(w, h);
         canvas.setMaxSize(w, h);
+        // A screen reader names the picture (ACC-01): the canvas is a Control with no text of its own.
+        canvas.setAccessibleRole(javafx.scene.AccessibleRole.IMAGE_VIEW);
+        canvas.setAccessibleText(Messages.tr("svg.image.name"));
         return canvas;
     }
 

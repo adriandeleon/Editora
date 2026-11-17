@@ -163,4 +163,97 @@ class HtmlLinksTest {
         assertEquals("100%", HtmlLinks.decode("100%"));
         assertEquals("%zz", HtmlLinks.decode("%zz"));
     }
+
+    @Test
+    void aSchemeStartsWithALetterAndHoldsOnlyLettersDigitsPlusMinusAndDots() {
+        assertEquals("web+cal-x.y9", HtmlLinks.scheme("Web+cal-x.y9:z"), "lower-cased");
+        assertNull(HtmlLinks.scheme("nocolon"));
+        assertNull(HtmlLinks.scheme("C:\\temp"), "a drive letter");
+        assertNull(HtmlLinks.scheme("1ab:x"), "a digit first");
+        assertNull(HtmlLinks.scheme("[ab:x"));
+        assertNull(HtmlLinks.scheme("{ab:x"));
+        assertNull(HtmlLinks.scheme("ab_c:x"), "an underscore");
+    }
+
+    @Test
+    void theLinkAtAnOffsetIsFoundPastEarlierOnesAndNoneAfterTheLast() {
+        String text = "<a href=\"one.html\">x</a> <a href=\"two.html\">y</a> tail";
+        HtmlLinks.Link two = HtmlLinks.at(text, text.indexOf("two") + 1);
+        assertNotNull(two);
+        assertEquals("two.html", two.value());
+        assertNull(HtmlLinks.at(text, text.indexOf("tail")), "after every link");
+    }
+
+    @Test
+    void theBaseHrefIsTheBaseElementsHrefBeforeTheBody() {
+        assertEquals("/b/", HtmlLinks.baseHref("<base data=\"x\" href=\" /b/ \">"), "its other link attribute skipped");
+        assertNull(HtmlLinks.baseHref("<body background=\"bg.png\"><base href=\"/b/\">"), "not after the body");
+    }
+
+    @Test
+    void schemesBasesAndOddValuesResolveAsABrowserWould() {
+        assertEquals(
+                new HtmlLinks.Target(HtmlLinks.Kind.WEB, null, "", "https://x.org/a"),
+                HtmlLinks.resolve(PAGE, null, "https://x.org/a", null));
+        HtmlLinks.Target file = HtmlLinks.resolve(PAGE, null, "file:///tmp/a.html#top", null);
+        assertEquals(HtmlLinks.Kind.FILE, file.kind());
+        assertEquals(Path.of("/tmp/a.html"), file.file());
+        assertEquals("top", file.fragment());
+        assertEquals(
+                HtmlLinks.Kind.NONE,
+                HtmlLinks.resolve(Path.of("/"), null, "a.html", null).kind(),
+                "no folder");
+
+        assertEquals(
+                DIR.resolve("a.html"),
+                HtmlLinks.resolve(PAGE, null, "a.html", "").file(),
+                "an empty base");
+        assertEquals(
+                DIR.resolve("a.html"),
+                HtmlLinks.resolve(PAGE, null, "a.html", "{{ base }}").file(),
+                "templated");
+        assertEquals(
+                "https://cdn.example.com/lib/a.js",
+                HtmlLinks.resolve(PAGE, null, "a.js", "//cdn.example.com/lib/").url(),
+                "a scheme-relative base");
+        assertEquals(
+                HtmlLinks.Kind.NONE,
+                HtmlLinks.resolve(PAGE, null, "a.js", "ftp://host/dir/").kind());
+        assertEquals(
+                DIR.resolve("a.html"),
+                HtmlLinks.resolve(PAGE, null, "a.html", "sub").file(),
+                "a file base");
+        assertEquals(
+                DIR.resolve("sub/a.html"),
+                HtmlLinks.resolve(PAGE, null, "a.html", "sub/").file(),
+                "a folder");
+        assertEquals(
+                DIR.resolve("a.html"),
+                HtmlLinks.resolve(PAGE, null, "a.html", "bad\0base").file(),
+                "a base that is no path is ignored");
+
+        HtmlLinks.Target self = HtmlLinks.resolve(PAGE, null, "?page=2", null);
+        assertEquals(DIR, self.file(), "a query alone: the page's own folder");
+        assertEquals(
+                DIR.resolve("css/x.css"),
+                HtmlLinks.resolve(PAGE, null, "/css/x.css", null).file(),
+                "no root");
+    }
+
+    @Test
+    void aServerUriIsReadForItsSchemeFragmentAndQuery() {
+        assertEquals(HtmlLinks.Kind.WEB, HtmlLinks.fromUri("https://x.org/a").kind());
+        assertEquals(HtmlLinks.Kind.NONE, HtmlLinks.fromUri("relative/a.html").kind(), "not an absolute URI");
+        assertEquals("file:///a.html", HtmlLinks.withoutFragment("file:///a.html%23team"));
+        assertEquals("a", HtmlLinks.withoutQuery("a?x%3Fy"), "the plain ? first");
+        assertEquals("a", HtmlLinks.withoutQuery("a%3Fy?x"), "the encoded one first");
+        assertTrue(HtmlLinks.templated("<?php echo $u ?>"));
+    }
+
+    @Test
+    void percentEscapesAreDecodedAsUtf8AndAMalformedOneIsKept() {
+        assertEquals("%4z", HtmlLinks.decode("%4z"));
+        assertEquals("a\u00e9", HtmlLinks.decode("a%C3%A9"), "an escape at the end");
+        assertEquals("\u00e9b", HtmlLinks.decode("%C3%A9b"));
+    }
 }

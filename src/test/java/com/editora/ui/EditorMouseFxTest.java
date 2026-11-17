@@ -600,9 +600,22 @@ class EditorMouseFxTest {
         robot.mouseClick(MouseButton.PRIMARY);
     }
 
+    /** Lets queued FX work run, then a few pulses (each a CSS and layout pass), then what those queued. */
     private static void settle() throws Exception {
         FxTestSupport.drainFx();
-        Thread.sleep(150);
+        java.util.concurrent.CountDownLatch frames = new java.util.concurrent.CountDownLatch(5);
+        javafx.animation.AnimationTimer counter = new javafx.animation.AnimationTimer() {
+            @Override
+            public void handle(long now) {
+                frames.countDown();
+            }
+        };
+        FxTestSupport.runOnFx(counter::start);
+        try {
+            assertTrue(frames.await(10, java.util.concurrent.TimeUnit.SECONDS), "pulses ran");
+        } finally {
+            FxTestSupport.runOnFx(counter::stop);
+        }
         FxTestSupport.drainFx();
         FxTestSupport.drainFx();
     }

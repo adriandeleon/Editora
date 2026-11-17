@@ -34,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** How the Settings window writes a change, and how it is kept in step with changes made elsewhere. */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxTracked.class)
 class SettingsApplyFxTest {
 
     private FxWindowFixture fx;
@@ -355,10 +356,7 @@ class SettingsApplyFxTest {
      * disk (PERF-01 moved both off the FX thread), so a file check sees only what the step under test did.
      */
     private static void settle(FxWindowFixture fx) throws Exception {
-        for (int i = 0; i < 3; i++) {
-            Thread.sleep(50);
-            FxTestSupport.drainFx();
-            fx.shared.awaitWrites();
-        }
+        OffFxTracked.awaitIdle();
+        fx.shared.awaitWrites();
     }
 }

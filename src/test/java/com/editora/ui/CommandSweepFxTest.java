@@ -13,6 +13,7 @@ import java.net.SocketAddress;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -327,16 +328,26 @@ class CommandSweepFxTest {
 
     /** Programs the sweep started that outlived its window (given a moment to finish). */
     private static List<String> stillRunning(Set<Long> before) throws InterruptedException {
-        List<ProcessHandle> left = List.of();
-        for (int i = 0; i < 100; i++) {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+        List<ProcessHandle> left;
+        while (true) {
             left = ProcessHandle.current()
                     .descendants()
                     .filter(p -> !before.contains(p.pid()) && p.isAlive())
                     .toList();
-            if (left.isEmpty()) {
+            long wait = deadline - System.nanoTime();
+            if (left.isEmpty() || wait <= 0) {
                 break;
             }
-            Thread.sleep(50);
+            // each one's exit, not a fixed tick; a child one of them started is listed on the next round
+            try {
+                java.util.concurrent.CompletableFuture.allOf(left.stream()
+                                .map(ProcessHandle::onExit)
+                                .toArray(java.util.concurrent.CompletableFuture[]::new))
+                        .get(wait, java.util.concurrent.TimeUnit.NANOSECONDS);
+            } catch (java.util.concurrent.TimeoutException | java.util.concurrent.ExecutionException e) {
+                // listed below
+            }
         }
         return left.stream()
                 .map(p -> "still running after the window closed: "
@@ -659,14 +670,11 @@ class CommandSweepFxTest {
                 return;
             }
             MainController window = controller;
-            long deadline = System.nanoTime() + 30_000_000_000L;
-            while (FxTestSupport.callOnFx(() -> window.git.repoRoot() == null)) {
-                if (System.nanoTime() > deadline) {
-                    throw new AssertionError("the Git project window never found its repository");
-                }
-                Thread.sleep(20);
-                FxTestSupport.drainFx();
-            }
+            EventuallyFx.untilOnFx(
+                    "the Git project window to find its repository",
+                    Duration.ofSeconds(30),
+                    () -> window.git.repoRoot() != null);
+            FxTestSupport.drainFx();
         }
 
         private void select(String word) {

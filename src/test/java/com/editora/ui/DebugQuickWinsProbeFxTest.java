@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 
@@ -13,6 +14,7 @@ import com.editora.config.SharedConfig;
 import com.editora.dap.DapManager;
 import com.editora.dap.DebugAdapterLocator;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -39,7 +41,7 @@ class DebugQuickWinsProbeFxTest {
                     Thread worker = new Thread(() -> {
                         for (int n = 0; n < 5000; n++) {
                             System.out.println("tick " + n);
-                            try { Thread.sleep(20); } catch (InterruptedException e) { return; }
+                            try { Thread.currentThread().join(20); } catch (InterruptedException e) { return; }
                         }
                     }, "worker");
                     worker.setDaemon(true);
@@ -47,17 +49,17 @@ class DebugQuickWinsProbeFxTest {
                     int total = 0;
                     for (int i = 0; i < 5; i++) {
                         total += i;
-                        Thread.sleep(100);
+                        Thread.currentThread().join(100);
                     }
-                    Thread.sleep(20000);
+                    Thread.currentThread().join(20000);
                     System.out.println("done " + total);
                 }
             }
             """;
 
     private static final int TEMPORARY_LINE = 12; // total += i;
-    private static final int SLEEP_LINE = 13; // Thread.sleep(100);
-    private static final int LONG_SLEEP_LINE = 15; // Thread.sleep(20000);
+    private static final int SLEEP_LINE = 13; // Thread.currentThread().join(100): a 100 ms wait
+    private static final int LONG_SLEEP_LINE = 15; // Thread.currentThread().join(20000): a 20 s wait
 
     @BeforeAll
     static void boot() throws Exception {
@@ -151,19 +153,21 @@ class DebugQuickWinsProbeFxTest {
             FxTestSupport.runOnFx(() -> b.toggleBreakpoint(SLEEP_LINE));
             FxTestSupport.runOnFx(dap::resume);
             await("running", 10, () -> call(dap::state) == DapManager.State.RUNNING);
-            Thread.sleep(1500);
+            await("the worker printing", 20, () -> ticks(debug) > 10);
             FxTestSupport.runOnFx(dap::pause);
             await("paused", 20, () -> call(dap::state) == DapManager.State.SUSPENDED);
-            Thread.sleep(800); // output already on its way
+            // The worker is suspended in the VM: java-debug walks the stack of a suspended thread only. Its output
+            // written before the pause has had the round trips of the stop and of these stacks to land.
+            assertTrue(workerSuspended(dap), "the worker is suspended too");
             int atPause = ticks(debug);
-            Thread.sleep(1500);
+            assertTrue(workerSuspended(dap), "the worker stays suspended");
             int later = ticks(debug);
             assertTrue(atPause > 0, "the worker printed before the pause");
             assertEquals(atPause, later, "no thread runs while the program is paused");
 
             FxTestSupport.runOnFx(dap::resume);
-            Thread.sleep(1500);
-            assertTrue(ticks(debug) > later + 10, "Continue resumed the worker too");
+            int paused = later;
+            await("Continue resumed the worker too", 20, () -> ticks(debug) > paused + 10);
             FxTestSupport.runOnFx(dap::stop);
             await("stopped", 20, () -> !call(dap::isActive));
         } finally {
@@ -184,13 +188,7 @@ class DebugQuickWinsProbeFxTest {
     }
 
     private static void await(String what, int seconds, BooleanSupplier condition) throws InterruptedException {
-        long end = System.nanoTime() + seconds * 1_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(50);
-        }
+        Await.until(condition, what, Duration.ofSeconds(seconds));
     }
 
     private static void awaitStop(DapManager dap, int line, DebugCoordinator debug) throws InterruptedException {
@@ -247,6 +245,16 @@ class DebugQuickWinsProbeFxTest {
     private static boolean changed(DebugPanel panel, String name) {
         TreeItem<DebugPanel.VarRow> row = row(panel, name);
         return row != null && panel.changed(row, row.getValue());
+    }
+
+    /** Whether java-debug walks the "worker" thread's stack ("Thread [worker]" there), which it does only for a suspended thread. */
+    private static boolean workerSuspended(DapManager dap) throws Exception {
+        java.util.concurrent.CompletableFuture<List<com.editora.dap.DapModels.ThreadStack>> stacks =
+                new java.util.concurrent.CompletableFuture<>();
+        FxTestSupport.runOnFx(() -> dap.threadStacks(stacks::complete));
+        return stacks.get(20, java.util.concurrent.TimeUnit.SECONDS).stream()
+                .anyMatch(s -> s.thread().name().equals("Thread [worker]")
+                        && !s.frames().isEmpty());
     }
 
     private static int ticks(DebugCoordinator debug) {

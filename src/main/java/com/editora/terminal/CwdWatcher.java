@@ -103,6 +103,14 @@ public final class CwdWatcher implements AutoCloseable {
         onProgramChange.accept(program);
     }
 
+    /**
+     * TEST SEAM — a no-op on the watchers' thread, due two ticks from now: once it has run, a watcher still running
+     * would have polled since this call, so a test waits on this instead of a fixed time.
+     */
+    static java.util.concurrent.Future<?> afterTwoTicksForTest() {
+        return Pool.INSTANCE.schedule(() -> {}, 2 * INTERVAL_MS, TimeUnit.MILLISECONDS);
+    }
+
     @Override
     public void close() {
         task.cancel(false);

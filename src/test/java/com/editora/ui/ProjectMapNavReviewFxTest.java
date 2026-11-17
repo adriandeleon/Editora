@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -805,7 +806,7 @@ class ProjectMapNavReviewFxTest {
             FxTestSupport.invoke(panel, "searchMap");
             assertSame(surface, scene.getFocusOwner());
         });
-        FxTestSupport.drainFx();
+        settle(surface); // the cleared search's reload has landed: what it selects is what Back starts from
         FxTestSupport.runOnFx(() -> {
             assertEquals(readme, selected(surface), "the search's landing stays selected");
             FxTestSupport.call(view, "moveHistory", new Class<?>[] {int.class}, -1);
@@ -851,14 +852,7 @@ class ProjectMapNavReviewFxTest {
     }
 
     private static void waitForFx(BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("timed out waiting for the map");
+        PulseChecks.untilOnFx(condition, "timed out waiting for the map", Duration.ofSeconds(10));
     }
 
     private static void setField(Object target, String name, Object value) {

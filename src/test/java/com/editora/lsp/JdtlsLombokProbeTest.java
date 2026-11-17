@@ -91,29 +91,25 @@ class JdtlsLombokProbeTest {
                 ServerInitOptions.javaInitOptions(List.of()));
         try {
             assertTrue(s.start());
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(90);
-            while (!s.isInitialized() && System.nanoTime() < deadline) {
-                Thread.sleep(100);
-            }
+            com.editora.testkit.Await.holdsWithin(() -> s.isInitialized(), java.time.Duration.ofSeconds(90));
             assertTrue(s.isInitialized(), "real handshake");
             assertTrue(imported.await(120, TimeUnit.SECONDS), "the project imported");
             String use = src.resolve("Use.java").toUri().toString();
             s.didOpen(src.resolve("Point.java").toUri().toString(), "java", POINT);
             s.didOpen(use, "java", USE);
-            long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-            PublishDiagnosticsParams latest = null;
-            while (System.nanoTime() < until) {
-                for (var p : diagnostics) {
-                    if (p.getUri().endsWith("Use.java")) {
-                        latest = p;
-                    }
-                }
-                if (latest != null) {
-                    break;
-                }
-                Thread.sleep(100);
+            java.util.function.LongSupplier useReports = () -> diagnostics.stream()
+                    .filter(p -> p.getUri().endsWith("Use.java"))
+                    .count();
+            com.editora.testkit.Await.holdsWithin(() -> useReports.getAsLong() > 0, java.time.Duration.ofSeconds(30));
+            // A reconcile may follow the first publish: the same text sent again is answered by a publish made
+            // after it, which no earlier reconcile can overtake.
+            long reports = useReports.getAsLong();
+            if (reports > 0) {
+                s.didChange(use, USE);
+                com.editora.testkit.Await.holdsWithin(
+                        () -> useReports.getAsLong() > reports, java.time.Duration.ofSeconds(30));
             }
-            Thread.sleep(1500); // a reconcile may follow the first publish
+            PublishDiagnosticsParams latest = null;
             for (var p : diagnostics) {
                 if (p.getUri().endsWith("Use.java")) {
                     latest = p;

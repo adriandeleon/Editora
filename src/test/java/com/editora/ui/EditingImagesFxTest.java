@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -392,24 +393,17 @@ class EditingImagesFxTest {
 
     /** A save is written on a background executor: wait until the buffer says it reached the disk. */
     private void awaitSaved(EditorBuffer b) throws Exception {
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
-        while (FxTestSupport.callOnFx(b::isDirty)) {
-            assertTrue(System.nanoTime() < deadline, "the save was never acknowledged");
-            Thread.sleep(20);
-            FxTestSupport.drainFx();
-        }
+        EventuallyFx.untilOnFx("the save was never acknowledged", Duration.ofSeconds(20), () -> !b.isDirty());
         FxTestSupport.drainFx();
         awaitCleanup();
     }
 
     /** Waits for the clean-up to have moved {@code file} away; fails when it never does. */
     private void awaitGone(Path file) throws Exception {
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
-        while (Files.exists(file)) {
-            assertTrue(System.nanoTime() < deadline, file + " was never moved to the trash");
+        EventuallyFx.until(file + " was never moved to the trash", Duration.ofSeconds(20), () -> {
             awaitCleanup();
-            Thread.sleep(20);
-        }
+            return !Files.exists(file);
+        });
     }
 
     /** The pasted-image clean-up runs after the save, off the FX thread: wait until it has settled. */

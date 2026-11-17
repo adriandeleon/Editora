@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -375,37 +376,33 @@ class ProjectPanelGitFolderMenuFxTest {
     }
 
     private static void awaitSelectedPath(TreeView<Path> tree, Path expected) throws Exception {
-        for (int i = 0; i < 100; i++) {
-            Path selected = FxTestSupport.callOnFx(() -> {
-                TreeItem<Path> item = tree.getSelectionModel().getSelectedItem();
-                return item == null ? null : item.getValue();
-            });
-            if (expected.equals(selected)) {
-                return;
-            }
-            Thread.sleep(50);
-        }
+        PulseChecks.holdsOnFxWithin(
+                () -> {
+                    TreeItem<Path> item = tree.getSelectionModel().getSelectedItem();
+                    return item != null && expected.equals(item.getValue());
+                },
+                Duration.ofSeconds(5));
         TreeItem<Path> selected =
                 FxTestSupport.callOnFx(() -> tree.getSelectionModel().getSelectedItem());
         assertEquals(expected, selected == null ? null : selected.getValue());
     }
 
     private static TreeItem<Path> awaitChild(ProjectPanel panel, Path path) throws Exception {
-        for (int i = 0; i < 100; i++) {
-            TreeItem<Path> match = FxTestSupport.callOnFx(() -> {
-                @SuppressWarnings("unchecked")
-                TreeView<Path> tree = FxTestSupport.field(panel, "tree");
-                return tree.getRoot().getChildren().stream()
-                        .filter(item -> path.equals(item.getValue()))
-                        .findFirst()
-                        .orElse(null);
-            });
-            if (match != null) {
-                return match;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("child did not load: " + path);
+        java.util.List<TreeItem<Path>> match = new java.util.ArrayList<>(java.util.Collections.singletonList(null));
+        PulseChecks.untilOnFx(
+                () -> {
+                    TreeView<Path> tree = FxTestSupport.field(panel, "tree");
+                    match.set(
+                            0,
+                            tree.getRoot().getChildren().stream()
+                                    .filter(item -> path.equals(item.getValue()))
+                                    .findFirst()
+                                    .orElse(null));
+                    return match.get(0) != null;
+                },
+                "child did not load: " + path,
+                Duration.ofSeconds(5));
+        return match.get(0);
     }
 
     private static void fire(Menu menu, String labelKey) throws Exception {

@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -9,6 +10,7 @@ import javafx.scene.layout.Region;
 import javafx.stage.Stage;
 
 import com.editora.i18n.Messages;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -85,11 +87,8 @@ class SettingsMinWidthFxTest {
                 stage.setWidth(1100);
                 stage.setHeight(700);
             });
-            for (int i = 0;
-                    i < 200 && FxTestSupport.callOnFx(() -> stage.getScene().getWidth()) < 1099;
-                    i++) {
-                Thread.sleep(10); // the resize reaches the scene on a later pulse
-            }
+            // the resize reaches the scene on a later pulse
+            Await.holdsWithin(() -> onFx(() -> stage.getScene().getWidth()) >= 1099, Duration.ofSeconds(2));
             java.util.Map<String, Double> rightEdge = new java.util.LinkedHashMap<>();
             for (String page : List.of("INTERFACE", "MCP", "EDITOR", "SEARCH")) { // long, short, long, short
                 FxTestSupport.drainFx();
@@ -113,6 +112,15 @@ class SettingsMinWidthFxTest {
             for (var e : rightEdge.entrySet()) {
                 assertTrue(Math.abs(e.getValue() - first) < 1, "right edges: " + rightEdge);
             }
+        }
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

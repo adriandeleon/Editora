@@ -98,30 +98,38 @@ class JdtlsResolveMainClassProbeTest {
                     .didOpen(new DidOpenTextDocumentParams(
                             new TextDocumentItem(file.toUri().toString(), "java", 1, Files.readString(file))));
 
-            // The project import is asynchronous; ask repeatedly rather than sleeping one arbitrary interval.
-            for (int attempt = 1; attempt <= 12; attempt++) {
-                Thread.sleep(10_000);
-                Object res;
-                String error = null;
-                try {
-                    res = server.getWorkspaceService()
-                            .executeCommand(new ExecuteCommandParams("vscode.java.resolveMainClass", List.of()))
-                            .get(60, TimeUnit.SECONDS);
-                } catch (Exception e) {
-                    res = null;
-                    error = String.valueOf(e.getCause() == null ? e : e.getCause());
-                }
-                System.out.println("--- attempt " + attempt + " (" + attempt * 10 + "s) ---");
-                System.out.println("  error = " + error);
-                System.out.println(
-                        "  type  = " + (res == null ? "null" : res.getClass().getName()));
-                System.out.println("  value = " + res);
-                if (res != null && !String.valueOf(res).equals("[]")) {
-                    // Close the loop: run OUR parser on the server's own object, not on a transcription of it.
-                    System.out.println("  >>> DapManager.parseMainClasses = " + parseMainClasses(res));
-                    break;
-                }
-            }
+            // The project import is asynchronous; ask again until it answers rather than sleeping an interval.
+            int[] attempts = {0};
+            com.editora.testkit.Await.holdsWithin(
+                    () -> {
+                        int attempt = ++attempts[0];
+                        Object res;
+                        String error = null;
+                        try {
+                            res = server.getWorkspaceService()
+                                    .executeCommand(new ExecuteCommandParams("vscode.java.resolveMainClass", List.of()))
+                                    .get(60, TimeUnit.SECONDS);
+                        } catch (Exception e) {
+                            res = null;
+                            error = String.valueOf(e.getCause() == null ? e : e.getCause());
+                        }
+                        System.out.println("--- attempt " + attempt + " ---");
+                        System.out.println("  error = " + error);
+                        System.out.println("  type  = "
+                                + (res == null ? "null" : res.getClass().getName()));
+                        System.out.println("  value = " + res);
+                        if (res != null && !String.valueOf(res).equals("[]")) {
+                            // Close the loop: run OUR parser on the server's own object, not on a transcription.
+                            try {
+                                System.out.println("  >>> DapManager.parseMainClasses = " + parseMainClasses(res));
+                            } catch (Exception e) {
+                                throw new IllegalStateException(e);
+                            }
+                            return true;
+                        }
+                        return false;
+                    },
+                    java.time.Duration.ofSeconds(120));
         } finally {
             proc.destroyForcibly();
         }

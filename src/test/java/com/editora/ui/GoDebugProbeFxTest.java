@@ -136,7 +136,7 @@ class GoDebugProbeFxTest {
     private static final String LOOP = """
             package main
 
-            import "time"
+            import ("fmt"; "time")
 
             func tick(n int) int {
             \treturn n + 1
@@ -146,6 +146,7 @@ class GoDebugProbeFxTest {
             \tn := 0
             \tfor {
             \t\tn = tick(n)
+            \t\tfmt.Println(n)
             \t\ttime.Sleep(50 * time.Millisecond)
             \t}
             }
@@ -380,7 +381,13 @@ class GoDebugProbeFxTest {
 
             FxTestSupport.runOnFx(manager::stop);
             assertTrue(session.ended.await(60, TimeUnit.SECONDS), "Stop ends the session: " + session.states);
-            Thread.sleep(500);
+            // What it printed before it stopped at the breakpoint is skipped: the ticks read next came after the
+            // session ended, which a program Stop had killed would never print.
+            java.io.InputStream ticks = program.getInputStream();
+            ticks.skip(ticks.available());
+            java.io.BufferedReader lines = new java.io.BufferedReader(new java.io.InputStreamReader(ticks));
+            lines.readLine();
+            assertNotNull(lines.readLine(), "Stop detaches: the program runs on and goes on ticking");
             assertTrue(program.isAlive(), "Stop detaches: the program runs on");
         } finally {
             FxTestSupport.runOnFx(manager::shutdown);
@@ -469,13 +476,7 @@ class GoDebugProbeFxTest {
 
     private static void await(String what, int seconds, java.util.function.BooleanSupplier condition)
             throws InterruptedException {
-        long end = System.nanoTime() + seconds * 1_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(50);
-        }
+        com.editora.testkit.Await.until(condition, what, java.time.Duration.ofSeconds(seconds));
     }
 
     /** A stop shown in the window on 0-based {@code line}, in a function whose name has {@code function}. */

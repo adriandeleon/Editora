@@ -48,6 +48,8 @@ final class GitAutoFetch {
     private long lastFocusedNanos = System.nanoTime();
     /** Fetches started, for tests. */
     private int runs;
+    /** TEST SEAM — times the timer went off, the ones that fetched nothing included (QUAL-07: a witness to wait on). */
+    private int ticks;
 
     GitAutoFetch(CoordinatorHost host, GitCoordinator git) {
         this.host = host;
@@ -70,6 +72,16 @@ final class GitAutoFetch {
 
     int runsForTest() {
         return runs;
+    }
+
+    /** TEST SEAM — how often the timer has gone off: what a test waits on to know a tick that did nothing happened. */
+    int ticksForTest() {
+        return ticks;
+    }
+
+    /** TEST SEAM — whether the timer is armed. */
+    boolean tickingForTest() {
+        return timer != null;
     }
 
     /** The interval between fetches: the setting, never under a minute. Pure. */
@@ -123,6 +135,7 @@ final class GitAutoFetch {
     }
 
     private void tick() {
+        ticks++;
         Path root = git.repoRoot();
         if (root == null // isAvailable() says the same
                 || !git.isAvailable()

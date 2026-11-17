@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +22,7 @@ import com.editora.template.NewFileCatalog;
 import com.editora.template.NewFileContent;
 import com.editora.template.Template;
 import com.editora.template.TemplateOutput;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -68,15 +70,9 @@ class TemplateFlowFxTest {
     // --- helpers ----------------------------------------------------------------------------------
 
     private static void await(String what, Callable<Boolean> condition) throws Exception {
-        long deadline = System.currentTimeMillis() + 15_000;
-        while (System.currentTimeMillis() < deadline) {
-            FxTestSupport.drainFx();
-            if (FxTestSupport.callOnFx(condition)) {
-                return;
-            }
-            Thread.sleep(40);
+        if (!Await.holdsWithin(() -> onFx(condition), Duration.ofSeconds(15))) {
+            throw new AssertionError("timed out waiting for " + what + "; status=" + lastStatus());
         }
-        throw new AssertionError("timed out waiting for " + what + "; status=" + lastStatus());
     }
 
     private static String collapsed(Path path) {
@@ -565,6 +561,15 @@ class TemplateFlowFxTest {
         assertTrue(Files.exists(dir.resolve("x.sh")));
         if (dir.getFileSystem().supportedFileAttributeViews().contains("posix")) {
             assertTrue(Files.isExecutable(dir.resolve("x.sh")));
+        }
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

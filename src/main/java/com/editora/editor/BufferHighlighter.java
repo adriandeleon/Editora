@@ -49,6 +49,8 @@ final class BufferHighlighter {
     /** Bumped on every highlight request (FX thread only); lets background results discard if stale. Volatile:
      *  read per line by the background tokenize's cancel check. */
     volatile long highlightGen;
+    /** Passes dispatched whose answer has not come back to the FX thread (FX thread only); a test seam. */
+    int passesInFlight;
     /** Per-line grammar end-states and bracket depths of the last applied pass (see {@link HighlightPass});
      *  null = none, so the next pass tokenizes the whole document. Replaced, never modified. */
     HighlightPass.@Nullable Lines highlightLines;
@@ -223,10 +225,18 @@ final class BufferHighlighter {
         styled = true;
         long version = b.docVersion;
         long gen = ++highlightGen;
+        passesInFlight++;
         EditorBuffer.HIGHLIGHT_POOL.execute(() -> {
-            char delim = com.editora.csv.CsvParser.detectDelimiter(text);
-            StyleSpans<Collection<String>> spans = CsvRainbow.buildSpans(text, delim, CsvRainbow.COLORS);
+            StyleSpans<Collection<String>> spans;
+            try {
+                char delim = com.editora.csv.CsvParser.detectDelimiter(text);
+                spans = CsvRainbow.buildSpans(text, delim, CsvRainbow.COLORS);
+            } catch (RuntimeException | LinkageError e) {
+                Platform.runLater(() -> passesInFlight--);
+                throw e;
+            }
             Platform.runLater(() -> {
+                passesInFlight--;
                 if (gen != highlightGen || version != b.docVersion || spans.length() != b.area.getLength()) {
                     return;
                 }
@@ -297,6 +307,7 @@ final class BufferHighlighter {
                                 ScrollAnchor.setStyleSpans(b.area, 0, spans);
                             }
                         }));
+        passesInFlight++;
         HighlightPass.submit(EditorBuffer.HIGHLIGHT_POOL, b.grammar, () -> {
             HighlightPass.Result r;
             try {
@@ -304,12 +315,15 @@ final class BufferHighlighter {
                 // doomed multi-MB tokenize while holding the shared grammar monitor (see analyzeFrom).
                 r = HighlightPass.run(request, () -> gen != highlightGen);
             } catch (Exception | LinkageError e) {
+                Platform.runLater(() -> passesInFlight--);
                 return; // never let a grammar/engine fault kill the highlighter thread
             }
             if (r == null) {
+                Platform.runLater(() -> passesInFlight--);
                 return;
             }
             Platform.runLater(() -> {
+                passesInFlight--;
                 // Superseded, or the text changed since the snapshot: what this pass owed stays in
                 // highlightDirty, so the next one covers it.
                 if (gen != highlightGen || version != b.docVersion) {

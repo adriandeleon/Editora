@@ -3,12 +3,12 @@ package com.editora.ui;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Duration;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
@@ -418,6 +418,9 @@ class RemoteSaveFxTest {
                 assertTrue(workflows.save(buffer));
             });
             async.await(block.staged(), "remote save staging");
+            java.util.Map<?, ?> connections =
+                    FxTestSupport.field(FxTestSupport.field(sftp, "fileSystems"), "byAuthority");
+            String id = sftp.connection().id();
             CountDownLatch disconnected = new CountDownLatch(1);
             async.start("drop-the-connection-mid-save", () -> {
                 try {
@@ -426,7 +429,8 @@ class RemoteSaveFxTest {
                     disconnected.countDown();
                 }
             });
-            TimeUnit.MILLISECONDS.sleep(200); // let the close begin while the staged write is still held
+            // the close has begun (its first step lets go of the connection) while the staged write is still held
+            PulseChecks.until(() -> !connections.containsKey(id), "the close to begin", Duration.ofSeconds(10));
             block.release().countDown();
             async.await(disconnected, "the connection to close");
             settle(async, workflows);

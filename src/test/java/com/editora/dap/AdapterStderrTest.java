@@ -1,6 +1,7 @@
 package com.editora.dap;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
@@ -51,10 +52,7 @@ class AdapterStderrTest {
         Process process = new ProcessBuilder(java, "-version").start(); // the version goes to stderr
         AdapterStderr tail = AdapterStderr.drain(process);
         assertTrue(process.waitFor(60, TimeUnit.SECONDS), "java -version exits");
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (tail.text().isEmpty() && System.nanoTime() < deadline) {
-            Thread.sleep(20);
-        }
+        com.editora.testkit.Await.holdsWithin(() -> !tail.text().isEmpty(), Duration.ofSeconds(30));
         assertTrue(tail.text().contains("version"), tail.text());
     }
 }

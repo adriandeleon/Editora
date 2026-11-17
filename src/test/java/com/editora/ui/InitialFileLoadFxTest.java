@@ -177,12 +177,7 @@ class InitialFileLoadFxTest {
     }
 
     private static boolean waitUntil(java.util.function.BooleanSupplier condition) throws Exception {
-        for (int i = 0; i < 300; i++) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return true;
-            }
-            Thread.sleep(20);
-        }
-        return false;
+        return com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.fxCondition(condition::getAsBoolean), java.time.Duration.ofSeconds(6));
     }
 }

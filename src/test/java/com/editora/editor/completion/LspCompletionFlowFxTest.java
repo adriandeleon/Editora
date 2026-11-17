@@ -17,6 +17,7 @@ import com.editora.completion.Completion;
 import com.editora.completion.CompletionIconKind;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.EditorFx;
+import com.editora.testkit.Await;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -78,13 +79,7 @@ class LspCompletionFlowFxTest {
     }
 
     private static void await(String what, BooleanSupplier onFx) throws Exception {
-        long end = System.currentTimeMillis() + WAIT_MILLIS;
-        while (!EditorFx.callFx(onFx::getAsBoolean)) {
-            if (System.currentTimeMillis() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(20);
-        }
+        Await.until(EditorFx.checkOnFx(onFx::getAsBoolean), what, java.time.Duration.ofMillis(WAIT_MILLIS));
         EditorFx.drain();
     }
 
@@ -250,8 +245,7 @@ class LspCompletionFlowFxTest {
             a.fireEvent(EditorFx.typed("/"));
         });
         assertEquals("<body>\n<p>a</p>\n</body>", EditorFx.callFx(a::getText), "precondition: the closer joined");
-        Thread.sleep(700); // past the typing pause
-        EditorFx.drain();
+        EditorFx.awaitEditsSettled(b); // past the typing pause
         assertFalse(EditorFx.callFx(() -> completion(b).completionPopupShowing()), "no list in a whole end tag");
         EditorFx.onFx(() -> {
             a.fireEvent(EditorFx.typed("p"));
@@ -293,8 +287,11 @@ class LspCompletionFlowFxTest {
      */
     @Test
     void theSecondStepStaysOpenWhenTheServerAnswersAsynchronously() throws Exception {
-        for (long delay : new long[] {15, 180}) {
+        for (boolean afterTheMilestone : new boolean[] {false, true}) {
+            String delay = afterTheMilestone ? "after the 90 ms milestone" : "at once";
             List<String> prefixes = new CopyOnWriteArrayList<>();
+            java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.CountDownLatch answered = new java.util.concurrent.CountDownLatch(1);
             Completion color = Completion.lsp("color", "color: ", null)
                     .withProtocol(
                             new Completion.Protocol("color", null, List.of(), 0, Completion.Protocol.TRIGGER_SUGGEST));
@@ -302,23 +299,42 @@ class LspCompletionFlowFxTest {
             EditorFx.onFx(() -> b.setLspCompletionProvider((position, answer) -> {
                 prefixes.add(b.getArea().getText());
                 var items = prefixes.size() == 1 ? List.of(color) : List.of(Completion.lsp("red", "red", null));
-                long wait = prefixes.size() == 1 ? 0 : delay;
+                boolean first = prefixes.size() == 1;
                 Thread.ofVirtual().start(() -> {
                     try {
-                        Thread.sleep(wait);
+                        if (!first) {
+                            release.await(); // the server answers the second step when the test lets it
+                        }
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                     }
-                    javafx.application.Platform.runLater(() -> answer.accept(items));
+                    javafx.application.Platform.runLater(() -> {
+                        answer.accept(items);
+                        if (!first) {
+                            answered.countDown();
+                        }
+                    });
                 });
             }));
             open(b);
             EditorFx.onFx(() -> b.getArea().fireEvent(EditorFx.pressed(KeyCode.ENTER, false, false)));
+            try {
+                Await.until(() -> prefixes.size() == 2, "the second step asked (" + delay + ")");
+                if (afterTheMilestone) {
+                    // the 90 ms settled-edit milestone has run at the accepted version
+                    Await.until(
+                            EditorFx.checkOnFx(() ->
+                                    EditorFx.<Long>field(EditorFx.field(b, "settledEdits"), "cursorMillis") >= 90),
+                            "the 90 ms milestone");
+                }
+            } finally {
+                release.countDown();
+            }
+            assertTrue(answered.await(WAIT_MILLIS, java.util.concurrent.TimeUnit.MILLISECONDS), "the answer landed");
             await(
-                    "the list of values (" + delay + " ms)",
+                    "the list of values (" + delay + ")",
                     () -> prefixes.size() == 2 && completion(b).completionPopupShowing());
-            Thread.sleep(400); // well past the 90 ms settled-edit milestone and the answer
-            EditorFx.drain();
+            EditorFx.awaitEditsSettled(b); // past the 90 ms settled-edit milestone and the answer
             assertTrue(
                     EditorFx.callFx(() -> completion(b).completionPopupShowing()),
                     "the values list is still showing (" + delay + " ms)");
@@ -329,8 +345,7 @@ class LspCompletionFlowFxTest {
                             () -> completion(b).completionPopup().selected().label()));
             // Escape closes it, and a later pass at the same version leaves it shut.
             EditorFx.onFx(() -> b.getArea().fireEvent(EditorFx.pressed(KeyCode.ESCAPE, false, false)));
-            Thread.sleep(200);
-            EditorFx.drain();
+            EditorFx.awaitEditsSettled(b);
             assertFalse(EditorFx.callFx(() -> completion(b).completionPopupShowing()), "Escape closes it");
         }
     }
@@ -437,10 +452,9 @@ class LspCompletionFlowFxTest {
             area.getUndoManager().preventMerge();
             b.cancelCompletion();
         });
-        Thread.sleep(600);
+        EditorFx.awaitEditsSettled(b);
         EditorFx.onFx(() -> b.getArea().undo());
-        Thread.sleep(800); // past the typing pause
-        EditorFx.drain();
+        EditorFx.awaitEditsSettled(b); // past the typing pause
         assertEquals("int box", EditorFx.callFx(() -> b.getArea().getText()));
         assertFalse(EditorFx.callFx(b::completionShowing), "no list after Ctrl+Z");
     }

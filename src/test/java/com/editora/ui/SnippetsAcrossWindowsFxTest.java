@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 
 import javafx.scene.control.Label;
@@ -12,6 +13,7 @@ import com.editora.command.CommandRegistry;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.snippet.SnippetManager;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -137,11 +139,15 @@ class SnippetsAcrossWindowsFxTest {
         assertTrue(settings.isSnippetTabExpansion(), "on by default");
         CommandRegistry registry = FxTestSupport.field(a, "registry");
         assertTrue(FxTestSupport.callOnFx(() -> registry.run("view.toggleSnippetTabExpansion")));
-        for (int i = 0; i < 10; i++) {
-            FxTestSupport.drainFx();
-            FxTestSupport.runOnFx(fx.windowManager::flushPendingSettingsBroadcast);
-            Thread.sleep(20);
-        }
+        // The broadcast is pushed now, then every window re-applies the setting on the FX thread.
+        Await.holdsWithin(
+                () -> onFx(() -> {
+                    fx.windowManager.flushPendingSettingsBroadcast();
+                    return FxTestSupport.<Boolean>field(
+                                    FxTestSupport.field(bufferB, "snippetKeys"), "snippetTabExpansion")
+                            == false;
+                }),
+                Duration.ofSeconds(2));
         assertFalse(settings.isSnippetTabExpansion());
         assertFalse(FxTestSupport.callOnFx(() ->
                 FxTestSupport.<Boolean>field(FxTestSupport.field(bufferA, "snippetKeys"), "snippetTabExpansion")));
@@ -150,11 +156,15 @@ class SnippetsAcrossWindowsFxTest {
                         FxTestSupport.field(bufferB, "snippetKeys"), "snippetTabExpansion")),
                 "the other window re-applied the shared setting");
         assertTrue(FxTestSupport.callOnFx(() -> registry.run("view.toggleSnippetTabExpansion")));
-        for (int i = 0; i < 10; i++) {
-            FxTestSupport.drainFx();
-            FxTestSupport.runOnFx(fx.windowManager::flushPendingSettingsBroadcast);
-            Thread.sleep(20);
-        }
+        // The broadcast is pushed now, then every window re-applies the setting on the FX thread.
+        Await.holdsWithin(
+                () -> onFx(() -> {
+                    fx.windowManager.flushPendingSettingsBroadcast();
+                    return FxTestSupport.<Boolean>field(
+                                    FxTestSupport.field(bufferB, "snippetKeys"), "snippetTabExpansion")
+                            == true;
+                }),
+                Duration.ofSeconds(2));
         assertTrue(FxTestSupport.callOnFx(() ->
                 FxTestSupport.<Boolean>field(FxTestSupport.field(bufferB, "snippetKeys"), "snippetTabExpansion")));
     }
@@ -191,5 +201,14 @@ class SnippetsAcrossWindowsFxTest {
                     bufferA.getArea().getText().contains("date"),
                     bufferA.getArea().getText());
         });
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

@@ -77,17 +77,28 @@ class JdtlsJavaScriptShadowProbeTest {
 
             // Completion offers a type that needs an import; the import goes after the shebang line.
             Position at = new Position(3, "    ArrayLis".length());
-            CompletionItem arrayList = null;
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
-            while (arrayList == null && System.nanoTime() < deadline) {
-                arrayList = CompletionMapper.itemsOf(session.completion(key, at).get(30, TimeUnit.SECONDS)).stream()
-                        .filter(i -> i.getLabel().startsWith("ArrayList"))
-                        .filter(i -> String.valueOf(i.getDetail()).contains("java.util")
-                                || String.valueOf(i.getLabelDetails()).contains("java.util"))
-                        .findFirst()
-                        .orElse(null);
-                if (arrayList == null) Thread.sleep(200);
-            }
+            CompletionItem[] offered = new CompletionItem[1];
+            com.editora.testkit.Await.holdsWithin(
+                    () -> {
+                        try {
+                            offered[0] =
+                                    CompletionMapper.itemsOf(
+                                                    session.completion(key, at).get(30, TimeUnit.SECONDS))
+                                            .stream()
+                                            .filter(i -> i.getLabel().startsWith("ArrayList"))
+                                            .filter(i -> String.valueOf(i.getDetail())
+                                                            .contains("java.util")
+                                                    || String.valueOf(i.getLabelDetails())
+                                                            .contains("java.util"))
+                                            .findFirst()
+                                            .orElse(null);
+                        } catch (Exception e) {
+                            throw new IllegalStateException(e);
+                        }
+                        return offered[0] != null;
+                    },
+                    java.time.Duration.ofSeconds(60));
+            CompletionItem arrayList = offered[0];
             assertNotNull(arrayList, "the script should complete through its stand-in");
             List<TextEdit> imports = session.resolveCompletion(arrayList)
                     .get(30, TimeUnit.SECONDS)
@@ -104,15 +115,12 @@ class JdtlsJavaScriptShadowProbeTest {
             }
 
             // The syntax error on line 4 is reported, and names the script.
-            boolean reported = false;
-            deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-            while (!reported && System.nanoTime() < deadline) {
-                reported = reports.stream()
-                        .filter(r -> key.equals(session.uris().toKey(r.getUri())))
-                        .anyMatch(r -> r.getDiagnostics().stream()
-                                .anyMatch(d -> d.getRange().getStart().getLine() == 3));
-                if (!reported) Thread.sleep(100);
-            }
+            boolean reported = com.editora.testkit.Await.holdsWithin(
+                    () -> reports.stream()
+                            .filter(r -> key.equals(session.uris().toKey(r.getUri())))
+                            .anyMatch(r -> r.getDiagnostics().stream()
+                                    .anyMatch(d -> d.getRange().getStart().getLine() == 3)),
+                    java.time.Duration.ofSeconds(30));
             assertTrue(reported, "the script's syntax error should be reported on it: " + reports);
             assertEquals(script, session.uris().toPath(DocumentUris.of(standIn)));
         } finally {

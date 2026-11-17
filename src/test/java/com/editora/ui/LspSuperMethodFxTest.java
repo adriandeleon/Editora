@@ -537,25 +537,21 @@ class LspSuperMethodFxTest {
                                         range(0, 0, 1),
                                         range(0, 10, 15))));
         fx.server().supertypesByName.put("Named", List.of());
-        fx.server().rawHandler = raw -> {
-            try {
-                Thread.sleep(450); // findLinks takes a moment
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-            return com.google.gson.JsonParser.parseString("[]");
-        };
+        // findLinks takes a moment: its answer comes when the test gives it, once the walk has said it is looking
+        java.util.concurrent.CompletableFuture<Object> answer = new java.util.concurrent.CompletableFuture<>();
+        fx.server().rawHandler = raw -> answer;
         fx.caret(b, 2, 10);
-        fx.run(() -> fx.coordinator.gotoSuperMethod());
-        for (int i = 0; i < 100 && !fx.host.statuses.contains(tr("status.lsp.superMethodSearching")); i++) {
-            Thread.sleep(10);
-            fx.settle();
+        try {
+            fx.run(() -> fx.coordinator.gotoSuperMethod());
+            OnFx.holdsWithin(
+                    () -> fx.host.statuses.contains(tr("status.lsp.superMethodSearching")),
+                    java.time.Duration.ofSeconds(10));
+            assertTrue(fx.host.statuses.contains(tr("status.lsp.superMethodSearching")), fx.host.statuses.toString());
+        } finally {
+            answer.complete(com.google.gson.JsonParser.parseString("[]"));
         }
-        assertTrue(fx.host.statuses.contains(tr("status.lsp.superMethodSearching")), fx.host.statuses.toString());
-        for (int i = 0; i < 200 && fx.ops.jumps.isEmpty(); i++) {
-            Thread.sleep(10);
-            fx.settle();
-        }
+        OnFx.holdsWithin(() -> !fx.ops.jumps.isEmpty(), java.time.Duration.ofSeconds(10));
+        fx.settle();
         assertEquals(List.of(new LspCoordinatorFixture.Jump(named, 1, 11)), fx.ops.jumps);
         assertTrue(
                 fx.server().documentSymbols.stream()
@@ -571,10 +567,8 @@ class LspSuperMethodFxTest {
         fx.server().failEverything = true; // the outline and findLinks both fail
         fx.caret(b, 2, 12);
         fx.run(() -> fx.coordinator.gotoSuperMethod());
-        for (int i = 0; i < 200 && fx.host.lastError() == null; i++) {
-            Thread.sleep(10);
-            fx.settle();
-        }
+        OnFx.holdsWithin(() -> fx.host.lastError() != null, java.time.Duration.ofSeconds(10));
+        fx.settle();
         assertTrue(fx.host.lastError() != null, fx.host.statuses.toString());
         assertTrue(fx.ops.jumps.isEmpty());
     }

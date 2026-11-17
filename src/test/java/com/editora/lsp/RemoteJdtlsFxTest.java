@@ -136,21 +136,32 @@ class RemoteJdtlsFxTest {
     }
 
     private JsonObject logged(String key) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (System.nanoTime() < deadline) {
-            if (Files.exists(log)) {
-                for (String line : Files.readAllLines(log)) {
-                    JsonObject json = JsonParser.parseString(line).getAsJsonObject();
-                    if (json.has(key)
-                            || key.equals(
-                                    json.has("method") ? json.get("method").getAsString() : "")) {
-                        return json;
+        // The stand-in jdtls is another process writing a file: nothing in this JVM announces a line.
+        JsonObject[] found = new JsonObject[1];
+        com.editora.testkit.Await.until(
+                () -> {
+                    try {
+                        if (Files.exists(log)) {
+                            for (String line : Files.readAllLines(log)) {
+                                JsonObject json = JsonParser.parseString(line).getAsJsonObject();
+                                if (json.has(key)
+                                        || key.equals(
+                                                json.has("method")
+                                                        ? json.get("method").getAsString()
+                                                        : "")) {
+                                    found[0] = json;
+                                    return true;
+                                }
+                            }
+                        }
+                        return false;
+                    } catch (java.io.IOException | RuntimeException halfWritten) {
+                        return false; // a line still being written: look again
                     }
-                }
-            }
-            Thread.sleep(50);
-        }
-        throw new AssertionError("jdtls never logged " + key);
+                },
+                "jdtls to log " + key,
+                java.time.Duration.ofSeconds(30));
+        return found[0];
     }
 
     @Test

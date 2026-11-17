@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BooleanSupplier;
@@ -13,6 +14,7 @@ import com.editora.config.Settings;
 import com.editora.config.SharedConfig;
 import com.editora.dap.DapManager;
 import com.editora.dap.DebugAdapterLocator;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -127,12 +129,16 @@ class ExceptionBreakpointsProbeFxTest {
             List<String> types = new ArrayList<>();
             int[] seen = {call(() -> debug.s().stopSerial)};
             long end = System.nanoTime() + 180_000_000_000L;
+            BooleanSupplier newStop = () -> call(() -> dap.state() == DapManager.State.SUSPENDED
+                    && debug.s().stopSerial > seen[0]
+                    && debug.s().quietStop != debug.s().stopSerial
+                    && !debug.panel().callStack().isEmpty());
             while (call(dap::isActive) && System.nanoTime() < end) {
-                Boolean stopped = call(() -> dap.state() == DapManager.State.SUSPENDED
-                        && debug.s().stopSerial > seen[0]
-                        && debug.s().quietStop != debug.s().stopSerial
-                        && !debug.panel().callStack().isEmpty());
-                if (stopped) {
+                // the next stop shown, or the end of the program
+                Await.holdsWithin(
+                        () -> newStop.getAsBoolean() || !call(dap::isActive),
+                        Duration.ofNanos(Math.max(0, end - System.nanoTime())));
+                if (newStop.getAsBoolean()) {
                     seen[0] = call(() -> debug.s().stopSerial);
                     shown.add(call(() -> debug.panel().callStack().getFirst().line()));
                     await("the exception named", 30, () -> call(() -> debug.s().stopException != null));
@@ -147,7 +153,6 @@ class ExceptionBreakpointsProbeFxTest {
                         return call(dap::state) != DapManager.State.SUSPENDED || !call(dap::isActive);
                     });
                 }
-                Thread.sleep(50);
             }
             assertTrue(!call(dap::isActive), "the program ended");
             assertEquals(List.of(line), shown, "one stop, the third throw: " + types);
@@ -170,12 +175,6 @@ class ExceptionBreakpointsProbeFxTest {
     }
 
     private static void await(String what, int seconds, BooleanSupplier condition) throws InterruptedException {
-        long end = System.nanoTime() + seconds * 1_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(50);
-        }
+        Await.until(condition, what, Duration.ofSeconds(seconds));
     }
 }

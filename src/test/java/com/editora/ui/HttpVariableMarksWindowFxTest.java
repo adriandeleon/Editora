@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
 import javafx.scene.Node;
@@ -69,11 +68,7 @@ class HttpVariableMarksWindowFxTest {
     }
 
     private static void await(String what, BooleanSupplier done) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (!FxTestSupport.callOnFx(done::getAsBoolean)) {
-            assertTrue(System.nanoTime() < deadline, what);
-            Thread.sleep(25);
-        }
+        FxTestSupport.awaitFxCondition(done::getAsBoolean, what, java.time.Duration.ofSeconds(20));
     }
 
     private void applySettings() throws Exception {
