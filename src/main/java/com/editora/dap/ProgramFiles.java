@@ -49,19 +49,53 @@ public final class ProgramFiles {
     }
 
     /**
-     * What {@code exe} is: a Go program; a native one with DWARF ({@code .debug_info}) — Rust's when rustc's
-     * {@code .debug_gdb_scripts} or {@code .rustc} is there too; null for anything else (no debug information, not a
-     * program, unreadable). A native program is told on Linux only: a macOS program keeps its DWARF elsewhere.
+     * What {@code exe} is: a Go program; a native one with DWARF — Rust's when rustc's {@code .debug_gdb_scripts} or
+     * {@code .rustc} is there too; null for anything else (no debug information, not a program, unreadable). DWARF is
+     * a {@code .debug_info} section (ELF) or {@code __debug_info} (Mach-O); a macOS program usually keeps it beside
+     * itself instead, in {@code <program>.dSYM}, which counts too.
      */
     public static @Nullable Kind kind(Path exe) {
         Set<String> sections = sections(exe);
         if (sections.stream().anyMatch(GO_SECTIONS::contains)) {
             return Kind.GO;
         }
-        if (!sections.contains(".debug_info")) {
+        boolean machO = sections.stream().anyMatch(s -> s.startsWith("__"));
+        Set<String> dwarf = sections;
+        if (machO && !sections.contains("__debug_info")) {
+            dwarf = dsymSections(exe);
+        }
+        if (!dwarf.contains(".debug_info") && !dwarf.contains("__debug_info")) {
             return null;
         }
-        return sections.contains(".debug_gdb_scripts") || sections.contains(".rustc") ? Kind.RUST : Kind.NATIVE;
+        return isRust(sections) || isRust(dwarf) ? Kind.RUST : Kind.NATIVE;
+    }
+
+    /** Whether rustc's own sections are among {@code sections} (a Mach-O name is cut to 16 characters). */
+    private static boolean isRust(Set<String> sections) {
+        return sections.contains(".debug_gdb_scripts")
+                || sections.contains(".rustc")
+                || sections.contains("__debug_gdb_scri")
+                || sections.contains("__rustc");
+    }
+
+    /**
+     * The sections of the DWARF file in {@code exe}'s {@code .dSYM} bundle ({@code
+     * <program>.dSYM/Contents/Resources/DWARF/<program>}), or none when it has no bundle. A bundle without that file
+     * still says the program was built with debug information: it counts as {@code __debug_info}.
+     */
+    private static Set<String> dsymSections(Path exe) {
+        Path name = exe.getFileName();
+        Path parent = exe.toAbsolutePath().getParent();
+        if (name == null || parent == null) {
+            return Set.of();
+        }
+        Path bundle = parent.resolve(name + ".dSYM");
+        if (!java.nio.file.Files.isDirectory(bundle)) {
+            return Set.of();
+        }
+        Path dwarf = bundle.resolve("Contents/Resources/DWARF").resolve(name.toString());
+        Set<String> sections = java.nio.file.Files.isRegularFile(dwarf) ? sections(dwarf) : Set.of();
+        return sections.contains("__debug_info") ? sections : Set.of("__debug_info");
     }
 
     /** The names of {@code exe}'s sections (ELF, Mach-O 64), or none when it is neither or cannot be read. */
