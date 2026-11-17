@@ -612,7 +612,7 @@ class SettingsPagesFxTest {
             rig.show();
             VBox rows = FxTestSupport.field(rig.<Object>control("todoSettings"), "patternsBox");
             assertEquals(
-                    Color.web("#E5C07B"),
+                    com.editora.editor.todo.TodoColors.solid(null), // the neutral fallback (ICON-18)
                     ((ColorPicker) ((HBox) rows.getChildren().get(0))
                                     .getChildren()
                                     .get(3))

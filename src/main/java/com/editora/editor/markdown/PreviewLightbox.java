@@ -68,8 +68,7 @@ public final class PreviewLightbox {
         box.view.setSmooth(true);
         box.view.setFitWidth(image.getWidth() * scale);
         StackPane backdrop = new StackPane(box.view);
-        backdrop.getStyleClass().add("md-lightbox");
-        backdrop.setStyle("-fx-background-color: rgba(0, 0, 0, 0.78);");
+        backdrop.getStyleClass().add("md-lightbox"); // the scrim: app.css, which the popup takes from its owner
         backdrop.setPrefSize(w, h);
         backdrop.setMinSize(w, h);
         backdrop.setMaxSize(w, h);

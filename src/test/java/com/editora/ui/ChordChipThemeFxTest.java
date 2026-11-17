@@ -12,8 +12,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The main window's chord chips (the Welcome page's keys here) take the app theme's periwinkle: the editor
@@ -47,10 +47,30 @@ class ChordChipThemeFxTest {
                     Node key = main.getScene().getRoot().lookup(".welcome-key");
                     assertNotNull(key, "the Welcome page shows its keys");
                     Color ink = (Color) ((Labeled) key).getTextFill();
-                    double ratio = StyleContrastTest.contrast(ink, Themes.backgroundFor(theme));
-                    assertTrue(ratio >= 4.5, theme + ": " + ink + " at " + ratio + ":1");
+                    // The app theme's -state-key, as JavaFX resolves it on the window's own ground: a probe on the
+                    // scene root, outside the editor, where no editor theme reaches. Its contrast on every bundled
+                    // theme is StyleContrastTest's (theKeyboardPeriwinkleReadsOnEveryBundledAppTheme), so no
+                    // ratio is computed here (ICON-14, Pauta 6.0.1).
+                    assertEquals(keyInk(main), ink, theme + ": the Welcome keys take the app theme's periwinkle");
                 });
             }
+        }
+    }
+
+    /** {@code -state-key} resolved on {@code stage}'s scene root, by a label added there for the moment. */
+    static Color keyInk(Stage stage) {
+        javafx.scene.layout.Pane root =
+                (javafx.scene.layout.Pane) stage.getScene().getRoot();
+        javafx.scene.control.Label probe = new javafx.scene.control.Label("K");
+        probe.setStyle("-fx-text-fill: -state-key;");
+        probe.setManaged(false);
+        javafx.collections.ObservableList<Node> children = root.getChildren();
+        children.add(probe);
+        try {
+            root.applyCss();
+            return (Color) probe.getTextFill();
+        } finally {
+            children.remove(probe);
         }
     }
 }

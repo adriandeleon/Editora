@@ -729,6 +729,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Amber, red and green now mean only a warning, an error and a success.** Bookmarks, Personal Notes, the Stop
+  buttons, deleted lines and the Map's recent-changes heat no longer borrow them. A bookmark and a note are the
+  accent, in the gutter, the Project tree and the editor's note wash, told apart by their shapes, and the code-action
+  bulb is the muted ink (red still marks a quick fix for an error). A note's popup, its Map card and its sticky notes
+  are an accent wash on the theme's own ground instead of yellow paper. Stop (the toolbar's run cluster, a running
+  `.http` request's ■ and the other Stop glyphs) is drawn in the ink. Deleted and removed lines are neutral grey in
+  the diff viewer, the change bar's wedge, a change's popup, the Git counts, a pull request, a patch and Git's output,
+  and changed lines are blue. The debugger's execution line, its arrow, the current disassembly row and the Map's stop
+  card are the accent (IntelliJ's execution point), conditional and recording breakpoints are red like the others,
+  and a logpoint is the accent. The Map's heat, its metrics table's heat and Find in the Markdown preview are the
+  accent, a Markdown TIP alert is grey, OpenAPI method badges are one accent, a JSON or XML preview's strings and
+  literals and a log's INFO lines follow the theme without the state colours, and the dev-mode badge is the accent.
+  In the editor, a search match, an assigned symbol's highlight and a jump label are the accent instead of yellow,
+  orange and peach, and the minimap marks deleted lines in grey. The Git log's graph lanes and a Markwhen timeline's
+  tags take six blue-to-magenta hues of the theme, none of them red, green or amber. Everything drawn on a canvas
+  (the editor's overlays and stripes, the minimap, the Git log graph, the diff's overview, the Project Map) now takes
+  its colours from the app theme, so it follows a theme switch.
+  A deprecated OpenAPI operation is amber (a warning) rather than red. Read-only View Mode's banner follows the theme's
+  amber. Pauta 6.0.1: ICON-07, ICON-08, ICON-09, ICON-18.
+- **A few hints read better.** An unresolved Maven version, the "locked" hint of an encrypted file, a Thread Dump
+  frame with no source, a log's TRACE lines and the line numbers of the default Primer Light editor theme and the
+  community themes' editor were drawn in the faintest text colour; they now use the muted one, 4.5:1 or more
+  (ICON-09).
+
 - **Print Preview follows the interface zoom.** Its bar's text, buttons and gaps, and the window's size, grow and
   shrink with the interface zoom (View: Zoom In Interface) like every other window (WIN-12, Pauta 6.0.1), and a
   change of the zoom reaches an open preview at once. The page at "100%" is drawn as large as the text around it;

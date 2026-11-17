@@ -1641,6 +1641,7 @@ public final class DiffViewerPane implements TabContent {
         connectorCanvas.widthProperty().bind(layered.widthProperty());
         connectorCanvas.heightProperty().bind(layered.heightProperty());
         layered.getChildren().add(connectorCanvas);
+        connectorCanvas.readThemeFrom(layered.getChildren());
         leftPaneBox = leftBox;
         sideBySideNode = layered;
     }
@@ -1798,11 +1799,28 @@ public final class DiffViewerPane implements TabContent {
 
         private Color bandColor(DiffConnectorModel.Kind kind, boolean selected) {
             double opacity = selected ? 0.52 : 0.30;
-            return switch (kind) {
-                case ADDED -> Color.rgb(63, 185, 80, opacity);
-                case REMOVED -> Color.rgb(248, 81, 73, opacity);
-                case MODIFIED -> Color.rgb(210, 153, 34, opacity);
+            // The theme's green for added lines and its accent for changed ones, through probes; removed lines are
+            // the neutral, as the diff's rows and the gutter draw them: red is for errors (ICON-18, Pauta 6.0.1).
+            com.editora.editor.ThemeProbes theme = probes;
+            Color base = switch (kind) {
+                case ADDED -> theme == null ? NEUTRAL : theme.get(com.editora.editor.ThemeProbes.GREEN, NEUTRAL);
+                case REMOVED -> NEUTRAL;
+                case MODIFIED -> theme == null ? NEUTRAL : theme.get(com.editora.editor.ThemeProbes.ACCENT_FG, NEUTRAL);
             };
+            return Color.color(base.getRed(), base.getGreen(), base.getBlue(), opacity);
+        }
+
+        /** A mid grey that reads on light and dark grounds alike: removed lines, and any colour no theme has given. */
+        private static final Color NEUTRAL = Color.gray(0.55);
+        /** The theme's colours, once the canvas's container hosts their probes. */
+        private com.editora.editor.@Nullable ThemeProbes probes;
+
+        void readThemeFrom(javafx.collections.ObservableList<javafx.scene.Node> host) {
+            probes = new com.editora.editor.ThemeProbes(
+                    host,
+                    this::requestDraw,
+                    com.editora.editor.ThemeProbes.GREEN,
+                    com.editora.editor.ThemeProbes.ACCENT_FG);
         }
 
         private record VisibleBand(double top, double bottom) {}

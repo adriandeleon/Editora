@@ -55,10 +55,10 @@
 /* Project tree: folder accent + muted file, matching this theme. */
 .project-tree { -project-folder-color: #88c0d0; -project-file-color: #6c7689; }
 
-/* Bookmark gutter marker (theme accent). */
-.editor-area .fold-gutter .bookmark-marker { -fx-fill: #f2a65c; }
-.editor-area .fold-gutter .note-marker { -fx-fill: #ff7043; }
-/* The code-action lightbulb in the editor theme's own colours, told apart from the bookmark: yellow for a quick action,
-   red for a fix to an error (sixth review EV4). */
-.editor-area .fold-gutter .bulb-marker { -fx-fill: #e6c84f; }
+/* Gutter markers in this theme's accent: a bookmark and a note, told apart by shape (amber and red are states, not
+   marks: ICON-18). The code-action lightbulb in its muted ink for a quick action, red for a fix to an error
+   (sixth review EV4). */
+.editor-area .fold-gutter .bookmark-marker { -fx-fill: #88c0d0; }
+.editor-area .fold-gutter .note-marker { -fx-fill: #88c0d0; }
+.editor-area .fold-gutter .bulb-marker { -fx-fill: #7b88a1; }
 .editor-area .fold-gutter .bulb-marker.fix { -fx-fill: #ff6b6b; }

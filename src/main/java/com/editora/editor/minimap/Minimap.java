@@ -54,9 +54,9 @@ public final class Minimap extends Region {
     private static final double MAX_ROW_HEIGHT = 3.0;
 
     /** Block and viewport-overlay colors; theme-aware (see {@link #setColors}). */
-    private Color textColor = Color.web("#9aa5b1");
+    private Color textColor = Color.gray(0.6); // until the editor theme sets it: a neutral, no theme's
 
-    private Color viewportColor = Color.web("#0969da", 0.14);
+    private Color viewportColor = Color.gray(0.5, 0.14);
 
     private final CodeArea area;
     private final Canvas canvas = new Canvas(WIDTH, 1);
@@ -164,9 +164,11 @@ public final class Minimap extends Region {
 
     private static final double GIT_STRIPE_WIDTH = 3;
 
-    private static final Color ERROR_STRIPE = Color.web("#e5484d");
-    private static final Color WARNING_STRIPE = Color.web("#e2a03f");
-    private static final Color INFO_STRIPE = Color.web("#4c8eda");
+    /** The diagnostic stripes' colours, the theme's error, warning and accent (resolved with the palette). */
+    private Color errorStripe = OverlayPalette.of(Color.WHITE).error();
+
+    private Color warningStripe = OverlayPalette.of(Color.WHITE).warning();
+    private Color infoStripe = OverlayPalette.of(Color.WHITE).info();
     private static final double STRIPE_WIDTH = 5;
 
     /** The minimap of the split's second view, given every setting and mark this one is given. */
@@ -211,13 +213,15 @@ public final class Minimap extends Region {
         // moments the canvas is smaller than it (see CanvasGuards / layoutChildren).
         addEventHandler(ScrollEvent.SCROLL, this::wheelScroll);
         resizeRender.setOnFinished(e -> renderContent());
-        OverlayPalette.track(area, palette -> {
-            Color ground = OverlayPalette.backgroundOf(area);
-            boolean dark = OverlayPalette.isDark(ground);
-            gitColors[GitHunk.Kind.ADDED.ordinal()] =
-                    OverlayPalette.reach(Color.web(dark ? "#3fb950" : "#1a7f37"), ground, OverlayPalette.INDICATOR);
+        OverlayPalette.track(area, getChildren(), palette -> {
+            // Added is the theme's green, modified its accent, deleted the neutral: a deletion is not an error
+            // (ICON-18). The diagnostic stripes keep red and amber, which are the state of an error and a warning.
+            gitColors[GitHunk.Kind.ADDED.ordinal()] = palette.success();
             gitColors[GitHunk.Kind.MODIFIED.ordinal()] = palette.info();
-            gitColors[GitHunk.Kind.DELETED.ordinal()] = palette.error();
+            gitColors[GitHunk.Kind.DELETED.ordinal()] = palette.whitespace();
+            errorStripe = palette.error();
+            warningStripe = palette.warning();
+            infoStripe = palette.info();
             repaintStripes();
         });
     }
@@ -999,11 +1003,11 @@ public final class Minimap extends Region {
         }
     }
 
-    private static Color stripeColor(LspDiagnostic.Severity sev) {
+    private Color stripeColor(LspDiagnostic.Severity sev) {
         return switch (sev) {
-            case ERROR -> ERROR_STRIPE;
-            case WARNING -> WARNING_STRIPE;
-            default -> INFO_STRIPE;
+            case ERROR -> errorStripe;
+            case WARNING -> warningStripe;
+            default -> infoStripe;
         };
     }
 
@@ -1014,7 +1018,7 @@ public final class Minimap extends Region {
         }
         double x = w - STRIPE_WIDTH;
         double markH = Math.max(2.0, rowHeight);
-        g.setFill(WARNING_STRIPE);
+        g.setFill(warningStripe);
         for (MarkdownLint.Diagnostic d : lintMarks) {
             double y = clamp(d.line() - 1, total) * rowHeight;
             g.fillRect(x, Math.min(y, h - markH), STRIPE_WIDTH, markH);

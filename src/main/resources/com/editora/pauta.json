@@ -113,51 +113,11 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1562"
     },
     {
-      "rule": "ICON-07",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-07",
-      "kind": "pending",
-      "reason": "Some parts of the interface take their warning, error and success colors directly from the theme instead of the shared state colors.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1563"
-    },
-    {
-      "rule": "ICON-08",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-08",
-      "kind": "pending",
-      "reason": "Some interface colors are fixed values that do not follow the theme.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1563"
-    },
-    {
-      "rule": "ICON-09",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-09",
-      "kind": "pending",
-      "reason": "A few hints are drawn in the faintest text color, which can be hard to read.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1563"
-    },
-    {
-      "rule": "ICON-14",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-14",
-      "kind": "pending",
-      "reason": "Some of the checks that keep text readable run as slower interface tests.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1563"
-    },
-    {
       "rule": "ICON-16",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-16",
       "kind": "pending",
       "reason": "There is no theme that follows the system's light or dark setting.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1563"
-    },
-    {
-      "rule": "ICON-18",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-18",
-      "kind": "pending",
-      "reason": "Amber, red and green are used for a few things besides warnings, errors and success, such as bookmarks and Stop buttons.",
       "link": "https://github.com/adriandeleon/Editora/issues/1563"
     },
     {

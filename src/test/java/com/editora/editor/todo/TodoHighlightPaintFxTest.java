@@ -122,13 +122,13 @@ class TodoHighlightPaintFxTest {
             assertTrue(priority.getRed() > 0.8 && priority.getGreen() < 0.3, "the priority in red: " + priority);
 
             Color fallback = pixel(overlay, area, px, at("FIXME"), end("FIXME"));
-            Color expected = Color.web("#E5C07B");
+            Color expected = TodoColors.solid(null); // the neutral fallback, no state's amber (ICON-18)
             assertTrue(
                     fallback.getOpacity() > 0.1
                             && Math.abs(fallback.getRed() - expected.getRed()) < 0.05
                             && Math.abs(fallback.getGreen() - expected.getGreen()) < 0.05
                             && Math.abs(fallback.getBlue() - expected.getBlue()) < 0.05,
-                    "an unparseable colour shows in the fallback amber: " + fallback);
+                    "an unparseable colour shows in the neutral fallback: " + fallback);
 
             for (int y = 0; y < img.getHeight(); y++) {
                 for (int x = 0; x < img.getWidth(); x++) {
@@ -157,7 +157,9 @@ class TodoHighlightPaintFxTest {
                     assertEquals(Color.web("#123456"), TodoColors.solid("#123456"));
                     assertEquals(Color.web("#123456", 0.3), TodoColors.wash("#123456", 0.3));
                     assertEquals(
-                            Color.web("#E5C07B"), TodoColors.solid("no such colour"), "an invalid value: the fallback");
+                            Color.gray(0.55),
+                            TodoColors.solid("no such colour"),
+                            "an invalid value: the neutral fallback");
                 });
     }
 
