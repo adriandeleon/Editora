@@ -48,8 +48,10 @@ final class CsharpTestDebug {
         return run != null && run.isRunning();
     }
 
-    /** How long a test run may go on after its session ended: it prints its summary, then exits by itself. */
-    static final javafx.util.Duration SUMMARY_GRACE = javafx.util.Duration.seconds(10);
+    /**
+     * How long a test run may go on after its session ended: it prints its summary, then exits by itself. TEST SEAM.
+     */
+    static javafx.util.Duration summaryGrace = javafx.util.Duration.seconds(10);
 
     /**
      * {@code session} ended: its {@code dotnet test} run is stopped if it is still going a little later. When the
@@ -60,7 +62,7 @@ final class CsharpTestDebug {
         if (run == null || !run.isRunning()) {
             return;
         }
-        javafx.animation.PauseTransition grace = new javafx.animation.PauseTransition(SUMMARY_GRACE);
+        javafx.animation.PauseTransition grace = new javafx.animation.PauseTransition(summaryGrace);
         grace.setOnFinished(e -> {
             if (session.testHost == run && run.isRunning() && !session.dap.isActive()) {
                 run.stop();

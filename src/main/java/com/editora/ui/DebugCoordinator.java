@@ -4005,13 +4005,15 @@ final class DebugCoordinator {
             @Nullable EditorBuffer b,
             java.util.Map<String, String> answers,
             Consumer<List<String>> then) {
-        // A tasks.json command is the folder's own code: it runs only in a folder the user trusts, as a build does.
-        if (!ops.trustBuild(workspace, List.of(tr("dialog.trust.item.preLaunchTask", label)))) {
-            return;
-        }
-        saveBuffersUnder(workspace, null); // the task builds what is on disk
         DebugPlanning.preLaunchTask(
-                host, launchJson, label, () -> launchContext(workspace, b, answers), answers, asThisSession(then));
+                host, launchJson, label, () -> launchContext(workspace, b, answers), answers, asThisSession(argv -> {
+                    // A tasks.json command is the folder's own code: it runs only in a folder the user trusts, as a
+                    // build does.
+                    if (ops.trustBuild(workspace, List.of(tr("dialog.trust.item.preLaunchTask", label)))) {
+                        saveBuffersUnder(workspace, null); // the task builds what is on disk
+                        then.accept(argv);
+                    }
+                }));
     }
 
     /** Starts a resolved configuration on the debugger its type names. */
