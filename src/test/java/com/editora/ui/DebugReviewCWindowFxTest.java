@@ -1121,10 +1121,14 @@ class DebugReviewCWindowFxTest {
         FxTestSupport.runOnFx(() -> {
             Node card = breakpointCard();
             double width = card.getLayoutBounds().getWidth();
-            assertTrue(width > 0 && width < 700, "the card is " + width + " px wide");
+            // In the window's zoom: a test before this one in the same JVM may have left it above 100%.
+            double zoom = com.editora.editor.UiZoom.factor();
+            assertTrue(width > 0 && width < 700 * zoom, "the card is " + width + " px wide at zoom " + zoom);
             double height = card.getLayoutBounds().getHeight();
             // A hint left on one line made the card ~600 px tall; six rows of fields and a wrapped hint are ~405.
-            assertTrue(height < 450, "the card is " + height + " px tall: the hint wraps where it is laid out");
+            assertTrue(
+                    height < 450 * zoom,
+                    "the card is " + height + " px tall at zoom " + zoom + ": the hint wraps where it is laid out");
             assertLabelsWhole(card);
             // The filters, folded away until their link opens them: then their labels are whole too.
             javafx.scene.control.Hyperlink filters =

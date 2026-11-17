@@ -32,14 +32,18 @@ class ScriptLaunchBashTest {
         Map<String, Object> launch = ScriptLaunch.bashLaunch(Path.of("/w/loop.sh"), List.of("a b"), Path.of("/w"));
         assertEquals("bashdb", launch.get("type"));
         assertEquals("launch", launch.get("request"));
-        assertEquals("/w/loop.sh", launch.get("program"));
+        assertEquals(Path.of("/w/loop.sh").toString(), launch.get("program"));
         assertEquals(List.of("a b"), launch.get("args"));
         assertEquals("debugConsole", launch.get("terminalKind"), "the script's output in the Debug console");
 
         Map<String, Object> tools = ScriptLaunch.withBashTools(
                 launch, Path.of("/opt/bash/extension/out/bashDebug.js"), name -> "/usr/bin/" + name);
-        assertEquals(Path.of("/opt/bash/extension/bashdb_dir/bashdb").toString(), tools.get("pathBashdb"));
-        assertEquals(Path.of("/opt/bash/extension/bashdb_dir").toString(), tools.get("pathBashdbLib"));
+        assertEquals(
+                Path.of("/opt/bash/extension/bashdb_dir/bashdb")
+                        .toAbsolutePath()
+                        .toString(),
+                tools.get("pathBashdb"));
+        assertEquals(Path.of("/opt/bash/extension/bashdb_dir").toAbsolutePath().toString(), tools.get("pathBashdbLib"));
         assertEquals("/usr/bin/bash", tools.get("pathBash"));
         assertEquals("/usr/bin/mkfifo", tools.get("pathMkfifo"));
         assertEquals("/usr/bin/pkill", tools.get("pathPkill"));
@@ -72,7 +76,7 @@ class ScriptLaunchBashTest {
                 DebugLanguages.RUBY,
                 ScriptLaunch.plan("ruby", script, List.of(), Path.of("/w")).language());
         assertEquals(
-                List.of("--", "ruby", "/w/x"),
+                List.of("--", "ruby", script.toString()),
                 ScriptLaunch.plan("ruby", script, List.of(), Path.of("/w")).tail());
         assertEquals(
                 DebugLanguages.PHP,
