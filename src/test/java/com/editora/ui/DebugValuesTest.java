@@ -127,6 +127,9 @@ class DebugValuesTest {
         // js-debug describes a function by its source (review D9)
         assertEquals("ƒ next() { … }", DebugValues.display("ƒ next() {\n    count += 1;\n    return count;\n  }"));
         assertEquals("first …", DebugValues.display("\nfirst\nsecond"));
+        assertEquals(" …", DebugValues.display("\n"), "only a line break");
+        assertEquals(" …", DebugValues.display("\r\n\r\n"));
+        assertEquals(" …", DebugValues.display("\n  \n"), "as blank lines");
         assertEquals("'one line'", DebugValues.display("'one line'"));
         assertNull(DebugValues.display(null));
     }
