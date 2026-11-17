@@ -1507,9 +1507,10 @@ stepped thread. The "Suspend all threads when one stops" setting is java-debug's
 other file an empty breakpoint set and the caret's file only the cursor line, then resumes; `clearTempBreakpoint`
 sends the real sets again (`forceRunMuted`) when the trip ends. A Run to Cursor trip ends at a stop on the cursor
 line, at a stop elsewhere the program is not resumed from (a step, a new Run to Cursor, a stop reached by anything but
-a resume), and with the session (`DapManager.settleTempBreakpoint`): the window resumes some stops without showing
-them (a logpoint it writes, a recording breakpoint, filters or a hit count that did not match, Thread Dump's pause),
-and clearing the temporary breakpoint at every stop left Run to Cursor never arriving. *Show Numbers as Hexadecimal*
+a resume), at a stop the window shows the user (`DapManager.stopShown`, as VS Code and IntelliJ end it), and with
+the session (`DapManager.settleTempBreakpoint`): the window resumes some stops without showing them (a logpoint it
+writes, a recording breakpoint, filters or a hit count that did not match, Thread Dump's pause), and clearing the
+temporary breakpoint at every stop left Run to Cursor never arriving. *Show Numbers as Hexadecimal*
 (`DapManager.setHexValues`) puts `format: {hex: true}` on every `variables` and `evaluate` request of the session and
 the next ones (java-debug, debugpy and GDB honour it; js-debug, CodeLLDB and Delve ignore it), and forgets the stop's cached answers. The opt-in `DebugQuickWinsProbeFxTest` checks this against the
 installed adapters in a real window (a worker thread's output stops while paused), along with temporary breakpoints
@@ -2287,8 +2288,15 @@ before). Debug Both makes a session on `DapManager.newSession()` — the same `D
 the focused one. Everything a session's manager hands the FX thread runs as that session's: its listener and its
 panel's `Actions` are proxies that wrap each call in `inSession` (`inSessionProxy`), and `DapManager.fx()` runs every
 reply through `setCallbackWrapper`. Launch steps that finish later carry the session that started them —
-`BeforeLaunchStep.setContext`, `later()`/`laterIn()`, `startOffFx`, `asThisSession` for the jdtls build — so a tab
-clicked meanwhile does not launch into the wrong session. Only the focused session (`shown()`) marks the editor
+`BeforeLaunchStep.setContext`, `later()`/`laterIn()`, `startOffFx`, `asThisSession` for the jdtls build, and
+`planOffFx` for every plan read off the FX thread (launch.json and tasks.json reads included) — so a tab clicked
+meanwhile, or a compound's next member focused before the first one's plan lands, does not launch into the wrong
+session. `DebugFacts` refuses a second look only for the same session. A Debug Test run's attaches go to the session
+waiting for them (`attachWaiter`), whichever is focused; each session keeps its own queued JVMs (`queuedAttaches`)
+and its own closed-file breakpoints (`DebugSession.closedBreakpoints`), and an edit to a closed file's breakpoints
+(Breakpoints list, Map card, import) is sent through `sendClosed` as a session start would: re-anchored, triggered ones
+held back. Debug support off, a file opened mid-session and hot code replace on save act on every session; Thread
+Dump and Parallel Stacks keep the session their stacks came from (`DebugStacks`). Only the focused session (`shown()`) marks the editor
 (execution line, inline values, exception card, breakpoint states, pins) and the status bar's debug state; a session
 that stops, other than on a recording breakpoint, is focused (`focusSession`), which takes the last one's marks off
 the editor and puts the new one's on. Breakpoint changes, Mute, hex values, exception filters and member breakpoints
