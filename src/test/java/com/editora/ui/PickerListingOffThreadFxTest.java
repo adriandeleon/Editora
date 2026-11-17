@@ -87,6 +87,7 @@ class PickerListingOffThreadFxTest {
 
             // Typing a name filters the listing already held: no further read.
             FxTestSupport.runOnFx(() -> input.setText(fast + SEP + "be"));
+            SaveGuardsFxTest.awaitOnFx(async, "the filter (off FX, PERF-01)", () -> items.size() == 1);
             assertEquals(List.of(beta), FxTestSupport.callOnFx(() -> List.copyOf(items)));
             assertEquals(List.of(slow, fast), reads);
 

@@ -644,9 +644,16 @@ final class TestNavigationCoordinator {
     /** {@link #runTestAtCaret}'s rest, after a C# test was not found at the caret. */
     private void runTestAtCaretAfterCsharp(@Nullable EditorBuffer b, boolean classLevel, boolean debug) {
         // A Rust test at the caret is debugged on CodeLLDB: its test binary, filtered to it.
-        if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugRustTestAtCaret(b)) {
+        if (debug
+                && host.debugCoordinator() != null
+                && host.debugCoordinator().debugRustTestAtCaret(b, () -> runJavaTestAtCaret(b, classLevel, debug))) {
             return;
         }
+        runJavaTestAtCaret(b, classLevel, debug);
+    }
+
+    /** {@link #runTestAtCaret}'s JUnit test at the caret, after no Rust test was found there. */
+    private void runJavaTestAtCaret(@Nullable EditorBuffer b, boolean classLevel, boolean debug) {
         com.editora.test.JavaTestScanner.TestTarget target = b == null ? null : b.testTargetAtCaret(classLevel);
         if (target == null) {
             host.setStatus(tr("status.testrunner.noTestAtCaret"));
@@ -667,7 +674,7 @@ final class TestNavigationCoordinator {
         // A pytest test's ▶ (its editor-menu Debug Test): debugpy runs it under pytest (Fixer D's hunk).
         EditorBuffer b = host.activeBuffer();
         if (b != null && b.isPython() && host.debugCoordinator() != null) {
-            host.debugCoordinator().debugPythonTest(b, DebugCoordinator.pytestTarget(b.getContent(), target));
+            host.debugCoordinator().debugPythonGlyph(b, target);
             return;
         }
         for (BuildCoordinator c : host.buildCoordinators()) {

@@ -2,11 +2,10 @@ package com.editora.ui;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.function.BiFunction;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -34,7 +33,6 @@ import com.editora.snippet.SnippetManager.Entry;
 import com.editora.snippet.SnippetManager.Problem;
 import com.editora.snippet.SnippetManager.Source;
 import org.fxmisc.richtext.CodeArea;
-import org.fxmisc.richtext.model.StyleSpans;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -55,7 +53,7 @@ final class SnippetsEditor {
     record Hooks(
             Consumer<String> warn,
             Predicate<String> confirm,
-            BiFunction<String, String, @Nullable StyleSpans<Collection<String>>> bodyStyles,
+            BiConsumer<CodeArea, String> highlight,
             Consumer<CodeArea> editorKeys,
             Predicate<String> confirmDelete) {}
 
@@ -182,8 +180,7 @@ final class SnippetsEditor {
         body.setWrapText(false); // a body is code: a wrapped line reads as two
         UiZoom.prefHeight(body, 180);
         hooks.editorKeys().accept(body);
-        // Coloured once typing pauses, off the FX thread (PERF-08, Pauta 6.0.1).
-        new SnippetBodyHighlighter(body, () -> language, hooks.bodyStyles());
+        body.plainTextChanges().subscribe(c -> hooks.highlight().accept(body, language));
 
         GridPane form = new GridPane();
         UiZoom.gaps(form, 8, 6);

@@ -37,6 +37,14 @@ class LspFoldingFxTest {
             }
             """;
 
+    /** The regions once the detection in flight has landed (PERF-01: they are detected off the FX thread). */
+    private static List<FoldRegions.Region> regionsOf(FoldManager folds) throws Exception {
+        java.util.concurrent.CompletableFuture<List<FoldRegions.Region>> known =
+                new java.util.concurrent.CompletableFuture<>();
+        FxTestSupport.runOnFx(() -> folds.whenRegionsKnown(() -> known.complete(folds.regions())));
+        return known.get(10, java.util.concurrent.TimeUnit.SECONDS);
+    }
+
     private static FoldManager managerOver(String text) throws Exception {
         return FxTestSupport.callOnFx(() -> {
             CodeArea area = new CodeArea(text);
@@ -50,7 +58,7 @@ class LspFoldingFxTest {
     void withoutServerRegionsTheHeuristicIsUsed() throws Exception {
         FoldManager folds = managerOver(JAVA);
 
-        List<FoldRegions.Region> regions = FxTestSupport.callOnFx(folds::regions);
+        List<FoldRegions.Region> regions = regionsOf(folds);
 
         assertEquals(FoldRegions.detect(JAVA, "java"), regions);
         assertTrue(regions.size() >= 2, "the class body and the method body both fold");
@@ -67,7 +75,7 @@ class LspFoldingFxTest {
 
         FxTestSupport.runOnFx(() -> folds.setServerRegions(fromServer));
 
-        assertEquals(fromServer, FxTestSupport.callOnFx(folds::regions));
+        assertEquals(fromServer, regionsOf(folds));
         assertNotEquals(FoldRegions.detect(JAVA, "java"), fromServer, "the two models really do differ here");
     }
 
@@ -79,15 +87,15 @@ class LspFoldingFxTest {
     @Test
     void anEmptyOrClearedAnswerRestoresTheHeuristic() throws Exception {
         FoldManager folds = managerOver(JAVA);
-        List<FoldRegions.Region> heuristic = FxTestSupport.callOnFx(folds::regions);
+        List<FoldRegions.Region> heuristic = regionsOf(folds);
 
         FxTestSupport.runOnFx(() -> folds.setServerRegions(List.of(new FoldRegions.Region(0, 4))));
         FxTestSupport.runOnFx(() -> folds.setServerRegions(List.of()));
-        assertEquals(heuristic, FxTestSupport.callOnFx(folds::regions), "empty list");
+        assertEquals(heuristic, regionsOf(folds), "empty list");
 
         FxTestSupport.runOnFx(() -> folds.setServerRegions(List.of(new FoldRegions.Region(0, 4))));
         FxTestSupport.runOnFx(() -> folds.setServerRegions(null));
-        assertEquals(heuristic, FxTestSupport.callOnFx(folds::regions), "null");
+        assertEquals(heuristic, regionsOf(folds), "null");
     }
 
     /**
@@ -105,9 +113,11 @@ class LspFoldingFxTest {
             folds.setOnRegionsChanged(recomputes::incrementAndGet);
             folds.setServerRegions(answer);
         });
+        regionsOf(folds);
         int afterFirst = recomputes.get();
         assertTrue(afterFirst > 0, "guard: the first install must recompute, or the assertion below is vacuous");
         FxTestSupport.runOnFx(() -> folds.setServerRegions(List.copyOf(answer)));
+        regionsOf(folds);
 
         assertEquals(afterFirst, recomputes.get(), "an equal-but-not-same list must not recompute");
     }

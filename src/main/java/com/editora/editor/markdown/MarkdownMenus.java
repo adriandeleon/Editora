@@ -51,7 +51,8 @@ public final class MarkdownMenus {
     /** @param insertImage opens the image chooser (it lives in {@code ui}); null when none is wired */
     public static List<MenuItem> items(EditorBuffer b, @Nullable Runnable insertImage) {
         MarkdownEditing md = b.markdown();
-        boolean onLink = md.linkAtCaret() != null;
+        // Read from the caret's line alone: a reference's definition is looked up by the command, off FX.
+        boolean onLink = md.looksLikeLinkAtCaret();
         return List.of(
                 item("command.markdown.bold", MenuIcons.bold(), () -> md.formatInline("**")),
                 item("command.markdown.italic", MenuIcons.italic(), () -> md.formatInline("*")),
@@ -74,11 +75,11 @@ public final class MarkdownMenus {
                         "row.unavailable.notOnLink"),
                 enabledWhen(
                         item("command.markdown.convertWikiLink", null, md::convertWikiLink),
-                        () -> md.linkForEditing()[2] != null,
+                        () -> onLink,
                         "row.unavailable.notOnWikiLink"),
                 enabledWhen(
-                        item("command.markdown.openLink", null, b::openLinkUnderCaret),
-                        () -> b.linkUnderCaret() != null,
+                        item("command.markdown.openLink", null, () -> b.openLinkUnderCaret(opened -> {})),
+                        () -> onLink,
                         "row.unavailable.notOnLink"),
                 new SeparatorMenuItem(),
                 item("command.markdown.bulletList", MenuIcons.bulletList(), md::formatBulletList),
@@ -93,10 +94,22 @@ public final class MarkdownMenus {
                 new SeparatorMenuItem(),
                 tableMenu(md),
                 item("command.markdown.toc", MenuIcons.bulletList(), md::insertOrUpdateToc),
-                item("command.markdown.numberHeadings", null, () -> MarkdownFormatting.numberHeadings(b)),
-                item("command.markdown.removeHeadingNumbers", null, () -> MarkdownFormatting.removeHeadingNumbers(b)),
-                item("command.markdown.formatDocument", null, () -> MarkdownFormatting.formatDocument(b)),
-                item("command.markdown.formatSelection", null, () -> MarkdownFormatting.formatSelection(b)),
+                item(
+                        "command.markdown.numberHeadings",
+                        null,
+                        () -> MarkdownFormatting.numberHeadings(b, outcome -> {})),
+                item(
+                        "command.markdown.removeHeadingNumbers",
+                        null,
+                        () -> MarkdownFormatting.removeHeadingNumbers(b, outcome -> {})),
+                item(
+                        "command.markdown.formatDocument",
+                        null,
+                        () -> MarkdownFormatting.formatDocument(b, outcome -> {})),
+                item(
+                        "command.markdown.formatSelection",
+                        null,
+                        () -> MarkdownFormatting.formatSelection(b, outcome -> {})),
                 item("command.markdown.insertFootnote", null, md::insertFootnote),
                 item("command.markdown.insertDate", null, md::insertDate),
                 item("command.markdown.insertHorizontalRule", null, md::insertHorizontalRule),
@@ -104,7 +117,14 @@ public final class MarkdownMenus {
                         item("command.markdown.insertImage", MenuIcons.download(), insertImage),
                         () -> insertImage != null,
                         "row.unavailable.noImageChooser"),
-                item("command.markdown.pasteAsMarkdown", MenuIcons.paste(), () -> md.pasteAsMarkdown(true)));
+                item(
+                        "command.markdown.pasteAsMarkdown",
+                        MenuIcons.paste(),
+                        () -> md.pasteAsMarkdown(true, markdown -> {
+                            if (markdown != null) {
+                                b.insertAtCaret(markdown);
+                            }
+                        })));
     }
 
     /** The "Table" submenu: insert, reformat, rows and columns, column alignment, CSV in and out. */

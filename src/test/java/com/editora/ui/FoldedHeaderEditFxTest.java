@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * that splits or joins the header or the run expands the fold. Driven through the real command registry.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // fold regions (PERF-01: detected off FX) land at once
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class FoldedHeaderEditFxTest {
 

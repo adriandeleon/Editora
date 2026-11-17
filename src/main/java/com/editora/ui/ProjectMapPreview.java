@@ -1143,14 +1143,9 @@ final class ProjectMapPreview extends StackPane {
 
     /** {@code markdown} as the editor's documentation popup shows it; links open through {@code openUrl}. */
     private static javafx.scene.Node rendered(String markdown, Consumer<String> openUrl) {
-        try {
-            return com.editora.editor.markdown.MarkdownRenderer.renderPopup(
-                    com.editora.editor.markdown.MarkdownRenderer.parseForRender(markdown), openUrl);
-        } catch (RuntimeException unrendered) {
-            Label label = new Label(markdown);
-            label.setWrapText(true);
-            return label;
-        }
+        // Plain text first, its rendering when the parse made off the FX thread lands (PERF-01, Pauta 6.0.1).
+        return com.editora.editor.markdown.MarkdownRenderer.renderedLater(
+                markdown, ast -> com.editora.editor.markdown.MarkdownRenderer.renderPopup(ast, openUrl));
     }
 
     /**

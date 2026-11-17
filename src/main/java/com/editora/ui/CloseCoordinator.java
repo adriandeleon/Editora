@@ -80,7 +80,9 @@ final class CloseCoordinator {
         if (buffer != null) {
             return askCloseIfDirty(buffer, afterSave) == Answer.CLOSE;
         }
-        return tab != null && tab.getUserData() instanceof TabContent content ? confirmCloseIfDirty(content) : true;
+        return tab != null && tab.getUserData() instanceof TabContent content
+                ? confirmCloseIfDirty(content, afterSave)
+                : true;
     }
 
     private boolean confirmPinned(EditorBuffer buffer) {
@@ -145,7 +147,7 @@ final class CloseCoordinator {
         return result.get() == discard ? Answer.CLOSE : Answer.CANCEL;
     }
 
-    private boolean confirmCloseIfDirty(TabContent content) {
+    private boolean confirmCloseIfDirty(TabContent content, @Nullable Runnable afterSave) {
         if (!content.hasUnsavedChanges()) {
             return true;
         }
@@ -158,7 +160,7 @@ final class CloseCoordinator {
             return false;
         }
         return result.get() == discard
-                || result.get() == save && content.saveBeforeClose() && !content.hasUnsavedChanges();
+                || result.get() == save && content.saveBeforeClose(afterSave) && !content.hasUnsavedChanges();
     }
 
     /**
@@ -247,7 +249,7 @@ final class CloseCoordinator {
                     }
                     editorArea.select(tab);
                     prompted = true;
-                    if (!confirmCloseIfDirty(content)) {
+                    if (!confirmCloseIfDirty(content, afterSave)) {
                         return new Sweep(false, true);
                     }
                     if (content.hasUnsavedChanges()) {

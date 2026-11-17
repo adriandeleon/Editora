@@ -1019,7 +1019,8 @@ final class TemplateCoordinator {
 
     private static boolean hasGrammar(String language) {
         try {
-            return !language.isEmpty() && GrammarRegistry.shared().forLanguageName(language) != null;
+            // a name-table lookup: the grammar itself is loaded when the buffer is given it, off the FX thread
+            return !language.isEmpty() && GrammarRegistry.shared().hasGrammarForLanguage(language);
         } catch (RuntimeException e) {
             return false;
         }

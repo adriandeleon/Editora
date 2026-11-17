@@ -36,6 +36,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * when the hunk reaches the end of the file or is the whole file, and that every side is the text an editor
  * buffer of the same bytes would hold (charset, line endings, whole document).
  */
+// The debugger's scans, merge and apply texts are worked out off the FX thread (PERF-01): here in place, so
+// each lands before the command returns. HandlersDebugOffFxThreadFxTest runs them where the app does.
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 @Tag("fx")
 class DiffMergeNormalFormFxTest {
 
@@ -260,7 +263,7 @@ class DiffMergeNormalFormFxTest {
                         Choice.OURS,
                         new Label(),
                         "ours");
-                return (Boolean) FxTestSupport.call(pane, "saveResult", new Class<?>[] {});
+                return pane.saveBeforeClose() /* in place, as the quit does */;
             });
 
             assertTrue(saved);

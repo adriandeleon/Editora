@@ -1499,6 +1499,19 @@ public final class TerminalView extends Region {
         return true;
     }
 
+    /** Whether the shell marked a command's output ({@link #lastCommandOutput} has rows to read). No lock, no text. */
+    boolean hasCommandOutput() {
+        if (buffer == null) {
+            return false;
+        }
+        for (PromptMark mark : markRows()) {
+            if (mark.kind() == 'C') {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * What the last command printed: the rows from its output mark (C) up to the mark that followed it (D, or the
      * next prompt), or up to the cursor while it is still running. Null when the shell sent no such mark.
@@ -1544,14 +1557,19 @@ public final class TerminalView extends Region {
 
     /** Copies {@link #lastCommandOutput()}; false when there was none. */
     public boolean copyLastOutput() {
-        String text = lastCommandOutput();
-        if (text == null) {
+        if (!hasCommandOutput()) {
             return false;
         }
-        ClipboardContent content = new ClipboardContent();
-        content.putString(text);
-        Clipboard.getSystemClipboard().setContent(content);
-        return true;
+        // The rows are read under the lock without waiting for it (PERF-01, Pauta 6.0.1), copied when read.
+        @Nullable String[] read = {null};
+        boolean[] done = {false};
+        underLockSoon(buf -> read[0] = lastCommandOutput(), () -> {
+            done[0] = true;
+            if (read[0] != null) {
+                toClipboard(read[0]);
+            }
+        });
+        return !done[0] || read[0] != null;
     }
 
     // ---------------------------------------------------------------- search
@@ -2424,7 +2442,8 @@ public final class TerminalView extends Region {
         // all change while this menu sits built and invisible.
         RowReasons.when(m.copyItem(), hasSelection(), "palette.disabled.needsSelection");
         m.copyOutputItem().setVisible(hasPromptMarks());
-        RowReasons.when(m.copyOutputItem(), lastCommandOutput() != null, "row.unavailable.noCommandOutput");
+        // Asked from the marks alone: the output's text is gathered only when the row is picked.
+        RowReasons.when(m.copyOutputItem(), hasCommandOutput(), "row.unavailable.noCommandOutput");
         RowReasons.when(m.pasteItem(), Clipboard.getSystemClipboard().hasString(), "row.unavailable.clipboardEmpty");
         // The link items are the menu's answer to a gesture nobody was told about: they need no
         // modifier and they say what is there. Computed for the right-clicked cell, not the last
@@ -2511,20 +2530,42 @@ public final class TerminalView extends Region {
 
     /** Selects the whole buffer: all of the scrollback plus the live screen. */
     public void selectAll() {
-        if (buffer == null) return;
-        buffer.lock();
-        try {
-            int history = buffer.getHistoryLinesCount();
-            TerminalSelection all = new TerminalSelection(new Point(0, -history));
-            all.updateEnd(new Point(slotsInRow(rows - 1), rows - 1));
-            rectangular = false;
-            selection = all;
-            selectionAnchor = new Point(0, -history);
-        } finally {
-            buffer.unlock();
+        underLockSoon(
+                buf -> {
+                    int history = buf.getHistoryLinesCount();
+                    TerminalSelection all = new TerminalSelection(new Point(0, -history));
+                    all.updateEnd(new Point(slotsInRow(rows - 1), rows - 1));
+                    rectangular = false;
+                    selection = all;
+                    selectionAnchor = new Point(0, -history);
+                },
+                () -> {
+                    settleSelection();
+                    markDirty();
+                });
+    }
+
+    /**
+     * Runs {@code work} under the buffer lock on the FX thread without ever waiting for it (PERF-01, Pauta 6.0.1): the
+     * lock is tried now, and while the emulator's thread holds it (one write of a chunk of output) tried again a
+     * moment later, when {@code after} runs too. Nothing else on the FX thread waits for this lock: the frame tries
+     * it ({@code tryLock}) and the find's scan holds it on its own thread a chunk of rows at a time.
+     */
+    private void underLockSoon(java.util.function.Consumer<TerminalTextBuffer> work, Runnable after) {
+        TerminalTextBuffer buf = buffer;
+        if (buf == null || closed) return;
+        if (buf.tryLock()) {
+            try {
+                work.accept(buf);
+            } finally {
+                buf.unlock();
+            }
+            after.run();
+            return;
         }
-        settleSelection();
-        markDirty();
+        javafx.animation.PauseTransition later = new javafx.animation.PauseTransition(javafx.util.Duration.millis(4));
+        later.setOnFinished(e -> underLockSoon(work, after));
+        later.play();
     }
 
     /**
@@ -2532,22 +2573,17 @@ public final class TerminalView extends Region {
      * prompt you are standing on.
      */
     public void clearScrollback() {
-        if (buffer == null) return;
-        buffer.lock();
-        try {
-            buffer.clearHistory();
-        } finally {
-            buffer.unlock();
-        }
-        // Everything measured against the history that just went away has to be reset with it, or
-        // the viewport scrolls into rows that no longer exist.
-        selection = null;
-        selectionAnchor = null;
-        settledText = null;
-        scrollOrigin = 0;
-        marks.removeIf(m -> rowOf(m.line()) < 0);
-        clearSearch();
-        markDirty();
+        underLockSoon(TerminalTextBuffer::clearHistory, () -> {
+            // Everything measured against the history that just went away has to be reset with it, or
+            // the viewport scrolls into rows that no longer exist.
+            selection = null;
+            selectionAnchor = null;
+            settledText = null;
+            scrollOrigin = 0;
+            marks.removeIf(m -> rowOf(m.line()) < 0);
+            clearSearch();
+            markDirty();
+        });
     }
 
     /** Shift state of the most recent press, for the context-menu event that may follow it. */
@@ -2625,8 +2661,20 @@ public final class TerminalView extends Region {
         Point at = cellAt(e);
         switch (e.getClickCount()) {
             case 2 -> {
-                selectWordAt(at);
-                settleSelection();
+                TerminalTextBuffer words = buffer;
+                if (words != null) {
+                    // The word's ends are read under the lock, never waited for (PERF-01, Pauta 6.0.1).
+                    @Nullable TerminalSelection[] word = {null};
+                    underLockSoon(buf -> word[0] = wordSelection(at, buf), () -> {
+                        TerminalSelection found = word[0];
+                        if (found == null) return;
+                        rectangular = false;
+                        selection = found;
+                        selectionAnchor = new Point(found.getStart().x, found.getStart().y);
+                        settleSelection();
+                        markDirty();
+                    });
+                }
             }
             case 3 -> {
                 selectLineAt(at);
@@ -2751,11 +2799,14 @@ public final class TerminalView extends Region {
         return new Point(column, scrollOrigin + row);
     }
 
-    /** {@link #lineTextAt} for a caller that does not hold the lock: the mouse handlers, on the FX thread. */
+    /**
+     * {@link #lineTextAt} for a caller that does not hold the lock: the mouse handlers, on the FX thread. The lock is
+     * only tried (PERF-01, Pauta 6.0.1): while output is being written the row reads "", so a drag's end lands on the
+     * cell's column for that one event, and the next event reads the row.
+     */
     private String lockedLineTextAt(int row) {
         TerminalTextBuffer buf = buffer;
-        if (buf == null) return "";
-        buf.lock();
+        if (buf == null || !buf.tryLock()) return "";
         try {
             return lineTextAt(row);
         } finally {
@@ -2846,15 +2897,6 @@ public final class TerminalView extends Region {
         }
     }
 
-    private void selectWordAt(Point at) {
-        TerminalTextBuffer buf = buffer;
-        if (buf == null) return; // the press handler has checked; no session, no words
-        TerminalSelection word = wordSelection(at, buf);
-        rectangular = false;
-        selection = word;
-        selectionAnchor = new Point(word.getStart().x, word.getStart().y);
-    }
-
     private void selectLineAt(Point at) {
         TerminalSelection line = new TerminalSelection(new Point(0, at.y));
         line.updateEnd(new Point(Math.max(columns, lockedLineTextAt(at.y).length()), at.y));
@@ -2867,10 +2909,16 @@ public final class TerminalView extends Region {
         return selection != null;
     }
 
-    /** The selected text, or "" — the find bar starts from a one-line selection. */
+    /** The selected text, or "" — the find bar starts from a one-line selection. The lock is only tried. */
     public String selectedText() {
-        String text = lockedSelectedText();
-        return text == null ? "" : text;
+        TerminalSelection current = selection;
+        TerminalTextBuffer buf = buffer;
+        if (current == null || buf == null || !buf.tryLock()) return "";
+        try {
+            return selectedText(current, buf);
+        } finally {
+            buf.unlock();
+        }
     }
 
     /** The text a selection stands for, a stream's or a block's. The caller holds the lock. */
@@ -2882,25 +2930,20 @@ public final class TerminalView extends Region {
         return text == null ? "" : text;
     }
 
-    /** {@link #selectedText(TerminalSelection, TerminalTextBuffer)} without the lock; null with no selection. */
-    private @Nullable String lockedSelectedText() {
-        TerminalSelection current = selection;
-        TerminalTextBuffer buf = buffer;
-        if (current == null || buf == null) return null;
-        buf.lock();
-        try {
-            return selectedText(current, buf);
-        } finally {
-            buf.unlock();
-        }
-    }
-
-    /** Copies the selection, returning false when there was nothing to copy. */
+    /**
+     * Copies the selection, returning false when there was nothing to copy. The text is read under the buffer lock
+     * without waiting for it ({@link #underLockSoon}): while output is being written, it is copied a moment later.
+     */
     public boolean copySelection() {
-        String text = lockedSelectedText();
-        if (text == null || text.isEmpty()) return false;
-        toClipboard(text);
-        return true;
+        TerminalSelection current = selection;
+        if (current == null || buffer == null) return false;
+        @Nullable String[] text = {null};
+        underLockSoon(buf -> text[0] = selectedText(current, buf), () -> {
+            if (text[0] != null && !text[0].isEmpty()) {
+                toClipboard(text[0]);
+            }
+        });
+        return text[0] == null || !text[0].isEmpty(); // not read yet: it will be; read empty: nothing copied
     }
 
     private static void toClipboard(String text) {
@@ -2915,11 +2958,20 @@ public final class TerminalView extends Region {
      * copy-on-select is on.
      */
     private void settleSelection() {
-        String text = lockedSelectedText();
-        settledText = text;
-        if (text == null || text.isEmpty()) return;
-        PrimarySelection.set(text);
-        if (copyOnSelect) toClipboard(text);
+        TerminalSelection current = selection;
+        if (current == null || buffer == null) {
+            settledText = null;
+            return;
+        }
+        @Nullable String[] read = {null};
+        underLockSoon(buf -> read[0] = selection == current ? selectedText(current, buf) : null, () -> {
+            if (selection != current) return; // a newer selection settles itself
+            String text = read[0];
+            settledText = text;
+            if (text == null || text.isEmpty()) return;
+            PrimarySelection.set(text);
+            if (copyOnSelect) toClipboard(text);
+        });
     }
 
     /**

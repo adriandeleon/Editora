@@ -97,12 +97,15 @@ class StructureAttachFxTest {
                 buffer.getFoldManager().regions().size(),
                 panel.outline(),
                 FxTestSupport.<Integer>field(panel, "treeBuilds"),
-                FxTestSupport.<TreeView<?>>field(panel, "tree")
-                        .getRoot()
-                        .getChildren()
-                        .size()
+                FxTestSupport.<TreeView<?>>field(panel, "tree").getRoot() == null
+                        ? 0
+                        : FxTestSupport.<TreeView<?>>field(panel, "tree")
+                                .getRoot()
+                                .getChildren()
+                                .size()
             });
-            if ((Integer) landed[0] > 0) {
+            // The regions land, then the outline is built from them off the FX thread and shown (PERF-01).
+            if ((Integer) landed[0] > 0 && (Integer) landed[2] > buildsAtAttach) {
                 break;
             }
             Thread.sleep(5);

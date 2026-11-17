@@ -232,13 +232,15 @@ final class GitBlameCoordinator {
         String language = buffer.getLanguage();
         buffer.setDisplayName(tr("blame.revisionTitle", name, GitFormat.shortHash(revision.hash())));
         buffer.setLanguageOverride(language); // …which the tab title, with its hash, no longer ends in
-        buffer.setContent(text);
         revisions.put(buffer, revision);
         openTab.accept(buffer);
         buffer.setViewMode(true);
-        buffer.jumpToLine(line); // the same line number: usually close to where the caret line was
+        // Its text made ready off the FX thread (PERF-01, Pauta 6.0.1), then the jump and the annotations.
+        buffer.setContentLater(text, () -> {
+            buffer.jumpToLine(line); // the same line number: usually close to where the caret line was
+            refresh(buffer);
+        });
         host.setStatus(tr("status.git.previousRevisionOpened", name, GitFormat.shortHash(revision.hash())));
-        refresh(buffer);
     }
 
     /** Fetches blame for {@code b} off-thread and pushes formatted annotations (or clears when ineligible). */

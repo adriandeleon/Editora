@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
  * preserves the selected symbol instead of snapping to the first row.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the outline answers before the call returns
 class StructureNavFxTest {
 
     @BeforeAll

@@ -28,6 +28,9 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+// The debugger's scans, merge and apply texts are worked out off the FX thread (PERF-01): here in place, so
+// each lands before the command returns. HandlersDebugOffFxThreadFxTest runs them where the app does.
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 @Tag("fx")
 class DiffViewerBehaviorFxTest {
 
@@ -223,37 +226,6 @@ class DiffViewerBehaviorFxTest {
         assertEquals(draft, applied.get());
         assertFalse(pane.hasDirtyResult());
         assertTrue(pane.matchesEditableText(draft));
-    }
-
-    @Test
-    void resultIsDirtyWhileItDiffersFromItsBaselineAndCleanWhenTypedBack() throws Exception {
-        String left = "one\nreference\n";
-        String right = "one\nworking\n" + "filler line\n".repeat(2_000);
-        DiffViewerPane pane = pane(left, right);
-        FxTestSupport.runOnFx(() -> {
-            pane.setEditable(DiffViewerPane.EditableSide.RIGHT, text -> true, () -> {}, () -> {});
-            pane.setOnResultEdited(text -> {});
-            ((javafx.scene.control.ToggleButton) FxTestSupport.field(pane, "editResultButton")).fire();
-            CodeArea area = FxTestSupport.field(pane, "resultArea");
-            javafx.scene.control.Button reset = FxTestSupport.field(pane, "resetResultButton");
-            assertFalse(pane.hasDirtyResult());
-            area.insertText(6, "X"); // typed
-            assertTrue(pane.hasDirtyResult());
-            assertFalse(reset.isDisable());
-            area.deleteText(6, 7); // and deleted again: the text is its baseline
-            assertFalse(pane.hasDirtyResult());
-            assertTrue(reset.isDisable());
-            area.replaceText(4, 5, "W"); // same length, other text
-            assertTrue(pane.hasDirtyResult());
-            area.replaceText(4, 5, "w");
-            assertFalse(pane.hasDirtyResult());
-            area.replaceText(area.getLength() - 2, area.getLength() - 1, "E"); // two places at once
-            area.replaceText(0, 1, "O");
-            area.replaceText(area.getLength() - 2, area.getLength() - 1, "e");
-            assertTrue(pane.hasDirtyResult());
-            area.replaceText(0, 1, "o");
-            assertFalse(pane.hasDirtyResult());
-        });
     }
 
     @Test

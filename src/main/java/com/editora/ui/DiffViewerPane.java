@@ -75,7 +75,6 @@ public final class DiffViewerPane implements TabContent {
 
     private static final Collection<String> NONE = Collections.emptyList();
     private static final List<String> WORD = List.of("diff-word");
-    private static final int CONTEXT_LINES = 3;
     private static volatile boolean rememberedCollapseContext = true;
     private static volatile boolean rememberedWrapLines;
     private static final ExecutorService HIGHLIGHT_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
@@ -92,7 +91,12 @@ public final class DiffViewerPane implements TabContent {
     private String leftText;
     private String rightText;
     private DiffModel model;
-    private final @Nullable IGrammar grammar;
+    /**
+     * The name the syntax grammar is looked up by, when one is bundled for it. The grammar itself is loaded on the
+     * highlight executor (PERF-01, Pauta 6.0.1: a cold grammar is read, parsed and compiled), never here.
+     */
+    private final @Nullable String grammarName;
+
     private String fontStyle; // mutable so text zoom can resize the diff areas live (#533)
     private final boolean showLineNumbers;
     private java.util.function.Consumer<PatchRequest> onExportPatch = p -> {};
@@ -244,8 +248,9 @@ public final class DiffViewerPane implements TabContent {
 
     private boolean updatingResult;
     private @Nullable String resultBaselineText;
-    /** Where the Result may differ from {@link #resultBaselineText}: a keystroke compares that span only. */
-    private final EditedSpan resultEdits = new EditedSpan();
+
+    /** Counts the Result editor's edits (FX thread). */
+    private long resultEdits;
 
     private boolean syncing; // re-entrancy guard for scroll sync
     /** The side-by-side pane the user is scrolling; only it drives the other (see {@link #syncScroll}). */
@@ -264,9 +269,10 @@ public final class DiffViewerPane implements TabContent {
             int selectedRightLine,
             double divider) {}
 
-    private record DisplayRow(Row row, int sourceStart, int sourceEnd, boolean collapsed) {}
+    /** The layouts of {@link #layoutsModel}, the model they were taken for. */
+    private com.editora.diff.DiffLayout.@Nullable Layouts layouts;
 
-    private record DisplayUnified(UnifiedRow row, int sourceStart, int sourceEnd, boolean collapsed) {}
+    private @Nullable DiffModel layoutsModel;
 
     public DiffViewerPane(
             String title,
@@ -293,8 +299,8 @@ public final class DiffViewerPane implements TabContent {
         this.fontStyle = "-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;";
         // Syntax grammar: prefer the local file's full path (so location-based types like ~/.ssh/config
         // resolve), else the "new" file's name, falling back to the old name's extension.
-        IGrammar g = grammarFor(grammarPath != null && !grammarPath.isBlank() ? grammarPath : rightName);
-        this.grammar = g != null ? g : grammarFor(leftName);
+        String g = grammarFor(grammarPath != null && !grammarPath.isBlank() ? grammarPath : rightName);
+        this.grammarName = g != null ? g : grammarFor(leftName);
 
         root.getStyleClass().add("diff-viewer");
         root.setAccessibleRole(AccessibleRole.PARENT);
@@ -308,6 +314,8 @@ public final class DiffViewerPane implements TabContent {
         resultDiffDelay.setOnFinished(e -> {
             if (resultEditing && resultArea != null) {
                 String text = resultArea.getText();
+                resultDirty = !java.util.Objects.equals(resultBaselineText, text);
+                updateResultControls();
                 onResultEdited.accept(text);
                 highlightResult(text);
             }
@@ -636,7 +644,7 @@ public final class DiffViewerPane implements TabContent {
     }
 
     public boolean hasDirtyResult() {
-        return resultEditing && resultDirty;
+        return resultEditing && resultDirty && draftDiffers();
     }
 
     public EditableSide editableSide() {
@@ -761,8 +769,18 @@ public final class DiffViewerPane implements TabContent {
         return PatchWriter.unifiedDiff(leftLabel, rightLabel, leftText, rightText);
     }
 
-    private static @Nullable IGrammar grammarFor(@Nullable String name) {
+    /** {@code name} when a grammar is bundled for it (a name-table lookup: nothing is loaded), else null. */
+    private static @Nullable String grammarFor(@Nullable String name) {
         if (name == null || name.isBlank()) {
+            return null;
+        }
+        return GrammarRegistry.shared().hasGrammarFor(name) ? name : null;
+    }
+
+    /** The grammar for {@link #grammarName}, loaded the first time: on the highlight executor only. */
+    private @Nullable IGrammar loadGrammar() {
+        String name = grammarName;
+        if (name == null) {
             return null;
         }
         try {
@@ -977,9 +995,37 @@ public final class DiffViewerPane implements TabContent {
 
     private void applyFinalNewline() {
         String editable = editableSide == EditableSide.RIGHT ? rightText : leftText;
-        DiffText parsed = DiffText.parse(editable);
         boolean desired = editableSide == EditableSide.RIGHT ? model.leftFinalNewline() : model.rightFinalNewline();
-        deliverApply(new DiffText(parsed.lines(), parsed.lineSeparator(), desired).compose(parsed.lines()));
+        applyWorkedOut(
+                () -> {
+                    DiffText parsed = DiffText.parse(editable);
+                    return new DiffText(parsed.lines(), parsed.lineSeparator(), desired).compose(parsed.lines());
+                },
+                this::deliverApply);
+    }
+
+    /** Where an apply's new text is worked out from a side's text: heard off the FX thread (PERF-01). */
+    public static final String APPLY_SITE = "DiffViewerPane.applyText";
+
+    /**
+     * Works out an apply's text off the FX thread (PERF-01, Pauta 6.0.1), the apply buttons busy meanwhile (a second
+     * press does nothing), then hands it to {@code then} unless the diff was computed again meanwhile.
+     */
+    private void applyWorkedOut(java.util.concurrent.Callable<String> work, java.util.function.Consumer<String> then) {
+        if (applyPending) {
+            return;
+        }
+        DiffModel asked = model;
+        applyPending = true;
+        updateEditButtons();
+        com.editora.perf.OffFx.then(APPLY_SITE, work, a -> {
+            applyPending = false;
+            updateEditButtons();
+            String text = a.value();
+            if (text != null && model == asked) {
+                then.accept(text);
+            }
+        });
     }
 
     private void hunkButton(Button button, String label, GitHunkAction action) {
@@ -1113,6 +1159,10 @@ public final class DiffViewerPane implements TabContent {
     }
 
     private void restoreViewState(ViewState state) {
+        if (layingOut) {
+            restoreWhenShown = state; // the view is shown once its layout lands: restored then
+            return;
+        }
         Platform.runLater(() -> {
             syncing = true;
             try {
@@ -1315,10 +1365,20 @@ public final class DiffViewerPane implements TabContent {
             performGitAction(GitHunkAction.OPEN, currentBlockStart(), true);
     }
 
+    /**
+     * Whether the draft differs from its baseline, looked at now for a command (an edit only marks it dirty: typing
+     * back to the baseline is noticed when typing pauses, or here); the flag is set to the answer.
+     */
+    private boolean draftDiffers() {
+        resultDirty = resultArea != null && !java.util.Objects.equals(resultBaselineText, resultArea.getText());
+        updateResultControls();
+        return resultDirty;
+    }
+
     private void toggleResultEditor() {
         if (editResultButton.isSelected()) {
             openResultEditor();
-        } else if (resultDirty) {
+        } else if (resultDirty && draftDiffers()) {
             // Applying or resetting is explicit; a toolbar click must not silently discard a draft.
             editResultButton.setSelected(true);
             if (resultArea != null) {
@@ -1394,15 +1454,14 @@ public final class DiffViewerPane implements TabContent {
         resultArea.setAccessibleText(tr("diff.resultDescription"));
         resultArea.setWrapText(wrapLines);
         resultArea.setStyle(fontStyle);
-        // The edit stream, not textProperty(): a listener on that builds the whole document per keystroke, and
-        // the dirty flag compares only the span the edits touched (PERF-08, Pauta 6.0.1).
-        CodeArea edited = resultArea;
-        edited.plainTextChanges().subscribe(change -> {
+        // Each edit is counted, not read: a listener on the text joined the whole draft per keystroke (PERF-01). An
+        // edit makes the draft dirty at once; whether it is back at the baseline is looked at when typing pauses.
+        resultArea.plainTextChanges().subscribe(change -> {
+            resultEdits++;
             if (updatingResult) {
                 return;
             }
-            resultEdits.edited(change.getPosition(), change.getInserted().length(), edited.getLength());
-            resultDirty = !resultEdits.equalsBaseline(resultBaselineText, edited.getLength(), edited::getText);
+            resultDirty = true;
             updateResultControls();
             resultDiffDelay.playFromStart();
         });
@@ -1441,7 +1500,6 @@ public final class DiffViewerPane implements TabContent {
         }
         if (baseline) {
             resultBaselineText = resultArea.getText();
-            resultEdits.reset();
             resultDirty = false;
         }
         updateResultControls();
@@ -1520,21 +1578,24 @@ public final class DiffViewerPane implements TabContent {
     }
 
     private void highlightResult(String text) {
-        if (resultArea == null || text == null || text.isEmpty() || grammar == null) {
+        if (resultArea == null || text == null || text.isEmpty() || grammarName == null) {
             return;
         }
         long generation = resultHighlightGeneration.incrementAndGet();
+        long edits = resultEdits; // the draft as it is now: styles for it are dropped once it is edited
         HIGHLIGHT_EXECUTOR.submit(() -> {
             StyleSpans<Collection<String>> styles;
+            IGrammar grammar = loadGrammar();
+            if (grammar == null) {
+                return;
+            }
             try {
                 styles = TextMateHighlighter.compute(text, grammar);
             } catch (RuntimeException ignored) {
                 return;
             }
             Platform.runLater(() -> {
-                if (generation == resultHighlightGeneration.get()
-                        && resultArea != null
-                        && text.equals(resultArea.getText())) {
+                if (generation == resultHighlightGeneration.get() && resultArea != null && edits == resultEdits) {
                     resultArea.setStyleSpans(0, styles);
                 }
             });
@@ -1555,8 +1616,13 @@ public final class DiffViewerPane implements TabContent {
 
     private void showSideBySide() {
         if (sideBySideNode == null) {
+            if (!layoutReady(false)) {
+                layOutThen(false, this::showSideBySide);
+                return;
+            }
             buildSideBySide();
         }
+        layoutShown();
         // (Re-)bind every time, not once at build: showUnified unbinds it, so a toggle out and back would
         // otherwise leave the toolbar cluster stuck at the window edge. Tracks the divider as it is dragged.
         if (leftPaneBox != null) {
@@ -1566,48 +1632,25 @@ public final class DiffViewerPane implements TabContent {
     }
 
     private void buildSideBySide() {
-        List<DisplayRow> display = sideDisplayRows();
-        List<Row> rows = display.stream().map(DisplayRow::row).toList();
-        sideSourceRows = display.stream().mapToInt(DisplayRow::sourceStart).toArray();
+        // The rows shown and the panes' texts were worked out where the model was made (PERF-01): only put in here.
+        com.editora.diff.DiffLayout.Side layout = layouts().side(collapseContext);
+        List<Row> rows = layout.rows();
+        sideSourceRows = layout.sourceStarts();
         leftArea = readOnlyArea("diff-left");
         rightArea = readOnlyArea("diff-right");
+        String left = layout.left();
+        String right = layout.right();
+        int[] leftNos = layout.leftNos();
+        int[] rightNos = layout.rightNos();
+        List<int[]> leftWordAbs = layout.leftWords();
+        List<int[]> rightWordAbs = layout.rightWords();
 
-        StringBuilder left = new StringBuilder();
-        StringBuilder right = new StringBuilder();
-        int[] leftNos = new int[rows.size()];
-        int[] rightNos = new int[rows.size()];
-        List<int[]> leftWordAbs = new ArrayList<>();
-        List<int[]> rightWordAbs = new ArrayList<>();
-        int leftOffset = 0;
-        int rightOffset = 0;
+        leftArea.replaceText(left);
+        rightArea.replaceText(right);
+        applyStyle(leftArea, left, leftWordAbs);
+        applyStyle(rightArea, right, rightWordAbs);
         for (int i = 0; i < rows.size(); i++) {
-            Row r = rows.get(i);
-            String l = r.left() == null ? "" : r.left();
-            String rt = r.right() == null ? "" : r.right();
-            if (i > 0) {
-                left.append('\n');
-                right.append('\n');
-                leftOffset++;
-                rightOffset++;
-            }
-            leftNos[i] = r.leftLine();
-            rightNos[i] = r.rightLine();
-            if (!display.get(i).collapsed() && r.type() == RowType.MODIFIED) {
-                addAbs(leftWordAbs, leftOffset, r.leftWordRanges());
-                addAbs(rightWordAbs, rightOffset, r.rightWordRanges());
-            }
-            left.append(l);
-            right.append(rt);
-            leftOffset += l.length();
-            rightOffset += rt.length();
-        }
-
-        leftArea.replaceText(left.toString());
-        rightArea.replaceText(right.toString());
-        applyStyle(leftArea, left.toString(), leftWordAbs);
-        applyStyle(rightArea, right.toString(), rightWordAbs);
-        for (int i = 0; i < rows.size(); i++) {
-            if (display.get(i).collapsed()) {
+            if (layout.collapsed()[i]) {
                 leftArea.setParagraphStyle(i, List.of("diff-collapsed"));
                 rightArea.setParagraphStyle(i, List.of("diff-collapsed"));
             } else {
@@ -1986,19 +2029,37 @@ public final class DiffViewerPane implements TabContent {
         // line. Revert edits the local file and keeps the documented local-apply rule.
         boolean indexAction = action == GitHunkAction.STAGE || action == GitHunkAction.UNSTAGE;
         boolean wholeFile = indexAction && com.editora.diff.HunkText.coversEveryChange(model.rows(), start, end);
-        String after = action == GitHunkAction.OPEN
-                ? before
-                : wholeFile
-                        ? other
-                        : indexAction
-                                ? com.editora.diff.HunkText.apply(
-                                        model.rows(),
-                                        start,
-                                        end,
-                                        !leftTarget,
-                                        DiffText.parse(before),
-                                        DiffText.parse(other))
-                                : computeAppliedFor(leftTarget ? EditableSide.LEFT : EditableSide.RIGHT, start, end);
+        if (action == GitHunkAction.OPEN || wholeFile) {
+            gitAction(
+                    action,
+                    row,
+                    start,
+                    end,
+                    leftTarget,
+                    wholeFile,
+                    before,
+                    action == GitHunkAction.OPEN ? before : other);
+            return;
+        }
+        List<Row> rows = model.rows();
+        boolean target = leftTarget;
+        applyWorkedOut( // the side's text parsed and the hunk applied off the FX thread (PERF-01)
+                () -> indexAction
+                        ? com.editora.diff.HunkText.apply(
+                                rows, start, end, !target, DiffText.parse(before), DiffText.parse(other))
+                        : appliedText(rows, !target, before, start, end),
+                after -> gitAction(action, row, start, end, target, false, before, after));
+    }
+
+    private void gitAction(
+            GitHunkAction action,
+            int row,
+            int start,
+            int end,
+            boolean leftTarget,
+            boolean wholeFile,
+            String before,
+            String after) {
         Row target = model.rows().get(row);
         int preferredLine = leftTarget ? target.leftLine() : target.rightLine();
         int fallbackLine = leftTarget ? target.rightLine() : target.leftLine();
@@ -2031,50 +2092,73 @@ public final class DiffViewerPane implements TabContent {
         javafx.scene.input.Clipboard.getSystemClipboard().setContent(content);
     }
 
-    private List<DisplayRow> sideDisplayRows() {
-        List<Row> rows = model.rows();
-        if (!collapseContext || rows.size() <= CONTEXT_LINES * 2 + 2) {
-            List<DisplayRow> out = new ArrayList<>(rows.size());
-            for (int i = 0; i < rows.size(); i++) {
-                out.add(new DisplayRow(rows.get(i), i, i + 1, false));
-            }
-            return out;
+    /** {@link com.editora.perf.BlockingSites} name of a view laid out here because its kept layouts were dropped. */
+    static final String LAYOUT_SITE = "DiffViewerPane.layout";
+
+    /** Counts layout asks: a layout landing for an earlier ask (or after a view was shown since) is dropped. */
+    private long layoutAsk;
+    /** Whether a view waits for its layout, worked out off the FX thread. */
+    private boolean layingOut;
+    /** The view state to restore once the view waiting for its layout is shown. */
+    private @Nullable ViewState restoreWhenShown;
+
+    /** Whether the layout of that view of the model shown is worked out (it normally is, where the model was made). */
+    private boolean layoutReady(boolean unifiedView) {
+        return layouts().has(unifiedView, collapseContext);
+    }
+
+    /**
+     * Lays the view out off the FX thread (PERF-01, Pauta 6.0.1) when the model's kept layouts were dropped before
+     * this viewer asked (more diffs made since, or a model made elsewhere), then shows it with {@code show}. The view
+     * shown until then stays; an answer for another model, view or collapse is dropped.
+     */
+    private void layOutThen(boolean unifiedView, Runnable show) {
+        long ask = ++layoutAsk;
+        layingOut = true;
+        DiffModel m = model;
+        boolean collapse = collapseContext;
+        com.editora.diff.DiffLayout.Layouts l = layouts();
+        com.editora.perf.OffFx.then(
+                LAYOUT_SITE,
+                () -> {
+                    if (unifiedView) {
+                        l.unified(collapse);
+                    } else {
+                        l.side(collapse);
+                    }
+                    return Boolean.TRUE;
+                },
+                a -> {
+                    if (ask != layoutAsk) {
+                        return; // a later ask, or a view shown since
+                    }
+                    layingOut = false;
+                    ViewState restore = restoreWhenShown;
+                    restoreWhenShown = null;
+                    if (model == m && collapseContext == collapse && unified == unifiedView) {
+                        show.run();
+                        if (restore != null) {
+                            restoreViewState(restore);
+                        }
+                    }
+                });
+    }
+
+    /** A view was shown: a layout still landing for an earlier ask is dropped. */
+    private void layoutShown() {
+        layoutAsk++;
+        layingOut = false;
+    }
+
+    /** The layouts of the model shown: worked out where it was made, or (a model made elsewhere) as asked for. */
+    private com.editora.diff.DiffLayout.Layouts layouts() {
+        com.editora.diff.DiffLayout.Layouts l = layouts;
+        if (l == null || layoutsModel != model) {
+            l = com.editora.diff.DiffLayout.of(model, n -> tr("diff.unchangedLines", n));
+            layouts = l;
+            layoutsModel = model;
         }
-        List<DisplayRow> out = new ArrayList<>();
-        int i = 0;
-        while (i < rows.size()) {
-            if (rows.get(i).type() != RowType.EQUAL) {
-                out.add(new DisplayRow(rows.get(i), i, i + 1, false));
-                i++;
-                continue;
-            }
-            int end = i + 1;
-            while (end < rows.size() && rows.get(end).type() == RowType.EQUAL) {
-                end++;
-            }
-            int leftKeep = i == 0 ? 0 : Math.min(CONTEXT_LINES, end - i);
-            int rightKeep = end == rows.size() ? 0 : Math.min(CONTEXT_LINES, end - i - leftKeep);
-            if (end - i <= leftKeep + rightKeep + 1) {
-                for (int j = i; j < end; j++) {
-                    out.add(new DisplayRow(rows.get(j), j, j + 1, false));
-                }
-            } else {
-                for (int j = i; j < i + leftKeep; j++) {
-                    out.add(new DisplayRow(rows.get(j), j, j + 1, false));
-                }
-                int hiddenStart = i + leftKeep;
-                int hiddenEnd = end - rightKeep;
-                String marker = tr("diff.unchangedLines", hiddenEnd - hiddenStart);
-                Row first = rows.get(hiddenStart);
-                Row collapsed = Row.equal(marker, first.leftLine(), first.rightLine());
-                out.add(new DisplayRow(collapsed, hiddenStart, hiddenEnd, true));
-                for (int j = hiddenEnd; j < end; j++) {
-                    out.add(new DisplayRow(rows.get(j), j, j + 1, false));
-                }
-            }
-            i = end;
-        }
-        return out;
+        return l;
     }
 
     private Label paneHeader(String text) {
@@ -2135,8 +2219,13 @@ public final class DiffViewerPane implements TabContent {
 
     private void showUnified() {
         if (unifiedNode == null) {
+            if (!layoutReady(true)) {
+                layOutThen(true, this::showUnified);
+                return;
+            }
             buildUnified();
         }
+        layoutShown();
         leftPaneWidth.unbind(); // no second pane to align to; the cluster goes back to the right edge
         leftPaneWidth.set(0);
         showComparison(unifiedNode);
@@ -2163,57 +2252,23 @@ public final class DiffViewerPane implements TabContent {
     }
 
     private void buildUnified() {
-        List<DisplayUnified> display = unifiedDisplayRows();
-        List<UnifiedRow> rows = display.stream().map(DisplayUnified::row).toList();
-        unifiedSourceRows =
-                display.stream().mapToInt(DisplayUnified::sourceStart).toArray();
+        // Worked out where the model was made (PERF-01): only put in here.
+        com.editora.diff.DiffLayout.Unified layout = layouts().unified(collapseContext);
+        List<UnifiedRow> rows = layout.rows();
+        unifiedSourceRows = layout.sourceStarts();
         unifiedArea = readOnlyArea("diff-unified");
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < rows.size(); i++) {
-            if (i > 0) {
-                sb.append('\n');
-            }
-            String rowText = rows.get(i).text();
-            sb.append(rowText == null ? "" : rowText);
-        }
-        String text = sb.toString();
+        String text = layout.text();
         unifiedArea.replaceText(text);
-        List<int[]> wordAbs = new ArrayList<>();
-        int offset = 0;
+        applyStyle(unifiedArea, text, layout.words());
+        int[] nos = layout.nos();
+        String[] signs = layout.signs();
         for (int i = 0; i < rows.size(); i++) {
-            if (i > 0) {
-                offset++;
-            }
-            addAbs(wordAbs, offset, rows.get(i).wordRanges());
-            String rowText = rows.get(i).text();
-            offset += rowText == null ? 0 : rowText.length();
-        }
-        applyStyle(unifiedArea, text, wordAbs);
-        int[] nos = new int[rows.size()];
-        String[] signs = new String[rows.size()];
-        for (int i = 0; i < rows.size(); i++) {
-            UnifiedRow r = rows.get(i);
-            if (display.get(i).collapsed()) {
+            if (layout.collapsed()[i]) {
                 unifiedArea.setParagraphStyle(i, List.of("diff-collapsed"));
-                nos[i] = r.rightLine();
-                signs[i] = "⋯";
-                continue;
-            }
-            switch (r.type()) {
-                case ADD -> {
-                    unifiedArea.setParagraphStyle(i, List.of("diff-added"));
-                    nos[i] = r.rightLine();
-                    signs[i] = "+";
-                }
-                case REMOVE -> {
-                    unifiedArea.setParagraphStyle(i, List.of("diff-removed"));
-                    nos[i] = r.leftLine();
-                    signs[i] = "-";
-                }
-                default -> {
-                    nos[i] = r.rightLine();
-                    signs[i] = " ";
-                }
+            } else if (rows.get(i).type() == com.editora.diff.DiffModels.UnifiedType.ADD) {
+                unifiedArea.setParagraphStyle(i, List.of("diff-added"));
+            } else if (rows.get(i).type() == com.editora.diff.DiffModels.UnifiedType.REMOVE) {
+                unifiedArea.setParagraphStyle(i, List.of("diff-removed"));
             }
         }
         installUnifiedGutter(unifiedArea, nos, signs);
@@ -2230,59 +2285,6 @@ public final class DiffViewerPane implements TabContent {
         ConsoleContextMenu.mark(area, () -> ConsoleContextMenu.copySelectionOrAll(area), () -> area.selectAll());
         ContextMenu menu = new ContextMenu(ConsoleContextMenu.copyRow(area), ConsoleContextMenu.selectAllRow(area));
         area.setContextMenu(menu);
-    }
-
-    private List<DisplayUnified> unifiedDisplayRows() {
-        List<UnifiedRow> rows = model.unified();
-        if (!collapseContext || rows.size() <= CONTEXT_LINES * 2 + 2) {
-            List<DisplayUnified> out = new ArrayList<>(rows.size());
-            for (int i = 0; i < rows.size(); i++) {
-                out.add(new DisplayUnified(rows.get(i), i, i + 1, false));
-            }
-            return out;
-        }
-        List<DisplayUnified> out = new ArrayList<>();
-        int i = 0;
-        while (i < rows.size()) {
-            if (rows.get(i).type() != com.editora.diff.DiffModels.UnifiedType.CONTEXT) {
-                out.add(new DisplayUnified(rows.get(i), i, i + 1, false));
-                i++;
-                continue;
-            }
-            int end = i + 1;
-            while (end < rows.size() && rows.get(end).type() == com.editora.diff.DiffModels.UnifiedType.CONTEXT) {
-                end++;
-            }
-            int leftKeep = i == 0 ? 0 : Math.min(CONTEXT_LINES, end - i);
-            int rightKeep = end == rows.size() ? 0 : Math.min(CONTEXT_LINES, end - i - leftKeep);
-            if (end - i <= leftKeep + rightKeep + 1) {
-                for (int j = i; j < end; j++) {
-                    out.add(new DisplayUnified(rows.get(j), j, j + 1, false));
-                }
-            } else {
-                for (int j = i; j < i + leftKeep; j++) {
-                    out.add(new DisplayUnified(rows.get(j), j, j + 1, false));
-                }
-                int hiddenStart = i + leftKeep;
-                int hiddenEnd = end - rightKeep;
-                UnifiedRow first = rows.get(hiddenStart);
-                out.add(new DisplayUnified(
-                        new UnifiedRow(
-                                com.editora.diff.DiffModels.UnifiedType.CONTEXT,
-                                tr("diff.unchangedLines", hiddenEnd - hiddenStart),
-                                first.leftLine(),
-                                first.rightLine(),
-                                null),
-                        hiddenStart,
-                        hiddenEnd,
-                        true));
-                for (int j = hiddenEnd; j < end; j++) {
-                    out.add(new DisplayUnified(rows.get(j), j, j + 1, false));
-                }
-            }
-            i = end;
-        }
-        return out;
     }
 
     // --- shared rendering -----------------------------------------------------------------------
@@ -2314,12 +2316,16 @@ public final class DiffViewerPane implements TabContent {
         if (words != null) {
             area.setStyleSpans(0, words);
         }
-        if (grammar == null) {
+        if (grammarName == null) {
             return;
         }
         long generation = highlightGeneration.get();
         HIGHLIGHT_EXECUTOR.submit(() -> {
             StyleSpans<Collection<String>> base;
+            IGrammar grammar = loadGrammar();
+            if (grammar == null) {
+                return;
+            }
             try {
                 base = TextMateHighlighter.compute(text, grammar);
             } catch (RuntimeException ignored) {
@@ -2330,7 +2336,9 @@ public final class DiffViewerPane implements TabContent {
             }
             StyleSpans<Collection<String>> combined = words == null ? base : base.overlay(words, DiffViewerPane::union);
             Platform.runLater(() -> {
-                if (generation == highlightGeneration.get() && text.equals(area.getText())) {
+                // A read-only pane's text changes only by being built again, as a new area: no need to compare it.
+                if (generation == highlightGeneration.get()
+                        && (area == leftArea || area == rightArea || area == unifiedArea)) {
                     area.setStyleSpans(0, combined);
                 }
             });
@@ -2370,16 +2378,6 @@ public final class DiffViewerPane implements TabContent {
             b.add(NONE, len - pos);
         }
         return b.create();
-    }
-
-    /** Converts a row's per-line word ranges to absolute offsets within the assembled document. */
-    private static void addAbs(List<int[]> out, int lineOffset, int @Nullable [][] ranges) {
-        if (ranges == null) {
-            return;
-        }
-        for (int[] r : ranges) {
-            out.add(new int[] {lineOffset + r[0], lineOffset + r[1]});
-        }
     }
 
     private static List<String> leftLineClasses(RowType t) {
@@ -2495,7 +2493,15 @@ public final class DiffViewerPane implements TabContent {
         if (!canMutate() || resultEditing) {
             return;
         }
-        deliverApply(computeApplied(start, blockEndFrom(start)));
+        applyLaterBetween(start, blockEndFrom(start));
+    }
+
+    /** The editable side with rows {@code [start, end)} taken from the other side, worked out off the FX thread. */
+    private void applyLaterBetween(int start, int end) {
+        List<Row> rows = model.rows();
+        boolean rightEditable = editableSide == EditableSide.RIGHT;
+        String editableText = rightEditable ? rightText : leftText;
+        applyWorkedOut(() -> appliedText(rows, rightEditable, editableText, start, end), this::deliverApply);
     }
 
     /** The exclusive end of the contiguous non-equal run starting at {@code start}. */
@@ -2514,7 +2520,7 @@ public final class DiffViewerPane implements TabContent {
         if (!canMutate() || resultEditing) {
             return;
         }
-        deliverApply(computeApplied(i, i + 1));
+        applyLaterBetween(i, i + 1);
     }
 
     /** "Apply all": makes the editable file identical to the other side (its exact fetched text). Since
@@ -2557,14 +2563,9 @@ public final class DiffViewerPane implements TabContent {
     }
 
     /** The editable side's full text after taking the other side's content for rows in {@code [start,end)}
-     *  and keeping the editable side's content elsewhere (filler = no line). */
-    private String computeApplied(int start, int end) {
-        return computeAppliedFor(editableSide, start, end);
-    }
-
-    private String computeAppliedFor(EditableSide side, int start, int end) {
-        boolean rightEditable = side == EditableSide.RIGHT;
-        List<Row> rows = model.rows();
+     *  and keeping the editable side's content elsewhere (filler = no line). Pure: {@code editableText} is the
+     *  editable side's text. */
+    static String appliedText(List<Row> rows, boolean rightEditable, String editableText, int start, int end) {
         List<String> out = new ArrayList<>();
         for (int i = 0; i < rows.size(); i++) {
             Row r = rows.get(i);
@@ -2577,7 +2578,6 @@ public final class DiffViewerPane implements TabContent {
                 out.add(text);
             }
         }
-        String editableText = rightEditable ? rightText : leftText;
         return DiffText.parse(editableText).compose(out);
     }
 

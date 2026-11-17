@@ -738,6 +738,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   named number of items and say how many more there are. Query Replace reads only as far as the next match, and
   the CSV grid's filter, the Markdown format bar and the File Information panel no longer read the whole file
   on each key.
+- **Typing, pickers and editor commands no longer pause on large files and projects.** The work behind them now runs
+  in the background and lands a moment later:
+  - typing in Search Everywhere, the command palette, every picker, Find File, the Settings search and the Git log,
+    Structure, TODO, Bookmarks, Notes and Build Actions filters (an Enter pressed meanwhile acts on the latest
+    results), and the status bar's word count;
+  - typing in a file synced to a language server (the change is worked out as it is sent, in order);
+  - Enter, Backspace and the list, heading, link, table-of-contents and format commands in long Markdown documents,
+    and the heading crumbs;
+  - the console find bar (the count appears once you pause typing);
+  - Select All Occurrences, matching-bracket jumps, Expand Selection, Query Replace, Toggle Comment, tag
+    auto-rename, CSV Align, Convert Indentation and whole-file replacements;
+  - folding, hover and documentation popups (a long doc may show as plain text for a moment), the merge resolver's
+    Save, the Map's Changes card (changed words are marked just after the lines show), breakpoints moved by
+    edits during a debug session;
+  - math in the Markdown preview, popups and the agent panel (a new formula appears a moment after its text),
+    Copy HTML, the debug expression field's colours and the status bar's size.
+
+  Two small differences: Ctrl/Cmd-click on a Markdown link now also moves the caret there, and a `*/` more than
+  4,096 characters below no longer stops `/**` from closing itself. A close-save in the merge resolver closes the tab
+  once the result is applied, and with `--single-window` the window appears once its session has been read.
 
 - **Searching, matching and checking a document no longer hold up typing.** The find bar searches, and works out
   Replace and Replace All, in the background for every document, not only large ones: the matches light up a moment

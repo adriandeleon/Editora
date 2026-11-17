@@ -106,6 +106,35 @@ public final class MarkdownLinks {
         return s.substring(0, space);
     }
 
+    /**
+     * Whether column {@code col} of {@code line} is on something written like a link — {@code [text](…)},
+     * {@code [text][label]} or a bare {@code [label]} — read from the line alone: a menu offers its link rows
+     * there without searching the document for the label's definition (PERF-01, Pauta 6.0.1). It may say yes
+     * where {@link #at} finds no link (an undefined {@code [label]}); never no where it finds one.
+     */
+    public static boolean looksLikeLinkAt(String line, int col) {
+        for (int i = 0; i < line.length(); i++) {
+            if (line.charAt(i) != '[' || (i > 0 && line.charAt(i - 1) == '\\')) {
+                continue;
+            }
+            int close = matching(line, i, line.length(), '[', ']');
+            if (close < 0) {
+                continue;
+            }
+            int start = i > 0 && line.charAt(i - 1) == '!' ? i - 1 : i;
+            int end = close + 1;
+            if (close + 1 < line.length() && (line.charAt(close + 1) == '(' || line.charAt(close + 1) == '[')) {
+                char left = line.charAt(close + 1);
+                int second = matching(line, close + 1, line.length(), left, left == '(' ? ')' : ']');
+                end = second > 0 ? second + 1 : end;
+            }
+            if (col >= start && col <= end) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static int matching(String s, int open, int limit, char left, char right) {
         int depth = 0;
         for (int i = open; i < limit; i++) {

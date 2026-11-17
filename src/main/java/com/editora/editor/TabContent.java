@@ -52,6 +52,15 @@ public interface TabContent {
         return !hasUnsavedChanges();
     }
 
+    /**
+     * As {@link #saveBeforeClose()}, for a close that need not wait: a tab whose save goes on off the FX thread
+     * answers false and runs {@code whenSaved} once it has landed (the close is asked again then). {@code null}: the
+     * quit, which may wait.
+     */
+    default boolean saveBeforeClose(@Nullable Runnable whenSaved) {
+        return saveBeforeClose();
+    }
+
     /** Message-catalog key for the affirmative close action (Save for buffers, Apply for drafts). */
     default String closeSaveActionKey() {
         return "dialog.save";

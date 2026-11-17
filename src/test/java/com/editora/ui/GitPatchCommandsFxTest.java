@@ -28,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * cannot be read, the rejected patch and its three-way question, and every "nothing to do" answer.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the patch check runs off FX in the app
 class GitPatchCommandsFxTest {
 
     private static final String BASE = "a\nb\nc\nd\ne\nf\ng\nh\n";

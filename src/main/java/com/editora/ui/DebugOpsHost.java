@@ -151,7 +151,7 @@ final class DebugOpsHost implements DebugCoordinator.Ops {
         // As LspOpsHost's library sources: an in-memory, read-only, path-less buffer.
         com.editora.editor.EditorBuffer buffer = new com.editora.editor.EditorBuffer();
         buffer.setDisplayName(title);
-        buffer.setContent(content);
+        buffer.setContentLater(content, () -> {}); // its line endings resolved off the FX thread; jumps wait for it
         buffer.setLanguageOverride(language);
         buffer.setViewMode(true);
         mc.addBuffer(buffer, true);

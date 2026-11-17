@@ -197,11 +197,21 @@ public final class PreviewMenu {
         if (!b.isMarkdown()) {
             return false;
         }
-        javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
-        cc.putString(MarkdownClipboardHtml.toMarkup(b.getContent(), MathImages.isEnabled()));
-        javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+        String content = b.getContent();
+        boolean math = MathImages.isEnabled();
+        // Parsed and rendered off the FX thread (PERF-01, Pauta 6.0.1); the clipboard is filled when that is done.
+        com.editora.perf.OffFx.then(COPY_HTML_SITE, () -> MarkdownClipboardHtml.toMarkup(content, math), markup -> {
+            if (markup.value() != null) {
+                javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
+                cc.putString(markup.value());
+                javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+            }
+        });
         return true;
     }
+
+    /** Where Copy HTML renders the document's markup: heard off the FX thread (PERF-01). */
+    public static final String COPY_HTML_SITE = "PreviewMenu.copyHtmlSource";
 
     /**
      * The editor's Copy or Select All command, when the rendered Markdown is where the user is — only the

@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * entire document (caret at its end) and a comment toggle the whole line, so the next typed character
  * replaced it.
  */
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // worked out off FX in the app; here in place
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class BareCaretTransformFxTest {

@@ -77,6 +77,7 @@ class WindowManagerLaunchFxTest {
         void launch(String projectArg, List<MainController.OpenTarget> targets, String singleWindow) throws Exception {
             FxTestSupport.runOnFx(
                     () -> wm.launch(new Stage(), projectArg, targets, false, false, null, false, singleWindow, false));
+            awaitFirstWindow(); // a window the launch did not read the session of is read off the FX thread first
         }
 
         List<String> keys() throws Exception {
@@ -108,6 +109,20 @@ class WindowManagerLaunchFxTest {
                 }
             }
             return null;
+        }
+
+        /**
+         * Steps the restore queue until a window exists: a window whose session the launch did not read is read off
+         * the FX thread first and built on its turn after that (PERF-01, Pauta 6.0.1).
+         */
+        void awaitFirstWindow() throws Exception {
+            for (int i = 0; i < 400 && keys().isEmpty(); i++) {
+                if (FxTestSupport.callOnFx(scheduled::isEmpty)) {
+                    Thread.sleep(25);
+                } else {
+                    step();
+                }
+            }
         }
 
         void step() throws Exception {

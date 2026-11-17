@@ -24,8 +24,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * area with the fork's multi-caret manager: where the carets end up, in which order, and that typing at them
  * afterwards is one edit.
  */
+@org.junit.jupiter.api.extension.ExtendWith(
+        com.editora.ui.OffFxInPlace.class) // searched off FX in the app; here in place
 @Tag("fx")
 class MultiCaretExtrasFxTest {
+
+    /** Split into Lines / Add Cursors to Line Ends, answered at once (worked out in place here). */
+    private static int split(EditorBuffer buffer, boolean atLineEnds) {
+        int[] placed = {-1};
+        buffer.splitSelectionIntoLines(atLineEnds, n -> placed[0] = n);
+        return placed[0];
+    }
+
+    /** Skip Occurrence, answered at once (its search runs in place here). */
+    private static boolean skip(EditorBuffer buffer) {
+        boolean[] moved = {false};
+        buffer.skipOccurrence(m -> moved[0] = m);
+        return moved[0];
+    }
 
     @BeforeAll
     static void bootToolkit() throws Exception {
@@ -36,7 +52,7 @@ class MultiCaretExtrasFxTest {
     void splitIntoLinesSelectsEachLinesPartAndTypingReplacesThemAllAtOnce() throws Exception {
         withBuffer("one\ntwo\nthree\n", buffer -> {
             buffer.getArea().selectRange(1, 11); // "ne\ntwo\nthr"
-            assertEquals(3, buffer.splitSelectionIntoLines(false));
+            assertEquals(3, split(buffer, false));
             assertEquals("1-3 4-7 8-11", carets(buffer), "primary first, then the others in order");
 
             type(buffer, "X");
@@ -51,7 +67,7 @@ class MultiCaretExtrasFxTest {
     void caretsAtLineEndsPutABareCaretAtTheEndOfEveryLine() throws Exception {
         withBuffer("one\ntwo\nthree\n", buffer -> {
             buffer.getArea().selectRange(0, 14); // through "three", not into the empty last line
-            assertEquals(3, buffer.splitSelectionIntoLines(true));
+            assertEquals(3, split(buffer, true));
             type(buffer, ";");
             assertEquals("one;\ntwo;\nthree;\n", buffer.getContent());
         });
@@ -60,9 +76,9 @@ class MultiCaretExtrasFxTest {
     @Test
     void everySelectionIsSplitAndNothingIsSelectedMeansNoCarets() throws Exception {
         withBuffer("aa\nbb\ncc\ndd\n", buffer -> {
-            assertEquals(0, buffer.splitSelectionIntoLines(false), "a bare caret has no lines to split");
+            assertEquals(0, split(buffer, false), "a bare caret has no lines to split");
             buffer.placeOccurrenceCarets(List.of(new int[] {0, 4}, new int[] {6, 10}), 0); // "aa\nb", "cc\nd"
-            assertEquals(4, buffer.splitSelectionIntoLines(true));
+            assertEquals(4, split(buffer, true));
             type(buffer, "!");
             assertEquals("aa!\nbb!\ncc!\ndd!\n", buffer.getContent());
         });
@@ -75,11 +91,11 @@ class MultiCaretExtrasFxTest {
             buffer.addCaretNextOccurrence(); // + 5-7
             assertEquals("0-2 5-7", carets(buffer));
 
-            assertTrue(buffer.skipOccurrence());
+            assertTrue(skip(buffer));
             assertEquals("0-2 10-12", carets(buffer), "the newest moved on; the one it left is free");
-            assertTrue(buffer.skipOccurrence());
+            assertTrue(skip(buffer));
             assertEquals("0-2 15-17", carets(buffer));
-            assertTrue(buffer.skipOccurrence());
+            assertTrue(skip(buffer));
             assertEquals("0-2 5-7", carets(buffer), "wraps round past the primary");
 
             type(buffer, "n");
@@ -91,14 +107,14 @@ class MultiCaretExtrasFxTest {
     void skipOccurrenceWithOneSelectionMovesItAndStopsWhenThereIsNoOther() throws Exception {
         withBuffer("id x id", buffer -> {
             buffer.getArea().selectRange(0, 2);
-            assertTrue(buffer.skipOccurrence());
+            assertTrue(skip(buffer));
             assertEquals("5-7", carets(buffer));
         });
         withBuffer("id only", buffer -> {
             buffer.getArea().selectRange(0, 2);
-            assertFalse(buffer.skipOccurrence(), "no other occurrence");
+            assertFalse(skip(buffer), "no other occurrence");
             buffer.getArea().moveTo(3);
-            assertFalse(buffer.skipOccurrence(), "nothing selected");
+            assertFalse(skip(buffer), "nothing selected");
         });
     }
 

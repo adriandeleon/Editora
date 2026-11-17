@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * closes it and gives the keyboard back, and asking for Find again steps to the next match.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(ConsoleFindInPlace.class)
 class ConsoleFindBarFxTest {
 
     @BeforeAll

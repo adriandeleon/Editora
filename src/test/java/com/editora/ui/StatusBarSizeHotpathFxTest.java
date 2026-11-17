@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * asserts a caret move updates Ln/Col but leaves the size segment untouched.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the size is counted off FX in the app
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class StatusBarSizeHotpathFxTest {
 

@@ -735,7 +735,10 @@ final class SearchCoordinator {
                 MultiFileSearch.ReplaceResult worked =
                         MultiFileSearch.replaceAll(current.text(), query, replacement, MultiFileSearch.UNICODE_CLASSES);
                 OpenSnapshot asked = current;
-                OpenApplied applied = callOnFx(() -> applyOpen(asked, worked));
+                // The span that differs, worked out here too: the FX thread only applies it.
+                EditorBuffer.PreparedEdit prepared =
+                        EditorBuffer.PreparedEdit.between(asked.version(), asked.text(), worked.text());
+                OpenApplied applied = callOnFx(() -> applyOpen(asked, worked, prepared));
                 if (applied.result() != null) {
                     return applied.result();
                 }
@@ -752,7 +755,8 @@ final class SearchCoordinator {
             @Nullable ClosedReplace result, @Nullable OpenSnapshot again) {}
 
     /** On the FX thread: applies {@code worked} to the buffer if it is still at the snapshot's version. */
-    private static OpenApplied applyOpen(OpenSnapshot snapshot, MultiFileSearch.ReplaceResult worked) {
+    private static OpenApplied applyOpen(
+            OpenSnapshot snapshot, MultiFileSearch.ReplaceResult worked, EditorBuffer.PreparedEdit prepared) {
         EditorBuffer buffer = snapshot.buffer();
         if (buffer.isDisposed()) {
             return new OpenApplied(new ClosedReplace(0, false, true), null);
@@ -763,11 +767,12 @@ final class SearchCoordinator {
                     ? new OpenApplied(new ClosedReplace(0, false, true), null)
                     : new OpenApplied(null, again);
         }
-        return new OpenApplied(applyOpenEdits(buffer, worked), null);
+        return new OpenApplied(applyOpenEdits(buffer, worked, prepared), null);
     }
 
     /** Applies edits worked out off the FX thread to an open buffer, as one undo step. */
-    private static ClosedReplace applyOpenEdits(EditorBuffer buffer, MultiFileSearch.ReplaceResult result) {
+    private static ClosedReplace applyOpenEdits(
+            EditorBuffer buffer, MultiFileSearch.ReplaceResult result, EditorBuffer.PreparedEdit prepared) {
         if (result.count() == 0) {
             return new ClosedReplace(0, false, false);
         }
@@ -776,7 +781,9 @@ final class SearchCoordinator {
         if (!NoUndoGuard.allow(buffer, tr("noUndo.op.replaceInFiles"))) {
             return new ClosedReplace(0, false, true);
         }
-        buffer.replaceWholeDocument(result.text());
+        if (!buffer.applyPreparedWholeText(prepared, result.text())) {
+            return new ClosedReplace(0, false, true); // the guard's safety copy moved it: not expected, reported
+        }
         return new ClosedReplace(result.count(), true, false);
     }
 
@@ -975,9 +982,10 @@ final class SearchCoordinator {
         if (snapshot == null) {
             return new ClosedReplace(0, false, true);
         }
+        MultiFileSearch.ReplaceResult worked =
+                MultiFileSearch.replaceAll(snapshot.text(), query, replacement, MultiFileSearch.UNICODE_CLASSES);
         return applyOpenEdits(
-                buffer,
-                MultiFileSearch.replaceAll(snapshot.text(), query, replacement, MultiFileSearch.UNICODE_CLASSES));
+                buffer, worked, EditorBuffer.PreparedEdit.between(snapshot.version(), snapshot.text(), worked.text()));
     }
 
     static ClosedReplace replaceClosedFile(

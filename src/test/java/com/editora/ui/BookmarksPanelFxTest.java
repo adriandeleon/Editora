@@ -31,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * and an in-memory source map.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the filter answers before the call returns
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class BookmarksPanelFxTest {
 

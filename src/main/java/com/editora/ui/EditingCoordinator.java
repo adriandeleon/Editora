@@ -477,11 +477,30 @@ final class EditingCoordinator {
             host.setStatus(tr("status.pasted"));
             return;
         }
-        if (b != null && b.isMarkdown() && b.markdown().pasteAsMarkdown(false)) { // structured HTML → Markdown
-            deactivateMark();
-            host.setStatus(tr("status.markdown.pastedAsMarkdown"));
+        if (b != null && b.isMarkdown() && b.markdown().pasteMayConvert(false)) {
+            // Structured HTML → Markdown: the clipboard is converted off the FX thread (PERF-01, Pauta 6.0.1), then
+            // the paste lands — converted, or as plain text when there was nothing to convert.
+            b.markdown().pasteAsMarkdown(false, markdown -> {
+                if (host.activeBuffer() != b || b.isDisposed() || !activeEditable()) {
+                    return; // the user moved on before the clipboard was read
+                }
+                renumberingList(() -> {
+                    if (markdown != null) {
+                        b.insertAtCaret(markdown);
+                        deactivateMark();
+                        host.setStatus(tr("status.markdown.pastedAsMarkdown"));
+                    } else {
+                        plainPaste(b);
+                    }
+                });
+            });
             return;
         }
+        plainPaste(b);
+    }
+
+    /** The paste of the clipboard's text (or the kill ring's latest entry) at the caret. */
+    private void plainPaste(@Nullable EditorBuffer b) {
         CodeArea area = host.activeArea();
         if (area == null) {
             return;
@@ -1032,54 +1051,44 @@ final class EditingCoordinator {
         if (buffer == null) {
             return;
         }
-        // The comment logic lives on the buffer (so the editor right-click menu can invoke it too).
-        if (!buffer.toggleComment()) {
-            // With comment syntax available the refusals left are a shebang line and a block comment that
-            // would nest.
-            host.setStatus(tr(
-                    !buffer.supportsComments()
-                            ? "status.noCommentSyntax"
-                            : onlyShebang(buffer)
-                                    ? "status.commentShebang"
-                                    : intoHereDoc(buffer)
-                                            ? "status.commentHereDoc"
-                                            : onPhpOpener(buffer)
-                                                    ? "status.commentPhpOpener"
-                                                    : mixesLanguages(buffer)
-                                                            ? "status.commentMixedLanguages"
-                                                            : "status.commentCannotNest"));
+        // The comment logic lives on the buffer (so the editor right-click menu can invoke it too). It runs off the
+        // FX thread, and so does the reason for a refusal, read from the same text (PERF-01, Pauta 6.0.1).
+        CodeArea a = buffer.getFocusedArea() != null ? buffer.getFocusedArea() : buffer.getArea();
+        int start = a.getSelection().getStart();
+        int end = a.getSelection().getEnd();
+        String language = buffer.getLanguage();
+        boolean supports = buffer.supportsComments();
+        java.util.function.Consumer<@Nullable String> said = why -> {
+            if (why != null) {
+                host.setStatus(tr(why));
+            }
+        };
+        if (!buffer.toggleComment(said, text -> commentRefusal(text, start, end, language, supports))) {
+            host.setStatus(tr("status.noCommentSyntax"));
         }
     }
 
-    /** Whether the selection starts on a {@code <?php}-only or {@code <?=} line, which Toggle Comment leaves alone. */
-    private static boolean onPhpOpener(EditorBuffer buffer) {
-        org.fxmisc.richtext.CodeArea a = buffer.getFocusedArea() != null ? buffer.getFocusedArea() : buffer.getArea();
-        return com.editora.editops.Commenter.onPhpOpener(
-                a.getText(), a.getSelection().getStart(), a.getSelection().getEnd(), buffer.getLanguage());
-    }
-
-    /** Whether the selection runs from HTML markup into an embedded script, style or PHP block (HTML review C3). */
-    private static boolean mixesLanguages(EditorBuffer buffer) {
-        org.fxmisc.richtext.CodeArea a = buffer.getFocusedArea() != null ? buffer.getFocusedArea() : buffer.getArea();
-        return com.editora.editops.Commenter.mixesLanguages(
-                a.getText(), a.getSelection().getStart(), a.getSelection().getEnd(), buffer.getLanguage());
-    }
-
-    /** Whether the selection is just a {@code #!} line, which Toggle Comment leaves alone. */
-    private static boolean onlyShebang(EditorBuffer buffer) {
-        org.fxmisc.richtext.CodeArea a = buffer.getFocusedArea() != null ? buffer.getFocusedArea() : buffer.getArea();
-        return com.editora.editops.Commenter.onlyShebang(
-                a.getText(),
-                a.getSelection().getStart(),
-                a.getSelection().getEnd(),
-                com.editora.editops.Commenter.styleFor(buffer.getLanguage()));
-    }
-
-    /** Whether the selection reaches into a shell here-doc's data, which Toggle Comment leaves alone. */
-    private static boolean intoHereDoc(EditorBuffer buffer) {
-        org.fxmisc.richtext.CodeArea a = buffer.getFocusedArea() != null ? buffer.getFocusedArea() : buffer.getArea();
-        return com.editora.editops.Commenter.intoHereDoc(
-                a.getText(), a.getSelection().getStart(), a.getSelection().getEnd(), buffer.getLanguage());
+    /**
+     * Why Toggle Comment made no edit, as a message key: with comment syntax available the refusals left are a shebang
+     * line, a here-doc, a PHP opener, a selection across languages and a block comment that would nest. Pure.
+     */
+    static String commentRefusal(String text, int start, int end, String language, boolean supports) {
+        if (!supports) {
+            return "status.noCommentSyntax";
+        }
+        if (com.editora.editops.Commenter.onlyShebang(
+                text, start, end, com.editora.editops.Commenter.styleFor(language))) {
+            return "status.commentShebang";
+        }
+        if (com.editora.editops.Commenter.intoHereDoc(text, start, end, language)) {
+            return "status.commentHereDoc";
+        }
+        if (com.editora.editops.Commenter.onPhpOpener(text, start, end, language)) {
+            return "status.commentPhpOpener";
+        }
+        return com.editora.editops.Commenter.mixesLanguages(text, start, end, language)
+                ? "status.commentMixedLanguages"
+                : "status.commentCannotNest";
     }
 
     /** Applies an Emacs transpose (chars/words/lines) to the active editable buffer at the caret. */
@@ -1199,10 +1208,7 @@ final class EditingCoordinator {
             int end = area.getSelection().getEnd();
             // Folds next to either end of the block move (or are moved over) as units.
             String text = area.getText();
-            String units = buffer.getFoldManager().linesAsUnits(text, paragraphOf(area, start));
-            if (units.equals(text)) {
-                units = buffer.getFoldManager().linesAsUnits(text, paragraphOf(area, end));
-            }
+            String units = buffer.getFoldManager().linesAsUnits(text, paragraphOf(area, start), paragraphOf(area, end));
             com.editora.editops.LineOps.BlockEdit edit = blockOp.apply(units, start, end);
             if (edit == null) {
                 return;
@@ -1586,6 +1592,12 @@ final class EditingCoordinator {
         return text.indexOf('\n') < 0 ? text : "";
     }
 
+    /** {@link com.editora.perf.BlockingSites} name of Query Replace's search and its {@code !} plan, off FX. */
+    static final String QUERY_REPLACE_SITE = "EditingCoordinator.queryReplace";
+
+    /** Query Replace's {@code !}: the span from the first remaining match to the last and what it becomes. */
+    private record RestPlan(int start, int end, String text, int count) {}
+
     private final class QueryReplaceSession {
         private final EditorBuffer buffer;
         private final CodeArea area;
@@ -1611,39 +1623,86 @@ final class EditingCoordinator {
             this.from = area.getCaretPosition();
         }
 
+        /**
+         * Takes the keys and looks for the first match. The search runs off the FX thread (PERF-01, Pauta 6.0.1):
+         * while it is out the session owns the keys and ignores its commands, so nothing acts on a match not yet
+         * found; Escape, Enter and {@code q} still end it.
+         */
         void start() {
-            try {
-                if (!showNext()) {
-                    host.setStatus(tr("status.queryReplace.none"));
-                    return;
-                }
-            } catch (RuntimeException badReference) { // a $n the pattern has no group for
-                host.setStatus(tr("find.badReplacement", String.valueOf(badReference.getMessage())));
-                return;
-            }
             active = true;
             queryReplaceSession = this;
             area.getProperties().put("editora.ownsKeys", Boolean.TRUE);
             keyHost.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, pressed);
             keyHost.addEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, typed);
             area.focusedProperty().addListener(focusLost);
+            showNext(true);
         }
 
-        /** Finds the next match from {@link #from}, highlights it and prompts. False when none remain. */
-        private boolean showNext() {
-            // Read as far as the next match only, not the whole document per answer (PERF-08, Pauta 6.0.1).
-            var m = com.editora.editor.search.QueryReplace.nextIn(
-                    com.editora.editor.search.QueryReplace.Source.of(area::getLength, area::getText), from, spec);
-            if (m.isEmpty()) {
-                current = null;
-                return false;
-            }
-            current = m.get();
-            buffer.setSearchMatches(com.editora.text.SearchMatches.of(current.start(), current.end()), 0);
-            area.moveTo(current.start());
-            area.requestFollowCaret();
-            host.setStatus(tr("status.queryReplace.prompt", replaced));
-            return true;
+        /** A search is out: the session's commands wait for it. */
+        private boolean searching;
+
+        /** What a search of a piece of the document found: a match, none, or that it read past the piece. */
+        private record Found(java.util.@Nullable Optional<com.editora.editor.search.QueryReplace.Match> match) {}
+
+        /**
+         * Finds the next match from {@link #from}, then highlights it and prompts — or, when none remain, ends the
+         * session ({@code first}: saying there was none at all). Only a piece of the document from the offset is
+         * copied on the FX thread and searched off it (PERF-01, PERF-08, Pauta 6.0.1), a piece twice as long each
+         * time the search reads past it; a match found in text that changed meanwhile is looked for again.
+         */
+        private void showNext(boolean first) {
+            showNext(first, com.editora.editor.search.QueryReplace.FIRST_PIECE);
+        }
+
+        private void showNext(boolean first, int size) {
+            int at = from;
+            var piece = com.editora.editor.search.QueryReplace.piece(
+                    com.editora.editor.search.QueryReplace.Source.of(area::getLength, area::getText), at, size);
+            long version = buffer.docVersion();
+            searching = true;
+            com.editora.perf.OffFx.then(
+                    QUERY_REPLACE_SITE,
+                    () -> {
+                        try {
+                            return new Found(com.editora.editor.search.QueryReplace.nextIn(piece, at, spec));
+                        } catch (com.editora.editor.search.QueryReplace.NeedMore more) {
+                            return new Found(null);
+                        }
+                    },
+                    answer -> {
+                        searching = false;
+                        if (!active) {
+                            return;
+                        }
+                        if (!answer.ok()) { // a $n the pattern has no group for
+                            finish();
+                            host.setStatus(tr("find.badReplacement", answer.why()));
+                            return;
+                        }
+                        if (buffer.docVersion() != version) {
+                            showNext(first); // changed under the search (a reload): look again
+                            return;
+                        }
+                        Found found = answer.value();
+                        var m = found == null ? null : found.match();
+                        if (found != null && m == null) {
+                            showNext(first, size * 2); // the answer lies past the piece
+                            return;
+                        }
+                        if (m == null || m.isEmpty()) {
+                            current = null;
+                            finish();
+                            if (first) {
+                                host.setStatus(tr("status.queryReplace.none"));
+                            }
+                            return;
+                        }
+                        current = m.get();
+                        buffer.setSearchMatches(com.editora.text.SearchMatches.of(current.start(), current.end()), 0);
+                        area.moveTo(current.start());
+                        area.requestFollowCaret();
+                        host.setStatus(tr("status.queryReplace.prompt", replaced));
+                    });
         }
 
         /** Applies the current match's replacement and moves the search anchor past it. */
@@ -1659,9 +1718,7 @@ final class EditingCoordinator {
 
         private void replaceCurrentAndAdvance() {
             replaceCurrentOnly();
-            if (!showNext()) {
-                finish();
-            }
+            showNext(false);
         }
 
         private void skip() {
@@ -1670,28 +1727,47 @@ final class EditingCoordinator {
                 return;
             }
             from = com.editora.editor.search.QueryReplace.afterSkip(match);
-            if (!showNext()) {
-                finish();
-            }
+            showNext(false);
         }
 
-        /** {@code !}: replace this and every remaining match in one edit, then stop. */
+        /** {@code !}: replace this and every remaining match in one edit, then stop. Planned off the FX thread. */
         private void replaceRest() {
-            var plan = com.editora.editor.search.QueryReplace.planRemaining(area.getText(), from, spec);
-            if (!plan.isEmpty()) {
-                int start = plan.get(0).start();
-                int end = plan.get(plan.size() - 1).end();
-                String text = area.getText();
-                StringBuilder sb = new StringBuilder();
-                int i = start;
-                for (var m : plan) {
-                    sb.append(text, i, m.start()).append(m.replacement());
-                    i = m.end();
-                }
-                area.replaceText(start, end, sb.toString());
-                replaced += plan.size();
-            }
-            finish();
+            String text = area.getText();
+            long version = buffer.docVersion();
+            int at = from;
+            searching = true;
+            com.editora.perf.OffFx.then(
+                    QUERY_REPLACE_SITE,
+                    () -> {
+                        var plan = com.editora.editor.search.QueryReplace.planRemaining(text, at, spec);
+                        if (plan.isEmpty()) {
+                            return null;
+                        }
+                        int start = plan.get(0).start();
+                        StringBuilder sb = new StringBuilder();
+                        int i = start;
+                        for (var m : plan) {
+                            sb.append(text, i, m.start()).append(m.replacement());
+                            i = m.end();
+                        }
+                        return new RestPlan(start, plan.get(plan.size() - 1).end(), sb.toString(), plan.size());
+                    },
+                    answer -> {
+                        searching = false;
+                        if (!active) {
+                            return;
+                        }
+                        if (answer.ok() && buffer.docVersion() != version) {
+                            replaceRest(); // changed under the plan (a reload): plan again
+                            return;
+                        }
+                        RestPlan rest = answer.value();
+                        if (rest != null) {
+                            area.replaceText(rest.start(), rest.end(), rest.text());
+                            replaced += rest.count();
+                        }
+                        finish();
+                    });
         }
 
         private void onPressed(javafx.scene.input.KeyEvent e) {
@@ -1701,7 +1777,9 @@ final class EditingCoordinator {
             e.consume();
             javafx.scene.input.KeyCode c = e.getCode();
             if (c == javafx.scene.input.KeyCode.BACK_SPACE || c == javafx.scene.input.KeyCode.DELETE) {
-                skip();
+                if (!searching) {
+                    skip();
+                }
             } else if (c == javafx.scene.input.KeyCode.ENTER
                     || c == javafx.scene.input.KeyCode.ESCAPE
                     || (c == javafx.scene.input.KeyCode.G && e.isControlDown())) {
@@ -1720,6 +1798,9 @@ final class EditingCoordinator {
             String ch = e.getCharacter();
             if (ch == null || ch.isEmpty()) {
                 return;
+            }
+            if (searching && ch.charAt(0) != 'q' && ch.charAt(0) != 'Q') {
+                return; // the next match is still being looked for: nothing to act on yet
             }
             switch (ch.charAt(0)) {
                 case ' ', 'y', 'Y' -> replaceCurrentAndAdvance();
@@ -1782,24 +1863,50 @@ final class EditingCoordinator {
      * none. Looked for in the whole document, as Emacs does ({@code narrow-to-defun} widens before it looks): a
      * narrowed buffer's own text hides the definition enclosing the region, so Defun could only ever shrink it.
      */
-    boolean narrowToDefunAt(EditorBuffer buffer, int pos) {
+    void narrowToDefunAt(EditorBuffer buffer, int pos) {
+        narrowToDefunAt(buffer, pos, 3);
+    }
+
+    private void narrowToDefunAt(EditorBuffer buffer, int pos, int tries) {
         String text = buffer.getContent();
-        int at = Math.max(0, Math.min(pos, text.length()));
-        if (buffer.isPython()) { // the innermost def/class with its decorators, not a column-0 line (review 2 A102)
-            int[] defun = com.editora.editops.PythonDefun.bounds(text, at);
-            if (defun == null) {
-                host.setStatus(tr("status.narrow.noDefun"));
-                return false;
+        long version = buffer.docVersion();
+        boolean python = buffer.isPython();
+        // Its bounds are looked for off the FX thread, and narrowed to when they land if the text is unchanged
+        // (PERF-01, Pauta 6.0.1); text typed meanwhile has them looked for again.
+        com.editora.perf.OffFx.then(DEFUN_SITE, () -> defunBounds(text, pos, python), answer -> {
+            if (buffer.isDisposed()) {
+                return;
             }
-            return applyNarrowDocument(buffer, defun[0], defun[1]);
+            if (buffer.docVersion() != version) {
+                if (tries > 1) {
+                    narrowToDefunAt(buffer, pos, tries - 1);
+                }
+                return;
+            }
+            int[] defun = answer.value();
+            if (defun == null || defun.length == 0) {
+                host.setStatus(tr("status.narrow.noDefun"));
+                return;
+            }
+            applyNarrowDocument(buffer, defun[0], defun[1]);
+        });
+    }
+
+    /** {@link com.editora.perf.BlockingSites} name of Narrow to Defun's bounds, looked for off the FX thread. */
+    static final String DEFUN_SITE = "EditingCoordinator.defunBounds";
+
+    /** Off the FX thread: the definition around {@code pos} in the whole text, or an empty array when there is none. */
+    static int[] defunBounds(String text, int pos, boolean python) {
+        int at = Math.max(0, Math.min(pos, text.length()));
+        if (python) { // the innermost def/class with its decorators, not a column-0 line (review 2 A102)
+            int[] defun = com.editora.editops.PythonDefun.bounds(text, at);
+            return defun == null ? new int[0] : defun;
         }
         int start = com.editora.editops.SexpNav.beginningOfDefun(text, at);
         int end = com.editora.editops.SexpNav.endOfDefun(text, at);
-        if (start >= end || !com.editora.editops.SexpNav.isDefunStart(text, start)) {
-            host.setStatus(tr("status.narrow.noDefun"));
-            return false;
-        }
-        return applyNarrowDocument(buffer, start, end);
+        return start >= end || !com.editora.editops.SexpNav.isDefunStart(text, start)
+                ? new int[0]
+                : new int[] {start, end};
     }
 
     /** Narrow to the innermost foldable region around the caret — the fold machinery already knows it. */
@@ -2095,8 +2202,19 @@ final class EditingCoordinator {
     }
 
     void sexpMove(java.util.function.BiFunction<String, Integer, Integer> nav) {
-        moveAndFollow(a -> a.moveTo(nav.apply(a.getText(), a.getCaretPosition()), host.selPolicy()));
+        CodeArea area = host.activeArea();
+        if (area == null) {
+            return;
+        }
+        // Searched off the FX thread, the caret moved when it lands if nothing moved meanwhile (PERF-01, Pauta 6.0.1).
+        com.editora.editor.CaretLook.then(MOTION_SITE, area, at -> nav.apply(at.text(), at.caret()), target -> {
+            area.moveTo(target, host.selPolicy());
+            area.requestFollowCaret();
+        });
     }
+
+    /** {@link com.editora.perf.BlockingSites} name of the motions that search from the caret, made off FX. */
+    static final String MOTION_SITE = "EditingCoordinator.motion";
 
     /**
      * Go to the bracket matching the one adjacent to the caret (VS Code {@code jumpToBracket},
@@ -2109,12 +2227,18 @@ final class EditingCoordinator {
         if (area == null) {
             return;
         }
-        int target = com.editora.editops.BraceMatcher.jumpTarget(
-                area.getText(), area.getCaretPosition(), com.editora.editops.BraceMatcher.DEFAULT_MAX_SCAN);
-        if (target < 0) {
-            return;
-        }
-        moveAndFollow(a -> a.moveTo(target, host.selPolicy()));
+        com.editora.editor.CaretLook.then(
+                MOTION_SITE,
+                area,
+                at -> {
+                    int target = com.editora.editops.BraceMatcher.jumpTarget(
+                            at.text(), at.caret(), com.editora.editops.BraceMatcher.DEFAULT_MAX_SCAN);
+                    return target < 0 ? null : target;
+                },
+                target -> {
+                    area.moveTo(target, host.selPolicy());
+                    area.requestFollowCaret();
+                });
     }
 
     /** Select from the caret's adjacent bracket to its mate, both brackets included (VS Code
@@ -2124,14 +2248,16 @@ final class EditingCoordinator {
         if (area == null) {
             return;
         }
-        int[] span = com.editora.editops.BraceMatcher.selectSpan(
-                area.getText(), area.getCaretPosition(), com.editora.editops.BraceMatcher.DEFAULT_MAX_SCAN);
-        if (span == null) {
-            return;
-        }
-        area.selectRange(span[0], span[1]);
-        activateMark();
-        area.requestFollowCaret();
+        com.editora.editor.CaretLook.then(
+                MOTION_SITE,
+                area,
+                at -> com.editora.editops.BraceMatcher.selectSpan(
+                        at.text(), at.caret(), com.editora.editops.BraceMatcher.DEFAULT_MAX_SCAN),
+                span -> {
+                    area.selectRange(span[0], span[1]);
+                    activateMark();
+                    area.requestFollowCaret();
+                });
     }
 
     /** Emacs {@code mark-sexp} (`C-M-SPC`): select the balanced expression after the caret. */
@@ -2140,14 +2266,18 @@ final class EditingCoordinator {
         if (area == null) {
             return;
         }
-        int caret = area.getCaretPosition();
-        int end = com.editora.editops.SexpNav.forwardBalanced(area.getText(), caret);
-        if (end <= caret) {
-            return;
-        }
-        area.selectRange(caret, end);
-        activateMark();
-        area.requestFollowCaret();
+        com.editora.editor.CaretLook.then(
+                MOTION_SITE,
+                area,
+                at -> {
+                    int end = com.editora.editops.SexpNav.forwardBalanced(at.text(), at.caret());
+                    return end <= at.caret() ? null : new int[] {at.caret(), end};
+                },
+                span -> {
+                    area.selectRange(span[0], span[1]);
+                    activateMark();
+                    area.requestFollowCaret();
+                });
     }
 
     /** Emacs {@code mark-paragraph} (`M-h`): select the paragraph (blank-line delimited) around the caret. */
@@ -2156,13 +2286,18 @@ final class EditingCoordinator {
         if (area == null) {
             return;
         }
-        int[] bounds = com.editora.editops.SexpNav.paragraphBounds(area.getText(), area.getCaretPosition());
-        if (bounds[0] >= bounds[1]) {
-            return;
-        }
-        area.selectRange(bounds[0], bounds[1]);
-        activateMark();
-        area.requestFollowCaret();
+        com.editora.editor.CaretLook.then(
+                MOTION_SITE,
+                area,
+                at -> {
+                    int[] bounds = com.editora.editops.SexpNav.paragraphBounds(at.text(), at.caret());
+                    return bounds[0] >= bounds[1] ? null : bounds;
+                },
+                bounds -> {
+                    area.selectRange(bounds[0], bounds[1]);
+                    activateMark();
+                    area.requestFollowCaret();
+                });
     }
 
     /**
@@ -2188,17 +2323,20 @@ final class EditingCoordinator {
         // The cached chain still belongs to the previous ladder's origin until that request answers (same
         // buffer, no edit since, so it looks valid): using it on this press selected the smallest old range
         // that happened to contain the new caret — typically the whole class body.
-        int[] next = smartSelect.expand(
-                area.getText(),
-                start,
-                end,
-                buffer == null || newLadder ? null : host.lspCoordinator().selectionChain(buffer));
-        if (next == null) {
-            return; // already the whole document
-        }
-        area.selectRange(next[0], next[1]);
-        area.requestFollowCaret();
-        activateMark();
+        java.util.List<int[]> chain =
+                buffer == null || newLadder ? null : host.lspCoordinator().selectionChain(buffer);
+        // The next range is looked for off the FX thread, and applied when it lands if the text and the selection
+        // are unchanged (PERF-01, Pauta 6.0.1); null: already the whole document.
+        com.editora.editor.CaretLook.then(
+                MOTION_SITE,
+                area,
+                at -> com.editora.editops.SmartSelectStack.next(at.text(), start, end, chain),
+                next -> {
+                    smartSelect.record(start, end, next);
+                    area.selectRange(next[0], next[1]);
+                    area.requestFollowCaret();
+                    activateMark();
+                });
     }
 
     /** Semantic shrink-selection (VS Code {@code Shift+Alt+Left}): pop back to the previous expand range. */
@@ -2223,13 +2361,67 @@ final class EditingCoordinator {
 
     /** Emacs {@code kill-sexp} (`C-M-k`): delete the balanced expression after the caret. */
     void killSexp() {
-        emacsKill(
-                (text, caret) -> {
-                    int end = com.editora.editops.SexpNav.forwardBalanced(text, caret);
-                    return end > caret ? new com.editora.editops.EmacsEdits.Edit(caret, end, "", caret) : null;
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        CodeArea area = buffer.getFocusedArea();
+        // The end of the expression is looked for off the FX thread (PERF-01, Pauta 6.0.1); the kill happens when it
+        // lands, if nothing moved. Folds keep every offset, so the plain text gives the span the folded one would.
+        killLater(
+                buffer,
+                area,
+                at -> {
+                    int end = com.editora.editops.SexpNav.forwardBalanced(at.text(), at.caret());
+                    return end > at.caret()
+                            ? new com.editora.editops.EmacsEdits.Edit(at.caret(), end, "", at.caret())
+                            : null;
                 },
-                KillRing.Direction.FORWARD);
+                () -> {});
     }
+
+    /**
+     * A forward kill whose span is searched for off the FX thread through {@link com.editora.editor.CaretLook}, then
+     * applied as {@link #emacsKill} applies it; {@code none} runs when there is nothing to kill. A pending tag join is
+     * settled first, and the span looked for again on the text it leaves.
+     */
+    private void killLater(
+            EditorBuffer buffer,
+            CodeArea area,
+            com.editora.editor.CaretLook.Search<com.editora.editops.EmacsEdits.Edit> search,
+            Runnable none) {
+        // A press while one look is out for this area does nothing (CaretLook refuses it).
+        com.editora.editor.CaretLook.then(
+                MOTION_SITE,
+                area,
+                at -> {
+                    com.editora.editops.EmacsEdits.Edit edit = search.find(at);
+                    return edit == null ? NO_EDIT : edit;
+                },
+                edit -> {
+                    if (edit == NO_EDIT) {
+                        none.run();
+                        return;
+                    }
+                    if (com.editora.editor.PendingTagJoin.settle(area)) {
+                        killLater(buffer, area, search, none); // the join changed the text: look again
+                        return;
+                    }
+                    boolean merge = continuesPreviousKill(buffer, area.getCaretPosition()); // decide before the edit
+                    String killed = area.getText(edit.from(), edit.to());
+                    replaceAndPlace(area, edit.from(), edit.to(), edit.replacement(), edit.caret());
+                    pushKill(buffer, area, killed, KillRing.Direction.FORWARD, merge);
+                    deactivateMark();
+                    area.requestFocus();
+                });
+    }
+
+    /** {@link #killLater}'s "nothing to kill" answer (CaretLook drops a null one). */
+    private static final com.editora.editops.EmacsEdits.Edit NO_EDIT =
+            new com.editora.editops.EmacsEdits.Edit(0, 0, "", 0);
 
     /**
      * Emacs {@code zap-to-char} (`M-z`): read one more character, then delete from the caret up to and
@@ -2257,17 +2449,12 @@ final class EditingCoordinator {
 
     /** The second half of {@code zap-to-char}: kill up to and including the next {@code ch}. */
     private void zapTo(EditorBuffer buffer, CodeArea area, char ch) {
-        com.editora.editops.EmacsEdits.Edit edit = settled(
-                area, () -> com.editora.editops.EmacsEdits.zapToChar(area.getText(), area.getCaretPosition(), ch));
-        if (edit == null) {
-            host.setStatus(tr("status.zapNotFound", String.valueOf(ch)));
-            return;
-        }
-        boolean merge = continuesPreviousKill(buffer, area.getCaretPosition());
-        String killed = area.getText(edit.from(), edit.to());
-        replaceAndPlace(area, edit.from(), edit.to(), edit.replacement(), edit.caret());
-        pushKill(buffer, area, killed, KillRing.Direction.FORWARD, merge);
-        deactivateMark();
+        // The character is looked for off the FX thread (PERF-01, Pauta 6.0.1); the kill happens when it lands.
+        killLater(
+                buffer,
+                area,
+                at -> com.editora.editops.EmacsEdits.zapToChar(at.text(), at.caret(), ch),
+                () -> host.setStatus(tr("status.zapNotFound", String.valueOf(ch))));
     }
 
     /**
@@ -2535,21 +2722,43 @@ final class EditingCoordinator {
         }
         CodeArea area = buffer.getFocusedArea();
         String text = area.getText();
-        String after = com.editora.editops.Indenter.convertIndentation(text, toSpaces, buffer.getTabSize());
-        if (after.equals(text)) {
-            host.setStatus(tr("status.indent.noChange"));
-            return;
-        }
-        if (!NoUndoGuard.allow(
-                buffer, tr(toSpaces ? "command.edit.indentationToSpaces" : "command.edit.indentationToTabs"))) {
-            return;
-        }
-        int caret = area.getCaretPosition();
-        buffer.replaceVisibleText(area, after); // one undo step holding only the lines whose indent changed
-        area.moveTo(Math.min(caret, area.getLength()));
-        area.requestFollowCaret();
-        host.setStatus(tr(toSpaces ? "status.indent.toSpaces" : "status.indent.toTabs"));
+        long version = buffer.docVersion();
+        int tabSize = buffer.getTabSize();
+        // Rewritten off the FX thread, the span that differs too, and applied only to the same text (PERF-01).
+        com.editora.perf.OffFx.then(
+                CONVERT_INDENTATION_SITE,
+                () -> {
+                    String after = com.editora.editops.Indenter.convertIndentation(text, toSpaces, tabSize);
+                    return after.equals(text) ? null : EditorBuffer.PreparedEdit.between(version, text, after);
+                },
+                answer -> {
+                    EditorBuffer.PreparedEdit edit = answer.value();
+                    if (buffer.isDisposed() || !answer.ok()) {
+                        return;
+                    }
+                    if (edit == null) {
+                        host.setStatus(tr("status.indent.noChange"));
+                        return;
+                    }
+                    if (buffer.docVersion() != version
+                            || !NoUndoGuard.allow(
+                                    buffer,
+                                    tr(
+                                            toSpaces
+                                                    ? "command.edit.indentationToSpaces"
+                                                    : "command.edit.indentationToTabs"))) {
+                        return; // typed into meanwhile: the command is pressed again on the new text
+                    }
+                    int caret = area.getCaretPosition();
+                    buffer.applyPreparedVisibleEdit(area, edit); // one undo step: only the lines whose indent changed
+                    area.moveTo(Math.min(caret, area.getLength()));
+                    area.requestFollowCaret();
+                    host.setStatus(tr(toSpaces ? "status.indent.toSpaces" : "status.indent.toTabs"));
+                });
     }
+
+    /** {@link com.editora.perf.BlockingSites} name of Convert Indentation, worked out off the FX thread. */
+    static final String CONVERT_INDENTATION_SITE = "EditingCoordinator.convertIndentation";
 
     /**
      * Encodes, decodes or escapes the text of every selection ({@link com.editora.editops.TextCodecs}), as one

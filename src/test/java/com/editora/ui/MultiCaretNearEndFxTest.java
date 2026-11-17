@@ -91,7 +91,8 @@ class MultiCaretNearEndFxTest {
     void typingOverEveryOccurrenceNearTheEnd() throws Exception {
         String src = "connection = open();\nuse(connection);\nclose(connection);\n";
         EditorBuffer b = open(src, 3);
-        FxTestSupport.runOnFx(b::selectAllOccurrences);
+        FxTestSupport.runOnFx(() -> b.selectAllOccurrences(n -> {}));
+        SettingsRig.awaitFx("every occurrence selected", () -> !com.editora.editor.CaretLook.busy(b.getArea()));
         type(b, "c");
         type(b, "o");
         type(b, "n");

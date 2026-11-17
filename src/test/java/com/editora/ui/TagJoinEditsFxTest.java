@@ -30,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       auto-rename carried that to the start tag ({@code </it} + Ctrl+Backspace gave {@code <em>t</em>}).
  * </ul>
  */
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the pair is found off FX in the app
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TagJoinEditsFxTest {

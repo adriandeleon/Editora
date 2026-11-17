@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Typing in an HTML page's {@code <script>} follows braces (HTML review C10), Toggle Comment there writes a script
  * comment (C3), and a template file gets Editora's tag features (C7) — through a real {@link EditorBuffer}.
  */
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // worked out off FX in the app; here in place
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class HtmlEditTypingFxTest {

@@ -582,14 +582,17 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         int line = area.getCurrentParagraph();
         int column = area.getCaretColumn();
         int top = Math.max(0, area.firstVisibleParToAllParIndex());
-        b.replaceWholeDocument(result.text()); // computed from getContent(): widens a narrowed buffer first
-        if (narrowed) {
-            return;
-        }
-        int last = area.getParagraphs().size() - 1;
-        int newLine = Math.max(0, Math.min(result.mapLine(line), last));
-        area.moveTo(newLine, Math.min(column, area.getParagraphLength(newLine)));
-        area.showParagraphAtTop(Math.max(0, Math.min(result.mapLine(top), last)));
+        // Computed from getContent(): widens a narrowed buffer first. The span that differs is worked out off the
+        // FX thread (PERF-01, Pauta 6.0.1), then the place is put back.
+        b.replaceWholeDocumentLater(result.text(), applied -> {
+            if (!applied || narrowed) {
+                return;
+            }
+            int last = area.getParagraphs().size() - 1;
+            int newLine = Math.max(0, Math.min(result.mapLine(line), last));
+            area.moveTo(newLine, Math.min(column, area.getParagraphLength(newLine)));
+            area.showParagraphAtTop(Math.max(0, Math.min(result.mapLine(top), last)));
+        });
     }
 
     // --- at the caret ---------------------------------------------------------------------------------

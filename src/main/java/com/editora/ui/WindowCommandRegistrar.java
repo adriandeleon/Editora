@@ -1430,11 +1430,12 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "edit.skipOccurrence",
-                        () -> host.withMultiCaret(b -> {
-                            if (!b.skipOccurrence()) {
-                                host.setStatus(tr("status.multiCaret.noOtherOccurrence"));
-                            }
-                        })));
+                        () -> host.withMultiCaret(b -> b.skipOccurrence(
+                                moved -> { // searched off the FX thread
+                                    if (!moved) {
+                                        host.setStatus(tr("status.multiCaret.noOtherOccurrence"));
+                                    }
+                                }))));
         host.registry()
                 .register(Command.of(
                         "edit.undoLastCaret",
@@ -1790,7 +1791,9 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "markdown.removeLink",
-                        () -> host.previews().markdownOr(b -> b.markdown().removeLink(), "status.markdown.noLink")));
+                        () -> host.previews()
+                                .markdownOrLater(
+                                        (b, done) -> b.markdown().removeLink(done), "status.markdown.noLink")));
         host.registry()
                 .register(Command.of(
                         "markdown.linkToReference", () -> host.previews().markdownConvertLink(false)));
@@ -3753,8 +3756,12 @@ final class WindowCommandRegistrar {
     /** Split into Lines ({@code atLineEnds} false) / Add Carets to Line Ends (true), with a status either way. */
     private void splitIntoLines(boolean atLineEnds) {
         host.withMultiCaret(b -> {
-            int placed = b.splitSelectionIntoLines(atLineEnds);
-            host.setStatus(placed == 0 ? tr("status.multiCaret.noSelection") : tr("status.multiCaret.placed", placed));
+            b.splitSelectionIntoLines(
+                    atLineEnds,
+                    placed -> host.setStatus( // worked out off the FX thread
+                            placed == 0
+                                    ? tr("status.multiCaret.noSelection")
+                                    : tr("status.multiCaret.placed", placed)));
         });
     }
 

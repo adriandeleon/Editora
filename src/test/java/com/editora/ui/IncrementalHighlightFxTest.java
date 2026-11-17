@@ -248,9 +248,10 @@ class IncrementalHighlightFxTest {
             b.getArea().moveTo(1); // just inside the "(" — its pair is the ")" at offset 4
             return b;
         });
-        FxTestSupport.drainFx();
-        FxTestSupport.drainFx();
-        assertTrue(styleAt(buffer, 0).contains("brace-match"), "the pair is highlighted");
+        // The caret's line is not laid out here (no scene), so the pair is looked for off the FX thread (PERF-01).
+        SettingsRig.awaitFx(
+                "the pair is highlighted",
+                () -> buffer.getArea().getStyleOfChar(0).contains("brace-match"));
         assertTrue(styleAt(buffer, 4).contains("brace-match"));
         Restyles restyles = watch(buffer);
 
@@ -294,8 +295,11 @@ class IncrementalHighlightFxTest {
             b.getArea().moveTo(1);
             return b;
         });
-        FxTestSupport.drainFx();
-        FxTestSupport.drainFx();
+        // The caret's line is not laid out here (no scene), so the pair is looked for off the FX thread (PERF-01).
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
+        while (braceMatched(buffer).isEmpty() && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
         assertEquals(List.of(0, 10), braceMatched(buffer), "the pair spans three lines");
 
         // Typed right after the "(": the new character takes on its neighbour's style, the ")" moves one

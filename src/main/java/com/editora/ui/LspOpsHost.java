@@ -41,7 +41,7 @@ final class LspOpsHost implements LspCoordinator.Ops {
         // The openTechnicalDictionary pattern: an in-memory, read-only, path-less buffer (#665).
         EditorBuffer buffer = new EditorBuffer();
         buffer.setDisplayName(title);
-        buffer.setContent(content);
+        buffer.setContentLater(content, () -> {}); // its line endings resolved off the FX thread; jumps wait for it
         buffer.setLanguageOverride(language);
         buffer.setViewMode(true); // read-only library source; set first, or the status bar says "Editable" (B16)
         mc.addBuffer(buffer, true);

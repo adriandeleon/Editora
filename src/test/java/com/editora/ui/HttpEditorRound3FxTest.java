@@ -35,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * after an env file changed while the window was away, Import cURL's status, and the {@code {{} popup.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the curl import is converted off FX in the app
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class HttpEditorRound3FxTest {
 

@@ -72,7 +72,7 @@ class StatusBarPythonIndentFxTest {
         StatusBar sb = (StatusBar) made[0];
         Label indent = FxTestSupport.callOnFx(() -> FxTestSupport.field(sb, "indent"));
         FxTestSupport.runOnFx(() -> {
-            assertTrue(big.length() > StatusBar.INLINE_SIZE_CHARS);
+            assertTrue(big.length() > StatusBar.INLINE_INDENT_CHARS);
             assertFalse(indent.getText().contains("mixed"), "not scanned on the FX thread");
             assertFalse(held.isEmpty());
         });

@@ -999,7 +999,7 @@ public final class StatusBar extends HBox {
         }
         // The buffer's shared text; scanned here when small, else off the FX thread (PERF-08, Pauta 6.0.1).
         String text = buffer.text();
-        if (text.length() <= INLINE_SIZE_CHARS) {
+        if (text.length() <= INLINE_INDENT_CHARS) {
             showIndent(buffer, com.editora.editops.PythonScan.inconsistentTabLine(text));
             return;
         }
@@ -1012,6 +1012,9 @@ public final class StatusBar extends HBox {
             });
         });
     }
+
+    /** A Python file up to this many chars is checked for mixed indentation inline; a larger one off the thread. */
+    static final int INLINE_INDENT_CHARS = 256 * 1024;
 
     /** Which {@link #refreshIndent} is the latest: an older scan that lands later is dropped. */
     private long indentGen;
@@ -1223,29 +1226,30 @@ public final class StatusBar extends HBox {
         return bytes;
     }
 
-    /** Above this many characters the size is counted off the FX thread. */
-    static final int INLINE_SIZE_CHARS = 256 * 1024;
+    /**
+     * Where the document's size is counted: off the FX thread, whatever the size (PERF-01, Pauta 6.0.1: a count
+     * over the whole text is a pass over the user's data). Heard by {@link com.editora.perf.BlockingSites}.
+     */
+    static final String SIZE_SITE = "StatusBar.size";
 
     /** The file-size segment: the document's UTF-8 byte count. Kept OFF the per-caret / per-keystroke path —
      *  computed only on a full {@link #refresh()} (tab switch / state change) and a debounced edit pulse,
-     *  never per caret move (it doesn't change on one). The text is the buffer's shared snapshot; counting
-     *  it is O(n), so for anything but a small file it happens on a background thread and a superseded count
-     *  is dropped. */
+     *  never per caret move (it doesn't change on one). The text is the buffer's shared snapshot, counted on
+     *  a background thread; the count is shown only if it is still the latest ask and the document is the
+     *  version it was taken from, and the last count stays on screen meanwhile. */
     private void refreshSize(EditorBuffer buffer) {
         long gen = ++sizeGen;
         String content = buffer.getContent();
+        long version = buffer.docVersion();
         wordCount.document(buffer, content, simpleMode);
-        if (content.length() <= INLINE_SIZE_CHARS) {
-            showSize(buffer, utf8Length(content));
-            return;
-        }
         if (sizedBuffer.get() != buffer) {
             size.setText(""); // until the count arrives, rather than the previous tab's size
         }
         sizeCounter.execute(() -> {
+            com.editora.perf.BlockingSites.enter(SIZE_SITE);
             long bytes = utf8Length(content);
-            Platform.runLater(() -> {
-                if (gen == sizeGen) {
+            com.editora.perf.OffFx.onFx(() -> {
+                if (gen == sizeGen && buffer.docVersion() == version) {
                     showSize(buffer, bytes);
                 }
             });
@@ -1257,9 +1261,8 @@ public final class StatusBar extends HBox {
         size.setText(formatSize(bytes));
     }
 
-    /** Where a large document's size is counted; replaceable so a test can hold the count back. */
-    java.util.concurrent.Executor sizeCounter =
-            task -> Thread.ofVirtual().name("status-size").start(task);
+    /** Where the document's size is counted (where {@code OffFx} runs work); replaceable so a test can hold it back. */
+    java.util.concurrent.Executor sizeCounter = task -> com.editora.perf.OffFx.start("status-size", task);
 
     /** Shows "Snippet position/count" while a snippet session runs in the active buffer; a count of 0 hides it. */
     public void setSnippetSession(int position, int count) {

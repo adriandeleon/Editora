@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * it must look the region up when clicked, not remember the one it was built with.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // fold regions (PERF-01: detected off FX) land at once
 class FoldChevronFxTest {
 
     @BeforeAll

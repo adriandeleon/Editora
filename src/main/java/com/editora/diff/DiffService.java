@@ -5,10 +5,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 
 import javafx.application.Platform;
 
 import com.editora.diff.DiffModels.DiffModel;
+import com.editora.i18n.Messages;
+import org.jspecify.annotations.Nullable;
 
 /**
  * FX-facing façade that runs {@link DiffEngine} off the JavaFX thread (the {@code GitService}/
@@ -39,18 +43,42 @@ public final class DiffService {
 
     /** As {@link #compute(String, String, Consumer)}, with explicit {@link DiffEngine.DiffOptions}. */
     public void compute(String leftText, String rightText, DiffEngine.DiffOptions opts, Consumer<DiffModel> onResult) {
+        compute(() -> leftText, () -> rightText, opts, m -> m, c -> onResult.accept(c.model()));
+    }
+
+    /** A diff worked out: the two texts compared, and the model (null when the comparison failed). */
+    public record Computed(
+            String left, String right, @Nullable DiffModel model) {}
+
+    /**
+     * As {@link #compute(String, String, DiffEngine.DiffOptions, Consumer)}, on this service's thread from the start
+     * (PERF-01, Pauta 6.0.1): the two texts are made there ({@code left}, {@code right}), the model is passed through
+     * {@code after} there (a patch's own line numbers), and its viewer layouts ({@link DiffLayout}) are worked out
+     * there too, before the texts and the model are posted on the FX thread.
+     */
+    public void compute(
+            Supplier<String> left,
+            Supplier<String> right,
+            DiffEngine.DiffOptions opts,
+            UnaryOperator<DiffModel> after,
+            Consumer<Computed> onResult) {
         try {
             exec.submit(() -> {
                 DiffModel computed;
+                String leftText = "";
+                String rightText = "";
                 try {
-                    computed = model(leftText, rightText, opts);
+                    leftText = left.get();
+                    rightText = right.get();
+                    computed = after.apply(model(leftText, rightText, opts));
+                    DiffLayout.warm(computed, n -> Messages.tr("diff.unchangedLines", n));
                 } catch (Throwable failed) { // incl. OutOfMemoryError: the caller must still hear back
                     // A task that dies inside submit() is swallowed by its Future; without this the callback
                     // never fired and the tab stayed "opening" for good. null is the "could not diff" answer.
                     computed = null;
                 }
-                DiffModel model = computed;
-                Platform.runLater(() -> onResult.accept(model));
+                Computed done = new Computed(leftText, rightText, computed);
+                Platform.runLater(() -> onResult.accept(done));
             });
         } catch (RejectedExecutionException shuttingDown) {
             // Git/blob reads can complete on the FX queue after the owning window has closed. At that point

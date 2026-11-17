@@ -38,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Modified markers, per-setting reset, "Show modified only", the restart note and the pages' help links. */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // searches and filters answer before the call returns
 class SettingsModifiedFxTest {
 
     /** Controls that are not a setting of their own, or that ask before they change (a modal no test answers). */

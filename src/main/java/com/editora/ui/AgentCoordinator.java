@@ -986,11 +986,32 @@ final class AgentCoordinator implements AcpClient.Host {
         }
         String key = PathKeys.key(file);
         String body = content == null ? "" : content;
-        // null = no buffer holds the file; "" = applied to its buffer; anything else = why it was refused.
-        String refusal = fxCall(() -> {
-            EditorBuffer open = openBuffer(file);
-            return open == null ? null : applyToOpenBuffer(open, key, body, path);
-        });
+        // null = no buffer holds the file; "" = applied to its buffer; anything else = why it was refused. The span
+        // that differs is worked out here, on the agent's thread, against the buffer's text at a version, and
+        // applied on the FX thread only to that version (PERF-01, Pauta 6.0.1); worked out again when typed into.
+        String refusal = null;
+        String bodyLf = com.editora.editops.LineEndings.toLf(body); // what the buffer holds once it is applied
+        EditorBuffer.PreparedEdit.Base base = fxCall(() -> baseOf(openBuffer(file)));
+        for (int tries = 3; base != null; tries--) {
+            EditorBuffer.PreparedEdit prepared = base.to(bodyLf);
+            long version = base.version();
+            OpenWrite attempt = fxCall(() -> {
+                EditorBuffer open = openBuffer(file);
+                if (open == null) {
+                    return new OpenWrite(null, null);
+                }
+                if (open.docVersion() != version) {
+                    return new OpenWrite(null, baseOf(open));
+                }
+                return new OpenWrite(applyToOpenBuffer(open, key, bodyLf, path, prepared), null);
+            });
+            refusal = attempt.refusal();
+            base = attempt.again();
+            if (base != null && tries <= 1) {
+                refusal = "The buffer for " + path + " kept changing while the edit was applied; read it and retry.";
+                break;
+            }
+        }
         if (refusal == null) {
             writeClosedFile(file, key, body);
         } else if (!refusal.isEmpty()) {
@@ -1005,7 +1026,8 @@ final class AgentCoordinator implements AcpClient.Host {
      *
      * <p>This is the one place an ACP write replaces a buffer's text.
      */
-    private @Nullable String applyToOpenBuffer(EditorBuffer open, String key, String body, String path) {
+    private @Nullable String applyToOpenBuffer(
+            EditorBuffer open, String key, String body, String path, EditorBuffer.PreparedEdit prepared) {
         if (!open.isEditable()) {
             return "Cannot apply an agent edit to read-only buffer " + path;
         }
@@ -1021,8 +1043,8 @@ final class AgentCoordinator implements AcpClient.Host {
             return verdict.message();
         }
         // The agent read getContent() (the whole file), so widen a narrowed buffer rather than nest the file in it.
-        open.replaceWholeDocument(body);
-        served.served(key, open.getContent()); // its own write is text it knows
+        open.applyPreparedWholeText(prepared, body); // the version was checked by the caller
+        served.served(key, body); // its own write (LF, as the buffer holds it) is text it knows
         host.setStatus(tr("status.agent.editedBuffer", open.getTitle()));
         return "";
     }
@@ -1253,6 +1275,14 @@ final class AgentCoordinator implements AcpClient.Host {
         }
         return modeId;
     }
+
+    /** FX thread: what a whole-document write to {@code open} is worked out against; null without a buffer. */
+    private static EditorBuffer.PreparedEdit.@Nullable Base baseOf(@Nullable EditorBuffer open) {
+        return open == null ? null : new EditorBuffer.PreparedEdit.Base(open.docVersion(), open.getContent());
+    }
+
+    /** One try at writing to an open buffer: the refusal ({@code ""} applied, null no buffer), or a newer base. */
+    private record OpenWrite(@Nullable String refusal, EditorBuffer.PreparedEdit.@Nullable Base again) {}
 
     /**
      * Runs {@code task} on the FX thread and blocks (with a timeout) for its result — for the fs bridge, which

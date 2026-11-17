@@ -1389,7 +1389,7 @@ final class PluginCoordinator {
                 EditorBuffer b = buf();
                 if (b != null && b.isEditable() && text != null && NoUndoGuard.allow(b, tr("noUndo.op.plugin"))) {
                     // text() is the whole file, so this widens a narrowed buffer first (undoable, marks dirty).
-                    b.replaceWholeDocument(text);
+                    b.replaceWholeDocumentLater(text, applied -> {}); // the span that differs, worked out off FX
                 }
             });
         }

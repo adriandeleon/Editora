@@ -111,11 +111,19 @@ final class MapCardMoves {
         }
         switch (commandId) {
             case GO_TO_LINE -> showLineBar();
+            // Searched off the FX thread, the caret moved when it lands if nothing moved (PERF-01, Pauta 6.0.1).
             case MATCHING_BRACKET ->
-                moveTo(BraceMatcher.jumpTarget(
-                        editor.getText(), editor.getCaretPosition(), BraceMatcher.DEFAULT_MAX_SCAN));
-            default ->
-                moveTo(defun(editor.getText(), editor.getCaretPosition(), python(), END_OF_DEFUN.equals(commandId)));
+                com.editora.editor.CaretLook.then(
+                        MOVE_SITE,
+                        editor,
+                        at -> BraceMatcher.jumpTarget(at.text(), at.caret(), BraceMatcher.DEFAULT_MAX_SCAN),
+                        this::moveTo);
+            default -> {
+                boolean python = python();
+                boolean end = END_OF_DEFUN.equals(commandId);
+                com.editora.editor.CaretLook.then(
+                        MOVE_SITE, editor, at -> defun(at.text(), at.caret(), python, end), this::moveTo);
+            }
         }
         return true;
     }
@@ -262,7 +270,14 @@ final class MapCardMoves {
 
     // --- the other uses of the name at the caret ----------------------------------------------------------------
 
+    /** Where the other uses of the name at the caret are searched for: heard off the FX thread (PERF-01). */
+    static final String USES_SITE = "MapCardMoves.usesOf";
+
+    /** Counts caret moves: uses found for an earlier caret that land late are dropped. */
+    private long usesGeneration;
+
     private void usesMoved() {
+        usesGeneration++;
         uses.setSpans(List.of());
         if (editor.isFocused() && card.textShown()) {
             usesIdle.playFromStart();
@@ -271,19 +286,40 @@ final class MapCardMoves {
         }
     }
 
-    /** Washes the other uses of the name at the caret, once the caret rests. */
+    /** {@link com.editora.perf.BlockingSites} name of the card's searches from the caret, made off the FX thread. */
+    static final String MOVE_SITE = "MapCardMoves.search";
+
+    /**
+     * Washes the other uses of the name at the caret, once the caret rests. Whether the caret is on a name is read
+     * from its own line's styles here; the uses are searched for off the FX thread (PERF-01, Pauta 6.0.1) and washed
+     * if the text and the caret are unchanged when they land.
+     */
     private void markUses() {
         if (!editor.isFocused() || !card.textShown() || editor.getLength() == 0) {
             return;
         }
-        uses.setSpans(usesOf(
-                editor.getText(),
-                editor.getCaretPosition(),
-                editor.getSelection().getStart(),
-                editor.getSelection().getEnd(),
-                language(),
-                at -> isName(editor.getStyleOfChar(at)),
-                MAX_USES));
+        // Whether the caret is on a name is read from its own line's styles here; the card's text is searched for
+        // the name's other uses off the FX thread, and they are washed if the caret has not moved since.
+        String language = language();
+        int line = editor.getCurrentParagraph();
+        int lineStart = editor.getAbsolutePosition(line, 0);
+        int[] word = SelectOccurrences.wordAt(editor.getParagraph(line).getText(), editor.getCaretColumn(), language);
+        if (word == null || !isName(editor.getStyleOfChar(lineStart + word[0]))) {
+            return;
+        }
+        String text = editor.getText();
+        int caret = editor.getCaretPosition();
+        int selectionStart = editor.getSelection().getStart();
+        int selectionEnd = editor.getSelection().getEnd();
+        long mine = ++usesGeneration;
+        com.editora.perf.OffFx.then(
+                USES_SITE,
+                () -> usesOf(text, caret, selectionStart, selectionEnd, language, at -> true, MAX_USES),
+                a -> {
+                    if (mine == usesGeneration && a.value() != null) {
+                        uses.setSpans(a.value());
+                    }
+                });
     }
 
     /** Whether a character with these style classes is part of a name: not a keyword, a constant or a number. */

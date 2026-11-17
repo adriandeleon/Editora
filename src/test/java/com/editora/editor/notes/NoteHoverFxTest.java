@@ -35,6 +35,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * with the indicators off does nothing, hovering it shows its body and moving off or leaving the area hides it.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(
+        com.editora.ui.OffFxInPlace.class) // work moved off FX (PERF-01) lands at once
 class NoteHoverFxTest {
 
     private static final String TEXT = "alpha beta gamma\ndelta epsilon\n";

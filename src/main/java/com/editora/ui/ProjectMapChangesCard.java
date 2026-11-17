@@ -462,9 +462,27 @@ final class ProjectMapChangesCard extends MapFloatingCard {
         diff.scrollTo(Math.max(0, header - 1));
     }
 
+    /** Where a picked file's changed words are worked out: heard off the FX thread (PERF-01). */
+    static final String WORDS_SITE = "ProjectMapChangesCard.wordSpans";
+
+    /** Counts file picks: the changed words of an earlier pick that land late are dropped. */
+    private long wordsGeneration;
+
     private void filePicked(GitChanges.@Nullable FileDiff file) {
         hunk = -1;
-        words = file == null ? java.util.Map.of() : wordSpans(file.lines());
+        // The lines show at once; their changed words are worked out off the FX thread (PERF-01, Pauta 6.0.1) and
+        // marked when they land, for the file still picked.
+        words = java.util.Map.of();
+        long mine = ++wordsGeneration;
+        if (file != null && !file.lines().isEmpty()) {
+            List<GitChanges.Line> lines = file.lines();
+            com.editora.perf.OffFx.then(WORDS_SITE, () -> wordSpans(lines), a -> {
+                if (mine == wordsGeneration && a.value() != null && !a.value().isEmpty()) {
+                    words = a.value();
+                    diff.refresh();
+                }
+            });
+        }
         if (file == null) {
             diff.getItems().clear();
             diff.setPlaceholder(placeholder(""));

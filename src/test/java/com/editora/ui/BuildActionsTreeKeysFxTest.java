@@ -37,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * mouse, and the checkbox of a toggle row.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the filter answers before the call returns
 class BuildActionsTreeKeysFxTest {
 
     /** Two sections; "Plugins" starts folded; checking "ci" reveals a third. */

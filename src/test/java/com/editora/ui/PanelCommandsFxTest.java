@@ -41,7 +41,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * keyboard in the panel, or the panel showing): each does what its row or button does to the selected or focused
  * thing, and with nothing there, or a row its menu would not offer, the status line says so (KBD-01, MENU-05).
  */
+// The debugger's scans, merge and apply texts are worked out off the FX thread (PERF-01): here in place, so
+// each lands before the command returns. HandlersDebugOffFxThreadFxTest runs them where the app does.
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // searches and filters answer before the call returns
 class PanelCommandsFxTest {
 
     @BeforeAll

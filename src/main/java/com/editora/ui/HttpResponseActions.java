@@ -65,7 +65,8 @@ final class HttpResponseActions {
         EditorBuffer buffer = new EditorBuffer();
         buffer.setDisplayName("response" + HttpResponseFormat.extensionFor(r.contentType()));
         ops.openTab(buffer);
-        buffer.setContent(r.body()); // the body as received; the viewer's pretty-printing is display-only
+        // The body as received (the viewer's pretty-printing is display-only), made ready off the FX thread.
+        buffer.setContentLater(r.body(), () -> {});
     }
 
     /**

@@ -4,7 +4,6 @@ import java.util.concurrent.Executor;
 import java.util.function.Supplier;
 
 import javafx.animation.PauseTransition;
-import javafx.application.Platform;
 import javafx.scene.control.Label;
 import javafx.scene.control.Tooltip;
 import javafx.util.Duration;
@@ -23,22 +22,22 @@ import static com.editora.i18n.Messages.tr;
  * The status bar's word count, for prose buffers (Markdown and plain text): the document's words, or the
  * selection's while there is one, with the reading time in the tooltip.
  *
- * <p>Never on the keystroke path. The document is counted where the size segment is — once per typing
- * burst, from the text that segment already took — and a large one on a background thread. A selection
+ * <p>Never on the keystroke path, never on the FX thread. The document is counted where the size segment is — once
+ * per typing burst, from the text that segment already took — on a background thread, whatever its size. A selection
  * change only notes the new length and restarts a pause; the selected text is read when the pause ends.
  */
 final class StatusWordCount {
 
-    /** Above this many characters the words are counted off the FX thread. */
-    static final int INLINE_CHARS = 200_000;
+    /** Where words are counted: off the FX thread, whatever the size (PERF-01, Pauta 6.0.1). */
+    static final String COUNT_SITE = "StatusWordCount.count";
 
     private final Label label = new Label();
     private final Tooltip tooltip = ControlNames.tooltip();
     private final Supplier<Settings> settings;
     private final PauseTransition selectionPause = new PauseTransition(Duration.millis(250));
 
-    /** Where a large text is counted; replaceable so a test can run it inline. */
-    Executor counter = task -> Thread.ofVirtual().name("status-words").start(task);
+    /** Where the text is counted: where {@code OffFx} runs work; replaceable so a test can run it inline. */
+    Executor counter = task -> com.editora.perf.OffFx.start("status-words", task);
 
     private long generation;
     private int documentWords = -1;
@@ -77,18 +76,17 @@ final class StatusWordCount {
             hide();
             return;
         }
-        if (content.length() <= INLINE_CHARS) {
-            documentWords = WordCount.words(content);
-            selection(buffer.getFocusedArea());
-            show(documentWords, false);
-            return;
-        }
+        // Counted off the FX thread; the count shown stays until the latest one lands, and is applied only to the
+        // document version it was taken from (a newer version calls this again).
+        long version = buffer.docVersion();
         counter.execute(() -> {
+            com.editora.perf.BlockingSites.enter(COUNT_SITE);
             int words = WordCount.words(content);
-            Platform.runLater(() -> {
-                if (gen == generation) {
+            com.editora.perf.OffFx.onFx(() -> {
+                if (gen == generation && buffer.docVersion() == version) {
                     documentWords = words;
                     show(words, false);
+                    selection(buffer.getFocusedArea());
                 }
             });
         });
@@ -120,15 +118,12 @@ final class StatusWordCount {
             return;
         }
         String selected = area.getSelectedText();
-        if (selected.length() <= INLINE_CHARS) {
-            show(WordCount.words(selected), true);
-            return;
-        }
         long gen = generation;
         int length = selected.length();
         counter.execute(() -> {
+            com.editora.perf.BlockingSites.enter(COUNT_SITE);
             int words = WordCount.words(selected);
-            Platform.runLater(() -> {
+            com.editora.perf.OffFx.onFx(() -> {
                 if (gen == generation && selectionLength == length) {
                     show(words, true);
                 }

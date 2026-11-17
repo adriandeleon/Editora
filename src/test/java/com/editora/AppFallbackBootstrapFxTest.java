@@ -78,6 +78,9 @@ class AppFallbackBootstrapFxTest {
             }
             assertEquals(List.of(), onFx, "nothing loaded, locked or read on the FX thread");
             assertFalse(heard.isEmpty(), "the load was heard");
+            assertTrue(
+                    heard.stream().anyMatch(h -> h.startsWith(App.FALLBACK_FIRST_WINDOW_SITE + " @")),
+                    "the first window's fonts, catalog, keymap and frame are read off the FX thread: " + heard);
             int lock = -1;
             int firstStore = -1;
             for (int i = 0; i < heard.size(); i++) {

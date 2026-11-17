@@ -8,6 +8,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -20,7 +21,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@ExtendWith(OffFxInPlace.class) // the search runs off the FX thread in the app; here in place, landing at once
 class SelectOccurrencesFxTest {
+
+    /** Select All Occurrences, answered at once (the search runs in place here). */
+    private static int occurrences(com.editora.editor.EditorBuffer b) {
+        int[] placed = {-1};
+        b.selectAllOccurrences(n -> placed[0] = n);
+        return placed[0];
+    }
 
     @BeforeAll
     void setUp() throws Exception {
@@ -43,7 +52,7 @@ class SelectOccurrencesFxTest {
         int count = FxTestSupport.callOnFx(() -> {
             CodeArea a = FxTestSupport.field(b, "area");
             a.moveTo(1); // inside the first "foo"
-            int n = b.selectAllOccurrences();
+            int n = occurrences(b);
             assertTrue(b.hasMultipleCarets(), "three foos → extra carets");
             return n;
         });
@@ -56,7 +65,7 @@ class SelectOccurrencesFxTest {
         int count = FxTestSupport.callOnFx(() -> {
             CodeArea a = FxTestSupport.field(b, "area");
             a.selectRange(0, 2); // "ab" — a substring that also occurs inside "abc"/"abcd"
-            return b.selectAllOccurrences();
+            return occurrences(b);
         });
         // literal substring match: "ab" appears in "ab", "abc", "ab", "abcd", "ab" = 5 times
         assertEquals(5, count);
@@ -68,7 +77,7 @@ class SelectOccurrencesFxTest {
         int count = FxTestSupport.callOnFx(() -> {
             CodeArea a = FxTestSupport.field(b, "area");
             a.moveTo(5); // inside the first "id", no selection
-            return b.selectAllOccurrences();
+            return occurrences(b);
         });
         assertEquals(2, count, "the two id identifiers, not the id inside valid and width");
     }
@@ -79,7 +88,7 @@ class SelectOccurrencesFxTest {
         int count = FxTestSupport.callOnFx(() -> {
             CodeArea a = FxTestSupport.field(b, "area");
             a.moveTo(a.getText().indexOf("foo") + 1); // the lowercase "foo"
-            return b.selectAllOccurrences();
+            return occurrences(b);
         });
         assertEquals(2, count, "only the two lowercase 'foo' match, not 'Foo'/'FOO'");
     }
@@ -90,7 +99,7 @@ class SelectOccurrencesFxTest {
         int count = FxTestSupport.callOnFx(() -> {
             CodeArea a = FxTestSupport.field(b, "area");
             a.moveTo(2); // on the '+'
-            int n = b.selectAllOccurrences();
+            int n = occurrences(b);
             assertFalse(b.hasMultipleCarets());
             return n;
         });

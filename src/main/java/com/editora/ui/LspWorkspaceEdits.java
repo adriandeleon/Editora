@@ -1104,10 +1104,12 @@ final class LspWorkspaceEdits {
             for (int i = applied.size() - 1; i >= 0; i--) {
                 try {
                     var snapshot = applied.get(i);
-                    snapshot.buffer().replaceWholeDocument(snapshot.original());
-                    if (lspManager.isManaged(snapshot.file())) {
-                        lspManager.changeDocument(snapshot.file(), snapshot.original());
-                    }
+                    // The span that differs is worked out off the FX thread; the server hears it once it is in.
+                    snapshot.buffer().replaceWholeDocumentLater(snapshot.original(), restored -> {
+                        if (restored && lspManager.isManaged(snapshot.file())) {
+                            lspManager.changeDocument(snapshot.file(), snapshot.original());
+                        }
+                    });
                 } catch (RuntimeException rollbackFailure) {
                     transaction.rollbackFailed = true;
                 }

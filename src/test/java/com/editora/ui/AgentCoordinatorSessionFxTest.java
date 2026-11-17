@@ -992,6 +992,8 @@ class AgentCoordinatorSessionFxTest {
 
         /** The transcript entries, each as its visible text. */
         List<String> transcript() throws Exception {
+            // A reply is parsed off the FX thread (PERF-01): read the transcript once it has landed.
+            SettingsRig.awaitFx("the replies rendered", () -> !panel.rendering());
             return FxTestSupport.callOnFx(this::entries);
         }
 

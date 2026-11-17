@@ -635,23 +635,23 @@ class SettingsFollowsFxTest {
 
     @Test
     void aBodyIsHighlightedForItsLanguageAndLeftPlainForNone() throws Exception {
-        FxTestSupport.runOnFx(() -> {
-            CodeArea area = new CodeArea("class A { int x = 1; }");
-            SettingsSnippetPages.highlightSnippetBody(area, "java");
-            assertTrue(
-                    area.getStyleSpans(0, area.getLength()).stream()
-                            .anyMatch(span -> !span.getStyle().isEmpty()),
-                    "Java source gets token styles");
+        // Tokenized off the FX thread (PERF-01, Pauta 6.0.1): the styles land a moment later.
+        CodeArea area = FxTestSupport.callOnFx(() -> new CodeArea("class A { int x = 1; }"));
+        java.util.function.BooleanSupplier styled = () -> area.getStyleSpans(0, area.getLength()).stream()
+                .anyMatch(span -> !span.getStyle().isEmpty());
+        FxTestSupport.runOnFx(() -> SettingsSnippetPages.highlightSnippetBody(area, "java"));
+        SettingsRig.awaitFx("Java source gets token styles", styled::getAsBoolean);
 
-            for (String plain : new String[] {"global", "", null, "no-such-language"}) {
+        for (String plain : new String[] {"global", "", null, "no-such-language"}) {
+            FxTestSupport.runOnFx(() -> {
                 SettingsSnippetPages.highlightSnippetBody(area, plain);
-                assertTrue(
-                        area.getStyleSpans(0, area.getLength()).stream()
-                                .allMatch(span -> span.getStyle().isEmpty()),
-                        "no styles for " + plain);
+                assertTrue(!styled.getAsBoolean(), "no styles for " + plain);
                 SettingsSnippetPages.highlightSnippetBody(area, "java");
-            }
+            });
+            SettingsRig.awaitFx("styled again", styled::getAsBoolean);
+        }
 
+        FxTestSupport.runOnFx(() -> {
             CodeArea empty = new CodeArea("");
             SettingsSnippetPages.highlightSnippetBody(empty, "global"); // nothing to clear
             assertEquals("", empty.getText());

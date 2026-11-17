@@ -47,6 +47,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * activating, leaving for the editor — and what its sort order, kind filter and rows show.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(
+        OffFxInPlace.class) // the outline and the pickers answer before the call returns
 class StructurePanelKeysFxTest {
 
     private static final String SOURCE = "class Outer {\n" // 0

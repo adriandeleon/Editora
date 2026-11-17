@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
  * assists. Those are key filters on the area; the session's used to be appended to the same node, so
  * auto-indent, smart Backspace and auto-close ran first and edited the document with the session's key.
  */
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // worked out off FX in the app; here in place
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ModalKeySessionFxTest {

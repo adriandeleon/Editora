@@ -85,6 +85,60 @@ public final class QueryReplace {
         }
     }
 
+    /** Thrown by a {@link Piece} asked for text outside it: the search needs a bigger piece. */
+    public static final class NeedMore extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        NeedMore() {
+            super(null, null, false, false);
+        }
+    }
+
+    /**
+     * A stretch of a document copied on the FX thread, for {@link #nextIn} to run on off it: the document's
+     * length is the real one, and reading outside the stretch throws {@link NeedMore}, so the caller copies a
+     * stretch twice as long and asks again. The answer is the one the whole document gives.
+     */
+    public static final class Piece implements Source {
+        private final String text;
+        private final int base;
+        private final int length;
+
+        Piece(String text, int base, int length) {
+            this.text = text;
+            this.base = base;
+            this.length = length;
+        }
+
+        @Override
+        public int length() {
+            return length;
+        }
+
+        @Override
+        public String text(int start, int end) {
+            if (start < base || end > base + text.length()) {
+                throw new NeedMore();
+            }
+            return text.substring(start - base, end - base);
+        }
+    }
+
+    /**
+     * Copies from {@code doc} what a search from {@code from} sees first: the context before it and {@code size}
+     * characters after it. FX thread (a short copy); search the piece off it with {@link #nextIn}.
+     */
+    public static Piece piece(Source doc, int from, int size) {
+        int length = doc.length();
+        int start = Math.max(0, Math.min(from, length));
+        int base = Math.max(0, start - REGEX_CONTEXT);
+        int end = (int) Math.min(length, (long) start + Math.max(1, size));
+        return new Piece(doc.text(base, end), base, length);
+    }
+
+    /** The first piece a session copies past its offset ({@link #piece}). */
+    public static final int FIRST_PIECE = 64 * 1024;
+
     /** The first stretch a literal search reads past the offset; doubled until the match is certain. */
     static final int FIRST_WINDOW = 16 * 1024;
 

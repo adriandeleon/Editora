@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * for every render, and ending in exactly what one render of the finished text gives.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the parses land in place
 class AgentPanelStreamFxTest {
 
     @BeforeAll

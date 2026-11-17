@@ -75,7 +75,7 @@ public final class MergeViewerPane implements TabContent {
     private final String fontStyle;
     private boolean updatingResult;
     /** The Result was edited since {@link #refreshResult} filled it; whether it differs is asked at a choice. */
-    private boolean touchedByHand;
+    private boolean manuallyEdited;
 
     private boolean draftDirty;
     private String generatedResult = "";
@@ -126,7 +126,7 @@ public final class MergeViewerPane implements TabContent {
         status.getStyleClass().add("merge-status");
         Button save = new Button(tr("merge.save"));
         save.getStyleClass().addAll("merge-save", "success");
-        save.setOnAction(e -> saveResult());
+        save.setOnAction(e -> saveResult(null));
         FocusCommands.press(root, "merge.saveResult", save);
         HBox bar = UiZoom.spacing(new HBox(status, spacer(), save), 8);
         bar.getStyleClass().add("merge-toolbar");
@@ -157,11 +157,10 @@ public final class MergeViewerPane implements TabContent {
         resultArea.setStyle(fontStyle);
         resultArea.getStyleClass().add("merge-result");
         resultArea.setAccessibleText(tr("merge.resultDescription"));
-        // An invalidation listener: a change listener makes the area build its whole text per keystroke, and the
-        // comparison with what was generated is only needed when a choice is made (PERF-08, Pauta 6.0.1).
-        resultArea.textProperty().addListener((javafx.beans.InvalidationListener) ignored -> {
+        // An invalidation listener: a change listener had the area join its whole text on every keystroke (PERF-01).
+        resultArea.textProperty().addListener(ignored -> {
             if (!updatingResult) {
-                touchedByHand = true;
+                manuallyEdited = true; // until the text is looked at: a choice compares it with what was shown
                 draftDirty = true;
             }
         });
@@ -315,7 +314,7 @@ public final class MergeViewerPane implements TabContent {
     }
 
     private void choose(int index, Choice choice, Label chosen, String text) {
-        if (manuallyEdited()) {
+        if (manuallyEdited && !resultArea.getText().equals(shownResult)) {
             status.setText(tr("merge.manualEditsBlockChoices"));
             return;
         }
@@ -326,12 +325,44 @@ public final class MergeViewerPane implements TabContent {
         refreshStatus();
     }
 
+    /** Where the Result's text is put together from the choices: heard off the FX thread (PERF-01). */
+    public static final String RESULT_SITE = "MergeViewerPane.result";
+
+    /** Counts the choices made: a Result put together for earlier ones that lands late is dropped. */
+    private long resultGeneration;
+
+    /** Set while the Result for the choices made is put together; a save waits for it. */
+    private boolean composing;
+
+    private @Nullable Runnable afterComposed;
+
+    /** The Result for the choices made, put together off the FX thread (PERF-01, Pauta 6.0.1) and shown when it lands. */
     private void refreshResult() {
+        List<Choice> now = List.copyOf(choices);
+        long mine = ++resultGeneration;
+        composing = true;
+        com.editora.perf.OffFx.then(RESULT_SITE, () -> resultText(file, now, lineSeparator, finalNewline), a -> {
+            if (mine != resultGeneration || a.value() == null) {
+                return;
+            }
+            composing = false;
+            showResult(a.value());
+            Runnable after = afterComposed;
+            afterComposed = null;
+            if (after != null) {
+                after.run();
+            }
+        });
+    }
+
+    /** Pure: the text {@code choices} resolve {@code file} to. */
+    static String resultText(ConflictFile file, List<Choice> choices, String lineSeparator, boolean finalNewline) {
         List<String> lines = ConflictParser.resolve(file, choices);
         String text = String.join(lineSeparator, lines);
-        if (finalNewline && !lines.isEmpty()) {
-            text += lineSeparator;
-        }
+        return finalNewline && !lines.isEmpty() ? text + lineSeparator : text;
+    }
+
+    private void showResult(String text) {
         generatedResult = text;
         updatingResult = true;
         try {
@@ -340,36 +371,63 @@ public final class MergeViewerPane implements TabContent {
         } finally {
             updatingResult = false;
         }
-        touchedByHand = false;
+        manuallyEdited = false;
     }
 
-    /** Whether the Result holds edits made by hand: it was typed in and is not what was generated. */
-    private boolean manuallyEdited() {
-        return touchedByHand && !resultArea.getText().equals(shownResult);
-    }
+    /** Where the hand-edited Result is turned back into the document's text: heard off the FX thread (PERF-01). */
+    public static final String SAVE_SITE = "MergeViewerPane.resultText";
 
     /**
-     * Applies the result. The answer may come later (a closed document is read again off the FX thread first):
-     * true only when it was applied before this returns. A press while a save waits does nothing.
+     * Applies the result. Its text is worked out off the FX thread (PERF-01, Pauta 6.0.1): an edited Result is
+     * compared and diffed against the generated one there; the answer may come later still (a closed document is
+     * read again off the FX thread first). A press while a save is under way does nothing. {@code whenSaved} runs
+     * once the result has been applied.
      */
-    private boolean saveResult() {
+    private void saveResult(@Nullable Runnable whenSaved) {
         if (saving) {
-            return false;
+            return;
+        }
+        if (composing) {
+            afterComposed = () -> saveResult(whenSaved); // the Result for the last choice first
+            return;
         }
         saving = true;
+        String current = resultArea.getText();
+        String generated = generatedResult;
+        String shown = shownResult;
+        String separator = lineSeparator;
+        com.editora.perf.OffFx.then(SAVE_SITE, () -> resultTextForSave(current, generated, shown, separator), a -> {
+            if (!a.ok() || a.value() == null) {
+                saving = false;
+                return;
+            }
+            apply(a.value(), whenSaved);
+        });
+    }
+
+    /** Hands {@code text} to the save callback; true when it was applied before this returns. */
+    private boolean apply(String text, @Nullable Runnable whenSaved) {
         boolean[] applied = {false};
-        onSave.accept(resultTextForSave(), ok -> {
+        onSave.accept(text, ok -> {
             saving = false;
             if (ok) {
                 draftDirty = false;
                 applied[0] = true;
+                if (whenSaved != null) {
+                    whenSaved.run();
+                }
             }
         });
         return applied[0];
     }
 
-    private String resultTextForSave() {
-        String current = resultArea.getText();
+    /** Whether a save is under way (its text being worked out, or its answer awaited). */
+    boolean saving() {
+        return saving;
+    }
+
+    /** Pure: the text a Save applies, from what the Result area shows now. */
+    static String resultTextForSave(String current, String generatedResult, String shownResult, String lineSeparator) {
         if (current.equals(shownResult)) {
             // Not edited by hand: apply the generated text itself. The TextArea's copy has lost every control
             // character (form feed page separators, ESC, …), in regions no conflict touched.
@@ -422,9 +480,29 @@ public final class MergeViewerPane implements TabContent {
         return draftDirty ? resultArea.getText() : null;
     }
 
+    /** The quit's close question, which may wait: the text is worked out in place. */
     @Override
     public boolean saveBeforeClose() {
-        return saveResult();
+        if (saving) {
+            return false;
+        }
+        if (composing) { // the quit may wait: put together in place
+            resultGeneration++;
+            composing = false;
+            showResult(resultText(file, List.copyOf(choices), lineSeparator, finalNewline));
+        }
+        saving = true;
+        return apply(resultTextForSave(resultArea.getText(), generatedResult, shownResult, lineSeparator), null);
+    }
+
+    /** A tab's close question: the save goes on off the FX thread and {@code whenSaved} asks for the close again. */
+    @Override
+    public boolean saveBeforeClose(@Nullable Runnable whenSaved) {
+        if (whenSaved == null) {
+            return saveBeforeClose();
+        }
+        saveResult(whenSaved);
+        return false;
     }
 
     @Override

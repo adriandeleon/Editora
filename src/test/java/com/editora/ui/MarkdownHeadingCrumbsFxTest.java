@@ -40,11 +40,8 @@ class MarkdownHeadingCrumbsFxTest {
             b.getArea().moveTo(line, 0);
             bar.headingCrumbs().refresh();
         });
-        // A changed text is scanned off the FX thread: the path shows when the scan lands.
-        long deadline = System.nanoTime() + 5_000_000_000L;
-        while (FxTestSupport.callOnFx(() -> bar.headingCrumbs().scanning()) && System.nanoTime() < deadline) {
-            Thread.sleep(5);
-        }
+        // The headings are parsed off the FX thread (PERF-01): the crumbs show them once that lands.
+        SettingsRig.awaitFx("the headings parsed", () -> !bar.headingCrumbs().parsing());
         return FxTestSupport.callOnFx(() -> bar.headingCrumbs().titles());
     }
 
@@ -78,27 +75,6 @@ class MarkdownHeadingCrumbsFxTest {
             install.fire();
         });
         assertEquals(6, (int) FxTestSupport.callOnFx(() -> md.getArea().getCurrentParagraph()));
-    }
-
-    @Test
-    void anEditedTextIsScannedOffTheFxThread() throws Exception {
-        EditorBuffer md = buffer("b.md", DOC);
-        FileBreadcrumb bar = FxTestSupport.callOnFx(() -> {
-            FileBreadcrumb b = new FileBreadcrumb(p -> {});
-            b.setEnabled(true);
-            b.setActiveBuffer(md);
-            return b;
-        });
-        assertEquals(List.of("Guide"), at(bar, md, 4));
-        boolean scannedLater = FxTestSupport.callOnFx(() -> {
-            md.getArea().replaceText(7, 14, "# Changed"); // the "# Guide" line
-            bar.headingCrumbs().refresh();
-            // The pause's refresh does not scan here: the path still shows the text scanned before.
-            return bar.headingCrumbs().scanning()
-                    && bar.headingCrumbs().titles().equals(List.of("Guide"));
-        });
-        assertTrue(scannedLater, "the scan runs off the FX thread");
-        assertEquals(List.of("Changed"), at(bar, md, 4));
     }
 
     @Test

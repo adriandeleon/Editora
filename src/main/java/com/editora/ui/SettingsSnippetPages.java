@@ -117,7 +117,7 @@ final class SettingsSnippetPages {
                 new SnippetsEditor.Hooks(
                         w.keymapsPage::macroWarn,
                         this::confirmSnippetSave,
-                        SettingsSnippetPages::snippetBodyStyles,
+                        SettingsSnippetPages::highlightSnippetBodySoon,
                         SettingsSnippetPages::installEmacsKeys,
                         name -> w.askBeforeLoss(SettingsWindow.deleteEntryQuestion(name))));
         reloadSnippets = snippetsEditor::reload;
@@ -237,11 +237,9 @@ final class SettingsSnippetPages {
         // Modest preferred height so the page fits the window; GridPane Vgrow lets it expand when there's room.
         UiZoom.prefHeight(body, 180);
         installEmacsKeys(body); // basic Emacs caret movement in the settings scene
-        // Coloured once typing pauses, off the FX thread: a template body is a file (PERF-08, Pauta 6.0.1).
-        SnippetBodyHighlighter colours =
-                new SnippetBodyHighlighter(body, language::getText, SettingsSnippetPages::snippetBodyStyles);
+        body.plainTextChanges().subscribe(c -> highlightSnippetBodySoon(body, language.getText()));
         // Re-highlight when the template's language changes (even without a body edit).
-        language.textProperty().addListener((o, a, b) -> colours.languageChanged());
+        language.textProperty().addListener((o, a, b) -> highlightSnippetBodySoon(body, language.getText()));
 
         javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
         UiZoom.gaps(form, 8, 6);
@@ -639,39 +637,74 @@ final class SettingsSnippetPages {
         }
     }
 
-    /** Re-highlights a snippet/template body {@link CodeArea} for {@code languageName} (plain for global/unknown). */
+    /** The place a snippet or template body is tokenized, heard off the FX thread ({@code BlockingSites}). */
+    public static final String SNIPPET_HIGHLIGHT_SITE = "SettingsSnippetPages.highlight";
+
+    /** How long typing in a body must pause before it is highlighted again. */
+    static final int HIGHLIGHT_PAUSE_MS = 150;
+
+    /** Where a body keeps its pending highlight: the typing pause and the latest ask. */
+    private static final Object HIGHLIGHT_STATE = new Object();
+
+    /** One body's highlighting: the pause typing waits for, and the generation of the latest ask. */
+    private static final class BodyHighlight {
+        final javafx.animation.PauseTransition pause =
+                new javafx.animation.PauseTransition(javafx.util.Duration.millis(HIGHLIGHT_PAUSE_MS));
+        long generation;
+    }
+
+    private static BodyHighlight state(CodeArea area) {
+        return (BodyHighlight) area.getProperties().computeIfAbsent(HIGHLIGHT_STATE, k -> new BodyHighlight());
+    }
+
+    /** As {@link #highlightSnippetBody}, once typing in the body pauses: for the body's change listeners. */
+    static void highlightSnippetBodySoon(CodeArea area, String languageName) {
+        BodyHighlight state = state(area);
+        state.generation++; // an answer still under way is for text that is changing
+        state.pause.setOnFinished(e -> highlightSnippetBody(area, languageName));
+        state.pause.playFromStart();
+    }
+
+    /**
+     * Re-highlights a snippet/template body {@link CodeArea} for {@code languageName} (plain for global/unknown).
+     * The grammar is loaded and the text tokenized off the FX thread on a snapshot (PERF-01, Pauta 6.0.1); the styles
+     * land when the body still holds that text and no later ask superseded this one.
+     */
     static void highlightSnippetBody(CodeArea area, String languageName) {
+        BodyHighlight state = state(area);
+        state.pause.stop();
+        long mine = ++state.generation;
         String text = area.getText();
-        org.fxmisc.richtext.model.StyleSpans<java.util.Collection<String>> styles;
-        try {
-            styles = snippetBodyStyles(text, languageName);
-        } catch (RuntimeException ignored) {
-            return; // Tokenizer hiccup: keep the last styling rather than crash the editor.
-        }
-        if (styles == null) {
+        boolean styled = languageName != null && !languageName.isBlank() && !"global".equals(languageName);
+        if (!styled || !GrammarRegistry.shared().hasGrammarForLanguage(languageName)) {
             if (!text.isEmpty()) {
                 area.clearStyle(0, text.length());
             }
             return;
         }
-        area.setStyleSpans(0, styles);
-    }
-
-    /**
-     * The colours of a snippet/template body for {@code languageName}, or null when it is shown plain (global, or a
-     * language with no grammar). Thread-safe: the body editors work it out off the FX thread.
-     */
-    static org.fxmisc.richtext.model.@Nullable StyleSpans<java.util.Collection<String>> snippetBodyStyles(
-            String text, @Nullable String languageName) {
-        IGrammar g = null;
-        if (languageName != null && !languageName.isBlank() && !"global".equals(languageName)) {
-            try {
-                g = GrammarRegistry.shared().forLanguageName(languageName);
-            } catch (RuntimeException ignored) {
-                // No grammar for this language: leave the body unstyled.
-            }
-        }
-        return g == null ? null : TextMateHighlighter.compute(text, g);
+        com.editora.perf.OffFx.then(
+                SNIPPET_HIGHLIGHT_SITE,
+                () -> {
+                    IGrammar g = GrammarRegistry.shared().forLanguageName(languageName);
+                    return g == null ? null : TextMateHighlighter.compute(text, g);
+                },
+                answer -> {
+                    org.fxmisc.richtext.model.StyleSpans<java.util.Collection<String>> spans = answer.value();
+                    if (mine != state.generation || area.getLength() != text.length()) {
+                        return; // a later ask (or an edit) supersedes it
+                    }
+                    if (spans == null) {
+                        if (!text.isEmpty()) {
+                            area.clearStyle(0, text.length());
+                        }
+                        return;
+                    }
+                    try {
+                        area.setStyleSpans(0, spans);
+                    } catch (RuntimeException ignored) {
+                        // Tokenizer hiccup: keep the last styling rather than crash the editor.
+                    }
+                });
     }
 
     /** Installs basic Emacs caret movement on a settings-scene {@link CodeArea} (no global KeyDispatcher there).
