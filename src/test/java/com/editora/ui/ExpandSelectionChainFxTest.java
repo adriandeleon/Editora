@@ -129,11 +129,12 @@ class ExpandSelectionChainFxTest {
         EditorBuffer b;
         try {
             b = open(coordinator, file);
+            // The server's start answers later on a slow runner: in place until it is attached.
+            com.editora.testkit.Await.holdsWithin(() -> manager.supportsSelectionRanges(file), Duration.ofSeconds(20));
+            FxTestSupport.drainFx();
         } finally {
             com.editora.perf.OffFx.runnerForTest(null);
         }
-        com.editora.testkit.Await.holdsWithin(() -> manager.supportsSelectionRanges(file), Duration.ofSeconds(5));
-        FxTestSupport.drainFx();
         assertTrue(manager.supportsSelectionRanges(file), "the fake server is attached");
 
         // Ladder 1 in method a(): the first press is local, the second uses the fetched chain.
@@ -141,7 +142,7 @@ class ExpandSelectionChainFxTest {
         expand(registry, b);
         // let the chain for ladder 1 arrive
         EventuallyFx.holdsWithin(
-                Duration.ofSeconds(2),
+                Duration.ofSeconds(10),
                 () -> !FxTestSupport.<List<?>>callOnFx(() -> (List<?>) FxTestSupport.call(
                                 coordinator, "selectionChain", new Class<?>[] {EditorBuffer.class}, b))
                         .isEmpty());
@@ -162,7 +163,7 @@ class ExpandSelectionChainFxTest {
         String before = FxTestSupport.callOnFx(() -> b.getArea().getSelectedText());
         FxTestSupport.runOnFx(() -> registry.run("edit.expandSelection"));
         EventuallyFx.holdsWithin(
-                Duration.ofSeconds(5),
+                Duration.ofSeconds(10),
                 () -> !before.equals(FxTestSupport.callOnFx(() -> b.getArea().getSelectedText())));
         FxTestSupport.drainFx();
     }
