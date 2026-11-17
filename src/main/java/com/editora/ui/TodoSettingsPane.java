@@ -244,6 +244,7 @@ final class TodoSettingsPane {
 
     private static void addPartColorRow(GridPane grid, int row, String label, ColorPicker picker) {
         Label l = new Label(label);
+        l.setLabelFor(picker);
         grid.add(l, 0, row);
         grid.add(picker, 1, row);
         GridPane.setValignment(l, VPos.CENTER);

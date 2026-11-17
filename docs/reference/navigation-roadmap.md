@@ -1,22 +1,24 @@
 # Code-navigation roadmap
 
-The plan for making Editora a first-class code-navigation tool. This is a *roadmap*, not a
-subsystem reference: it records what shipped, what was decided against, and what is left.
+The plan that made Editora a first-class code-navigation tool, kept as a record: what shipped, in
+which order and why, and what was decided against. What is in the tree, and the decisions that still
+hold, are in [subsystems/navigation.md](../subsystems/navigation.md); the open items are in
+[`TODO.md`](../../TODO.md).
 
 **Phases 1–5 have shipped.** What they built is documented in
-[subsystems/navigation.md](subsystems/navigation.md) and, terser, in the
+[subsystems/navigation.md](../subsystems/navigation.md) and, terser, in the
 `search/FuzzyMatch` + `index/` + `search/SearchEverywhere` entry of the
-[architecture catalog](reference/architecture-catalog.md).
+[architecture catalog](architecture-catalog.md).
 This file keeps only the sequencing, the rejected alternatives, and the items still open.
 
 ## Status
 
 | Phase | State | Where it lives now |
 | --- | --- | --- |
-| 1 — ranked matcher | **shipped** | [subsystems/navigation.md § Ranking](subsystems/navigation.md#ranking--fuzzymatch) |
-| 2 — symbol index | **shipped** (lazy build, incremental on save) | [§ The symbol index](subsystems/navigation.md#the-symbol-index) |
-| 3 — Search Everywhere | **shipped** | [§ Search Everywhere](subsystems/navigation.md#search-everywhere) |
-| 4 — flow | **shipped** | [§ Flow](subsystems/navigation.md#flow--not-losing-your-place) |
+| 1 — ranked matcher | **shipped** | [subsystems/navigation.md § Ranking](../subsystems/navigation.md#ranking--fuzzymatch) |
+| 2 — symbol index | **shipped** (lazy build, incremental on save) | [§ The symbol index](../subsystems/navigation.md#the-symbol-index) |
+| 3 — Search Everywhere | **shipped** | [§ Search Everywhere](../subsystems/navigation.md#search-everywhere) |
+| 4 — flow | **shipped** | [§ Flow](../subsystems/navigation.md#flow--not-losing-your-place) |
 | 5 — polish | shipped bar the code lens; symbol breadcrumb dropped as redundant | below |
 
 ## The thesis
@@ -104,7 +106,7 @@ corpus would have been a worse product than the five separate pickers it replace
 
 ## What any further work here must follow
 
-The standing rules in [conventions.md](conventions.md) apply — no exceptions for this work:
+The standing rules in [conventions.md](../conventions.md) apply — no exceptions for this work:
 
 - Every user-facing action is a registered `Command`, discoverable in the palette.
 - Every setting gets a palette command as well as a Settings control.

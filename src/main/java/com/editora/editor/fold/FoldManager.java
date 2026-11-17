@@ -1886,19 +1886,16 @@ public final class FoldManager {
                 : bulbClass.apply(idx);
         if (bulb != null) {
             Node marker = bulbMarker(bulb);
-            StackPane slot = new StackPane(marker);
+            final int bulbIdx = idx;
+            // A button to a screen reader too (it was announced as nothing, EV4); from the keyboard, the code
+            // actions command opens the same list.
+            com.editora.editor.PressablePane slot =
+                    new com.editora.editor.PressablePane(() -> onBulb.accept(bulbIdx), false);
+            slot.getChildren().add(marker);
             slot.setCursor(Cursor.HAND);
             LazyTooltip.install(slot, bulbTooltip::get, null);
-            slot.setAccessibleRole(javafx.scene.AccessibleRole.BUTTON); // it was announced as nothing (EV4)
             slot.setAccessibleText(bulbTooltip.get());
             ownPointer(slot);
-            final int bulbIdx = idx;
-            slot.setOnMouseClicked(e -> {
-                if (e.getButton() == MouseButton.PRIMARY) {
-                    onBulb.accept(bulbIdx);
-                    e.consume();
-                }
-            });
             bookmarkSlot = slot;
         } else if (isBookmarked.test(idx)) {
             bookmarkSlot = new StackPane(bookmarkMarker());

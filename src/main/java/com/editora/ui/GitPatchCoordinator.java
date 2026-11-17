@@ -221,6 +221,7 @@ final class GitPatchCoordinator {
         area.setPrefColumnCount(52);
         area.setPrefRowCount(Math.min(14, (int) body.lines().count() + 4));
         area.getStyleClass().add("git-error-text");
+        area.setAccessibleText(alert.getHeaderText()); // the details of what the header says failed
         alert.getDialogPane().setContent(area);
         return Dialogs.showAndWait(alert).orElse(cancel) == retry;
     }

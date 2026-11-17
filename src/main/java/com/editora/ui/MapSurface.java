@@ -2202,6 +2202,7 @@ final class MapSurface extends Region {
         TextField filter = new TextField();
         filter.getStyleClass().add("project-map-column-filter");
         filter.setPromptText(tr("project.map.column.filter"));
+        filter.setAccessibleText(tr("project.map.column.filter"));
         filter.setAccessibleHelp(tr("project.map.column.filterHelp"));
         String query = columnQueries.get(id);
         if (query != null) {

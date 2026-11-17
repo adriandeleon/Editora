@@ -123,6 +123,20 @@ A control that works with the mouse but cannot be reached, seen or named from th
   highlight, so `PickerKeys.navigate` (and a filter that changes the row in front) calls
   `PickerKeys.announce(list)`, which tells a screen reader the list's item changed. A row drawn from nodes
   sets its accessible text, and a row that cannot run says so there with the reason.
+- **Every control has a name.** A field, list, tree or box with no text of its own gets one: a `Label` whose
+  `labelFor` is the control (`ControlNames.label(text, control)`; a Settings row title and an `OverlayInput`
+  form's captions, through `FormLabels.link`, do it themselves), or `setAccessibleText` with the string the UI
+  already shows (a filter's prompt, the tool window's title). A list or tree row drawn from nodes is set with
+  `setGraphic(CellNames.read(row))`, so it reads as the words it shows. `NamedControlsSweepFxTest` runs every
+  command (as `CommandSweepFxTest` does), opens every tool window and Settings page and reads the menu bar,
+  and fails on a control, a filled row or a menu row with no name (ACC-01, Pauta 6.0.1).
+- **A label or pane that acts as a button is a `PressableLabel`, `PressableBox` or `PressablePane`**
+  (`editor/Pressable`): the `BUTTON` role, a screen reader's `FIRE`, Enter or Space, and a primary click all run
+  its action; pass `tabStop` false for a gutter mark a command reaches from the keyboard. A status-bar segment
+  is a `StatusSegment` (one of these); the echo line is one too, and a new message is announced to the screen
+  reader (`StatusSegment.announce`). `ClickHandlersGuardTest` lists every other click handler in the source in
+  `click-handlers.tsv` with why it needs no path of its own (a `Control`, the command that does the same, or no
+  action at all): a new one fails until it is a pressable or has its line (ACC-02).
 - **Two commands move between the regions of the window**, `window.other` and `window.otherReverse` (the
   editor, then each open tool window), and every keymap binds both (`KeymapsTest`).
 - **Colour**: text people must read uses `-color-fg-muted` or stronger (`-color-fg-subtle` is ~3:1 —
@@ -306,10 +320,10 @@ All Java is auto-formatted with [Palantir Java Format](https://github.com/palant
 - **Format on JDK 25.** Spotless runs Palantir inside Maven's own JVM, and Palantir reads a javac
   internal (`JCCompilationUnit.endPositions`) that JDK 27 removed
   ([JDK-8372948](https://bugs.openjdk.org/browse/JDK-8372948)); on JDK 27 every file fails with a
-  `NoSuchFieldError`. The repo's `.sdkmanrc` pins JDK 25 (`sdk env`), and on JDK 26+ the
-  `formatter-needs-jdk25` profile fails `verify` early with that explanation unless
-  `-Dspotless.check.skip=true` is passed (as CI's JDK 27 lane did; that lane is disabled for now). `mvn spotless:apply` is a direct
-  goal that bypasses that check, so run it on JDK 25 yourself. Drop the pin and profile once a Palantir
+  `NoSuchFieldError`. The repo's `.sdkmanrc` pins JDK 25 (`sdk env`). A newer JDK still builds the app
+  (Pauta PLAT-01): on JDK 26+ the `formatter-needs-jdk25` profile turns the format check off, so `verify`
+  passes without it, and CI's format check runs on JDK 25. `mvn spotless:apply` is a direct goal that the
+  profile does not reach, so run it on JDK 25 yourself. Drop the pin and profile once a Palantir
   release fixes both [#1785](https://github.com/palantir/palantir-java-format/issues/1785) (this field,
   fix in PR [#1786](https://github.com/palantir/palantir-java-format/pull/1786)) and
   [#1799](https://github.com/palantir/palantir-java-format/issues/1799) (JDK 27 also breaks formatting
@@ -413,8 +427,13 @@ open the pull request and move on without waiting for CI
 ## Docs in the same PR
 
 A feature PR updates `CHANGELOG.md` and `TODO.md` in the same change, not as a follow-up.
-User-facing documentation lives in the separate website repo; **this `docs/` folder is for
-developers**. `README.md` is a short landing page that points at the website: it does not carry a
+A changelog entry goes under `## [Unreleased]`, in `### Added`, `### Changed`, `### Fixed` or
+`### Removed` (`### Deprecated` and `### Security` too, and no headings of our own), and opens with a bold
+one-line summary written for users (`- **…**`); `ChangelogFormatTest` checks the shape (REPO-02, Pauta
+6.0.1). User-facing documentation lives in the separate website repo; **this `docs/` folder is for
+developers**: no page here tells a user how to install or use something, even in one section (DOCS-02).
+A guide explains what is true now; a dated review, measurement or plan goes under
+[`reference/`](reference/README.md) or with its evidence in `artifacts/` (DOCS-14). `README.md` is a short landing page that points at the website: it does not carry a
 feature catalog, so change it only when its highlights, install, build, command-line or
 configuration facts change. Keep `AGENTS.md` concise and operational. Put durable explanations in the
 focused guides and preserve established implementation detail in the

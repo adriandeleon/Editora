@@ -74,6 +74,7 @@ public final class DebugLogWindow {
         area.setEditable(false);
         area.setWrapText(false);
         area.getStyleClass().add("debug-log-area");
+        area.setAccessibleText(tr("debuglog.title"));
         area.setPromptText(tr("debuglog.empty"));
         VBox.setVgrow(area, Priority.ALWAYS);
 

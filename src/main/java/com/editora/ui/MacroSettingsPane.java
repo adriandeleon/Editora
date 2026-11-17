@@ -125,6 +125,8 @@ final class MacroSettingsPane extends HBox {
         });
 
         UiZoom.prefHeight(stepList, 190);
+        stepList.setAccessibleText(tr("settings.macro.steps"));
+        list.setAccessibleText(tr("settings.cat.macros"));
         stepList.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(MacroStep s, boolean empty) {
@@ -299,6 +301,7 @@ final class MacroSettingsPane extends HBox {
     private static void formRow(javafx.scene.layout.GridPane form, int row, String text, Node field) {
         Label l = new Label(text);
         l.setMinWidth(Region.USE_PREF_SIZE);
+        l.setLabelFor(SettingsWindow.labelTarget(field));
         form.add(l, 0, row);
         form.add(field, 1, row);
     }
@@ -769,7 +772,9 @@ final class MacroSettingsPane extends HBox {
         FilteredList<SettingsWindow.Shortcut> shown = new FilteredList<>(all);
         TextField filter = new TextField();
         filter.setPromptText(tr("settings.macro.chooseCommand.filter"));
+        filter.setAccessibleText(tr("settings.macro.chooseCommand.filter"));
         ListView<SettingsWindow.Shortcut> commands = new ListView<>(shown);
+        commands.setAccessibleText(tr("settings.macro.chooseCommand.filter"));
         UiZoom.prefSize(commands, 520, 360);
         commands.setCellFactory(lv -> new ListCell<>() {
             @Override

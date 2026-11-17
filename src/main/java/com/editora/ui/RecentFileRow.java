@@ -68,6 +68,9 @@ final class RecentFileRow extends Region {
             getChildren().add(pill);
         }
         getChildren().add(remove);
+        // A menu reads a row drawn from nodes by its accessible text: the file, then its project (ACC-01).
+        setAccessibleText(
+                pill == null || pill.getText() == null ? name.getText() : name.getText() + " " + pill.getText());
     }
 
     @Override

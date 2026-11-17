@@ -108,6 +108,7 @@ public final class DeploymentsWindow {
         UiZoom.prefWidth(list, 200);
         UiZoom.minWidth(list, 160);
         list.setId("deployments-list");
+        list.setAccessibleText(tr("deploy.window.title"));
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(Deployment value, boolean empty) {
@@ -169,7 +170,8 @@ public final class DeploymentsWindow {
         CheckBox uploadOnSave = new CheckBox(tr("deploy.field.uploadOnSave"));
         uploadOnSave.setId("deploy-upload-on-save");
 
-        HBox hostRow = UiZoom.spacing(new HBox(hostField, new Label(tr("remote.port")), port, fromSite), 6);
+        HBox hostRow =
+                UiZoom.spacing(new HBox(hostField, ControlNames.label(tr("remote.port"), port), port, fromSite), 6);
         hostRow.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(hostField, Priority.ALWAYS);
         HBox keyRow = UiZoom.spacing(new HBox(keyPath, keyBrowse), 6);
@@ -416,6 +418,7 @@ public final class DeploymentsWindow {
     private static void row(GridPane form, int row, String labelKey, javafx.scene.Node control) {
         Label label = new Label(tr(labelKey));
         label.setMinWidth(Region.USE_PREF_SIZE);
+        label.setLabelFor(SettingsWindow.labelTarget(control));
         form.add(label, 0, row);
         form.add(control, 1, row);
         GridPane.setHgrow(control, Priority.ALWAYS);

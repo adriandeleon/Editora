@@ -18,9 +18,11 @@ Actions provider; the independently selected ACP chat agent does not generate th
 ## Codex
 
 The Codex provider uses `Settings.codexAgentCommand` (default `codex-acp`) and the adapter's
-existing login. Install `npm install -g @agentclientprotocol/codex-acp @openai/codex` and run
-`codex login`; plain `codex` starts a terminal UI and is not an ACP server. The adapter is
-maintained at [agentclientprotocol/codex-acp](https://github.com/agentclientprotocol/codex-acp).
+existing login. Editora does not install the adapter: it is the npm package
+`@agentclientprotocol/codex-acp`, beside `@openai/codex` and its `codex login` (the user guide's
+[AI page](https://editora-project.dev/docs/ai) says how). Plain `codex` starts a terminal UI and is
+not an ACP server. The adapter is maintained at
+[agentclientprotocol/codex-acp](https://github.com/agentclientprotocol/codex-acp).
 
 `CodexAiClient` creates an independent ACP process/session for each action in a temporary
 working directory. It selects `read-only` before prompting, refuses client filesystem requests
@@ -47,9 +49,10 @@ never embedded in argv or the generated JSON. Remote cleartext credentials are r
 matching the direct AI client’s guard.
 
 The model identifier is required for the agent preset because OpenCode needs a model
-catalog entry. Configure it under AI Actions with the LM Studio / Bionic provider selected;
-AI actions need not be enabled. Changing the model/endpoint/token takes effect on the next
-agent session. The preset’s command override is independent of the ordinary OpenCode agent.
+catalog entry. The preset reads it from the LM Studio / Bionic provider's AI Actions fields,
+whether or not AI actions are enabled, when a session starts, so a changed model, endpoint or
+token applies from the next agent session. The preset’s command override is independent of the
+ordinary OpenCode agent.
 
 Bionic supplies local inference here; OpenCode supplies the coding-agent loop and ACP.
 There is no dependency on a Bionic ACP command or its cloud subscription. Reference protocols:

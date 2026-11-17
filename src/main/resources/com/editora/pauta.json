@@ -17,36 +17,12 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1554"
     },
     {
-      "rule": "PLAT-01",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/platform/#plat-01",
-      "kind": "pending",
-      "reason": "Building Editora from source on a JDK newer than 25 stops at the format check unless that check is skipped.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1555"
-    },
-    {
       "rule": "PLAT-14",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/platform/#plat-14",
       "kind": "pending",
       "reason": "The snippets file is edited as text, to keep your comments, rather than read into typed data.",
       "link": "https://github.com/adriandeleon/Editora/issues/1555"
-    },
-    {
-      "rule": "REPO-02",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/repository/#repo-02",
-      "kind": "pending",
-      "reason": "Some older changelog entries do not open with a one-line summary, and a few sections use headings of their own.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1556"
-    },
-    {
-      "rule": "DOCS-02",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/documentation/#docs-02",
-      "kind": "pending",
-      "reason": "The plugin authors' guide in the repository also explains installing and troubleshooting plugins, which belongs in the user guide on the website.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1557"
     },
     {
       "rule": "DOCS-04",
@@ -62,14 +38,6 @@
       "url": "https://pauta-project.dev/6.0.1/documentation/#docs-05",
       "kind": "pending",
       "reason": "The notes on a GitHub release are a list of commits rather than notes written for users.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1557"
-    },
-    {
-      "rule": "DOCS-14",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/documentation/#docs-14",
-      "kind": "pending",
-      "reason": "One developer guide in the repository is a dated review report rather than a lasting explanation.",
       "link": "https://github.com/adriandeleon/Editora/issues/1557"
     },
     {
@@ -119,22 +87,6 @@
       "kind": "pending",
       "reason": "The Markdown preview keeps the nodes of every block of the document, and a few other views build a row for each item of a list or rebuild a whole document on each key.",
       "link": "https://github.com/adriandeleon/Editora/issues/1559"
-    },
-    {
-      "rule": "ACC-01",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-01",
-      "kind": "pending",
-      "reason": "Not every control has a name for screen readers, and no test sweeps every window for them.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1561"
-    },
-    {
-      "rule": "ACC-02",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-02",
-      "kind": "pending",
-      "reason": "Clickable items in the status bar cannot be activated by a screen reader, and messages there are not announced.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1561"
     },
     {
       "rule": "ACC-07",
