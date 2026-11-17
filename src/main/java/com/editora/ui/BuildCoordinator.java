@@ -433,6 +433,9 @@ final class BuildCoordinator {
         }
         Path searchFrom = pinnedRoot != null ? pinnedRoot : context;
         boolean scanProjects = project != null && !project.equals(scannedProject);
+        boolean windows = isWindows();
+        String command = host.projectScope().buildCommand(tool, host.settings());
+        String projectCommand = BuildTrust.gates(tool) ? host.projectScope().projectBuildCommand(tool) : "";
         BuildDetection.execute(() -> {
             // filesOnly: every build marker is a file (pom.xml/package.json/go.mod/…), so a directory
             // merely named like one must not root the tool there (it would then fail to parse) — #451.
@@ -452,6 +455,9 @@ final class BuildCoordinator {
                         }
                     }
                 });
+            }
+            if (root != null) {
+                warmTrust(root, project, windows, command, projectCommand); // for the tree header, the Settings row
             }
             BuildDetection.Stamp stamp = BuildDetection.Stamp.of(root, tool.markers());
             if (stamp.equals(known)) {
@@ -502,6 +508,34 @@ final class BuildCoordinator {
                 }
             });
         });
+    }
+
+    /**
+     * Looks, off the FX thread, at what the FX thread then asks about {@code root}: its wrapper, its executable and,
+     * for a tool the trust gate covers, what the question would list ({@code BuildTool}'s and {@code BuildTrust}'s
+     * memory then answers the tasks tree's header, the Settings row and a build before a launch).
+     */
+    private void warmTrust(Path root, @Nullable Path project, boolean windows, String command, String projectCommand) {
+        Path boundary = project != null
+                        && root.toAbsolutePath()
+                                .normalize()
+                                .startsWith(project.toAbsolutePath().normalize())
+                ? project.toAbsolutePath().normalize()
+                : root;
+        Path wrapper = tool.repoWrapper(root, boundary, windows);
+        tool.executable(root, boundary, windows, command);
+        if (BuildTrust.gates(tool)) {
+            BuildTrust.describe(tool, root, wrapper, projectCommand);
+        }
+    }
+
+    /**
+     * Warms {@link #trustedExecutable}'s lookups for {@code root} on this (a Run or Debug plan's) thread: the
+     * settings' strings are read here, the disk is looked at here, and the FX thread then answers from memory.
+     */
+    void warmTrustedExecutable(Path root, @Nullable Path project) {
+        String projectCommand = BuildTrust.gates(tool) ? host.projectScope().projectBuildCommand(tool) : "";
+        warmTrust(root, project, isWindows(), host.projectScope().buildCommand(tool, host.settings()), projectCommand);
     }
 
     /** How far below the project root build markers are looked for, and how many folders at most. */
@@ -627,10 +661,7 @@ final class BuildCoordinator {
         if (busy(String.join(" ", taskArgs), () -> runTask(taskArgs, toggleArgs))) {
             return;
         }
-        List<String> argv = new ArrayList<>(executable(root));
-        argv.addAll(taskArgs);
-        argv.addAll(toggleArgs);
-        launch(root, argv, taskArgs, toggleArgs);
+        plan(root, false, concat(taskArgs, toggleArgs), taskArgs, toggleArgs);
     }
 
     /**
@@ -651,14 +682,7 @@ final class BuildCoordinator {
         if (busy(String.join(" ", taskArgs), () -> runTaskAt(root, taskArgs, toggleArgs))) {
             return;
         }
-        if (!Files.isDirectory(root)) {
-            host.setStatus(tr("status.build.notDetected", tool.displayName()));
-            return;
-        }
-        List<String> argv = new ArrayList<>(executable(root));
-        argv.addAll(taskArgs);
-        argv.addAll(toggleArgs);
-        launch(root, argv, taskArgs, toggleArgs);
+        plan(root, true, concat(taskArgs, toggleArgs), taskArgs, toggleArgs);
     }
 
     /** Prompts for a freeform task string and runs it verbatim (no toggle args — type the modifier flag
@@ -716,7 +740,7 @@ final class BuildCoordinator {
             return;
         }
         Path at = root == null ? markerRoot : root;
-        if (at == null || !Files.isDirectory(at)) {
+        if (at == null) {
             host.setStatus(tr("status.build.notDetected", tool.displayName()));
             return;
         }
@@ -726,9 +750,7 @@ final class BuildCoordinator {
         }
         lastCustomText = text;
         ops.rememberCustom(tool.id(), text);
-        List<String> argv = new ArrayList<>(executable(at));
-        argv.addAll(tokens);
-        launch(at, argv, tokens, List.of());
+        plan(at, true, tokens, tokens, List.of());
     }
 
     /** Re-runs the most recent invocation (same root + task + toggle args). */
@@ -740,10 +762,123 @@ final class BuildCoordinator {
         if (busy(String.join(" ", lastTaskArgs), this::rerunLast)) {
             return;
         }
-        List<String> argv = new ArrayList<>(executable(lastRoot));
-        argv.addAll(lastTaskArgs);
-        argv.addAll(lastToggleArgs);
-        launch(lastRoot, argv, lastTaskArgs, lastToggleArgs);
+        plan(lastRoot, false, concat(lastTaskArgs, lastToggleArgs), lastTaskArgs, lastToggleArgs);
+    }
+
+    private static List<String> concat(List<String> a, List<String> b) {
+        List<String> out = new ArrayList<>(a);
+        out.addAll(b);
+        return out;
+    }
+
+    /**
+     * Where a build's plan is looked up. TEST SEAM — a test that drives the coordinator directly may plan in
+     * place ({@code Runnable::run}), and then the plan lands at once.
+     */
+    java.util.concurrent.Executor planner = com.editora.process.BlockingTasks.named("build-plan");
+
+    /** A plan is being looked up: a second press waits for it rather than looking again. */
+    private boolean planning;
+
+    /**
+     * What a build needs from the disk before it starts (PERF-01, Pauta 6.0.1): whether its folder is there, the
+     * argv prefix (the wrapper is a file in the folder or above it), the folder whose trust it needs and what the
+     * trust prompt would list (it reads the pom), and the selected JDK's environment over the augmented PATH.
+     */
+    private record Plan(
+            boolean folderMissing,
+            List<String> executable,
+            @Nullable Path wrapper,
+            @Nullable Path trustRoot,
+            BuildTrust.@Nullable Summary summary,
+            java.util.@Nullable Map<String, String> jdkEnvironment) {}
+
+    /**
+     * Looks up the build's plan on {@code build-plan} and launches it on the FX thread: {@code extraArgs} follow
+     * the executable. What lives in memory (the settings, the project's command, the open project) is read here
+     * first. A refusal or a failure is said on the FX thread as before.
+     */
+    private void plan(
+            Path root, boolean checkFolder, List<String> extraArgs, List<String> taskArgs, List<String> toggleArgs) {
+        if (planning) {
+            host.setStatus(tr("status.build.busy", tool.displayName()));
+            return;
+        }
+        planning = true;
+        String hostTool = com.editora.process.ExecTargets.remoteTool(root, tool.id());
+        String command = hostTool != null ? hostTool : host.projectScope().buildCommand(tool, host.settings());
+        Path boundary = wrapperBoundary(root);
+        boolean windows = isWindows();
+        boolean gated = BuildTrust.gates(tool);
+        String projectCommand = gated ? host.projectScope().projectBuildCommand(tool) : "";
+        boolean localJdk = onSettingsJdk() && com.editora.process.ExecTargets.runsHere(root);
+        String jdkHome = host.settings().getMavenJdkHome();
+        planner.execute(() -> {
+            Plan plan;
+            RuntimeException failure = null;
+            com.editora.perf.BlockingSites.enter("BuildCoordinator.plan");
+            try {
+                if (checkFolder && !Files.isDirectory(root)) {
+                    plan = new Plan(true, List.of(), null, null, null, null);
+                } else {
+                    List<String> exe = tool.executable(root, boundary, windows, command);
+                    Path wrapper = gated ? tool.repoWrapper(root, boundary, windows) : null;
+                    Path trustRoot = wrapper != null ? wrapper.getParent() : boundary;
+                    BuildTrust.Summary summary =
+                            gated ? BuildTrust.describe(tool, root, wrapper, projectCommand) : null;
+                    java.util.Map<String, String> jdkEnv = localJdk
+                            ? com.editora.run.JdkToolchain.environment(
+                                    jdkHome, com.editora.process.ProcessRunner.augmentedPath())
+                            : null;
+                    plan = new Plan(false, exe, wrapper, trustRoot, summary, jdkEnv);
+                }
+            } catch (RuntimeException e) {
+                plan = null;
+                failure = e;
+            }
+            Plan planned = plan;
+            RuntimeException failed = failure;
+            onFx(() -> {
+                planning = false;
+                if (failed != null) {
+                    host.setStatus(tr("status.build.notDetected", tool.displayName()));
+                    java.util.logging.Logger.getLogger(BuildCoordinator.class.getName())
+                            .log(java.util.logging.Level.WARNING, "build plan failed", failed);
+                    return;
+                }
+                if (planned == null || planned.folderMissing()) {
+                    host.setStatus(tr("status.build.notDetected", tool.displayName()));
+                    return;
+                }
+                if (service.isRunning()) {
+                    host.setStatus(tr("status.build.busy", tool.displayName()));
+                    return;
+                }
+                List<String> argv = new ArrayList<>(planned.executable());
+                argv.addAll(extraArgs);
+                if (!allowRun(root, planned)) {
+                    return;
+                }
+                launchAllowed(root, argv, taskArgs, toggleArgs, planned.jdkEnvironment());
+            });
+        });
+    }
+
+    /** {@code action} now when this is the FX thread (a plan made in place), else on it. */
+    private static void onFx(Runnable action) {
+        if (Platform.isFxApplicationThread()) {
+            action.run();
+        } else {
+            Platform.runLater(action);
+        }
+    }
+
+    /** Whether the build runs on the JDK chosen in Settings, as Run does (Gradle picks its own). */
+    private boolean onSettingsJdk() {
+        return tool == BuildTool.MAVEN
+                || tool == BuildTool.SBT
+                || tool == BuildTool.MILL
+                || tool == BuildTool.SCALA_CLI;
     }
 
     /** The launch argv prefix: the project wrapper when present, else the Settings override, else the tool's
@@ -810,6 +945,21 @@ final class BuildCoordinator {
         // which is no part of what trusting enables — and the project's, which trusting would apply, is hidden.
         BuildTrust.Summary summary =
                 BuildTrust.describe(tool, root, wrapper, host.projectScope().projectBuildCommand(tool));
+        return askTrust(trustRoot, summary);
+    }
+
+    /** {@link #allowRun(Path)} from a {@link Plan}: what it needed from the disk was looked up off the FX thread. */
+    private boolean allowRun(Path root, Plan plan) {
+        Path trustRoot = plan.trustRoot();
+        BuildTrust.Summary summary = plan.summary();
+        if (!BuildTrust.gates(tool) || trustRoot == null || summary == null || ops.isTrusted(trustRoot)) {
+            return true;
+        }
+        return askTrust(trustRoot, summary);
+    }
+
+    /** Asks whether {@code trustRoot} may run its build, remembering a yes; a no says so and runs nothing. */
+    private boolean askTrust(@Nullable Path trustRoot, BuildTrust.Summary summary) {
         if (!ops.confirmTrust(trustRoot, summary)) {
             host.setStatus(tr("status.build.untrusted", tool.displayName()));
             return false;
@@ -821,21 +971,24 @@ final class BuildCoordinator {
         return true;
     }
 
-    private void launch(Path root, List<String> argv, List<String> taskArgs, List<String> toggleArgs) {
-        if (!allowRun(root)) {
-            return;
-        }
+    /** Launches a build whose trust was settled ({@link #plan}); {@code jdkEnvironment} as the plan found it. */
+    private void launchAllowed(
+            Path root,
+            List<String> argv,
+            List<String> taskArgs,
+            List<String> toggleArgs,
+            java.util.@Nullable Map<String, String> jdkEnvironment) {
         if (tool == BuildTool.NPM) {
             // npm runs on the Node.js Run File would pick here (.nvmrc, the setting, PATH): its folder goes first
             // on PATH, and the npm beside it runs (review C101). Which Node is a disk question: planned off FX.
             NpmRunSupport.prepare(root, ops.projectRoot(), host.settings().getNodePath(), argv, npm -> {
                 if (!isRunning()) {
-                    launchNow(root, npm.argv(), taskArgs, toggleArgs, npm);
+                    launchNow(root, npm.argv(), taskArgs, toggleArgs, npm, null);
                 }
             });
             return;
         }
-        launchNow(root, argv, taskArgs, toggleArgs, null);
+        launchNow(root, argv, taskArgs, toggleArgs, null, jdkEnvironment);
     }
 
     private void launchNow(
@@ -843,7 +996,8 @@ final class BuildCoordinator {
             List<String> argv,
             List<String> taskArgs,
             List<String> toggleArgs,
-            com.editora.run.@Nullable NpmLaunch npm) {
+            com.editora.run.@Nullable NpmLaunch npm,
+            java.util.@Nullable Map<String, String> jdkEnvironment) {
         lastRoot = root;
         lastTaskArgs = taskArgs;
         lastToggleArgs = toggleArgs;
@@ -882,19 +1036,18 @@ final class BuildCoordinator {
         host.setStatus(tr("status.build.startedIn", runName, label, String.valueOf(rootName)));
         // Maven and the Scala tools (sbt, Mill, Scala CLI) run on the JDK chosen in Settings, as Run does; Gradle
         // picks its own through its toolchains.
-        boolean onSettingsJdk = tool == BuildTool.MAVEN
-                || tool == BuildTool.SBT
-                || tool == BuildTool.MILL
-                || tool == BuildTool.SCALA_CLI;
-        java.util.Map<String, String> environment = !onSettingsJdk
-                ? java.util.Map.of()
-                : !com.editora.process.ExecTargets.runsHere(root)
-                        // Where the build runs elsewhere: the JDK there, or the one configured for it; never
-                        // this machine's JDK or PATH.
-                        ? RunCoordinator.remoteJdkEnvironment(
-                                com.editora.process.ExecTargets.remoteTool(root, "jdk.home"))
-                        : com.editora.run.JdkToolchain.environment(
-                                host.settings().getMavenJdkHome(), com.editora.process.ProcessRunner.augmentedPath());
+        java.util.Map<String, String> environment = jdkEnvironment != null
+                ? jdkEnvironment
+                : !onSettingsJdk()
+                        ? java.util.Map.of()
+                        : !com.editora.process.ExecTargets.runsHere(root)
+                                // Where the build runs elsewhere: the JDK there, or the one configured for it; never
+                                // this machine's JDK or PATH.
+                                ? RunCoordinator.remoteJdkEnvironment(
+                                        com.editora.process.ExecTargets.remoteTool(root, "jdk.home"))
+                                : com.editora.run.JdkToolchain.environment(
+                                        host.settings().getMavenJdkHome(),
+                                        com.editora.process.ProcessRunner.augmentedPath());
         if (npm != null) {
             environment = npm.env();
             long generation = ++runtimeGeneration;

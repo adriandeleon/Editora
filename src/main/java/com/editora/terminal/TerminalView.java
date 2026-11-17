@@ -456,6 +456,15 @@ public final class TerminalView extends Region {
 
     private @Nullable CwdWatcher cwdWatch;
 
+    /**
+     * What this tab's shell on this machine was running at the watcher's last tick (every 750 ms, off the FX
+     * thread), innermost first; null when nobody watches it (a shell elsewhere) or before the first tick.
+     */
+    public java.util.@Nullable List<String> runningPrograms() {
+        CwdWatcher w = cwdWatch;
+        return w == null ? null : w.programs();
+    }
+
     private @Nullable Runnable onSessionEnded;
 
     public void setOnSessionEnded(Runnable onSessionEnded) {

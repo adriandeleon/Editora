@@ -66,6 +66,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("fx")
 class MavenProjectFlowFxTest {
 
+    /** The plans read in place: these tests read what a command did as soon as it returns (PERF-01 moved the reads). */
+    @org.junit.jupiter.api.BeforeEach
+    void planInPlace() {
+        DebugPlanning.planner = (name, task) -> task.run();
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void planOnThreads() {
+        DebugPlanning.planner = (name, task) -> Thread.ofVirtual().name(name).start(task);
+    }
+
     private static final long WAIT_SECONDS = 30;
 
     private static final String CATALOG_URL = "https://repo.example.test/archetype-catalog.xml";
@@ -214,7 +225,8 @@ class MavenProjectFlowFxTest {
 
             Files.writeString(dir.resolve("pom.xml"), "<project><artifactId>bare</artifactId></project>");
             FxTestSupport.runOnFx(rig.coordinator::updateVersions);
-            assertEquals(tr("status.mavenVersions.nothingPinned"), rig.host.lastStatus());
+            // The pom is read and parsed off the FX thread (PERF-01): the answer comes back on it.
+            assertEquals(tr("status.mavenVersions.nothingPinned"), rig.host.awaitStatus());
 
             rig.host.settings.setMavenSupport(false);
             FxTestSupport.runOnFx(rig.coordinator::updateVersions);
@@ -829,11 +841,10 @@ class MavenProjectFlowFxTest {
             rig.coordinator.setHttpClientsForTest(() -> central.client().get());
             Path pom = Files.writeString(dir.resolve("pom.xml"), PINNED_POM);
             rig.ops.parent = dir;
-            FxTestSupport.runOnFx(() -> {
-                rig.coordinator.updateVersions();
-                rig.coordinator.updateVersions(); // the same pulse: the first is still in flight
-            });
+            FxTestSupport.runOnFx(rig.coordinator::updateVersions);
+            // The pom is read off the FX thread (PERF-01): the lookups start once it is.
             assertEquals(tr("status.mavenVersions.checking", 3), rig.host.awaitStatus());
+            FxTestSupport.runOnFx(rig.coordinator::updateVersions); // the first is still in flight
             assertEquals(tr("status.mavenVersions.cancelled"), rig.host.awaitStatus());
             FxTestSupport.drainFx();
             assertEquals(List.of(1, 1), List.of(rig.host.tasksStarted.get(), rig.host.tasksClosed.get()));
@@ -1203,10 +1214,13 @@ class MavenProjectFlowFxTest {
             assertEquals(List.of(), ran, "no item goes through the context-free palette commands");
             assertEquals(List.of(dir), rig.ops.actionsAt, "Show Actions opens the popup for the clicked pom's folder");
             assertEquals(List.of(dir), rig.ops.customAt, "Run custom runs in the clicked pom's folder");
+            // Update Versions read the clicked pom (nothing pinned), not the active tab's (one pin); the read is off
+            // the FX thread (PERF-01), so its answer is waited for.
             assertEquals(
                     tr("status.mavenVersions.nothingPinned"),
-                    rig.host.lastStatus(),
-                    "Update Versions read the clicked pom (nothing pinned), not the active tab's (one pin)");
+                    rig.host.awaitStatus(s -> s.equals(tr("status.mavenVersions.nothingPinned"))
+                            || s.startsWith(
+                                    tr("status.mavenVersions.checking", 1).replace("1", ""))));
 
             assertNull(FxTestSupport.callOnFx(() -> rig.coordinator.mavenMenu(null)));
             assertNull(FxTestSupport.callOnFx(() -> rig.coordinator.mavenMenu(dir.resolve("effective-pom.xml"))));

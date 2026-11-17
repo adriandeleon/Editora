@@ -1107,26 +1107,41 @@ final class EncryptionCoordinator {
         String name = String.valueOf(original.getFileName());
         chooseRecipients(buffer, tr("encryption.picker.title", name), false, false, true, choice -> {
             Path target = EncryptedFiles.encryptedSibling(original, choice.armor() ? "asc" : "gpg");
-            if (Files.exists(target) && !files.confirmOverwrite(target)) {
-                wipe(choice.passphrase());
-                return;
-            }
-            applyChoice(buffer, choice, false);
-            originals.put(buffer, original);
-            if (!files.applySaveAsTarget(buffer, target)) {
-                // Refused before anything was written (the target is open elsewhere): still a plain file.
-                originals.remove(buffer);
-                buffer.encryption().setState(null);
-                refreshChrome(buffer);
-            }
+            ifOverwriteAllowed(target, () -> wipe(choice.passphrase()), () -> {
+                applyChoice(buffer, choice, false);
+                originals.put(buffer, original);
+                if (!files.applySaveAsTarget(buffer, target)) {
+                    // Refused before anything was written (the target is open elsewhere): still a plain file.
+                    originals.remove(buffer);
+                    buffer.encryption().setState(null);
+                    refreshChrome(buffer);
+                }
+            });
+        });
+    }
+
+    /**
+     * Runs {@code then} when {@code target} is not there or the user agrees to replace it; {@code declined} when
+     * not. Whether it is there is looked at off the FX thread (PERF-01, Pauta 6.0.1).
+     */
+    private void ifOverwriteAllowed(Path target, Runnable declined, Runnable then) {
+        background("gpg-target", () -> {
+            boolean there = Files.exists(target);
+            Platform.runLater(() -> {
+                if (there && !files.confirmOverwrite(target)) {
+                    declined.run();
+                } else {
+                    then.run();
+                }
+            });
         });
     }
 
     private void offerToTrashOriginal(EditorBuffer buffer, Path original, EncryptionState state) {
-        if (!Files.exists(original)) {
-            return;
-        }
         background("gpg-original", () -> {
+            if (!Files.exists(original)) {
+                return; // looked at here, off the FX thread (PERF-01)
+            }
             boolean tracked = isTrackedByGit(original);
             Platform.runLater(() -> {
                 String message = tr(
@@ -1226,11 +1241,10 @@ final class EncryptionCoordinator {
         if (!confirmLeaveEncryption.test(target)) {
             return;
         }
-        if (Files.exists(target) && !files.confirmOverwrite(target)) {
-            return;
-        }
-        leavingConfirmed.add(buffer);
-        files.applySaveAsTarget(buffer, target);
+        ifOverwriteAllowed(target, () -> {}, () -> {
+            leavingConfirmed.add(buffer);
+            files.applySaveAsTarget(buffer, target);
+        });
     }
 
     /** {@code crypto.lockFile}: puts the active encrypted file away — its text leaves memory; Decrypt brings it back. */
@@ -1635,35 +1649,34 @@ final class EncryptionCoordinator {
         }
         Path file = buffer.getPath();
         Path target = file.resolveSibling(file.getFileName() + ".asc");
-        if (Files.exists(target) && !files.confirmOverwrite(target)) {
-            return;
-        }
-        String signer = host.config().getSettings().getEncryptionDefaultKey();
-        background("gpg-sign-read", () -> {
-            byte[] data = readQuietly(file);
-            Platform.runLater(() -> withSecret(
-                    tr("encryption.passphrase.forSigning"),
-                    tr("encryption.action.sign"),
-                    false,
-                    passphrase -> gpg().detachSign(data, signer.isBlank() ? null : signer, passphrase, true),
-                    (outcome, passphrase) -> {
-                        wipe(passphrase);
-                        byte[] signature = outcome.out();
-                        background("gpg-sign-write", () -> {
-                            try {
-                                Files.write(target, signature);
-                                Platform.runLater(
-                                        () -> host.setStatus(tr("encryption.status.signedTo", target.getFileName())));
-                            } catch (IOException e) {
-                                Platform.runLater(() -> host.services().setError(e.getMessage()));
+        ifOverwriteAllowed(target, () -> {}, () -> {
+            String signer = host.config().getSettings().getEncryptionDefaultKey();
+            background("gpg-sign-read", () -> {
+                byte[] data = readQuietly(file);
+                Platform.runLater(() -> withSecret(
+                        tr("encryption.passphrase.forSigning"),
+                        tr("encryption.action.sign"),
+                        false,
+                        passphrase -> gpg().detachSign(data, signer.isBlank() ? null : signer, passphrase, true),
+                        (outcome, passphrase) -> {
+                            wipe(passphrase);
+                            byte[] signature = outcome.out();
+                            background("gpg-sign-write", () -> {
+                                try {
+                                    Files.write(target, signature);
+                                    Platform.runLater(() ->
+                                            host.setStatus(tr("encryption.status.signedTo", target.getFileName())));
+                                } catch (IOException e) {
+                                    Platform.runLater(() -> host.services().setError(e.getMessage()));
+                                }
+                            });
+                        },
+                        failure -> {
+                            if (failure.kind() != GpgFailure.Kind.CANCELLED) {
+                                host.services().setError(messageFor(failure));
                             }
-                        });
-                    },
-                    failure -> {
-                        if (failure.kind() != GpgFailure.Kind.CANCELLED) {
-                            host.services().setError(messageFor(failure));
-                        }
-                    }));
+                        }));
+            });
         });
     }
 

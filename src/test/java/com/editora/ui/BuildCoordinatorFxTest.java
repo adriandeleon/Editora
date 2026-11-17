@@ -146,7 +146,11 @@ class BuildCoordinatorFxTest {
 
     /** A fresh shared console for each coordinator under test (the panel content isn't asserted here). */
     private static BuildCoordinator coordinator(BuildTool tool, FakeHost host, BuildCoordinator.Ops ops) {
-        return new BuildCoordinator(tool, host, ops, new BuildOutput());
+        BuildCoordinator c = new BuildCoordinator(tool, host, ops, new BuildOutput());
+        // The plan (wrapper, trust summary) looked up in place: these tests read what the gate asked as soon as
+        // the command returns. ProcessesOffFxThreadFxTest drives the real planner thread.
+        c.planner = Runnable::run;
+        return c;
     }
 
     private static final String VALID_POM = """
@@ -363,8 +367,9 @@ class BuildCoordinatorFxTest {
 
         assertEquals(1, ops.openConsoleCount, "a run attempt opens the console even though it fails");
         String failedPrefix = tr("status.build.failed", disp(BuildTool.MAVEN), "");
-        assertTrue(
-                host.lastStatus != null && host.lastStatus.startsWith(failedPrefix),
+        // The start is off the FX thread (PERF-01): its failure is reported back on it.
+        waitUntil(
+                () -> host.lastStatus != null && host.lastStatus.startsWith(failedPrefix),
                 "reports the launch failure: " + host.lastStatus);
     }
 
@@ -442,6 +447,9 @@ class BuildCoordinatorFxTest {
         assertFalse(ops.promptedSummary.items().isEmpty(), "the prompt says what will run");
         assertEquals(1, ops.trustCount, "accepting records the folder");
         assertEquals(1, ops.openConsoleCount, "and the run proceeds");
+        // The bogus command's failure comes back from the start thread (PERF-01): the next build waits for it,
+        // or it would meet the "Stop and run?" question of a build still starting.
+        waitUntil(() -> !c.isRunning(), "the first build's failure is reported");
 
         FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
         assertEquals(1, ops.promptCount, "trusted now: the second build does not ask again");

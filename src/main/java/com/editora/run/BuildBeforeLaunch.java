@@ -29,6 +29,14 @@ public final class BuildBeforeLaunch {
         if (root == null) {
             return null;
         }
+        return TOOL_AT.get(root);
+    }
+
+    /** The stats: off the FX thread by a launch's plan, answered from memory on it (PERF-01, Pauta 6.0.1). */
+    private static final com.editora.perf.Looked<Path, BuildTool> TOOL_AT =
+            new com.editora.perf.Looked<>("BuildBeforeLaunch.toolAt", BuildBeforeLaunch::lookToolAt);
+
+    private static @Nullable BuildTool lookToolAt(Path root) {
         try {
             for (BuildTool tool : List.of(BuildTool.MAVEN, BuildTool.GRADLE)) {
                 for (String marker : tool.markers()) {

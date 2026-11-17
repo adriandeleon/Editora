@@ -112,7 +112,8 @@ public final class OutputPump {
     /** How long {@link #finish} waits for a reader that is not making progress before closing its stream. */
     private static final long FINISH_GRACE_NANOS = 1_000_000_000L;
 
-    private record PendingFx(int generation, int chars, boolean output, Runnable action) {}
+    /** {@code leading}: an event queued before any output of its run (the start), which a drop notice follows. */
+    private record PendingFx(int generation, int chars, boolean output, Runnable action, boolean leading) {}
 
     /** One reader thread and the stream it drains. */
     public static final class Feed {
@@ -249,7 +250,15 @@ public final class OutputPump {
                         int held = ChildText.incompleteUtf8Tail(line, length); // never split a character
                         if (length > held) {
                             String text = ChildText.decode(line, 0, length - held) + (truncated ? LINE_TRUNCATED : "");
-                            enqueue(self, gen, text.length(), true, () -> sink.partial(text, stderr), sink, stderr);
+                            enqueue(
+                                    self,
+                                    gen,
+                                    text.length(),
+                                    true,
+                                    () -> sink.partial(text, stderr),
+                                    sink,
+                                    stderr,
+                                    false);
                             System.arraycopy(line, length - held, line, 0, held);
                             length = held;
                             truncated = false;
@@ -273,7 +282,7 @@ public final class OutputPump {
             length -= ChildText.incompleteUtf8Tail(line, length); // the cap may have cut a character in two
         }
         String text = ChildText.decode(line, 0, length) + (truncated ? LINE_TRUNCATED : "");
-        enqueue(self, gen, text.length(), true, () -> sink.line(text, stderr), sink, stderr);
+        enqueue(self, gen, text.length(), true, () -> sink.line(text, stderr), sink, stderr, false);
     }
 
     /**
@@ -326,7 +335,15 @@ public final class OutputPump {
 
     /** Queues a non-output event (the exit notification) behind every line already queued for {@code gen}. */
     public void post(int gen, Runnable action) {
-        enqueue(null, gen, 0, false, action, null, false);
+        enqueue(null, gen, 0, false, action, null, false, false);
+    }
+
+    /**
+     * Queues the run's start notification, before any of its output: a program started off the FX thread reports
+     * it this way, so it still comes first, and a notice of dropped lines comes after it.
+     */
+    public void postStart(int gen, Runnable action) {
+        enqueue(null, gen, 0, false, action, null, false, true);
     }
 
     private void enqueue(
@@ -336,7 +353,8 @@ public final class OutputPump {
             boolean output,
             Runnable action,
             @Nullable Sink sink,
-            boolean stderr) {
+            boolean stderr,
+            boolean leading) {
         boolean schedule = false;
         synchronized (lock) {
             if (gen != generation) {
@@ -345,7 +363,7 @@ public final class OutputPump {
             if (output && reader != null && overflow == Overflow.BLOCK && !awaitRoom(reader, gen, chars)) {
                 return;
             }
-            pending.addLast(new PendingFx(gen, chars, output, action));
+            pending.addLast(new PendingFx(gen, chars, output, action, leading));
             pendingOutputChars += chars;
             if (output) {
                 pendingOutputEvents++;
@@ -453,15 +471,19 @@ public final class OutputPump {
         // exit event is not: it runs with every line before it already on screen, as it always has (it may
         // start the next run, or open a dialog and so a nested event loop).
         boolean batching = false;
+        Runnable held = notice; // where the dropped lines were: after the run's start, before what is left of them
         try {
-            if (notice != null) {
-                OutputBatch.begin();
-                batching = true;
-                deliver(notice);
-            }
             for (PendingFx event : batch) {
                 if (event.generation() != generation) {
                     continue;
+                }
+                if (held != null && !event.leading()) {
+                    if (!batching) {
+                        OutputBatch.begin();
+                        batching = true;
+                    }
+                    deliver(held);
+                    held = null;
                 }
                 if (event.output() != batching) {
                     if (batching) {
@@ -472,6 +494,13 @@ public final class OutputPump {
                     batching = event.output();
                 }
                 deliver(event.action());
+            }
+            if (held != null) {
+                if (!batching) {
+                    OutputBatch.begin();
+                    batching = true;
+                }
+                deliver(held);
             }
         } finally {
             if (batching) {

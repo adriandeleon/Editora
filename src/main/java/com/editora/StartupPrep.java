@@ -56,6 +56,11 @@ final class StartupPrep {
         // Delete a mcp-endpoint.json left by a crashed run — it advertises a dead port with a live-looking token.
         // Reaped by the stamped pid + start instant, before any MCP server starts this session (#464).
         step("stale MCP endpoint", () -> com.editora.mcp.McpServer.reapStaleEndpoint(configDir));
+        // The login shell's PATH, on a thread of its own: Run, Build and Debug find it built (PERF-01, Pauta 6.0.1).
+        step("PATH warm-up", com.editora.process.ProcessRunner::warmAugmentedPathAsync);
+        step(
+                "read prompt shim",
+                () -> Thread.ofVirtual().name("read-prompt-shim").start(com.editora.run.ReadPromptShim::prepare));
     }
 
     /** What the first window is built from, read ahead. {@code uiFontSheet} is the UI font's stylesheet. Blocking. */

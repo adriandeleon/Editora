@@ -43,6 +43,17 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 @Tag("fx")
 class BreakpointGroupsWindowFxTest {
 
+    /** The plans read in place: these tests read what a command did as soon as it returns (PERF-01 moved the reads). */
+    @org.junit.jupiter.api.BeforeEach
+    void planInPlace() {
+        DebugPlanning.planner = (name, task) -> task.run();
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void planOnThreads() {
+        DebugPlanning.planner = (name, task) -> Thread.ofVirtual().name(name).start(task);
+    }
+
     private FxWindowFixture fx;
     private DapManager manager;
     private DebugCoordinator debug;

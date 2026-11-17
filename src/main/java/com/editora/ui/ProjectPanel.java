@@ -4047,23 +4047,47 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             completion.complete(new DeleteResult(false, 0, files));
             return;
         }
+        // The check that nothing changed, the deletes and the moves to the trash (which can run `gio trash` and
+        // wait for it) are made off the FX thread (PERF-01, Pauta 6.0.1); what they did is shown back on it.
+        deleteWork.execute(() -> {
+            DeleteOutcome outcome = deleteNow(files, approval);
+            onFx(() -> afterDelete(files, outcome, completion));
+        });
+    }
+
+    /** Where a confirmed delete does its file work. TEST SEAM. */
+    java.util.concurrent.Executor deleteWork = com.editora.process.BlockingTasks.named("project-delete");
+
+    /**
+     * What a delete did: {@code changed} names a file that no longer holds what the user saw (nothing was then
+     * deleted), else the files deleted (or trashed), how many went to the trash, the failures with their messages,
+     * and the files the trash refused.
+     */
+    private record DeleteOutcome(
+            @Nullable Path changed,
+            List<Path> deleted,
+            int trashed,
+            @Nullable Path firstTrashed,
+            Map<Path, String> failed,
+            List<Path> refusedByTrash,
+            @Nullable String trashRefusal) {}
+
+    /** The delete's file work, on {@link #deleteWork}. */
+    private DeleteOutcome deleteNow(List<Path> files, DeleteApproval approval) {
+        com.editora.perf.BlockingSites.enter("ProjectPanel.delete");
         for (Map.Entry<Path, byte[]> expected : approval.expectedBytes().entrySet()) {
             try {
                 if (!java.util.Arrays.equals(expected.getValue(), deleteOperations.readAllBytes(expected.getKey()))) {
-                    fileOpStatus(tr("project.deleteChanged", expected.getKey().getFileName()));
-                    completion.complete(new DeleteResult(false, 0, files));
-                    return;
+                    return new DeleteOutcome(expected.getKey(), List.of(), 0, null, Map.of(), List.of(), null);
                 }
             } catch (IOException | RuntimeException changedOrMissing) {
-                fileOpStatus(tr("project.deleteChanged", expected.getKey().getFileName()));
-                completion.complete(new DeleteResult(false, 0, files));
-                return;
+                return new DeleteOutcome(expected.getKey(), List.of(), 0, null, Map.of(), List.of(), null);
             }
         }
-
-        int deleted = 0;
+        List<Path> deleted = new ArrayList<>();
         int trashed = 0;
-        List<Path> failed = new ArrayList<>();
+        Path firstTrashed = null;
+        Map<Path, String> failed = new java.util.LinkedHashMap<>();
         List<Path> refusedByTrash = new ArrayList<>();
         String trashRefusal = null;
         for (Path file : files) {
@@ -4072,6 +4096,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 if (toTrash) {
                     deleteOperations.moveToTrash(file);
                     trashed++;
+                    firstTrashed = firstTrashed == null ? file : firstTrashed;
                 } else {
                     deleteOperations.delete(file);
                 }
@@ -4081,53 +4106,82 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     refusedByTrash.add(file);
                     trashRefusal = trashRefusal == null ? String.valueOf(failure.getMessage()) : trashRefusal;
                 } else {
-                    failed.add(file);
-                    showError(tr("project.deleteError", file.getFileName(), failure.getMessage()));
+                    failed.put(file, String.valueOf(failure.getMessage()));
                 }
                 continue;
             }
-            onFileDeleted.accept(file);
-            deleted++;
+            deleted.add(file);
         }
-        if (!refusedByTrash.isEmpty()) {
-            boolean permanently = confirmPermanentDelete.test(
-                    permanentDeleteQuestion(refusedByTrash, trashRefusal).message());
+        return new DeleteOutcome(null, deleted, trashed, firstTrashed, failed, refusedByTrash, trashRefusal);
+    }
+
+    /** Shows what the delete did, asks about the files the trash refused, and completes. FX thread. */
+    private void afterDelete(List<Path> files, DeleteOutcome outcome, CompletableFuture<DeleteResult> completion) {
+        Path changed = outcome.changed();
+        if (changed != null) {
+            fileOpStatus(tr("project.deleteChanged", changed.getFileName()));
+            completion.complete(new DeleteResult(false, 0, files));
+            return;
+        }
+        List<Path> failed = new ArrayList<>();
+        outcome.failed().forEach((file, message) -> {
+            failed.add(file);
+            showError(tr("project.deleteError", file.getFileName(), message));
+        });
+        outcome.deleted().forEach(onFileDeleted);
+        List<Path> refusedByTrash = outcome.refusedByTrash();
+        if (refusedByTrash.isEmpty()) {
+            finishDeleteReport(files, outcome.deleted().size(), outcome, failed, completion);
+            return;
+        }
+        boolean permanently = confirmPermanentDelete.test(
+                permanentDeleteQuestion(refusedByTrash, outcome.trashRefusal()).message());
+        if (!permanently) {
+            failed.addAll(refusedByTrash); // kept, by the user's choice
+            finishDeleteReport(files, outcome.deleted().size(), outcome, failed, completion);
+            return;
+        }
+        deleteWork.execute(() -> {
+            com.editora.perf.BlockingSites.enter("ProjectPanel.delete");
+            List<Path> gone = new ArrayList<>();
+            Map<Path, String> notGone = new java.util.LinkedHashMap<>();
             for (Path file : refusedByTrash) {
-                if (!permanently) {
-                    failed.add(file); // kept, by the user's choice
-                    continue;
-                }
                 try {
                     deleteOperations.delete(file);
+                    gone.add(file);
                 } catch (IOException | RuntimeException failure) {
-                    failed.add(file);
-                    showError(tr("project.deleteError", file.getFileName(), failure.getMessage()));
-                    continue;
+                    notGone.put(file, String.valueOf(failure.getMessage()));
                 }
-                onFileDeleted.accept(file);
-                deleted++;
             }
-        }
+            onFx(() -> {
+                notGone.forEach((file, message) -> {
+                    failed.add(file);
+                    showError(tr("project.deleteError", file.getFileName(), message));
+                });
+                gone.forEach(onFileDeleted);
+                finishDeleteReport(files, outcome.deleted().size() + gone.size(), outcome, failed, completion);
+            });
+        });
+    }
+
+    private void finishDeleteReport(
+            List<Path> files,
+            int deleted,
+            DeleteOutcome outcome,
+            List<Path> failed,
+            CompletableFuture<DeleteResult> completion) {
         if (deleted > 0) {
             markLocalChange(files);
             refreshAfterChange();
         }
-        if (trashed == 1) {
-            fileOpStatus(tr("project.trashedOne", firstTrashedName(files, failed, refusedByTrash)));
+        int trashed = outcome.trashed();
+        Path firstTrashed = outcome.firstTrashed();
+        if (trashed == 1 && firstTrashed != null) {
+            fileOpStatus(tr("project.trashedOne", String.valueOf(firstTrashed.getFileName())));
         } else if (trashed > 1) {
             fileOpStatus(tr("project.trashedMany", trashed));
         }
         completion.complete(new DeleteResult(true, deleted, failed));
-    }
-
-    /** The name of the one file that went to the trash (for the status line). */
-    private String firstTrashedName(List<Path> files, List<Path> failed, List<Path> refusedByTrash) {
-        for (Path file : files) {
-            if (!failed.contains(file) && !refusedByTrash.contains(file) && !Files.exists(file)) {
-                return String.valueOf(file.getFileName());
-            }
-        }
-        return String.valueOf(files.get(0).getFileName());
     }
 
     private static void onFx(Runnable action) {

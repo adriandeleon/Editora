@@ -361,14 +361,29 @@ class ProjectDeleteProtectionFxTest {
     }
 
     private static void dismissOkAlert(CountDownLatch seen) {
+        dismissOkAlert(seen, 200);
+    }
+
+    /**
+     * Presses OK on the error alert once it shows. The delete runs off the FX thread (PERF-01), so the alert can
+     * open after this was first asked: it looks again on the next FX turns until it finds one.
+     */
+    private static void dismissOkAlert(CountDownLatch seen, int triesLeft) {
         for (Window window : Window.getWindows().stream().toList()) {
             if (window.getScene() != null && window.getScene().getRoot() instanceof DialogPane pane) {
                 Button button = (Button) pane.lookupButton(ButtonType.OK);
                 if (button != null) {
                     seen.countDown();
                     button.fire();
+                    return;
                 }
             }
+        }
+        if (triesLeft > 0) {
+            javafx.animation.PauseTransition later =
+                    new javafx.animation.PauseTransition(javafx.util.Duration.millis(25));
+            later.setOnFinished(e -> dismissOkAlert(seen, triesLeft - 1));
+            later.play();
         }
     }
 

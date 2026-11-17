@@ -766,20 +766,27 @@ final class GitCoordinator {
     }
 
     private void stageIn(Path root, @Nullable GitStatus status, List<String> paths) {
-        if (!saveUnsaved(root, paths) || !confirmStagingMarkers(root, status, paths)) {
+        if (!saveUnsaved(root, paths)) {
             return;
         }
-        gitOpIn(
+        confirmStagingMarkers(
                 root,
-                paths.size() == 1 ? tr("status.git.staged", paths.get(0)) : tr("status.git.stagedMany", paths.size()),
-                argv(paths, "add", "--"));
+                status,
+                paths,
+                () -> gitOpIn(
+                        root,
+                        paths.size() == 1
+                                ? tr("status.git.staged", paths.get(0))
+                                : tr("status.git.stagedMany", paths.size()),
+                        argv(paths, "add", "--")));
     }
 
     /** {@code git add -A}: the Commit window's Stage All. */
     void gitStageAll() {
         Path root = repoRootOrReport(); // the confirmation below runs a nested event loop: the root is captured first
-        if (root != null && saveUnsaved(root, List.of()) && confirmStagingMarkers(root, lastStatus, List.of())) {
-            gitOpIn(root, tr("status.git.stagedAll"), "add", "-A");
+        if (root != null && saveUnsaved(root, List.of())) {
+            confirmStagingMarkers(
+                    root, lastStatus, List.of(), () -> gitOpIn(root, tr("status.git.stagedAll"), "add", "-A"));
         }
     }
 
@@ -791,15 +798,22 @@ final class GitCoordinator {
      * {@code <<<<<<<} markers commits the markers, so it is confirmed first, naming the file. Called after
      * the unsaved buffers were written, so the disk copy is what git is about to stage.
      *
+     * <p>The unmerged files are read off the FX thread (PERF-01, Pauta 6.0.1); with none, {@code then} runs at once.
+     *
      * @param pathspecs the paths being staged; empty means the whole repository (Stage All)
-     * @return false when the user declined
+     * @param then the staging, unless the user declined
      */
-    private boolean confirmStagingMarkers(Path root, @Nullable GitStatus status, List<String> pathspecs) {
-        List<String> marked = unresolvedAmong(root, status, pathspecs);
-        if (marked.isEmpty()) {
-            return true;
+    private void confirmStagingMarkers(Path root, @Nullable GitStatus status, List<String> pathspecs, Runnable then) {
+        if (status == null || GitConflicts.unmerged(status).isEmpty()) {
+            then.run();
+            return;
         }
-        return confirmDestructive(stageConflictQuestion(marked));
+        DebugPlanning.offFx("git-conflict-markers", () -> unresolvedAmong(root, status, pathspecs), a -> {
+            List<String> marked = a.value() == null ? List.of() : a.value();
+            if (marked.isEmpty() || confirmDestructive(stageConflictQuestion(marked))) {
+                then.run();
+            }
+        });
     }
 
     /** The unmerged paths {@code pathspecs} select whose file on disk still contains conflict markers. */
@@ -1869,7 +1883,7 @@ final class GitCoordinator {
     /**
      * Adds {@code file} (a directory gets a trailing {@code /}) to the repo-root {@code .gitignore}, creating
      * it if absent — the Project-tree "Add to .gitignore" action. A no-op when the entry is already present.
-     * Writes the small file on the FX thread then refreshes so the now-ignored file drops from the tree color.
+     * Writes the small file off the FX thread, then refreshes so the now-ignored file drops from the tree color.
      */
     void addToGitignore(@Nullable Path file) {
         inRepositoryOf(file, (root, status) -> addToGitignore(root, file));
@@ -1880,21 +1894,30 @@ final class GitCoordinator {
         if (file == null || rel == null || rel.isEmpty()) {
             return;
         }
-        String entry = com.editora.git.GitIgnore.entryFor(rel, java.nio.file.Files.isDirectory(file));
-        Path ignore = root.resolve(".gitignore");
-        try {
-            String existing = java.nio.file.Files.exists(ignore) ? java.nio.file.Files.readString(ignore) : "";
-            String updated = com.editora.git.GitIgnore.withEntry(existing, entry);
-            if (updated == null) {
-                host.setStatus(tr("status.git.alreadyIgnored", entry));
-                return;
-            }
-            java.nio.file.Files.writeString(ignore, updated);
-            host.setStatus(tr("status.git.addedToGitignore", entry));
-            afterMutation();
-        } catch (java.io.IOException e) {
-            gitError(tr("status.git.gitignoreFailed"), String.valueOf(e.getMessage()));
-        }
+        // The file is looked at, and .gitignore read and written, off the FX thread (PERF-01, Pauta 6.0.1).
+        DebugPlanning.offFx(
+                "git-ignore-write",
+                () -> {
+                    String entry = com.editora.git.GitIgnore.entryFor(rel, java.nio.file.Files.isDirectory(file));
+                    Path ignore = root.resolve(".gitignore");
+                    String existing = java.nio.file.Files.exists(ignore) ? java.nio.file.Files.readString(ignore) : "";
+                    String updated = com.editora.git.GitIgnore.withEntry(existing, entry);
+                    if (updated != null) {
+                        java.nio.file.Files.writeString(ignore, updated);
+                    }
+                    return new String[] {entry, updated == null ? "" : "added"};
+                },
+                a -> {
+                    String[] done = a.value();
+                    if (a.failure() != null || done == null) {
+                        gitError(tr("status.git.gitignoreFailed"), a.why());
+                    } else if (done[1].isEmpty()) {
+                        host.setStatus(tr("status.git.alreadyIgnored", done[0]));
+                    } else {
+                        host.setStatus(tr("status.git.addedToGitignore", done[0]));
+                        afterMutation();
+                    }
+                });
     }
 
     // --- stash: see GitStashCoordinator -----------------------------------------------------------

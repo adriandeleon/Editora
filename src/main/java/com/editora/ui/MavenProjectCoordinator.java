@@ -243,11 +243,20 @@ final class MavenProjectCoordinator {
 
     private static final class VersionCheck {
         final AtomicBoolean cancelled = new AtomicBoolean();
-        private final AutoCloseable task;
+        private AutoCloseable task;
         private boolean closed;
 
         VersionCheck(AutoCloseable task) {
             this.task = task;
+        }
+
+        /** The background-task handle the lookups show, once the pom has been read (FX thread). */
+        void showAs(AutoCloseable lookups) {
+            if (closed) {
+                closeQuietly(lookups);
+            } else {
+                task = lookups;
+            }
         }
 
         /** Closes the background-task handle once, whether the check finished or was cancelled first. */
@@ -277,16 +286,37 @@ final class MavenProjectCoordinator {
             host.setError(tr("status.mavenVersions.noPom"));
             return;
         }
-        String pom = pomText(pomFile, ops.openBuffer(pomFile));
-        PomUpgrades.Plan plan = PomUpgrades.plan(pom == null ? "" : pom);
-        if (!plan.hasLookups()) {
-            nothingToCheck(pomFile, pom, plan);
-            return;
-        }
-        host.setStatus(tr("status.mavenVersions.checking", plan.coordinates().size()));
-        VersionCheck check = new VersionCheck(host.startBackgroundTask(
-                tr("status.mavenVersions.checking", plan.coordinates().size())));
+        // The pom is read (when it is not open), parsed, and its parent looked for off the FX thread (PERF-01,
+        // Pauta 6.0.1). A second press meanwhile cancels, as it does during the lookups.
+        com.editora.editor.EditorBuffer open = ops.openBuffer(pomFile);
+        String openText = open == null ? null : open.getContent();
+        VersionCheck check = new VersionCheck(() -> {});
         runningCheck = check;
+        fetchExecutor().execute(() -> {
+            com.editora.perf.BlockingSites.enter("Maven update versions plan");
+            String pom = openText != null ? openText : read(pomFile);
+            PomUpgrades.Plan plan = PomUpgrades.plan(pom == null ? "" : pom);
+            Path parentPom = plan.hasLookups() ? null : parentPomOnDisk(pomFile, pom);
+            Platform.runLater(() -> {
+                if (check.cancelled.get() || runningCheck != check) {
+                    return; // cancelCheck already said so
+                }
+                if (!plan.hasLookups()) {
+                    runningCheck = null;
+                    check.close();
+                    nothingToCheck(pom, plan, parentPom);
+                    return;
+                }
+                lookUpVersions(pomFile, pom, plan, check);
+            });
+        });
+    }
+
+    /** Looks the plan's coordinates up on Maven Central, off the FX thread, and shows what is newer. */
+    private void lookUpVersions(Path pomFile, @Nullable String pom, PomUpgrades.Plan plan, VersionCheck check) {
+        host.setStatus(tr("status.mavenVersions.checking", plan.coordinates().size()));
+        check.showAs(host.startBackgroundTask(
+                tr("status.mavenVersions.checking", plan.coordinates().size())));
         AtomicBoolean unreachable = new AtomicBoolean();
         fetchExecutor().execute(() -> {
             Map<String, String> latest = CentralVersions.latest(
@@ -294,6 +324,7 @@ final class MavenProjectCoordinator {
                     path -> fetchMetadataOrThrow(path, unreachable),
                     lookupPool(),
                     check.cancelled::get);
+            Path parentPom = plan.skipped() > 0 ? parentPomOnDisk(pomFile, pom) : null;
             Platform.runLater(() -> {
                 check.close();
                 if (runningCheck == check) {
@@ -302,7 +333,7 @@ final class MavenProjectCoordinator {
                 if (check.cancelled.get()) {
                     return; // cancelCheck already said so
                 }
-                showUpgrades(pomFile, pom, plan, PomUpgrades.rows(plan, latest), unreachable.get());
+                showUpgrades(pomFile, pom, plan, PomUpgrades.rows(plan, latest), unreachable.get(), parentPom);
             });
         });
     }
@@ -324,14 +355,13 @@ final class MavenProjectCoordinator {
      * nothing in it — and, when the parent pom is on disk, offers to check that one instead: it is where
      * the versions a module inherits are pinned, and the thing a Spring Boot user actually bumps.
      */
-    private void nothingToCheck(Path pomFile, @Nullable String pom, PomUpgrades.Plan plan) {
+    private void nothingToCheck(@Nullable String pom, PomUpgrades.Plan plan, @Nullable Path parentPom) {
         if (plan.skipped() == 0) {
             host.setStatus(tr("status.mavenVersions.nothingPinned"));
             return;
         }
         String why =
                 tr("status.mavenVersions.nothingPinnedSkipped", plan.skippedPropertyDriven(), plan.skippedInherited());
-        Path parentPom = parentPomOnDisk(pomFile, pom);
         if (parentPom == null) {
             host.setStatus(why);
             return;
@@ -406,14 +436,15 @@ final class MavenProjectCoordinator {
             @Nullable String pom,
             PomUpgrades.Plan plan,
             List<PomUpgrades.Row> rows,
-            boolean unreachable) {
+            boolean unreachable,
+            @Nullable Path parentPom) {
         if (rows.isEmpty()) {
             if (unreachable) {
                 host.setError(tr("status.mavenVersions.unreachable"));
             } else if (plan.skipped() > 0) {
                 // A module whose only lookup was its parent coordinate (a reactor parent is not on Central):
                 // what it inherits is the real question, so offer the parent pom as for a pom with no lookups.
-                nothingToCheck(pomFile, pom, plan);
+                nothingToCheck(pom, plan, parentPom);
             } else {
                 host.setStatus(tr("status.mavenVersions.upToDate"));
             }
@@ -1295,27 +1326,46 @@ final class MavenProjectCoordinator {
                 SESSION_TRUSTED.add(spec.archetype().gav());
             }
         }
-        Path parent;
-        try {
-            parent = java.util.Objects.requireNonNull(spec.parentDir(), "a valid spec has a folder");
-            Files.createDirectories(parent);
-        } catch (Exception e) {
-            host.setError(tr("status.mavenProject.mkdirFailed", String.valueOf(e.getMessage())));
-            return;
-        }
-        // Generating next to an UNRELATED Maven project fails outright: archetype:generate tries to add the
-        // new project as a <module> of whatever project it finds in the working directory, and refuses when
-        // that one is not packaging=pom. So when the target holds such a project, the run is detached — a
-        // pom-less scratch working directory plus -DoutputDirectory — and Maven simply has no current
-        // project to register a module with. An aggregator pom is left attached, where the module is wanted.
-        String parentPackaging = packagingOf(parent);
-        Path scratch = parentPackaging != null && ArchetypeGenerate.detachFromExistingProject(parentPackaging)
-                ? scratchDir()
-                : null;
+        Path parent = java.util.Objects.requireNonNull(spec.parentDir(), "a valid spec has a folder");
+        // The folder made, the pom there read, the scratch folder made and the archetype's descriptor read off the
+        // FX thread (PERF-01, Pauta 6.0.1); the generation starts back on it.
+        DebugPlanning.offFx(
+                "maven-generate-plan",
+                () -> {
+                    Files.createDirectories(parent);
+                    // Generating next to an UNRELATED Maven project fails outright: archetype:generate tries to add
+                    // the new project as a <module> of whatever project it finds in the working directory, and
+                    // refuses when that one is not packaging=pom. So when the target holds such a project, the run
+                    // is detached — a pom-less scratch working directory plus -DoutputDirectory — and Maven has no
+                    // current project to register a module with. An aggregator pom is left attached.
+                    String packaging = packagingOf(parent);
+                    Path scratch = packaging != null && ArchetypeGenerate.detachFromExistingProject(packaging)
+                            ? scratchDir()
+                            : null;
+                    return new GeneratePlan(packaging, scratch, descriptorOf(spec.archetype()));
+                },
+                a -> {
+                    GeneratePlan plan = a.value();
+                    if (a.failure() != null || plan == null) {
+                        host.setError(tr("status.mavenProject.mkdirFailed", a.why()));
+                    } else {
+                        generate(spec, extras, projectDir, parent, plan);
+                    }
+                });
+    }
+
+    /** What New Maven Project read before Maven starts: the parent pom's packaging, a scratch folder, a descriptor. */
+    private record GeneratePlan(
+            @Nullable String parentPackaging, @Nullable Path scratch, ArchetypeDescriptor descriptor) {}
+
+    private void generate(
+            MavenProjectSpec spec, MavenProjectExtras extras, Path projectDir, Path parent, GeneratePlan plan) {
+        String parentPackaging = plan.parentPackaging();
+        Path scratch = plan.scratch();
         Path workingDir = scratch != null ? scratch : parent;
         List<String> mvn = mavenExecutable();
         // An archetype that takes the Java release as a property gets it that way rather than as a pom edit.
-        MavenProjectExtras applied = extras.forArchetype(descriptorOf(spec.archetype()));
+        MavenProjectExtras applied = extras.forArchetype(plan.descriptor());
         // Generated INSIDE the scratch dir and moved afterwards, rather than generated into `parent` from a
         // scratch working directory: the module check reads the pom in the OUTPUT directory, so pointing
         // outputDirectory at a folder that already holds a project fails exactly as running there did.
@@ -1356,12 +1406,26 @@ final class MavenProjectCoordinator {
             public void onExit(int code) {
                 closeQuietly(task);
                 output.finished(MavenProjectCoordinator.this, code);
-                boolean placed = scratch == null || moveIntoPlace(scratch, spec, projectDir);
-                if (code == 0 && placed && Files.isDirectory(projectDir)) {
-                    afterGenerate(projectDir, spec, applied, module);
-                } else {
-                    failed(spec);
-                }
+                // The project is moved into place, and looked for, off the FX thread (PERF-01).
+                DebugPlanning.offFx(
+                        "maven-generate-place",
+                        () -> {
+                            String moveError = scratch == null ? null : moveIntoPlace(scratch, spec, projectDir);
+                            return new String[] {
+                                moveError == null ? "" : moveError, Files.isDirectory(projectDir) ? "there" : ""
+                            };
+                        },
+                        a -> {
+                            String[] placed = a.value();
+                            if (placed != null && !placed[0].isEmpty() && !"-".equals(placed[0])) {
+                                host.setError(tr("status.mavenProject.moveFailed", placed[0]));
+                            }
+                            if (code == 0 && placed != null && placed[0].isEmpty() && !placed[1].isEmpty()) {
+                                afterGenerate(projectDir, spec, applied, module);
+                            } else {
+                                failed(spec);
+                            }
+                        });
             }
 
             @Override
@@ -1399,12 +1463,13 @@ final class MavenProjectCoordinator {
      * <p>An atomic rename when both sit on one filesystem, a recursive copy when they do not — the scratch
      * directory is the system temp dir, which is very often a different mount from the user's home.
      *
-     * @return false when the project could not be put in place, so the caller reports a failure
+     * @return null when it is in place; else "-" (nothing to move) or why it could not be moved. Blocking.
      */
-    private boolean moveIntoPlace(Path scratch, MavenProjectSpec spec, Path projectDir) {
+    private static @Nullable String moveIntoPlace(Path scratch, MavenProjectSpec spec, Path projectDir) {
         Path generated = scratch.resolve(spec.artifactId());
         if (!Files.isDirectory(generated)) {
-            return false;
+            deleteRecursively(scratch);
+            return "-"; // nothing was generated: the build's own output says why
         }
         try {
             Files.createDirectories(projectDir.getParent());
@@ -1417,10 +1482,9 @@ final class MavenProjectCoordinator {
             } catch (java.nio.file.FileSystemException crossDevice) {
                 copyRecursively(generated, projectDir);
             }
-            return Files.isDirectory(projectDir);
+            return Files.isDirectory(projectDir) ? null : "-";
         } catch (Exception e) {
-            host.setError(tr("status.mavenProject.moveFailed", String.valueOf(e.getMessage())));
-            return false;
+            return String.valueOf(e.getMessage());
         } finally {
             deleteRecursively(scratch);
         }

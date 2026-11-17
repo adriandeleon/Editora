@@ -285,6 +285,8 @@ class TerminalPanelFxTest {
             panel.closeActive();
             return null;
         });
+        // What the shell runs is asked off the FX thread (PERF-01): the question comes once that answer is back.
+        await(() -> fxQuietly(() -> asked.size() == 1), "the close question");
         assertEquals(List.of(List.of("sleep")), asked);
         assertTrue(fx(panel::hasTerminals), "Cancel keeps the tab");
 
@@ -293,7 +295,8 @@ class TerminalPanelFxTest {
             panel.closeActive();
             return null;
         });
-        assertFalse(fx(panel::hasTerminals), "Close ends it");
+        await(() -> !fxQuietly(panel::hasTerminals), "Close ends it");
+        assertEquals(2, asked.size(), "asked again");
     }
 
     @Test
@@ -1096,6 +1099,10 @@ class TerminalPanelFxTest {
             panel.runProgram("Build", null, (c, r) -> program, code -> {});
             return null;
         });
+        // The remote shell's host is asked off the FX thread (PERF-01): its answer serves the next question.
+        await(
+                () -> call(() -> panel.busyTabs(java.time.Duration.ofSeconds(2)).size() == 2),
+                "the remote host's answer");
         List<String> busy = fx(() -> panel.busyTabs(java.time.Duration.ofSeconds(2)));
         assertEquals(2, busy.size(), busy.toString());
         assertTrue(busy.stream().anyMatch(b -> b.endsWith("(htop)")), busy.toString());
@@ -1271,6 +1278,15 @@ class TerminalPanelFxTest {
             return fx(c);
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    /** {@link #fx} for a condition polled by {@link #await}. */
+    private static boolean fxQuietly(Callable<Boolean> work) {
+        try {
+            return fx(work);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 

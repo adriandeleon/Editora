@@ -206,13 +206,17 @@ final class BreakpointGroups {
         if (chosen == null) {
             return;
         }
-        String text = BreakpointExport.write(exported(entries, root), exportedMembers(entries));
-        try {
-            Files.writeString(chosen.toPath(), text);
-            host.setStatus(tr("status.debug.exported", entries.size(), chosen.getName()));
-        } catch (IOException | RuntimeException e) {
-            host.setStatus(tr("status.debug.exportFailed", chosen.getName(), String.valueOf(e.getMessage())));
-        }
+        var breakpoints = exported(entries, root);
+        var members = exportedMembers(entries);
+        int count = entries.size();
+        // The JSON is made and written off the FX thread (PERF-01, Pauta 6.0.1); the status says how it went.
+        DebugPlanning.offFx(
+                "breakpoints-export",
+                () -> Files.writeString(chosen.toPath(), BreakpointExport.write(breakpoints, members)),
+                a -> host.setStatus(
+                        a.failure() == null
+                                ? tr("status.debug.exported", count, chosen.getName())
+                                : tr("status.debug.exportFailed", chosen.getName(), a.why())));
     }
 
     /** {@code breakpoints.json}, or a group's name made a file name. */
@@ -298,28 +302,44 @@ final class BreakpointGroups {
         if (chosen == null) {
             return;
         }
-        BreakpointExport.Document doc;
-        try {
-            // The size is asked before the content is read: a file picked by mistake is not read into memory.
-            if (Files.size(chosen.toPath()) > MAX_IMPORT_BYTES) {
-                host.setStatus(tr(
-                        "status.debug.breakpointsImportFailed",
-                        chosen.getName(),
-                        tr("debug.import.tooLarge", MAX_IMPORT_BYTES / (1024 * 1024))));
-                return;
-            }
-            doc = BreakpointExport.read(Files.readString(chosen.toPath()));
-        } catch (IOException | RuntimeException e) {
-            host.setStatus(
-                    tr("status.debug.breakpointsImportFailed", chosen.getName(), String.valueOf(e.getMessage())));
-            return;
-        }
-        Imported done = apply(doc, root);
-        host.setStatus(tr("status.debug.imported", done.added(), done.existing(), done.missing()));
+        // Measured, read, parsed and each file looked for off the FX thread (PERF-01, Pauta 6.0.1); set on it.
+        DebugPlanning.offFx(
+                "breakpoints-import",
+                () -> {
+                    // The size is asked before the content is read: a file picked by mistake is not read.
+                    if (Files.size(chosen.toPath()) > MAX_IMPORT_BYTES) {
+                        throw new IOException(tr("debug.import.tooLarge", MAX_IMPORT_BYTES / (1024 * 1024)));
+                    }
+                    BreakpointExport.Document doc = BreakpointExport.read(Files.readString(chosen.toPath()));
+                    java.util.Set<Path> there = new java.util.HashSet<>();
+                    for (BreakpointExport.FileBreakpoint fb : doc.breakpoints()) {
+                        Path p = fileOf(fb.file(), root);
+                        if (p != null && Files.isRegularFile(p)) {
+                            there.add(p);
+                        }
+                    }
+                    return new Object[] {doc, there};
+                },
+                a -> {
+                    Object[] read = a.value();
+                    if (a.failure() != null || read == null) {
+                        host.setStatus(tr("status.debug.breakpointsImportFailed", chosen.getName(), a.why()));
+                        return;
+                    }
+                    @SuppressWarnings("unchecked")
+                    java.util.Set<Path> there = (java.util.Set<Path>) read[1];
+                    Imported done = apply((BreakpointExport.Document) read[0], root, there::contains);
+                    host.setStatus(tr("status.debug.imported", done.added(), done.existing(), done.missing()));
+                });
     }
 
     /** Sets {@code doc}'s breakpoints, files resolved against {@code root}. */
     Imported apply(BreakpointExport.Document doc, @Nullable Path root) {
+        return apply(doc, root, Files::isRegularFile);
+    }
+
+    /** As above, {@code exists} saying which files are there (read off the FX thread by an import). */
+    Imported apply(BreakpointExport.Document doc, @Nullable Path root, java.util.function.Predicate<Path> exists) {
         Map<String, String> taken = new HashMap<>();
         for (BreakpointsPicker.Entry e : picker.get().entries()) {
             if (e.member() == null && !e.breakpoint().id().isEmpty()) {
@@ -336,7 +356,7 @@ final class BreakpointGroups {
         int missing = 0;
         for (BreakpointExport.FileBreakpoint fb : wanted) {
             Path p = fileOf(fb.file(), root);
-            if (p == null || (p.getFileSystem() == java.nio.file.FileSystems.getDefault() && !Files.isRegularFile(p))) {
+            if (p == null || (p.getFileSystem() == java.nio.file.FileSystems.getDefault() && !exists.test(p))) {
                 missing++;
                 continue;
             }

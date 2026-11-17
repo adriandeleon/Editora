@@ -1158,9 +1158,10 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     private final java.util.Set<Tab> asking = new java.util.HashSet<>();
 
     /**
-     * Closes {@code tab} once it may: at once, or after asking when its shell is running something. A shell on
-     * another machine is asked off the FX thread — over a slow link, or with the host's one-shot slots busy, that
-     * question took up to tens of seconds, and the editor waited on it. The tab stays meanwhile.
+     * Closes {@code tab} once it may: at once, or after asking when its shell is running something. What the shell
+     * runs is asked off the FX thread: on another machine over a slow link, or with the host's one-shot slots busy,
+     * that question took up to tens of seconds, and the editor waited on it; on this one it reads {@code /proc} or
+     * asks the OS (PERF-01, Pauta 6.0.1). The tab stays meanwhile.
      */
     void requestClose(Tab tab) {
         TerminalView view = views.get(tab);
@@ -1178,13 +1179,9 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         }
         long pid = view.getSession().pid();
         long remote = view.getSession().remotePid();
-        if (pid > 0) {
-            closeUnlessDeclined(tab, RunningProgram.in(pid));
-            return;
-        }
         String stored = dirs.getOrDefault(tab, "");
         Path dir = stored.isEmpty() ? null : Vfs.parseStorable(stored);
-        if (remote <= 0 || dir == null) {
+        if (pid <= 0 && (remote <= 0 || dir == null)) {
             remove(tab);
             return;
         }
@@ -1194,7 +1191,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         Thread.ofVirtual().name("terminal-close-ask").start(() -> {
             List<String> programs;
             try {
-                programs = remotePrograms.apply(dir, remote);
+                programs = pid > 0 || dir == null ? RunningProgram.in(pid) : remotePrograms.apply(dir, remote);
             } catch (RuntimeException e) {
                 programs = List.of();
             }
@@ -1216,12 +1213,13 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
 
     /**
      * The tabs whose shell or program is running something, as "title (program, …)", for the question a window
-     * close or quit asks. A shell on another machine is asked in parallel with the others, all within
-     * {@code remoteWait}; one that does not answer in time is left out.
+     * close or quit asks. Nothing is read or waited for here (PERF-01, Pauta 6.0.1): a shell on this machine
+     * answers from its watcher's last tick (off the FX thread, every 750 ms), and one on another machine from the
+     * last answer its host gave, which this asks again in the background for the next question. A host never
+     * answered yet is not asked about, as one that did not answer in time was not.
      */
     List<String> busyTabs(java.time.Duration remoteWait) {
         List<String> busy = new ArrayList<>();
-        Map<Tab, java.util.concurrent.CompletableFuture<List<String>>> remoteAnswers = new LinkedHashMap<>();
         for (Tab tab : allTabs()) {
             TerminalView view = views.get(tab);
             if (view == null || view.getSession() == null) {
@@ -1237,33 +1235,31 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             long remote = view.getSession().remotePid();
             String stored = dirs.getOrDefault(tab, "");
             Path dir = stored.isEmpty() ? null : Vfs.parseStorable(stored);
-            if (pid > 0) {
-                List<String> programs = RunningProgram.in(pid);
-                if (!programs.isEmpty()) {
-                    busy.add(describe(tab, programs));
-                }
-            } else if (remote > 0 && dir != null) {
-                remoteAnswers.put(
-                        tab,
-                        java.util.concurrent.CompletableFuture.supplyAsync(
-                                () -> remotePrograms.apply(dir, remote),
-                                command -> Thread.ofVirtual().start(command)));
+            List<String> programs = pid > 0 ? view.runningPrograms() : remoteAnswers.get(tab);
+            if (programs != null && !programs.isEmpty()) {
+                busy.add(describe(tab, programs));
+            }
+            if (pid <= 0 && remote > 0 && dir != null) {
+                Thread.ofVirtual().name("terminal-busy-ask").start(() -> {
+                    List<String> answer;
+                    try {
+                        answer = remotePrograms.apply(dir, remote);
+                    } catch (RuntimeException e) {
+                        return;
+                    }
+                    Platform.runLater(() -> {
+                        if (owns(tab)) {
+                            remoteAnswers.put(tab, answer);
+                        }
+                    });
+                });
             }
         }
-        long deadline = System.nanoTime() + remoteWait.toNanos();
-        remoteAnswers.forEach((tab, answer) -> {
-            try {
-                List<String> programs = answer.get(
-                        Math.max(0, deadline - System.nanoTime()), java.util.concurrent.TimeUnit.NANOSECONDS);
-                if (!programs.isEmpty()) {
-                    busy.add(describe(tab, programs));
-                }
-            } catch (Exception noAnswer) {
-                // slow or gone: not asked about
-            }
-        });
         return busy;
     }
+
+    /** What each remote shell's host last said it runs (FX thread). */
+    private final Map<Tab, List<String>> remoteAnswers = new java.util.WeakHashMap<>();
 
     private static String describe(Tab tab, List<String> programs) {
         String running = programs.size() <= RunningProgram.MAX_NAMED

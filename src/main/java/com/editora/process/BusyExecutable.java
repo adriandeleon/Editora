@@ -24,6 +24,7 @@ public final class BusyExecutable {
 
     /** {@code pb.start()}, retried while the executable is busy; any other failure is thrown at once. */
     public static Process start(ProcessBuilder pb) throws IOException {
+        com.editora.perf.BlockingSites.enter("process start");
         return start(pb, ATTEMPTS, FIRST_WAIT_MS);
     }
 
