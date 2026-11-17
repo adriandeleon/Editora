@@ -126,6 +126,7 @@ class EditorInteractionFxTest {
             buffer.setTestDebugHandler(t -> ran.add("debug:" + t.className() + "#" + t.methodName()));
             buffer.setTestGutterEnabled(true);
             buffer.setTestGutterEnabled(true);
+            buffer.settleRunScanForTest(); // the scan runs off the FX thread (PERF-01): landed here
 
             var classTarget = buffer.testClassTarget();
             assertNotNull(classTarget);
@@ -179,6 +180,7 @@ class EditorInteractionFxTest {
             EditorFx.call(EditorFx.field(buffer, "runGutter"), "onRunGlyph", new Class<?>[] {int.class}, methodLine);
             assertEquals(3, ran.size(), "with no handler the glyph does nothing");
             buffer.setTestGutterEnabled(false);
+            buffer.settleRunScanForTest();
             assertNull(buffer.testClassTarget());
             stage.close();
             buffer.dispose();
@@ -207,6 +209,7 @@ class EditorInteractionFxTest {
             buffer.setMainDebugHandler(m -> ran.add("debug:" + m.fqn()));
             buffer.setMainGutterEnabled(true);
             buffer.setMainGutterEnabled(true);
+            buffer.settleRunScanForTest(); // the scan runs off the FX thread (PERF-01): landed here
 
             var main = buffer.mainTargetAtCaret();
             assertNotNull(main, "caret above main(): the file's first entry point");
@@ -257,6 +260,7 @@ class EditorInteractionFxTest {
             assertFalse(http.isRunnable());
             http.setHttpEnabled(true);
             http.setHttpEnabled(true);
+            http.settleRunScanForTest(); // the scan runs off the FX thread (PERF-01): landed here
             assertTrue(http.isRunnable());
             assertEquals(1, runnableChanges.get());
             assertTrue(EditorFx.<Boolean>call(
@@ -270,6 +274,7 @@ class EditorInteractionFxTest {
             assertEquals(1, requests.size());
             http.setOnRunnableChanged(null);
             http.setHttpEnabled(false);
+            http.settleRunScanForTest();
             assertFalse(http.isRunnable());
             assertEquals(1, runnableChanges.get());
 
@@ -278,8 +283,10 @@ class EditorInteractionFxTest {
             List<String> targets = new ArrayList<>();
             make.setMakeRunHandler(targets::add);
             make.setRunEnabled(false);
+            make.settleRunScanForTest();
             assertFalse(make.isRunnable(), "the Run feature is off");
             make.setRunEnabled(true);
+            make.settleRunScanForTest(); // the scan runs off the FX thread (PERF-01): landed here
             assertTrue(make.isMakefile());
             assertTrue(make.isRunnable());
             java.util.Map<Integer, String> byLine = EditorFx.field(EditorFx.field(make, "runGutter"), "makeTargets");
@@ -317,7 +324,9 @@ class EditorInteractionFxTest {
                     0); // nothing wired: no-op
             python.setRunHandler(runs::incrementAndGet);
             python.setRunEnabled(false);
+            python.settleRunScanForTest();
             python.setRunEnabled(true);
+            python.settleRunScanForTest();
             assertTrue(python.isRunnable());
             EditorFx.call(EditorFx.field(python, "runGutter"), "onRunGlyph", new Class<?>[] {int.class}, 0);
             assertEquals(1, runs.get());
@@ -328,6 +337,7 @@ class EditorInteractionFxTest {
             assertEquals(2, runs.get());
             menu.hide();
             python.setRunEnabled(false);
+            python.settleRunScanForTest();
             ContextMenu off = rightClick(python, 2);
             assertNull(EditorFx.findMenuItem(off.getItems(), tr("command.file.run")), "Run goes with the feature");
             off.hide();
@@ -336,9 +346,11 @@ class EditorInteractionFxTest {
             // A shell script's glyph follows the Run feature alone, like Python's.
             EditorBuffer shell = buffer("shell", "#!/bin/sh\necho hi\n");
             shell.setRunEnabled(false);
+            shell.settleRunScanForTest();
             assertTrue(shell.isShell());
             assertFalse(shell.isRunnable());
             shell.setRunEnabled(true);
+            shell.settleRunScanForTest();
             assertTrue(shell.isRunnable());
             http.dispose();
             make.dispose();

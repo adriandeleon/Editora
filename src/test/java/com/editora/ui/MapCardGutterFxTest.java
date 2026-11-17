@@ -211,7 +211,10 @@ class MapCardGutterFxTest {
                 // The ▶ of main runs it.
                 StackPane runSlot = (StackPane) row(c, 7).getChildren().get(2);
                 Node glyph = runSlot.getChildren().getFirst();
-                assertTrue(glyph instanceof Group);
+                assertTrue(
+                        glyph instanceof com.editora.editor.PressablePane pressable
+                                && pressable.getChildren().getFirst() instanceof Group,
+                        "the ▶, pressable");
                 click(glyph, MouseButton.PRIMARY);
                 click(glyph, MouseButton.SECONDARY);
                 assertTrue(stub.calls.contains("run demo.AppTest"));

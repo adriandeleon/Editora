@@ -106,11 +106,13 @@ public final class LogHighlightOverlay extends Region implements SecondaryPane.F
         });
         area.estimatedScrollXProperty().addListener((o, a, b) -> scheduleRedraw());
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
-        tints = OverlayPalette.logTints(area);
-        area.backgroundProperty().addListener((o, a, b) -> {
-            tints = OverlayPalette.logTints(area);
-            scheduleRedraw();
-        });
+        OverlayPalette.trackLogTints(
+                area,
+                getChildren(),
+                next -> { // the theme's, re-read on a theme change
+                    tints = next;
+                    scheduleRedraw();
+                });
     }
 
     /** The same level tints for a split's second {@code view}, kept in step with this one. */

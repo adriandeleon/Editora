@@ -49,6 +49,7 @@ public final class MarkwhenCalendar {
             long endExclusive,
             String label,
             @Nullable Color color,
+            @Nullable String lane,
             String tooltip) {}
 
     /** Builds the calendar node. {@code zoomScale} scales the font + cell height; {@code viewportWidth} is
@@ -161,8 +162,12 @@ public final class MarkwhenCalendar {
         Label chip = new Label(e.label());
         chip.getStyleClass().add("markwhen-cal-chip");
         chip.setMaxWidth(Double.MAX_VALUE);
-        if (e.color() != null) {
-            chip.setStyle("-fx-background-color: " + MarkwhenPaint.toRgba(e.color()) + ";");
+        Color color = e.color();
+        String lane = e.lane();
+        if (color != null) {
+            chip.setStyle("-fx-background-color: " + MarkwhenPaint.toRgba(color) + ";");
+        } else if (lane != null) {
+            chip.getStyleClass().add(lane);
         }
         Tooltip.install(chip, ControlNames.tooltip(e.tooltip()));
         return chip;
@@ -176,7 +181,13 @@ public final class MarkwhenCalendar {
                 long s = e.start().startEpochDay();
                 long en = (e.end() != null ? e.end() : e.start()).endEpochDayExclusive();
                 String label = e.label().isBlank() ? Messages.tr("common.untitled") : e.label();
-                out.add(new Ev(s, en, label, MarkwhenPaint.colorFor(e, model), tooltip(e, label)));
+                out.add(new Ev(
+                        s,
+                        en,
+                        label,
+                        MarkwhenPaint.colorFor(e, model),
+                        MarkwhenPaint.laneClass(e, model),
+                        tooltip(e, label)));
             }
         }
     }

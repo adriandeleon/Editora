@@ -113,6 +113,7 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
         this.actions = actions;
         this.issues = issues;
         getStyleClass().add("markdown-lint-panel");
+        list.setAccessibleText(tr("toolwindow.markdownLint"));
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         UiZoom.spacing(this, 6);
         UiZoom.padding(this, 6);

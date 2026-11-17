@@ -39,6 +39,7 @@ public class ProjectCombo extends ComboBox<Project> {
 
     public ProjectCombo(Consumer<Project> onSwitch) {
         getStyleClass().add("project-combo");
+        setAccessibleText(tr("toolwindow.project"));
         setConverter(new StringConverter<>() {
             @Override
             public String toString(Project p) {

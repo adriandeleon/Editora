@@ -256,6 +256,7 @@ final class TodoSettingsPane {
 
     private static void addPartColorRow(GridPane grid, int row, String label, ColorPicker picker) {
         Label l = new Label(label);
+        l.setLabelFor(picker);
         grid.add(l, 0, row);
         grid.add(picker, 1, row);
         GridPane.setValignment(l, VPos.CENTER);
@@ -286,7 +287,7 @@ final class TodoSettingsPane {
         try {
             return Color.web(web == null || web.isBlank() ? "#E5C07B" : web);
         } catch (RuntimeException e) {
-            return Color.web("#E5C07B");
+            return com.editora.editor.todo.TodoColors.solid(null); // not a colour: the neutral fallback
         }
     }
 

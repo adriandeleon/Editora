@@ -118,6 +118,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         UiZoom.spacing(this, 4);
 
         filterField.setPromptText(tr("bookmarks.filterPrompt"));
+        filterField.setAccessibleText(tr("bookmarks.filterPrompt"));
         filterField.getStyleClass().add("bookmarks-filter");
         filterField.textProperty().addListener((o, w, n) -> refresh());
         FilterFieldNav.install(filterField, tree, this::activateSelected); // Down/Enter → into / open the results
@@ -158,6 +159,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
 
         tree.setShowRoot(false);
         tree.getStyleClass().add("bookmarks-tree");
+        tree.setAccessibleText(tr("toolwindow.bookmarks"));
         tree.setCellFactory(t -> new BookmarkCell());
         RowContextMenu.install(tree); // Menu key / Shift+F10 open the selected row's menu (cells are not focusable)
         // Delete removes the selected entry here, whatever a keymap may bind the key to globally.

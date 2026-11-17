@@ -5,6 +5,7 @@ import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.function.IntConsumer;
 
 import javafx.collections.ObservableList;
 import javafx.scene.Node;
@@ -82,19 +83,22 @@ public final class PreviewFind {
 
     /**
      * Finds every match of {@code query}, makes the first one at or below the top of the view current and
-     * scrolls to it. Returns the number of matches; an empty query or an invalid regex clears the search.
+     * scrolls to it, then hands {@code found} the number of matches; an empty query or an invalid regex clears
+     * the search. The blocks' text is taken on the FX thread and searched off it (PERF-01, Pauta 6.0.1): the
+     * marks land a moment later, and only for the latest search.
      */
-    public int search(String query, boolean matchCase, boolean regex, boolean wholeWord) {
+    public void search(String query, boolean matchCase, boolean regex, boolean wholeWord, IntConsumer found) {
         clear();
         this.query = query == null ? "" : query;
         this.matchCase = matchCase;
         this.regex = regex;
         this.wholeWord = wholeWord;
-        collect();
-        markShown();
-        current = hits.isEmpty() ? -1 : firstAtOrBelow(preview.scrollY());
-        show();
-        return hits.size();
+        collect(() -> {
+            markShown();
+            current = hits.isEmpty() ? -1 : firstAtOrBelow(preview.scrollY());
+            show();
+            found.accept(hits.size());
+        });
     }
 
     /** Makes the next (or previous) match current, wrapping around, and scrolls to it. Returns its index. */
@@ -110,6 +114,7 @@ public final class PreviewFind {
 
     /** Removes every mark and forgets the query. */
     public void clear() {
+        asked++; // a search still out is dropped
         unmark();
         hits.clear();
         query = "";
@@ -122,10 +127,11 @@ public final class PreviewFind {
             return;
         }
         int was = current;
-        collect();
-        markShown();
-        current = hits.isEmpty() ? -1 : Math.min(Math.max(was, 0), hits.size() - 1);
-        setCurrent(true);
+        collect(() -> {
+            markShown();
+            current = hits.isEmpty() ? -1 : Math.min(Math.max(was, 0), hits.size() - 1);
+            setCurrent(true);
+        });
     }
 
     /** Block {@code block} entered the scene: its matches are marked. */
@@ -137,25 +143,66 @@ public final class PreviewFind {
 
     // --- finding -----------------------------------------------------------------------------------------
 
-    private void collect() {
+    /** {@link com.editora.perf.BlockingSites} name of the preview's search, made off the FX thread. */
+    public static final String SEARCH_SITE = "PreviewFind.search";
+
+    /** The latest search asked: an answer to an older one is dropped. */
+    private long asked;
+
+    /**
+     * Takes every block's runs on the FX thread (the text of a block not built is cached), finds the matches in
+     * them off it, then — if no newer search was asked — makes them the hits and runs {@code then}.
+     */
+    private void collect(Runnable then) {
         unmark(); // the runs are read clean: a marked block is cut into pieces
         hits.clear();
+        long mine = ++asked;
         if (query.isEmpty()) {
+            then.run();
             return;
         }
+        List<List<Run>> blocks = new ArrayList<>(preview.blockCount());
         for (int b = 0; b < preview.blockCount(); b++) {
-            hits.addAll(find(b, preview.runsOf(b)));
+            blocks.add(preview.runsOf(b));
         }
+        String q = query;
+        boolean mc = matchCase;
+        boolean rx = regex;
+        boolean ww = wholeWord;
+        com.editora.perf.OffFx.then(
+                SEARCH_SITE,
+                () -> {
+                    List<Hit> found = new ArrayList<>();
+                    for (int b = 0; b < blocks.size(); b++) {
+                        found.addAll(find(b, blocks.get(b), q, mc, rx, ww));
+                    }
+                    return found;
+                },
+                answer -> {
+                    List<Hit> found = answer.value();
+                    if (mine != asked || found == null) {
+                        return; // a newer search, or a cleared one
+                    }
+                    unmark();
+                    hits.clear();
+                    hits.addAll(found);
+                    then.run();
+                });
     }
 
     private List<Hit> find(int block, List<Run> runs) {
+        return find(block, runs, query, matchCase, regex, wholeWord);
+    }
+
+    private static List<Hit> find(
+            int block, List<Run> runs, String query, boolean matchCase, boolean regex, boolean wholeWord) {
         List<Hit> out = new ArrayList<>();
         for (int r = 0; r < runs.size(); r++) {
             Run run = runs.get(r);
             if (run.text().isEmpty()) {
                 continue;
             }
-            List<int[]> found = matches(run.text());
+            List<int[]> found = matches(run.text(), query, matchCase, regex, wholeWord);
             if (run.label()) {
                 if (!found.isEmpty()) {
                     out.add(new Hit(block, r, 0, run.text().length()));
@@ -169,8 +216,9 @@ public final class PreviewFind {
         return out;
     }
 
-    private List<int[]> matches(String text) {
-        List<int[]> all = new ArrayList<>(SearchMatcher.matches(text, query, matchCase, regex, wholeWord));
+    /** The matches of a query in {@code text} (off the FX thread too); a zero-width match has nothing to mark. */
+    private static List<int[]> matches(String text, String query, boolean matchCase, boolean regex, boolean ww) {
+        List<int[]> all = new ArrayList<>(SearchMatcher.matches(text, query, matchCase, regex, ww));
         all.removeIf(m -> m[1] <= m[0]); // a zero-width match (^, $) has nothing to highlight
         return all;
     }

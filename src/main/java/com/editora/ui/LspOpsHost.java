@@ -95,11 +95,6 @@ final class LspOpsHost implements LspCoordinator.Ops {
     }
 
     @Override
-    public boolean saveBuffer(EditorBuffer buffer) {
-        return mc.fileWorkflows.saveSynchronously(buffer);
-    }
-
-    @Override
     public void closeBackgroundBuffer(EditorBuffer buffer) {
         Tab tab = mc.tabFor(buffer);
         if (tab != null && !buffer.isDirty()) {
@@ -228,5 +223,10 @@ final class LspOpsHost implements LspCoordinator.Ops {
     @Override
     public @Nullable Path canonicalize(@Nullable Path file) {
         return file == null ? null : MainController.canonicalPath(file);
+    }
+
+    @Override
+    public void saveThen(EditorBuffer buffer, java.util.function.Consumer<Boolean> then) {
+        mc.fileWorkflows.saveThen(buffer, then); // the write off the FX thread, no nested wait (PERF-01)
     }
 }

@@ -116,6 +116,7 @@ public class FileBreadcrumb extends StackPane {
 
         crumbHolder.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
         crumbHolder.getStyleClass().add("file-breadcrumb-holder");
+        breadcrumbs.setAccessibleText(tr("breadcrumb.name"));
         scroll.setFitToHeight(true);
         scroll.setPannable(true);
         // No visible scrollbars — they'd make the bar taller than one text line. Long paths are

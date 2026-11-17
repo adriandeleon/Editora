@@ -14,7 +14,6 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
-import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
@@ -27,6 +26,7 @@ import javafx.stage.Window;
 
 import com.editora.dap.DapModels;
 import com.editora.editor.ControlNames;
+import com.editora.editor.PressableLabel;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
@@ -276,27 +276,19 @@ final class DebugParallelStacksWindow {
     }
 
     private Label frameRow(ParallelStacks.Frame f, boolean shownTop) {
-        Label row = new Label(f.text());
+        PressableLabel row = new PressableLabel(() -> {});
+        row.setText(f.text());
         row.getStyleClass().add("parallel-stacks-frame");
         if (f.shownThreadsFrame() != null && shownTop) {
             row.getStyleClass().add("parallel-stacks-current");
         }
         row.setMaxWidth(Double.MAX_VALUE);
         row.setPrefHeight(UiZoom.px(ROW));
-        row.setFocusTraversable(true);
         row.setAccessibleText(f.text());
         row.setTooltip(ControlNames.tooltip(DebugPanelText.frameText(f.opened())));
-        row.setOnMouseClicked(e -> {
-            if (e.getButton() == MouseButton.PRIMARY) {
-                row.requestFocus();
-                actions.openFrame(f.opened());
-            }
-        });
-        row.setOnKeyPressed(e -> {
-            if (e.getCode() == KeyCode.ENTER || e.getCode() == KeyCode.SPACE) {
-                actions.openFrame(f.opened());
-                e.consume();
-            }
+        row.setAction(() -> {
+            row.requestFocus();
+            actions.openFrame(f.opened());
         });
         return row;
     }

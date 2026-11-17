@@ -138,6 +138,14 @@ public final class MarkwhenTimeline {
         pane.getChildren().add(name);
     }
 
+    /** The tag's lane hue, for an event whose tag declares no colour of its own. */
+    private static void addLane(Node mark, MwNode.Event e, Timeline model) {
+        String lane = MarkwhenPaint.laneClass(e, model);
+        if (lane != null) {
+            mark.getStyleClass().add(lane);
+        }
+    }
+
     private static void renderEvent(
             Pane pane, MwNode.Event e, double y, long min, long max, double axisW, Timeline model) {
         long startDay = e.start().startEpochDay();
@@ -158,6 +166,7 @@ public final class MarkwhenTimeline {
                 point.setFill(color);
             } else {
                 point.getStyleClass().add("markwhen-point");
+                addLane(point, e, model);
             }
             mark = point;
             labelX = x1 + POINT_R + 5;
@@ -168,6 +177,7 @@ public final class MarkwhenTimeline {
                 bar.setStyle("-fx-background-color: " + MarkwhenPaint.toRgba(color) + "; -fx-background-radius: 3;");
             } else {
                 bar.getStyleClass().add("markwhen-bar");
+                addLane(bar, e, model);
             }
             mark = bar;
             labelX = x2 + 5;

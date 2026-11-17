@@ -110,7 +110,7 @@ public class Switcher {
                 }
                 // File-type glyph for real files; a non-buffer tab (Welcome) gets none.
                 label.setGraphic(buffer != null ? FileIcons.forFileName(name) : null);
-                setGraphic(label);
+                setGraphic(CellNames.read(label));
                 setText(null);
             }
         });
@@ -119,6 +119,7 @@ public class Switcher {
         header.getStyleClass().add("switcher-header");
         VBox column = UiZoom.spacing(new VBox(header, filesList), 4);
         column.getStyleClass().add("switcher-column");
+        filesList.setAccessibleText(tr("switcher.header"));
 
         pathLabel.getStyleClass().add("switcher-path");
         pathLabel.setMaxWidth(Double.MAX_VALUE);

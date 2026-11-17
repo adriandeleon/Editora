@@ -1063,7 +1063,7 @@ public final class BufferCompletion {
             return;
         }
         if (sourceOn && !host.lspActive() && "shell".equals(host.language())) {
-            items = withShellNames(items, a, windowStart + start, prefix); // no server: the script's names (C9)
+            items = withShellNames(items, a, windowStart + start, prefix, manual); // no server: the script's names (C9)
         }
         if (wideStart < start && !items.isEmpty()) {
             var pos =
@@ -1874,23 +1874,79 @@ public final class BufferCompletion {
                 }));
     }
 
-    /** {@code items} (the snippets) followed by the shell script's own names for {@code prefix} at {@code wordStart}. */
-    private static List<Completion> withShellNames(List<Completion> items, CodeArea a, int wordStart, String prefix) {
+    /**
+     * {@code items} (the snippets) followed by the shell script's own names for {@code prefix} at {@code wordStart}.
+     * The script is scanned off the FX thread (PERF-01, Pauta 6.0.1), once per document version and caret: until
+     * that scan lands the snippets are offered alone, and when it lands for the same text and caret the list is
+     * worked out again with the names.
+     */
+    private List<Completion> withShellNames(
+            List<Completion> items, CodeArea a, int wordStart, String prefix, boolean manual) {
         int room = CompletionEngine.MAX - items.size();
         if (room <= 0 || a.getLength() > com.editora.completion.ShellBufferNames.MAX_SCAN_CHARS) {
             return items;
         }
-        var names = com.editora.completion.ShellBufferNames.complete(a.getText(), wordStart, prefix, room);
+        long version = host.docVersion();
+        int caret = a.getCaretPosition();
+        List<Completion> names;
+        if (version == shellNamesVersion && caret == shellNamesCaret) {
+            names = shellNames;
+        } else {
+            askShellNames(a, wordStart, prefix, room, manual);
+            return items;
+        }
         if (names.isEmpty()) {
             return items;
         }
         var out = new java.util.ArrayList<Completion>(items);
         for (Completion name : names) {
+            if (out.size() >= CompletionEngine.MAX) {
+                break;
+            }
             if (out.stream().noneMatch(c -> c.insert().equals(name.insert()))) {
                 out.add(name);
             }
         }
         return out;
+    }
+
+    /** {@link com.editora.perf.BlockingSites} name of the shell script's scan for its names. */
+    public static final String SHELL_NAMES_SITE = "BufferCompletion.shellNames";
+
+    /** The document version and caret {@link #shellNames} were found for. */
+    private long shellNamesVersion = -1;
+
+    private int shellNamesCaret = -1;
+    private List<Completion> shellNames = List.of();
+    /** The latest scan asked for: an answer to an older one is dropped. */
+    private long shellNamesAsk;
+
+    private void askShellNames(CodeArea a, int wordStart, String prefix, int room, boolean manual) {
+        long version = host.docVersion();
+        int caret = a.getCaretPosition();
+        String text = a.getText();
+        long ask = ++shellNamesAsk;
+        offerRunner.accept(() -> {
+            com.editora.perf.BlockingSites.enter(SHELL_NAMES_SITE);
+            List<Completion> found;
+            try {
+                found = com.editora.completion.ShellBufferNames.complete(text, wordStart, prefix, room);
+            } catch (RuntimeException e) {
+                found = List.of();
+            }
+            List<Completion> names = found;
+            com.editora.perf.OffFx.onFx(() -> {
+                if (ask != shellNamesAsk || host.docVersion() != version || a.getCaretPosition() != caret) {
+                    return; // the text or the caret moved on: a newer ask answers
+                }
+                shellNamesVersion = version;
+                shellNamesCaret = caret;
+                shellNames = names;
+                if (!names.isEmpty()) {
+                    updateCompletion(a, manual);
+                }
+            });
+        });
     }
 
     /** Whether the completion popup is currently open (an in-progress LSP/local completion session). */

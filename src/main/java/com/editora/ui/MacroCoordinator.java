@@ -89,6 +89,13 @@ final class MacroCoordinator implements MacroCapture {
     private static final long FOCUS_WAIT_NANOS = 2_000_000_000L;
 
     private final CoordinatorHost host;
+
+    /**
+     * Whether work a step started still runs off the FX thread (the find bar's search): the next key step waits for
+     * it, as it waits for a prompt or an overlay, so a replay lands where the live keys did (PERF-01, Pauta 6.0.1).
+     */
+    java.util.function.BooleanSupplier workPending = () -> false;
+
     private final Ops ops;
     private final CommandRegistry registry;
     private final MacroService service;
@@ -705,6 +712,9 @@ final class MacroCoordinator implements MacroCapture {
         private MacroReplay.Readiness readiness(MacroStep step) {
             if (step.isCommand()) {
                 return MacroReplay.Readiness.READY;
+            }
+            if (workPending.getAsBoolean()) {
+                return MacroReplay.Readiness.WAIT_FOR_EDITOR;
             }
             OverlayHost overlay = host.overlayHost();
             boolean overlayShowing = overlay != null && overlay.isShowing();

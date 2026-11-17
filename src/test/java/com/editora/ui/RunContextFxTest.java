@@ -2,7 +2,6 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
@@ -49,11 +48,18 @@ class RunContextFxTest {
             b.setContent(Files.readString(file));
             b.setPath(file);
             FxTestSupport.call(fx.controller, "addBuffer", new Class[] {EditorBuffer.class, boolean.class}, b, true);
-            registry.run("run.context");
+            registry.run("run.context"); // decides once the buffer's Run scan, made off FX, has landed
+            return null;
+        });
+        SettingsRig.awaitFx("the status line", () -> {
             Object statusBar = FxTestSupport.field(fx.controller, "statusBar");
             MessageLog log = FxTestSupport.field(statusBar, "messageLog");
-            List<MessageLog.Entry> entries = log.entries();
-            return entries.isEmpty() ? null : entries.get(0).text();
+            return !log.entries().isEmpty();
+        });
+        said = FxTestSupport.callOnFx(() -> {
+            Object statusBar = FxTestSupport.field(fx.controller, "statusBar");
+            MessageLog log = FxTestSupport.field(statusBar, "messageLog");
+            return log.entries().get(0).text();
         });
         assertEquals(tr("status.run.noContext", "Shelf.java"), said);
     }
@@ -70,7 +76,7 @@ class RunContextFxTest {
             b.setPath(file);
             FxTestSupport.call(fx.controller, "addBuffer", new Class[] {EditorBuffer.class, boolean.class}, b, true);
             b.setTestGutterEnabled(true);
-            b.settleRunScan();
+            b.settleRunScanForTest();
             b.getArea().moveTo(0, 0);
             return b.testTargetAtCaret(true);
         });

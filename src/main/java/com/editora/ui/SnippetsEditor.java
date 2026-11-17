@@ -168,6 +168,7 @@ final class SnippetsEditor {
         filter.textProperty().addListener((o, was, now) -> shown.setPredicate(e -> matches(e, now)));
 
         ListView<Entry> list = new ListView<>(shown);
+        list.setAccessibleText(tr("settings.cat.snippets"));
         UiZoom.prefSize(list, 240, 400);
         VBox.setVgrow(list, Priority.ALWAYS);
         list.setCellFactory(lv -> new EntryCell());
@@ -610,7 +611,7 @@ final class SnippetsEditor {
                 t.setMinWidth(Region.USE_PREF_SIZE); // the name gives way, not the tag ("bund…")
                 cell.getChildren().add(t);
             }
-            setGraphic(cell);
+            setGraphic(CellNames.read(cell));
         }
     }
 }

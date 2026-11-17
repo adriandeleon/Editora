@@ -46,6 +46,7 @@ import javafx.scene.paint.Color;
 
 import com.editora.editor.ControlNames;
 import com.editora.editor.MenuChords;
+import com.editora.editor.ThemeProbes;
 import com.editora.editor.UiZoom;
 import com.editora.git.GitFileStatus;
 import com.editora.git.GitFormat;
@@ -301,6 +302,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         // trailing clear ("✕") button; Enter (or the search button) runs the text over the whole history.
         // Typing here can't clash with the list's bare n/p nav — that handler is on the commit ListView.
         filterField.setPromptText(tr("gitlog.filterPrompt"));
+        filterField.setAccessibleText(tr("gitlog.filterPrompt"));
         filterField.getStyleClass().add("git-log-filter");
         filterField.textProperty().addListener((o, w, n) -> applyCommitFilter(n));
         filterField.setOnAction(e -> searchHistory());
@@ -325,6 +327,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         filterRow.setAlignment(Pos.CENTER_LEFT);
 
         commits.getStyleClass().add("git-tree");
+        commits.setAccessibleText(tr("toolwindow.gitLog"));
         commits.setItems(filteredCommits);
         commits.setPlaceholder(placeholder);
         commits.setCellFactory(v -> new CommitCell());
@@ -369,6 +372,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         VBox commitsBox = new VBox(commits, footer);
 
         files.getStyleClass().add("git-tree");
+        files.setAccessibleText(tr("project.map.changes.filesAccessible"));
         files.setCellFactory(v -> new FileCell());
         RowContextMenu.install(files); // the file rows' menu from the Menu key / Shift+F10, as for the commits
         installListNav(files);
@@ -438,6 +442,15 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         placeholder.setWrapText(true);
 
         getChildren().setAll(toolbar, filterRow, split);
+        readLanes();
+        lanes = new ThemeProbes(
+                getChildren(),
+                () -> {
+                    readLanes();
+                    commits.refresh(); // each row's graph strip redraws in the new lanes
+                },
+                ThemeProbes.laneNames());
+        readLanes();
     }
 
     /** Runs the filter box's text as a search over the whole history; the box then filters its result. */
@@ -1124,17 +1137,24 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         return sb.append('\n').append(c.hash()).toString();
     }
 
-    /** Lane colours, by column: mid-tones that read on a light and on a dark list alike. */
-    private static final Color[] LANE_COLORS = {
-        Color.web("#3b82f6"),
-        Color.web("#e0603a"),
-        Color.web("#2fa46a"),
-        Color.web("#b065d8"),
-        Color.web("#d4a017"),
-        Color.web("#16a3b8"),
-        Color.web("#e0559a"),
-        Color.web("#8a8f98")
-    };
+    /**
+     * Lane colours, by column: the theme's six {@code -lane-*} hues (ladders of the ground, blue to magenta, none of
+     * them amber, red or green, which mean states: ICON-18), read through probes and re-read on a theme change. A
+     * mid grey stands for each until a stylesheet reaches the probes.
+     */
+    private final Color[] laneColors = new Color[com.editora.editor.ThemeProbes.LANES];
+
+    private @Nullable ThemeProbes lanes;
+
+    private Color lane(int lane) {
+        return laneColors[lane % laneColors.length];
+    }
+
+    private void readLanes() {
+        for (int i = 0; i < laneColors.length; i++) {
+            laneColors[i] = lanes == null ? Color.gray(0.55) : lanes.get("lane-" + i, Color.gray(0.55));
+        }
+    }
 
     /**
      * The graph of one row: a canvas as wide as the graph column and exactly as high as the cell, so the
@@ -1223,18 +1243,18 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             double nodeX = x(row.column());
             g.setLineWidth(UiZoom.px(1.5));
             for (int lane : row.through()) {
-                g.setStroke(LANE_COLORS[lane % LANE_COLORS.length]);
+                g.setStroke(lane(lane));
                 g.strokeLine(x(lane), 0, x(lane), h);
             }
             for (int lane : row.in()) {
-                g.setStroke(LANE_COLORS[lane % LANE_COLORS.length]);
+                g.setStroke(lane(lane));
                 edge(g, x(lane), 0, nodeX, mid);
             }
             for (int lane : row.out()) {
-                g.setStroke(LANE_COLORS[lane % LANE_COLORS.length]);
+                g.setStroke(lane(lane));
                 edge(g, nodeX, mid, x(lane), h);
             }
-            g.setFill(LANE_COLORS[row.column() % LANE_COLORS.length]);
+            g.setFill(lane(row.column()));
             if (merge) {
                 // A merge is a diamond, apart from the two lanes leaving it.
                 g.beginPath();
@@ -1379,7 +1399,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             author.setText(c.author());
             date.setText(relativeDate(c, System.currentTimeMillis() / 1000));
             fitToWidth(c);
-            setGraphic(row);
+            setGraphic(CellNames.read(row));
             tooltip.setText(commitTooltip(c));
             setTooltip(tooltip);
             if (loadsAhead(index, filteredCommits.size(), hasMore, filtering(), loadAheadRows)) {

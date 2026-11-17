@@ -57,6 +57,10 @@ final class AbbreviationsEditor {
     private boolean loading;
     private Supplier<PendingFormEdit> formEdit = PendingFormEdit::none;
 
+    {
+        list.setAccessibleText(tr("settings.cat.abbreviations"));
+    }
+
     AbbreviationsEditor(
             ConfigManager config,
             Runnable applied,

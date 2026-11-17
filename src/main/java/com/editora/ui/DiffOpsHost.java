@@ -60,11 +60,6 @@ final class DiffOpsHost implements DiffCoordinator.Ops {
     }
 
     @Override
-    public boolean saveBuffer(EditorBuffer buffer) {
-        return mc.fileWorkflows.saveSynchronously(buffer);
-    }
-
-    @Override
     public java.util.List<DiffViewerPane> openDiffPanes() {
         java.util.List<DiffViewerPane> out = new java.util.ArrayList<>();
         for (Tab tab : mc.editorArea.tabs()) {
@@ -107,5 +102,10 @@ final class DiffOpsHost implements DiffCoordinator.Ops {
     @Override
     public void openAt(Path file, int line) {
         mc.openAndNavigate(file, Math.max(0, line - 1));
+    }
+
+    @Override
+    public void saveThen(EditorBuffer buffer, java.util.function.Consumer<Boolean> then) {
+        mc.fileWorkflows.saveThen(buffer, then); // the write off the FX thread, no nested wait (PERF-01)
     }
 }

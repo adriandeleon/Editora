@@ -116,6 +116,7 @@ class MainControllerWindowFxTest {
 
     /** Types {@code query} into the find bar and lets it search now rather than after its typing delay. */
     private static void find(FindReplaceBar bar, String query) {
+        bar.searchOn(Runnable::run, Runnable::run, com.editora.text.SearchMatcher.DEFAULT_PAGE); // in place (seam)
         bar.show(false);
         FxTestSupport.<javafx.scene.control.TextField>field(bar, "findField").setText(query);
         FxTestSupport.invoke(bar, "recompute");

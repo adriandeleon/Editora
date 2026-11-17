@@ -2384,6 +2384,54 @@ final class FileWorkflowCoordinator {
         return completed;
     }
 
+    /**
+     * Saves {@code buffer} as {@link #saveSynchronously} does — a write, or Save As for an untitled one — without
+     * waiting: the write runs on the save worker and {@code then} hears on the FX thread whether the bytes are on
+     * disk. A command that must run on the saved file goes on there, never in a nested event loop (PERF-01, Pauta
+     * 6.0.1).
+     */
+    void saveThen(EditorBuffer buffer, java.util.function.Consumer<Boolean> then) {
+        if (refuseUnsavable(buffer)) {
+            then.accept(false);
+            return;
+        }
+        Path file = buffer.getPath();
+        if (file == null) {
+            Path target = saveAsTargetChooser.apply(buffer);
+            if (target == null) {
+                then.accept(false);
+                return;
+            }
+            applySaveAsTarget(buffer, target, then);
+            return;
+        }
+        if (adminSaveApplicable(file)) {
+            saveAsAdmin(buffer);
+            then.accept(false);
+            return;
+        }
+        writeBufferThen(buffer, file, false, then);
+    }
+
+    /** Captures and queues the write, then {@code then} with its outcome on the FX thread. */
+    private void writeBufferThen(
+            EditorBuffer buffer, Path file, boolean saveAs, java.util.function.Consumer<Boolean> then) {
+        SaveRequest request = captureSave(buffer, file, saveAs);
+        if (request == null) {
+            then.accept(false);
+            return;
+        }
+        CompletableFuture<Boolean> completed = new CompletableFuture<>();
+        completed.whenComplete(
+                (ok, error) -> Platform.runLater(() -> then.accept(error == null && Boolean.TRUE.equals(ok))));
+        try {
+            saveExecutor(file).submit(() -> writeAsync(request, false, completed));
+        } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
+            finishRequest(request);
+            completed.complete(false);
+        }
+    }
+
     /** Synchronous variant for close/run/debug flows that must observe the saved bytes before continuing. */
     boolean saveSynchronously(EditorBuffer buffer) {
         if (refuseUnsavable(buffer)) {
@@ -2570,11 +2618,33 @@ final class FileWorkflowCoordinator {
     }
 
     private boolean applySaveAsTarget(EditorBuffer buffer, Path file, boolean synchronous) {
+        return applySaveAsTarget(buffer, file, synchronous, null);
+    }
+
+    /** As above, the write's outcome handed to {@code then} on the FX thread (no wait at all). */
+    private void applySaveAsTarget(EditorBuffer buffer, Path file, java.util.function.Consumer<Boolean> then) {
+        if (!applySaveAsTarget(buffer, file, false, then)) {
+            then.accept(false);
+        }
+    }
+
+    /**
+     * Re-points {@code buffer} at {@code file} and writes it: in a nested wait when {@code synchronous}, or with its
+     * outcome handed to {@code then} when one is given (the method then answers whether the write was queued).
+     */
+    private boolean applySaveAsTarget(
+            EditorBuffer buffer, Path file, boolean synchronous, java.util.function.@Nullable Consumer<Boolean> then) {
         if (refuseUnsavable(buffer) || refuseTargetOpenElsewhere(buffer, file)) {
             return false; // before the buffer is re-pointed: a refused write must not leave it renamed
         }
-        if (!encryption.beforeSaveAs(buffer, file, () -> applySaveAsTarget(buffer, file, synchronous))) {
-            return false; // asked first: leaving encryption, or choosing who a new encrypted file is for
+        if (!encryption.beforeSaveAs(buffer, file, () -> {
+            if (then != null) {
+                applySaveAsTarget(buffer, file, then);
+            } else {
+                applySaveAsTarget(buffer, file, synchronous);
+            }
+        })) {
+            return then != null; // asked first: leaving encryption, or choosing who a new encrypted file is for
         }
         Path previousPath = buffer.getPath();
         saveAsOrigins.putIfAbsent(buffer, new SaveAsOrigin(previousPath));
@@ -2589,7 +2659,13 @@ final class FileWorkflowCoordinator {
         host.previews().ensurePreviewControls(buffer); // a new untitled saved as .md/.mmd now gets the preview toggle
         host.htmlPreview().pathChanged(buffer, previousPath); // old name: no editor text served (E201); new: the globe
         host.logViewer().ensureControl(buffer); // a save-as to .log now gets the log control + level overlay
-        boolean ok = synchronous ? writeBufferSynchronously(buffer, file, true) : writeBuffer(buffer, file, true);
+        boolean ok;
+        if (then != null) {
+            writeBufferThen(buffer, file, true, then);
+            ok = true;
+        } else {
+            ok = synchronous ? writeBufferSynchronously(buffer, file, true) : writeBuffer(buffer, file, true);
+        }
         Tab tab = host.tabFor(buffer);
         if (tab != null) {
             host.updateTabMeta(tab, buffer);
@@ -3487,29 +3563,46 @@ final class FileWorkflowCoordinator {
     /** Completes when the clean-up started by the latest save has settled (tests wait on it). */
     volatile CompletableFuture<Void> pastedImageCleanup = CompletableFuture.completedFuture(null);
 
-    /** Whether some open Markdown / Typst document other than {@code buffer} mentions {@code file}. */
-    private boolean usedByAnotherBuffer(EditorBuffer buffer, Path file) {
+    /** Another open Markdown or Typst document's text, taken on the FX thread for a check made off it. */
+    private record OtherDoc(@Nullable Path path, String text) {}
+
+    /** FX thread: the other open Markdown and Typst documents, as they are now. */
+    private List<OtherDoc> otherDocs(EditorBuffer buffer) {
+        List<OtherDoc> out = new java.util.ArrayList<>();
         for (Tab tab : host.editorArea().tabs()) {
             EditorBuffer other = host.bufferOf(tab);
-            if (other != null
-                    && other != buffer
-                    && (other.isMarkdown() || other.isTypst())
-                    && PastedImageCleanup.mentions(other.getPath(), other.getContent(), file)) {
+            if (other != null && other != buffer && (other.isMarkdown() || other.isTypst())) {
+                out.add(new OtherDoc(other.getPath(), other.getContent()));
+            }
+        }
+        return out;
+    }
+
+    /** Whether one of {@code others} mentions {@code file}: a search, made off the FX thread. */
+    private static boolean mentionedIn(List<OtherDoc> others, Path file) {
+        for (OtherDoc other : others) {
+            if (PastedImageCleanup.mentions(other.path(), other.text(), file)) {
                 return true;
             }
         }
         return false;
     }
 
+    /** What the recheck takes on the FX thread: the document, its pasted images, the other documents. */
+    private record Recheck(String text, List<Path> created, List<OtherDoc> others) {}
+
+    /** {@link com.editora.perf.BlockingSites} name of the pasted-image check, made off the FX thread. */
+    static final String PASTED_IMAGES_SITE = "FileWorkflowCoordinator.pastedImages";
+
     /**
      * After an explicit save: moves the images pasted into the document in this session that nothing
      * mentions any more to the trash ({@link PastedImageCleanup}). The save does not wait for it.
      *
-     * <p>Only string work happens here on the FX thread (the saved text, the other open buffers). Reading
-     * the sibling documents and moving files are file I/O and run on {@link #fileLoadExecutor}; between the
-     * two the candidates are checked again on the FX thread against the buffer as it is <em>then</em> — the
-     * user may have undone the deletion — and the status note is posted from the FX thread at the end.
-     * Closing the window stops it ({@link #shutdown}).
+     * <p>Nothing is searched on the FX thread (PERF-01, Pauta 6.0.1): it takes the texts there (the saved text,
+     * the other open documents), and the search for the images they mention, the reading of the sibling documents
+     * and the moving of files run on {@link #fileLoadExecutor}. Between the two the texts are taken again on the FX
+     * thread — the user may have undone the deletion — and checked once more off it; the status note is posted from
+     * the FX thread at the end. Closing the window stops it ({@link #shutdown}).
      */
     private void cleanUpPastedImages(SaveRequest request) {
         EditorBuffer buffer = request.buffer();
@@ -3518,33 +3611,40 @@ final class FileWorkflowCoordinator {
             return;
         }
         Path document = request.target();
-        List<Path> candidates = PastedImageCleanup.candidates(
-                document, request.savedText(), created, file -> usedByAnotherBuffer(buffer, file));
-        if (candidates.isEmpty()) {
-            return;
-        }
-        com.editora.io.Trash.Bin bin = pastedImageBin != null ? pastedImageBin : com.editora.io.Trash.system();
+        List<Path> createdNow = List.copyOf(created);
+        List<OtherDoc> others = otherDocs(buffer);
+        com.editora.io.Trash.Bin chosen = pastedImageBin;
         java.util.function.BooleanSupplier cancelled = () -> shutdown || buffer.isDisposed();
         CompletableFuture<Void> done = new CompletableFuture<>();
         pastedImageCleanup = done;
         try {
             fileLoadExecutor.submit(() -> {
                 try {
+                    com.editora.perf.BlockingSites.enter(PASTED_IMAGES_SITE);
+                    List<Path> candidates = PastedImageCleanup.candidates(
+                            document, request.savedText(), createdNow, file -> mentionedIn(others, file));
+                    if (candidates.isEmpty()) {
+                        return;
+                    }
                     List<Path> unused = PastedImageCleanup.unusedOnDisk(document, candidates, cancelled);
                     if (beforePastedImageRecheck != null) {
                         beforePastedImageRecheck.run();
                     }
-                    // Back on the FX thread: is each one still ours, and still unmentioned right now?
-                    List<Path> confirmed = unused.isEmpty() || cancelled.getAsBoolean()
-                            ? List.of()
-                            : onFx(() -> PastedImageCleanup.candidates(
-                                            document,
+                    // Is each one still ours, and still unmentioned right now? The texts are taken on the FX thread.
+                    Recheck again = unused.isEmpty() || cancelled.getAsBoolean()
+                            ? null
+                            : onFx(() -> new Recheck(
                                             buffer.getContent(),
                                             created.stream()
                                                     .filter(unused::contains)
                                                     .toList(),
-                                            file -> usedByAnotherBuffer(buffer, file)))
+                                            otherDocs(buffer)))
                                     .get();
+                    List<Path> confirmed = again == null
+                            ? List.of()
+                            : PastedImageCleanup.candidates(
+                                    document, again.text(), again.created(), file -> mentionedIn(again.others(), file));
+                    com.editora.io.Trash.Bin bin = chosen != null ? chosen : com.editora.io.Trash.system();
                     PastedImageCleanup.Outcome outcome = PastedImageCleanup.trash(confirmed, bin, cancelled);
                     onFx(() -> {
                                 created.removeAll(outcome.trashed());

@@ -46,9 +46,9 @@ void request(String input, Consumer<Result> onResult) {
 }
 ```
 
-Later additions with the same shape: the find bar's large-document search (`LatestOnly`), the status
-bar's byte count, the Run-glyph scan (`RunScan`, at a load as well as at a settled edit; the Run and Debug
-commands call `EditorBuffer.settleRunScan()` so a command issued before the load's result lands still decides
+Later additions with the same shape: the find bar's search (`LatestOnly`), the status
+bar's byte count, the Run-glyph scan (`RunScan`, whatever asks for it; the Run and Debug
+commands wait with `EditorBuffer.whenRunScanned` so a command issued before the scan lands still decides
 from the real scan), external-change and
 recent-file checks, directory listings for Find File and the breadcrumb (`DirectoryListing`), the File
 Information panel's word count and disk facts, and the spell checker's code-line scan of a prose buffer.
@@ -202,6 +202,46 @@ is parsed per document version off the thread (`HttpParsedFiles`, `EditorBuffer.
 click on a path not looked at yet is acted on when the look lands. Outside start-up's allowed reads and the quit, nothing
 on the FX thread touches the disk, starts or waits for a process, or parses, hashes or serializes text of the user's
 size.
+
+Nothing searches, hashes or parses a document in place either (PERF-01, Pauta 6.0.1). The dirty check compares
+lengths and, while the saved baseline holds its text, the text itself; against a sealed baseline the SHA-256 runs off
+the thread (`EditorBuffer.textMatchesSaved`, `dirtyHash`, keyed by document version and baseline): until it lands
+the tab keeps the dirty state the cheap check gives, never "clean" for text that differs, and an undo back to the saved
+text clears it when the hash lands; the fingerprint a baseline is sealed with is worked out off the thread too
+(`SavedBaseline` takes no lock, so the FX thread never waits on a hash). The find bar searches every document on
+`find-search` (its regex compiled there), and Replace and Replace All work their edits out there on a snapshot;
+Replace All applies them as one undo step only to the version they were found in, and works them out again (up to
+three times) when text was typed meanwhile. Replace in Files does the same for an open buffer on its replace worker
+(`SearchCoordinator.OpenSnapshot`), as does the Markdown link update after a rename (`MarkdownLinkUpdater.applyOpen`).
+Shell completion scans the script once per version and caret (`shell-names` through `structural-completion`); the
+Run scan runs off the thread for every caller; brace matching looks for the partner near the caret only (the screen
+and one screen each way, at most `NEAR_BRACE_SCAN` = 16,384 chars) and scans the rest of its 50,000-char window off the
+thread, the pair shown if text, caret and view are unchanged when it lands. A Debug's main-class parse is made with
+its plan (`DebugPlanning.ownMainClass`), an HTTP run's request fingerprints as its result lands, Debug Test's Gradle
+init script is waited for (`GradleDebugInit.whenPrepared`, a failed write kept), a Clojure Run's missing-tool message
+reads the plan's tool, and the pasted-image check after a save searches the texts it took on the save worker.
+Windows after the first are built by `MainView`, the frame `main.fxml` declares written in code (`MainViewFxTest`
+keeps them equal), so no later window parses XML. A `perf/Looked` memo never looks on the FX thread: a cold key
+answers its cold answer (null, "unknown", for a memo made without one, whose FX askers check `Looked.allKnown`) and is
+looked at behind; at its bound it drops keys older than a minute, never one a command just had looked at.
+Run's save-before-run (`RunCoordinator.saveThen`, `FileWorkflowCoordinator.saveThen`) and Debug File's save write
+off the thread and go on in the save's callback, never in a nested event loop. The start-up fallback, when the
+prefetch failed or `main()` was bypassed, runs `loadForFirstWindow` on a `config-prefetch` thread `start()` does not
+wait for (`App.fallbackBootstrap`): that thread claims the instance lock first, before the settings are loaded or
+anything is written, and the first window is built when it lands. `InPlaceWorkOffFxThreadFxTest` drives these paths
+and checks that none of their `BlockingSites` is heard on the FX thread.
+
+No save waits on the FX thread outside the quit. A command that must run on the saved file continues in the save's
+callback (`FileWorkflowCoordinator.saveThen`; several files one after another through `SaveChain`): Run and its tests,
+deploys and compiled-language builds, every Debug launch (`DebugCoordinator.savedOrThen` asks the command again once
+the writes have landed), Git's save before a command, Diff, the language servers' re-saves and refactoring saves, Debug
+via Build Tool and the close question. Its Save leaves the tab open and asks for the close again when the write has
+landed (`CloseCoordinator.askCloseIfDirty`; a project delete is prepared again the same way); only the quit
+(`WindowManager.confirmAndDisposeAllWindows`) still waits with `saveSynchronously`, which PERF-01 allows. A file's
+personal notes show at their stored offsets and are found in the text off the thread (`NoteManager.relocateLater`,
+applied only to the same edit count, worked out again otherwise); the Markdown preview's find takes its text runs on
+the FX thread and searches them off it (`PreviewFind.SEARCH_SITE`); the loose-files root a window did not find made by
+the launch is made off the thread (`LspManager.setLooseRoot`).
 
 ### 2. Debounce and coalesce
 

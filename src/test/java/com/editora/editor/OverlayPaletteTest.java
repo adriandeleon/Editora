@@ -78,4 +78,30 @@ class OverlayPaletteTest {
         // A translucent or missing background is treated as the stylesheet default (white).
         assertEquals(OverlayPalette.of(Color.WHITE), OverlayPalette.of(null));
     }
+
+    /**
+     * With the theme's seeds (Editora Light's state and accent colours), errors stay red and warnings amber, while a
+     * search match and an assignment are the accent, not amber or orange (ICON-18), each still 3:1 on the ground.
+     */
+    @Test
+    void theThemesSeedsColourTheStatesAndTheAccentTheMatches() {
+        OverlayPalette.Seeds editoraLight = new OverlayPalette.Seeds(
+                Color.web("#c03434"),
+                Color.web("#8d6309"),
+                Color.web("#2c784c"),
+                Color.web("#0e8577"),
+                Color.web("#0d786b"));
+        OverlayPalette.Colors c = OverlayPalette.of(Color.WHITE, editoraLight);
+        assertEquals(Color.web("#c03434"), c.error());
+        assertEquals(Color.web("#8d6309"), c.warning());
+        for (Color accent : List.of(c.searchActiveBorder(), c.occurrenceWriteBorder(), c.jumpPill())) {
+            assertEquals(Color.web("#0e8577").getHue(), accent.getHue(), 1.0, "the accent's hue: " + accent);
+            assertTrue(OverlayPalette.contrast(
+                            Color.color(accent.getRed(), accent.getGreen(), accent.getBlue()), Color.WHITE)
+                    >= 2.99);
+        }
+        assertEquals(Color.web("#0e8577").getHue(), c.searchMatch().getHue(), 1.0);
+        assertTrue(OverlayPalette.contrast(c.jumpInk(), c.jumpPill()) >= 4.5, "a jump label reads on its pill");
+        assertEquals(c.occurrenceRead().getSaturation(), 0, 0.01, "a read is a neutral wash");
+    }
 }

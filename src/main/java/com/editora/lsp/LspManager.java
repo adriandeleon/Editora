@@ -297,10 +297,37 @@ public final class LspManager {
     /** Sets the shared root of loose JavaScript/TypeScript files (see {@link #looseRoot}). */
     public void setLooseRoot(@Nullable Path root) {
         Path next = root == null ? null : root.toAbsolutePath().normalize();
-        if (next != null && !next.equals(looseRoot) && !makeLooseRoot(next)) {
-            next = null;
+        wantedLooseRoot = next;
+        if (next == null || next.equals(looseRoot) || MADE_LOOSE_ROOTS.contains(next) || !onFxThread()) {
+            if (next != null && !next.equals(looseRoot) && !makeLooseRoot(next)) {
+                next = null;
+            }
+            looseRoot = next;
+            return;
         }
-        looseRoot = next;
+        // Not made yet (the launch's thread makes it; a failure there, or another config folder): made off the FX
+        // thread (PERF-01, Pauta 6.0.1). Until it lands a loose file has no shared root.
+        looseRoot = null;
+        Path asked = next;
+        Thread.ofVirtual().name("loose-root").start(() -> {
+            boolean made = makeLooseRoot(asked);
+            javafx.application.Platform.runLater(() -> {
+                if (made && asked.equals(wantedLooseRoot)) {
+                    looseRoot = asked;
+                }
+            });
+        });
+    }
+
+    /** The loose root last asked for, so a make that lands late applies only if it is still the one wanted. */
+    private volatile @Nullable Path wantedLooseRoot;
+
+    private static boolean onFxThread() {
+        try {
+            return javafx.application.Platform.isFxApplicationThread();
+        } catch (RuntimeException | LinkageError e) {
+            return false;
+        }
     }
 
     /** The loose-files roots made in this run: each window's manager sets the same one. */

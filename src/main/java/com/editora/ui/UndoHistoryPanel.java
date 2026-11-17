@@ -38,6 +38,7 @@ public class UndoHistoryPanel extends VBox implements ToolWindowContent {
     public UndoHistoryPanel() {
         getStyleClass().add("undo-history-panel");
         list.getStyleClass().add("undo-history-list");
+        list.setAccessibleText(tr("toolwindow.undoHistory"));
         list.setPlaceholder(new Label(tr("undoHistory.empty")));
         list.setCellFactory(lv -> new CheckpointCell());
         list.setOnMouseClicked(e -> {
@@ -126,7 +127,7 @@ public class UndoHistoryPanel extends VBox implements ToolWindowContent {
             HBox row = UiZoom.spacing(new HBox(time, preview, spacer), 8);
             row.setAlignment(Pos.CENTER_LEFT);
             setText(null);
-            setGraphic(row);
+            setGraphic(CellNames.read(row));
         }
     }
 }

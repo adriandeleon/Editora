@@ -171,9 +171,14 @@ final class GitPatchCoordinator {
         boolean writesFiles = !cached || threeWay;
         // git patches the files on disk: an unsaved edit of one of them would be left behind, then conflict
         // with the patched file on its next save.
-        if (writesFiles && !git.saveUnsaved(root, touchedPaths(patch))) {
-            return;
+        if (writesFiles) {
+            git.saveUnsaved(root, touchedPaths(patch), () -> runSaved(root, patch, cached, threeWay, true));
+        } else {
+            runSaved(root, patch, cached, threeWay, false);
         }
+    }
+
+    private void runSaved(Path root, byte[] patch, boolean cached, boolean threeWay, boolean writesFiles) {
         Consumer<Consumer<ProcessRunner.Result>> operation = done ->
                 git.service().applyPatch(root, patch, cached, threeWay, git.running(new String[] {"apply"}, done));
         Consumer<ProcessRunner.Result> report = result -> report(root, patch, cached, threeWay, result);
@@ -221,6 +226,7 @@ final class GitPatchCoordinator {
         area.setPrefColumnCount(52);
         area.setPrefRowCount(Math.min(14, (int) body.lines().count() + 4));
         area.getStyleClass().add("git-error-text");
+        area.setAccessibleText(alert.getHeaderText()); // the details of what the header says failed
         alert.getDialogPane().setContent(area);
         return Dialogs.showAndWait(alert).orElse(cancel) == retry;
     }

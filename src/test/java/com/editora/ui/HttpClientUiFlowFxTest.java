@@ -286,7 +286,7 @@ class HttpClientUiFlowFxTest {
                     line -> runs[0] = line, () -> runs[1]++, null, () -> "Run this request (C-M-r)", null, null));
             b.setHttpEnabled(true);
             b.setContent("### one\nGET http://127.0.0.1:1/\nAccept: */*\n");
-            b.settleRunScan();
+            b.settleRunScanForTest();
             Stage st = new Stage();
             st.setScene(new Scene(b.getNode(), 800, 600));
             st.show();

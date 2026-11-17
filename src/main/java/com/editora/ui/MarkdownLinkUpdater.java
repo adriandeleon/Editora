@@ -222,27 +222,31 @@ final class MarkdownLinkUpdater {
         apply(plan, run);
     }
 
-    /** FX thread: open buffers — of every window — are edited here, closed files on the worker. */
+    /**
+     * FX thread: open buffers — of every window — are snapshotted here and edited here; closed files are rewritten
+     * on the worker. An open buffer's links are parsed and rewritten on the worker too, from its snapshot (PERF-01,
+     * Pauta 6.0.1), and the edit applied on the FX thread only to the version it was worked out from: a buffer typed
+     * into meanwhile has it worked out again, up to {@link #OPEN_TRIES} times, then is reported with the failures.
+     */
     private void apply(Plan plan, CompletableFuture<Outcome> run) {
         Map<Path, EditorBuffer> buffers = MarkdownLinkGraph.openBuffers();
         int[] totals = new int[2];
         List<Path> failed = new ArrayList<>();
         List<Path> closed = new ArrayList<>();
+        List<OpenDoc> open = new ArrayList<>();
         for (FileChange change : plan.changes()) {
             EditorBuffer buffer = buffers.get(change.file());
             if (buffer == null) {
                 closed.add(change.file());
-                continue;
-            }
-            int count = rewriteBuffer(buffer, change.file(), plan);
-            if (count < 0) {
-                failed.add(change.file());
-            } else if (count > 0) {
-                totals[0] += count;
-                totals[1]++;
+            } else {
+                open.add(OpenDoc.of(change.file(), buffer));
             }
         }
         graph.submit(index -> {
+            List<Worked> worked = new ArrayList<>();
+            for (OpenDoc doc : open) {
+                worked.add(doc.work(plan));
+            }
             for (Path file : closed) {
                 String[] written = new String[1];
                 int count = disposed ? -1 : rewriteFile(file, plan, this::recordHistory, written);
@@ -256,12 +260,83 @@ final class MarkdownLinkUpdater {
                     }
                 }
             }
-            Outcome outcome = new Outcome(totals[0], totals[1], List.copyOf(failed));
-            Platform.runLater(() -> {
+            Platform.runLater(() -> applyOpen(worked, plan, OPEN_TRIES, totals, failed, () -> {
+                Outcome outcome = new Outcome(totals[0], totals[1], List.copyOf(failed));
                 report(outcome);
                 run.complete(outcome);
-            });
+            }));
         });
+    }
+
+    /** How many times an open buffer's rewrite is worked out again when it was typed into before it landed. */
+    static final int OPEN_TRIES = 3;
+
+    /** {@link com.editora.perf.BlockingSites} name of an open buffer's rewrite, worked out off the FX thread. */
+    static final String OPEN_REWRITE_SITE = "MarkdownLinkUpdater.rewriteBuffer";
+
+    /** An open buffer's text as the update found it on the FX thread. */
+    private record OpenDoc(Path file, EditorBuffer buffer, String text, long version) {
+        static OpenDoc of(Path file, EditorBuffer buffer) {
+            return new OpenDoc(file, buffer, buffer.getContent(), buffer.docVersion());
+        }
+
+        /** Off the FX thread: the rewrite of the snapshot's links. */
+        Worked work(Plan plan) {
+            com.editora.perf.BlockingSites.enter(OPEN_REWRITE_SITE);
+            try {
+                return new Worked(
+                        this,
+                        MarkdownLinkRewrite.rewrite(
+                                text, before(file, plan.from(), plan.to()), file, plan.from(), plan.to(), plan.wiki()));
+            } catch (RuntimeException e) {
+                return new Worked(this, null);
+            }
+        }
+    }
+
+    /** An open buffer's rewrite, worked out off the FX thread; null when it failed. */
+    private record Worked(OpenDoc doc, MarkdownLinkRewrite.@Nullable Result result) {}
+
+    /** FX thread: applies each worked rewrite to its buffer if unchanged; works the others out again, then {@code done}. */
+    private void applyOpen(List<Worked> worked, Plan plan, int tries, int[] totals, List<Path> failed, Runnable done) {
+        List<OpenDoc> again = new ArrayList<>();
+        for (Worked w : worked) {
+            EditorBuffer buffer = w.doc().buffer();
+            MarkdownLinkRewrite.Result result = w.result();
+            if (buffer.isDisposed() || result == null) {
+                failed.add(w.doc().file());
+            } else if (buffer.docVersion() != w.doc().version()) {
+                if (tries > 1) {
+                    again.add(OpenDoc.of(w.doc().file(), buffer));
+                } else {
+                    failed.add(w.doc().file());
+                }
+            } else {
+                int count = rewriteBuffer(buffer, result);
+                if (count < 0) {
+                    failed.add(w.doc().file());
+                } else if (count > 0) {
+                    totals[0] += count;
+                    totals[1]++;
+                }
+            }
+        }
+        if (again.isEmpty()) {
+            done.run();
+            return;
+        }
+        com.editora.perf.OffFx.then(
+                OPEN_REWRITE_SITE,
+                () -> again.stream().map(doc -> doc.work(plan)).toList(),
+                a -> {
+                    List<Worked> landed = a.value();
+                    if (landed == null) {
+                        again.forEach(doc -> failed.add(doc.file()));
+                        done.run();
+                    } else {
+                        applyOpen(landed, plan, tries - 1, totals, failed, done);
+                    }
+                });
     }
 
     /** How long the worker waits for Local History to take a file's text before giving the file up. */
@@ -291,9 +366,7 @@ final class MarkdownLinkUpdater {
     }
 
     /** Links rewritten in an open buffer, as one undo step; -1 when the buffer may not be edited. */
-    private int rewriteBuffer(EditorBuffer buffer, Path file, Plan plan) {
-        MarkdownLinkRewrite.Result result = MarkdownLinkRewrite.rewrite(
-                buffer.getContent(), before(file, plan.from(), plan.to()), file, plan.from(), plan.to(), plan.wiki());
+    private static int rewriteBuffer(EditorBuffer buffer, MarkdownLinkRewrite.Result result) {
         if (result.count() == 0) {
             return 0;
         }

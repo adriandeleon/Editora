@@ -12,7 +12,6 @@ import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
-import javafx.scene.control.cell.CheckBoxListCell;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.VBox;
 
@@ -52,7 +51,7 @@ final class SpellFileTypesEditor extends VBox {
         filter.setPromptText(tr("settings.spell.fileTypes.filter"));
         filter.setAccessibleText(tr("settings.spell.fileTypes.filter"));
         filter.textProperty().addListener((o, was, now) -> showMatching(now)); // narrows the list; stores nothing
-        list.setCellFactory(CheckBoxListCell.forListView(ticked::get));
+        list.setCellFactory(CellNames.checkBoxes(ticked::get));
         UiZoom.prefSize(list, 300, 220);
         list.setAccessibleText(tr("settings.spell.fileTypes.title"));
         // A tick box inside a list cell answers the mouse only; Space on the selected row does the same.

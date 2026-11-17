@@ -42,7 +42,7 @@ A backlog of planned features and improvements. Unordered within each section.
 
 - [x] Audit and improve the complete typing → sync → completion → insertion → imports path, with
       real-key FX regressions and an opt-in portable JDT LS Maven-project probe. See
-      [Java editing review](docs/subsystems/java-editing-review.md).
+      [Java interactive editing](docs/subsystems/java-editing.md).
 - [x] Validate sibling-module resolution in disposable Maven/Gradle projects and 75 KB Java source;
       enable JDT lifecycle joining to prevent stale import edits.
 - [x] Add signature overload switching/multiline lifetime, nested snippet restoration, and grouped
@@ -59,6 +59,11 @@ A backlog of planned features and improvements. Unordered within each section.
       with request/state capture; passing follow-up runs do not establish a fix or root cause.
 - [ ] Track JDT LS's conflicting import proposal for a same-file class in broken source; rerun the
       strict live probe when evaluating server updates.
+- [ ] Submit the prepared standalone JDT report
+      ([`artifacts/java-editing-study/jdt-import-conflict/`](artifacts/java-editing-study/jdt-import-conflict/REPORT.md))
+      upstream, and rerun it against server updates.
+- [ ] Design a per-session ordered synchronization worker (immutable snapshot captured on FX, diff on the
+      worker, dependent requests queued behind its version) so large-file snapshots leave the FX thread.
 
 ## Recently shipped
 - [x] **Java LSP ninth review (2026-10-26)** — Go to Super Method: findLinks first plus the hierarchy walk for what it
@@ -1666,6 +1671,13 @@ A backlog of planned features and improvements. Unordered within each section.
       sort (Position/Name/Kind) + kind filter, expanded by default
 - [x] Multi language support — UI string translation (en/it/es/fr/pt/de); see "UI localization (i18n)"
       under "Recently shipped"
+- [ ] One "go to symbol": `lsp.gotoSymbol` and `index.gotoSymbol` are separate commands; make one that asks
+      the language server and falls back to the symbol index. See
+      [code navigation](docs/subsystems/navigation.md).
+- [ ] Code lenses above a line: LSP code lenses (`Settings.codeLens`) render at the end of the line; a lens
+      above it needs a vertical editor decoration the RichTextFX fork does not have yet (`Inlay` is
+      horizontal); scope that rendering capability first. See
+      [code navigation](docs/subsystems/navigation.md#two-things-deliberately-absent).
 
 ## Snippets
 - [x] GUI for Snippet management — Settings → Snippets: a master-detail editor (language picker +

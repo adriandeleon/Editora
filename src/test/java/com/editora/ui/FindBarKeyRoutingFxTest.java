@@ -192,6 +192,10 @@ class FindBarKeyRoutingFxTest {
         FxTestSupport.runOnFx(() -> {
             setField(findField, "line", 4);
             FxTestSupport.invoke(bar, "recompute"); // skip the typing debounce
+        });
+        // The search runs off the FX thread (PERF-01): wait for its first match to be selected.
+        SettingsRig.awaitFx("the first match", () -> b.getArea().getSelection().getLength() > 0 && !bar.busy());
+        FxTestSupport.runOnFx(() -> {
             int first = b.getArea().getSelection().getStart();
             press(findField, KeyCode.S, false, true, false); // C-s = find.show = next match: stays global
             assertTrue(b.getArea().getSelection().getStart() > first, "C-s advanced to the next match");

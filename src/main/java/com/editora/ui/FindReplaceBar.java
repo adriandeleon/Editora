@@ -71,14 +71,6 @@ public class FindReplaceBar extends HBox {
 
     private record SearchKey(long version, SearchMatcher.Query query) {}
 
-    /**
-     * Documents up to this many characters are searched where the request is made, as they always were: a
-     * few milliseconds at most, and the result is there for the next line of code. Anything larger is
-     * searched on {@link #SEARCH_POOL} and applied when it arrives — a search of a 45 MB buffer took a third
-     * of a second on the FX thread, again after every edit made with the bar open.
-     */
-    static final int SYNC_SEARCH_CHARS = 512 * 1024;
-
     /** One daemon thread, shared by every window's bar and gone after 30 s idle. */
     private static final java.util.concurrent.ExecutorService SEARCH_POOL = new java.util.concurrent.ThreadPoolExecutor(
             0, 1, 30, java.util.concurrent.TimeUnit.SECONDS, new java.util.concurrent.LinkedBlockingQueue<>(), task -> {
@@ -87,9 +79,27 @@ public class FindReplaceBar extends HBox {
                 return thread;
             });
 
-    private int syncSearchChars = SYNC_SEARCH_CHARS;
+    /**
+     * Every search, Replace and Replace All runs on {@link #SEARCH_POOL} over a snapshot of the text and lands
+     * on the FX thread (PERF-01, Pauta 6.0.1: no searching of any size there; a search of a 45 MB buffer took a
+     * third of a second, again after every edit made with the bar open). The latest request wins; a result is
+     * applied only to the document version it was found in.
+     */
     private int pageSize = SearchMatcher.DEFAULT_PAGE;
+
     private LatestOnly searcher = new LatestOnly(SEARCH_POOL, Platform::runLater);
+    /** Replace and Replace All's work: separate from {@link #searcher}, so a search never drops an edit. */
+    private LatestOnly replacer = new LatestOnly(SEARCH_POOL, Platform::runLater);
+    /** True while a Replace or Replace All is being worked out: a second press starts nothing. */
+    private boolean replacing;
+    /** How many times Replace All works its edits out again when the document changed before they landed. */
+    static final int REPLACE_TRIES = 3;
+
+    /** {@link com.editora.perf.BlockingSites} names of the bar's work, heard on the thread it runs on. */
+    static final String SEARCH_SITE = "FindReplaceBar.search";
+
+    static final String REPLACE_SITE = "FindReplaceBar.replace";
+    static final String REPLACE_ALL_SITE = "FindReplaceBar.replaceAll";
     /** The buffer {@link #matches}, the edit subscription and the scope belong to; null while hidden. */
     private @Nullable EditorBuffer boundBuffer;
     /** True when the last search was abandoned part-way (time budget or regex stack depth). */
@@ -499,12 +509,28 @@ public class FindReplaceBar extends HBox {
         return matches.toList();
     }
 
-    /** Test seam: where large documents are searched, what counts as large, and how many matches are held. */
-    void searchOn(java.util.concurrent.Executor worker, int syncChars, int page) {
+    /**
+     * Test seam: where searches and replaces run, where their results are delivered, and how many matches are
+     * held. {@code (Runnable::run, Runnable::run, page)} called on the FX thread makes every result land before
+     * the call that asked for it returns.
+     */
+    void searchOn(java.util.concurrent.Executor worker, java.util.concurrent.Executor deliver, int page) {
         searcher.cancel();
-        searcher = new LatestOnly(worker, Platform::runLater);
-        syncSearchChars = syncChars;
+        replacer.cancel();
+        replacing = false;
+        searcher = new LatestOnly(worker, deliver);
+        replacer = new LatestOnly(worker, deliver);
         pageSize = page;
+    }
+
+    /**
+     * Whether a search, Replace or Replace All is still being worked out, or a typed query is waiting for its search:
+     * tests, and a macro replay, wait for it.
+     */
+    boolean busy() {
+        return searcher.pending()
+                || replacer.pending()
+                || debounce.getStatus() == javafx.animation.Animation.Status.RUNNING; // a typed query not searched yet
     }
 
     /** Wires the Alt+Enter "select all matches" action (turns every match into a caret). */
@@ -550,17 +576,14 @@ public class FindReplaceBar extends HBox {
             countLabel.setText("");
             return;
         }
-        if (regex.isSelected()) {
-            String err = SearchMatcher.regexError(query);
-            if (err != null) {
+        locate(buffer, query, anchor, true, found -> {
+            if (found.badRegex() != null) {
                 forgetMatches();
                 buffer.clearSearchMatches();
                 countLabel.setText("");
-                status.accept(tr("find.badRegex", err));
+                status.accept(tr("find.badRegex", found.badRegex()));
                 return;
             }
-        }
-        locate(buffer, query, anchor, true, found -> {
             if (found.index() < 0) {
                 showNoMatches(buffer);
                 if (announce) {
@@ -618,37 +641,52 @@ public class FindReplaceBar extends HBox {
                 scoped ? scopeEnd : -1);
     }
 
+    /** A search's answer: where to go and the page of matches around it, or why the regex does not compile. */
+    private record Found(
+            SearchMatcher.Located located, @Nullable String badRegex) {
+        int index() {
+            return located.index();
+        }
+
+        SearchMatches matches() {
+            return located.matches();
+        }
+    }
+
     /**
      * Finds the match to go to from {@code from} (see {@link SearchMatcher#locate}) together with the page of
      * matches around it, makes that page the current match list and hands the result to {@code then}.
      *
-     * <p>The text is the buffer's shared snapshot, not a fresh {@code area.getText()}. A document over
-     * {@link #syncSearchChars} is searched off the FX thread: {@code then} runs later, and not at all if the
-     * search was superseded by another, the document was edited meanwhile (that edit's own re-search is
-     * already on its way) or the bar has moved to another buffer or closed.
+     * <p>The text is the buffer's shared snapshot, not a fresh {@code area.getText()}, and it is searched off the
+     * FX thread whatever its size (PERF-01, Pauta 6.0.1), the regex compiled there too: {@code then} runs later,
+     * and not at all if the search was superseded by another, the document was edited meanwhile (that edit's own
+     * re-search is already on its way) or the bar has moved to another buffer or closed.
      */
-    private void locate(
-            EditorBuffer buffer, String query, int from, boolean forward, Consumer<SearchMatcher.Located> then) {
+    private void locate(EditorBuffer buffer, String query, int from, boolean forward, Consumer<Found> then) {
         SearchMatcher.Query q = query(query);
         String text = buffer.getVisibleContent();
         long version = buffer.docVersion();
         int page = pageSize;
-        Consumer<SearchMatcher.Located> apply = found -> {
-            matches = found.matches();
-            matchesKey = new SearchKey(version, q);
-            searchIncomplete = !matches.complete();
-            then.accept(found);
-        };
-        if (text.length() <= syncSearchChars) {
-            searcher.cancel();
-            apply.accept(SearchMatcher.locate(text, q, from, forward, page));
-            return;
-        }
-        searcher.submit(() -> SearchMatcher.locate(text, q, from, forward, page), found -> {
-            if (isVisible() && boundBuffer == buffer && buffer.docVersion() == version) {
-                apply.accept(found);
-            }
-        });
+        boolean checkRegex = regex.isSelected();
+        searcher.submit(
+                () -> {
+                    com.editora.perf.BlockingSites.enter(SEARCH_SITE);
+                    String err = checkRegex ? SearchMatcher.regexError(query) : null;
+                    return err != null
+                            ? new Found(new SearchMatcher.Located(SearchMatches.EMPTY, -1), err)
+                            : new Found(SearchMatcher.locate(text, q, from, forward, page), null);
+                },
+                found -> {
+                    if (!isVisible() || boundBuffer != buffer || buffer.docVersion() != version) {
+                        return;
+                    }
+                    if (found.badRegex() == null) {
+                        matches = found.matches();
+                        matchesKey = new SearchKey(version, q);
+                        searchIncomplete = !matches.complete();
+                    }
+                    then.accept(found);
+                });
     }
 
     /** Whether {@link #matches} were found for {@code buffer} as it is now and for the query as it is now. */
@@ -715,11 +753,13 @@ public class FindReplaceBar extends HBox {
         forgetMatches();
         buffer.clearSearchMatches();
         String query = findField.getText();
-        int found = preview.search(query, caseSensitive.isSelected(), regex.isSelected(), wholeWord.isSelected());
-        countLabel.setText(found == 0 ? "" : tr("find.count", preview.current() + 1, found));
-        if (found == 0 && !query.isEmpty() && announce) {
-            status.accept(tr("find.notFound", query));
-        }
+        // The preview's text is searched off the FX thread (PERF-01, Pauta 6.0.1): the count lands with the marks.
+        preview.search(query, caseSensitive.isSelected(), regex.isSelected(), wholeWord.isSelected(), found -> {
+            countLabel.setText(found == 0 ? "" : tr("find.count", preview.current() + 1, found));
+            if (found == 0 && !query.isEmpty() && announce) {
+                status.accept(tr("find.notFound", query));
+            }
+        });
         return true;
     }
 
@@ -837,7 +877,7 @@ public class FindReplaceBar extends HBox {
     private void replaceCurrent() {
         EditorBuffer buffer = activeBuffer.get();
         CodeArea area = buffer == null ? null : buffer.getFocusedArea();
-        if (area == null || !buffer.isEditable()) {
+        if (area == null || !buffer.isEditable() || replacing) {
             return;
         }
         if (refusedInPreview(buffer)) {
@@ -849,164 +889,286 @@ public class FindReplaceBar extends HBox {
         // Validate the selection against a fresh match list WITHOUT recompute(): that re-selects the first
         // match after the open-time anchor, and the replace below then rewrote that match instead of this one.
         String query = findField.getText();
-        String text = buffer.getVisibleContent();
-        boolean currentMatch = !query.isEmpty()
-                && (matchesCurrent(buffer, query) && matches.covers(start)
-                        ? matches.indexOf(start, end) >= 0
-                        : SearchMatcher.isMatch(text, query(query), start, end));
-        int next = start;
-        // A zero-width match (^, $, a lookahead) is replaceable too: it is an insertion at that spot.
-        if (inScope(start, end) && currentMatch) {
-            String matched = area.getText(start, end);
-            String repl;
-            try {
-                repl = replacementForSingle(text, start, end, matched);
-            } catch (RuntimeException badReference) {
-                status.accept(tr("find.badReplacement", describe(badReference)));
-                return;
-            } catch (StackOverflowError tooDeep) {
-                status.accept(tr("find.tooComplex"));
-                return;
-            }
-            area.replaceText(start, end, repl); // by range: never whatever happens to be selected by now
-            // Past a zero-width match step one further, or the same assertion is found at the same spot.
-            next = start + repl.length() + (end > start ? 0 : 1);
+        if (query.isEmpty()) {
+            recompute(start);
+            return;
         }
-        // Move on to the first match after the replaced text (or, when the selection was not a match, the
-        // first one at/after it) — the next match in document order, not one relative to the stale anchor.
-        recompute(next);
+        // The held page answers when it covers the selection; otherwise the selection is checked, and the
+        // replacement worked out, off the FX thread on a snapshot (PERF-01, Pauta 6.0.1).
+        Boolean held = matchesCurrent(buffer, query) && matches.covers(start) ? matches.indexOf(start, end) >= 0 : null;
+        String text = buffer.getVisibleContent();
+        long version = buffer.docVersion();
+        SearchMatcher.Query q = query(query);
+        boolean scoped = inScope(start, end);
+        Single single = new Single(
+                query,
+                replaceField.getText(),
+                regex.isSelected(),
+                caseSensitive.isSelected(),
+                wholeWord.isSelected(),
+                preserveCase.isSelected());
+        replacing = true;
+        replacer.submit(
+                () -> {
+                    com.editora.perf.BlockingSites.enter(REPLACE_SITE);
+                    try {
+                        boolean match = held != null ? held : SearchMatcher.isMatch(text, q, start, end);
+                        // A zero-width match (^, $, a lookahead) is replaceable too: it is an insertion at that spot.
+                        if (!scoped || !match) {
+                            return Replaced.none();
+                        }
+                        return Replaced.with(single.replacement(text, start, end));
+                    } catch (RuntimeException badReference) {
+                        return Replaced.failed(tr("find.badReplacement", describe(badReference)));
+                    } catch (StackOverflowError tooDeep) {
+                        return Replaced.failed(tr("find.tooComplex"));
+                    }
+                },
+                replaced -> {
+                    replacing = false;
+                    if (buffer.isDisposed() || activeBuffer.get() != buffer) {
+                        return;
+                    }
+                    if (replaced.failure() != null) {
+                        status.accept(replaced.failure());
+                        return;
+                    }
+                    int next = start;
+                    String repl = replaced.text();
+                    if (repl != null
+                            && buffer.docVersion() == version
+                            && area.getSelection().getStart() == start
+                            && area.getSelection().getEnd() == end) {
+                        area.replaceText(start, end, repl); // by range: never whatever happens to be selected by now
+                        // Past a zero-width match step one further, or the same assertion is found at the same spot.
+                        next = start + repl.length() + (end > start ? 0 : 1);
+                    }
+                    // Move on to the first match after the replaced text (or, when the selection was not a match,
+                    // the first one at/after it) — the next match in document order, not one relative to the stale
+                    // anchor. A selection that moved or text typed meanwhile is left alone and searched from.
+                    recompute(next);
+                });
     }
 
-    /**
-     * The replacement text for one already-selected match: group references expanded (regex mode) and the
-     * result recased (preserve-case mode).
-     *
-     * <p>Groups are expanded by re-running the pattern against the matched text alone, which is exact
-     * because the selection <em>is</em> one whole match. A pattern needing surrounding context
-     * (lookbehind/lookahead) will not match in isolation — that falls back to the literal replacement
-     * rather than guessing, since Replace All handles those correctly via a full-text walk.
-     *
-     * @throws RuntimeException if the replacement names a group the pattern does not have
-     */
-    private String replacementForSingle(String fullText, int start, int end, String matched) {
-        String replacement = replaceField.getText();
-        String expanded = replacement;
-        if (regex.isSelected()) {
-            Pattern p = SearchMatcher.compileDocumentRegex(
-                    findField.getText(), caseSensitive.isSelected(), wholeWord.isSelected());
-            java.util.regex.Matcher matcher = p == null ? null : p.matcher(fullText);
-            if (matcher != null && matcher.find(start) && matcher.start() == start && matcher.end() == end) {
-                StringBuffer replacedPrefix = new StringBuffer();
-                matcher.appendReplacement(replacedPrefix, replacement);
-                expanded = replacedPrefix.substring(start);
-            }
+    /** What one Replace works out off the FX thread: the replacement text, none, or why it could not. */
+    private record Replaced(@Nullable String text, @Nullable String failure) {
+        static Replaced none() {
+            return new Replaced(null, null);
         }
-        return preserveCase.isSelected() ? PreserveCase.apply(matched, expanded) : expanded;
+
+        static Replaced with(String text) {
+            return new Replaced(text, null);
+        }
+
+        static Replaced failed(String why) {
+            return new Replaced(null, why);
+        }
+    }
+
+    /** The bar's replace options as they were when Replace was pressed, for the work done off the FX thread. */
+    private record Single(
+            String query,
+            String replacement,
+            boolean regex,
+            boolean caseSensitive,
+            boolean wholeWord,
+            boolean preserveCase) {
+
+        /**
+         * The replacement text for one already-selected match: group references expanded (regex mode) and the
+         * result recased (preserve-case mode).
+         *
+         * <p>Groups are expanded by re-running the pattern from the match's start, which is exact because the
+         * selection <em>is</em> one whole match. A pattern that does not match there falls back to the literal
+         * replacement rather than guessing, since Replace All handles those correctly via a full-text walk.
+         *
+         * @throws RuntimeException if the replacement names a group the pattern does not have
+         */
+        String replacement(String fullText, int start, int end) {
+            String expanded = replacement;
+            if (regex) {
+                Pattern p = SearchMatcher.compileDocumentRegex(query, caseSensitive, wholeWord);
+                java.util.regex.Matcher matcher = p == null ? null : p.matcher(fullText);
+                if (matcher != null && matcher.find(start) && matcher.start() == start && matcher.end() == end) {
+                    StringBuffer replacedPrefix = new StringBuffer();
+                    matcher.appendReplacement(replacedPrefix, replacement);
+                    expanded = replacedPrefix.substring(start);
+                }
+            }
+            return preserveCase ? PreserveCase.apply(fullText.substring(start, end), expanded) : expanded;
+        }
     }
 
     private void replaceAll() {
-        EditorBuffer buffer = activeBuffer.get();
-        CodeArea area = buffer == null ? null : buffer.getFocusedArea();
-        String query = findField.getText();
-        if (area == null || query.isEmpty() || !buffer.isEditable() || refusedInPreview(buffer)) {
-            return;
-        }
-        onActiveBufferChanged();
-        if (regex.isSelected()) {
-            String err = SearchMatcher.regexError(query);
-            if (err != null) {
-                status.accept(tr("find.badRegex", err));
-                return;
-            }
-        }
-        String text = buffer.getVisibleContent();
-        SearchMatches spans;
-        List<String> replacements = new ArrayList<>();
-        try {
-            spans = collectReplacements(text, query, replacements);
-        } catch (SearchMatcher.MatchBudgetExceededException timeout) {
-            // A valid-but-pathological pattern blew the backtracking budget mid-walk — abandon the whole
-            // replace (a half-collected set would splice a corrupt document) rather than freeze the UI.
-            status.accept(tr("find.replaceTimeout"));
-            return;
-        } catch (RuntimeException badReference) {
-            // An invalid $-group reference — leave the buffer untouched rather than half-rewrite it.
-            status.accept(tr("find.badReplacement", describe(badReference)));
-            return;
-        } catch (StackOverflowError tooDeep) {
-            // java.util.regex recurses per repetition of a group; a long match ran it out of stack.
-            status.accept(tr("find.tooComplex"));
-            return;
-        }
-        if (spans.isEmpty()) {
-            status.accept(tr("find.replaced", 0));
-            return;
-        }
-        // Splice only the span from the first to the last match, not the whole document: one ranged edit
-        // keeps the untouched remainder out of the undo entry and leaves the caret where it was.
-        int from = spans.start(0);
-        int to = spans.end(spans.size() - 1);
-        String same = replaceField.getText(); // what every match gets when none has a text of its own
-        StringBuilder sb = new StringBuilder();
-        int i = from;
-        for (int k = 0; k < spans.size(); k++) {
-            sb.append(text, i, spans.start(k)).append(replacements.isEmpty() ? same : replacements.get(k));
-            i = spans.end(k);
-        }
-        area.replaceText(from, to, sb.toString());
-        recompute(searchAnchor, false);
-        status.accept(tr("find.replaced", spans.size()));
+        replaceAll(REPLACE_TRIES);
     }
 
     /**
-     * Every in-scope match of the document — not the page the bar happens to be showing — and, in
-     * {@code replacements}, the text that should replace each: group references expanded in regex mode, then
-     * recased when preserve-case is on. A plain literal replace gives every match the same text, so
-     * {@code replacements} is left empty rather than filled with one reference per match.
-     *
-     * <p>Regex mode walks the pattern over the full document rather than reusing the bar's match list,
-     * because expanding {@code $1} needs live {@link Matcher} state. Expansion is delegated to
-     * {@link Matcher#appendReplacement} (writing into a scratch buffer we then slice) so the JDK's own
-     * {@code $}/{@code \} handling is used verbatim instead of being reimplemented here.
-     *
-     * @throws RuntimeException from {@code appendReplacement} if the replacement references a missing group
+     * Replace All: every match and its replacement are worked out off the FX thread on a snapshot (PERF-01, Pauta
+     * 6.0.1) and applied on the FX thread as one undo step, only to the document version they were found in. Text
+     * typed meanwhile has the edits worked out again on the new text, up to {@code tries} times.
      */
-    private SearchMatches collectReplacements(String text, String query, List<String> replacements) {
-        String replacement = replaceField.getText();
-        boolean recase = preserveCase.isSelected();
-        if (!regex.isSelected()) {
-            SearchMatches all = SearchMatcher.all(text, query(query));
-            for (int k = 0; recase && k < all.size(); k++) {
-                replacements.add(PreserveCase.apply(text.substring(all.start(k), all.end(k)), replacement));
+    private void replaceAll(int tries) {
+        EditorBuffer buffer = activeBuffer.get();
+        CodeArea area = buffer == null ? null : buffer.getFocusedArea();
+        String query = findField.getText();
+        if (area == null || query.isEmpty() || !buffer.isEditable() || refusedInPreview(buffer) || replacing) {
+            return;
+        }
+        onActiveBufferChanged();
+        String text = buffer.getVisibleContent();
+        long version = buffer.docVersion();
+        All all = new All(
+                query(query),
+                replaceField.getText(),
+                regex.isSelected(),
+                caseSensitive.isSelected(),
+                wholeWord.isSelected(),
+                preserveCase.isSelected());
+        replacing = true;
+        replacer.submit(
+                () -> {
+                    com.editora.perf.BlockingSites.enter(REPLACE_ALL_SITE);
+                    return all.work(text);
+                },
+                worked -> {
+                    replacing = false;
+                    if (buffer.isDisposed() || activeBuffer.get() != buffer) {
+                        return;
+                    }
+                    if (worked.failure() != null) {
+                        status.accept(worked.failure());
+                        return;
+                    }
+                    if (buffer.docVersion() != version) {
+                        if (tries > 1) {
+                            replaceAll(tries - 1); // typed into meanwhile: worked out again on the new text
+                        } else {
+                            status.accept(tr("find.replaced", 0));
+                        }
+                        return;
+                    }
+                    int count = worked.count();
+                    if (count > 0) {
+                        // Splice only the span from the first to the last match, not the whole document: one
+                        // ranged edit keeps the untouched remainder out of the undo entry and leaves the caret
+                        // where it was.
+                        area.replaceText(worked.from(), worked.to(), worked.spliced());
+                        recompute(searchAnchor, false);
+                    }
+                    status.accept(tr("find.replaced", count));
+                });
+    }
+
+    /** What Replace All works out off the FX thread: the edit as one splice, how many matches it replaces, or why not. */
+    private record AllWorked(
+            int from,
+            int to,
+            String spliced,
+            int count,
+            @Nullable String failure) {
+        static AllWorked failed(String why) {
+            return new AllWorked(0, 0, "", 0, why);
+        }
+    }
+
+    /** Replace All's options as they were when it was pressed, for the work done off the FX thread. */
+    private record All(
+            SearchMatcher.Query query,
+            String replacement,
+            boolean regex,
+            boolean caseSensitive,
+            boolean wholeWord,
+            boolean preserveCase) {
+
+        AllWorked work(String text) {
+            if (regex) {
+                String err = SearchMatcher.regexError(query.text());
+                if (err != null) {
+                    return AllWorked.failed(tr("find.badRegex", err));
+                }
             }
-            return all;
-        }
-        // Whole-word wraps the query in a non-capturing group, so user group numbers survive.
-        Pattern p = SearchMatcher.compileDocumentRegex(query, caseSensitive.isSelected(), wholeWord.isSelected());
-        if (p == null) {
-            return SearchMatches.EMPTY;
-        }
-        List<int[]> spans = new ArrayList<>();
-        // Wrap the document in the same wall-clock backtracking budget the incremental search uses, so a
-        // pathological-but-valid pattern aborts (via MatchBudgetExceededException) instead of hanging the FX
-        // thread. text.substring(...) below still reads the raw String, so offsets are exact.
-        Matcher m = p.matcher(SearchMatcher.budgetedSequence(text));
-        StringBuffer scratch = new StringBuffer();
-        int lastEnd = 0;
-        while (m.find()) {
-            // appendReplacement writes text[lastEnd, m.start()) followed by the expansion, so the
-            // expansion begins that many characters into what it just appended.
-            int insertStart = scratch.length() + (m.start() - lastEnd);
-            m.appendReplacement(scratch, replacement);
-            lastEnd = m.end();
-            if (!inScope(m.start(), m.end())) {
-                continue;
+            SearchMatches spans;
+            List<String> replacements = new ArrayList<>();
+            try {
+                spans = collect(text, replacements);
+            } catch (SearchMatcher.MatchBudgetExceededException timeout) {
+                // A valid-but-pathological pattern blew the backtracking budget mid-walk — abandon the whole
+                // replace (a half-collected set would splice a corrupt document) rather than run on.
+                return AllWorked.failed(tr("find.replaceTimeout"));
+            } catch (RuntimeException badReference) {
+                // An invalid $-group reference — leave the buffer untouched rather than half-rewrite it.
+                return AllWorked.failed(tr("find.badReplacement", describe(badReference)));
+            } catch (StackOverflowError tooDeep) {
+                // java.util.regex recurses per repetition of a group; a long match ran it out of stack.
+                return AllWorked.failed(tr("find.tooComplex"));
             }
-            String expanded = scratch.substring(insertStart);
-            spans.add(new int[] {m.start(), m.end()});
-            replacements.add(recase ? PreserveCase.apply(m.group(), expanded) : expanded);
+            if (spans.isEmpty()) {
+                return new AllWorked(0, 0, "", 0, null);
+            }
+            int from = spans.start(0);
+            int to = spans.end(spans.size() - 1);
+            StringBuilder sb = new StringBuilder();
+            int i = from;
+            for (int k = 0; k < spans.size(); k++) {
+                sb.append(text, i, spans.start(k)).append(replacements.isEmpty() ? replacement : replacements.get(k));
+                i = spans.end(k);
+            }
+            return new AllWorked(from, to, sb.toString(), spans.size(), null);
         }
-        return SearchMatches.ofPairs(spans);
+
+        private boolean inScope(int start, int end) {
+            return query.scopeStart() < 0 || (start >= query.scopeStart() && end <= query.scopeEnd());
+        }
+
+        /**
+         * Every in-scope match of the document — not the page the bar happens to be showing — and, in
+         * {@code replacements}, the text that should replace each: group references expanded in regex mode, then
+         * recased when preserve-case is on. A plain literal replace gives every match the same text, so
+         * {@code replacements} is left empty rather than filled with one reference per match.
+         *
+         * <p>Regex mode walks the pattern over the full document rather than reusing the bar's match list,
+         * because expanding {@code $1} needs live {@link Matcher} state. Expansion is delegated to
+         * {@link Matcher#appendReplacement} (writing into a scratch buffer we then slice) so the JDK's own
+         * {@code $}/{@code \} handling is used verbatim instead of being reimplemented here.
+         *
+         * @throws RuntimeException from {@code appendReplacement} if the replacement references a missing group
+         */
+        private SearchMatches collect(String text, List<String> replacements) {
+            if (!regex) {
+                SearchMatches all = SearchMatcher.all(text, query);
+                for (int k = 0; preserveCase && k < all.size(); k++) {
+                    replacements.add(PreserveCase.apply(text.substring(all.start(k), all.end(k)), replacement));
+                }
+                return all;
+            }
+            // Whole-word wraps the query in a non-capturing group, so user group numbers survive.
+            Pattern p = SearchMatcher.compileDocumentRegex(query.text(), caseSensitive, wholeWord);
+            if (p == null) {
+                return SearchMatches.EMPTY;
+            }
+            List<int[]> spans = new ArrayList<>();
+            // The same wall-clock backtracking budget the incremental search uses, so a pathological-but-valid
+            // pattern aborts (via MatchBudgetExceededException). text.substring(...) below still reads the raw
+            // String, so offsets are exact.
+            Matcher m = p.matcher(SearchMatcher.budgetedSequence(text));
+            StringBuffer scratch = new StringBuffer();
+            int lastEnd = 0;
+            while (m.find()) {
+                // appendReplacement writes text[lastEnd, m.start()) followed by the expansion, so the
+                // expansion begins that many characters into what it just appended.
+                int insertStart = scratch.length() + (m.start() - lastEnd);
+                m.appendReplacement(scratch, replacement);
+                lastEnd = m.end();
+                if (!inScope(m.start(), m.end())) {
+                    continue;
+                }
+                String expanded = scratch.substring(insertStart);
+                spans.add(new int[] {m.start(), m.end()});
+                replacements.add(preserveCase ? PreserveCase.apply(m.group(), expanded) : expanded);
+            }
+            return SearchMatches.ofPairs(spans);
+        }
     }
 
     /** A short, user-facing description of a replacement-expansion failure. */

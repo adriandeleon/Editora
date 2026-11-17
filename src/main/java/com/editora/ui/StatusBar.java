@@ -44,7 +44,7 @@ public final class StatusBar extends HBox {
      * placeholder that is present on every frame but says nothing trains the eye to skip the one region of
      * the bar that real messages land in.
      */
-    private final Label echo = new Label();
+    private final StatusSegment echo = new StatusSegment(() -> registry().run("view.messageLog"));
     /** In-memory, session-only history of echo messages, shown by clicking the echo area. */
     private final MessageLog messageLog = new MessageLog();
 
@@ -52,7 +52,8 @@ public final class StatusBar extends HBox {
      * Count of errors recorded since the log was last opened. Stays up after the echo has moved on, so a
      * failure the user was not looking at leaves something behind that says so.
      */
-    private final Label unreadErrors = new Label();
+    private final StatusSegment unreadErrors =
+            new StatusSegment(() -> registry().run("view.messageLog"));
 
     /**
      * What background work is running, so an operation that takes a minute is distinguishable from a hang.
@@ -82,7 +83,7 @@ public final class StatusBar extends HBox {
      * The active {@code .http} file's environment ("Env: dev", "No environment"); clicking opens its environment menu
      * above the segment. Hidden for every other buffer and while the HTTP Client is off.
      */
-    private final Label httpEnv = new Label();
+    private final StatusSegment httpEnv = new StatusSegment(() -> this.onHttpEnvClicked.run());
     /** What clicking {@link #httpEnv} does (the controller opens the environment menu at the segment). */
     private Runnable onHttpEnvClicked = () -> {};
     /** The active Markdown buffer's lint issue count; click opens the Markdown Lint tool window. */
@@ -154,7 +155,7 @@ public final class StatusBar extends HBox {
     /** Read-only ("View mode") indicator; shown only when the active buffer is non-editable. */
     private final Label readOnly = segment("view.toggleReadOnly", tr("statusbar.tip.readOnly"));
     /** Text-zoom percentage (clickable to reset to 100%). */
-    private final Label zoomPercent = new Label("100%");
+    private final StatusSegment zoomPercent = new StatusSegment(() -> registry().run("view.textZoomReset"));
 
     private @Nullable EditorBuffer attached;
     /** Simple UI mode hides the git / language / tab-size / line-ending / encoding / LSP segments (size is kept). */
@@ -201,12 +202,13 @@ public final class StatusBar extends HBox {
         this.wordCount = new StatusWordCount(settings);
 
         getStyleClass().add("status-bar");
-        echo.getStyleClass().addAll("status-message", "status-segment-clickable");
+        echo.getStyleClass().add("status-message");
         echo.setTooltip(ControlNames.tooltip(tr("statusbar.tip.messageLog")));
-        echo.setOnMouseClicked(e -> registry.run("view.messageLog"));
-        unreadErrors.getStyleClass().addAll("status-unread-errors", "status-segment-clickable");
+        echo.setAccessibleHelp(tr("statusbar.tip.messageLog"));
+        echo.setAccessibleText(tr("statusbar.tip.messageLog")); // until the first message: see setMessage
+        unreadErrors.getStyleClass().add("status-unread-errors");
         unreadErrors.setTooltip(ControlNames.tooltip(tr("statusbar.tip.unreadErrors")));
-        unreadErrors.setOnMouseClicked(e -> registry.run("view.messageLog"));
+        unreadErrors.setAccessibleHelp(tr("statusbar.tip.unreadErrors"));
         unreadErrors.setVisible(false);
         unreadErrors.setManaged(false);
         backgroundTasks.getStyleClass().add("status-segment");
@@ -240,9 +242,9 @@ public final class StatusBar extends HBox {
         githubChecks.setVisible(false); // shown only when the current branch's PR has checks
         githubChecks.setManaged(false);
 
-        httpEnv.getStyleClass().addAll("status-segment", "status-segment-clickable", "status-http-env");
+        httpEnv.getStyleClass().addAll("status-segment", "status-http-env");
         httpEnv.setTooltip(ControlNames.tooltip(tr("statusbar.tip.httpEnv")));
-        httpEnv.setOnMouseClicked(e -> onHttpEnvClicked.run());
+        httpEnv.setAccessibleHelp(tr("statusbar.tip.httpEnv"));
         httpEnv.setVisible(false); // shown only for an .http buffer with the HTTP Client on
         httpEnv.setManaged(false);
 
@@ -381,9 +383,10 @@ public final class StatusBar extends HBox {
     private HBox zoomGroup() {
         Button out = zoomButton("−", "view.textZoomOut");
         Button in = zoomButton("+", "view.textZoomIn");
-        zoomPercent.getStyleClass().addAll("status-segment", "status-segment-clickable", "text-zoom-percent");
+        zoomPercent.setText("100%");
+        zoomPercent.getStyleClass().addAll("status-segment", "text-zoom-percent");
         zoomPercent.setTooltip(ControlNames.tooltip(tr("statusbar.tip.zoomReset")));
-        zoomPercent.setOnMouseClicked(e -> registry.run("view.textZoomReset"));
+        zoomPercent.setAccessibleHelp(tr("statusbar.tip.zoomReset"));
         HBox group = new HBox(out, zoomPercent, in);
         group.getStyleClass().add("text-zoom");
         return group;
@@ -399,33 +402,20 @@ public final class StatusBar extends HBox {
         return b;
     }
 
-    /** Builds a clickable segment label that dispatches {@code commandId} when clicked, or from the keyboard. */
-    private Label segment(String commandId, String hint) {
-        Label label = new Label();
-        label.getStyleClass().addAll("status-segment", "status-segment-clickable");
+    /** Builds a clickable segment that runs {@code commandId} when clicked, from the keyboard or a screen reader. */
+    private StatusSegment segment(String commandId, String hint) {
+        StatusSegment label = new StatusSegment(() -> registry().run(commandId));
+        label.getStyleClass().add("status-segment");
         label.setTooltip(ControlNames.tooltip(hint));
-        asButton(label, commandId, hint);
+        if (hint != null && !hint.isBlank()) {
+            label.setAccessibleHelp(hint); // what a screen reader says it does (C112)
+        }
         return label;
     }
 
-    /**
-     * Makes {@code seg} a keyboard-reachable button (Tab, then Enter or Space) a screen reader announces with
-     * {@code hint}, besides a mouse click. The built-in segments (the Python interpreter, the language server) were
-     * mouse-only, unlike a plugin's (Python review 2, C112).
-     */
-    private void asButton(Label seg, String commandId, @Nullable String hint) {
-        seg.setOnMouseClicked(e -> registry.run(commandId));
-        seg.setFocusTraversable(true);
-        seg.setAccessibleRole(javafx.scene.AccessibleRole.BUTTON);
-        if (hint != null && !hint.isBlank()) {
-            seg.setAccessibleHelp(hint);
-        }
-        seg.setOnKeyPressed(e -> {
-            if (e.getCode() == javafx.scene.input.KeyCode.ENTER || e.getCode() == javafx.scene.input.KeyCode.SPACE) {
-                e.consume();
-                registry.run(commandId);
-            }
-        });
+    /** The registry, for a segment built in a field initializer before the constructor has set it. */
+    private CommandRegistry registry() {
+        return registry;
     }
 
     /**
@@ -436,15 +426,14 @@ public final class StatusBar extends HBox {
      * @return the segment, for {@link #removePluginSegment}
      */
     public Node addPluginSegment(String text, @Nullable String commandId, String hint) {
-        Label seg = new Label(text == null ? "" : text);
+        Label seg = commandId != null && !commandId.isBlank()
+                ? new StatusSegment(() -> registry.run(commandId))
+                : new Label();
+        seg.setText(text == null ? "" : text);
         seg.getStyleClass().add("status-segment");
         if (hint != null && !hint.isBlank()) {
             seg.setTooltip(ControlNames.tooltip(hint));
             seg.setAccessibleHelp(hint);
-        }
-        if (commandId != null && !commandId.isBlank()) {
-            seg.getStyleClass().add("status-segment-clickable");
-            asButton(seg, commandId, hint);
         }
         getChildren().add(seg);
         return seg;
@@ -478,7 +467,13 @@ public final class StatusBar extends HBox {
      * never disappear entirely unnoticed without the echo line being hijacked to hold it.
      */
     public void setMessage(@Nullable String message, MessageLog.Severity severity) {
-        echo.setText(echoLine(message));
+        String line = echoLine(message);
+        echo.setText(line);
+        // Idle, the line is empty and the button reads as what it opens; with a message, as the message.
+        echo.setAccessibleText(line.isBlank() ? tr("statusbar.tip.messageLog") : null);
+        if (!line.isBlank()) {
+            echo.announce(); // a screen reader reads the new message out (ACC-02, Pauta 6.0.1)
+        }
         echo.getStyleClass().removeAll("status-echo-warn", "status-echo-error");
         if (severity == MessageLog.Severity.ERROR) {
             echo.getStyleClass().add("status-echo-error");

@@ -52,7 +52,7 @@ class KotlinRunDebugWindowFxTest {
                 "the file to open",
                 () -> c.activeBuffer() != null && file.equals(c.activeBuffer().getPath()));
         EditorBuffer b = FxTestSupport.callOnFx(c::activeBuffer);
-        FxTestSupport.runOnFx(b::settleRunScan);
+        FxTestSupport.runOnFx(b::settleRunScanForTest);
         return b;
     }
 

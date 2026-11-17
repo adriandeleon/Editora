@@ -1,6 +1,8 @@
 package com.editora.editor;
 
+import javafx.scene.Node;
 import javafx.scene.control.Control;
+import javafx.scene.control.Label;
 import javafx.scene.control.Tooltip;
 import javafx.util.Duration;
 
@@ -50,6 +52,16 @@ public final class ControlNames {
         UiZoom.follow(control, "tooltipWidth", () -> tooltip.setMaxWidth(UiZoom.px(360)));
         control.setTooltip(tooltip);
         return control;
+    }
+
+    /**
+     * A label that names {@code control} for a screen reader ({@code labelFor}), as a form's row label does: a
+     * field, a list or a box beside a label reads as that label (ACC-01, Pauta 6.0.1).
+     */
+    public static Label label(String text, Node control) {
+        Label label = new Label(text);
+        label.setLabelFor(control);
+        return label;
     }
 
     /**

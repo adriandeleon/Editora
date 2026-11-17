@@ -178,6 +178,7 @@ public final class RunConfigurationsWindow {
         stage.initModality(Modality.NONE);
 
         UiZoom.prefWidth(list, 220);
+        list.setAccessibleText(tr("run.config.title"));
         UiZoom.minWidth(list, 180);
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
@@ -738,6 +739,7 @@ public final class RunConfigurationsWindow {
     private static void formRow(GridPane form, int row, String labelKey, javafx.scene.Node control) {
         Label label = new Label(tr(labelKey));
         label.setMinWidth(Region.USE_PREF_SIZE); // "Program arguments", not "Program arg…"
+        label.setLabelFor(SettingsWindow.labelTarget(control));
         form.add(label, 0, row);
         form.add(control, 1, row);
         GridPane.setHgrow(control, Priority.ALWAYS);

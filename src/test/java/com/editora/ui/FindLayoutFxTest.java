@@ -82,6 +82,7 @@ class FindLayoutFxTest {
             EditorBuffer buffer = new EditorBuffer();
             buffer.setContent("alpha beta");
             FindReplaceBar bar = new FindReplaceBar(() -> buffer, s -> {});
+            bar.searchOn(Runnable::run, Runnable::run, com.editora.text.SearchMatcher.DEFAULT_PAGE); // in place
             VBox root = new VBox(bar, buffer.getNode());
             Stage stage = new Stage();
             stage.setScene(sceneFor(root, 1440, 400));

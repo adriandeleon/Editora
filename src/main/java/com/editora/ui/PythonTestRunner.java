@@ -270,12 +270,18 @@ final class PythonTestRunner {
                     });
                 }
             };
-            if (host.runCoordinator()
+            host.runCoordinator()
                     .runTests(
-                            scope.label(), where, plan.argv(), plan.env(), scope.script(), hooks, () -> start(scope))) {
-                shown[0] = !launchFailed[0]
-                        && host.testRunCoordinator().startExternalRun(scope.label(), where, driver(scope, true));
-            }
+                            scope.label(),
+                            where,
+                            plan.argv(),
+                            plan.env(),
+                            scope.script(),
+                            hooks,
+                            () -> start(scope),
+                            () -> shown[0] = !launchFailed[0]
+                                    && host.testRunCoordinator()
+                                            .startExternalRun(scope.label(), where, driver(scope, true)));
         });
     }
 
@@ -312,12 +318,21 @@ final class PythonTestRunner {
                     }
                 }
             };
-            if (host.runCoordinator()
-                    .runTests(scope.label(), dir, plan.argv(), plan.env(), scope.script(), hooks, () -> start(scope))) {
-                shown[0] = !launchFailed[0]
-                        && host.testRunCoordinator().startExternalRun(scope.label(), dir, driver(scope, false));
-                host.setStatus(tr("status.testrunner.unittestFallback"));
-            }
+            host.runCoordinator()
+                    .runTests(
+                            scope.label(),
+                            dir,
+                            plan.argv(),
+                            plan.env(),
+                            scope.script(),
+                            hooks,
+                            () -> start(scope),
+                            () -> {
+                                shown[0] = !launchFailed[0]
+                                        && host.testRunCoordinator()
+                                                .startExternalRun(scope.label(), dir, driver(scope, false));
+                                host.setStatus(tr("status.testrunner.unittestFallback"));
+                            });
         });
     }
 

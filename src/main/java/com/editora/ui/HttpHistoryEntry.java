@@ -132,6 +132,28 @@ record HttpHistoryEntry(
             long at,
             boolean noLog,
             @Nullable String environment) {
+        return ran(
+                exchange,
+                request,
+                requestIndex,
+                at,
+                noLog,
+                environment,
+                request == null ? null : HttpRerunTarget.fingerprint(request));
+    }
+
+    /**
+     * As above, with the request's {@link HttpRerunTarget#fingerprint} worked out already: a run's results land on the
+     * FX thread, which hashes nothing (PERF-01, Pauta 6.0.1), so they are hashed off it first.
+     */
+    static HttpHistoryEntry ran(
+            HttpExchange exchange,
+            HttpFile.@Nullable Parsed request,
+            int requestIndex,
+            long at,
+            boolean noLog,
+            @Nullable String environment,
+            @Nullable String fingerprint) {
         return new HttpHistoryEntry(
                 exchange,
                 request == null ? null : request.name(),
@@ -143,7 +165,7 @@ record HttpHistoryEntry(
                 false,
                 System.currentTimeMillis(),
                 request == null ? null : request.url(),
-                request == null ? null : HttpRerunTarget.fingerprint(request),
+                fingerprint,
                 environment);
     }
 

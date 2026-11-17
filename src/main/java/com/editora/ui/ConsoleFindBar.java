@@ -199,6 +199,7 @@ final class ConsoleFindBar extends HBox {
         setMaxWidth(Region.USE_PREF_SIZE);
         setMaxHeight(Region.USE_PREF_SIZE);
         query.setPromptText(tr("find.prompt"));
+        query.setAccessibleText(tr("find.prompt"));
         query.setPrefColumnCount(18);
         count.getStyleClass().add("find-count");
         count.setMinWidth(Region.USE_PREF_SIZE);
