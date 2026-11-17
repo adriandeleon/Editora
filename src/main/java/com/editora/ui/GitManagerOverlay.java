@@ -86,11 +86,14 @@ final class GitManagerOverlay<T> {
                 if (isEmpty || item == null) {
                     setText(null);
                     setGraphic(null);
+                    setAccessibleText(null);
                     return;
                 }
                 Label name = new Label(label.apply(item));
                 name.getStyleClass().add("menu-item-title");
                 Label sub = new Label(detail.apply(item));
+                // Its text is in a graphic: a screen reader reads the row by this (ACC-01).
+                setAccessibleText(sub.getText().isBlank() ? name.getText() : name.getText() + ", " + sub.getText());
                 sub.getStyleClass().add("git-manager-detail");
                 setText(null);
                 setGraphic(UiZoom.spacing(new VBox(name, sub), 1));

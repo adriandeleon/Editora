@@ -89,6 +89,7 @@ final class DirectoryReviewPane implements TabContent {
         root.getStyleClass().add("patch-review");
         files.setItems(FXCollections.observableList(this.entries));
         files.getStyleClass().add("patch-file-list");
+        files.setAccessibleText(title); // the list of the review's files, named for a screen reader (ACC-01)
         files.setCellFactory(v -> new FileCell());
         UiZoom.prefWidth(files, 275);
         UiZoom.minWidth(files, 185);

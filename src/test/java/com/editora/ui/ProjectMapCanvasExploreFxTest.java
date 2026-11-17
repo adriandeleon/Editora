@@ -293,7 +293,10 @@ class ProjectMapCanvasExploreFxTest {
             FxTestSupport.callOnFx(() -> (String) FxTestSupport.call(
                     h.surface(), "tooltipText", new Class<?>[] {ProjectMapModel.Entry.class}, entry(h, last)));
             DiskFacts<ProjectMapModel.Entry, ?> attributes = FxTestSupport.field(h.surface(), "attributes");
-            waitForFx(() -> attributes.knows(entry(h, last)));
+            ProjectMapModel.Entry row = FxTestSupport.callOnFx(() -> entry(h, last));
+            if (row.size() < 0 && row.modifiedMillis() < 0) { // listed by name only: else nothing is looked up
+                waitForFx(() -> attributes.knows(entry(h, last)));
+            }
             String tooltip = FxTestSupport.callOnFx(() -> (String) FxTestSupport.call(
                     h.surface(), "tooltipText", new Class<?>[] {ProjectMapModel.Entry.class}, entry(h, last)));
             assertTrue(tooltip.contains(tr("project.map.tooltip.size", "0 B")), tooltip);
