@@ -86,12 +86,12 @@ public final class LineEndings {
     }
 
     /** The separator a label stands for; anything unrecognised is {@code \n}. */
-    public static String separator(String label) {
+    public static String separator(@Nullable String label) {
         return CRLF.equals(label) ? "\r\n" : CR.equals(label) ? "\r" : "\n";
     }
 
     /** Rewrites {@code \n}-normalised {@code lfText} with the line ending {@code label} names. */
-    public static String apply(String lfText, String label) {
+    public static String apply(String lfText, @Nullable String label) {
         String separator = separator(label);
         return lfText == null || "\n".equals(separator) || lfText.indexOf('\n') < 0
                 ? lfText

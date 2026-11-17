@@ -122,4 +122,29 @@ class RecoveryCodecDamageTest {
                         "b-2", "/tmp/x.txt", "x.txt", "x", "UTF-8", false, "CRLF", 10, 20, "abc", 30, 4, "w1", null),
                 listed);
     }
+
+    @Test
+    void aHeaderEditedByHandWithoutItsTitleOrWindowStillDecodesWithItsText() throws IOException {
+        byte[] utf8 = "kept".getBytes(StandardCharsets.UTF_8);
+        RecoveryRecord untitled = RecoveryCodec.decode(file(header("\"utf-8\"", utf8), utf8), true);
+        assertEquals("kept", untitled.text());
+        assertEquals("", untitled.title(), "no title and no path: an empty one");
+        assertEquals("", untitled.windowKey(), "no window: the no-project window");
+        assertNull(untitled.charset(), "no charset: the restored buffer detects one");
+        assertNull(untitled.lineEnding(), "no line ending: the text keeps \\n");
+
+        String withPath = "{\"bufferId\":\"b-1\",\"path\":\"/home/me/notes.txt\",\"textEncoding\":\"utf-8\","
+                + "\"textBytes\":" + utf8.length + ",\"textCrc\":" + crc(utf8) + "}";
+        assertEquals(
+                "notes.txt", RecoveryCodec.decode(file(withPath, utf8), true).title(), "titled from the path");
+    }
+
+    @Test
+    void aMissingTitleIsTheLastSegmentOfThePath() {
+        assertEquals("", RecoveryCodec.fileName(null));
+        assertEquals("a.txt", RecoveryCodec.fileName("/x/y/a.txt"));
+        assertEquals("a.txt", RecoveryCodec.fileName("C:\\x\\a.txt"));
+        assertEquals("a.txt", RecoveryCodec.fileName("sftp://host/x/a.txt"));
+        assertEquals("a.txt", RecoveryCodec.fileName("a.txt"));
+    }
 }

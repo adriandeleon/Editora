@@ -561,7 +561,7 @@ final class RecoveryCoordinator {
         }
     }
 
-    private static void applyLineEnding(EditorBuffer buffer, String lineEnding) {
+    private static void applyLineEnding(EditorBuffer buffer, @Nullable String lineEnding) {
         if (lineEnding != null
                 && !lineEnding.equals(buffer.getLineEnding())
                 && (LineEndings.LF.equals(lineEnding) || LineEndings.CRLF.equals(lineEnding))) {

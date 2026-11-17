@@ -26,7 +26,8 @@ Some tests check the repository, not the program: no Javadoc comment stacked on 
 message catalogs in step (`MessagesTest`), every shipped dependency named in `NOTICE`
 (`NoticeCoverageTest`), every place that starts a process classified by locale
 (`ChildLocalePolicyTest`), the workflows' pinned actions (`ReleaseSupplyChainTest`), the `fx` tag on every
-test class that starts the toolkit (`FxTestTagsTest`). A change anywhere can
+test class that starts the toolkit (`FxTestTagsTest`), no NullAway report suppressed in `src/main`
+(`NullAwaySuppressionTest`). A change anywhere can
 break one, and the narrow tests for the change never run them, so they failed first in CI: in the week to
 12 November 2026 they were the only failure in 17 of the 35 pull-request runs that failed, each a
 fifteen-minute run spent on something that takes seconds to check.
@@ -37,7 +38,7 @@ They carry `@Tag("guard")`. Run them before every push:
 mvn test -Dgroups=guard
 ```
 
-That is 24 classes and 100 tests, about half a minute once the project is compiled, most of it Maven
+That is 28 classes and 109 tests, about half a minute once the project is compiled, most of it Maven
 starting.
 
 A new test of this kind gets the tag. It qualifies when it is pure (no toolkit), reads source files,
@@ -191,70 +192,111 @@ package, and per class where a package is too large for its own number to protec
 `jacoco-check` execution in `pom.xml` is the source of truth; `BuildHygieneTest` fails when the
 table below and the pom disagree.
 
-Measured on 2026-10-08 the full suite covers 93.4% of lines, 92.9% of methods and 81.9% of branches.
-The build as a whole may not fall below **0.90 lines, 0.90 methods and 0.79 branches**. The pure suite
-alone (`-DexcludedGroups=fx`) covers under half of that, which is all the Windows lane exercises.
+Measured on master d29174057 (CI run 44017533497, 2026-11-17) the full suite covers 91.4% of lines,
+91.1% of methods and 79.1% of branches. The build as a whole may not fall below **0.90 lines, 0.90
+methods and 0.79 branches**. The pure suite alone (`-DexcludedGroups=fx`) covers under half of that,
+which is all the Windows lane exercises.
+
+Every package of 300 lines or more has its own line floor (Pauta QUAL-03), measured on the same run:
 
 | Package | Floor | Measured |
 |---|---|---|
 | `cron` | 0.96 | 99.7% |
 | `systemd` | 0.96 | 99.6% |
 | `csv` | 0.95 | 98.2% |
-| `text` | 0.95 | 97.9% (the classes' figure before they moved) |
-| `diff` | 0.94 | 97.5% |
-| `editops` | 0.94 | 97.1% |
-| `config` | 0.93 | 96.3% |
-| `mcp` | 0.93 | 96.3% |
-| `office` | 0.93 | 96.8% |
-| `run` | 0.93 | 96.4% |
-| `template` | 0.93 | 96.1% |
-| `test` | 0.93 | 96.1% |
-| `todo` | 0.93 | 96.2% |
+| `text` | 0.95 | 96.9% |
+| `diff` | 0.94 | 97.6% |
+| `editops` | 0.94 | 95.9% |
+| `editor.http` | 0.94 | 97.2% |
+| `editor.minimap` | 0.94 | 97.2% |
+| `editor.structured` | 0.94 | 97.9% |
+| `editor.todo` | 0.94 | 97.5% |
+| `format` | 0.94 | 97.9% |
+| `command` | 0.93 | 96.9% |
+| `config` | 0.93 | 95.4% |
+| `editor.highlight` | 0.93 | 96.5% |
+| `jstools` | 0.93 | 96.4% |
+| `markdown` | 0.93 | 96.4% |
+| `mcp` | 0.93 | 95.2% |
+| `office` | 0.93 | 96.9% |
+| `run` | 0.93 | 94.0% |
+| `template` | 0.93 | 95.9% |
+| `test` | 0.93 | 96.8% |
+| `todo` | 0.93 | 96.6% |
 | `agent` | 0.92 | 95.5% |
-| `completion` | 0.92 | 95.2% |
-| `config.migration` | 0.92 | 95.1% |
-| `git` | 0.92 | 95.9% |
-| `github` | 0.92 | 95.7% |
+| `completion` | 0.92 | 95.3% |
+| `config.migration` | 0.92 | 95.8% |
+| `doctor` | 0.92 | 95.1% |
+| `editor` | 0.92 | 95.5% |
+| `editor.completion` | 0.92 | 95.1% |
+| `git` | 0.92 | 95.7% |
+| `github` | 0.92 | 95.0% |
 | `logviewer` | 0.92 | 95.5% |
-| `lsp` | 0.92 | 95.4% |
-| `editor` | 0.91 | 94.2% |
-| `editor.*` | 0.91 | each of the 18 sub-packages on its own; the tightest on the full suite is `editor.lsp`, 93.1% |
-| `editorconfig` | 0.91 | 94.0% |
-| `http` | 0.91 | 94.6% |
+| `lsp` | 0.92 | 93.0% |
+| `editor.*` | 0.91 | each sub-package on its own, a new one included; those measured higher have their own row |
+| `editorconfig` | 0.91 | 94.1% |
+| `http` | 0.91 | 92.2% |
 | `index` | 0.91 | 94.4% |
-| `markdown` | 0.91 | 95.0% |
-| `search` | 0.91 | 94.4% |
-| `build` | 0.90 | 93.1% |
-| `command` | 0.90 | 93.7% |
-| `pdf` | 0.90 | 93.6% |
-| `install` | 0.89 | 92.6% |
-| `sync` | 0.89 | 92.1% |
-| `ui` | 0.89 | 92.8% |
-| `maven` | 0.88 | 91.9% |
+| `search` | 0.91 | 94.5% |
+| `structured` | 0.91 | 94.7% |
+| `sync` | 0.91 | 94.2% |
+| `build` | 0.90 | 93.9% |
+| `pdf` | 0.90 | 93.9% |
+| `typst` | 0.90 | 93.7% |
+| `install` | 0.89 | 90.0% |
+| `maven` | 0.89 | 92.5% |
+| `snippet` | 0.89 | 92.4% |
+| `ui` | 0.89 | 90.0% |
 | `plugin` | 0.88 | 91.9% |
-| `snippet` | 0.88 | 91.5% |
-| `dap` | 0.87 | 90.9% |
+| `dap` | 0.87 | 90.2% |
+| `history` | 0.87 | 90.5% |
+| `mermaid` | 0.87 | 90.8% |
 | `print` | 0.87 | 90.0% |
-| `process` | 0.86 | 89.4% |
-| `recovery` | 0.86 | 89.0% |
-| `history` | 0.85 | 89.0% |
+| `web` | 0.87 | 90.5% |
+| `process` | 0.86 | 88.5% |
+| `recovery` | 0.86 | 89.2% |
+| `vfs` | 0.86 | 89.9% |
+| `crypto` | 0.85 | 88.2% |
 | `io` | 0.84 | 87.4% |
 | `ai` | 0.83 | 86.7% |
-| `web` | 0.80 | 83.8% |
-| `ui.LspCoordinator` (class) | 0.90 | 93.8% |
-| `ui.WindowCommandRegistrar` (class) | 0.95 | 98.7% |
+| `terminal` | 0.83 | 86.8% |
+| `deploy` | 0.79 | 82.3% |
+| `dap.jvm` | 0.74 | 77.5% |
+| `com.editora` | 0.68 | 72.0% |
+| `container` | 0.50 | 53.8% |
+| `ui.WindowCommandRegistrar` (class) | 0.95 | 98.6% |
+| `ui.LspCoordinator` (class) | 0.90 | 92.2% |
 
-- Each floor sits **three points below** the measured level — a regression net, not a target. **When
-  you raise a package's coverage, ratchet its floor up.**
-- Every package of 300 lines or more that measures 80% or better has a floor. Left out on purpose: the
-  entry point, and the diagram, Typst and Mermaid packages, whose tests need tools the CI runner does
-  not install.
+- Each floor is the measured level **less three points, rounded down** to two decimals — a regression
+  net, not a target. A floor set earlier that is still higher stays where it is: a floor never goes
+  down. Some of those now sit closer than three points (`ui` 0.89 at 90.0%, `install` 0.89 at 90.0%,
+  `lsp` 0.92 at 93.0%, `http` 0.91 at 92.2%); a drop there fails the build sooner.
+- `editor.*` holds every editor sub-package, so a new one starts with 0.91; a sub-package measured
+  higher is listed again with its own floor, and the higher of the two applies.
+- Packages under 300 lines have no floor of their own (they still count towards the build's totals).
 - Branch coverage is the counter with room left. What remains is mostly the null/absent halves of
   compound conditions, stale-reply guards, and failure arms with no boundary to inject the failure at.
   Lines that cannot run in a test at all are native file choosers and drag-and-drop, real printing,
   OS-specific code, and anything that would start an external program.
 - The command-registrar class floor is held up by `CommandSweepFxTest`. If it drops, the sweep has
   stopped reaching commands.
+
+### Coverage floors: the ratchet
+
+When a package's coverage rises, raise its floor so the gain cannot slip away unnoticed:
+
+1. Take the coverage of the latest green `master` run of `ci.yml` (the build job puts the six shards
+   together): `gh run list --branch master --workflow ci.yml`, then
+   `gh run download <id> -n jacoco-report` and read `jacoco.csv` (sum `LINE_COVERED` and `LINE_MISSED`
+   per `PACKAGE`). Nothing has to run locally.
+2. For each package of 300+ lines, the floor is the measured ratio less 0.03, rounded down to two
+   decimals. Raise any floor that is now lower than that; never lower one. A package that has grown
+   past 300 lines gets its first floor the same way.
+3. Move the package to the `<rule>` of its new value in the `jacoco-check` execution of `pom.xml`, and
+   update its row in the table above (`BuildHygieneTest` fails when the two disagree).
+4. To check the new floors against that run before pushing, download its `classes` artifact and the six
+   `test-shard-N` artifacts, join their `jacoco-shard-N.exec` into `target/jacoco.exec`, put the classes
+   in `target/classes`, and run `mvn jacoco:check@jacoco-check`, as CI's build job does. No test runs.
 
 CI writes the two totals to the job summary and uploads the HTML report from the JDK 25 lane as the
 `jacoco-report` artifact.

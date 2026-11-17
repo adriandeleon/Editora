@@ -618,11 +618,11 @@
             <!-- Test coverage (JaCoCo): the on-the-fly agent instruments the unit tests and a report is
                  generated after the `test` phase (HTML + XML under target/site/jacoco/).
                  jacoco wires its agent into surefire via the `argLine` property (surefire sets none).
-                 A `check` (bound to `verify`) enforces a per-package LINE-coverage FLOOR on the pure,
-                 well-covered packages so their coverage can't silently regress. Floors sit three points below
-                 measured levels — a regression net, not a stretch goal. When you raise a package's coverage,
-                 ratchet its floor up here. The `mvn javafx:run`/`compile` dev
-                 loop is unaffected (check runs only at `verify`/`package`). -->
+                 A `check` (bound to `verify`) enforces a LINE-coverage FLOOR on every package of 300+ lines
+                 so its coverage can't silently regress. Floors sit three points below measured levels — a
+                 regression net, not a stretch goal. When you raise a package's coverage, ratchet its floor up
+                 here. The `mvn javafx:run`/`compile` dev loop is unaffected (check runs only at
+                 `verify`/`package`). -->
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
@@ -674,10 +674,15 @@
                                         </limit>
                                     </limits>
                                 </rule>
-                                <!-- PACKAGE floors, grouped by value. Every package of 300+ lines that measures
-                                     80% or better is listed, three points under its measured line coverage
-                                     (2026-10-08). Left out on purpose: the entry point (com.editora), and
-                                     diagram / typst / mermaid, whose tests need tools the CI runner lacks. -->
+                                <!-- PACKAGE floors, one per package of 300+ lines (Pauta QUAL-03), grouped by value.
+                                     Each is the line coverage CI measured, less three points, rounded down to two
+                                     decimals; where an older floor was already higher it stays (a floor never goes
+                                     down). Measured on master d29174057 (CI run 44017533497, the merged six-shard
+                                     report, 2026-11-17). com.editora.editor.* holds every editor sub-package, a new one
+                                     included, at 0.91; the ones measured higher are listed again at their own floor. To
+                                     ratchet: take jacoco.csv from the latest green master run's jacoco-report artifact,
+                                     and raise any floor now more than three points under its package (docs/testing.md,
+                                     "Coverage floors"). -->
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
@@ -711,6 +716,11 @@
                                     <includes>
                                         <include>com.editora.diff</include>
                                         <include>com.editora.editops</include>
+                                        <include>com.editora.editor.http</include>
+                                        <include>com.editora.editor.minimap</include>
+                                        <include>com.editora.editor.structured</include>
+                                        <include>com.editora.editor.todo</include>
+                                        <include>com.editora.format</include>
                                     </includes>
                                     <limits>
                                         <limit>
@@ -723,7 +733,11 @@
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
+                                        <include>com.editora.command</include>
                                         <include>com.editora.config</include>
+                                        <include>com.editora.editor.highlight</include>
+                                        <include>com.editora.jstools</include>
+                                        <include>com.editora.markdown</include>
                                         <include>com.editora.mcp</include>
                                         <include>com.editora.office</include>
                                         <include>com.editora.run</include>
@@ -745,6 +759,9 @@
                                         <include>com.editora.agent</include>
                                         <include>com.editora.completion</include>
                                         <include>com.editora.config.migration</include>
+                                        <include>com.editora.doctor</include>
+                                        <include>com.editora.editor</include>
+                                        <include>com.editora.editor.completion</include>
                                         <include>com.editora.git</include>
                                         <include>com.editora.github</include>
                                         <include>com.editora.logviewer</include>
@@ -761,13 +778,13 @@
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
-                                        <include>com.editora.editor</include>
                                         <include>com.editora.editor.*</include>
                                         <include>com.editora.editorconfig</include>
                                         <include>com.editora.http</include>
                                         <include>com.editora.index</include>
-                                        <include>com.editora.markdown</include>
                                         <include>com.editora.search</include>
+                                        <include>com.editora.structured</include>
+                                        <include>com.editora.sync</include>
                                     </includes>
                                     <limits>
                                         <limit>
@@ -781,8 +798,8 @@
                                     <element>PACKAGE</element>
                                     <includes>
                                         <include>com.editora.build</include>
-                                        <include>com.editora.command</include>
                                         <include>com.editora.pdf</include>
+                                        <include>com.editora.typst</include>
                                     </includes>
                                     <limits>
                                         <limit>
@@ -796,7 +813,8 @@
                                     <element>PACKAGE</element>
                                     <includes>
                                         <include>com.editora.install</include>
-                                        <include>com.editora.sync</include>
+                                        <include>com.editora.maven</include>
+                                        <include>com.editora.snippet</include>
                                         <include>com.editora.ui</include>
                                     </includes>
                                     <limits>
@@ -810,9 +828,7 @@
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
-                                        <include>com.editora.maven</include>
                                         <include>com.editora.plugin</include>
-                                        <include>com.editora.snippet</include>
                                     </includes>
                                     <limits>
                                         <limit>
@@ -826,7 +842,10 @@
                                     <element>PACKAGE</element>
                                     <includes>
                                         <include>com.editora.dap</include>
+                                        <include>com.editora.history</include>
+                                        <include>com.editora.mermaid</include>
                                         <include>com.editora.print</include>
+                                        <include>com.editora.web</include>
                                     </includes>
                                     <limits>
                                         <limit>
@@ -841,6 +860,7 @@
                                     <includes>
                                         <include>com.editora.process</include>
                                         <include>com.editora.recovery</include>
+                                        <include>com.editora.vfs</include>
                                     </includes>
                                     <limits>
                                         <limit>
@@ -853,7 +873,7 @@
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
-                                        <include>com.editora.history</include>
+                                        <include>com.editora.crypto</include>
                                     </includes>
                                     <limits>
                                         <limit>
@@ -880,6 +900,7 @@
                                     <element>PACKAGE</element>
                                     <includes>
                                         <include>com.editora.ai</include>
+                                        <include>com.editora.terminal</include>
                                     </includes>
                                     <limits>
                                         <limit>
@@ -892,13 +913,52 @@
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
-                                        <include>com.editora.web</include>
+                                        <include>com.editora.deploy</include>
                                     </includes>
                                     <limits>
                                         <limit>
                                             <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
-                                            <minimum>0.80</minimum>
+                                            <minimum>0.79</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
+                                        <include>com.editora.dap.jvm</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.74</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
+                                        <include>com.editora</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.68</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
+                                        <include>com.editora.container</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.50</minimum>
                                         </limit>
                                     </limits>
                                 </rule>
