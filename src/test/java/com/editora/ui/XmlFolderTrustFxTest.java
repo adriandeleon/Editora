@@ -129,6 +129,7 @@ class XmlFolderTrustFxTest {
     @AfterEach
     void closeManager() throws Exception {
         FxTestSupport.runOnFx(manager::close);
+        config.shared().flushWrites(); // saved off the FX thread (PERF-01): landed before the folder is deleted
     }
 
     private EditorBuffer open(Path file, String text) throws Exception {
