@@ -43,6 +43,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * count of requests that reached a server.
  */
 @Tag("fx")
+// A buffer's server root is looked for off the FX thread (PERF-01, Pauta 6.0.1); here in place, so a sync has
+// opened the document when it returns, as the assertions read it.
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class LspRefreshTrafficFxTest {
 
     @BeforeAll

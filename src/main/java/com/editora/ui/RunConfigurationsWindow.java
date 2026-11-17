@@ -349,7 +349,11 @@ public final class RunConfigurationsWindow {
             applyType.run();
             commit.run();
         });
-        jdk.valueProperty().addListener((o, was, now) -> commit.run());
+        jdk.valueProperty().addListener((o, was, now) -> {
+            if (!JdkChoice.sameHome(was, now)) { // not the version landing (JdkChoice.select)
+                commit.run();
+            }
+        });
         inTerminal.selectedProperty().addListener((o, was, now) -> commit.run());
         runOn.valueProperty().addListener((o, was, now) -> commit.run());
         stage.focusedProperty().addListener((o, was, now) -> {

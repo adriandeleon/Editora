@@ -112,6 +112,25 @@ final class StringViews {
 
     private static final ObjectMapper JSON = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
 
+    /**
+     * Lays {@code text} out as JSON ({@code json}) or XML off the FX thread (PERF-01, Pauta 6.0.1: a debuggee's
+     * string may be of any size), then hands {@code laidOut} the result on the FX thread, or {@code failed} why not.
+     */
+    static void layOutLater(
+            String text,
+            boolean json,
+            java.util.function.Consumer<String> laidOut,
+            java.util.function.Consumer<String> failed) {
+        com.editora.perf.OffFx.then("debug-view-as", () -> json ? prettyJson(text) : prettyXml(text), a -> {
+            if (a.ok() && a.value() != null) {
+                laidOut.accept(a.value());
+            } else {
+                Throwable f = a.failure();
+                failed.accept(f == null || f.getMessage() == null ? "" : f.getMessage());
+            }
+        });
+    }
+
     /** {@code text} as indented JSON; an {@link IllegalArgumentException} saying why when it is not JSON. */
     static String prettyJson(String text) {
         try {

@@ -126,9 +126,94 @@ public final class PathKeys {
         if (hit != null) {
             return hit;
         }
+        if (onFx()) {
+            // Never resolved on the FX thread (PERF-01, Pauta 6.0.1): what was known before the last invalidation,
+            // else the plain absolute form (a real path, as a server reports it, is its own), resolved behind.
+            Path before = STALE.get(cacheKey);
+            resolveBehind(cacheKey, p);
+            Path landed = CANONICAL_CACHE.get(cacheKey); // a test that runs OffFx in place has it already
+            if (landed != null) {
+                return landed;
+            }
+            if (before != null) {
+                return before;
+            }
+            Path abs = p.toAbsolutePath().normalize();
+            Path viaAncestor = viaKnownAncestor(abs);
+            return viaAncestor != null ? viaAncestor : abs;
+        }
+        return resolveNow(cacheKey, p);
+    }
+
+    /** What was resolved before the last {@link #invalidateCanonicalCache}: the FX thread's answer meanwhile. */
+    private static final Map<String, Path> STALE = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static final java.util.Set<String> RESOLVING = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    private static void resolveBehind(String cacheKey, Path p) {
+        if (!RESOLVING.add(cacheKey)) {
+            return;
+        }
+        com.editora.perf.OffFx.then(
+                "PathKeys.canonical",
+                () -> {
+                    try {
+                        return resolveNow(cacheKey, p);
+                    } finally {
+                        RESOLVING.remove(cacheKey);
+                    }
+                },
+                done -> {});
+    }
+
+    /**
+     * The nearest ancestor of {@code abs} already resolved, with the names below it: a Save As target in a folder
+     * reached through a link is keyed as it will be once written, without a look on the FX thread.
+     */
+    private static @Nullable Path viaKnownAncestor(Path abs) {
+        for (Path dir = abs.getParent(); dir != null; dir = dir.getParent()) {
+            Path known = CANONICAL_CACHE.get(dir.toString());
+            if (known == null) {
+                known = STALE.get(dir.toString());
+            }
+            if (known != null) {
+                return known.resolve(dir.relativize(abs)).normalize();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Resolves {@code p} and its folder on this thread, off the FX thread, so a later FX ask answers from memory —
+     * for the file, and for a new file beside it (a Save As target).
+     */
+    public static void warm(Path p) {
+        if (Vfs.isRemote(p)) {
+            return;
+        }
+        if (!CANONICAL_CACHE.containsKey(p.toString())) {
+            resolveNow(p.toString(), p);
+        }
+        Path parent = p.toAbsolutePath().getParent();
+        if (parent != null && !CANONICAL_CACHE.containsKey(parent.toString())) {
+            resolveNow(parent.toString(), parent);
+        }
+    }
+
+    private static boolean onFx() {
+        try {
+            return javafx.application.Platform.isFxApplicationThread();
+        } catch (RuntimeException | LinkageError e) {
+            return false;
+        }
+    }
+
+    private static Path resolveNow(String cacheKey, Path p) {
+        com.editora.perf.BlockingSites.enter("PathKeys.canonical");
         try {
             Path real = p.toRealPath();
             CANONICAL_CACHE.put(cacheKey, real);
+            STALE.remove(cacheKey);
             return real;
         } catch (java.io.IOException | RuntimeException e) {
             return unresolved(p); // NOT cached — see the javadoc
@@ -157,7 +242,13 @@ public final class PathKeys {
     /** Drops every cached canonical resolution — called when the filesystem may have shifted under us
      *  (rename/delete/external change/window focus regain). Cheap: the next lookups re-resolve + re-warm. */
     public static void invalidateCanonicalCache() {
-        CANONICAL_CACHE.clear();
+        synchronized (CANONICAL_CACHE) {
+            if (STALE.size() + CANONICAL_CACHE.size() > CANONICAL_CACHE_MAX) {
+                STALE.clear(); // a bound, like the cache's own
+            }
+            STALE.putAll(CANONICAL_CACHE);
+            CANONICAL_CACHE.clear();
+        }
     }
 
     /**

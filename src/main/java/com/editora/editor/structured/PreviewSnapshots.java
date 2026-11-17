@@ -119,22 +119,43 @@ public final class PreviewSnapshots {
      */
     public static void capture(
             EditorBuffer b, String lightUa, BiConsumer<Integer, Integer> progress, Consumer<Result> done) {
-        Plan plan;
+        Request request;
         Scene scene;
         try {
-            plan = plan(b);
-            scene = plan == null ? null : scene(b, lightUa);
+            request = request(b);
+            scene = request == null ? null : scene(b, lightUa);
         } catch (RuntimeException e) {
             LOG.log(java.util.logging.Level.WARNING, "preview snapshot failed", e);
-            plan = null;
+            request = null;
             scene = null;
         }
-        if (plan == null || scene == null) {
+        if (request == null || scene == null) {
+            Platform.runLater(() -> done.accept(null));
+            return;
+        }
+        // The text is parsed off the FX thread (PERF-01, Pauta 6.0.1): a document of the user's size, and a pom's
+        // parents and imported BOMs read from the disk. The nodes are built and shot on the FX thread.
+        Request asked = request;
+        Scene sc = scene;
+        com.editora.perf.OffFx.then("preview-snapshot-parse", () -> parse(asked), parsed -> {
+            Plan plan;
+            try {
+                plan = parsed.ok() ? build(asked, parsed.value()) : null;
+            } catch (RuntimeException e) {
+                LOG.log(java.util.logging.Level.WARNING, "preview snapshot failed", e);
+                plan = null;
+            }
+            shootPlan(plan, sc, progress, done);
+        });
+    }
+
+    private static void shootPlan(
+            @Nullable Plan plan, Scene scene, BiConsumer<Integer, Integer> progress, Consumer<Result> done) {
+        if (plan == null) {
             Platform.runLater(() -> done.accept(null));
         } else if (plan.single() instanceof Node node) {
-            Scene sc = scene;
             step(done, () -> {
-                Shot shot = shoot(sc, node, true);
+                Shot shot = shoot(scene, node, true);
                 encode(shot, done, (s, png) -> {
                     progress.accept(1, 1);
                     Chunk image = new Chunk(png, s.scale(), s.cuts(), false);
@@ -148,60 +169,144 @@ public final class PreviewSnapshots {
         }
     }
 
-    private static @Nullable Plan plan(EditorBuffer b) {
-        String text = b.getArea().getText();
-        if (b.hasGithubActionsPreview()) {
-            return Plan.of(GithubActionsPreview.content(com.editora.ghactions.Workflow.parse(text), EXPORT_WIDTH));
+    /** What kind of preview a buffer has, for a snapshot. */
+    private enum Kind {
+        GITHUB_ACTIONS,
+        STRUCTURED,
+        POM,
+        XML,
+        CRONTAB,
+        FSTAB,
+        SYSTEMD,
+        SSH_CONFIG,
+        DOCKERFILE,
+        MARKWHEN
+    }
+
+    /** What the FX thread hands the parse: the buffer's text and what its preview shows. Memory only. */
+    private record Request(
+            Kind kind,
+            String text,
+            java.nio.file.@Nullable Path path,
+            StructuredParser.@Nullable Format format,
+            boolean apiDocs,
+            boolean calendar) {}
+
+    private static @Nullable Request request(EditorBuffer b) {
+        Kind kind = b.hasGithubActionsPreview()
+                ? Kind.GITHUB_ACTIONS
+                : b.isStructured()
+                        ? Kind.STRUCTURED
+                        : b.hasPomPreview()
+                                ? Kind.POM
+                                : b.isXml()
+                                        ? Kind.XML
+                                        : b.isCrontab()
+                                                ? Kind.CRONTAB
+                                                : b.isFstab()
+                                                        ? Kind.FSTAB
+                                                        : b.isSystemd()
+                                                                ? Kind.SYSTEMD
+                                                                : b.isSshConfig()
+                                                                        ? Kind.SSH_CONFIG
+                                                                        : b.isDockerfile()
+                                                                                ? Kind.DOCKERFILE
+                                                                                : b.isMarkwhen() ? Kind.MARKWHEN : null;
+        if (kind == null) {
+            return null;
         }
-        if (b.isStructured()) {
-            StructuredParser.Parsed p = StructuredParser.parse(text, b.structuredFormat());
-            com.editora.structured.StructuredNode root = p.root();
-            if (root == null || !p.ok()) {
-                return null;
+        return new Request(
+                kind,
+                b.getArea().getText(),
+                b.getPath(),
+                kind == Kind.STRUCTURED ? b.structuredFormat() : null,
+                kind == Kind.STRUCTURED && b.showsApiDocs(),
+                kind == Kind.MARKWHEN && b.getMarkwhenView() == EditorBuffer.MarkwhenView.CALENDAR);
+    }
+
+    /** The model {@code r}'s text holds. Off the FX thread: parses, and reads a pom's neighbours. */
+    private static Object parse(Request r) {
+        com.editora.perf.BlockingSites.enter("PreviewSnapshots.parse");
+        String text = r.text();
+        return switch (r.kind()) {
+            case GITHUB_ACTIONS -> com.editora.ghactions.Workflow.parse(text);
+            case STRUCTURED -> StructuredParser.parse(text, r.format());
+            case POM -> com.editora.maven.PomSummary.parse(text, r.path());
+            case XML -> XmlParser.parse(text);
+            case CRONTAB -> com.editora.cron.Crontab.parse(text);
+            case FSTAB -> com.editora.fstab.Fstab.parse(text);
+            case SYSTEMD -> com.editora.systemd.SystemdUnit.parse(text);
+            case SSH_CONFIG -> com.editora.sshconfig.SshConfig.parse(text);
+            case DOCKERFILE -> com.editora.dockerfile.Dockerfile.parse(text);
+            case MARKWHEN -> com.editora.markwhen.MarkwhenParser.parse(text);
+        };
+    }
+
+    /** The nodes to shoot for {@code model}. FX thread. */
+    private static @Nullable Plan build(Request r, @Nullable Object model) {
+        if (model == null) {
+            return null;
+        }
+        switch (r.kind()) {
+            case GITHUB_ACTIONS -> {
+                return Plan.of(GithubActionsPreview.content((com.editora.ghactions.Workflow) model, EXPORT_WIDTH));
             }
-            if (p.isOpenApi() && b.showsApiDocs()) { // what the preview shows: the docs, not the tree behind them
-                VBox docs = OpenApiDoc.content(p.openApi());
-                docs.setPrefWidth(DOCS_WIDTH);
-                return new Plan(docs, null, 0, null);
+            case STRUCTURED -> {
+                StructuredParser.Parsed p = (StructuredParser.Parsed) model;
+                com.editora.structured.StructuredNode root = p.root();
+                if (root == null || !p.ok()) {
+                    return null;
+                }
+                if (p.isOpenApi() && r.apiDocs()) { // what the preview shows: the docs, not the tree behind them
+                    VBox docs = OpenApiDoc.content(p.openApi());
+                    docs.setPrefWidth(DOCS_WIDTH);
+                    return new Plan(docs, null, 0, null);
+                }
+                return new Plan(
+                        null,
+                        StructuredTree.printableRows(root, MAX_PRINT_ROWS),
+                        StructuredTree.rowCount(root),
+                        "structured-tree");
             }
-            return new Plan(
-                    null,
-                    StructuredTree.printableRows(root, MAX_PRINT_ROWS),
-                    StructuredTree.rowCount(root),
-                    "structured-tree");
-        }
-        if (b.hasPomPreview()) {
-            return Plan.of(PomPreview.content(com.editora.maven.PomSummary.parse(text, b.getPath()), EXPORT_WIDTH));
-        }
-        if (b.isXml()) {
-            XmlParser.Parsed p = XmlParser.parse(text);
-            return p.ok() && p.root() instanceof com.editora.structured.XmlNode root
-                    ? new Plan(null, XmlTree.printableRows(root, MAX_PRINT_ROWS), XmlTree.rowCount(root), "xml-tree")
-                    : null;
-        }
-        if (b.isCrontab()) {
-            return Plan.of(CrontabPreview.content(
-                    com.editora.cron.Crontab.parse(text), java.time.LocalDateTime.now(), EXPORT_WIDTH));
-        }
-        if (b.isFstab()) {
-            return Plan.of(FstabPreview.content(com.editora.fstab.Fstab.parse(text), EXPORT_WIDTH));
-        }
-        if (b.isSystemd()) {
-            return Plan.of(SystemdPreview.content(
-                    com.editora.systemd.SystemdUnit.parse(text), java.time.LocalDateTime.now(), EXPORT_WIDTH));
-        }
-        if (b.isSshConfig()) {
-            return Plan.of(SshConfigPreview.content(com.editora.sshconfig.SshConfig.parse(text), EXPORT_WIDTH));
-        }
-        if (b.isDockerfile()) {
-            return Plan.of(DockerfilePreview.content(com.editora.dockerfile.Dockerfile.parse(text), EXPORT_WIDTH));
-        }
-        if (b.isMarkwhen()) {
-            com.editora.markwhen.Timeline model = com.editora.markwhen.MarkwhenParser.parse(text);
-            Node timeline = b.getMarkwhenView() == EditorBuffer.MarkwhenView.CALENDAR
-                    ? MarkwhenCalendar.build(model, 1.0, EXPORT_WIDTH)
-                    : MarkwhenTimeline.build(model, 1.0, EXPORT_WIDTH);
-            return Plan.of(new VBox(timeline));
+            case POM -> {
+                return Plan.of(PomPreview.content((com.editora.maven.PomSummary) model, EXPORT_WIDTH));
+            }
+            case XML -> {
+                XmlParser.Parsed p = (XmlParser.Parsed) model;
+                return p.ok() && p.root() instanceof com.editora.structured.XmlNode root
+                        ? new Plan(
+                                null, XmlTree.printableRows(root, MAX_PRINT_ROWS), XmlTree.rowCount(root), "xml-tree")
+                        : null;
+            }
+            case CRONTAB -> {
+                return Plan.of(CrontabPreview.content(
+                        (com.editora.cron.Crontab) model, java.time.LocalDateTime.now(), EXPORT_WIDTH));
+            }
+            case FSTAB -> {
+                @SuppressWarnings("unchecked")
+                List<com.editora.fstab.FstabEntry> entries = (List<com.editora.fstab.FstabEntry>) model;
+                return Plan.of(FstabPreview.content(entries, EXPORT_WIDTH));
+            }
+            case SYSTEMD -> {
+                return Plan.of(SystemdPreview.content(
+                        (com.editora.systemd.SystemdUnit) model, java.time.LocalDateTime.now(), EXPORT_WIDTH));
+            }
+            case SSH_CONFIG -> {
+                @SuppressWarnings("unchecked")
+                List<com.editora.sshconfig.SshConfig.Block> blocks =
+                        (List<com.editora.sshconfig.SshConfig.Block>) model;
+                return Plan.of(SshConfigPreview.content(blocks, EXPORT_WIDTH));
+            }
+            case DOCKERFILE -> {
+                return Plan.of(DockerfilePreview.content((com.editora.dockerfile.Dockerfile) model, EXPORT_WIDTH));
+            }
+            case MARKWHEN -> {
+                com.editora.markwhen.Timeline timeline = (com.editora.markwhen.Timeline) model;
+                Node node = r.calendar()
+                        ? MarkwhenCalendar.build(timeline, 1.0, EXPORT_WIDTH)
+                        : MarkwhenTimeline.build(timeline, 1.0, EXPORT_WIDTH);
+                return Plan.of(new VBox(node));
+            }
         }
         return null;
     }

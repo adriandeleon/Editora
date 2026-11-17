@@ -224,6 +224,11 @@ class RunConfigurationCommandsFxTest {
         }
 
         @Override
+        public void suggestMainClass(Path file, String text, java.util.function.Consumer<String> then) {
+            then.accept(suggested); // the fake answers at once, in place of the off-FX look
+        }
+
+        @Override
         public Path windowProjectRoot() {
             return projectRoot;
         }

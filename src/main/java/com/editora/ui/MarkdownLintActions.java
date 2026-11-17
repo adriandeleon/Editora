@@ -8,6 +8,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
 
@@ -86,15 +87,115 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
 
     // --- project config -------------------------------------------------------------------------------
 
-    /** The nearest markdownlint config governing {@code file}, or null when there is none. */
-    @Nullable
-    ConfigHit configFor(Path file) {
-        return configFor(file, host.activeProjectRoot());
+    /** Which config a file's folder resolves to under a project root (null outside a project). */
+    private record HitKey(Path folder, @Nullable Path projectRoot) {}
+
+    /** What a look off the FX thread found for a folder, and when (System.nanoTime). */
+    private record Looked(Optional<ConfigHit> hit, long at) {}
+
+    /**
+     * The config each folder resolved to at the last look (PERF-01, Pauta 6.0.1): the FX thread answers from
+     * here and never stats or reads a config itself. A folder never looked at is looked at on
+     * {@link #configExec}, and the lint it held back runs when the answer lands.
+     */
+    private final Map<HitKey, Looked> hits = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private final Set<HitKey> looking = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** How old an answer the FX thread takes before it looks again behind it. TEST SEAM: 0 looks every time. */
+    static volatile long hitFreshNanos = 2_000_000_000L;
+
+    private static final java.util.concurrent.Executor CONFIG_LOOK =
+            r -> Thread.ofVirtual().name("markdown-lint-config").start(r);
+
+    /** Where the configs are stat-ed, read and parsed. TEST SEAM: a test may run the look in place. */
+    static volatile java.util.concurrent.Executor configExec = CONFIG_LOOK;
+
+    /** TEST SEAM — restores the look's own thread and freshness. */
+    static void resetLookForTest() {
+        configExec = CONFIG_LOOK;
+        hitFreshNanos = 2_000_000_000L;
     }
 
-    /** As {@link #configFor(Path)}, with the project root already in hand (a project lint asks off-thread). */
+    /** The nearest markdownlint config governing {@code file}, or null when there is none (or none known yet). */
+    @Nullable
+    ConfigHit configFor(Path file) {
+        return knownConfigFor(file, host.activeProjectRoot(), null);
+    }
+
+    /**
+     * Whether the config governing {@code file} is known (looked at off the FX thread at least once); when it is
+     * not, the look is started and {@code whenKnown} runs on the FX thread once it lands.
+     */
+    boolean configKnown(Path file, Runnable whenKnown) {
+        HitKey key = keyOf(file, host.activeProjectRoot());
+        if (key == null || hits.containsKey(key)) {
+            return true;
+        }
+        lookBehind(file, key, whenKnown);
+        return hits.containsKey(key); // a look run in place (a test) has answered already
+    }
+
+    private @Nullable HitKey keyOf(Path file, @Nullable Path root) {
+        Path folder = file.getParent();
+        return folder == null ? null : new HitKey(folder, root != null && file.startsWith(root) ? root : null);
+    }
+
+    /** The answer kept for {@code file}'s folder; looked at again behind it when it is old. */
+    private @Nullable ConfigHit knownConfigFor(Path file, @Nullable Path root, @Nullable Runnable whenKnown) {
+        HitKey key = keyOf(file, root);
+        if (key == null) {
+            return null;
+        }
+        Looked known = hits.get(key);
+        if (known == null || System.nanoTime() - known.at() > hitFreshNanos) {
+            lookBehind(file, key, whenKnown);
+            known = hits.get(key); // a look run in place (a test) has answered already
+        }
+        return known == null ? null : known.hit().orElse(null);
+    }
+
+    /** Looks at {@code key} on {@link #configExec}; a changed answer re-lints the open buffers. */
+    private void lookBehind(Path file, HitKey key, @Nullable Runnable whenKnown) {
+        if (!looking.add(key)) {
+            if (whenKnown != null) {
+                waiting.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(whenKnown);
+            }
+            return;
+        }
+        if (whenKnown != null) {
+            waiting.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(whenKnown);
+        }
+        configExec.execute(() -> {
+            ConfigHit found = null;
+            try {
+                found = configFor(file, key.projectRoot());
+            } catch (RuntimeException e) {
+                // unreadable: as with no config
+            }
+            ConfigHit hit = found;
+            com.editora.perf.OffFx.onFx(() -> {
+                looking.remove(key);
+                Looked before = hits.put(key, new Looked(Optional.ofNullable(hit), System.nanoTime()));
+                List<Runnable> held = waiting.remove(key);
+                if (held != null) {
+                    held.forEach(Runnable::run);
+                } else if (before != null && !before.hit().equals(Optional.ofNullable(hit))) {
+                    previews.applyMarkdownLint(); // the config changed on disk: lint again by the new one
+                }
+            });
+        });
+    }
+
+    private final Map<HitKey, List<Runnable>> waiting = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * As {@link #configFor(Path)}, with the project root already in hand: the look itself, which stats, reads and
+     * parses the configs. Never on the FX thread (a project lint and {@link #configExec} ask).
+     */
     @Nullable
     ConfigHit configFor(Path file, @Nullable Path projectRoot) {
+        com.editora.perf.BlockingSites.enter("MarkdownLintActions.configFor");
         Path stop = boundary(file, projectRoot);
         for (Path dir = file.getParent(); dir != null; dir = dir.getParent()) {
             if (stop == null && isHomeOrRoot(dir)) {
@@ -331,30 +432,98 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
     }
 
     /**
-     * The save hook of "fix on save": applies the safe fixes to {@code buffer} just before it is written, as one
-     * undo step. Does nothing unless the setting is on and the buffer is an editable Markdown source the user is
-     * editing (not a read-only file, not a preview-only view, not a narrowed one).
+     * Whether "fix on save" applies to {@code buffer}: the setting is on and it is an editable Markdown source the
+     * user is editing (not a read-only file, not a preview-only view, not a narrowed one). Memory only.
      */
-    void beforeSave(EditorBuffer buffer) {
-        if (buffer == null
-                || !host.config().getSettings().isMarkdownLintFixOnSave()
-                || !previews.markdownLintEnabled()
-                || !buffer.isMarkdown()
-                || !buffer.isEditable()
-                || buffer.isPreviewOnly()
-                || buffer.isNarrowed()) {
+    boolean fixesOnSave(EditorBuffer buffer) {
+        return buffer != null
+                && host.config().getSettings().isMarkdownLintFixOnSave()
+                && previews.markdownLintEnabled()
+                && buffer.isMarkdown()
+                && buffer.isEditable()
+                && !buffer.isPreviewOnly()
+                && !buffer.isNarrowed();
+    }
+
+    /**
+     * The save hook of "fix on save": works out the safe fixes of {@code buffer}'s text off the FX thread (PERF-01,
+     * Pauta 6.0.1), applies them as one undo step when the text has not changed meanwhile, then runs {@code save}
+     * on the FX thread (always, also for a buffer closed meanwhile: the caller checks). Text typed while the fixes were worked out is fixed again (a few times at most; then the
+     * save goes on with the text as it is). Runs {@code save} at once when "fix on save" does not apply.
+     */
+    void fixThenSave(EditorBuffer buffer, Runnable save) {
+        if (!fixesOnSave(buffer)) {
+            save.run();
             return;
         }
-        String text = buffer.getContent();
-        MarkdownLintFix.Result fixed = MarkdownLintFix.fix(
-                text,
-                previews.effectiveMarkdownLintDisabled(buffer),
-                buffer.getTabSize(), // the buffer's own: .editorconfig, else the project's, else the user's
-                MarkdownLintFix.Scope.ALL,
-                options(buffer));
-        if (!fixed.text().equals(text)) {
-            replaceKeepingPlace(buffer, fixed);
+        fixThen(buffer, MarkdownLintFix.Scope.ALL, FIX_TRIES, (b, worked) -> {
+            if (!b.isDisposed() && worked != null && !worked.fixed().text().equals(worked.text())) {
+                replaceKeepingPlace(b, worked.fixed());
+            }
+            save.run(); // always: the caller checks the buffer is still open
+        });
+    }
+
+    /** How often a fix is worked out again when the text changed under it. */
+    private static final int FIX_TRIES = 3;
+
+    /**
+     * Works out the fixes in {@code scope} of {@code b}'s text off the FX thread, with the config governing it known
+     * first, and hands them to {@code then} on the FX thread while {@code b}'s text is still the one fixed; else
+     * again, {@code tries} times at most, then {@code then} with null.
+     */
+    private void fixThen(EditorBuffer b, MarkdownLintFix.Scope scope, int tries, FixLanded then) {
+        Path path = b.getPath();
+        boolean[] askedAgain = {false};
+        if (path != null
+                && com.editora.vfs.Vfs.isLocal(path)
+                && !configKnown(path, () -> {
+                    askedAgain[0] = true;
+                    fixThen(b, scope, tries, then);
+                })) {
+            return; // the rules the fixes follow are looked at first
         }
+        if (askedAgain[0]) {
+            return; // a look run in place (a test) has asked again already
+        }
+        String text = b.getContent();
+        long version = b.docVersion();
+        Set<String> off = previews.effectiveMarkdownLintDisabled(b);
+        MarkdownLintOptions options = options(b);
+        int tabSize = b.getTabSize(); // the buffer's own: .editorconfig, else the project's, else the user's
+        com.editora.perf.OffFx.then(
+                "MarkdownLintActions.fix",
+                () -> {
+                    MarkdownLintFix.Result fixed = MarkdownLintFix.fix(text, off, tabSize, scope, options);
+                    List<Diagnostic> before = MarkdownLint.lint(text, off, options);
+                    List<Diagnostic> after =
+                            fixed.text().equals(text) ? before : MarkdownLint.lint(fixed.text(), off, options);
+                    return new FixWorked(text, fixed, before, after);
+                },
+                answer -> {
+                    if (b.isDisposed()) {
+                        then.accept(b, null); // closed meanwhile: nothing to fix, nothing to save
+                        return;
+                    }
+                    FixWorked worked = answer.value();
+                    if (worked != null && b.docVersion() == version) {
+                        then.accept(b, worked);
+                    } else if (worked != null && tries > 1) {
+                        fixThen(b, scope, tries - 1, then); // typed into meanwhile: worked out on the new text
+                    } else {
+                        then.accept(b, null);
+                    }
+                });
+    }
+
+    /** A fix worked out off the FX thread: the text it started from, the fixes, and the issues before and after. */
+    private record FixWorked(
+            String text, MarkdownLintFix.Result fixed, List<Diagnostic> before, List<Diagnostic> after) {}
+
+    /** {@link #fixThen}'s answer on the FX thread: null when the text kept changing (or the work failed). */
+    @FunctionalInterface
+    private interface FixLanded {
+        void accept(EditorBuffer buffer, @Nullable FixWorked worked);
     }
 
     /** Applies the safe-to-automate fixes in {@code scope} to the active buffer (one undo step). */
@@ -363,29 +532,41 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         if (b == null || refusedInPreview(b)) {
             return;
         }
-        String text = b.getContent();
-        Set<String> off = previews.effectiveMarkdownLintDisabled(b);
-        MarkdownLintOptions options = options(b);
-        MarkdownLintFix.Result fixed =
-                MarkdownLintFix.fix(text, off, b.getTabSize(), scope, options); // the buffer's effective tab size
-        if (fixed.text().equals(text)) {
-            int manual = MarkdownLint.lint(text, off, options).size();
+        if (fixing) {
+            return; // the fixes asked for are still being worked out: a second press starts nothing
+        }
+        fixing = true;
+        fixThen(b, scope, FIX_TRIES, (buffer, worked) -> {
+            fixing = false;
+            if (worked == null) {
+                return; // typed into every time the fixes were worked out: nothing is replaced under the typing
+            }
+            MarkdownLintFix.Result fixed = worked.fixed();
+            if (fixed.text().equals(worked.text())) {
+                int manual = worked.before().size();
+                host.setStatus(
+                        manual == 0
+                                ? tr("status.markdownLint.fixNone")
+                                : tr("status.markdownLint.fixNoneManual", manual));
+                return;
+            }
+            if (!NoUndoGuard.allow(buffer, tr("command.markdownLint.fix"))) {
+                return;
+            }
+            replaceKeepingPlace(buffer, fixed);
+            long done = Math.max(1, fixable(worked.before()) - fixable(worked.after()));
             host.setStatus(
-                    manual == 0 ? tr("status.markdownLint.fixNone") : tr("status.markdownLint.fixNoneManual", manual));
-            return;
-        }
-        if (!NoUndoGuard.allow(b, tr("command.markdownLint.fix"))) {
-            return;
-        }
-        replaceKeepingPlace(b, fixed);
-        List<Diagnostic> before = MarkdownLint.lint(text, off, options);
-        List<Diagnostic> after = MarkdownLint.lint(fixed.text(), off, options);
-        long done = Math.max(1, fixable(before) - fixable(after));
-        host.setStatus(
-                after.isEmpty()
-                        ? tr("status.markdownLint.fixed", done)
-                        : tr("status.markdownLint.fixedManual", done, after.size()));
+                    worked.after().isEmpty()
+                            ? tr("status.markdownLint.fixed", done)
+                            : tr(
+                                    "status.markdownLint.fixedManual",
+                                    done,
+                                    worked.after().size()));
+        });
     }
+
+    /** A Fix command's work is out: a second press starts nothing until it lands. */
+    private boolean fixing;
 
     private static long fixable(List<Diagnostic> diagnostics) {
         return diagnostics.stream().filter(d -> MarkdownLint.fixable(d.code())).count();
@@ -554,11 +735,22 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         if (b == null || refusedInPreview(b) || !NoUndoGuard.allow(b, tr("command.markdownLint.disableLine"))) {
             return;
         }
-        MarkdownLintFix.Result r = MarkdownLintFix.disableForLine(b.getContent(), d.line() - 1, d.code());
-        if (!r.text().equals(b.getContent())) {
-            replaceKeepingPlace(b, r);
-        }
-        host.setStatus(tr("status.markdownLint.lineDisabled", d.code()));
+        // Worked out off the FX thread on a copy of the text (PERF-01, Pauta 6.0.1); applied while it is unchanged.
+        String text = b.getContent();
+        long version = b.docVersion();
+        com.editora.perf.OffFx.then(
+                "MarkdownLintActions.disableLine",
+                () -> MarkdownLintFix.disableForLine(text, d.line() - 1, d.code()),
+                answer -> {
+                    MarkdownLintFix.Result r = answer.value();
+                    if (r == null || b.isDisposed() || b.docVersion() != version) {
+                        return; // typed into meanwhile: the line the issue was on may have moved
+                    }
+                    if (!r.text().equals(text)) {
+                        replaceKeepingPlace(b, r);
+                    }
+                    host.setStatus(tr("status.markdownLint.lineDisabled", d.code()));
+                });
     }
 
     @Override
@@ -567,11 +759,21 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         if (b == null || refusedInPreview(b) || !NoUndoGuard.allow(b, tr("command.markdownLint.disableFile"))) {
             return;
         }
-        MarkdownLintFix.Result r = MarkdownLintFix.disableForFile(b.getContent(), d.code());
-        if (!r.text().equals(b.getContent())) {
-            replaceKeepingPlace(b, r);
-        }
-        host.setStatus(tr("status.markdownLint.fileDisabled", d.code()));
+        // The document is scanned off the FX thread on a copy of its text (PERF-01, Pauta 6.0.1); applied while it
+        // is unchanged.
+        String text = b.getContent();
+        long version = b.docVersion();
+        com.editora.perf.OffFx.then(
+                "MarkdownLintActions.disableFile", () -> MarkdownLintFix.disableForFile(text, d.code()), answer -> {
+                    MarkdownLintFix.Result r = answer.value();
+                    if (r == null || b.isDisposed() || b.docVersion() != version) {
+                        return; // typed into meanwhile
+                    }
+                    if (!r.text().equals(text)) {
+                        replaceKeepingPlace(b, r);
+                    }
+                    host.setStatus(tr("status.markdownLint.fileDisabled", d.code()));
+                });
     }
 
     /**
@@ -589,17 +791,33 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
             }
             return;
         }
-        ConfigHit hit = configFor(path);
-        if (hit != null) {
-            writeRuleOff(hit.file(), d.code());
-            return;
-        }
-        Path root = boundary(path, host.activeProjectRoot());
-        Path dir = root == null ? path.getParent() : root;
-        if (dir == null) {
-            return;
-        }
-        Path proposed = dir.resolve(".markdownlint.json");
+        Path projectRoot = host.activeProjectRoot();
+        // Which config governs the file, and where a new one would go, are looked at off the FX thread.
+        com.editora.perf.OffFx.then(
+                "markdown-lint-disable-look",
+                () -> {
+                    ConfigHit hit = configFor(path, projectRoot);
+                    if (hit != null) {
+                        return hit.file();
+                    }
+                    Path root = boundary(path, projectRoot);
+                    Path dir = root == null ? path.getParent() : root;
+                    return dir == null ? null : new ProposedConfig(dir.resolve(".markdownlint.json"));
+                },
+                looked -> {
+                    Object answer = looked.value();
+                    if (answer instanceof Path existing) {
+                        writeRuleOff(existing, d.code());
+                    } else if (answer instanceof ProposedConfig(Path proposed)) {
+                        offerConfig(proposed, d);
+                    }
+                });
+    }
+
+    /** Where a new project config would be created (the answer of the disable look when there is none). */
+    private record ProposedConfig(Path path) {}
+
+    private void offerConfig(Path proposed, Diagnostic d) {
         host.promptText(
                 tr("prompt.markdownLint.createConfig.title"),
                 tr("prompt.markdownLint.createConfig.label", d.code()),
@@ -640,6 +858,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
                                 name));
                     } else {
                         cache.remove(config);
+                        hits.clear(); // looked at again before the next lint
                         previews.applyMarkdownLint();
                         host.setStatus(tr("status.markdownLint.projectDisabled", code, config.getFileName()));
                     }
@@ -840,33 +1059,54 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         }
         lastConfigCheck = now;
         Path root = host.activeProjectRoot();
-        Map<Path, String> byFolder = new HashMap<>();
-        StringBuilder signature = new StringBuilder();
-        int looked = 0;
+        List<Path> paths = new java.util.ArrayList<>();
+        Set<Path> folders = new HashSet<>();
         for (javafx.scene.control.Tab tab : host.editorArea().tabs()) {
             EditorBuffer b = host.bufferOf(tab);
             Path path = b == null || !b.isMarkdown() ? null : b.getPath();
             if (path == null || path.getParent() == null || !com.editora.vfs.Vfs.isLocal(path)) {
                 continue;
             }
-            if (looked++ >= MAX_BUFFERS_CHECKED) {
+            if (paths.size() >= MAX_BUFFERS_CHECKED) {
                 break;
             }
-            signature.append(byFolder.computeIfAbsent(path.getParent(), folder -> {
-                ConfigHit hit = configFor(path, root);
+            if (folders.add(path.getParent())) {
+                paths.add(path);
+            }
+        }
+        // The stats, reads and parses happen on configExec (PERF-01, Pauta 6.0.1); the answer is compared on FX.
+        configExec.execute(() -> {
+            Map<HitKey, Optional<ConfigHit>> found = new HashMap<>();
+            StringBuilder signature = new StringBuilder();
+            for (Path path : paths) {
+                ConfigHit hit;
+                try {
+                    hit = configFor(path, root);
+                } catch (RuntimeException e) {
+                    hit = null;
+                }
+                HitKey key = keyOf(path, root);
+                if (key != null) {
+                    found.put(key, Optional.ofNullable(hit));
+                }
                 CacheEntry entry = hit == null ? null : cache.get(hit.file());
-                return hit == null
-                        ? "-;"
-                        : hit.file() + "@" + (entry == null ? 0 : entry.mtime()) + "/" + hit.disabled() + hit.enabled()
-                                + ";";
-            }));
-        }
-        String seen = signature.toString();
-        boolean changed = configSignature != null && !configSignature.equals(seen);
-        configSignature = seen;
-        if (changed) {
-            previews.applyMarkdownLint();
-        }
+                signature.append(
+                        hit == null
+                                ? "-;"
+                                : hit.file() + "@" + (entry == null ? 0 : entry.mtime()) + "/" + hit.disabled()
+                                        + hit.enabled() + ";");
+            }
+            String seen = signature.toString();
+            com.editora.perf.OffFx.onFx(() -> {
+                long at = System.nanoTime();
+                found.forEach((key, hit) -> hits.put(key, new Looked(hit, at)));
+                boolean changed = configSignature != null && !configSignature.equals(seen);
+                configSignature = seen;
+                if (changed) {
+                    previews.applyMarkdownLint();
+                }
+            });
+        });
     }
 
     /** The project's file watcher saw changes: a touched markdownlint config re-lints the open buffers. */
@@ -878,6 +1118,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
             Path name = change.path() == null ? null : change.path().getFileName();
             if (name != null && name.toString().startsWith(".markdownlint")) {
                 cache.remove(change.path());
+                hits.clear(); // looked at again before the next lint
                 previews.applyMarkdownLint();
                 return;
             }

@@ -56,6 +56,12 @@ class LspBashToolsFxTest {
         fx.open("deploy.sh", "#!/usr/bin/env bash\nif true; then\necho hi\nfi\n");
 
         fx.run(() -> fx.coordinator.formatDocument());
+        // Whether shfmt is there is looked at off the FX thread before the command says anything: never a guess.
+        long until = System.nanoTime() + 10_000_000_000L;
+        while (tr("status.lsp.formatting").equals(fx.host.lastStatus()) && System.nanoTime() < until) {
+            Thread.sleep(20);
+            fx.settle();
+        }
 
         assertEquals(tr("status.lsp.bashNoShfmt"), fx.host.lastStatus());
     }

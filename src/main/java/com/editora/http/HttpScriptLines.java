@@ -49,6 +49,42 @@ public final class HttpScriptLines {
         return !p.preScripts().isEmpty() || !p.handlers().isEmpty();
     }
 
+    /**
+     * What the editor asks of a {@code .http} document's scripts, worked out in one parse (off the FX thread, PERF-01,
+     * Pauta 6.0.1): its script lines, and the lines of the requests that have a pre-request script or a handler.
+     */
+    public record Map(BitSet scriptLines, BitSet scriptedRequestLines) {
+
+        public boolean isScriptLine(int line) {
+            return line >= 0 && scriptLines.get(line);
+        }
+
+        public boolean requestHasScripts(int line) {
+            return line >= 0 && scriptedRequestLines.get(line);
+        }
+    }
+
+    /** {@link Map} of {@code text}. Pure; parses the whole document. */
+    public static Map mapOf(String text) {
+        BitSet lines = new BitSet();
+        BitSet scripted = new BitSet();
+        if (text != null && (text.indexOf("{%") >= 0 || text.indexOf(".js") >= 0)) {
+            for (HttpFile.Request r : HttpFile.parse(text)) {
+                HttpFile.Parsed p = HttpFile.parseRequest(r);
+                for (HttpFile.Handler h : p.preScripts()) {
+                    mark(lines, h);
+                }
+                for (HttpFile.Handler h : p.handlers()) {
+                    mark(lines, h);
+                }
+                if (!p.preScripts().isEmpty() || !p.handlers().isEmpty()) {
+                    scripted.set(r.sectionStart(), r.sectionEnd() + 1);
+                }
+            }
+        }
+        return new Map(lines, scripted);
+    }
+
     private static void mark(BitSet lines, HttpFile.Handler h) {
         if (h.source() == null) {
             return; // a script file: its breakpoints go in that file

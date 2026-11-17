@@ -269,7 +269,18 @@ final class SearchInFilesPopup {
                 return;
             }
         }
-        Path root = resolveRoot();
+        Path candidate = rootCandidate(rootField.getText());
+        Path root = null;
+        if (candidate != null) {
+            // Is the typed root a folder: looked at off the FX thread (PERF-01, Pauta 6.0.1); the search runs again
+            // when the answer lands.
+            Boolean directory = rootFolders.get(candidate);
+            if (directory == null) {
+                status.setText(tr("search.searching"));
+                return;
+            }
+            root = directory ? candidate : null;
+        }
         if (root == null && !rootField.getText().isBlank()) {
             rows.clear();
             status.setText(tr("search.rootNotFound"));
@@ -309,20 +320,23 @@ final class SearchInFilesPopup {
     /** The root the currently-shown results were produced against (for relativizing header paths). */
     private @Nullable Path currentRoot;
 
-    /** Resolves the root field to a directory: blank ⇒ null (open buffers only); {@code ~} expanded; a
-     *  non-directory ⇒ null. */
-    private @Nullable Path resolveRoot() {
-        String t = rootField.getText();
-        if (t == null || t.isBlank()) {
+    /** Whether each typed root is a folder, looked at off the FX thread; a landed answer runs the search again. */
+    private final DiskFacts<Path, Boolean> rootFolders = new DiskFacts<Path, Boolean>(
+                    "SearchInFilesPopup.resolveRoot", Files::isDirectory)
+            .freshFor(0)
+            .onLearned(this::runSearch);
+
+    /** The root field as an absolute path: blank ⇒ null (open buffers only); {@code ~} expanded. Pure. */
+    static @Nullable Path rootCandidate(@Nullable String text) {
+        if (text == null || text.isBlank()) {
             return null;
         }
-        t = t.trim();
+        String t = text.trim();
         if (t.startsWith("~")) {
             t = System.getProperty("user.home", "") + t.substring(1);
         }
         try {
-            Path p = Path.of(t).toAbsolutePath().normalize();
-            return Files.isDirectory(p) ? p : null;
+            return Path.of(t).toAbsolutePath().normalize();
         } catch (RuntimeException e) {
             return null;
         }

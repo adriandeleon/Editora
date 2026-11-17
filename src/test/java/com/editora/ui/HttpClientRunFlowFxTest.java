@@ -41,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * environments, cancelling and superseding a run, and what the response viewer's actions do with the result.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class HttpClientRunFlowFxTest {
 
     private static final long WAIT_SECONDS = 30;

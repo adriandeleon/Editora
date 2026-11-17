@@ -205,6 +205,9 @@ final class FxWindowFixture implements AutoCloseable {
             quietLanguageServers(shared, fresh);
             isolateExports(shared);
             beforeWindows.accept(shared);
+            // What the launch's prefetch looks at for the first window (FirstWindowPrep): which servers run
+            // Editora's own copy. Done here, in the fixture's own set-up, so the window applies its support at once.
+            LspServerCommands.prepareOwnCopies(shared.getSettings(), bootstrap.getConfigDir());
             KeymapManager keymap = new KeymapManager();
             keymap.loadNamed(shared.getSettings().getKeymap());
             keymap.applyOverrides(UserKeys.overrides(shared.getSettings()));

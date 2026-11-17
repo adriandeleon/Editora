@@ -22,8 +22,8 @@ final class JsToolDoctorRows {
     private JsToolDoctorRows() {}
 
     /** Whether the project has a {@code package.json}: looked at off the FX thread before a run ({@link #lookAt}). */
-    private static final com.editora.perf.Looked<Path, Boolean> PACKAGE_JSON =
-            new com.editora.perf.Looked<>("JsToolDoctorRows.packageJson", Files::isRegularFile);
+    private static final com.editora.perf.Looked<Path, Boolean> PACKAGE_JSON = new com.editora.perf.Looked<>(
+            "JsToolDoctorRows.packageJson", Files::isRegularFile, Boolean.FALSE); // the Doctor looks first
 
     /** Looks at {@code project}'s {@code package.json} now, on this thread (off the FX thread), for {@link #rows}. */
     static void lookAt(@Nullable Path project) {

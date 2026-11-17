@@ -113,4 +113,19 @@ class ProbeCacheTest {
         BlockingSites.enter("not heard");
         assertEquals(List.of("heard"), heard);
     }
+
+    @Test
+    void reprobeKeptLooksAtEveryKeptKeyAgainWithoutEmptyingTheCache() {
+        ProbeCache<String, Integer> cache = cache();
+        disk.put("a", 1);
+        disk.put("b", 2);
+        assertEquals(1, cache.get("a"));
+        assertEquals(2, cache.get("b"));
+        disk.put("a", 10); // an install changed what is on disk
+        disk.put("b", -1); // and this one cannot be read now
+        cache.reprobeKept();
+        assertTrue(cache.knows("a"), "kept: the next ask answers from memory");
+        assertEquals(10, cache.get("a"), "with the new answer");
+        assertFalse(cache.knows("b"), "an unreadable one is dropped, asked again where it is next asked");
+    }
 }

@@ -1377,7 +1377,7 @@ public class SettingsWindow {
                 JdkChoice.configure(mavenJdkCombo, tr("settings.maven.jdk.system"));
                 mavenJdkCombo.setId("settings-maven-jdk");
                 mavenJdkCombo.valueProperty().addListener((obs, was, now) -> {
-                    if (!loading) {
+                    if (!loading && !JdkChoice.sameHome(was, now)) { // not the version landing (JdkChoice.select)
                         config.getSettings().setMavenJdkHome(now == null ? "" : now.home());
                         apply();
                     }
@@ -3071,11 +3071,22 @@ public class SettingsWindow {
                 override = "";
             }
             List<String> argv = com.editora.build.BuildExecutable.resolve(List.of(), override, command);
-            String found = ToolStatusRow.pathOf(argv);
             status.tool(ToolStatusRow.toolName(argv, command));
-            status.show(!found.isEmpty(), found, bt.enabledIn(config.getSettings()));
+            boolean on = bt.enabledIn(config.getSettings());
+            long mine = buildCommandLooks.merge(bt, 1L, Long::sum);
+            // Whether it is there is looked at off the FX thread (PERF-01, Pauta 6.0.1); the row says so when it lands.
+            com.editora.perf.OffFx.then(
+                    "SettingsWindow.buildCommandStatus", () -> com.editora.doctor.DoctorProbes.lookAt(argv), a -> {
+                        if (mine == buildCommandLooks.getOrDefault(bt, 0L)) {
+                            String found = a.or("");
+                            status.show(!found.isEmpty(), found, on);
+                        }
+                    });
         }
     }
+
+    /** The latest look at each build tool's command: an older one that lands later is dropped. */
+    private final Map<BuildTool, Long> buildCommandLooks = new java.util.EnumMap<>(BuildTool.class);
 
     private final Map<BuildTool, ToolStatusRow> buildToolCommandStatus = new java.util.EnumMap<>(BuildTool.class);
 

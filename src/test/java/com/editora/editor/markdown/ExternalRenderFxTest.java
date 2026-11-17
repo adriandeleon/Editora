@@ -332,6 +332,33 @@ class ExternalRenderFxTest {
         EditorFx.onFx(() -> assertInstanceOf(ImageView.class, kept.getChildren().get(0), "still cached"));
     }
 
+    /**
+     * PERF-01 (Pauta 6.0.1): a diagram's cache key, a hash of its whole source, is never worked out on the FX thread;
+     * an unchanged diagram is still shown from the cache at once, by the key remembered for its source.
+     */
+    @Test
+    void theCacheKeyIsWorkedOutOffTheFxThreadAndAnUnchangedDiagramIsShownAtOnce() throws Exception {
+        useMermaid(false, false);
+        String source = unique("graph TD; Off-->Fx");
+        List<String> onFx = new java.util.concurrent.CopyOnWriteArrayList<>();
+        com.editora.perf.BlockingSites.listenForTest((site, thread) -> {
+            if (javafx.application.Platform.isFxApplicationThread() && site.equals("SourceKeys.hash")) {
+                onFx.add(site);
+            }
+        });
+        try {
+            StackPane first = render(() -> MermaidImages.node(source, width -> width));
+            EditorFx.onFx(
+                    () -> assertInstanceOf(ImageView.class, first.getChildren().get(0)));
+            StackPane again = (StackPane) EditorFx.callFx(() -> MermaidImages.node(source, width -> width));
+            EditorFx.onFx(() -> assertInstanceOf(
+                    ImageView.class, again.getChildren().get(0), "unchanged: shown from the cache at once"));
+        } finally {
+            com.editora.perf.BlockingSites.listenForTest(null);
+        }
+        assertEquals(List.of(), onFx, "no source hashed on the FX thread");
+    }
+
     @Test
     void anOldFailureIsRetriedButAFreshOneIsReused() throws Exception {
         useMermaid(false, false);
@@ -339,10 +366,10 @@ class ExternalRenderFxTest {
         String key =
                 EditorFx.call(MermaidImages.class, "key", new Class<?>[] {String.class, boolean.class}, source, false);
         MermaidImages.store(key, new MermaidImages.Cached(null, "mmdc was not installed"), null);
-        EditorFx.onFx(() -> {
-            StackPane fresh = (StackPane) MermaidImages.node(source, width -> width);
-            assertTrue(((Label) fresh.getChildren().get(0)).getText().contains("mmdc was not installed"));
-        });
+        // The source's key is worked out off the FX thread (PERF-01), which then serves the cached failure.
+        StackPane fresh = render(() -> MermaidImages.node(source, width -> width));
+        EditorFx.onFx(
+                () -> assertTrue(((Label) fresh.getChildren().get(0)).getText().contains("mmdc was not installed")));
 
         MermaidImages.store(key, new MermaidImages.Cached(null, "mmdc was not installed", 0L), null);
         StackPane retried = render(() -> MermaidImages.node(source, width -> width));
@@ -617,10 +644,10 @@ class ExternalRenderFxTest {
                 TypstImages.class, "key", new Class<?>[] {String.class, Path.class, Path.class}, source, null, null);
         String retry = "typst-retry-" + System.nanoTime();
         TypstImages.store(key, new TypstImages.Cached(null, "typst not found", 0), retry, null);
-        EditorFx.onFx(() -> {
-            StackPane fresh = typstNode(source, retry, null);
-            assertTrue(((Label) fresh.getChildren().get(0)).getText().contains("typst not found"));
-        });
+        // The source's key is worked out off the FX thread (PERF-01), which then serves the cached failure.
+        StackPane fresh = render(() -> typstNode(source, retry, null));
+        EditorFx.onFx(
+                () -> assertTrue(((Label) fresh.getChildren().get(0)).getText().contains("typst not found")));
         TypstImages.store(key, new TypstImages.Cached(null, "typst not found", 0, 0L), retry, null);
         StackPane retried = render(() -> typstNode(source, retry, null));
         EditorFx.onFx(() -> assertInstanceOf(VBox.class, retried.getChildren().get(0)));

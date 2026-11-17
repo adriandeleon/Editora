@@ -726,6 +726,20 @@ public enum BuildTool {
      * Path, Path, java.util.function.Predicate, java.util.function.Function)}.
      */
     public static NpmPackageManager.Detection npmManager(Path root, @Nullable Path projectRoot) {
+        NpmPackageManager.Detection d = NPM_MANAGERS.get(new NpmKey(root, projectRoot));
+        return d != null ? d : npmManagerNow(root, projectRoot);
+    }
+
+    private record NpmKey(Path root, @Nullable Path projectRoot) {}
+
+    /**
+     * {@link #npmManager} by folder: looked at off the FX thread by detection, a build's or a launch's plan
+     * ({@code warmTrust} asks {@code NPM.executable}), answered from memory on it (PERF-01, Pauta 6.0.1).
+     */
+    private static final com.editora.perf.Looked<NpmKey, NpmPackageManager.Detection> NPM_MANAGERS =
+            new com.editora.perf.Looked<>("BuildTool.npmManager", k -> npmManagerNow(k.root(), k.projectRoot()));
+
+    private static NpmPackageManager.Detection npmManagerNow(Path root, @Nullable Path projectRoot) {
         return NpmPackageManager.detect(root, projectRoot, userHome(), Files::exists, p -> {
             try {
                 return Files.isRegularFile(p) ? java.util.Optional.of(Files.readString(p)) : java.util.Optional.empty();

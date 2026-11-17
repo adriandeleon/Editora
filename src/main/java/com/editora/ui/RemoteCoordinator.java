@@ -57,6 +57,9 @@ import static com.editora.i18n.Messages.tr;
  */
 final class RemoteCoordinator {
 
+    /** How long the Host field waits for typing to pause before ~/.ssh/config is asked about it. */
+    static final int HOST_LOOK_PAUSE_MS = 150;
+
     /** Window hooks beyond {@link CoordinatorHost} that the remote flows need. */
     interface Ops {
         /** This window's active keymap (for installing caret navigation on the form's text fields). */
@@ -610,8 +613,7 @@ final class RemoteCoordinator {
         userField.textProperty().addListener((o, a, b) -> userTyped[0] |= !filling[0]);
         portField.textProperty().addListener((o, a, b) -> portTyped[0] |= !filling[0]);
         String defaultUser = userField.getText();
-        Runnable describeHost = () -> {
-            RemoteFileSystems.ConfiguredHost c = engine.configured(hostField.getText());
+        java.util.function.Consumer<RemoteFileSystems.@Nullable ConfiguredHost> describeHost = c -> {
             filling[0] = true;
             try {
                 if (c == null) {
@@ -649,8 +651,27 @@ final class RemoteCoordinator {
                 filling[0] = false;
             }
         };
-        hostField.textProperty().addListener((o, a, b) -> describeHost.run());
-        describeHost.run();
+        // What ~/.ssh/config says of the host typed: read off the FX thread (it stats the config and every file it
+        // includes) once typing pauses, and the latest answer is applied (PERF-01, Pauta 6.0.1).
+        long[] asked = {0};
+        Runnable lookUpHost = () -> {
+            String host = hostField.getText();
+            long mine = ++asked[0];
+            com.editora.perf.OffFx.then(
+                    "RemoteCoordinator.describeHost",
+                    () -> java.util.Optional.ofNullable(engine.configured(host)),
+                    found -> {
+                        if (mine == asked[0]) {
+                            describeHost.accept(
+                                    found.or(java.util.Optional.empty()).orElse(null));
+                        }
+                    });
+        };
+        javafx.animation.PauseTransition hostPause =
+                new javafx.animation.PauseTransition(javafx.util.Duration.millis(HOST_LOOK_PAUSE_MS));
+        hostPause.setOnFinished(e -> lookUpHost.run());
+        hostField.textProperty().addListener((o, a, b) -> hostPause.playFromStart());
+        lookUpHost.run();
         configHint.managedProperty().bind(configHint.textProperty().isNotEmpty());
         configHint.visibleProperty().bind(configHint.managedProperty());
 

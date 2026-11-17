@@ -260,6 +260,8 @@ public final class GitHubService {
      * another program). Re-applying the same setting, which happens on every settings save, changes nothing.
      */
     public boolean setCommand(String configured) {
+        lastConfigured = configured == null ? "" : configured.strip();
+        com.editora.process.ConfiguredCommand.onLearned(commandLearned);
         List<String> next = commandTokens(configured);
         synchronized (probeLock) {
             if (next.equals(command)) {
@@ -282,6 +284,16 @@ public final class GitHubService {
     public static List<String> commandTokens(String configured) {
         return ConfiguredCommand.tokens(configured, "gh");
     }
+
+    /** The value last given to {@link #setCommand}, set again when whether it names a file is learned. */
+    private volatile String lastConfigured = "";
+
+    /** Kept in a field: {@link ConfiguredCommand#onLearned} holds it weakly. */
+    private final java.util.function.Consumer<String> commandLearned = raw -> {
+        if (raw.equals(lastConfigured)) {
+            setCommand(raw);
+        }
+    };
 
     /** The last probed availability (may be {@code null} before the first {@link #detect}). */
     public @Nullable Availability availability() {

@@ -107,16 +107,19 @@ final class PythonTestRunner {
             return;
         }
         Path tests = root.resolve("tests");
-        Path unittestDir = !com.editora.vfs.Vfs.isRemote(tests) && Files.isDirectory(tests) ? tests : root;
-        start(new Scope(
-                root,
-                List.of(),
-                unittestDir,
-                List.of(),
-                root.getFileName() == null
-                        ? root.toString()
-                        : root.getFileName().toString(),
-                null));
+        // Whether there is a tests folder: looked at off the FX thread (PERF-01, Pauta 6.0.1).
+        com.editora.perf.OffFx.then(
+                "PythonTestRunner.runAll",
+                () -> !com.editora.vfs.Vfs.isRemote(tests) && Files.isDirectory(tests),
+                hasTests -> start(new Scope(
+                        root,
+                        List.of(),
+                        Boolean.TRUE.equals(hasTests.value()) ? tests : root,
+                        List.of(),
+                        root.getFileName() == null
+                                ? root.toString()
+                                : root.getFileName().toString(),
+                        null)));
     }
 
     /** The scope of a file or one target in it (pure apart from the path arithmetic; tested). */
@@ -201,22 +204,38 @@ final class PythonTestRunner {
     private void launchPytest(Scope scope) {
         Path where = scope.rootDir();
         boolean here = ExecTargets.runsHere(where);
-        Path report;
-        String reportArg;
-        try {
-            if (here) {
-                report = Files.createTempFile("editora-pytest", ".xml");
-                report.toFile().deleteOnExit();
-                Files.deleteIfExists(report); // pytest writes it; a stale empty file is no report
-                reportArg = report.toString();
-            } else {
-                reportArg = "/tmp/editora-pytest-" + java.util.UUID.randomUUID() + ".xml";
+        if (!here) {
+            String reportArg = "/tmp/editora-pytest-" + java.util.UUID.randomUUID() + ".xml";
+            Path report;
+            try {
                 report = ExecTargets.forPath(where).toPath(reportArg);
+            } catch (RuntimeException e) {
+                host.setStatus(tr("status.testrunner.failed", String.valueOf(e.getMessage())));
+                return;
             }
-        } catch (java.io.IOException | RuntimeException e) {
-            host.setStatus(tr("status.testrunner.failed", String.valueOf(e.getMessage())));
+            launchPytest(scope, where, false, report, reportArg);
             return;
         }
+        // The local report's temporary file is made off the FX thread (PERF-01, Pauta 6.0.1).
+        com.editora.perf.OffFx.then(
+                "PythonTestRunner.launchPytest",
+                () -> {
+                    Path report = Files.createTempFile("editora-pytest", ".xml");
+                    report.toFile().deleteOnExit();
+                    Files.deleteIfExists(report); // pytest writes it; a stale empty file is no report
+                    return report;
+                },
+                made -> {
+                    Path report = made.value();
+                    if (report == null) {
+                        host.setStatus(tr("status.testrunner.failed", made.why()));
+                        return;
+                    }
+                    launchPytest(scope, where, true, report, report.toString());
+                });
+    }
+
+    private void launchPytest(Scope scope, Path where, boolean here, Path report, String reportArg) {
         List<String> args = new ArrayList<>(scope.pytestIds());
         args.addAll(List.of("--junitxml=" + reportArg, "-o", "junit_family=xunit1", "--color=yes"));
         Path reportFile = report;
@@ -272,19 +291,22 @@ final class PythonTestRunner {
             boolean[] shown = {false};
             boolean[] launchFailed = {false};
             UnittestOutputParser parser = new UnittestOutputParser();
+            // Each line is parsed off the FX thread, in order; the results and then the exit come back on it.
+            TestParseQueue parses =
+                    new TestParseQueue("unittest-output-parse", host.testRunCoordinator()::externalResults);
             RunCoordinator.TestStream hooks = new RunCoordinator.TestStream() {
                 @Override
                 public void line(String text, boolean stderr) {
                     if (shown[0]) {
-                        host.testRunCoordinator().externalResults(parser.onLine(text, stderr));
+                        parses.parse(() -> parser.onLine(text, stderr));
                     }
                 }
 
                 @Override
                 public void exit(int code) {
                     if (shown[0]) {
-                        host.testRunCoordinator().externalResults(parser.onExit(code));
-                        host.testRunCoordinator().finishExternalRun(code);
+                        parses.parse(() -> parser.onExit(code));
+                        parses.then(() -> host.testRunCoordinator().finishExternalRun(code));
                     } else {
                         launchFailed[0] = true; // it could not start: no Test Results for it
                     }
@@ -435,14 +457,28 @@ final class PythonTestRunner {
             String module = cls.contains(".") ? cls.substring(0, cls.lastIndexOf('.')) : cls;
             file = scope.unittestDir().resolve(module.replace('.', '/') + ".py");
         }
-        if (file == null || !Files.isRegularFile(file)) {
+        if (file == null) {
             host.setStatus(tr("status.testrunner.noSource", node.displayName()));
             return;
         }
-        if (line < 0 && node.methodName() != null) {
-            line = defLine(file, node.methodName());
-        }
-        host.openAndGoto(file, Math.max(0, line), 0);
+        // Whether the file is there, and the line of its def, are looked at off the FX thread (PERF-01, Pauta
+        // 6.0.1).
+        Path source = file;
+        int hinted = line;
+        String method = node.methodName();
+        com.editora.perf.OffFx.then(
+                "PythonTestRunner.jumpByName",
+                () -> !Files.isRegularFile(source)
+                        ? -2
+                        : hinted < 0 && method != null ? defLine(source, method) : hinted,
+                found -> {
+                    int at = found.or(-2);
+                    if (at == -2) {
+                        host.setStatus(tr("status.testrunner.noSource", node.displayName()));
+                    } else {
+                        host.openAndGoto(source, Math.max(0, at), 0);
+                    }
+                });
     }
 
     /** The 0-based line of {@code def name} in {@code file}, or 0. */

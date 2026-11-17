@@ -1,0 +1,86 @@
+package com.editora.dap;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+
+import javafx.application.Platform;
+
+import com.editora.perf.BlockingSites;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/** A stop's frame files are looked at off the FX thread; the FX thread answers from that (PERF-01, Pauta 6.0.1). */
+@Tag("fx")
+class FrameFilesFxTest {
+
+    @BeforeAll
+    static void boot() {
+        try {
+            Platform.startup(() -> {});
+        } catch (IllegalStateException alreadyRunning) {
+            // another FX test booted the toolkit in this JVM
+        }
+        Platform.setImplicitExit(false);
+    }
+
+    @AfterEach
+    void stopListening() {
+        BlockingSites.listenForTest(null);
+    }
+
+    private static <T> T onFx(java.util.concurrent.Callable<T> work) throws Exception {
+        CompletableFuture<T> done = new CompletableFuture<>();
+        Platform.runLater(() -> {
+            try {
+                done.complete(work.call());
+            } catch (Exception e) {
+                done.completeExceptionally(e);
+            }
+        });
+        return done.get(10, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void warmedFramesAnswerOnFxWithoutALook(@TempDir Path dir) throws Exception {
+        Path there = Files.writeString(dir.resolve("Main.java"), "class Main {}");
+        Path gone = dir.resolve("Gone.java");
+        FrameFiles.warm(List.of(
+                new DapModels.StackFrameInfo(1, "a", there, 0, 0), new DapModels.StackFrameInfo(2, "b", gone, 0, 0)));
+        Thread fx = onFx(Thread::currentThread);
+        BlockingSites.listenForTest((site, thread) -> {
+            if (thread == fx) {
+                throw new AssertionError(site + " looked on the FX thread");
+            }
+        });
+        assertTrue(onFx(() -> FrameFiles.isFile(there)));
+        assertFalse(onFx(() -> FrameFiles.isFile(gone)), "a frame with no file is told apart");
+    }
+
+    @Test
+    void aFrameNothingLookedAtShowsAndIsLookedAtBehind(@TempDir Path dir) throws Exception {
+        Path never = dir.resolve("Never.java");
+        Thread fx = onFx(Thread::currentThread);
+        BlockingSites.listenForTest((site, thread) -> {
+            if (thread == fx) {
+                throw new AssertionError(site + " looked on the FX thread");
+            }
+        });
+        assertTrue(onFx(() -> FrameFiles.isFile(never)), "unknown: the frame is not hidden");
+        long deadline = System.nanoTime() + 5_000_000_000L;
+        boolean seen = false;
+        while (!seen && System.nanoTime() < deadline) {
+            seen = !onFx(() -> FrameFiles.isFile(never));
+            Thread.sleep(10);
+        }
+        assertTrue(seen, "the look behind the answer lands");
+    }
+}

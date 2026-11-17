@@ -76,6 +76,9 @@ public final class SvgImages {
                     return size() > MAX_CACHED;
                 }
             });
+    /** The cache keys of the sources seen, so the FX thread hashes none ({@link SourceKeys}). */
+    private static final SourceKeys KEYS = new SourceKeys();
+
     private static final ExecutorService EXEC = Executors.newFixedThreadPool(2, r -> {
         Thread t = new Thread(r, "svg-render");
         t.setDaemon(true);
@@ -112,14 +115,23 @@ public final class SvgImages {
             String source,
             java.util.function.DoubleUnaryOperator sizer,
             com.editora.editor.structured.ParseErrorView.@Nullable Jump jump) {
-        String key = key(source);
-        Cached hit = CACHE.get(key);
+        // The key is a hash of the whole source: worked out off the FX thread (PERF-01, Pauta 6.0.1). A source seen
+        // before has its key remembered, so an unchanged image is shown from the cache at once.
+        String knownKey = KEYS.knownKey("", source);
+        Cached hit = knownKey == null ? null : CACHE.get(knownKey);
         if (hit != null) {
             applyCached(host, hit, sizer, jump);
             return;
         }
         host.getChildren().setAll(placeholder(Messages.tr("svg.rendering")));
         EXEC.submit(() -> {
+            String key = key(source);
+            KEYS.remember("", source, key);
+            Cached cached = CACHE.get(key);
+            if (cached != null) {
+                Platform.runLater(() -> applyCached(host, cached, sizer, jump));
+                return;
+            }
             SVGDocument doc = PreviewImageLoader.parseSvg(source.getBytes(StandardCharsets.UTF_8));
             Cached result = cachedFor(doc, source);
             remember(key, result);
@@ -243,6 +255,7 @@ public final class SvgImages {
 
     /** Cache key = sha-256 of the SVG source, so editing invalidates but a re-render of the same text hits. */
     private static String key(String source) {
+        com.editora.perf.BlockingSites.enter("SourceKeys.hash"); // a hash of the whole source: never on FX
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             return HexFormat.of().formatHex(md.digest(source.getBytes(StandardCharsets.UTF_8)));

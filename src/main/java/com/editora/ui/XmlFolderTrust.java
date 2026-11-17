@@ -91,6 +91,15 @@ final class XmlFolderTrust {
      * changes; {@link #trustChanged} forgets it too.
      */
     boolean pomTrusted(EditorBuffer b) {
+        return Boolean.TRUE.equals(pomTrust(b));
+    }
+
+    /**
+     * {@link #pomTrusted}, or null while the pom's root is not known yet (looked for off the FX thread; the buffer
+     * syncs again when it lands, PERF-01, Pauta 6.0.1).
+     */
+    @Nullable
+    Boolean pomTrust(EditorBuffer b) {
         Path file = lsp.lspPath(b);
         ConfigManager config = ops.config();
         if (file == null || config == null) {
@@ -103,7 +112,10 @@ final class XmlFolderTrust {
             return known.trusted();
         }
         Path root = lsp.lspRootFor(b, LspServerRegistry.MAVEN_POM_SERVER_ID);
-        boolean trusted = root != null && config.getTrustStore().isTrusted(root);
+        if (root == null) {
+            return null; // not known yet (looked for off the FX thread; the buffer syncs again): asked again then
+        }
+        boolean trusted = config.getTrustStore().isTrusted(root);
         answers.put(file, new Answer(trustList, project, trusted));
         return trusted;
     }
@@ -120,7 +132,7 @@ final class XmlFolderTrust {
                 && LspServerRegistry.isPomFile(name.toString())
                 && ops.lspFeatureEnabled()
                 && lsp.serverEnabled(LspServerRegistry.MAVEN_POM_SERVER_ID)
-                && !pomTrusted(b);
+                && Boolean.FALSE.equals(pomTrust(b)); // a root not known yet withholds nothing
     }
 
     // --- notices -------------------------------------------------------------------------------------

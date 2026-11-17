@@ -3143,19 +3143,17 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     private void showAs(String title, String shown, ViewAs how) {
         String text = StringViews.content(shown, actions.language());
-        String laidOut = text;
-        try {
-            laidOut = switch (how) {
-                case JSON -> StringViews.prettyJson(text);
-                case XML -> StringViews.prettyXml(text);
-                case TEXT -> text;
-            };
-            actions.openText(title, laidOut, how.language);
-        } catch (IllegalArgumentException e) {
-            // Not what it was asked to be: shown as it is, and said why.
-            actions.openText(title, text, ViewAs.TEXT.language);
-            actions.say(tr("status.debug.viewAsFailed", how.name(), e.getMessage() == null ? "" : e.getMessage()));
+        if (how == ViewAs.TEXT) {
+            actions.openText(title, text, how.language);
+            return;
         }
+        // Laid out off the FX thread (PERF-01, Pauta 6.0.1): a debuggee's string may be of any size.
+        StringViews.layOutLater(
+                text, how == ViewAs.JSON, laidOut -> actions.openText(title, laidOut, how.language), why -> {
+                    // Not what it was asked to be: shown as it is, and said why.
+                    actions.openText(title, text, ViewAs.TEXT.language);
+                    actions.say(tr("status.debug.viewAsFailed", how.name(), why));
+                });
     }
 
     /**

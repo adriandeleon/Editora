@@ -24,32 +24,30 @@ class DebugAttachRoutingTest {
 
     @Test
     void anAnchorOpenInATabRoutesThroughItself() {
-        assertEquals(TEST, DebugCoordinator.attachRouting(TEST, List.of(MAIN, TEST), ROOT, Set.of(MAIN)::contains));
+        assertEquals(TEST, DebugAttach.attachRouting(TEST, List.of(MAIN, TEST), ROOT, Set.of(MAIN)::contains));
     }
 
     @Test
     void anAnchorWithNoTabRoutesThroughAnOpenFileOfItsProject() {
         assertEquals(
-                MAIN,
-                DebugCoordinator.attachRouting(TEST, List.of(ELSEWHERE, MAIN), ROOT, Set.of(ELSEWHERE)::contains));
+                MAIN, DebugAttach.attachRouting(TEST, List.of(ELSEWHERE, MAIN), ROOT, Set.of(ELSEWHERE)::contains));
     }
 
     @Test
     void amongTheProjectsOpenFilesOneAlreadyOnTheServerWins() {
         assertEquals(
                 OTHER_MAIN,
-                DebugCoordinator.attachRouting(TEST, List.of(MAIN, OTHER_MAIN), ROOT, Set.of(OTHER_MAIN)::contains));
+                DebugAttach.attachRouting(TEST, List.of(MAIN, OTHER_MAIN), ROOT, Set.of(OTHER_MAIN)::contains));
     }
 
     @Test
     void withNoFileOfTheProjectOpenAnyServerManagedFileIsUsed() {
-        assertEquals(
-                ELSEWHERE, DebugCoordinator.attachRouting(TEST, List.of(ELSEWHERE), ROOT, Set.of(ELSEWHERE)::contains));
+        assertEquals(ELSEWHERE, DebugAttach.attachRouting(TEST, List.of(ELSEWHERE), ROOT, Set.of(ELSEWHERE)::contains));
     }
 
     @Test
     void withNothingUsableTheAnchorIsKeptSoTheFailureNamesIt() {
-        assertEquals(TEST, DebugCoordinator.attachRouting(TEST, List.of(), ROOT, p -> false));
-        assertEquals(TEST, DebugCoordinator.attachRouting(TEST, List.of(ELSEWHERE), ROOT, p -> false));
+        assertEquals(TEST, DebugAttach.attachRouting(TEST, List.of(), ROOT, p -> false));
+        assertEquals(TEST, DebugAttach.attachRouting(TEST, List.of(ELSEWHERE), ROOT, p -> false));
     }
 }

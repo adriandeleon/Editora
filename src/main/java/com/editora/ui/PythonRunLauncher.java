@@ -51,13 +51,17 @@ final class PythonRunLauncher {
 
     /**
      * Plans {@code request} for a program run in {@code where} and hands the plan to {@code onPlan} on the FX
-     * thread: at once on this machine, after the lookups elsewhere. {@code firstLine} is read by the plan
+     * thread, after its lookups (on a thread of their own, here or elsewhere). {@code firstLine} is read by the plan
      * thread when the request has none and the file is remote (a network round trip).
      */
     static void plan(PythonRunPlan.Request request, @Nullable Path where, Consumer<PythonRunPlan> onPlan) {
         PythonRunPlan.Host host = hostFor(where);
         if (host.local()) {
-            onPlan.accept(PythonRunPlan.plan(request, host));
+            // The interpreter's file checks run off the FX thread too (PERF-01, Pauta 6.0.1).
+            com.editora.perf.OffFx.then("python-run-plan", () -> PythonRunPlan.plan(request, host), a -> {
+                PythonRunPlan done = a.value();
+                onPlan.accept(done != null ? done : PythonRunPlan.plan(request, host.withoutLookups()));
+            });
             return;
         }
         Thread.ofVirtual().name("python-run-plan").start(() -> {

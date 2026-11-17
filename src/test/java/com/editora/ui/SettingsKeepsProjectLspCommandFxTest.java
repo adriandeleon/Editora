@@ -54,6 +54,10 @@ class SettingsKeepsProjectLspCommandFxTest {
                 LspTestHooks.useFakeSessions(manager);
                 coordinator.applySupport();
             });
+            // A project's command is looked at (Editora's own copy?) off the FX thread first (PERF-01): applied then.
+            SettingsRig.awaitFx(
+                    "the project's command applied",
+                    () -> override.equals(LspTestHooks.configuredCommand(manager, "python")));
             assertEquals(override, LspTestHooks.configuredCommand(manager, "python"), "precondition");
 
             SettingsWindow settings = FxTestSupport.field(window, "settingsWindow");
@@ -101,6 +105,10 @@ class SettingsKeepsProjectLspCommandFxTest {
                 LspTestHooks.useFakeSessions(manager);
                 coordinator.applySupport();
             });
+            // A project's command is looked at (Editora's own copy?) off the FX thread first (PERF-01): applied then.
+            SettingsRig.awaitFx(
+                    "the project's command applied",
+                    () -> override.equals(LspTestHooks.configuredCommand(manager, "python")));
             assertEquals(override, LspTestHooks.configuredCommand(manager, "python"), "precondition");
 
             FxTestSupport.runOnFx(() -> registry.run("workspace.revokeTrust"));

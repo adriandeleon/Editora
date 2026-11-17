@@ -143,7 +143,16 @@ class ProjectScopeFxTest {
             config.getTrustStore().trust(project);
             scope().reload();
             CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
-            registry.run("markdownLint.fix");
+            // The fixes are worked out off the FX thread (PERF-01); here in place, so they land now.
+            com.editora.perf.OffFx.runnerForTest((name, task) -> task.run());
+            java.util.concurrent.Executor look = MarkdownLintActions.configExec;
+            MarkdownLintActions.configExec = Runnable::run;
+            try {
+                registry.run("markdownLint.fix");
+            } finally {
+                com.editora.perf.OffFx.runnerForTest(null);
+                MarkdownLintActions.configExec = look;
+            }
             assertEquals("# Title\n\nword  after\n", buffer.getContent(), "two spaces: the project's tab size");
         });
     }

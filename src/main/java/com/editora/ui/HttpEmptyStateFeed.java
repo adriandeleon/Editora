@@ -18,7 +18,8 @@ import org.reactfx.Subscription;
  * Feeds a response view's empty state ({@link HttpEmptyState}) from its {@code .http} buffer: the file's requests and
  * the one at the caret. Only while the empty state is on show (and the panel is in a scene): it then follows the caret
  * line and the text, debounced, so typing parses nothing until it pauses, and moving the caret within the text
- * already parsed parses nothing at all. FX thread only.
+ * already parsed parses nothing at all. The text is parsed off the FX thread (PERF-01, Pauta 6.0.1), and an answer
+ * for text edited since is dropped. FX thread only otherwise.
  */
 final class HttpEmptyStateFeed {
 
@@ -33,6 +34,9 @@ final class HttpEmptyStateFeed {
     private @Nullable Subscription textEdits;
     /** The text changed since it was last parsed (or is not known yet). */
     private boolean stale = true;
+
+    /** Bumped at each edit: a parse of an older text that lands later is dropped. */
+    private long edits;
 
     private List<HttpFile.Request> requests = List.of();
     private List<HttpEmptyState.Row> rows = List.of();
@@ -60,10 +64,12 @@ final class HttpEmptyStateFeed {
         if (want && textEdits == null) {
             textEdits = area.plainTextChanges().subscribe(c -> {
                 stale = true;
+                edits++;
                 settle.playFromStart();
             });
             area.currentParagraphProperty().addListener(caretMoved);
             stale = true; // edits made while it was hidden were not seen
+            edits++;
             refresh();
         } else if (!want && textEdits != null) {
             stopFollowing(textEdits, area);
@@ -80,24 +86,38 @@ final class HttpEmptyStateFeed {
     private void refresh() {
         CodeArea area = buffer.getArea();
         if (stale) {
-            requests = HttpFile.parse(buffer.getContent());
-            List<HttpEmptyState.Row> built = new ArrayList<>(requests.size());
-            int paragraphs = area.getParagraphs().size();
-            for (HttpFile.Request r : requests) {
-                int start = r.sectionStart();
-                String titleLine = start >= 0 && start < paragraphs
-                        ? area.getParagraph(start).getText()
-                        : null;
-                built.add(new HttpEmptyState.Row(
-                        r.startLine(),
-                        r.method(),
-                        HttpPanelStates.requestLabel(titleLine, r.name(), r.method(), r.url()),
-                        r.url()));
-            }
-            rows = built;
-            stale = false;
+            long asked = edits;
+            String text = buffer.getContent();
+            com.editora.perf.OffFx.then("HttpEmptyStateFeed.parse", () -> HttpFile.parse(text), parsed -> {
+                List<HttpFile.Request> found = parsed.value();
+                if (found == null || asked != edits || textEdits == null) {
+                    return; // edited since (its own refresh asks again), or no longer followed
+                }
+                requests = found;
+                rows = rowsOf(found, area);
+                stale = false;
+                panel.showEmptyRequests(rows, indexAt(requests, area.getCurrentParagraph()));
+            });
+            return;
         }
         panel.showEmptyRequests(rows, indexAt(requests, area.getCurrentParagraph()));
+    }
+
+    /** The empty state's rows for {@code requests}, titled from the area's lines. */
+    private static List<HttpEmptyState.Row> rowsOf(List<HttpFile.Request> requests, CodeArea area) {
+        List<HttpEmptyState.Row> built = new ArrayList<>(requests.size());
+        int paragraphs = area.getParagraphs().size();
+        for (HttpFile.Request r : requests) {
+            int start = r.sectionStart();
+            String titleLine =
+                    start >= 0 && start < paragraphs ? area.getParagraph(start).getText() : null;
+            built.add(new HttpEmptyState.Row(
+                    r.startLine(),
+                    r.method(),
+                    HttpPanelStates.requestLabel(titleLine, r.name(), r.method(), r.url()),
+                    r.url()));
+        }
+        return built;
     }
 
     /** The index of the request whose section holds {@code line}, or -1. */

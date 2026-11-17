@@ -1858,7 +1858,7 @@ final class ProjectMapView extends VBox {
      * 6.0.1).
      */
     private static final com.editora.perf.Looked<Path, Boolean> BEARINGS_EXIST =
-            new com.editora.perf.Looked<>("ProjectMapView.bearingsExists", java.nio.file.Files::exists);
+            new com.editora.perf.Looked<>("ProjectMapView.bearingsExists", java.nio.file.Files::exists, Boolean.TRUE);
 
     /** Looks at every place {@code stored} names, off the FX thread, for {@link #bearingsExists}. */
     private static void bearingsLookAt(com.editora.config.@Nullable ProjectMapState stored) {

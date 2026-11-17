@@ -67,11 +67,88 @@ final class FileWorkflowCoordinator {
             String lineEnding,
             @Nullable String charsetFallback,
             SaveNotes notes,
-            EncryptionCoordinator.@Nullable Seal seal) {
+            EncryptionCoordinator.@Nullable Seal seal,
+            SaveRules rules) {
 
         /** What goes on disk: the encoded text, or — for an encrypted file — its ciphertext, once sealed. */
         byte[] diskBytes() {
-            return seal == null ? bytes : seal.sealed();
+            return seal == null ? bytes() : seal.sealed();
+        }
+
+        // The payload as the save worker worked it out again when the file's .editorconfig had changed since the
+        // FX thread captured the save ({@link #reresolveRules}); else as captured.
+
+        @Override
+        public String savedText() {
+            SavePayload again = rules.again;
+            return again == null ? savedText : again.text();
+        }
+
+        @Override
+        public byte[] bytes() {
+            SavePayload again = rules.again;
+            byte[] encoded = again == null ? null : again.encoding().bytes();
+            return encoded == null ? bytes : encoded;
+        }
+
+        @Override
+        public @Nullable String charsetFallback() {
+            SavePayload again = rules.again;
+            return again == null ? charsetFallback : again.encoding().fallbackFrom();
+        }
+
+        @Override
+        public SaveNotes notes() {
+            SavePayload again = rules.again;
+            return again == null ? notes : again.notes();
+        }
+    }
+
+    /**
+     * What a save needs to work its payload out again on the save worker with the {@code .editorconfig} rules as
+     * they are on disk then (PERF-01, Pauta 6.0.1: the FX thread looks at no file; an outside change governs the very
+     * next save). {@code inputs} is null when the rules do not apply (EditorConfig off, a remote file, Save As's own
+     * freshly resolved target).
+     */
+    private static final class SaveRules {
+        final @Nullable SaveInputs inputs;
+        /** The rules the save worker found, when it looked. */
+        volatile com.editora.editorconfig.@Nullable EditorConfigProperties found;
+        /** The payload worked out again by them, when they differed from the ones captured. */
+        volatile @Nullable SavePayload again;
+
+        SaveRules(@Nullable SaveInputs inputs) {
+            this.inputs = inputs;
+        }
+    }
+
+    /** A save's text and the buffer's encoding facts, as captured on the FX thread. */
+    private record SaveInputs(
+            String content,
+            MixedLineEndings.@Nullable Source mixedSource,
+            @Nullable Path target,
+            String language,
+            ProjectScope scope,
+            com.editora.editorconfig.EditorConfigProperties rulesUsed,
+            String baseLineEnding,
+            @Nullable String userCharset,
+            String detectedCharset,
+            boolean charsetAssumed,
+            boolean bomless,
+            String lineEnding,
+            boolean lineEndingForced,
+            String effectiveCharset,
+            boolean resolveOnDisk) {}
+
+    /** A charset the save worker found cannot hold what the buffer holds: nothing is written. */
+    private static final class Unencodable extends IOException {
+        final SaveEncoding.@Nullable Unencodable first;
+        final String charset;
+
+        Unencodable(SaveEncoding.@Nullable Unencodable first, String charset) {
+            super("unencodable");
+            this.first = first;
+            this.charset = charset;
         }
     }
 
@@ -330,6 +407,7 @@ final class FileWorkflowCoordinator {
         this.host = host;
         this.encodings = new EncodingCommands(host, this);
         this.encryption = new EncryptionCoordinator(host, this);
+        com.editora.io.Trash.warm(); // asked on the FX thread later: looked for here, off it (PERF-01, Pauta 6.0.1)
     }
 
     /** Reopen / Save with Encoding. */
@@ -1070,8 +1148,10 @@ final class FileWorkflowCoordinator {
             // the file may be written (View mode), its repository, and whether a save needs the administrator.
             com.editora.vfs.Vfs.isWritableOnDisk(file);
             GitPathScope.lookAt(file); // the repository its tab's menu and the Git commands ask about
-            if (adminSaveEnabled()) {
-                needsElevation(file);
+            needsElevation(file); // whether admin save is on now or turned on later, its Save then knows
+            com.editora.config.PathKeys.warm(file); // the key every diagnostics publish and note asks for
+            if (com.editora.vfs.Vfs.isLocal(file) && file.toString().endsWith(".java")) {
+                JavaProjectRoot.warm(file); // its build root, which Run, Debug and their menu rows ask for
             }
         }
         // One stat call for both size + mtime instead of two separate syscalls per file load.
@@ -1953,7 +2033,8 @@ final class FileWorkflowCoordinator {
 
     private static final com.editora.perf.Looked<Path, Boolean> NEEDS_ELEVATION = new com.editora.perf.Looked<>(
             "FileWorkflowCoordinator.adminSaveApplicable",
-            p -> Files.exists(p) && !Files.isWritable(p) && !replaceableWithoutElevation(p));
+            p -> Files.exists(p) && !Files.isWritable(p) && !replaceableWithoutElevation(p),
+            Boolean.FALSE); // a Save As target never read: a plain save, whose refusal is reported as before
 
     private static boolean replaceableWithoutElevation(Path p) {
         try {
@@ -2006,6 +2087,21 @@ final class FileWorkflowCoordinator {
     /** Pushes the current "Edit as Administrator" availability to every open buffer's banner. */
     void pushAdminEditAvailable() {
         boolean available = elevationAvailable();
+        if (available) {
+            // whether each open file's save needs the administrator, looked at again off the FX thread for the
+            // next Save (PERF-01, Pauta 6.0.1): its permissions may have changed since it was read
+            List<Path> open = new ArrayList<>();
+            for (Tab t : host.editorArea().tabs()) {
+                EditorBuffer b = host.bufferOf(t);
+                Path p = b == null ? null : b.getPath();
+                if (p != null && com.editora.vfs.Vfs.isLocal(p)) {
+                    open.add(p);
+                }
+            }
+            if (!open.isEmpty()) {
+                Thread.ofVirtual().name("admin-save-look").start(() -> open.forEach(NEEDS_ELEVATION::lookAgain));
+            }
+        }
         for (Tab t : host.editorArea().tabs()) {
             EditorBuffer b = host.bufferOf(t);
             if (b != null) {
@@ -2058,7 +2154,22 @@ final class FileWorkflowCoordinator {
         if (refuseUnsavable(buffer)) {
             return false;
         }
-        host.previews().lint().beforeSave(buffer); // "fix Markdown lint issues on save", one undo step
+        MarkdownLintActions lint = host.previews().lint();
+        if (lint.fixesOnSave(buffer)) {
+            // "Fix Markdown lint issues on save", one undo step: worked out off the FX thread (PERF-01, Pauta
+            // 6.0.1), applied while the text is unchanged, then saved.
+            lint.fixThenSave(buffer, () -> {
+                if (!buffer.isDisposed() && !refuseUnsavable(buffer)) {
+                    saveFixed(buffer);
+                }
+            });
+            return true;
+        }
+        return saveFixed(buffer);
+    }
+
+    /** {@link #save} once the fixes on save, if any, are in the buffer. */
+    private boolean saveFixed(EditorBuffer buffer) {
         if (buffer.getPath() == null) {
             return saveAs(buffer);
         }
@@ -2135,7 +2246,30 @@ final class FileWorkflowCoordinator {
         if (refuseUnsavable(buffer)) {
             return CompletableFuture.completedFuture(false);
         }
-        host.previews().lint().beforeSave(buffer);
+        MarkdownLintActions lint = host.previews().lint();
+        if (lint.fixesOnSave(buffer)) {
+            // The fixes on save are worked out off the FX thread first (PERF-01, Pauta 6.0.1), then the save runs.
+            CompletableFuture<Boolean> saved = new CompletableFuture<>();
+            lint.fixThenSave(buffer, () -> {
+                if (buffer.isDisposed() || refuseUnsavable(buffer)) {
+                    saved.complete(false); // closed meanwhile, or no longer savable
+                    return;
+                }
+                CompletableFuture<Boolean> write = saveTrackedFixed(buffer);
+                if (write == null) {
+                    saved.complete(true); // an elevated save, which reports itself
+                } else {
+                    write.whenComplete((ok, failure) -> saved.complete(Boolean.TRUE.equals(ok)));
+                }
+            });
+            return saved;
+        }
+        return saveTrackedFixed(buffer);
+    }
+
+    /** {@link #saveTracked} once the fixes on save, if any, are in the buffer. */
+    @Nullable
+    private CompletableFuture<Boolean> saveTrackedFixed(EditorBuffer buffer) {
         updateTocForExplicitSave(buffer);
         Path file = buffer.getPath();
         if (adminSaveApplicable(file)) {
@@ -2291,6 +2425,7 @@ final class FileWorkflowCoordinator {
         Thread.ofPlatform().daemon().name("admin-save").start(() -> {
             try {
                 var outcome = request.ticket().runIfCurrent(() -> {
+                    reresolveRules(request); // the payload, worked out here (off the FX thread)
                     if (request.seal() != null) {
                         request.seal().seal(request.bytes());
                     }
@@ -2564,45 +2699,118 @@ final class FileWorkflowCoordinator {
     }
 
     private SavePayload savePayload(EditorBuffer buffer, String content, @Nullable Path target) {
-        MixedLineEndings.Source mixedSource = MixedLineEndings.of(buffer);
-        MixedLineEndings.Decision mixed = MixedLineEndings.decide(
-                mixedSource, content, buffer.getLineEnding(), buffer.isLineEndingForced(), target);
+        SaveInputs in = saveInputs(buffer, content, target, false);
+        return payloadOf(
+                in, in.rulesUsed(), buffer.getLineEnding(), buffer.isLineEndingForced(), buffer.getEffectiveCharset());
+    }
+
+    /** The buffer's facts a save's payload is worked out from, taken on the FX thread. */
+    private SaveInputs saveInputs(EditorBuffer buffer, String content, @Nullable Path target, boolean resolveOnDisk) {
+        return new SaveInputs(
+                content,
+                MixedLineEndings.of(buffer),
+                target,
+                String.valueOf(buffer.getLanguage()),
+                host.lspCoordinator().projectScope(),
+                host.editorSettings().editorConfigEnabled()
+                        ? buffer.getEditorConfigProps()
+                        : com.editora.editorconfig.EditorConfigProperties.EMPTY,
+                buffer.getBaseLineEnding(),
+                buffer.getUserCharset(),
+                buffer.getDetectedCharset(),
+                buffer.isCharsetAssumed(),
+                bomlessUtf16.contains(buffer),
+                buffer.getLineEnding(),
+                buffer.isLineEndingForced(),
+                buffer.getEffectiveCharset(),
+                resolveOnDisk);
+    }
+
+    /**
+     * What a save writes: the text transformed by {@code rules} and encoded. Pure (no file looked at): the FX thread
+     * works it out with the rules the buffer holds, and the save worker again with the rules on disk when they
+     * changed ({@link #reresolveRules}).
+     */
+    private static SavePayload payloadOf(
+            SaveInputs in,
+            com.editora.editorconfig.EditorConfigProperties rules,
+            String lineEnding,
+            boolean lineEndingForced,
+            String charset) {
+        String content = in.content();
+        MixedLineEndings.Source mixedSource = in.mixedSource();
+        MixedLineEndings.Decision mixed =
+                MixedLineEndings.decide(mixedSource, content, lineEnding, lineEndingForced, in.target());
         if (mixedSource != null && mixed == MixedLineEndings.Decision.KEEP_BYTES) {
             // Unedited, and the document cannot reproduce the file's terminators: its own bytes go back.
             return new SavePayload(
                     content, new SaveEncoding.Plan(mixedSource.bytes(), null, null), SaveNotes.keptBytes(mixedSource));
         }
         com.editora.editorconfig.EditorConfigProperties p =
-                host.editorSettings().editorConfigEnabled()
-                        ? buffer.getEditorConfigProps()
-                        : com.editora.editorconfig.EditorConfigProperties.EMPTY;
-        p = host.lspCoordinator().projectScope().saveRules(p); // the project's trim/final newline under .editorconfig
+                in.scope().saveRules(rules); // the project's trim/final newline under .editorconfig
         String text = com.editora.editorconfig.EditorConfigTransform.transform(content, p);
         if (com.editora.editops.LineEndings.labelOf(p.endOfLine()) == null) {
             // No end_of_line rule: write the file's own line ending back. The document only ever holds '\n',
             // so without this every CRLF file was rewritten as LF by its first save.
-            text = com.editora.editops.LineEndings.apply(text, buffer.getLineEnding());
+            text = com.editora.editops.LineEndings.apply(text, lineEnding);
         }
         // A charset that can't represent what the user typed (an em dash / curly quote / emoji under
         // `charset = latin1`) would be written as '?' by String.getBytes — and the editor keeps showing the
         // real character until the file is reopened, so the corruption is invisible until it's permanent.
         // SaveEncoding decides what is written instead, and refuses when nothing safe can be.
-        String charset = buffer.getEffectiveCharset();
-        boolean bom = !(isUtf16(charset) && bomlessUtf16.contains(buffer));
-        boolean chosen = buffer.getUserCharset() != null;
-        SaveEncoding.Plan plan = SaveEncoding.plan(text, charset, buffer.isCharsetAssumed() || chosen, bom);
+        boolean bom = !(isUtf16(charset) && in.bomless());
+        boolean chosen = in.userCharset() != null;
+        SaveEncoding.Plan plan = SaveEncoding.plan(text, charset, in.charsetAssumed() || chosen, bom);
         SaveNotes notes = SaveNotes.of(
                 mixed,
                 mixedSource,
-                buffer.getLineEnding(),
+                lineEnding,
                 content,
                 text,
                 p,
-                buffer.getDetectedCharset(),
+                in.detectedCharset(),
                 charset,
-                !buffer.isCharsetAssumed() && plan.fallbackFrom() == null,
+                !in.charsetAssumed() && plan.fallbackFrom() == null,
                 chosen);
         return new SavePayload(text, plan, notes);
+    }
+
+    /**
+     * On the save worker, before the bytes are sealed and written: looks at the file's {@code .editorconfig} rules
+     * as they are on disk now and, when they differ from the ones the FX thread captured the save with, works the
+     * payload out again by them (PERF-01, Pauta 6.0.1). A charset that cannot hold the text refuses the save.
+     */
+    private static void reresolveRules(SaveRequest request) throws IOException {
+        SaveInputs in = request.rules().inputs;
+        if (in == null || request.rules().again != null) {
+            return;
+        }
+        // The payload (the save transform and the encoding of the whole text) is worked out here, on the save
+        // worker, never on the FX thread (PERF-01, Pauta 6.0.1).
+        SavePayload again;
+        com.editora.editorconfig.EditorConfigProperties found = in.rulesUsed();
+        if (in.resolveOnDisk()) {
+            com.editora.perf.BlockingSites.enter("FileWorkflowCoordinator.reresolveRules");
+            found = com.editora.text.ShellScripts.honoured(
+                    in.language(), com.editora.editorconfig.EditorConfig.resolveFor(request.target()));
+            request.rules().found = found;
+        }
+        String charset;
+        if (found.equals(in.rulesUsed())) {
+            charset = in.effectiveCharset();
+            again = payloadOf(in, found, in.lineEnding(), in.lineEndingForced(), charset);
+        } else {
+            String eol = com.editora.editops.LineEndings.labelOf(found.endOfLine());
+            String lineEnding = eol != null ? eol : in.baseLineEnding();
+            charset = in.userCharset() != null
+                    ? in.userCharset()
+                    : found.charset() != null && !in.charsetAssumed() ? found.charset() : in.detectedCharset();
+            again = payloadOf(in, found, lineEnding, eol != null, charset);
+        }
+        if (again.encoding().bytes() == null) {
+            throw new Unencodable(again.encoding().refused(), charset);
+        }
+        request.rules().again = again;
     }
 
     static String fingerprint(byte[] bytes) {
@@ -2700,6 +2908,27 @@ final class FileWorkflowCoordinator {
         return captureSave(buffer, file, false);
     }
 
+    /** Why {@code buffer} cannot be saved in {@code charset}: the first character it cannot hold, and what to do. */
+    private static String cannotEncodeStatus(
+            EditorBuffer buffer, SaveEncoding.@Nullable Unencodable first, String charset) {
+        return first != null && first.unpairedSurrogate()
+                ? tr("status.save.cannotEncodeSurrogate", buffer.getTitle(), first.line(), first.display())
+                : buffer.getUserCharset() != null && !buffer.isCharsetAssumed()
+                        ? tr(
+                                "status.save.cannotEncodeChosen",
+                                buffer.getTitle(),
+                                com.editora.editorconfig.EditorConfigCharset.displayName(charset),
+                                first == null ? "?" : first.character(),
+                                first == null ? "?" : String.valueOf(first.line()),
+                                tr("command.buffer.saveWithEncoding"))
+                        : tr(
+                                "status.save.cannotEncodeAssumed",
+                                buffer.getTitle(),
+                                com.editora.editorconfig.EditorConfigCharset.displayName(charset),
+                                first == null ? "?" : first.character(),
+                                first == null ? "?" : String.valueOf(first.line()));
+    }
+
     /**
      * Snapshots {@code buffer} for a write, or returns {@code null} (with a status message) when it must not be
      * written — see {@link #saveRefusal}. The single choke point for Save, Save As, autosave, the elevated
@@ -2709,36 +2938,18 @@ final class FileWorkflowCoordinator {
         if (refuseUnsavable(buffer)) {
             return null;
         }
-        if (!saveAs) {
-            // The rules were resolved when the file was opened; an .editorconfig edited or pulled since then
-            // must govern this write, not the next session's. (Save As has just re-resolved for its target.)
-            host.editorSettings().refreshEditorConfig(buffer);
-        }
         String content = buffer.getContent();
-        SavePayload payload = savePayload(buffer, content, file);
-        if (payload.encoding().bytes() == null) {
-            SaveEncoding.Unencodable first = payload.encoding().refused();
-            host.setStatus(
-                    first != null && first.unpairedSurrogate()
-                            ? tr("status.save.cannotEncodeSurrogate", buffer.getTitle(), first.line(), first.display())
-                            : buffer.getUserCharset() != null && !buffer.isCharsetAssumed()
-                                    ? tr(
-                                            "status.save.cannotEncodeChosen",
-                                            buffer.getTitle(),
-                                            com.editora.editorconfig.EditorConfigCharset.displayName(
-                                                    buffer.getEffectiveCharset()),
-                                            first == null ? "?" : first.character(),
-                                            first == null ? "?" : String.valueOf(first.line()),
-                                            tr("command.buffer.saveWithEncoding"))
-                                    : tr(
-                                            "status.save.cannotEncodeAssumed",
-                                            buffer.getTitle(),
-                                            com.editora.editorconfig.EditorConfigCharset.displayName(
-                                                    buffer.getEffectiveCharset()),
-                                            first == null ? "?" : first.character(),
-                                            first == null ? "?" : String.valueOf(first.line())));
-            return null;
-        }
+        // The rules were resolved when the file was opened; an .editorconfig edited or pulled since then must govern
+        // this write, not the next session's: the save worker looks at them again (reresolveRules). Save As has just
+        // resolved its target's. The payload itself is worked out there too (a charset that cannot hold the text
+        // refuses the save from there, with the same message).
+        SaveInputs inputs = saveInputs(
+                buffer,
+                content,
+                file,
+                !saveAs && host.editorSettings().editorConfigEnabled() && com.editora.vfs.Vfs.isLocal(file));
+        SaveRules rules = new SaveRules(inputs);
+        SavePayload payload = new SavePayload(content, new SaveEncoding.Plan(null, null, null), SaveNotes.NONE);
         EncryptionCoordinator.Seal seal = encryption.sealFor(buffer, file);
         if (seal == EncryptionCoordinator.Seal.REFUSED) {
             return null; // an encrypted file that cannot be encrypted right now: never written in plain text
@@ -2749,7 +2960,7 @@ final class FileWorkflowCoordinator {
                 file,
                 content,
                 payload.text(),
-                payload.encoding().bytes(),
+                new byte[0], // worked out on the save worker (reresolveRules)
                 buffer.docVersion(),
                 buffer.diskSnapshot(),
                 activeSaveRequests.stream()
@@ -2762,7 +2973,8 @@ final class FileWorkflowCoordinator {
                 buffer.getLineEnding(),
                 payload.encoding().fallbackFrom(),
                 payload.notes(),
-                seal);
+                seal,
+                rules);
         activeSaveRequests.add(request);
         return request;
     }
@@ -3082,6 +3294,7 @@ final class FileWorkflowCoordinator {
         try {
             var outcome = request.ticket().runIfCurrent(() -> {
                 Path target = request.target();
+                reresolveRules(request); // the .editorconfig as it is on disk now governs these bytes
                 if (request.seal() != null) {
                     request.seal().seal(request.bytes()); // gpg, here on the save worker; fails closed
                 }
@@ -3159,7 +3372,11 @@ final class FileWorkflowCoordinator {
                         if (e instanceof EncryptionCoordinator.SealFailure failure) {
                             encryption.saveFailed(request.buffer(), failure); // the banner: why, and what to do
                         }
-                        host.setStatus(tr(autoSave ? "status.autoSaveFailed" : "status.failedSave", why));
+                        if (e instanceof Unencodable refused) {
+                            host.setStatus(cannotEncodeStatus(request.buffer(), refused.first, refused.charset));
+                        } else {
+                            host.setStatus(tr(autoSave ? "status.autoSaveFailed" : "status.failedSave", why));
+                        }
                     }
                     rollbackFailedSaveAs(request);
                     completeFuture(completed, false);
@@ -3198,6 +3415,11 @@ final class FileWorkflowCoordinator {
         if (request.charsetFallback() != null && stillThisFile) {
             // The file on disk is UTF-8 with a BOM now; the status bar and the next save must agree with it.
             host.editorSettings().charsetFellBackToUtf8(request.buffer());
+        }
+        com.editora.editorconfig.EditorConfigProperties found = request.rules().found;
+        if (found != null && stillThisFile) {
+            // The rules the save worker found on disk: the buffer (indent, line ending, charset shown) follows them.
+            host.editorSettings().applyRefreshedEditorConfig(request.buffer(), found);
         }
         settleSaveNotes(request);
         if (".editorconfig".equals(String.valueOf(request.target().getFileName()))) {

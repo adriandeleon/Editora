@@ -2415,15 +2415,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         Path styleRoot = root != null && !com.editora.vfs.Vfs.isRemote(root) ? root : null;
         java.nio.file.WatchService service = watchService;
         boolean hidden = showHidden;
-        // The polling watcher lists each folder it is given and stats every entry: that registration is made off the
-        // FX thread (PERF-01, Pauta 6.0.1), and a folder that changed before it landed is listed again. The system's
-        // watcher registers a folder with one call, in place, as before: the Map relies on knowing at once which
-        // folders are watched.
-        boolean polling = com.editora.io.WatchServices.isPolling(service);
-        if (!polling) {
-            mapView.setWatchedDirectories(registerWatches(service, wanted, styleRoot, new ArrayList<>()));
-            return;
-        }
+        // Registering a folder is a call into the system (the polling watcher lists it and stats every entry), and
+        // the Java style's folders are read from the build: made off the FX thread (PERF-01, Pauta 6.0.1), and a
+        // folder that changed before it landed is listed again. Until it lands the Map treats the new folders as
+        // not watched, as it does any folder no watch covers.
         try {
             watchWork.execute(() -> {
                 java.util.List<Path> added = new ArrayList<>();
@@ -2485,9 +2480,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             java.util.Set<Path> desired,
             @Nullable Path styleRoot,
             java.util.List<Path> added) {
-        if (com.editora.io.WatchServices.isPolling(service)) {
-            com.editora.perf.BlockingSites.enter("ProjectPanel.watch"); // the polling watcher lists each folder
-        }
+        com.editora.perf.BlockingSites.enter("ProjectPanel.watch"); // a system call per folder; polling lists each
         // The folders the project's Java style is read from, open in the tree or not: an outside edit to a profile
         // in .settings went unseen in a project window (fifth review DN4). Their changes refresh no tree.
         java.util.Set<Path> style = new java.util.HashSet<>();
@@ -2533,12 +2526,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     private void cancelAllWatches() {
-        java.nio.file.WatchService service = watchService;
-        // in order with the registrations: on the polling watcher's worker when they are made there
-        java.util.concurrent.Executor work =
-                service != null && com.editora.io.WatchServices.isPolling(service) ? watchWork : Runnable::run;
+        // in order with the registrations, on their worker
         try {
-            work.execute(() -> {
+            watchWork.execute(() -> {
                 for (java.nio.file.WatchKey key : watchKeys.keySet()) {
                     key.cancel();
                 }

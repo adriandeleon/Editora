@@ -66,6 +66,7 @@ class PreviewCommandsFxTest {
 
     @AfterAll
     void tearDown() throws Exception {
+        MarkdownLintActions.resetLookForTest();
         if (fx != null) {
             fx.dispose();
         }
@@ -73,6 +74,10 @@ class PreviewCommandsFxTest {
 
     @BeforeEach
     void reset() throws Exception {
+        // The project config is looked at off the FX thread and kept a moment; here it is looked at in place on
+        // every ask, as these tests rewrite it between edits (ChecksOffFxThread-style tests cover the thread).
+        MarkdownLintActions.configExec = Runnable::run;
+        MarkdownLintActions.hitFreshNanos = 0;
         destination = null;
         FxTestSupport.runOnFx(() -> {
             OverlayHost overlay = FxTestSupport.field(fx.controller, "overlayHost");
@@ -718,6 +723,61 @@ class PreviewCommandsFxTest {
         Files.delete(config);
     }
 
+    /**
+     * The project config is stat-ed, read and parsed off the FX thread (PERF-01, Pauta 6.0.1): a buffer whose
+     * config was never looked at is not linted by a guess (the project's own rule choices would be ignored); its
+     * lint waits for the look and then follows the config.
+     */
+    @Test
+    void theProjectConfigIsLookedAtOffTheFxThreadAndTheLintWaitsForIt() throws Exception {
+        java.util.concurrent.BlockingQueue<Runnable> looks = new java.util.concurrent.LinkedBlockingQueue<>();
+        List<String> heardOnFx = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        MarkdownLintActions.configExec = looks::add;
+        MarkdownLintActions.hitFreshNanos = 60_000_000_000L;
+        com.editora.perf.BlockingSites.listenForTest((site, thread) -> {
+            if (site.startsWith("MarkdownLintActions.") && javafx.application.Platform.isFxApplicationThread()) {
+                heardOnFx.add(site);
+            }
+        });
+        try {
+            Path folder = Files.createDirectory(dir.resolve("held" + counter++));
+            Files.writeString(folder.resolve(".markdownlint.json"), "{\"MD009\": false}");
+            String text = "# Title\n\n\ntrailing  \n";
+            Path file = Files.writeString(folder.resolve("held.md"), text);
+            EditorBuffer b = FxTestSupport.callOnFx(() -> {
+                EditorBuffer buffer = new EditorBuffer();
+                buffer.setPath(file);
+                buffer.setContent(text);
+                FxTestSupport.call(
+                        fx.controller, "addBuffer", new Class[] {EditorBuffer.class, boolean.class}, buffer, true);
+                return buffer;
+            });
+            Runnable first = looks.poll(10, java.util.concurrent.TimeUnit.SECONDS);
+            assertTrue(first != null, "the config is looked at");
+            lintSettled();
+            assertEquals(List.of(), FxTestSupport.callOnFx(b::markdownLintDiagnostics), "no lint by a guess");
+
+            first.run(); // the look, off the FX thread
+            List<String> codes = List.of();
+            for (int attempt = 0; attempt < 100 && !codes.equals(List.of("MD012")); attempt++) {
+                for (Runnable more; (more = looks.poll()) != null; ) {
+                    more.run();
+                }
+                lintSettled();
+                codes = FxTestSupport.callOnFx(b::markdownLintDiagnostics).stream()
+                        .map(com.editora.markdown.MarkdownLint.Diagnostic::code)
+                        .toList();
+                Thread.sleep(20);
+            }
+            assertEquals(List.of("MD012"), codes, "linted once the config is known: MD009 is the project's off");
+            assertEquals(List.of(), heardOnFx, "the config is never looked at on the FX thread");
+        } finally {
+            com.editora.perf.BlockingSites.listenForTest(null);
+            MarkdownLintActions.configExec = Runnable::run;
+            MarkdownLintActions.hitFreshNanos = 0;
+        }
+    }
+
     @Test
     void theConfigLookupStopsAtTheRepositoryRoot() throws Exception {
         EditorBuffer b = document("lint.md", "# Title\n");
@@ -929,6 +989,30 @@ class PreviewCommandsFxTest {
         FxTestSupport.runOnFx(() -> b.getArea().undo());
         assertEquals("# T\n\ntext   \nmore   \n", text(b), "the fix is one undo step");
         FxTestSupport.runOnFx(() -> fx.shared.getSettings().setMarkdownLintFixOnSave(false));
+    }
+
+    /**
+     * PERF-01 (Pauta 6.0.1): Fix works the fixes out off the FX thread on a copy of the text and applies them only
+     * while the text is the one fixed; text typed meanwhile is fixed again, never overwritten.
+     */
+    @Test
+    void aFixWorkedOutWhileTheTextChangedIsWorkedOutAgainOnTheNewText() throws Exception {
+        EditorBuffer b = linted("lint.md", "# T\n\ntext   \n");
+        java.util.List<Runnable> held = new java.util.concurrent.CopyOnWriteArrayList<>();
+        com.editora.perf.OffFx.runnerForTest((name, task) -> held.add(task));
+        try {
+            run("markdownLint.fix");
+            assertEquals(1, held.size(), "the fixes are worked out off the FX thread");
+            assertEquals("# T\n\ntext   \n", text(b), "nothing is replaced before they land");
+            FxTestSupport.runOnFx(() -> b.getArea().appendText("more   \n")); // typed meanwhile
+            FxTestSupport.runOnFx(held.remove(0)); // lands for the old text: worked out again
+            assertEquals("# T\n\ntext   \nmore   \n", text(b), "the typing is kept");
+            assertEquals(1, held.size(), "asked again on the new text");
+            FxTestSupport.runOnFx(held.remove(0));
+            assertEquals("# T\n\ntext\nmore\n", text(b));
+        } finally {
+            com.editora.perf.OffFx.runnerForTest((name, task) -> task.run()); // as OffFxInPlace has it
+        }
     }
 
     @Test

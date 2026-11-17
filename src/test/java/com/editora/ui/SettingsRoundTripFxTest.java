@@ -89,6 +89,19 @@ class SettingsRoundTripFxTest {
         return control instanceof javafx.scene.Node n && n.isDisabled();
     }
 
+    /** Lets the JDK combos' look off the FX thread land: a JDK's version is known only then (PERF-01). */
+    private static void awaitJdks() throws Exception {
+        long until = System.nanoTime() + 30_000_000_000L;
+        do {
+            FxTestSupport.drainFx();
+            if (!FxTestSupport.callOnFx(JdkChoice::looking)) {
+                return;
+            }
+            Thread.sleep(20);
+        } while (System.nanoTime() < until);
+        throw new AssertionError("the JDK look never landed");
+    }
+
     @Test
     void everyControlIsSavedAndReadBack() throws Exception {
         Path dir = Files.createTempDirectory("editora-fx-roundtrip");
@@ -98,6 +111,7 @@ class SettingsRoundTripFxTest {
         try {
             SettingsWindow window = first.controller.settingsWindow;
             FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(first.controller, "stage")));
+            awaitJdks();
             Map<String, Object> controls = FxTestSupport.callOnFx(() -> controls(window));
             for (var e : controls.entrySet()) {
                 FxTestSupport.runOnFx(() -> {
@@ -107,6 +121,7 @@ class SettingsRoundTripFxTest {
                 });
             }
             FxTestSupport.drainFx();
+            awaitJdks();
             // What the window shows after every change (a switch can change another one, a theme an editor theme).
             FxTestSupport.runOnFx(() -> controls.forEach((name, c) -> expected.put(name, valueOf(c))));
             FxTestSupport.runOnFx(
@@ -118,6 +133,7 @@ class SettingsRoundTripFxTest {
         try (var second = FxWindowFixture.create(dir, shared -> {})) {
             SettingsWindow window = second.controller.settingsWindow;
             FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(second.controller, "stage")));
+            awaitJdks();
             List<String> lost = new ArrayList<>();
             FxTestSupport.runOnFx(() -> {
                 try {
