@@ -185,7 +185,8 @@ class WikiLinkPreviewFxTest {
                 java.time.Duration.ofSeconds(15));
         // The note's link is styled once the folder's notes are known (a render after the picture's): wait for it.
         Await.until(
-                EditorFx.checkOnFx(() -> run("note") != null && run("note").getStyleClass().contains("md-wikilink")),
+                EditorFx.checkOnFx(
+                        () -> run("note") != null && run("note").getStyleClass().contains("md-wikilink")),
                 "the note's link was never styled");
         EditorFx.onFx(() -> {
             assertEquals(1, pane.preview().column().lookupAll(".md-image").size());
