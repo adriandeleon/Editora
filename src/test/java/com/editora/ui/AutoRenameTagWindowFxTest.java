@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
  */
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the pair is found off FX in the app
 class AutoRenameTagWindowFxTest {
 
     private FxWindowFixture fx;
