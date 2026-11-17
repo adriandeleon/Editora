@@ -384,19 +384,21 @@ final class LspRefactoringUndo {
         if (group != null && lastApplied != null) {
             group.add(lastApplied);
         }
-        // Saved only now that the move is recorded: a save can run a nested event loop, which ran the drag's next
-        // move and its end first (sixth review BS1).
+        // Saved only now that the move is recorded, off the FX thread and one after another (PERF-01, Pauta 6.0.1).
+        java.util.List<EditorBuffer> toSave = new java.util.ArrayList<>();
         for (EditedFile e : files) {
             EditorBuffer b = ops.bufferForPath(e.path());
             if (b != null && b.isDirty() && b.getContent().equals(e.after())) {
-                ops.saveBuffer(b);
+                toSave.add(b);
             }
         }
-        if (group != null) {
-            return; // a drag-move: the tree says what moved, not "Renamed to" (fourth review BF3)
-        }
-        // the saves above said "Saved /the/whole/path"; the rename is what happened (BT7)
-        host.setStatus(tr("status.renamedTo", PathDisplay.fileName(to)));
+        boolean dragMove = group != null;
+        SaveChain.all(toSave, (b, then) -> ops.saveThen(b, saved -> then.accept(true)), done -> {
+            if (!dragMove) { // a drag-move: the tree says what moved, not "Renamed to" (fourth review BF3)
+                // the saves above said "Saved /the/whole/path"; the rename is what happened (BT7)
+                host.setStatus(tr("status.renamedTo", PathDisplay.fileName(to)));
+            }
+        });
     }
 
     /** What the user chose when Undo met a buffer the last refactoring edited. */

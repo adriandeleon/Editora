@@ -118,8 +118,18 @@ final class DiffCoordinator {
         /** Removes a background buffer opened solely for an apply that was rejected as stale. */
         default void discardBackgroundBuffer(@Nullable EditorBuffer buffer) {}
 
-        /** Saves {@code buffer}; {@code true} on success. */
-        boolean saveBuffer(EditorBuffer buffer);
+        /**
+         * Saves {@code buffer} without waiting: the write runs off the FX thread and {@code then} hears on it whether
+         * it went through (PERF-01, Pauta 6.0.1). This default, for test stand-ins, answers {@link #saveBuffer} at once.
+         */
+        default void saveThen(EditorBuffer buffer, Consumer<Boolean> then) {
+            then.accept(saveBuffer(buffer));
+        }
+
+        /** A test stand-in's save, answered at once; the app saves through {@link #saveThen}. */
+        default boolean saveBuffer(EditorBuffer buffer) {
+            return false;
+        }
 
         /** Every open diff-viewer tab's pane (for {@link #refreshOpenDiffs()}). */
         List<DiffViewerPane> openDiffPanes();
@@ -175,9 +185,9 @@ final class DiffCoordinator {
         return hunks;
     }
 
-    /** Saves {@code buffer} through the window's normal save path; false when it could not be saved. */
-    boolean saveBuffer(EditorBuffer buffer) {
-        return ops.saveBuffer(buffer);
+    /** Saves {@code buffer} through the window's normal save path, then tells {@code then} whether it could. */
+    void saveThen(EditorBuffer buffer, Consumer<Boolean> then) {
+        ops.saveThen(buffer, then);
     }
 
     /**
@@ -577,10 +587,14 @@ final class DiffCoordinator {
         if (b == null) {
             return;
         }
-        if (ops.saveBuffer(b)) {
-            host.setStatus(tr("status.diff.saved", target.getFileName()));
-            refreshOpenDiffs();
-        }
+        ops.saveThen(
+                b,
+                saved -> { // written off the FX thread (PERF-01)
+                    if (saved) {
+                        host.setStatus(tr("status.diff.saved", target.getFileName()));
+                        refreshOpenDiffs();
+                    }
+                });
     }
 
     /** Diff the active file's working copy against its committed (HEAD) version. */

@@ -184,6 +184,9 @@ class DebugCoordinatorCommandsFxTest {
         public boolean saveBuffer(EditorBuffer buffer) {
             saves++;
             savedFiles.add(buffer.getPath());
+            if (saveOk) {
+                buffer.markClean(); // as a real save leaves it: Debug goes on once the saved file is clean
+            }
             return saveOk;
         }
 

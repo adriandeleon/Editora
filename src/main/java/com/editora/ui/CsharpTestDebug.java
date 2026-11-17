@@ -130,7 +130,9 @@ final class CsharpTestDebug {
     static final Map<String, String> ENVIRONMENT = Map.of("VSTEST_HOST_DEBUG", "1", "DOTNET_NOLOGO", "1");
 
     private void start(Path file, Path project, Path root, DotnetTests.Target target) {
-        d.saveBuffersUnder(root, "csharp");
+        if (!d.savedOrThen(d.buffersUnder(root, "csharp"), () -> start(file, project, root, target))) {
+            return; // saved first, off the FX thread (PERF-01); started again once the writes have landed
+        }
         DebugSession session = d.s();
         RunService previous = session.testHost;
         if (previous != null && previous.isRunning()) {

@@ -101,6 +101,7 @@ import com.editora.markdown.MarkdownInline;
 import com.editora.markdown.MarkdownLint;
 import com.editora.markdown.MarkdownTable;
 import com.editora.maven.PomFiles;
+import com.editora.perf.OffFx;
 import com.editora.snippet.ParsedSnippet;
 import com.editora.snippet.Snippet;
 import com.editora.snippet.SnippetSessions;
@@ -2871,8 +2872,22 @@ public class EditorBuffer implements TabContent {
         return runGutter.testTargetAtCaret(classLevel);
     }
 
-    public void settleRunScan() {
-        runGutter.settleRunScan();
+    /**
+     * Runs {@code then} once the Run scan of the text has landed: at once when none is in flight. The scan runs off
+     * the FX thread (PERF-01, Pauta 6.0.1), so a Run or Debug command decides from its result by waiting here.
+     */
+    public void whenRunScanned(Runnable then) {
+        runGutter.whenRunScanned(then);
+    }
+
+    /** TEST SEAM — lands a Run scan still in flight now, scanning in place; the app uses {@link #whenRunScanned}. */
+    public void settleRunScanForTest() {
+        runGutter.settleRunScanForTest();
+    }
+
+    /** Whether a Run scan of the text is in flight off the FX thread (what {@link #whenRunScanned} waits for). */
+    public boolean runScanPending() {
+        return runGutter.runScanPending();
     }
 
     /** A language whose server copes with this file despite the large-source tier (Python, review B10). */
@@ -4455,10 +4470,18 @@ public class EditorBuffer implements TabContent {
         notes.setOnChanged(callback);
     }
 
-    /** Replaces this buffer's notes from persisted state and repaints their highlight. Returns true if any note
-     *  was re-anchored or (un)orphaned, so the caller can persist the self-healed state. */
-    public boolean applyNotes(List<com.editora.config.PersonalNote> saved) {
-        return notes.restore(saved); // repaints the note overlay; the gutter shows no notes, so it is left alone
+    /** Replaces this buffer's notes from persisted state and repaints their highlight (see {@link #applyNotes(List, java.util.function.Consumer)}). */
+    public void applyNotes(List<com.editora.config.PersonalNote> saved) {
+        notes.restore(saved); // repaints the note overlay; the gutter shows no notes, so it is left alone
+    }
+
+    /**
+     * As above; {@code movedThen} hears whether any note was re-anchored or (un)orphaned, so the caller can persist
+     * the self-healed state. The notes are found in the text off the FX thread (PERF-01, Pauta 6.0.1).
+     */
+    public void applyNotes(
+            List<com.editora.config.PersonalNote> saved, java.util.function.Consumer<Boolean> movedThen) {
+        notes.restore(saved, movedThen);
     }
 
     /**
@@ -5339,9 +5362,26 @@ public class EditorBuffer implements TabContent {
         Platform.runLater(this::updateBraceMatch);
     }
 
-    /** Clears any previous match highlight and highlights the pair adjacent to the focused caret. */
+    /**
+     * How far each way from the caret the FX thread looks for a bracket's partner: a few screens (about 250 lines of
+     * 64 chars). A partner further off is looked for off the FX thread (PERF-01, Pauta 6.0.1).
+     */
+    static final int NEAR_BRACE_SCAN = 16_384;
+
+    /** {@link com.editora.perf.BlockingSites} name of the far brace scan, made off the FX thread. */
+    static final String BRACE_SCAN_SITE = "EditorBuffer.braceMatch";
+
+    /** The latest brace-match ask: a far scan answering an older one is dropped. */
+    private long braceAsk;
+
+    /**
+     * Clears any previous match highlight and highlights the pair adjacent to the focused caret. The partner is
+     * looked for in place only near the caret ({@link #NEAR_BRACE_SCAN} chars each way); when it is not there, the whole {@link BraceMatcher#DEFAULT_MAX_SCAN} window is scanned off the FX
+     * thread and the pair shown when that lands, if the text, the caret and the focused view are unchanged.
+     */
     private void updateBraceMatch() {
         braceMatchPending = false;
+        long ask = ++braceAsk;
         clearBraceMatch();
         if (largeFile) {
             return; // brace matching off in large-file mode (highlighting is disabled there too)
@@ -5349,8 +5389,7 @@ public class EditorBuffer implements TabContent {
         CodeArea a = focusedArea;
         int caret = a.getCaretPosition();
         // BraceMatcher answers from the two characters beside the caret and never scans beyond
-        // DEFAULT_MAX_SCAN chars from it: read those two first, and build the window (up to 100,000 chars,
-        // on every caret move — the hot path) only when one of them is a bracket.
+        // DEFAULT_MAX_SCAN chars from it: read those two first, and build a window only when one of them is a bracket.
         int max = BraceMatcher.DEFAULT_MAX_SCAN;
         int winStart = Math.max(0, caret - max - 1);
         int winEnd = Math.min(a.getLength(), caret + max + 1);
@@ -5359,12 +5398,44 @@ public class EditorBuffer implements TabContent {
                 caret > 0 ? beside.charAt(0) : 0, beside.isEmpty() ? 0 : beside.charAt(beside.length() - 1))) {
             return;
         }
-        int[] m = BraceMatcher.match(a.getText(winStart, winEnd), caret - winStart, max);
+        int[] near = nearBraceWindow(a, caret);
+        int nearStart = Math.max(winStart, near[0]);
+        int nearEnd = Math.min(winEnd, near[1]);
+        int[] m = BraceMatcher.match(a.getText(nearStart, nearEnd), caret - nearStart, max);
         if (m != null) {
-            addBraceClass(m[0] + winStart);
-            addBraceClass(m[1] + winStart);
-            completionActions.setBraceMatch(new int[] {m[0] + winStart, m[1] + winStart});
+            showBraceMatch(m[0] + nearStart, m[1] + nearStart);
+            return;
         }
+        if (nearStart == winStart && nearEnd == winEnd) {
+            return; // the whole window was near: there is no partner
+        }
+        String window = a.getText(winStart, winEnd);
+        long version = docVersion;
+        OffFx.then(
+                BRACE_SCAN_SITE,
+                () -> java.util.Optional.ofNullable(BraceMatcher.match(window, caret - winStart, max)),
+                found -> {
+                    int[] far = found.value() == null ? null : found.value().orElse(null);
+                    if (far != null
+                            && ask == braceAsk
+                            && !disposed
+                            && docVersion == version
+                            && focusedArea == a
+                            && a.getCaretPosition() == caret) {
+                        showBraceMatch(far[0] + winStart, far[1] + winStart);
+                    }
+                });
+    }
+
+    /** The near window around {@code caret}: {@link #NEAR_BRACE_SCAN} chars each way (a few screens). */
+    private static int[] nearBraceWindow(CodeArea a, int caret) {
+        return new int[] {Math.max(0, caret - NEAR_BRACE_SCAN), Math.min(a.getLength(), caret + NEAR_BRACE_SCAN)};
+    }
+
+    private void showBraceMatch(int open, int close) {
+        addBraceClass(open);
+        addBraceClass(close);
+        completionActions.setBraceMatch(new int[] {open, close});
     }
 
     void clearBraceMatch() {
@@ -5852,6 +5923,7 @@ public class EditorBuffer implements TabContent {
      * with a {@code sameLength} change stays dirty and is compared when the edit settles (or when
      * {@link #isDirty()} is asked), so a run of same-length edits (move line up/down, overwrite, transpose)
      * no longer copies the document on every one of them — those runs, not a single landing, were the cost.
+     * Against a sealed baseline the comparison is a hash, worked out off the FX thread ({@link #textMatchesSaved}).
      */
     private void dirtyAfterEdit(boolean sameLength) {
         dirtyUnresolved = sameLength
@@ -5874,12 +5946,92 @@ public class EditorBuffer implements TabContent {
 
     /**
      * Once the edits of a dirty buffer have settled, the baseline's text is no longer the snapshot and would be
-     * a second document-sized String for as long as the tab stays modified: keep its fingerprint only.
+     * a second document-sized String for as long as the tab stays modified: keep its fingerprint only. A
+     * fingerprint no worker supplied is worked out off the FX thread first (PERF-01, Pauta 6.0.1); the text is let
+     * go when it lands, if the buffer is still dirty then.
      */
     private void sealBaselineIfDirty() {
-        if (baseline != null && dirty.get() && !dirtyUnresolved) {
-            baseline.seal();
+        SavedBaseline b = baseline;
+        if (b == null || !dirty.get() || dirtyUnresolved || b.sealIfFingerprinted()) {
+            return;
         }
+        String held = b.heldText();
+        if (held == null || fingerprinting == b) {
+            return;
+        }
+        fingerprinting = b;
+        OffFx.then(DIRTY_HASH_SITE, () -> TextFingerprint.of(held), done -> {
+            if (fingerprinting == b) {
+                fingerprinting = null;
+            }
+            String fp = done.value();
+            if (fp != null && baseline == b && !disposed) {
+                b.knowFingerprint(held, fp);
+                sealBaselineIfDirty();
+            }
+        });
+    }
+
+    /** {@link BlockingSites} name of the dirty check's hashes, made off the FX thread. */
+    static final String DIRTY_HASH_SITE = "EditorBuffer.dirtyHash";
+
+    /** The baseline whose fingerprint is being worked out off the FX thread, so a second settle starts none. */
+    private @Nullable SavedBaseline fingerprinting;
+
+    /** What the last hash made off the FX thread found: the text at {@code version} against {@code baseline}. */
+    private record SavedHash(long version, SavedBaseline baseline, boolean matches) {}
+
+    private @Nullable SavedHash savedHash;
+
+    /** The version and baseline a hash is under way for, so a second ask for them starts none. */
+    private long hashingVersion = -1;
+
+    private @Nullable SavedBaseline hashingBaseline;
+
+    /**
+     * Whether the whole text is the saved text, with {@code b}'s length already equal. Without a hash when the
+     * baseline holds its text. Against a sealed baseline the FX thread never hashes (PERF-01, Pauta 6.0.1): it
+     * answers from the last hash made off the thread for this document version, and otherwise says "differs" —
+     * the dirty state the cheap checks give, never "clean" for text that differs — and hashes a snapshot off the
+     * thread; when that lands for the same version and baseline, the flag is set again from it, so an undo back
+     * to the saved text clears it then.
+     */
+    private boolean textMatchesSaved(SavedBaseline b) {
+        String current = getContent();
+        Boolean cheap = b.matchesWithoutHashing(current);
+        if (cheap != null) {
+            return cheap;
+        }
+        if (!Platform.isFxApplicationThread()) {
+            return b.matches(current);
+        }
+        long version = docVersion;
+        SavedHash known = savedHash;
+        if (known != null && known.version() == version && known.baseline() == b) {
+            return known.matches();
+        }
+        if (hashingVersion != version || hashingBaseline != b) {
+            hashingVersion = version;
+            hashingBaseline = b;
+            OffFx.then(DIRTY_HASH_SITE, () -> b.matches(current), done -> {
+                if (hashingVersion == version && hashingBaseline == b) {
+                    hashingVersion = -1;
+                    hashingBaseline = null;
+                }
+                Boolean same = done.value();
+                if (same == null || disposed || docVersion != version || baseline != b) {
+                    return; // an edit or a save since: its own check asks again
+                }
+                savedHash = new SavedHash(version, b, same);
+                dirtyUnresolved = false;
+                dirty.set(differsFromSaved());
+            });
+            known = savedHash; // a test that runs OffFx in place has it already
+            if (known != null && known.version() == version && known.baseline() == b) {
+                return known.matches();
+            }
+        }
+        return false;
     }
 
     /** Whether the saved baseline still holds its text rather than a fingerprint alone (tests). */
@@ -5902,7 +6054,7 @@ public class EditorBuffer implements TabContent {
         return forcedDirty
                 || !lineEnding.equals(cleanLineEnding)
                 || (userCharset != null && !userCharset.equals(detectedCharset))
-                || (baseline != null && (contentLength() != baseline.length() || !baseline.matches(getContent())));
+                || (baseline != null && (contentLength() != baseline.length() || !textMatchesSaved(baseline)));
     }
 
     /** Marks content as not durably saved, even when it still equals its in-memory baseline. */

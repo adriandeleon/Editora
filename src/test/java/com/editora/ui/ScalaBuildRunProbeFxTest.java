@@ -59,7 +59,7 @@ class ScalaBuildRunProbeFxTest {
                 "the file to open",
                 () -> c.activeBuffer() != null && file.equals(c.activeBuffer().getPath()));
         EditorBuffer b = FxTestSupport.callOnFx(c::activeBuffer);
-        FxTestSupport.runOnFx(b::settleRunScan);
+        FxTestSupport.runOnFx(b::settleRunScanForTest);
         assertTrue(FxTestSupport.callOnFx(b::isRunnable), "the @main has a ▶");
         CommandRegistry registry = FxTestSupport.field(c, "registry");
         FxTestSupport.runOnFx(() -> registry.run("file.run"));

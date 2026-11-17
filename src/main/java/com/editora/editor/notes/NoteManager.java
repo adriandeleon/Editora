@@ -184,16 +184,26 @@ public final class NoteManager implements LineMarks.Carrier {
         if (note == null) {
             return;
         }
-        tracked.put(note.id(), place(note));
+        tracked.put(note.id(), atStoredOffset(note));
         fireChanged();
         onSpansChanged.run();
+        relocateLater(List.of(note.id()), RELOCATE_TRIES, moved -> {
+            if (moved) {
+                fireChanged();
+            }
+        });
     }
 
     public void update(PersonalNote note) {
         if (note != null && tracked.containsKey(note.id())) {
-            tracked.put(note.id(), place(note));
+            tracked.put(note.id(), atStoredOffset(note));
             fireChanged();
             onSpansChanged.run();
+            relocateLater(List.of(note.id()), RELOCATE_TRIES, moved -> {
+                if (moved) {
+                    fireChanged();
+                }
+            });
         }
     }
 
@@ -234,51 +244,133 @@ public final class NoteManager implements LineMarks.Carrier {
     }
 
     /**
-     * Replaces the note set from a persisted list, relocating each to the current text (without firing
-     * {@code onChanged}). Returns {@code true} if anything moved or was (un)orphaned, so the controller can
-     * persist the self-healed state.
+     * Replaces the note set from a persisted list (without firing {@code onChanged}). Each note shows at its stored
+     * offset at once; finding it in the current text — a search of the document — runs off the FX thread (PERF-01,
+     * Pauta 6.0.1) on a snapshot, and its positions are applied when it lands, if the text is unchanged (worked out
+     * again otherwise). {@code movedThen} hears then whether anything moved or was (un)orphaned, so the controller
+     * can persist the self-healed state.
      */
-    public boolean restore(List<PersonalNote> saved) {
+    public void restore(List<PersonalNote> saved) {
+        restore(saved, moved -> {});
+    }
+
+    /** As {@link #restore(List)}; {@code movedThen} hears, once the relocation lands, whether anything moved. */
+    public void restore(List<PersonalNote> saved, java.util.function.Consumer<Boolean> movedThen) {
         restoring = true;
-        boolean moved = false;
+        List<UUID> ids = new ArrayList<>();
         try {
             tracked.clear();
             if (saved != null) {
-                // One snapshot for the whole restore. place(note) used to materialize the complete document
-                // once per note, turning file open into O(notes × document-size) copying before relocation.
-                String document = area.getText();
                 for (PersonalNote s : saved) {
-                    if (s == null) {
-                        continue;
-                    }
-                    Tracked t = place(s, document);
-                    tracked.put(s.id(), t);
-                    if (t.note.status() != s.status()) {
-                        moved = true;
-                    } else if (t.positioned() && lineOf(t.start) != s.anchor().line()) {
-                        moved = true;
+                    if (s != null) {
+                        tracked.put(s.id(), atStoredOffset(s));
+                        ids.add(s.id());
                     }
                 }
             }
-            return moved;
         } finally {
             restoring = false;
             onSpansChanged.run();
         }
+        relocateLater(ids, RELOCATE_TRIES, movedThen);
+    }
+
+    /** How many times a relocation is worked out again when the text changed before it landed. */
+    private static final int RELOCATE_TRIES = 3;
+
+    /** {@link com.editora.perf.BlockingSites} name of the notes' relocation, made off the FX thread. */
+    public static final String RELOCATE_SITE = "NoteManager.relocate";
+
+    /** Edits made to the text: what a relocation worked out off the FX thread is applied against. */
+    private long edits;
+
+    /** One note's relocation asked off the FX thread: from where it is now, with its anchor's text. */
+    private record Ask(Tracked tracked, PersonalNote note, int start, int end) {}
+
+    /** A note where its stored anchor says, not yet looked for in the text. FX thread, no search. */
+    private Tracked atStoredOffset(PersonalNote note) {
+        TextAnchor a = note.anchor();
+        return new Tracked(note, absOffset(a.line(), a.column()), absOffset(a.endLine(), a.endColumn()));
+    }
+
+    /**
+     * Finds the notes {@code ids} in the text off the FX thread (each from where it is now), then applies their
+     * positions — or their orphaning — on the FX thread if the text is unchanged; {@code movedThen} hears whether
+     * anything moved. Text typed meanwhile has it worked out again, up to {@code tries} times; then the notes stay
+     * where the edits carried them.
+     */
+    private void relocateLater(List<UUID> ids, int tries, java.util.function.Consumer<Boolean> movedThen) {
+        List<Ask> asks = new ArrayList<>();
+        for (UUID id : ids) {
+            Tracked t = tracked.get(id);
+            if (t != null) {
+                asks.add(new Ask(t, t.note, t.start, t.end));
+            }
+        }
+        if (asks.isEmpty()) {
+            movedThen.accept(false);
+            return;
+        }
+        String document = area.getText();
+        long version = edits;
+        com.editora.perf.OffFx.then(
+                RELOCATE_SITE,
+                () -> {
+                    List<int @Nullable []> found = new ArrayList<>();
+                    for (Ask ask : asks) {
+                        TextAnchor a = ask.note().anchor();
+                        found.add(NoteAnchors.relocate(
+                                document,
+                                ask.start(),
+                                ask.end(),
+                                a.selectedText(),
+                                a.prefix(),
+                                a.suffix(),
+                                a.length()));
+                    }
+                    return found;
+                },
+                answer -> {
+                    List<int @Nullable []> found = answer.value();
+                    if (found == null) {
+                        movedThen.accept(false);
+                        return;
+                    }
+                    if (edits != version) {
+                        if (tries > 1) {
+                            relocateLater(ids, tries - 1, movedThen);
+                        } else {
+                            movedThen.accept(false);
+                        }
+                        return;
+                    }
+                    boolean moved = false;
+                    for (int k = 0; k < asks.size(); k++) {
+                        Ask ask = asks.get(k);
+                        Tracked t = ask.tracked();
+                        if (tracked.get(t.note.id()) != t || t.note != ask.note()) {
+                            continue; // removed or changed meanwhile: its own relocation answers
+                        }
+                        Tracked placed = placed(ask.note(), found.get(k));
+                        t.note = placed.note;
+                        t.start = placed.start;
+                        t.end = placed.end;
+                        if (placed.note.status() != ask.note().status()
+                                || (placed.positioned()
+                                        && lineOf(placed.start)
+                                                != ask.note().anchor().line())) {
+                            moved = true;
+                        }
+                    }
+                    onSpansChanged.run();
+                    movedThen.accept(moved);
+                });
     }
 
     // ---- internals ----
 
-    private Tracked place(PersonalNote note) {
-        return place(note, area.getText());
-    }
-
-    private Tracked place(PersonalNote note, String document) {
-        TextAnchor a = note.anchor();
-        int savedStart = absOffset(a.line(), a.column());
-        int savedEnd = absOffset(a.endLine(), a.endColumn());
-        int[] r = NoteAnchors.relocate(
-                document, savedStart, savedEnd, a.selectedText(), a.prefix(), a.suffix(), a.length());
+    /** {@code note} at {@code r} as relocation found it, or orphaned when it found nothing. */
+    private static Tracked placed(PersonalNote note, int @Nullable [] r) {
         if (r == null) {
             // ORPHANED is a system observation ("I can't find the text"), RESOLVED is the user's decision.
             // Overwriting one with the other lost the decision permanently: a checkout that hid the text
@@ -373,6 +465,7 @@ public final class NoteManager implements LineMarks.Carrier {
     }
 
     private void onTextChange(PlainTextChange change) {
+        edits++; // what a relocation worked out off the FX thread is checked against
         if (swapping || tracked.isEmpty()) {
             return; // hot-path early-out
         }

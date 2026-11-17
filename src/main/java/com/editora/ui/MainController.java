@@ -72,7 +72,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     BorderPane root;
 
     @FXML
-    private BorderPane workspace;
+    BorderPane workspace;
 
     /**
      * FXML injection point for the editor area's tab strip. <b>Do not use directly</b> — everything goes
@@ -105,10 +105,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     @FXML
-    private VBox topBox;
+    VBox topBox;
 
     @FXML
-    private VBox bottomBox;
+    VBox bottomBox;
 
     @FXML
     ToolBar toolBar;
@@ -546,7 +546,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         stage.setOnCloseRequest(e -> {
             // Busy terminals first (closing ends them), then this window's dirty buffers + its session; cancel the
             // close if the user backs out. (No separate "Quit?" prompt — each window closes independently now.)
-            if (!terminalCoordinator.confirmCloseWithBusyTerminals() || !closes.confirmCloseAll()) {
+            // A Save picked in the question writes off the FX thread: the window stays, and closes once it has landed.
+            if (!terminalCoordinator.confirmCloseWithBusyTerminals() || !closes.confirmCloseAll(this::closeAfterSave)) {
                 e.consume();
                 return;
             }
@@ -622,6 +623,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Tooltip on a grayed row explaining why, and naming the command that would re-enable it.
         this.palette.setDisabledReason(c -> disabledCommandReason(c.id()));
         this.findBar = new FindReplaceBar(this::activeBuffer, this::setStatus);
+        this.macroCoordinator.workPending = findBar::busy; // a replayed key waits for the search a step started
         this.findBar.setOnSelectAllMatches(this::selectAllFindMatches);
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
@@ -1387,13 +1389,22 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
+    /** The window close asked for again once a Save picked in its question has landed (PERF-01, Pauta 6.0.1). */
+    private void closeAfterSave() {
+        if (windowManager != null) {
+            windowManager.requestClose(this);
+        } else if (closeWindowProgrammatically()) {
+            stage.close();
+        }
+    }
+
     /**
      * Closes this window's session programmatically (the "Close Project" command): prompts to save dirty
      * buffers, persists the session, and releases the window's resources. Returns {@code false} if the
      * user cancelled (the window stays open). The caller ({@link WindowManager}) closes the stage.
      */
     public boolean closeWindowProgrammatically() {
-        if (!terminalCoordinator.confirmCloseWithBusyTerminals() || !closes.confirmCloseAll()) {
+        if (!terminalCoordinator.confirmCloseWithBusyTerminals() || !closes.confirmCloseAll(this::closeAfterSave)) {
             return false;
         }
         disposeWindow();
@@ -1570,7 +1581,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Toolbar "Open Folder" icon: native folder dialog (the palette/keybinding uses the finder). */
     @FXML
-    private void onOpenFolder() {
+    void onOpenFolder() {
         DirectoryChooser chooser = new DirectoryChooser();
         chooser.setTitle(tr("dialog.openFolder.title"));
         java.io.File dir = chooser.showDialog(stage);
@@ -2189,7 +2200,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 path -> windowManager == null ? buffersAtOrUnderLocal(path) : windowManager.buffersAtOrUnder(path),
                 buffer -> ownerOf(buffer).revealBufferLocal(buffer),
                 buffer -> ownerOf(buffer).fileWorkflows.hasPendingSave(buffer),
-                buffer -> ownerOf(buffer).closes.confirmCloseIfDirty(buffer),
+                (buffer, afterSave, failed) -> ownerOf(buffer).closes.askCloseIfDirty(buffer, afterSave, failed),
                 fileWorkflows::invalidatePendingWrite,
                 (path, completion) -> historyCoordinator.captureBeforeDeleteDurably(path, completion),
                 this::setStatus);
@@ -2437,33 +2448,33 @@ public class MainController implements com.editora.mcp.McpBridge {
     final EditingCoordinator editing = new EditingCoordinator(new EditingHost(this));
 
     @FXML
-    private void onUndo() {
+    void onUndo() {
         editing.onUndo();
     }
 
     @FXML
-    private void onRedo() {
+    void onRedo() {
         editing.onRedo();
     }
 
     @FXML
-    private void onCut() {
+    void onCut() {
         editing.onCut();
     }
 
     @FXML
-    private void onCopy() {
+    void onCopy() {
         editing.onCopy();
     }
 
     @FXML
-    private void onPaste() {
+    void onPaste() {
         editing.onPaste();
     }
 
     /** Shows the find/replace bar, or hides it if it's already open. */
     @FXML
-    private void onFind() {
+    void onFind() {
         editing.onFind();
     }
 
@@ -2488,17 +2499,17 @@ public class MainController implements com.editora.mcp.McpBridge {
     Button runConfigStopButton;
 
     @FXML
-    private void onRunSelectedConfig() {
+    void onRunSelectedConfig() {
         runConfigurations.onRunSelectedConfig();
     }
 
     @FXML
-    private void onDebugSelectedConfig() {
+    void onDebugSelectedConfig() {
         runConfigurations.onDebugSelectedConfig();
     }
 
     @FXML
-    private void onStopRun() {
+    void onStopRun() {
         runConfigurations.onStopRun();
     }
 
@@ -2522,7 +2533,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     @FXML
-    private void onSaveAs() {
+    void onSaveAs() {
         fileWorkflows.onSaveAs();
     }
 
@@ -3911,7 +3922,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         tab.setClosable(content.closeable());
         installContentTabMenu(tab); // every tab of the strip has the tab operations; a buffer's menu replaces it
         tab.setOnCloseRequest(e -> {
-            if (!closes.confirmClose(tab)) {
+            if (!closes.confirmClose(tab, () -> closeTab(tab))) {
                 e.consume();
             } else {
                 rememberClosed(tab);
@@ -3950,7 +3961,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     @FXML
-    private void onNewFromTemplate() {
+    void onNewFromTemplate() {
         templateActions.newFromTemplate(null);
     }
 
@@ -4279,7 +4290,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             terminalCoordinator.requestClose(terminal); // its shell's own question, which may ask the host first
             return;
         }
-        if (tab != null && closes.confirmClose(tab)) {
+        if (tab != null && closes.confirmClose(tab, () -> closeTab(tab))) {
             rememberClosed(tab);
             editorArea.remove(tab);
         }
@@ -4356,14 +4367,19 @@ public class MainController implements com.editora.mcp.McpBridge {
      * the user cancels — mirroring the window-close coordinator.
      */
     private void closeTabs(List<Tab> targets) {
-        for (Tab tab : targets) {
+        for (int i = 0; i < targets.size(); i++) {
+            Tab tab = targets.get(i);
+            // A Save picked in a question writes off the FX thread: the batch goes on from this tab once it has landed.
+            List<Tab> fromHere = List.copyOf(targets.subList(i, targets.size()));
+            Runnable afterSave = () -> closeTabs(
+                    fromHere.stream().filter(t -> editorArea.tabs().contains(t)).toList());
             if (tab.getUserData() instanceof TerminalEditorTab terminal) {
                 terminalCoordinator.requestClose(terminal); // asks when its shell is running something
                 continue;
             }
             EditorBuffer buffer = bufferOf(tab);
             if (buffer == null) {
-                if (!closes.confirmClose(tab)) {
+                if (!closes.confirmClose(tab, afterSave)) {
                     return;
                 }
                 rememberClosed(tab);
@@ -4376,8 +4392,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 continue;
             }
             editorArea.select(tab);
-            if (!closes.confirmCloseIfDirty(buffer)) {
-                return; // user cancelled — stop the batch
+            if (closes.askCloseIfDirty(buffer, afterSave) != CloseCoordinator.Answer.CLOSE) {
+                return; // user cancelled, or saving first — stop the batch (a save goes on with it when it lands)
             }
             rememberClosed(tab);
             editorArea.remove(tab);
@@ -4736,7 +4752,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         // One question: quitting, and which terminals that ends (in every window).
         List<String> busy = windowManager != null ? windowManager.busyTerminals() : terminalCoordinator.busyTerminals();
         boolean ok = closes.confirmQuit(busy)
-                && (windowManager != null ? windowManager.confirmCloseAllWindows() : closes.confirmCloseAll());
+                && (windowManager != null
+                        ? windowManager.confirmCloseAllWindows()
+                        : closes.confirmCloseAll(null)); // the quit may wait for a save
         if (ok) {
             Platform.exit();
         }
@@ -4847,7 +4865,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     @FXML
-    private void onFindInFiles() {
+    void onFindInFiles() {
         searchCoordinator.openToggle();
     }
 
@@ -4978,7 +4996,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     @FXML
-    private void onToggleSimpleMode() {
+    void onToggleSimpleMode() {
         chrome.toggleSimpleMode();
     }
 

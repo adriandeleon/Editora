@@ -272,9 +272,16 @@ class KeystrokeCostFxTest {
             runOnFx(() -> {
                 assertTrue(ref.get().isRunnable());
                 ref.get().getArea().replaceText("# gone again\n");
-                invoke(ref.get().runGutter, "recomputeRun"); // load / Save As / a toggle still answer at once
-                assertFalse(ref.get().isRunnable());
+                invoke(ref.get().runGutter, "recomputeRun"); // load / Save As / a toggle: off the FX thread too
+                assertTrue(ref.get().isRunnable(), "nothing scanned in place: the old answer until the scan lands");
             });
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+            boolean[] still = {true};
+            while (still[0] && System.nanoTime() < deadline) {
+                Thread.sleep(10);
+                runOnFx(() -> still[0] = ref.get().isRunnable());
+            }
+            assertFalse(still[0], "the scan's answer lands");
         } finally {
             runOnFx(() -> ref.get().dispose());
         }

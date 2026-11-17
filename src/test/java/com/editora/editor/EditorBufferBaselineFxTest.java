@@ -9,7 +9,11 @@ import javafx.application.Platform;
 
 import com.editora.editops.LineEndings;
 import com.editora.editops.TextFingerprint;
+import com.editora.perf.BlockingSites;
+import com.editora.perf.OffFx;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.testfx.api.FxToolkit;
@@ -20,7 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The saved baseline keeps a length and a fingerprint, not a second copy of the document — and the buffer's
- * modified flag behaves exactly as it did when it held the text: an edit back to the saved text is clean.
+ * modified flag behaves exactly as it did when it held the text: an edit back to the saved text is clean. The
+ * hashes run off the FX thread (PERF-01, Pauta 6.0.1); these tests run that work in place ({@link OffFx}'s seam),
+ * except {@link #anUndoBackToTheSavedTextOfALargeDocumentIsHashedOffTheFxThread}, which runs it as the app does.
  */
 @Tag("fx")
 class EditorBufferBaselineFxTest {
@@ -28,6 +34,71 @@ class EditorBufferBaselineFxTest {
     @BeforeAll
     static void bootToolkit() throws Exception {
         FxToolkit.registerPrimaryStage();
+    }
+
+    @BeforeEach
+    void hashInPlace() {
+        OffFx.runnerForTest((name, task) -> task.run());
+    }
+
+    @AfterEach
+    void restore() {
+        OffFx.runnerForTest(null);
+        BlockingSites.listenForTest(null);
+    }
+
+    /**
+     * A few MiB, edited and settled (so the baseline is sealed), then undone back to the saved text: the FX thread
+     * hashes nothing — the tab stays modified until the hash made off it lands, then is clean — and a different
+     * text of the same length is never shown clean.
+     */
+    @Test
+    void anUndoBackToTheSavedTextOfALargeDocumentIsHashedOffTheFxThread() throws Exception {
+        OffFx.runnerForTest(null); // as the app runs it
+        java.util.List<String> onFx = new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.List<String> offFx = new java.util.concurrent.CopyOnWriteArrayList<>();
+        BlockingSites.listenForTest((site, thread) -> (Platform.isFxApplicationThread() ? onFx : offFx).add(site));
+        String loaded = "0123456789abcdef\n".repeat(200_000); // 3.4 MB
+        EditorBuffer[] holder = new EditorBuffer[1];
+        runOnFx(() -> {
+            EditorBuffer buffer = new EditorBuffer();
+            holder[0] = buffer;
+            buffer.setInitialContent(loaded);
+            buffer.getArea().insertText(0, "x");
+            settle(buffer); // the fingerprint of the held text is worked out off FX, then the text let go
+        });
+        EditorBuffer buffer = holder[0];
+        try {
+            waitFor(() -> !buffer.baselineHoldsText());
+            runOnFx(() -> {
+                buffer.getArea().deleteText(0, 1); // back to the saved text: same length, sealed baseline
+                assertTrue(buffer.isDirty(), "unknown until the hash lands: the cheap check's dirty, never clean");
+            });
+            waitFor(() -> !buffer.isDirty());
+            runOnFx(() -> {
+                buffer.getArea().replaceText(0, 1, "Z"); // same length, different text
+                assertTrue(buffer.isDirty());
+            });
+            Thread.sleep(300);
+            runOnFx(() -> assertTrue(buffer.isDirty(), "a different text of the same length stays modified"));
+            assertEquals(java.util.List.of(), onFx, "nothing hashed on the FX thread");
+            assertTrue(offFx.contains(EditorBuffer.DIRTY_HASH_SITE), "hashed off it: " + offFx);
+        } finally {
+            runOnFx(buffer::dispose);
+        }
+    }
+
+    private static void waitFor(java.util.function.BooleanSupplier onFxCondition) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        while (System.nanoTime() < deadline) {
+            boolean[] met = {false};
+            runOnFx(() -> met[0] = onFxCondition.getAsBoolean());
+            if (met[0]) {
+                return;
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError("timed out");
     }
 
     @Test

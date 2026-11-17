@@ -1170,9 +1170,11 @@ final class EncryptionCoordinator {
     volatile com.editora.io.Trash.@Nullable Bin trash = null;
 
     private void trashOriginal(Path original) {
-        com.editora.io.Trash.Bin bin = trash != null ? trash : com.editora.io.Trash.system();
+        com.editora.io.Trash.Bin chosen = trash;
         background("gpg-trash", () -> {
             try {
+                // Looked for here, off the FX thread, when the warm-up has not found it yet (PERF-01).
+                com.editora.io.Trash.Bin bin = chosen != null ? chosen : com.editora.io.Trash.system();
                 bin.trash(original);
                 Platform.runLater(() -> host.setStatus(tr("encryption.original.trashed", original.getFileName())));
             } catch (IOException e) {

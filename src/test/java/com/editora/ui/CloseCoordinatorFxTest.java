@@ -178,24 +178,24 @@ class CloseCoordinatorFxTest {
             });
 
             CountDownLatch cancel = w.answer(header, tr("dialog.cancel"));
-            assertFalse(FxTestSupport.callOnFx(closes::confirmCloseAll), "Cancel keeps the window open");
+            assertFalse(FxTestSupport.callOnFx(() -> closes.confirmCloseAll()), "Cancel keeps the window open");
             w.async.await(cancel, "the unsaved question");
             assertSame(formTab, FxTestSupport.callOnFx(area::selectedTab), "the tab in question was brought up");
 
             // Discard: the next validation pass finds the same unsaved state already approved and asks no more.
             CountDownLatch discard = w.answer(header, tr("dialog.discard"));
-            assertTrue(FxTestSupport.callOnFx(closes::confirmCloseAll));
+            assertTrue(FxTestSupport.callOnFx(() -> closes.confirmCloseAll()));
             w.async.await(discard, "the unsaved question");
             assertTrue(form.unsaved);
             assertEquals(0, form.saves);
 
             CountDownLatch save = w.answer(header, tr("dialog.close"));
-            assertTrue(FxTestSupport.callOnFx(closes::confirmCloseAll));
+            assertTrue(FxTestSupport.callOnFx(() -> closes.confirmCloseAll()));
             w.async.await(save, "the unsaved question");
             assertFalse(form.unsaved, "saved, so there is nothing left to ask about");
             assertEquals(1, form.saves);
 
-            assertTrue(FxTestSupport.callOnFx(closes::confirmCloseAll), "nothing unsaved: no dialog at all");
+            assertTrue(FxTestSupport.callOnFx(() -> closes.confirmCloseAll()), "nothing unsaved: no dialog at all");
         }
     }
 
@@ -209,11 +209,11 @@ class CloseCoordinatorFxTest {
             String header = tr("dialog.unsaved.header", "draft.txt");
 
             CountDownLatch cancel = w.answer(header, tr("dialog.cancel"));
-            assertFalse(FxTestSupport.callOnFx(closes::confirmCloseAll));
+            assertFalse(FxTestSupport.callOnFx(() -> closes.confirmCloseAll()));
             w.async.await(cancel, "the unsaved question");
 
             CountDownLatch discard = w.answer(header, tr("dialog.discard"));
-            assertTrue(FxTestSupport.callOnFx(closes::confirmCloseAll));
+            assertTrue(FxTestSupport.callOnFx(() -> closes.confirmCloseAll()));
             w.async.await(discard, "the unsaved question");
             assertEquals("saved text\n", Files.readString(file), "Discard wrote nothing");
             assertTrue(FxTestSupport.callOnFx(buffer::isDirty));
@@ -221,7 +221,7 @@ class CloseCoordinatorFxTest {
             // A discard answered once is not a standing permission: the next attempt to close asks again.
             FxTestSupport.runOnFx(() -> buffer.getArea().appendText("!"));
             CountDownLatch again = w.answer(header, tr("dialog.cancel"));
-            assertFalse(FxTestSupport.callOnFx(closes::confirmCloseAll));
+            assertFalse(FxTestSupport.callOnFx(() -> closes.confirmCloseAll()));
             w.async.await(again, "the unsaved question, asked again");
         }
     }

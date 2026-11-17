@@ -63,10 +63,14 @@ class PathKeysOffFxTest {
 
     @Test
     void theFxThreadAnswersFromMemoryAndResolvesBehind() throws Exception {
-        Path real = Files.createDirectories(dir.resolve("real"));
+        // The temp folder's own real path (macOS: /var is /private/var, which an earlier test may have resolved), and
+        // the work on a thread of its own: a test before this one may have left it running in place.
+        com.editora.perf.OffFx.runnerForTest(null);
+        Path base = dir.toRealPath();
+        Path real = Files.createDirectories(base.resolve("real"));
         Path link;
         try {
-            link = Files.createSymbolicLink(dir.resolve("link"), real);
+            link = Files.createSymbolicLink(base.resolve("link"), real);
         } catch (UnsupportedOperationException | java.io.IOException | SecurityException noLinks) {
             org.junit.jupiter.api.Assumptions.abort("no symbolic links here");
             return;

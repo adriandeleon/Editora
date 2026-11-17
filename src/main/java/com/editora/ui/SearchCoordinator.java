@@ -565,86 +565,120 @@ final class SearchCoordinator {
      * Replaces every match of {@code query} with {@code replacement} across {@code files}. Open buffers
      * are edited in-memory (undoable); closed files are rewritten on disk (UTF-8, line endings kept as
      * they live in the text). Asks for confirmation, then re-runs the search to refresh the panel.
+     *
+     * <p>Nothing is searched on the FX thread (PERF-01, Pauta 6.0.1): the replacement is checked off it before the
+     * question, and an open buffer's edits are worked out on the replace worker from a snapshot of its text, then
+     * applied on the FX thread as one undo step only to the version they were found in (worked out again, up to
+     * {@link #OPEN_REPLACE_TRIES} times, when it was typed into meanwhile).
      */
     CompletableFuture<ReplaceResult> replaceInFiles(SearchQuery query, String replacement, List<Path> files) {
         if (query == null || query.text() == null || query.text().isEmpty() || files.isEmpty()) {
             return CompletableFuture.completedFuture(new ReplaceResult(0, 0, List.of(), false));
         }
-        String badReplacement = MultiFileSearch.replacementError(query, replacement);
-        if (badReplacement != null) {
-            // Before any file is touched: every file would answer "nothing replaced", which read as success.
-            host.setError(tr("find.badReplacement", badReplacement));
-            return CompletableFuture.completedFuture(new ReplaceResult(0, 0, List.of(), true));
-        }
-        if (!replaceConfirmation.confirm(files.size())) {
-            return CompletableFuture.completedFuture(new ReplaceResult(0, 0, List.of(), true));
-        }
-        int total = 0;
-        int changedFiles = 0;
+        CompletableFuture<ReplaceResult> completion = new CompletableFuture<>();
+        com.editora.perf.OffFx.then(
+                REPLACEMENT_CHECK_SITE,
+                () -> java.util.Optional.ofNullable(MultiFileSearch.replacementError(query, replacement)),
+                checked -> {
+                    String badReplacement = checked.ok() && checked.value() != null
+                            ? checked.value().orElse(null)
+                            : checked.why();
+                    if (badReplacement != null) {
+                        // Before any file is touched: every file would answer "nothing replaced", which read as
+                        // success.
+                        host.setError(tr("find.badReplacement", badReplacement));
+                        completion.complete(new ReplaceResult(0, 0, List.of(), true));
+                        return;
+                    }
+                    if (!replaceConfirmation.confirm(files.size())) {
+                        completion.complete(new ReplaceResult(0, 0, List.of(), true));
+                        return;
+                    }
+                    startReplace(query, replacement, files, completion);
+                });
+        return completion;
+    }
+
+    /** {@link com.editora.perf.BlockingSites} names of Replace in Files' work, heard on the thread it runs on. */
+    static final String REPLACEMENT_CHECK_SITE = "SearchCoordinator.replacementError";
+
+    static final String OPEN_REPLACE_SITE = "SearchCoordinator.replaceOpenBuffer";
+
+    /** How many times an open buffer's edits are worked out again when it was typed into before they landed. */
+    static final int OPEN_REPLACE_TRIES = 3;
+
+    /** Sorts the files into open buffers (snapshotted here, on the FX thread) and closed files, then queues the job. */
+    private void startReplace(
+            SearchQuery query, String replacement, List<Path> files, CompletableFuture<ReplaceResult> completion) {
         List<Path> failedFiles = new java.util.ArrayList<>();
+        List<OpenSnapshot> open = new java.util.ArrayList<>();
         List<Path> closed = new java.util.ArrayList<>();
         for (Path file : files) {
             try {
                 EditorBuffer buffer = ops.bufferForPath(file);
-                if (buffer != null) {
-                    ClosedReplace result = replaceOpenBuffer(buffer, query, replacement, ops.isBufferLoading(buffer));
-                    total += result.count();
-                    if (result.changed()) {
-                        changedFiles++;
-                    }
-                    if (result.failed()) {
-                        failedFiles.add(file);
-                    }
-                } else {
+                if (buffer == null) {
                     closed.add(file);
+                    continue;
+                }
+                OpenSnapshot snapshot = OpenSnapshot.of(file, buffer, ops.isBufferLoading(buffer));
+                if (snapshot == null) {
+                    failedFiles.add(file);
+                } else {
+                    open.add(snapshot);
                 }
             } catch (RuntimeException e) {
                 failedFiles.add(file);
             }
         }
-        if (closed.isEmpty()) {
-            return CompletableFuture.completedFuture(finishReplace(total, changedFiles, failedFiles));
+        if (open.isEmpty() && closed.isEmpty()) {
+            completion.complete(finishReplace(0, 0, failedFiles));
+            return;
         }
-        CompletableFuture<ReplaceResult> completion = new CompletableFuture<>();
-        int openTotal = total;
-        int openChanged = changedFiles;
-        List<Path> openFailed = List.copyOf(failedFiles);
-        ReplaceJob job = new ReplaceJob(query, replacement, closed, openTotal, openChanged, openFailed, completion);
+        ReplaceJob job = new ReplaceJob(query, replacement, open, closed, failedFiles, completion);
         queuedReplaces.add(job);
         try {
             replaceExecutor.execute(job);
         } catch (RejectedExecutionException rejected) {
             queuedReplaces.remove(job);
-            List<Path> finalFailed = new java.util.ArrayList<>(openFailed);
-            finalFailed.addAll(closed);
-            completeReplace(completion, openTotal, openChanged, finalFailed);
+            completeReplace(completion, 0, 0, job.allFailed());
         }
-        return completion;
+    }
+
+    /**
+     * An open buffer's text as Replace in Files found it on the FX thread: the edits are worked out from it off the
+     * thread and applied only while the buffer is still at {@code version}.
+     */
+    record OpenSnapshot(Path file, EditorBuffer buffer, String text, long version) {
+
+        /** Null when the buffer cannot be replaced in (loading, read-only, a truncated load): reported as failed. */
+        static @Nullable OpenSnapshot of(Path file, EditorBuffer buffer, boolean loading) {
+            if (buffer == null || loading || !buffer.isEditable() || buffer.isTruncatedLoad()) {
+                return null;
+            }
+            return new OpenSnapshot(file, buffer, buffer.getContent(), buffer.docVersion());
+        }
     }
 
     private final class ReplaceJob implements Runnable {
 
         private final SearchQuery query;
         private final String replacement;
+        private final List<OpenSnapshot> open;
         private final List<Path> closed;
-        private final int openTotal;
-        private final int openChanged;
         private final List<Path> openFailed;
         private final CompletableFuture<ReplaceResult> completion;
 
         private ReplaceJob(
                 SearchQuery query,
                 String replacement,
+                List<OpenSnapshot> open,
                 List<Path> closed,
-                int openTotal,
-                int openChanged,
                 List<Path> openFailed,
                 CompletableFuture<ReplaceResult> completion) {
             this.query = query;
             this.replacement = replacement;
+            this.open = List.copyOf(open);
             this.closed = List.copyOf(closed);
-            this.openTotal = openTotal;
-            this.openChanged = openChanged;
             this.openFailed = List.copyOf(openFailed);
             this.completion = completion;
         }
@@ -654,17 +688,96 @@ final class SearchCoordinator {
             if (!queuedReplaces.remove(this)) {
                 return;
             }
-            runClosedReplacements(query, replacement, closed, openTotal, openChanged, openFailed, completion);
+            int openTotal = 0;
+            int openChanged = 0;
+            List<Path> failed = new java.util.ArrayList<>(openFailed);
+            for (OpenSnapshot snapshot : open) {
+                ClosedReplace result = shutdown.get()
+                        ? new ClosedReplace(0, false, true)
+                        : replaceOpenOffFx(snapshot, query, replacement);
+                openTotal += result.count();
+                if (result.changed()) {
+                    openChanged++;
+                }
+                if (result.failed()) {
+                    failed.add(snapshot.file());
+                }
+            }
+            runClosedReplacements(query, replacement, closed, openTotal, openChanged, failed, completion);
+        }
+
+        /** Every file of the job, as failed: what a job that never ran reports. */
+        private List<Path> allFailed() {
+            List<Path> failed = new java.util.ArrayList<>(openFailed);
+            open.forEach(snapshot -> failed.add(snapshot.file()));
+            failed.addAll(closed);
+            return failed;
         }
 
         private void abandon() {
             if (!queuedReplaces.remove(this)) {
                 return;
             }
-            List<Path> failed = new java.util.ArrayList<>(openFailed);
-            failed.addAll(closed);
-            completion.complete(new ReplaceResult(openTotal, openChanged, failed, false));
+            completion.complete(new ReplaceResult(0, 0, allFailed(), false));
         }
+    }
+
+    /**
+     * On the replace worker: works out an open buffer's edits from {@code snapshot}, then applies them on the FX
+     * thread if the buffer is still at that version; if it was typed into meanwhile, takes a new snapshot there and
+     * works them out again, up to {@link #OPEN_REPLACE_TRIES} times, then reports the file as failed.
+     */
+    private static ClosedReplace replaceOpenOffFx(OpenSnapshot snapshot, SearchQuery query, String replacement) {
+        OpenSnapshot current = snapshot;
+        try {
+            for (int tries = OPEN_REPLACE_TRIES; tries > 0 && current != null; tries--) {
+                com.editora.perf.BlockingSites.enter(OPEN_REPLACE_SITE);
+                MultiFileSearch.ReplaceResult worked =
+                        MultiFileSearch.replaceAll(current.text(), query, replacement, MultiFileSearch.UNICODE_CLASSES);
+                OpenSnapshot asked = current;
+                OpenApplied applied = callOnFx(() -> applyOpen(asked, worked));
+                if (applied.result() != null) {
+                    return applied.result();
+                }
+                current = applied.again();
+            }
+        } catch (IOException | RuntimeException e) {
+            // reported as failed below
+        }
+        return new ClosedReplace(0, false, true);
+    }
+
+    /** What applying on the FX thread came to: a result, or a new snapshot to work the edits out again from. */
+    private record OpenApplied(
+            @Nullable ClosedReplace result, @Nullable OpenSnapshot again) {}
+
+    /** On the FX thread: applies {@code worked} to the buffer if it is still at the snapshot's version. */
+    private static OpenApplied applyOpen(OpenSnapshot snapshot, MultiFileSearch.ReplaceResult worked) {
+        EditorBuffer buffer = snapshot.buffer();
+        if (buffer.isDisposed()) {
+            return new OpenApplied(new ClosedReplace(0, false, true), null);
+        }
+        if (buffer.docVersion() != snapshot.version()) {
+            OpenSnapshot again = OpenSnapshot.of(snapshot.file(), buffer, false);
+            return again == null
+                    ? new OpenApplied(new ClosedReplace(0, false, true), null)
+                    : new OpenApplied(null, again);
+        }
+        return new OpenApplied(applyOpenEdits(buffer, worked), null);
+    }
+
+    /** Applies edits worked out off the FX thread to an open buffer, as one undo step. */
+    private static ClosedReplace applyOpenEdits(EditorBuffer buffer, MultiFileSearch.ReplaceResult result) {
+        if (result.count() == 0) {
+            return new ClosedReplace(0, false, false);
+        }
+        // A large-file buffer has no undo: its text goes to Local History first, or the file is left alone
+        // and reported with the ones that failed.
+        if (!NoUndoGuard.allow(buffer, tr("noUndo.op.replaceInFiles"))) {
+            return new ClosedReplace(0, false, true);
+        }
+        buffer.replaceWholeDocument(result.text());
+        return new ClosedReplace(result.count(), true, false);
     }
 
     /**
@@ -720,10 +833,18 @@ final class SearchCoordinator {
 
     private ClosedReplace replaceClosedCandidate(Path file, SearchQuery query, String replacement) {
         try {
-            EditorBuffer newlyOpened = callOnFx(() -> ops.bufferForPath(file));
-            if (newlyOpened != null) {
-                return callOnFx(
-                        () -> replaceOpenBuffer(newlyOpened, query, replacement, ops.isBufferLoading(newlyOpened)));
+            // A file opened since the files were sorted: replaced in its buffer, worked out here (off the FX thread).
+            OpenCheck newlyOpened = callOnFx(() -> {
+                EditorBuffer buffer = ops.bufferForPath(file);
+                return buffer == null
+                        ? new OpenCheck(false, null)
+                        : new OpenCheck(true, OpenSnapshot.of(file, buffer, ops.isBufferLoading(buffer)));
+            });
+            if (newlyOpened.open()) {
+                OpenSnapshot snapshot = newlyOpened.snapshot();
+                return snapshot == null
+                        ? new ClosedReplace(0, false, true)
+                        : replaceOpenOffFx(snapshot, query, replacement);
             }
             try (DocumentWriteSequencer.Ticket ticket = ops.beginDocumentWrite(file)) {
                 var outcome = ticket.runIfCurrent(() -> replaceClosedFile(
@@ -840,23 +961,23 @@ final class SearchCoordinator {
 
     record ClosedReplace(int count, boolean changed, boolean failed) {}
 
+    /** Whether a file is open now, and its snapshot when it can be replaced in. */
+    private record OpenCheck(boolean open, @Nullable OpenSnapshot snapshot) {}
+
+    /**
+     * One open buffer replaced where it is called, the edits worked out in place: the tests' way to drive the
+     * apply half. The command never calls it on the FX thread; it works the edits out on the replace worker.
+     */
     static ClosedReplace replaceOpenBuffer(
             EditorBuffer buffer, SearchQuery query, String replacement, boolean loading) {
-        if (buffer == null || loading || !buffer.isEditable() || buffer.isTruncatedLoad()) {
+        Path file = buffer.getPath();
+        OpenSnapshot snapshot = OpenSnapshot.of(file != null ? file : Path.of(buffer.getTitle()), buffer, loading);
+        if (snapshot == null) {
             return new ClosedReplace(0, false, true);
         }
-        var result =
-                MultiFileSearch.replaceAll(buffer.getContent(), query, replacement, MultiFileSearch.UNICODE_CLASSES);
-        if (result.count() == 0) {
-            return new ClosedReplace(0, false, false);
-        }
-        // A large-file buffer has no undo: its text goes to Local History first, or the file is left alone
-        // and reported with the ones that failed.
-        if (!NoUndoGuard.allow(buffer, tr("noUndo.op.replaceInFiles"))) {
-            return new ClosedReplace(0, false, true);
-        }
-        buffer.replaceWholeDocument(result.text());
-        return new ClosedReplace(result.count(), true, false);
+        return applyOpenEdits(
+                buffer,
+                MultiFileSearch.replaceAll(snapshot.text(), query, replacement, MultiFileSearch.UNICODE_CLASSES));
     }
 
     static ClosedReplace replaceClosedFile(

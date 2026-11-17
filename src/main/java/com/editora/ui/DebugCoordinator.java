@@ -15,11 +15,8 @@ import java.util.function.Predicate;
 
 import javafx.application.Platform;
 import javafx.scene.Node;
-import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
-import javafx.scene.layout.GridPane;
-import javafx.scene.layout.Priority;
 
 import com.editora.config.Breakpoint;
 import com.editora.config.BreakpointStore;
@@ -109,8 +106,15 @@ final class DebugCoordinator {
         /** Status-bar indeterminate loading bar (a session is starting). */
         void setStatusDebugLoading(boolean loading);
 
-        /** Saves {@code buffer} (dirty → write, untitled → Save-As); {@code false} if cancelled/failed. */
-        boolean saveBuffer(EditorBuffer buffer);
+        /** A test stand-in's save (dirty → write, untitled → Save-As), answered at once; the app uses saveThen. */
+        default boolean saveBuffer(EditorBuffer buffer) {
+            return false;
+        }
+
+        /** {@link #saveBuffer} without waiting: the write runs off the FX thread, {@code then} hears how it went. */
+        default void saveThen(EditorBuffer buffer, Consumer<Boolean> then) {
+            then.accept(saveBuffer(buffer));
+        }
 
         /** The remembered program-arguments string for {@code path} (shared with the Run feature). */
         String programArgs(@Nullable Path path);
@@ -3973,15 +3977,20 @@ final class DebugCoordinator {
         // saved and built again before it is debugged.
         Runnable again = () -> resolveAndRun(launchJson, workspace, name, raw, answers, b);
         boolean launch = !"attach".equals(body.get("request"));
-        Runnable start = () -> {
-            saveBuffersUnder(workspace, null); // the adapter (and the task) read the program from disk
+        Runnable[] start = new Runnable[1];
+        start[0] = () -> {
+            // The adapter reads the program from disk: edits are saved first (off the FX thread, then this again).
+            DebugSession session = s(); // the saves answer later: then again as this session
+            if (!savedOrThen(buffersUnder(workspace, null), () -> inSession(session, start[0]))) {
+                return;
+            }
             startRoute(workspace, name, body, b);
             if (launch) {
                 s().relaunch = again;
             }
         };
         if (!(body.get("preLaunchTask") instanceof String task) || task.isBlank()) {
-            start.run();
+            start[0].run();
             return;
         }
         preLaunchTask(launchJson, workspace, task, b, answers, argv -> {
@@ -3996,7 +4005,7 @@ final class DebugCoordinator {
                             workspace,
                             java.util.Map.of(),
                             beforeLaunchConsole(),
-                            () -> later(start));
+                            () -> later(start[0]));
         });
     }
 
@@ -4013,8 +4022,14 @@ final class DebugCoordinator {
                     // A tasks.json command is the folder's own code: it runs only in a folder the user trusts, as a
                     // build does.
                     if (ops.trustBuild(workspace, List.of(tr("dialog.trust.item.preLaunchTask", label)))) {
-                        saveBuffersUnder(workspace, null); // the task builds what is on disk
-                        then.accept(argv);
+                        Runnable[] run = new Runnable[1];
+                        DebugSession session = s();
+                        run[0] = () -> { // the task builds what is on disk: edits are saved first
+                            if (savedOrThen(buffersUnder(workspace, null), () -> inSession(session, run[0]))) {
+                                then.accept(argv);
+                            }
+                        };
+                        run[0].run();
                     }
                 }));
     }
@@ -4583,15 +4598,22 @@ final class DebugCoordinator {
         if (!clearToStart(b, true)) {
             return;
         }
-        s().startCleared = true; // Debug Test's own check (clearToDebugTest) has been answered here
-        try {
-            if (debugsTest(b)) {
-                return;
-            }
-        } finally {
-            s().startCleared = false;
+        if (b == null || testDebugger == null || !"java".equals(b.getLanguage())) {
+            launchBuffer(b);
+            return;
         }
-        launchBuffer(b);
+        // The test lines are the Run scan's and the main class a parse: both made off the FX thread (PERF-01).
+        b.whenRunScanned(() -> {
+            String text = b.getContent();
+            DebugPlanning.offFx("debug-own-main", () -> DebugPlanning.ownMainClass(text), a -> {
+                s().startCleared = true; // Debug Test's own check (clearToDebugTest) has been answered here
+                boolean test = debugsTest(b, a.value());
+                s().startCleared = false;
+                if (!test) {
+                    launchBuffer(b);
+                }
+            });
+        });
     }
 
     /** Debug File (the editor menu, the Debug File handler): {@code b}, after the same check as F5's. */
@@ -4714,21 +4736,17 @@ final class DebugCoordinator {
     }
 
     /** Debug ▶ in a JUnit test file debugs the test at the caret, or its class (review A102); true when it did. */
-    private boolean debugsTest(@Nullable EditorBuffer b) {
-        if (b == null || testDebugger == null || !"java".equals(b.getLanguage())) {
-            return false;
-        }
-        b.settleRunScan(); // the test lines come from the load's off-FX scan
+    private boolean debugsTest(EditorBuffer b, @Nullable String ownMain) {
         DebugTestRoute.Route route = DebugTestRoute.route(
                 true,
                 b.isCompactSource(),
                 b.testClassTarget() != null,
-                ownMainClass(b.getContent()) != null,
+                ownMain != null,
                 b.testTargetAtCaret(false) != null);
         if (route == DebugTestRoute.Route.LAUNCH) {
             return false;
         }
-        testDebugger.accept(route == DebugTestRoute.Route.TEST_CLASS);
+        java.util.Objects.requireNonNull(testDebugger).accept(route == DebugTestRoute.Route.TEST_CLASS);
         return true;
     }
 
@@ -4844,7 +4862,9 @@ final class DebugCoordinator {
      * disk), then starts {@code launch} for {@code path}.
      */
     private void startGo(Path path, @Nullable Path built, java.util.Map<String, Object> launch) {
-        saveBuffersUnder(built, "go");
+        if (!savedOrThen(buffersUnder(built, "go"), () -> startGo(path, built, launch))) {
+            return;
+        }
         withClosedBreakpoints(() -> dap().startExternal(path, com.editora.dap.DebugLanguages.GO, launch));
     }
 
@@ -4938,7 +4958,9 @@ final class DebugCoordinator {
             com.editora.dap.RustLaunch.Plan plan,
             List<String> args,
             LaunchExtras extras) {
-        saveBuffersUnder(root, "rust");
+        if (!savedOrThen(buffersUnder(root, "rust"), () -> startRust(path, root, cargo, plan, args, extras))) {
+            return;
+        }
         if (beforeLaunchActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
@@ -5057,8 +5079,11 @@ final class DebugCoordinator {
 
     /** Saves the project's C and C++ files, runs {@code plan}'s build steps in the Debug console, then launches. */
     private void startNative(Path path, com.editora.dap.NativeBuild.Plan plan, List<String> args, LaunchExtras extras) {
-        saveBuffersUnder(plan.root(), "c");
-        saveBuffersUnder(plan.root(), "cpp");
+        List<EditorBuffer> sources = new ArrayList<>(buffersUnder(plan.root(), "c"));
+        sources.addAll(buffersUnder(plan.root(), "cpp"));
+        if (!savedOrThen(sources, () -> startNative(path, plan, args, extras))) {
+            return;
+        }
         if (beforeLaunchActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
@@ -5172,7 +5197,9 @@ final class DebugCoordinator {
 
     /** Saves the C# files under the project, builds it in the Debug console, then launches its assembly. */
     private void startCsharp(Path path, com.editora.dap.DotnetLaunch.Plan plan, List<String> args) {
-        saveBuffersUnder(plan.root(), "csharp");
+        if (!savedOrThen(buffersUnder(plan.root(), "csharp"), () -> startCsharp(path, plan, args))) {
+            return;
+        }
         if (beforeLaunchActive() || s().pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
@@ -5237,8 +5264,9 @@ final class DebugCoordinator {
         start.run();
     }
 
-    /** Saves the edited buffers of {@code language} (null: of any) under {@code root}: a build reads them from disk. */
-    void saveBuffersUnder(@Nullable Path root, @Nullable String language) {
+    /** The edited buffers of {@code language} (null: of any) under {@code root}: a build reads them from disk. */
+    List<EditorBuffer> buffersUnder(@Nullable Path root, @Nullable String language) {
+        List<EditorBuffer> out = new ArrayList<>();
         host.forEachBuffer(other -> {
             Path p = other.getPath();
             if (other.isDirty()
@@ -5246,9 +5274,15 @@ final class DebugCoordinator {
                     && (language == null || language.equals(other.getLanguage()))
                     && root != null
                     && p.toAbsolutePath().startsWith(root)) {
-                ops.saveBuffer(other);
+                out.add(other);
             }
         });
+        return out;
+    }
+
+    /** {@link SaveChain#savedOrThen} through this window's save path: no nested wait (PERF-01, Pauta 6.0.1). */
+    boolean savedOrThen(List<EditorBuffer> buffers, Runnable again) {
+        return SaveChain.savedOrThen(buffers, ops::saveThen, again);
     }
 
     /** The 0-based document line of {@code b}'s caret. */
@@ -5331,8 +5365,11 @@ final class DebugCoordinator {
             debugHtmlPage(b); // its scripts run in a browser
             return;
         }
-        if (b == null || b.getPath() == null && !ops.saveBuffer(b)) {
-            host.setStatus(tr("status.debug.saveFirst"));
+        if (b == null || b.getPath() == null) { // an untitled file is saved first, off the FX thread (PERF-01)
+            savedOrThen(b == null ? List.of() : List.of(b), () -> launchBuffer(b, nodeArgs));
+            if (b == null) {
+                host.setStatus(tr("status.debug.saveFirst"));
+            }
             return;
         }
         String language = DapServerRegistry.adapterLanguage(b.getLanguage()); // a .ts file: JavaScript
@@ -5340,13 +5377,15 @@ final class DebugCoordinator {
             host.setStatus(unavailableMessage(language, b.getPath()));
             return;
         }
-        if ((b.isDirty() || b.getPath() == null) && !ops.saveBuffer(b)) {
+        if (b.isDirty() || b.getPath() == null) { // saved off the FX thread, then launched (PERF-01, Pauta 6.0.1)
+            ops.saveThen(b, saved -> {
+                if (saved && b.getPath() != null && !b.isDirty()) {
+                    launchBuffer(b, nodeArgs);
+                }
+            });
             return;
         }
-        Path path = b.getPath();
-        if (path == null) {
-            return; // saved just above, so it has one
-        }
+        Path path = java.util.Objects.requireNonNull(b.getPath()); // checked above
         String text = b.getContent();
         String settingsJdk = host.settings().getMavenJdkHome();
         // What the launch reads from the disk is looked at off the FX thread first (PERF-01): the trust gate's
@@ -5360,6 +5399,10 @@ final class DebugCoordinator {
 
     private void launchBufferPlanned(
             EditorBuffer b, Path path, String language, List<String> nodeArgs, DebugPlanning.FileRead read) {
+        if (b.runScanPending()) { // compact-source detection is the Run scan, made off FX: decide from its result
+            b.whenRunScanned(() -> launchBufferPlanned(b, path, language, nodeArgs, read));
+            return;
+        }
         // A Clojure file of a Leiningen, deps.edn or bb.edn project, a file of a Scala CLI project: its tool loads
         // the project, not just the file — the workspace-trust gate first, as Run asks it, so "no" starts nothing.
         // The gate's facts and a Java file's project are looked at off the FX thread first when not known (PERF-01).
@@ -5370,7 +5413,6 @@ final class DebugCoordinator {
                 || !trusted(read.gate())) {
             return;
         }
-        b.settleRunScan(); // compact-source detection is the load's off-FX scan; decide from its result
         Integer shebangSource = b.getShebangJavaSource();
         if ("java".equals(language) && b.isCompactSource() && shebangSource != null && shebangSource < 25) {
             host.setStatus(tr("status.debug.needSource25", shebangSource));
@@ -5433,13 +5475,16 @@ final class DebugCoordinator {
         boolean compactSource = java && b.isCompactSource();
         // A plain-folder project window: its program runs in the project root, like Run's (review A16).
         Path project = java ? JavaLaunchPrep.projectOf(path, projectRoot, ops.projectRoot()) : null;
-        if (java && !saveJavaBuffers(path, project, false)) { // the launched file was saved above
-            return;
+        if (java
+                && !savedOrThen(
+                        javaBuffers(path, project, false),
+                        () -> launchBufferPlanned(b, path, language, nodeArgs, read))) {
+            return; // the launched file was saved above; the others of the project first, off the FX thread
         }
         if (projectRoot != null && !compactSource) {
             // A saved configuration for this class is how the project runs it — its before-launch build,
             // arguments, environment, working directory — exactly as Run ▶ uses it (review D1).
-            String ownMain = ownMainClass(b.getContent());
+            String ownMain = read.ownMain(); // parsed with the plan, off the FX thread (PERF-01)
             RunConfiguration configured = ownMain == null
                     ? null
                     : com.editora.run.JavaLaunchPlan.configurationFor(ownMain, ops.runConfigurations());
@@ -5589,19 +5634,12 @@ final class DebugCoordinator {
         updateDebugAvailability();
     }
 
-    /** The fully-qualified name of the first {@code main} in {@code source}, or null. */
-    private static @Nullable String ownMainClass(String source) {
-        List<com.editora.run.MainMethodScanner.MainMethod> mains =
-                com.editora.run.MainMethodScanner.scan(source == null ? "" : source);
-        return mains.isEmpty() ? null : mains.get(0).fqn();
-    }
-
     /**
-     * Saves every unsaved Java file of {@code project} (the launched file's folder tree without one) before a
-     * Java launch: the program is compiled from what is on disk, and a breakpoint in an unsaved file would sit
-     * on lines the program does not have (review B3). False when a save failed or was cancelled.
+     * Every unsaved Java file of {@code project} (the launched file's folder tree without one), saved before a Java
+     * launch: the program is compiled from what is on disk, and a breakpoint in an unsaved file would sit on lines
+     * the program does not have (review B3).
      */
-    private boolean saveJavaBuffers(Path launched, @Nullable Path project, boolean includeLaunched) {
+    private List<EditorBuffer> javaBuffers(Path launched, @Nullable Path project, boolean includeLaunched) {
         List<EditorBuffer> dirty = new ArrayList<>();
         host.forEachBuffer(buf -> {
             if (buf.isDirty()
@@ -5610,12 +5648,7 @@ final class DebugCoordinator {
                 dirty.add(buf);
             }
         });
-        for (EditorBuffer buf : dirty) {
-            if (!ops.saveBuffer(buf)) {
-                return false;
-            }
-        }
-        return true;
+        return dirty;
     }
 
     /**
@@ -5845,7 +5878,8 @@ final class DebugCoordinator {
             return;
         }
         EditorBuffer open = ops.bufferForPath(anchor);
-        if (open != null && open.isDirty() && !ops.saveBuffer(open)) {
+        if (open != null
+                && !savedOrThen(List.of(open), () -> debugPythonTests(anchor, cwd, pytestIds, unittestIds, label))) {
             return;
         }
         List<String> fallback = unittestIds == null ? List.of() : unittestIds;
@@ -6036,7 +6070,7 @@ final class DebugCoordinator {
                 () -> debugJavaConfig(cfg, routing, read))) {
             return;
         }
-        if (!saveJavaBuffers(routing, root, true)) {
+        if (!savedOrThen(javaBuffers(routing, root, true), () -> debugJavaConfig(cfg, routing, read))) {
             return; // every unsaved Java file of the project is written first (review B3)
         }
         com.editora.run.JavaLaunchPlan plan = planned.plan();
@@ -6494,7 +6528,7 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.noProject"));
             return;
         }
-        if (!saveJavaBuffers(routing, root, true)) {
+        if (!savedOrThen(javaBuffers(routing, root, true), () -> startMainClassDebug(b, targetFqn))) {
             return;
         }
         boolean plainFolder = buildRoot == null;
@@ -7323,8 +7357,8 @@ final class DebugCoordinator {
             host.setStatus(unavailableMessage("javascript", null));
             return;
         }
-        if (b.getPath() == null && !ops.saveBuffer(b)) {
-            host.setStatus(tr("status.debug.saveFirst"));
+        if (b.getPath() == null) { // saved first, off the FX thread (PERF-01)
+            savedOrThen(List.of(b), () -> debugHtmlPage(b));
             return;
         }
         Path file = b.getPath();
@@ -7875,183 +7909,15 @@ final class DebugCoordinator {
         if (!breakpointAllowed(b, line, this::editBreakpointAtCaret)) {
             return;
         }
-        var mgr = b.getBreakpointManager();
-        // A line without a breakpoint gets one only when the form is accepted: creating it up front left it
-        // behind — saved, and sent to a live session — when the form was cancelled.
-        Breakpoint existing = mgr.get(line);
-        boolean existed = existing != null;
-        Breakpoint bp = existing != null
-                ? existing
-                : Breakpoint.plain(
-                        line, b.getArea().getParagraph(line).getText().strip());
-
-        TextField condition = new TextField(bp.condition());
-        condition.setPrefColumnCount(32);
-        TextField logMessage = new TextField(bp.logMessage());
-        logMessage.setPrefColumnCount(32);
-        // Completion in the stopped frame (follow-up 5): the whole condition, and the {expression} of a log message.
-        DebugCompletion.attach(condition, completionSource(false));
-        DebugCompletion.attach(logMessage, completionSource(true));
-        TextField hitCondition = new TextField(bp.hitCondition());
-        hitCondition.setPrefColumnCount(32);
-        hitCondition.setPromptText(BreakpointFormText.hitConditionPrompt(b.getLanguage()));
-        CheckBox enabled = new CheckBox(tr("dialog.debug.breakpointEnabled"));
-        enabled.setSelected(bp.enabled());
-        CheckBox temporary = new CheckBox(tr("dialog.debug.breakpointTemporary"));
-        temporary.setSelected(bp.temporary());
-        CheckBox recording = new CheckBox(tr("dialog.debug.breakpointRecording"));
-        recording.setSelected(bp.recording());
-        // Wait for: another breakpoint this one waits for in each session (a triggered breakpoint).
-        javafx.scene.control.ComboBox<BreakpointsPicker.Entry> waitFor = waitForChoice(b, line, bp);
-        javafx.scene.control.ComboBox<String> group = groups.groupField(bp.group());
-        // Filters (IntelliJ's): where a hit counts — a thread, a caller, a marked object. Checked by Editora.
-        TextField threadFilter = new TextField(bp.filters().thread());
-        threadFilter.setPromptText(tr("dialog.debug.threadFilterPrompt"));
-        TextField callerFilter = new TextField(bp.filters().caller());
-        callerFilter.setPromptText(tr("dialog.debug.callerFilterPrompt"));
-        javafx.scene.control.ComboBox<String> instanceFilter = new javafx.scene.control.ComboBox<>();
-        instanceFilter.setEditable(true);
-        instanceFilter.getItems().setAll(s().marks.labels());
-        instanceFilter.setValue(bp.filters().instance());
-        instanceFilter.setPromptText(tr("dialog.debug.instanceFilterPrompt"));
-        instanceFilter.setMaxWidth(Double.MAX_VALUE);
-        for (javafx.scene.control.Control c : List.of(threadFilter, callerFilter, instanceFilter)) {
-            javafx.scene.control.Tooltip hint = com.editora.editor.ControlNames.tooltip(tr("dialog.debug.filtersHint"));
-            hint.setWrapText(true);
-            hint.setMaxWidth(UiZoom.px(360));
-            c.setTooltip(hint);
-        }
-
-        GridPane grid = Dialogs.labelColumn(new GridPane());
-        UiZoom.gaps(grid, 8, 8);
-        // The line the breakpoint is on: the card covers the editor, often that very line (review 2 C106).
-        Label lineText = new Label(
-                BreakpointFormText.lineText(b.getArea().getParagraph(line).getText(), 64));
-        lineText.getStyleClass().add("debug-breakpoint-line");
-        grid.add(lineText, 0, 0, 2, 1);
-        grid.add(new Label(tr("dialog.debug.conditionLabel")), 0, 1);
-        grid.add(condition, 1, 1);
-        grid.add(new Label(tr("dialog.debug.logMessageLabel")), 0, 2);
-        grid.add(logMessage, 1, 2);
-        grid.add(new Label(tr("dialog.debug.hitConditionLabel")), 0, 3);
-        grid.add(hitCondition, 1, 3);
-        grid.add(new Label(tr("dialog.debug.triggeredByLabel")), 0, 4);
-        grid.add(waitFor, 1, 4);
-        grid.add(new Label(tr("dialog.debug.groupLabel")), 0, 5);
-        grid.add(group, 1, 5);
-        // The filters show on a toggle beside the switches, on when the breakpoint has one: most breakpoints have
-        // none, and the form keeps its height (DebugReviewCWindowFxTest).
-        GridPane filterGrid = Dialogs.labelColumn(new GridPane());
-        UiZoom.gaps(filterGrid, 8, 8);
-        filterGrid.add(new Label(tr("dialog.debug.threadFilterLabel")), 0, 0);
-        filterGrid.add(threadFilter, 1, 0);
-        filterGrid.add(new Label(tr("dialog.debug.callerFilterLabel")), 0, 1);
-        filterGrid.add(callerFilter, 1, 1);
-        filterGrid.add(new Label(tr("dialog.debug.instanceFilterLabel")), 0, 2);
-        filterGrid.add(instanceFilter, 1, 2);
-        GridPane.setHgrow(threadFilter, Priority.ALWAYS);
-        GridPane.setHgrow(callerFilter, Priority.ALWAYS);
-        GridPane.setHgrow(instanceFilter, Priority.ALWAYS);
-        // A link, not a button: as tall as the switches beside it, so the form keeps its height.
-        javafx.scene.control.Hyperlink filtersToggle = new javafx.scene.control.Hyperlink();
-        filtersToggle.getStyleClass().add("debug-breakpoint-filters-toggle");
-        filterGrid.setVisible(!bp.filters().none());
-        filterGrid.managedProperty().bind(filterGrid.visibleProperty());
-        Runnable filtersText = () ->
-                filtersToggle.setText(tr("dialog.debug.filters") + (filterGrid.isVisible() ? " \u25BE" : " \u25B8"));
-        filtersText.run();
-        filtersToggle.setOnAction(e -> {
-            filterGrid.setVisible(!filterGrid.isVisible());
-            filtersToggle.setVisited(false);
-            filtersText.run();
-        });
-        // In the switches' own cell: hidden, the filters add no row (and no row gap) to the form.
-        javafx.scene.layout.VBox switches = UiZoom.spacing(
-                new javafx.scene.layout.VBox(
-                        UiZoom.spacing(new javafx.scene.layout.HBox(enabled, temporary, recording, filtersToggle), 16),
-                        filterGrid),
-                8);
-        grid.add(switches, 1, 6);
-        grid.add(note(tr("dialog.debug.logMessageHint")), 1, 7);
-        GridPane.setHgrow(condition, Priority.ALWAYS);
-        GridPane.setHgrow(logMessage, Priority.ALWAYS);
-
-        OverlayInput.show(
+        BreakpointEditForm.show(
                 host.overlayHost(),
-                BreakpointFormText.title(b.getPath(), line),
-                grid,
-                condition,
-                tr("dialog.ok"),
-                null,
-                () -> {
-                    if (!existed && !mgr.isBreakpoint(line)) {
-                        b.toggleBreakpoint(line);
-                    }
-                    mgr.setCondition(line, condition.getText().trim());
-                    mgr.setLogMessage(line, logMessage.getText().trim());
-                    mgr.setHitCondition(line, hitCondition.getText().trim());
-                    mgr.setEnabled(line, enabled.isSelected());
-                    mgr.setTemporary(line, temporary.isSelected());
-                    mgr.setRecording(line, recording.isSelected());
-                    mgr.setGroup(line, BreakpointGroups.groupIn(group));
-                    String instance = instanceFilter.getEditor() == null
-                            ? instanceFilter.getValue()
-                            : instanceFilter.getEditor().getText();
-                    mgr.setFilters(
-                            line,
-                            new com.editora.config.StopFilters(
-                                    threadFilter.getText(), callerFilter.getText(), instance));
-                    BreakpointsPicker.Entry trigger = waitFor.getValue();
-                    if (trigger != null && trigger.line() < 0) {
-                        trigger = null; // "no other breakpoint"
-                    }
-                    Breakpoint now = mgr.get(line);
-                    String was = now == null ? "" : now.triggeredBy();
-                    if (now != null
-                            && !(trigger == null
-                                    ? was.isEmpty()
-                                    : was.equals(trigger.breakpoint().id()))) {
-                        triggered.link(b, line, trigger);
-                    }
-                },
-                null,
-                false);
-    }
-
-    /**
-     * The edit form's Wait for choice: no other breakpoint (a row with line -1), then each breakpoint the one on
-     * {@code line} of {@code b} ({@code bp}) can wait for, with the one it waits for chosen.
-     */
-    private javafx.scene.control.ComboBox<BreakpointsPicker.Entry> waitForChoice(
-            EditorBuffer b, int line, Breakpoint bp) {
-        Path file = b.getPath();
-        List<BreakpointsPicker.Entry> all = triggered.entries();
-        List<BreakpointsPicker.Entry> choices = file == null
-                ? List.of()
-                : TriggeredBreakpoints.choices(
-                        key(file), line + b.getBreakpointManager().regionFirstLine(), bp.id(), all);
-        BreakpointsPicker.Entry none = new BreakpointsPicker.Entry(Path.of(""), "", -1, bp, null);
-        javafx.scene.control.ComboBox<BreakpointsPicker.Entry> combo = new javafx.scene.control.ComboBox<>();
-        combo.getItems().add(none);
-        combo.getItems().addAll(choices);
-        combo.setConverter(new javafx.util.StringConverter<>() {
-            @Override
-            public String toString(BreakpointsPicker.@Nullable Entry e) {
-                return e == null || e.line() < 0 ? tr("dialog.debug.triggeredByNone") : BreakpointsPicker.label(e);
-            }
-
-            @Override
-            public BreakpointsPicker.@Nullable Entry fromString(String text) {
-                return null; // not editable
-            }
-        });
-        combo.setValue(choices.stream()
-                .filter(e -> bp.isTriggered()
-                        && bp.triggeredBy().equals(e.breakpoint().id()))
-                .findFirst()
-                .orElse(none));
-        combo.setMaxWidth(Double.MAX_VALUE);
-        return combo;
+                b,
+                line,
+                completionSource(false),
+                completionSource(true),
+                groups,
+                triggered,
+                s().marks.labels());
     }
 
     /**
@@ -8135,60 +8001,7 @@ final class DebugCoordinator {
         if (!breakpointAllowed(b, line, () -> addLogpoint(b, line))) {
             return;
         }
-        var mgr = b.getBreakpointManager();
-        Breakpoint existing = mgr.get(line);
-        TextField message = new TextField(existing == null ? "" : existing.logMessage());
-        message.setPrefColumnCount(32);
-        message.setPromptText(tr("dialog.debug.logpointPrompt"));
-        DebugCompletion.attach(message, completionSource(true)); // the {expression}s, in the stopped frame
-        Label lineText = new Label(
-                BreakpointFormText.lineText(b.getArea().getParagraph(line).getText(), 64));
-        lineText.getStyleClass().add("debug-breakpoint-line");
-        GridPane grid = Dialogs.labelColumn(new GridPane());
-        UiZoom.gaps(grid, 8, 8);
-        grid.add(lineText, 0, 0, 2, 1);
-        grid.add(new Label(tr("dialog.debug.logMessageLabel")), 0, 1);
-        grid.add(message, 1, 1);
-        grid.add(note(tr("dialog.debug.logpointHint")), 1, 2);
-        GridPane.setHgrow(message, Priority.ALWAYS);
-        // Nothing to log is not a logpoint: OK waits for a message rather than leaving a breakpoint that stops.
-        var hasMessage = javafx.beans.binding.Bindings.createBooleanBinding(
-                () -> !message.getText().isBlank(), message.textProperty());
-        OverlayInput.show(
-                host.overlayHost(),
-                BreakpointFormText.logpointTitle(b.getPath(), line),
-                grid,
-                message,
-                tr("dialog.ok"),
-                hasMessage,
-                () -> {
-                    String text = message.getText().trim();
-                    if (text.isEmpty()) {
-                        return;
-                    }
-                    if (!mgr.isBreakpoint(line)) {
-                        b.toggleBreakpoint(line);
-                    }
-                    mgr.setLogMessage(line, text);
-                    b.refreshGutterLine(line);
-                    host.setStatus(tr("status.debug.logpointAdded", line + 1));
-                },
-                null,
-                false);
-    }
-
-    /**
-     * A small muted hint label under a form field, wrapped at a fixed width. Left at its own preferred width a
-     * wrapping label asks for its whole text on one line, and the overlay card hugs its content, so the hint
-     * stretched the form across the window and squeezed the field labels to an ellipsis. (A width bound to the
-     * field's instead changes mid-layout and leaves the card at a stale height.)
-     */
-    private static Label note(String text) {
-        Label l = new Label(text);
-        l.getStyleClass().add("settings-note");
-        l.setWrapText(true);
-        UiZoom.prefWidth(l, 420);
-        return l;
+        BreakpointEditForm.showLogpoint(host.overlayHost(), b, line, completionSource(true), host::setStatus);
     }
 
     /**
@@ -9705,8 +9518,9 @@ final class DebugCoordinator {
      */
     void debugMainClassAtCaret() {
         EditorBuffer b = host.activeBuffer();
-        if (b != null) {
-            b.settleRunScan(); // the load's scan runs off FX; the answer is needed now
+        if (b != null && b.runScanPending()) { // the load's scan runs off FX: decide once it has landed
+            b.whenRunScanned(this::debugMainClassAtCaret);
+            return;
         }
         var main = b == null ? null : b.mainTargetAtCaret();
         if (main == null) {

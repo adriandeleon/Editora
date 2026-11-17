@@ -422,6 +422,8 @@ class RunConfigurationCommandsFxTest {
             dap.shutdown();
         });
         lspManager.close(); // close, not shutdownAll: it also stops the folder watchers (inotify instances)
+        // Saves reach the disk on the config writer (PERF-01): let the queued ones land before the temp folder goes.
+        config.shared().awaitWrites();
     }
 
     // --- harness --------------------------------------------------------------------------------------

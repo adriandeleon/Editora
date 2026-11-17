@@ -977,11 +977,15 @@ public class WindowManager {
     }
 
     /**
-     * The bytes of {@code main.fxml}, read once with the first window (the rule allows reading what the first
-     * window is built from) and kept: every later window parses the kept copy instead of reading the bundled
-     * resource again on the FX thread (PERF-01, Pauta 6.0.1).
+     * The bytes of {@code main.fxml}, read with the first window (the rule allows reading what the first window is
+     * built from). Every later window is built by {@link MainView}, the same frame in code, so neither reads nor
+     * parses it on the FX thread (PERF-01, Pauta 6.0.1).
      */
     private static byte @Nullable [] mainFxmlBytes;
+
+    /** Whether this process has built a window from {@code main.fxml} yet: only the first is. */
+    private static final java.util.concurrent.atomic.AtomicBoolean FIRST_FRAME_BUILT =
+            new java.util.concurrent.atomic.AtomicBoolean();
 
     private static byte[] mainFxml() throws java.io.IOException {
         byte[] kept = mainFxmlBytes;
@@ -1004,19 +1008,14 @@ public class WindowManager {
 
     /**
      * Reads, once and on a thread of its own, the bundled resources a later window or dialog would otherwise read
-     * on the FX thread (PERF-01, Pauta 6.0.1): {@code main.fxml} for the windows after the first and the Settings
-     * window's table of controls, New Maven Project's archetype catalog.
+     * on the FX thread (PERF-01, Pauta 6.0.1): the Settings window's table of controls, New Maven Project's archetype
+     * catalog.
      */
     private static void warmBundledLater() {
         if (!BUNDLED_WARMED.compareAndSet(false, true)) {
             return;
         }
         Thread.ofVirtual().name("bundled-warm").start(() -> {
-            try {
-                mainFxml();
-            } catch (java.io.IOException | RuntimeException e) {
-                // the first window reads it itself and reports the problem
-            }
             try {
                 SettingsModified.warm();
             } catch (RuntimeException | LinkageError e) {
@@ -1618,7 +1617,8 @@ public class WindowManager {
                 h.stage().requestFocus();
                 CloseCoordinator.ApprovalState approval =
                         approvals.computeIfAbsent(h.controller(), c -> new CloseCoordinator.ApprovalState());
-                CloseCoordinator.Sweep sweep = h.controller().closes.confirmSweep(approval);
+                // The quit: a Save picked here may be waited for (PERF-01 leaves the last save to the quit).
+                CloseCoordinator.Sweep sweep = h.controller().closes.confirmSweep(approval, null);
                 if (!sweep.allowed()) {
                     return false; // cancelled — the app keeps running and nothing was disposed
                 }
@@ -2062,13 +2062,21 @@ public class WindowManager {
                 config.setWorkspaceStateFile(config.getWorkspaceStateFile()); // load this window's session
             }
 
-            FXMLLoader loader = new FXMLLoader(WindowManager.class.getResource("main.fxml"));
-            // Set the classloader explicitly: FXMLLoader otherwise falls back to the FX thread's context
-            // classloader, which is non-null at launch but can become null later — so building a window at
-            // runtime (every project window past the first) would fail with a null-classloader NPE.
-            loader.setClassLoader(WindowManager.class.getClassLoader());
-            BorderPane root = loader.load(new java.io.ByteArrayInputStream(mainFxml()));
-            MainController controller = loader.getController();
+            // The first window is built from main.fxml, which start-up may read; every later window from MainView,
+            // its copy in code, so no window after the first parses XML on the FX thread (PERF-01, Pauta 6.0.1).
+            MainController controller;
+            BorderPane root;
+            if (FIRST_FRAME_BUILT.compareAndSet(false, true)) {
+                FXMLLoader loader = new FXMLLoader(WindowManager.class.getResource("main.fxml"));
+                // Set the classloader explicitly: FXMLLoader otherwise falls back to the FX thread's context
+                // classloader, which is non-null at launch but can become null later.
+                loader.setClassLoader(WindowManager.class.getClassLoader());
+                root = loader.load(new java.io.ByteArrayInputStream(mainFxml()));
+                controller = loader.getController();
+            } else {
+                controller = new MainController();
+                root = MainView.build(controller);
+            }
             com.editora.perf.Startup.mark(com.editora.perf.Startup.FXML_LOADED);
             controller.setPluginManager(pluginManager); // before init: applyPlugins() runs inside init
             controller.init(stage, config, registry, keymap);

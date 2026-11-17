@@ -1,5 +1,6 @@
 package com.editora.perf;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -12,13 +13,13 @@ import org.jspecify.annotations.Nullable;
 /**
  * The last answer a look at the disk gave, by key: a look made off the FX thread refreshes it, and the FX thread
  * answers from it (PERF-01, Pauta 6.0.1). A launch's plan looks off the thread first for exactly what its FX part
- * asks next, so the FX part finds it; the FX thread looks itself only for a key no plan has looked at, and
- * {@link BlockingSites} names that look. Bounded: the keys of a session.
+ * asks next, so the FX part finds it. Bounded: the keys of a session.
  *
- * <p>A memo made with a <em>cold answer</em> never looks on the FX thread: a key nothing has looked at yet is
- * answered there with that answer (what the code did when the fact was unknown), looked at on a thread of its own,
- * and kept; {@link #onLearned} then hears it on the FX thread. An asker that cannot go on without the real answer
- * uses {@link #whenKnown}, which waits off the FX thread instead.
+ * <p>No memo looks on the FX thread. A key nothing has looked at yet is answered there with the memo's <em>cold
+ * answer</em> (what the code did when the fact was unknown, or null, "unknown", for a memo made without one), looked
+ * at on a thread of its own, and kept; {@link #onLearned} then hears it on the FX thread. An asker that cannot go on
+ * without the real answer checks {@link #allKnown} first and has the asks run off the FX thread, or uses
+ * {@link #whenKnown}, which waits off the FX thread.
  */
 public final class Looked<K, V> {
 
@@ -33,9 +34,6 @@ public final class Looked<K, V> {
 
     private record Kept<V>(Optional<V> value, long at) {}
 
-    /** Whether a cold key on the FX thread is answered with {@link #coldAnswer} instead of looked at in place. */
-    private final boolean answersCold;
-
     private final @Nullable V coldAnswer;
 
     /** The keys a look behind is under way for, so a second cold ask starts none. */
@@ -43,11 +41,13 @@ public final class Looked<K, V> {
 
     private volatile @Nullable Consumer<K> learned;
 
-    /** A memo whose cold key is looked at where it is asked, the FX thread included (named to BlockingSites). */
+    /**
+     * A memo whose cold key answers null on the FX thread ("unknown": its FX askers check {@link #allKnown} first)
+     * and is looked at behind; off the FX thread it is looked at where it is asked.
+     */
     public Looked(String name, Function<K, @Nullable V> look) {
         this.name = name;
         this.look = look;
-        this.answersCold = false;
         this.coldAnswer = null;
     }
 
@@ -58,7 +58,6 @@ public final class Looked<K, V> {
     public Looked(String name, Function<K, @Nullable V> look, @Nullable V coldAnswer) {
         this.name = name;
         this.look = look;
-        this.answersCold = true;
         this.coldAnswer = coldAnswer;
     }
 
@@ -123,11 +122,9 @@ public final class Looked<K, V> {
                 }
                 return kept.value().orElse(null);
             }
-            if (answersCold) {
-                lookBehind(key);
-                Kept<V> landed = known.get(key); // a test that runs OffFx in place has it already
-                return landed != null ? landed.value().orElse(null) : coldAnswer;
-            }
+            lookBehind(key);
+            Kept<V> landed = known.get(key); // a test that runs OffFx in place has it already
+            return landed != null ? landed.value().orElse(null) : coldAnswer;
         }
         return lookNow(key);
     }
@@ -198,14 +195,64 @@ public final class Looked<K, V> {
     private @Nullable V lookNow(K key) {
         BlockingSites.enter(name);
         V value = look.apply(key);
+        long now = System.nanoTime();
         if (known.size() >= MAX) {
-            known.clear();
+            evict(now);
         }
-        known.put(key, new Kept<>(Optional.ofNullable(value), System.nanoTime()));
+        known.put(key, new Kept<>(Optional.ofNullable(value), now));
         return value;
     }
 
+    /** How long a key just looked at is kept whatever the bound: a command waiting for it finds it. */
+    private static final long KEEP_NANOS = 60_000_000_000L;
+
+    /**
+     * Makes room: drops the keys not looked at for {@link #KEEP_NANOS}, never one just looked at — an FX command that
+     * found a key missing has it looked at off the thread and then asks again, and must find it — and, if every key
+     * is that fresh and the memo has grown to four times its bound, the older half.
+     */
+    private void evict(long now) {
+        known.entrySet().removeIf(e -> now - e.getValue().at() > KEEP_NANOS);
+        if (known.size() < 4 * MAX) {
+            return;
+        }
+        List<Map.Entry<K, Kept<V>>> byAge = new java.util.ArrayList<>(known.entrySet());
+        byAge.sort(java.util.Comparator.comparingLong(e -> e.getValue().at()));
+        for (int i = 0; i < byAge.size() / 2; i++) {
+            known.remove(byAge.get(i).getKey(), byAge.get(i).getValue());
+        }
+    }
+
+    /** How many keys are kept (tests). */
+    int size() {
+        return known.size();
+    }
+
+    /**
+     * Set while work that runs off the FX thread in the app runs where it is: a plan or an {@link OffFx} task a test
+     * seam runs in place. Its asks look for real, as they would on the app's own thread.
+     */
+    private static final ThreadLocal<Boolean> OFF_FX_WORK = new ThreadLocal<>();
+
+    /** Runs {@code work} as work the app does off the FX thread (see {@link #OFF_FX_WORK}), wherever it runs. */
+    public static void asOffFxWork(Runnable work) {
+        Boolean before = OFF_FX_WORK.get();
+        OFF_FX_WORK.set(Boolean.TRUE);
+        try {
+            work.run();
+        } finally {
+            if (before == null) {
+                OFF_FX_WORK.remove();
+            } else {
+                OFF_FX_WORK.set(before);
+            }
+        }
+    }
+
     private static boolean onFx() {
+        if (OFF_FX_WORK.get() != null) {
+            return false;
+        }
         try {
             return javafx.application.Platform.isFxApplicationThread();
         } catch (RuntimeException | LinkageError e) {

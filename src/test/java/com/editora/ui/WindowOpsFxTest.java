@@ -323,6 +323,11 @@ class WindowOpsFxTest {
         Path plain = Files.createDirectories(dir.resolve("plain"));
         Path main = Files.writeString(plain.resolve("Main.java"), "class Main {}\n");
         RunCoordinator.Ops run = ops(RunCoordinator.Ops.class);
+        // What a Run's plan does first, off the FX thread: the FX thread then answers from what it looked at (PERF-01).
+        for (Path folder : List.of(maven, gradleKts, gradleSettingsOnly, plain)) {
+            run.mavenProjectAt(folder);
+            run.gradleProjectAt(folder);
+        }
 
         FxTestSupport.runOnFx(() -> {
             assertTrue(run.mavenProjectAt(maven));

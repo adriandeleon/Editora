@@ -129,7 +129,7 @@ final class NodeTestRunner {
                 parses.then(() -> host.testRunCoordinator().finishExternalRun(code));
             }
         };
-        if (host.runCoordinator()
+        host.runCoordinator()
                 .runTests(
                         label,
                         ready.dir(),
@@ -137,9 +137,9 @@ final class NodeTestRunner {
                         ready.plan().env(),
                         file,
                         hooks,
-                        () -> start(file, rowNames))) {
-            shown[0] = !launchFailed[0] && host.testRunCoordinator().startExternalRun(label, ready.dir(), driver(file));
-        }
+                        () -> start(file, rowNames),
+                        () -> shown[0] = !launchFailed[0]
+                                && host.testRunCoordinator().startExternalRun(label, ready.dir(), driver(file)));
     }
 
     private void results(List<ParsedSuite> suites) {

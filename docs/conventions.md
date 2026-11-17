@@ -388,9 +388,10 @@ and not checked.
   nullness, so mark the binding type `@NullUnmarked` instead of annotating every pointer
   (`secrets.LinuxSecretServiceStore`). The Java field that holds a library that may not have loaded is
   `@Nullable`. A `loaded()` accessor that throws hands each method a non-null local.
-- **Suppress rarely.** Put `@SuppressWarnings("NullAway")` on the narrowest element, with a comment saying
-  why. Usually that is a one-line helper rather than a whole method: `RecoveryCodec.written` keeps a null
-  from a hand-edited header, because refusing the record would lose its text.
+- **Never suppress.** `src/main` has no `@SuppressWarnings("NullAway")` (Pauta QUAL-02), and the guard test
+  `NullAwaySuppressionTest` keeps it that way. Mark what may be null `@Nullable`, or restructure until NullAway
+  can prove it: `RecoveryCodec.decode` gives a hand-edited header's missing title and window a value, and
+  leaves `RecoveryRecord.charset` and `lineEnding` `@Nullable` because their readers already handle null.
 - **Plumbing.** Only NullAway runs (`-XepDisableAllChecks -Xep:NullAway:ERROR`), and only in the main compile,
   not on tests. `.mvn/jvm.config` exports the javac internals that Error Prone needs. JSpecify is a `provided`
   dependency read through `requires static org.jspecify`, so nothing ships. It runs on JDK 25 and JDK 27.

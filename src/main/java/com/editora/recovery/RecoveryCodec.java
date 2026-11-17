@@ -149,35 +149,41 @@ public final class RecoveryCodec {
         } else {
             throw new IOException("recovery record text encoding is unknown: " + encoding);
         }
+        String path = text(header, "path");
+        String title = text(header, "title");
+        String windowKey = text(header, "windowKey");
         return new RecoveryRecord(
                 bufferId,
-                text(header, "path"),
-                written(header, "title"),
+                path,
+                title != null ? title : fileName(path),
                 text(header, "displayName"),
-                written(header, "charset"),
+                text(header, "charset"),
                 header.path("bom").asBoolean(true),
-                written(header, "lineEnding"),
+                text(header, "lineEnding"),
                 header.path("baseModifiedMillis").asLong(-1),
                 header.path("baseSize").asLong(-1),
                 text(header, "baseFingerprint"),
                 header.path("savedAtMillis").asLong(0),
                 header.path("caret").asInt(0),
-                written(header, "windowKey"),
+                windowKey != null ? windowKey : "",
                 body,
                 header.path("charsetChosen").asBoolean(false));
     }
 
     /**
-     * A field {@link #encode} always writes. A header edited by hand may lack it: decoding keeps the null rather
-     * than refusing the record, which would lose its text.
+     * The tab title for a header that lacks one ({@link #encode} always writes it, a header edited by hand may
+     * not): the last segment of the stored path, or {@code ""} for an untitled buffer. Refusing the record
+     * instead would lose its text.
      */
-    @SuppressWarnings("NullAway")
-    private static String written(JsonNode header, String field) {
-        return text(header, field);
+    static String fileName(@Nullable String path) {
+        if (path == null) {
+            return "";
+        }
+        int cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+        return path.substring(cut + 1);
     }
 
     private static @Nullable String text(JsonNode header, String field) {
-
         JsonNode node = header.get(field);
         return node == null || node.isNull() ? null : node.asText();
     }

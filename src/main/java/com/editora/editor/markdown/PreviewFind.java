@@ -2,6 +2,7 @@ package com.editora.editor.markdown;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.IntConsumer;
 
 import javafx.collections.ObservableList;
 import javafx.scene.Node;
@@ -11,6 +12,7 @@ import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
 import com.editora.text.SearchMatcher;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Find in the rendered Markdown preview: marks every occurrence of a query in the preview's text, and steps
@@ -61,18 +63,21 @@ public final class PreviewFind {
 
     /**
      * Marks every match of {@code query}, makes the first one at or below the top of the view current and
-     * scrolls to it. Returns the number of matches; an empty query or an invalid regex clears the search.
+     * scrolls to it, then hands {@code found} the number of matches; an empty query or an invalid regex clears the
+     * search. The preview's text is taken on the FX thread and searched off it (PERF-01, Pauta 6.0.1): the marks
+     * land a moment later, and only for the latest search and the preview as it was taken.
      */
-    public int search(String query, boolean matchCase, boolean regex, boolean wholeWord) {
+    public void search(String query, boolean matchCase, boolean regex, boolean wholeWord, IntConsumer found) {
         clear();
         this.query = query == null ? "" : query;
         this.matchCase = matchCase;
         this.regex = regex;
         this.wholeWord = wholeWord;
-        mark();
-        current = hits.isEmpty() ? -1 : firstAtOrBelow(preview.scrollY());
-        show();
-        return hits.size();
+        mark(() -> {
+            current = hits.isEmpty() ? -1 : firstAtOrBelow(preview.scrollY());
+            show();
+            found.accept(hits.size());
+        });
     }
 
     /** Makes the next (or previous) match current, wrapping around, and scrolls to it. Returns its index. */
@@ -88,6 +93,7 @@ public final class PreviewFind {
 
     /** Removes every mark and forgets the query. */
     public void clear() {
+        asked++; // a search still out is dropped
         unmark();
         query = "";
         current = -1;
@@ -100,9 +106,10 @@ public final class PreviewFind {
         }
         int was = current;
         unmark();
-        mark();
-        current = hits.isEmpty() ? -1 : Math.min(Math.max(was, 0), hits.size() - 1);
-        setCurrent(true);
+        mark(() -> {
+            current = hits.isEmpty() ? -1 : Math.min(Math.max(was, 0), hits.size() - 1);
+            setCurrent(true);
+        });
     }
 
     private void unmark() {
@@ -113,10 +120,68 @@ public final class PreviewFind {
         hits.clear();
     }
 
-    private void mark() {
-        if (!query.isEmpty()) {
-            walk(preview.column());
+    /** {@link com.editora.perf.BlockingSites} name of the preview's search, made off the FX thread. */
+    public static final String SEARCH_SITE = "PreviewFind.search";
+
+    /** The latest search asked: an answer to an older one is dropped. */
+    private long asked;
+
+    /** A run of the preview's text as taken on the FX thread: a label, or a {@code Text} in its flow. */
+    private record Run(Node node, @Nullable TextFlow flow, String text) {}
+
+    /**
+     * Takes the text runs on the FX thread, finds the matches in them off it, then marks them and runs {@code then}
+     * — if no newer search was asked and each run is still where it was, with the same text.
+     */
+    private void mark(Runnable then) {
+        if (query.isEmpty()) {
+            then.run();
+            return;
         }
+        List<Run> runs = new ArrayList<>();
+        walk(preview.column(), runs);
+        long mine = ++asked;
+        String q = query;
+        boolean mc = matchCase;
+        boolean rx = regex;
+        boolean ww = wholeWord;
+        com.editora.perf.OffFx.then(
+                SEARCH_SITE,
+                () -> {
+                    List<List<int[]>> found = new ArrayList<>();
+                    for (Run run : runs) {
+                        found.add(matches(run.text(), q, mc, rx, ww));
+                    }
+                    return found;
+                },
+                answer -> {
+                    List<List<int[]>> found = answer.value();
+                    if (mine != asked || found == null) {
+                        return;
+                    }
+                    for (int i = 0; i < runs.size(); i++) {
+                        Run run = runs.get(i);
+                        List<int[]> at = found.get(i);
+                        if (at.isEmpty()) {
+                            continue;
+                        }
+                        TextFlow flow = run.flow();
+                        if (flow == null && run.node() instanceof Label label) {
+                            if (run.text().equals(label.getText())
+                                    && !label.getStyleClass().contains(MATCH)) {
+                                label.getStyleClass().add(MATCH);
+                                hits.add(label);
+                                restore.add(() -> label.getStyleClass().removeAll(MATCH, CURRENT));
+                            }
+                        } else if (flow != null
+                                && run.node() instanceof Text text
+                                && run.text().equals(text.getText())
+                                && flow.getChildren().contains(text)) {
+                            markText(flow, text, at);
+                        }
+                    }
+                    then.run();
+                });
     }
 
     private void show() {
@@ -145,47 +210,44 @@ public final class PreviewFind {
         return 0;
     }
 
-    private void walk(Node node) {
+    /** Collects the text runs under {@code node} that can be seen. FX thread; no matching here. */
+    private void walk(Node node, List<Run> runs) {
         if (!node.isManaged() || !node.isVisible()) {
             return; // a folded <details>: what cannot be seen is not found
         }
         if (node instanceof TextFlow flow) {
             for (Node child : List.copyOf(flow.getChildren())) {
                 if (child instanceof Text text) {
-                    markText(flow, text);
+                    String s = text.getText();
+                    if (s != null && !s.isEmpty()) {
+                        runs.add(new Run(text, flow, s));
+                    }
                 } else {
-                    walk(child);
+                    walk(child, runs);
                 }
             }
         } else if (node instanceof Label label) {
             String text = label.getText();
-            if (text != null
-                    && !label.getStyleClass().contains(MATCH)
-                    && !matches(text).isEmpty()) {
-                label.getStyleClass().add(MATCH);
-                hits.add(label);
-                restore.add(() -> label.getStyleClass().removeAll(MATCH, CURRENT));
+            if (text != null) {
+                runs.add(new Run(label, null, text));
             }
         } else if (node instanceof Parent parent && !(node instanceof javafx.scene.control.Control)) {
             for (Node child : List.copyOf(parent.getChildrenUnmodifiable())) {
-                walk(child);
+                walk(child, runs);
             }
         }
     }
 
-    private List<int[]> matches(String text) {
-        List<int[]> all = SearchMatcher.matches(text, query, matchCase, regex, wholeWord);
-        all.removeIf(m -> m[1] <= m[0]); // a zero-width match (^, $) has nothing to highlight
+    /** The matches of a query in {@code text}, off the FX thread; a zero-width match has nothing to highlight. */
+    private static List<int[]> matches(String text, String query, boolean matchCase, boolean regex, boolean ww) {
+        List<int[]> all = new ArrayList<>(SearchMatcher.matches(text, query, matchCase, regex, ww));
+        all.removeIf(m -> m[1] <= m[0]);
         return all;
     }
 
     /** Cuts the matches out of one run of text: {@code [before][match][between][match][after]}. */
-    private void markText(TextFlow flow, Text text) {
+    private void markText(TextFlow flow, Text text, List<int[]> found) {
         String s = text.getText();
-        List<int[]> found = s == null || s.isEmpty() ? List.of() : new ArrayList<>(matches(s));
-        if (found.isEmpty()) {
-            return;
-        }
         List<Node> pieces = new ArrayList<>();
         int pos = 0;
         for (int[] m : found) {

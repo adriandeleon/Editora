@@ -76,6 +76,7 @@ class FindReplaceBarFxTest {
             h.buffer = new EditorBuffer();
             h.buffer.setContent(text);
             h.bar = new FindReplaceBar(() -> h.buffer, h.statuses::add);
+            h.bar.searchOn(Runnable::run, Runnable::run, com.editora.text.SearchMatcher.DEFAULT_PAGE); // in place
             VBox root = new VBox(h.bar, h.buffer.getNode());
             new Scene(root, 800, 600);
             return h;
@@ -584,6 +585,7 @@ class FindReplaceBarFxTest {
             b.setContent("0123456789 nothing to see here");
             active[0] = a;
             FindReplaceBar bar = new FindReplaceBar(() -> active[0], statuses::add);
+            bar.searchOn(Runnable::run, Runnable::run, com.editora.text.SearchMatcher.DEFAULT_PAGE); // in place
             new Scene(new VBox(bar, a.getNode(), b.getNode()), 800, 600);
             bar.show(false);
             FxTestSupport.<TextField>field(bar, "findField").setText("foo");

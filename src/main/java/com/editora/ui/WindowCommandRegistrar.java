@@ -2119,24 +2119,11 @@ final class WindowCommandRegistrar {
         // IntelliJ's Run Context Configuration (Ctrl+Shift+F10): the test at the caret, else the file (fourth
         // review E1). The chord started Maven's Rerun Last.
         host.registry().register(Command.of("run.context", () -> {
-            EditorBuffer b = host.activeBuffer();
-            if (b != null) {
-                b.settleRunScan(); // the load's scan runs off FX; the answer is needed now
-            }
-            var main = b == null ? null : b.mainTargetAtCaret();
-            if (b != null && b.testTargetAtCaret(false) != null) {
-                host.runTestAtCaret(false, false);
-            } else if (main != null) {
-                // A project class's main, as its ▶ runs it: Run File knows only single files (fifth review BV2)
-                host.runCoordinator().runMainClassNamed(main.fqn());
-            } else if (b != null && b.testClassTarget() != null) {
-                // a test class's imports or package line: its tests, not a single-file compile (sixth review BS3)
-                host.runTestAtCaret(true, false);
-            } else if (b != null && b.getPath() != null && "java".equals(b.getLanguage()) && !b.isRunnable()) {
-                host.setStatus(
-                        tr("status.run.noContext", b.getPath().getFileName().toString())); // EV7
+            EditorBuffer active = host.activeBuffer();
+            if (active != null) {
+                active.whenRunScanned(() -> runContext(active)); // the load's scan runs off FX: decide once it lands
             } else {
-                host.runCoordinator().runActiveFile();
+                runContext(null);
             }
         }));
         host.registry().register(Command.of("test.runClassAtCaret", () -> host.runTestAtCaret(true, false)));
@@ -3863,5 +3850,23 @@ final class WindowCommandRegistrar {
     /** The palette's "this feature is turned off" line, naming the command that turns Project support on. */
     private static String projectsOff() {
         return tr("palette.disabled.featureOff", tr("command.view.toggleProjects"));
+    }
+
+    /** Run Context Configuration, once the buffer's Run scan has landed. */
+    private void runContext(@Nullable EditorBuffer b) {
+        var main = b == null ? null : b.mainTargetAtCaret();
+        if (b != null && b.testTargetAtCaret(false) != null) {
+            host.runTestAtCaret(false, false);
+        } else if (main != null) {
+            // A project class's main, as its ▶ runs it: Run File knows only single files (fifth review BV2)
+            host.runCoordinator().runMainClassNamed(main.fqn());
+        } else if (b != null && b.testClassTarget() != null) {
+            // a test class's imports or package line: its tests, not a single-file compile (sixth review BS3)
+            host.runTestAtCaret(true, false);
+        } else if (b != null && b.getPath() != null && "java".equals(b.getLanguage()) && !b.isRunnable()) {
+            host.setStatus(tr("status.run.noContext", b.getPath().getFileName().toString())); // EV7
+        } else {
+            host.runCoordinator().runActiveFile();
+        }
     }
 }

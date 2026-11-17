@@ -31,6 +31,16 @@ final class CloseCoordinator {
 
     record Sweep(boolean allowed, boolean prompted) {}
 
+    /** What the close question for an edited buffer came to. */
+    enum Answer {
+        /** Discarded, or saved where waiting is allowed: close now. */
+        CLOSE,
+        /** Cancelled: keep it open. */
+        CANCEL,
+        /** Save picked: the write runs off the FX thread, and the close is asked for again once it has landed. */
+        SAVING
+    }
+
     private final Stage stage;
     private final EditorArea editorArea;
     private final Set<Tab> pinned;
@@ -53,13 +63,22 @@ final class CloseCoordinator {
         this.persistSession = persistSession;
     }
 
+    /** {@link #confirmClose(Tab, Runnable)} where waiting for a save is allowed: tests. */
     boolean confirmClose(Tab tab) {
+        return confirmClose(tab, null);
+    }
+
+    /**
+     * Whether {@code tab} may close now. A Save picked in the question writes off the FX thread (PERF-01, Pauta 6.0.1):
+     * the tab stays for now, and {@code afterSave} asks for the close again once the write has landed.
+     */
+    boolean confirmClose(Tab tab, @Nullable Runnable afterSave) {
         EditorBuffer buffer = bufferOf.apply(tab);
         if (buffer != null && pinned.contains(tab) && !confirmPinned(buffer)) {
             return false;
         }
         if (buffer != null) {
-            return confirmCloseIfDirty(buffer);
+            return askCloseIfDirty(buffer, afterSave) == Answer.CLOSE;
         }
         return tab != null && tab.getUserData() instanceof TabContent content ? confirmCloseIfDirty(content) : true;
     }
@@ -77,9 +96,27 @@ final class CloseCoordinator {
         return result.isPresent() && result.get() == close;
     }
 
+    /**
+     * The close question for {@code buffer} where waiting for the write is allowed: the quit, and tests. Everything
+     * else asks with {@link #askCloseIfDirty}.
+     */
     boolean confirmCloseIfDirty(EditorBuffer buffer) {
+        return askCloseIfDirty(buffer, null) == Answer.CLOSE;
+    }
+
+    /**
+     * Asks whether to save {@code buffer}'s unsaved changes before it closes. Save writes off the FX thread (PERF-01,
+     * Pauta 6.0.1) and answers {@link Answer#SAVING}: {@code afterSave} runs once the write has landed, and asks for
+     * the close again. With no {@code afterSave} (the quit, which may wait) it waits for the write instead.
+     */
+    Answer askCloseIfDirty(EditorBuffer buffer, @Nullable Runnable afterSave) {
+        return askCloseIfDirty(buffer, afterSave, () -> {});
+    }
+
+    /** As above; {@code saveFailed} runs when the Save picked could not write the file. */
+    Answer askCloseIfDirty(EditorBuffer buffer, @Nullable Runnable afterSave, Runnable saveFailed) {
         if (!buffer.isDirty() && !files.hasPendingSave(buffer)) {
-            return true;
+            return Answer.CLOSE;
         }
         Alert alert = unsavedAlert(buffer.getTitle(), "dialog.save");
         ButtonType save = alert.getButtonTypes().get(0);
@@ -87,13 +124,25 @@ final class CloseCoordinator {
         ButtonType cancel = alert.getButtonTypes().get(2);
         Optional<ButtonType> result = Dialogs.showAndWait(alert);
         if (result.isEmpty() || result.get() == cancel) {
-            return false;
+            return Answer.CANCEL;
         }
         if (result.get() == save) {
-            return files.saveSynchronously(buffer) && !buffer.isDirty() && !files.hasPendingSave(buffer);
+            if (afterSave == null) {
+                return files.saveSynchronously(buffer) && !buffer.isDirty() && !files.hasPendingSave(buffer)
+                        ? Answer.CLOSE
+                        : Answer.CANCEL;
+            }
+            files.saveThen(buffer, saved -> {
+                if (saved) {
+                    afterSave.run(); // asks again: a buffer edited meanwhile is asked about again
+                } else {
+                    saveFailed.run();
+                }
+            });
+            return Answer.SAVING;
         }
         files.invalidatePendingWrites(buffer);
-        return result.get() == discard;
+        return result.get() == discard ? Answer.CLOSE : Answer.CANCEL;
     }
 
     private boolean confirmCloseIfDirty(TabContent content) {
@@ -176,8 +225,17 @@ final class CloseCoordinator {
         return result.isPresent() && result.get() == quit;
     }
 
-    /** One validation pass. Discard approvals remain valid only for the exact state the user saw. */
+    /** {@link #confirmSweep(ApprovalState, Runnable)} where waiting for a save is allowed: tests. */
     Sweep confirmSweep(ApprovalState approvals) {
+        return confirmSweep(approvals, null);
+    }
+
+    /**
+     * One validation pass over the window's tabs, asking about each unsaved one; discard approvals remain valid only
+     * for the exact state the user saw. {@code afterSave}: where a Save picked goes on
+     * once its write has landed (the pass stops, as at a Cancel); null only at the quit, which may wait for the write.
+     */
+    Sweep confirmSweep(ApprovalState approvals, @Nullable Runnable afterSave) {
         boolean prompted = false;
         for (Tab tab : new ArrayList<>(editorArea.tabs())) {
             EditorBuffer buffer = bufferOf.apply(tab);
@@ -210,7 +268,7 @@ final class CloseCoordinator {
             }
             editorArea.select(tab);
             prompted = true;
-            if (!confirmCloseIfDirty(buffer)) {
+            if (askCloseIfDirty(buffer, afterSave) != Answer.CLOSE) {
                 return new Sweep(false, true);
             }
             if (buffer.isDirty() || files.hasPendingSave(buffer)) {
@@ -222,10 +280,16 @@ final class CloseCoordinator {
         return new Sweep(true, prompted);
     }
 
+    /** {@link #confirmCloseAll(Runnable)} where waiting for a save is allowed: tests. */
     boolean confirmCloseAll() {
+        return confirmCloseAll(null);
+    }
+
+    /** Asks about every unsaved tab of the window, then saves its session; {@code afterSave} as {@link #confirmSweep}. */
+    boolean confirmCloseAll(@Nullable Runnable afterSave) {
         ApprovalState approvals = new ApprovalState();
         while (true) {
-            Sweep sweep = confirmSweep(approvals);
+            Sweep sweep = confirmSweep(approvals, afterSave);
             if (!sweep.allowed()) {
                 return false;
             }

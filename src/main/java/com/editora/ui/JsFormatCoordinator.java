@@ -273,8 +273,12 @@ final class JsFormatCoordinator {
         }
         SaveActionUndo.foldIntoOneUndo(buffer, saved);
         savingAgain.add(buffer);
-        if (!ops.saveBuffer(buffer)) {
-            savingAgain.remove(buffer);
-        }
+        ops.saveThen(
+                buffer,
+                written -> { // written off the FX thread (PERF-01)
+                    if (!written) {
+                        savingAgain.remove(buffer);
+                    }
+                });
     }
 }

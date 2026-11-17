@@ -49,22 +49,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1557"
     },
     {
-      "rule": "QUAL-02",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/quality/#qual-02",
-      "kind": "pending",
-      "reason": "One null-safety warning in the code is silenced rather than fixed.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1558"
-    },
-    {
-      "rule": "QUAL-03",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/quality/#qual-03",
-      "kind": "pending",
-      "reason": "Several large parts of the code have no minimum test coverage set.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1558"
-    },
-    {
       "rule": "QUAL-07",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/quality/#qual-07",
@@ -77,7 +61,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/performance/#perf-01",
       "kind": "pending",
-      "reason": "Nothing on the interface's own thread reads or writes the disk or waits any more, but a few things still search, hash or parse a whole document there: the find bar and Replace, telling whether an edited file is back to its saved text, and a few scans made as you type, so a very large file can briefly slow typing.",
+      "reason": "Nothing on the interface's own thread reads or writes the disk or waits any more, but some work still searches, diffs or parses a whole document or project there: Search Everywhere, the text sent to a language server, Markdown editing and a few commands, so a very large file or project can briefly slow typing.",
       "link": "https://github.com/adriandeleon/Editora/issues/1559"
     },
     {
