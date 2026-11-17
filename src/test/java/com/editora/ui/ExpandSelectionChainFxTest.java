@@ -131,16 +131,20 @@ class ExpandSelectionChainFxTest {
         EditorBuffer b;
         try {
             b = open(coordinator, file);
-            // The server's start answers later on a slow runner: in place until it is attached, and the buffer synced
-            // again now and then, as an edit would, in case its first open went out before the server was up.
-            for (int i = 0; i < 10 && !manager.supportsSelectionRanges(file); i++) {
+            // The server's start answers later on a slow runner, and the settings just changed may restart it once
+            // more (queued on the FX thread): attached only once what is queued has run, with the buffer synced again
+            // meanwhile, as an edit would.
+            for (int i = 0; i < 20; i++) {
                 com.editora.testkit.Await.holdsWithin(
-                        () -> manager.supportsSelectionRanges(file), Duration.ofSeconds(2));
+                        () -> manager.supportsSelectionRanges(file), Duration.ofSeconds(1));
+                FxTestSupport.drainFx();
+                if (manager.supportsSelectionRanges(file)) {
+                    break;
+                }
                 EditorBuffer opened = b;
                 FxTestSupport.runOnFx(() ->
                         FxTestSupport.call(coordinator, "syncBuffer", new Class<?>[] {EditorBuffer.class}, opened));
             }
-            FxTestSupport.drainFx();
         } finally {
             com.editora.perf.OffFx.runnerForTest(null);
         }
