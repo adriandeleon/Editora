@@ -270,32 +270,24 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
     }
 
     @Override
-    public String editBuffer(@Nullable String path, String oldText, String newText, boolean replaceAll) {
+    public @Nullable String editBuffer(@Nullable String path, String oldText, String newText, boolean replaceAll) {
         if (oldText == null || oldText.isEmpty()) {
             // Never "then replace everything": that takes replaceBuffer, which the client must ask for by name.
             return "old_text is required for a targeted edit.";
         }
-        return mcpOnFx(() -> {
-            EditorBuffer b = path == null ? host.activeBuffer() : openBufferForPath(path);
-            if (b == null) {
-                return path == null ? "No active buffer." : "No open buffer for: " + path;
+        String replacement = newText == null ? "" : newText;
+        // The match is searched for here, on the MCP thread, in the text taken on the FX thread at a version; the
+        // FX thread applies the edit only to that version, else it is searched for again (PERF-01, Pauta 6.0.1).
+        for (int tries = EDIT_TRIES; tries > 0; tries--) {
+            Taken taken = mcpOnFx(() -> take(path));
+            if (taken.refusal() != null) {
+                return taken.refusal();
             }
-            if (!b.isEditable()) {
-                return "Buffer is read-only.";
-            }
-            String protectedFile = McpAccess.writeRefusal(host.configDirectory(), b.getPath());
-            if (protectedFile != null) {
-                return protectedFile;
-            }
-            if (b.encryption().isEncrypted()) {
-                return ENCRYPTED; // a match would tell the client what the text says
-            }
-            String replacement = newText == null ? "" : newText;
             // read_buffer serves the whole file, so the match is made against the whole file — also when the
             // buffer is narrowed: matching the accessible region only made "exactly once" and replace_all
             // mean something else than the text the client had read.
-            String text = b.getContent();
-            boolean known = served.knows(b, text);
+            String text = taken.text();
+            boolean known = served.knows(taken.buffer(), text);
             int first = text.indexOf(oldText);
             if (first < 0) {
                 return "old_text not found in the buffer.";
@@ -303,72 +295,122 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             if (!replaceAll && text.indexOf(oldText, first + 1) >= 0) {
                 return "old_text occurs more than once; pass replace_all or a longer, unique old_text.";
             }
-            // A buffer without undo (large-file mode) keeps a Local History copy first, or refuses.
-            NoUndoGuard.Verdict verdict = NoUndoGuard.check(b, tr("noUndo.op.agent"));
-            if (!verdict.allowed()) {
-                return verdict.message();
-            }
-            if (replaceAll) {
-                replaceWholeDocument(b, text.replace(oldText, replacement));
-            } else {
+            String next = replaceAll
+                    ? text.replace(oldText, replacement)
+                    : text.substring(0, first) + replacement + text.substring(first + oldText.length());
+            String nextLf = com.editora.editops.LineEndings.toLf(next);
+            EditorBuffer.PreparedEdit prepared = EditorBuffer.PreparedEdit.between(taken.version(), text, nextLf);
+            Applied applied = mcpOnFx(() -> {
+                EditorBuffer b = taken.buffer();
+                if (b.isDisposed() || b.docVersion() != taken.version()) {
+                    return Applied.AGAIN;
+                }
+                // A buffer without undo (large-file mode) keeps a Local History copy first, or refuses.
+                NoUndoGuard.Verdict verdict = NoUndoGuard.check(b, tr("noUndo.op.agent"));
+                if (!verdict.allowed()) {
+                    return new Applied(verdict.message());
+                }
                 CodeArea area = b.getArea();
                 int at = first - b.narrowStart();
-                if (at >= 0 && at + oldText.length() <= area.getLength()) {
+                if (!replaceAll && at >= 0 && at + oldText.length() <= area.getLength()) {
                     area.replaceText(at, at + oldText.length(), replacement); // inside the accessible text
                 } else {
-                    // In the part narrowing holds aside (or across its edge): reachable only by widening.
-                    replaceWholeDocument(
-                            b, text.substring(0, first) + replacement + text.substring(first + oldText.length()));
+                    // replace_all, or in the part narrowing holds aside (or across its edge): the whole document.
+                    b.applyPreparedWholeText(prepared, nextLf);
                 }
+                if (known) {
+                    served.served(b, nextLf); // the client knows its own edit of text it had read
+                }
+                return Applied.DONE;
+            });
+            if (applied != Applied.AGAIN) {
+                return applied.refusal();
             }
-            if (known) {
-                served.served(b, b.getContent()); // the client knows its own edit of text it had read
-            }
-            return null;
-        });
+        }
+        return "The buffer kept changing while the edit was applied; read it again and retry.";
+    }
+
+    /** How many times an edit is searched for again when the buffer changed before it was applied. */
+    private static final int EDIT_TRIES = 3;
+
+    /** A buffer's whole text at a version, taken on the FX thread for an edit; or why it may not be edited. */
+    private record Taken(
+            @Nullable EditorBuffer buffer,
+            String text,
+            long version,
+            @Nullable String refusal) {
+
+        static Taken refused(String why) {
+            return new Taken(null, "", -1, why);
+        }
+
+        @Override
+        public EditorBuffer buffer() {
+            return java.util.Objects.requireNonNull(buffer);
+        }
+    }
+
+    /** What applying on the FX thread came to: {@code refusal} null when it went through. */
+    private record Applied(@Nullable String refusal) {
+        static final Applied DONE = new Applied(null);
+        static final Applied AGAIN = new Applied("again");
+    }
+
+    /** FX thread: the buffer an edit names, and its whole text, or why it may not be edited. No search. */
+    private Taken take(@Nullable String path) {
+        EditorBuffer b = path == null ? host.activeBuffer() : openBufferForPath(path);
+        if (b == null) {
+            return Taken.refused(path == null ? "No active buffer." : "No open buffer for: " + path);
+        }
+        if (!b.isEditable()) {
+            return Taken.refused("Buffer is read-only.");
+        }
+        String protectedFile = McpAccess.writeRefusal(host.configDirectory(), b.getPath());
+        if (protectedFile != null) {
+            return Taken.refused(protectedFile);
+        }
+        if (b.encryption().isEncrypted()) {
+            return Taken.refused(ENCRYPTED); // a match would tell the client what the text says
+        }
+        return new Taken(b, b.getContent(), b.docVersion(), null);
     }
 
     @Override
-    public String replaceBuffer(@Nullable String path, String newText) {
-        return mcpOnFx(() -> {
-            EditorBuffer b = path == null ? host.activeBuffer() : openBufferForPath(path);
-            if (b == null) {
-                return path == null ? "No active buffer." : "No open buffer for: " + path;
-            }
-            if (!b.isEditable()) {
-                return "Buffer is read-only.";
-            }
-            String protectedFile = McpAccess.writeRefusal(host.configDirectory(), b.getPath());
-            if (protectedFile != null) {
-                return protectedFile;
-            }
-            if (b.encryption().isEncrypted()) {
-                return ENCRYPTED;
+    public @Nullable String replaceBuffer(@Nullable String path, String newText) {
+        String nextLf = com.editora.editops.LineEndings.toLf(newText == null ? "" : newText);
+        for (int tries = EDIT_TRIES; tries > 0; tries--) {
+            Taken taken = mcpOnFx(() -> take(path));
+            if (taken.refusal() != null) {
+                return taken.refusal();
             }
             // The client sends the whole text as it believes it to be. What was typed since its read_buffer —
             // or unsaved text it never read — would be replaced without notice.
-            String stale = served.check(b, b.getContent(), b.isDirty())
-                    .refusal(path == null ? "The active buffer" : path, "read_buffer");
-            if (stale != null) {
-                return stale;
+            EditorBuffer.PreparedEdit prepared =
+                    EditorBuffer.PreparedEdit.between(taken.version(), taken.text(), nextLf);
+            Applied applied = mcpOnFx(() -> {
+                EditorBuffer b = taken.buffer();
+                if (b.isDisposed() || b.docVersion() != taken.version()) {
+                    return Applied.AGAIN;
+                }
+                String stale = served.check(b, taken.text(), b.isDirty())
+                        .refusal(path == null ? "The active buffer" : path, "read_buffer");
+                if (stale != null) {
+                    return new Applied(stale);
+                }
+                NoUndoGuard.Verdict verdict = NoUndoGuard.check(b, tr("noUndo.op.agent"));
+                if (!verdict.allowed()) {
+                    return new Applied(verdict.message());
+                }
+                // Widens first, then one undo step that records only the span that differs.
+                b.applyPreparedWholeText(prepared, nextLf);
+                served.served(b, nextLf);
+                return Applied.DONE;
+            });
+            if (applied != Applied.AGAIN) {
+                return applied.refusal();
             }
-            NoUndoGuard.Verdict verdict = NoUndoGuard.check(b, tr("noUndo.op.agent"));
-            if (!verdict.allowed()) {
-                return verdict.message();
-            }
-            replaceWholeDocument(b, newText == null ? "" : newText);
-            served.served(b, b.getContent());
-            return null;
-        });
-    }
-
-    /**
-     * FX thread: the one place an MCP call replaces a buffer's whole document (an explicit whole-buffer
-     * replacement, {@code replace_all}, and a targeted edit outside a narrowed region). Widens first, then
-     * one undo step that records only the span that differs.
-     */
-    private static void replaceWholeDocument(EditorBuffer buffer, String text) {
-        buffer.replaceWholeDocument(text);
+        }
+        return "The buffer kept changing while the text was applied; read it again and retry.";
     }
 
     @Override

@@ -32,6 +32,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * The editor's reading aids in the Project Map's code cards (Map code browser round 2): the server's semantic
  * highlighting and inlay hints, and the pinned scope headers, as the editor's settings say.
  */
+// A card's lines are counted off the FX thread (PERF-01): here in place, so the aids land as they are asked for.
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 @Tag("fx")
 class MapCardEditorAidsFxTest {
 
@@ -53,7 +55,7 @@ class MapCardEditorAidsFxTest {
     }
 
     /** A server that holds every file: its tokens and hints are the test's. */
-    private static final class Server implements MapCardLinks.Source {
+    static final class Server implements MapCardLinks.Source {
         final List<String> asked = new ArrayList<>();
 
         @Override

@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static com.editora.i18n.Messages.tr;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Debug Test on a Python test's ▶ (the editor menu of a test line, as for a JUnit test) goes to the Python
@@ -52,8 +51,10 @@ class PythonTestDebugRoutingFxTest {
         FxTestSupport.runOnFx(() ->
                 c.testNavigation.debugSingleTest(new JavaTestScanner.TestTarget(1, "TestCart", "test_add", false)));
 
-        String echo = FxTestSupport.callOnFx(
-                () -> ((javafx.scene.control.Label) FxTestSupport.field(c.statusBar(), "echo")).getText());
-        assertEquals(tr("status.debug.pythonOff"), echo);
+        // The test's end is found off the FX thread (PERF-01, DebugTextScans): the command goes on when it lands.
+        SettingsRig.awaitFx(
+                "the Python debugger asked",
+                () -> tr("status.debug.pythonOff")
+                        .equals(((javafx.scene.control.Label) FxTestSupport.field(c.statusBar(), "echo")).getText()));
     }
 }

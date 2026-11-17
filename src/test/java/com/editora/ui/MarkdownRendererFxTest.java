@@ -27,6 +27,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * (or plain) block falls back to a plain {@code Label}.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(
+        com.editora.ui.OffFxInPlace.class) // work moved off FX (PERF-01) lands at once
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class MarkdownRendererFxTest {
 

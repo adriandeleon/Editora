@@ -41,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@code C-s} finds, {@code C-u} is the prefix argument and {@code C-g} cancels.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // work moved off FX (PERF-01) lands at once
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class MacroWindowFxTest {
 

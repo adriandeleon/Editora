@@ -475,12 +475,12 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     @Override
-    public String editBuffer(@Nullable String path, String oldText, String newText, boolean replaceAll) {
+    public @Nullable String editBuffer(@Nullable String path, String oldText, String newText, boolean replaceAll) {
         return mcpBridge.editBuffer(path, oldText, newText, replaceAll);
     }
 
     @Override
-    public String replaceBuffer(@Nullable String path, String newText) {
+    public @Nullable String replaceBuffer(@Nullable String path, String newText) {
         return mcpBridge.replaceBuffer(path, newText);
     }
 
@@ -4061,7 +4061,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void openTechnicalDictionary(String text) {
         EditorBuffer buffer = new EditorBuffer();
         buffer.setDisplayName("technical.txt");
-        buffer.setContent(text);
+        buffer.setContentLater(text, () -> {}); // line endings resolved off the FX thread (PERF-01, Pauta 6.0.1)
         addBuffer(buffer, true);
         buffer.setViewMode(true); // read-only: it's the bundled list, not user-editable
     }
@@ -5086,8 +5086,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** VS Code {@code selectHighlights} (Ctrl+Shift+L): a caret at every occurrence of the selection/word. */
     void selectAllOccurrences() {
         withMultiCaret(b -> {
-            int n = b.selectAllOccurrences();
-            setStatus(n == 0 ? tr("status.occurrences.none") : tr("status.occurrences.selected", n));
+            b.selectAllOccurrences( // searched off the FX thread (PERF-01, Pauta 6.0.1)
+                    n -> setStatus(n == 0 ? tr("status.occurrences.none") : tr("status.occurrences.selected", n)));
         });
     }
 

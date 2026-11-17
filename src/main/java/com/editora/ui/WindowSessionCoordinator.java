@@ -492,7 +492,8 @@ final class WindowSessionCoordinator {
         }
         Path file = placeholder.path();
         try {
-            FileWorkflowCoordinator.PreparedLoad load = host.fileWorkflows().prepareLoad(file, true);
+            FileWorkflowCoordinator.PreparedLoad load =
+                    host.fileWorkflows().prepareLoad(file, true).preparedFor(buffer);
             EditorBuffer loaded = applySessionLoad(placeholder.entry(), buffer, load);
             maybeFinishRestore();
             return loaded;

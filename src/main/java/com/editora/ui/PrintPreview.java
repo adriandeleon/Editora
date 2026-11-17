@@ -857,6 +857,23 @@ final class PrintPreview {
                 return;
             }
             notice.setText(tr("print.preview.printingPage", at + 1, indices.length));
+            // A page of images is decoded off the FX thread first (PERF-01); printed in a turn of its own after.
+            pages.prepare(indices[at], () -> Platform.runLater(() -> printPrepared(indices, at)));
+        } catch (Throwable t) {
+            fail(t);
+        }
+    }
+
+    private void printPrepared(int[] indices, int at) {
+        if (done) {
+            return;
+        }
+        try {
+            if (cancelRequested) {
+                abandonJob();
+                closeWith(onCancel);
+                return;
+            }
             if (!job.printPage(layout, detached(pages.get(indices[at])))) {
                 jobFinished = true;
                 job.endJob();

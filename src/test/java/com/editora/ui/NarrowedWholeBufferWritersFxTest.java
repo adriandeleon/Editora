@@ -32,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * held-aside prefix and suffix around a full copy of the file — the duplicated document is then what Save
  * writes — so every one of them must replace the whole document (which widens first).
  */
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the work runs off FX in the app; here in place
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class NarrowedWholeBufferWritersFxTest {

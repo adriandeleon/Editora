@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@link EditorBuffer#getContent()} — must still see the whole document. If that inversion ever regresses,
  * a narrowed buffer silently truncates the user's file on the next save.
  */
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // worked out off FX in the app; here in place
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class NarrowingFxTest {

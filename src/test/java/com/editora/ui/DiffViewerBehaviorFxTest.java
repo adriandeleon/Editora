@@ -28,6 +28,9 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+// The debugger's scans, merge and apply texts are worked out off the FX thread (PERF-01): here in place, so
+// each lands before the command returns. HandlersDebugOffFxThreadFxTest runs them where the app does.
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 @Tag("fx")
 class DiffViewerBehaviorFxTest {
 

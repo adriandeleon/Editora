@@ -20,7 +20,7 @@ import static com.editora.i18n.Messages.tr;
 /**
  * The declarations a Project Map {@code @name} query finds (Project Map review 3 E2): the editor's symbol index,
  * built on the first such query, and the {@code workspace/symbol} answer of a language server that runs for one of
- * the open files. The index answers at once; a server's answer, when one is asked, follows and is merged in,
+ * the open files. The index answers first (searched off the FX thread); a server's answer, when one is asked, follows and is merged in,
  * ahead of the index's for the same declaration. {@code new ProjectMapSymbolSearch(index, lsp)::find} is the
  * {@link Source} the Project panel is given.
  */
@@ -71,16 +71,39 @@ final class ProjectMapSymbolSearch {
             status.accept(tr("project.map.status.symbolsIndexing"));
         }
         index.ensureBuilt(() -> {
-            List<ProjectMapSearchResult.Match> fromIndex = fromIndex(root, query);
-            if (anchor == null || lsp == null) {
-                found.accept(ranked(query, List.of(), fromIndex), true);
-                return;
-            }
-            found.accept(ranked(query, List.of(), fromIndex), false);
-            lsp.workspaceSymbols(
-                    anchor, query, matches -> found.accept(ranked(query, fromServer(root, matches), fromIndex), true));
+            // Searched and ranked off the FX thread (PERF-01, Pauta 6.0.1), on the index as it is now; the Map drops
+            // an answer for a query it has moved on from.
+            IndexCoordinator.Corpus corpus = index.corpus();
+            LspManager server = anchor == null ? null : lsp;
+            com.editora.perf.OffFx.then(
+                    SEARCH_SITE,
+                    () -> {
+                        List<ProjectMapSearchResult.Match> fromIndex = fromIndex(corpus, root, query);
+                        return new Indexed(fromIndex, ranked(query, List.of(), fromIndex));
+                    },
+                    answer -> {
+                        Indexed fromIdx = answer.or(new Indexed(List.of(), List.of()));
+                        if (anchor == null || server == null) {
+                            found.accept(fromIdx.ranked(), true);
+                            return;
+                        }
+                        found.accept(fromIdx.ranked(), false);
+                        server.workspaceSymbols(
+                                anchor,
+                                query,
+                                matches -> com.editora.perf.OffFx.then(
+                                        SEARCH_SITE,
+                                        () -> ranked(query, fromServer(root, matches), fromIdx.fromIndex()),
+                                        merged -> found.accept(merged.or(fromIdx.ranked()), true)));
+                    });
         });
     }
+
+    /** Where the Map's {@code @name} answer is searched and ranked: off the FX thread. */
+    static final String SEARCH_SITE = "ProjectMapSymbolSearch.search";
+
+    /** The index's matches, and them ranked alone. */
+    private record Indexed(List<ProjectMapSearchResult.Match> fromIndex, List<ProjectMapSearchResult.Match> ranked) {}
 
     /** An open file under {@code root} whose language server answers {@code workspace/symbol}, or null. */
     private @Nullable Path serverAnchor(Path root, Collection<Path> openFiles) {
@@ -101,9 +124,10 @@ final class ProjectMapSymbolSearch {
         return null;
     }
 
-    private List<ProjectMapSearchResult.Match> fromIndex(Path root, String query) {
+    private static List<ProjectMapSearchResult.Match> fromIndex(
+            IndexCoordinator.Corpus corpus, Path root, String query) {
         List<ProjectMapSearchResult.Match> out = new ArrayList<>();
-        for (SymbolIndex.Hit hit : index.searchSymbols(query, ProjectMapSearch.MAX_MATCHES)) {
+        for (SymbolIndex.Hit hit : corpus.searchSymbols(query, ProjectMapSearch.MAX_MATCHES)) {
             Path file = hit.file();
             if (!com.editora.config.PathKeys.isAtOrUnder(file, root)) {
                 continue; // the window's project is not the folder the Map shows

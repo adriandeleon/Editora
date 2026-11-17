@@ -43,6 +43,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * a size — none is a timing — so they hold on any machine.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // fold regions (PERF-01: detected off FX) land at once
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class OverlayScrollPerfFxTest {
 

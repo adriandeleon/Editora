@@ -38,19 +38,33 @@ public final class SmartSelectStack {
      * records what was <em>applied</em>, so {@link #shrink} retraces a mixed ladder correctly.
      */
     public int @Nullable [] expand(String text, int s, int e, java.util.@Nullable List<int[]> serverChain) {
+        int[] next = next(text, s, e, serverChain);
+        if (next == null) {
+            if (!isLast(s, e)) {
+                stack.clear(); // the selection changed under us → begin a new ladder
+            }
+            return null;
+        }
+        record(s, e, next);
+        return next;
+    }
+
+    /**
+     * The range {@link #expand} would hand out from {@code [s, e)}, without touching the stack: pure, so it may run
+     * off the FX thread on a copy of the text; the caller then {@linkplain #record records} what it applied.
+     */
+    public static int @Nullable [] next(String text, int s, int e, java.util.@Nullable List<int[]> serverChain) {
+        int[] next = fromChain(serverChain, s, e);
+        return next != null ? next : SmartSelect.expand(text, s, e);
+    }
+
+    /** Records that the selection {@code [s, e)} was grown to {@code next}, as {@link #expand} does. */
+    public void record(int s, int e, int[] next) {
         if (!isLast(s, e)) {
             stack.clear(); // the selection changed under us → begin a new ladder
         }
-        int[] next = fromChain(serverChain, s, e);
-        if (next == null) {
-            next = SmartSelect.expand(text, s, e);
-        }
-        if (next == null) {
-            return null;
-        }
         stack.push(new int[] {s, e});
         last = next;
-        return next;
     }
 
     /**

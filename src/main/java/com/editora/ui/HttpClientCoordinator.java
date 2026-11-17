@@ -1047,31 +1047,62 @@ final class HttpClientCoordinator {
                 host.setStatus(tr("status.http.notCurl"));
                 return;
             }
-            String request = CurlImport.toHttpRequest(clip.strip());
-            if (request == null) {
-                host.setStatus(tr("status.http.notCurl")); // no curl word or no URL: nothing worth writing
-                return;
+            if (importingCurl) {
+                return; // one import at a time: the command is busy until the conversion lands
             }
-            // Every {{ of the command was written as \{{ (sent as {{, never read as a variable): say so.
-            boolean escaped = clip.contains("{{");
-            // Body lines the format reads as comments, handlers or a new request: said, not silently dropped.
-            int altered = CurlImport.alteredBodyLines(request);
-            String note = altered > 0 ? " — " + tr("status.http.curlBodyAltered", String.valueOf(altered)) : "";
-            EditorBuffer b = host.activeBuffer();
-            if (b != null && b.isHttpFile() && b.isEditable()) {
-                String snippet = (b.getArea().getLength() == 0 ? "" : "\n") + "###\n" + request + "\n";
-                b.getArea().insertText(b.getArea().getLength(), snippet);
-                b.getArea().moveTo(b.getArea().getLength());
-                host.setStatus(tr(escaped ? "status.http.curlImportedEscaped" : "status.http.curlImported") + note);
-            } else {
-                EditorBuffer nb = new EditorBuffer();
-                nb.setDisplayName("requests.http");
-                ops.openTab(nb);
-                nb.setContent(request);
-                host.setStatus(
-                        tr(escaped ? "status.http.curlImportedNewEscaped" : "status.http.curlImportedNew") + note);
-            }
+            importingCurl = true;
+            // The command is parsed off the FX thread (PERF-01, Pauta 6.0.1), and so is the new tab's text.
+            com.editora.perf.OffFx.then(CURL_IMPORT_SITE, () -> curlImport(clip), answer -> {
+                importingCurl = false;
+                CurlImported imported = answer.value();
+                if (imported == null) {
+                    host.setStatus(tr("status.http.notCurl")); // no curl word or no URL: nothing worth writing
+                    return;
+                }
+                applyCurlImport(imported);
+            });
         });
+    }
+
+    /** {@link com.editora.perf.BlockingSites} name of the curl command's conversion, made off the FX thread. */
+    static final String CURL_IMPORT_SITE = "HttpClientCoordinator.importCurl";
+
+    /** Whether an Import from curl is being converted: a second press meanwhile starts nothing. */
+    private boolean importingCurl;
+
+    /** A converted curl command: the request, and what the status says about it. */
+    private record CurlImported(String request, boolean escaped, int altered) {}
+
+    /** Pure: the clipboard's curl command as a request, or null when it is none. */
+    private static @Nullable CurlImported curlImport(String clip) {
+        String request = CurlImport.toHttpRequest(clip.strip());
+        if (request == null) {
+            return null;
+        }
+        // Every {{ of the command was written as \{{ (sent as {{, never read as a variable): say so.
+        // Body lines the format reads as comments, handlers or a new request: said, not silently dropped.
+        return new CurlImported(request, clip.contains("{{"), CurlImport.alteredBodyLines(request));
+    }
+
+    private void applyCurlImport(CurlImported imported) {
+        String request = imported.request();
+        boolean escaped = imported.escaped();
+        String note = imported.altered() > 0
+                ? " — " + tr("status.http.curlBodyAltered", String.valueOf(imported.altered()))
+                : "";
+        EditorBuffer b = host.activeBuffer();
+        if (b != null && b.isHttpFile() && b.isEditable()) {
+            String snippet = (b.getArea().getLength() == 0 ? "" : "\n") + "###\n" + request + "\n";
+            b.getArea().insertText(b.getArea().getLength(), snippet);
+            b.getArea().moveTo(b.getArea().getLength());
+            host.setStatus(tr(escaped ? "status.http.curlImportedEscaped" : "status.http.curlImported") + note);
+        } else {
+            EditorBuffer nb = new EditorBuffer();
+            nb.setDisplayName("requests.http");
+            ops.openTab(nb);
+            nb.setContentLater(request, () -> {}); // its line endings are looked at off the FX thread
+            host.setStatus(tr(escaped ? "status.http.curlImportedNewEscaped" : "status.http.curlImportedNew") + note);
+        }
     }
 
     /** {@code http.copyAsCurl}: copy the response viewer's selected request as a {@code curl} command. */

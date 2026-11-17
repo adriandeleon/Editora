@@ -1,5 +1,6 @@
 package com.editora.editor.markdown;
 
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import com.editora.editor.EditorBuffer;
@@ -7,6 +8,7 @@ import com.editora.markdown.MarkdownFormat;
 import com.editora.markdown.MarkdownHeadingNumbers;
 import com.editora.markdown.MarkdownLintFix;
 import com.editora.markdown.MarkdownLintOptions;
+import com.editora.perf.OffFx;
 import org.fxmisc.richtext.CodeArea;
 
 /**
@@ -54,19 +56,31 @@ public final class MarkdownFormatting {
         return b != null && b.canFormatMarkdown() && !b.isPreviewOnly();
     }
 
-    public static Outcome formatDocument(EditorBuffer b) {
+    /** {@link com.editora.perf.BlockingSites} name of a whole-document Markdown command, worked out off FX. */
+    public static final String FORMAT_SITE = "MarkdownFormatting.work";
+
+    /** How many times a command is worked out again when the text changed before its answer landed. */
+    private static final int TRIES = 3;
+
+    /**
+     * Formats the whole document. The text is parsed and the edit worked out off the FX thread (PERF-01, Pauta
+     * 6.0.1); {@code done} hears the outcome once it is applied, on the FX thread.
+     */
+    public static void formatDocument(EditorBuffer b, Consumer<Outcome> done) {
         if (!canRun(b)) {
-            return Outcome.REFUSED;
+            done.accept(Outcome.REFUSED);
+            return;
         }
-        CodeArea area = b.getArea();
-        String text = area.getText();
-        return replace(b, text, MarkdownFormat.format(text, b.getTabSize(), options(b)));
+        int tabSize = b.getTabSize();
+        MarkdownLintOptions options = options(b);
+        run(b, text -> MarkdownFormat.format(text, tabSize, options), TRIES, done);
     }
 
-    /** Formats the lines the selection touches; with no selection, the caret's line. */
-    public static Outcome formatSelection(EditorBuffer b) {
+    /** Formats the lines the selection touches; with no selection, the caret's line. As {@link #formatDocument}. */
+    public static void formatSelection(EditorBuffer b, Consumer<Outcome> done) {
         if (!canRun(b)) {
-            return Outcome.REFUSED;
+            done.accept(Outcome.REFUSED);
+            return;
         }
         CodeArea area = b.getFocusedArea() == null ? b.getArea() : b.getFocusedArea();
         var selection = area.getCaretSelectionBind();
@@ -75,42 +89,84 @@ public final class MarkdownFormatting {
         if (to > from && selection.getEndColumnPosition() == 0) {
             to--; // a selection that ends at the start of a line does not include that line
         }
-        String text = area.getText();
-        return replace(b, text, MarkdownFormat.format(text, b.getTabSize(), options(b), from, to));
+        int last = to;
+        int tabSize = b.getTabSize();
+        MarkdownLintOptions options = options(b);
+        run(b, text -> MarkdownFormat.format(text, tabSize, options, from, last), TRIES, done);
     }
 
-    /** Adds section numbers to the headings, or brings the ones there up to date. */
-    public static Outcome numberHeadings(EditorBuffer b) {
-        return headingNumbers(b, true);
+    /** Adds section numbers to the headings, or brings the ones there up to date. As {@link #formatDocument}. */
+    public static void numberHeadings(EditorBuffer b, Consumer<Outcome> done) {
+        headingNumbers(b, true, done);
     }
 
-    public static Outcome removeHeadingNumbers(EditorBuffer b) {
-        return headingNumbers(b, false);
+    public static void removeHeadingNumbers(EditorBuffer b, Consumer<Outcome> done) {
+        headingNumbers(b, false, done);
     }
 
-    private static Outcome headingNumbers(EditorBuffer b, boolean number) {
+    private static void headingNumbers(EditorBuffer b, boolean number, Consumer<Outcome> done) {
         if (!canRun(b)) {
-            return Outcome.REFUSED;
+            done.accept(Outcome.REFUSED);
+            return;
         }
-        String text = b.getArea().getText();
-        String next = number ? MarkdownHeadingNumbers.number(text) : MarkdownHeadingNumbers.remove(text);
-        return replace(b, text, new MarkdownLintFix.Result(next, new int[0]));
+        run(
+                b,
+                text -> new MarkdownLintFix.Result(
+                        number ? MarkdownHeadingNumbers.number(text) : MarkdownHeadingNumbers.remove(text), new int[0]),
+                TRIES,
+                done);
     }
 
-    private static Outcome replace(EditorBuffer b, String text, MarkdownLintFix.Result result) {
-        if (result.text() == null || result.text().equals(text)) {
-            return Outcome.UNCHANGED;
-        }
+    /** A command's answer, worked out off the FX thread: its result and the span of the text it changes. */
+    private record Worked(MarkdownLintFix.Result result, EditorBuffer.PreparedEdit edit) {}
+
+    /**
+     * Works {@code command} out on the shown text off the FX thread, then applies it as one undo step if the text is
+     * unchanged, keeping the caret and the top line; text typed meanwhile has it worked out again.
+     */
+    private static void run(
+            EditorBuffer b, Function<String, MarkdownLintFix.Result> command, int tries, Consumer<Outcome> done) {
+        CodeArea area = b.getArea();
+        String text = area.getText();
+        long version = b.docVersion();
+        OffFx.then(
+                FORMAT_SITE,
+                () -> {
+                    MarkdownLintFix.Result result = command.apply(text);
+                    return result.text() == null || result.text().equals(text)
+                            ? null
+                            : new Worked(result, EditorBuffer.PreparedEdit.between(version, text, result.text()));
+                },
+                answer -> {
+                    Worked worked = answer.value();
+                    if (b.isDisposed()) {
+                        done.accept(Outcome.REFUSED);
+                    } else if (b.docVersion() != version) {
+                        if (tries > 1 && canRun(b)) {
+                            run(b, command, tries - 1, done);
+                        } else {
+                            done.accept(Outcome.REFUSED);
+                        }
+                    } else if (worked == null) {
+                        done.accept(answer.ok() ? Outcome.UNCHANGED : Outcome.REFUSED);
+                    } else {
+                        apply(b, worked);
+                        done.accept(Outcome.CHANGED);
+                    }
+                });
+    }
+
+    private static void apply(EditorBuffer b, Worked worked) {
+        MarkdownLintFix.Result result = worked.result();
         CodeArea area = b.getArea();
         int line = area.getCurrentParagraph();
         int column = area.getCaretColumn();
         int top = Math.max(0, area.firstVisibleParToAllParIndex());
         boolean mapped = result.lineMap().length > 0;
-        b.replaceVisibleText(area, result.text());
+        b.applyPreparedVisibleEdit(area, worked.edit());
         int last = area.getParagraphs().size() - 1;
         int newLine = Math.max(0, Math.min(mapped ? result.mapLine(line) : line, last));
         area.moveTo(newLine, Math.min(column, area.getParagraphLength(newLine)));
         area.showParagraphAtTop(Math.max(0, Math.min(mapped ? result.mapLine(top) : top, last)));
-        return Outcome.CHANGED;
     }
 }

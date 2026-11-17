@@ -36,11 +36,13 @@ class MarkdownHeadingCrumbsFxTest {
     }
 
     private static List<String> at(FileBreadcrumb bar, EditorBuffer b, int line) throws Exception {
-        return FxTestSupport.callOnFx(() -> {
+        FxTestSupport.runOnFx(() -> {
             b.getArea().moveTo(line, 0);
             bar.headingCrumbs().refresh();
-            return bar.headingCrumbs().titles();
         });
+        // The headings are parsed off the FX thread (PERF-01): the crumbs show them once that lands.
+        SettingsRig.awaitFx("the headings parsed", () -> !bar.headingCrumbs().parsing());
+        return FxTestSupport.callOnFx(() -> bar.headingCrumbs().titles());
     }
 
     @Test

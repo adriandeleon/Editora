@@ -133,7 +133,7 @@ class DeferredSyncConsumerTest {
     }
 
     @Test
-    void documentSyncIsEncodedOnTheWriterThreadAndEverythingElseWhereItWasSent() throws Exception {
+    void everyRequestAndNotificationIsEncodedOnTheWriterThread() throws Exception {
         Probe.ENCODED_ON.clear();
         MessageJsonHandler json = jsonHandler();
         AsyncPipeWriter writer = new AsyncPipeWriter(new ByteArrayOutputStream(), "sync-writer", () -> {});
@@ -145,6 +145,8 @@ class DeferredSyncConsumerTest {
             deferring.consume(notification("textDocument/didSave", new Probe()));
             deferring.consume(notification("textDocument/didClose", new Probe()));
             deferring.consume(request(1, "textDocument/hover", new Probe()));
+            deferring.consume(request(2, "completionItem/resolve", new Probe()));
+            deferring.consume(notification("workspace/didChangeConfiguration", new Probe()));
             assertTrue(writer.awaitDrained(10, TimeUnit.SECONDS));
         } finally {
             writer.close();
@@ -154,8 +156,8 @@ class DeferredSyncConsumerTest {
                 Probe.ENCODED_ON.stream().filter("sync-writer"::equals).toList();
         List<String> callingThread =
                 Probe.ENCODED_ON.stream().filter(caller::equals).toList();
-        assertEquals(3, writerThread.size(), "didOpen, didChange and didSave: " + Probe.ENCODED_ON);
-        assertEquals(2, callingThread.size(), "didClose and the request: " + Probe.ENCODED_ON);
+        assertEquals(7, writerThread.size(), "every request and notification: " + Probe.ENCODED_ON);
+        assertEquals(0, callingThread.size(), "nothing on the calling thread: " + Probe.ENCODED_ON);
     }
 
     @Test

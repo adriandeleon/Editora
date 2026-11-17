@@ -43,6 +43,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * menu, what a row shows for a resolved, orphaned, empty or folder note, and the filter bar.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the filter answers before the call returns
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class NotesPanelKeysFxTest {
 

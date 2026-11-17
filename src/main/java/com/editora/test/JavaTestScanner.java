@@ -182,11 +182,51 @@ public final class JavaTestScanner {
         if (source == null || targets == null || targets.isEmpty() || caret < 0) {
             return null;
         }
+        return targetAt(caretIndex(source, targets), targets, caret);
+    }
+
+    /**
+     * What {@link #targetAt} reads of a source, worked out once per scan (off the FX thread, with the targets): which
+     * lines are blank, which lead in to a declaration (annotations, comments, blank lines among them), and the line
+     * that ends each target's body. With it the target at a caret is a walk over these flags, no parse.
+     */
+    public record CaretIndex(
+            int lines, java.util.BitSet rawBlank, java.util.BitSet leadIn, java.util.Map<Integer, Integer> bodyEnds) {}
+
+    /** The {@link CaretIndex} of {@code source} for {@code targets}. Pure; meant for the scan's own thread. */
+    public static CaretIndex caretIndex(String source, java.util.Map<Integer, TestTarget> targets) {
         String[] lines = blank(source).split("\n", -1);
         String[] raw = source.split("\n", -1);
-        if (caret < lines.length && caret < raw.length && !raw[caret].isBlank()) {
+        java.util.BitSet rawBlank = new java.util.BitSet(raw.length);
+        java.util.BitSet leadIn = new java.util.BitSet(lines.length);
+        for (int i = 0; i < raw.length; i++) {
+            if (raw[i].isBlank()) {
+                rawBlank.set(i);
+            }
+        }
+        for (int i = 0; i < lines.length; i++) {
+            if (leadsToDeclaration(lines[i])) {
+                leadIn.set(i);
+            }
+        }
+        java.util.Map<Integer, Integer> bodyEnds = new java.util.HashMap<>();
+        for (TestTarget t : targets.values()) {
+            bodyEnds.put(t.line(), bodyEnd(lines, t.line()));
+        }
+        return new CaretIndex(Math.min(lines.length, raw.length), rawBlank, leadIn, java.util.Map.copyOf(bodyEnds));
+    }
+
+    /** {@link #targetAt(String, java.util.Map, int)} from a {@link CaretIndex} made for these {@code targets}. */
+    public static @Nullable TestTarget targetAt(
+            CaretIndex index, java.util.Map<Integer, TestTarget> targets, int caret) {
+        if (targets.isEmpty() || caret < 0) {
+            return null;
+        }
+        if (caret < index.lines() && !index.rawBlank().get(caret)) {
             int line = caret;
-            while (line < lines.length && !targets.containsKey(line) && leadsToDeclaration(lines[line])) {
+            while (line < index.lines()
+                    && !targets.containsKey(line)
+                    && index.leadIn().get(line)) {
                 line++; // over annotations, comments, and blank lines between them
             }
             if (targets.containsKey(line)) {
@@ -195,7 +235,8 @@ public final class JavaTestScanner {
         }
         java.util.NavigableMap<Integer, TestTarget> above = new java.util.TreeMap<>(targets).headMap(caret, true);
         for (TestTarget t : above.descendingMap().values()) {
-            if (caret <= bodyEnd(lines, t.line())) {
+            Integer end = index.bodyEnds().get(t.line());
+            if (caret <= (end == null ? t.line() : end)) {
                 return t;
             }
         }

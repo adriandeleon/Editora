@@ -195,19 +195,14 @@ public final class PrReviewPane extends Region implements TabContent {
     }
 
     private static Node renderMarkdown(String markdown, @Nullable Consumer<String> onOpenUrl) {
-        try {
-            // Links in a description or a comment open through the pane's own opener (the window's link choke
-            // point): rendered without one they looked like links and did nothing.
-            Node node = MarkdownRenderer.renderDocument(
-                    MarkdownRenderer.parseForRender(markdown), null, onOpenUrl, MarkdownRenderer.ImagePolicy.DATA_ONLY);
-            node.getStyleClass().add("pr-review-md");
-            return node;
-        } catch (RuntimeException e) {
-            Label fallback = new Label(markdown);
-            fallback.getStyleClass().add("pr-review-body");
-            fallback.setWrapText(true);
-            return fallback;
-        }
+        // Links in a description or a comment open through the pane's own opener (the window's link choke
+        // point): rendered without one they looked like links and did nothing. The text shows plain at once and
+        // rendered when the parse made off the FX thread lands (PERF-01, Pauta 6.0.1).
+        Node node = MarkdownRenderer.renderedLater(
+                markdown,
+                ast -> MarkdownRenderer.renderDocument(ast, null, onOpenUrl, MarkdownRenderer.ImagePolicy.DATA_ONLY));
+        node.getStyleClass().add("pr-review-md");
+        return node;
     }
 
     private Node header(List<FileRow> rows) {

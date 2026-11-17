@@ -223,10 +223,11 @@ public final class MarkdownPreviewPane implements TabContent {
         String text = from.getContent();
         Path file = from.getPath();
         Path baseDir = file == null ? null : file.getParent();
+        Boolean glyphsDark = themeMode.isEmpty() ? null : Boolean.valueOf("dark".equals(themeMode));
         POOL.submit(() -> {
             MarkdownPreview.Plan plan;
             try {
-                plan = MarkdownPreview.plan(text, baseDir);
+                plan = MarkdownPreview.plan(text, baseDir, glyphsDark);
             } catch (RuntimeException | Error e) {
                 return; // a parse limit (a table of a million cells): keep what is shown
             }
@@ -273,7 +274,7 @@ public final class MarkdownPreviewPane implements TabContent {
     }
 
     /** The rendered document (tests). */
-    MarkdownPreview preview() {
+    public MarkdownPreview preview() {
         return preview;
     }
 }

@@ -793,7 +793,7 @@ public class SettingsWindow {
                 new SettingsSearch(rows, sectionLabels, cards, List.of(Category.values()), c -> ((Category) c).display);
         if (keymapsPage.shortcutFilter != null) {
             search.setListSource(new SettingsSearch.ListSource(
-                    Category.KEYMAPS, keymapsPage.shortcutFilter, keymapsPage::shortcutMatches));
+                    Category.KEYMAPS, keymapsPage.shortcutFilter, keymapsPage::shortcutMatcher));
         }
         modified = new SettingsModified(controlOwners());
 
@@ -4096,8 +4096,6 @@ public class SettingsWindow {
     }
 
     private void filter(String typed) {
-        searchHiddenCats.clear();
-        searchHiddenGroups.clear();
         // "Modified" (or @modified typed in the search) lists only the rows that differ from their defaults.
         boolean onlyModified = modifiedOnly.isSelected() || SettingsSearch.wantsModified(typed);
         search.setRowFilter(
@@ -4105,8 +4103,15 @@ public class SettingsWindow {
                         ? r -> SettingRowState.peek(r.node()) instanceof SettingRowState st && st.isModified()
                         : null);
         String query = SettingsSearch.withoutModifiedToken(typed);
-        SettingsSearch.Result found = search.filter(query);
-        keymapsPage.pushShortcutQuery(query);
+        // Scored off the FX thread (PERF-01, Pauta 6.0.1); the pages follow when the latest query's answer lands.
+        search.filterLater(query, (found, listHit) -> searched(query, found, listHit));
+    }
+
+    /** What a search found, shown: the shortcut list's filter, the sidebar, and the page to open. */
+    private void searched(String query, SettingsSearch.@Nullable Result found, boolean listHit) {
+        keymapsPage.pushShortcutQuery(query, listHit);
+        searchHiddenCats.clear();
+        searchHiddenGroups.clear();
         if (found != null) {
             for (Category c : Category.values()) {
                 if (!found.pages().contains(c)) {
@@ -4185,6 +4190,9 @@ public class SettingsWindow {
 
     // --- live preview ----------------------------------------------------------------------------
 
+    /** The place the theme preview's sample is tokenized, heard off the FX thread ({@code BlockingSites}). */
+    static final String PREVIEW_HIGHLIGHT_SITE = "SettingsWindow.previewHighlight";
+
     private void buildPreview() {
         preview = AreaUndo.none(new CodeArea(PREVIEW_SAMPLE));
         preview.getStyleClass().addAll("editor-area", "settings-preview");
@@ -4195,15 +4203,20 @@ public class SettingsWindow {
         preview.setPrefHeight(170);
         preview.setMinHeight(170);
         preview.setWrapText(false);
-        try {
-            IGrammar g = GrammarRegistry.shared().forLanguageName("java");
-            if (g != null) {
-                StyleSpans<Collection<String>> spans = TextMateHighlighter.compute(PREVIEW_SAMPLE, g);
-                preview.setStyleSpans(0, spans);
-            }
-        } catch (RuntimeException ignored) {
-            // Grammar unavailable: the preview still shows the sample in the theme's plain text color.
-        }
+        // The sample is tokenized off the FX thread, its grammar loaded there the first time (PERF-01, Pauta 6.0.1).
+        CodeArea shown = preview;
+        com.editora.perf.OffFx.then(
+                PREVIEW_HIGHLIGHT_SITE,
+                () -> {
+                    IGrammar g = GrammarRegistry.shared().forLanguageName("java");
+                    return g == null ? null : TextMateHighlighter.compute(PREVIEW_SAMPLE, g);
+                },
+                answer -> {
+                    StyleSpans<Collection<String>> spans = answer.value();
+                    if (spans != null && shown.getLength() == PREVIEW_SAMPLE.length()) {
+                        shown.setStyleSpans(0, spans);
+                    } // else: grammar unavailable, the preview shows the sample in the theme's plain text color
+                });
     }
 
     /** Swaps the editor-theme override sheet on the settings scene so the preview recolors to {@code name}. */
@@ -5094,7 +5107,7 @@ public class SettingsWindow {
     private void resetRow(java.util.Set<String> keys) {
         Settings settings = config.getSettings();
         boolean differed = SettingsModified.modifiedKeys(settings).stream().anyMatch(keys::contains);
-        com.fasterxml.jackson.databind.node.ObjectNode previous = SettingsModified.values(settings, keys);
+        java.util.Map<String, @Nullable Object> previous = SettingsModified.values(settings, keys);
         SettingsModified.reset(settings, keys);
         commitReset(); // saves, applies, re-reads every control
         if (differed) {
@@ -5109,7 +5122,7 @@ public class SettingsWindow {
      * Puts a reset row's {@code previous} values back, through what every settings change goes through (saved,
      * applied, every control read again). False, changing nothing, when one of {@code keys} was changed again since.
      */
-    boolean restoreRow(java.util.Set<String> keys, com.fasterxml.jackson.databind.node.ObjectNode previous) {
+    boolean restoreRow(java.util.Set<String> keys, java.util.Map<String, @Nullable Object> previous) {
         Settings settings = config.getSettings();
         if (SettingsModified.modifiedKeys(settings).stream().anyMatch(keys::contains)) {
             return false;

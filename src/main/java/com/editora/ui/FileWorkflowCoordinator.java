@@ -835,7 +835,7 @@ final class FileWorkflowCoordinator {
      * </ul>
      */
     String loadInto(EditorBuffer buffer, Path file) throws IOException {
-        String note = applyPreparedLoad(buffer, prepareLoad(file, false));
+        String note = applyPreparedLoad(buffer, prepareLoad(file, false).preparedFor(buffer));
         notePerfContentLoaded(buffer);
         return note;
     }
@@ -1448,15 +1448,16 @@ final class FileWorkflowCoordinator {
 
     /** Applies a prepared document atomically on the FX thread, with all expensive-mode flags already active. */
     String applyPreparedLoad(EditorBuffer buffer, PreparedLoad load) {
-        return applyPreparedLoad(buffer, load, false);
+        return applyPreparedLoad(buffer, load, null);
     }
 
     /**
-     * As {@link #applyPreparedLoad(EditorBuffer, PreparedLoad)}; {@code inPlace} is a reload into a buffer that
-     * already shows the file, which rewrites only the span that differs instead of swapping the whole document
-     * — unless the load needs the segmented or capped profile, which only a whole-document install provides.
+     * As {@link #applyPreparedLoad(EditorBuffer, PreparedLoad)}; {@code inPlace}, when given, is a reload into a
+     * buffer that already shows the file, which rewrites only the span that differs (worked out on the read worker)
+     * instead of swapping the whole document — unless the load needs the segmented or capped profile, which only a
+     * whole-document install provides.
      */
-    String applyPreparedLoad(EditorBuffer buffer, PreparedLoad load, boolean inPlace) {
+    String applyPreparedLoad(EditorBuffer buffer, PreparedLoad load, EditorBuffer.@Nullable PreparedEdit inPlace) {
         if (load.encrypted()) {
             return encryption.applyLocked(buffer, load); // its text arrives once it is decrypted
         }
@@ -1490,8 +1491,8 @@ final class FileWorkflowCoordinator {
         // Null only for a binary or encrypted load, neither of which is applied here; empty, as before.
         String loadedText = load.content();
         String text = loadedText == null ? "" : loadedText;
-        if (inPlace && load.document() != null && !load.longLine() && !load.truncated()) {
-            buffer.reloadContent(load.document());
+        if (inPlace != null && load.document() != null && !load.longLine() && !load.truncated()) {
+            buffer.reloadContent(load.document(), inPlace);
         } else if (load.document() != null) {
             buffer.setInitialContent(load.document());
         } else {
@@ -1908,6 +1909,10 @@ final class FileWorkflowCoordinator {
         // The decision to let the disk win is about the document as it is now. The read comes back on a
         // later FX turn; whatever was typed in between was never part of that decision and must survive.
         ReloadGuard guard = ReloadGuard.capture(buffer);
+        // The text the differing span is worked out against, on the read worker (PERF-01, Pauta 6.0.1).
+        EditorBuffer.PreparedEdit.@Nullable Base base = buffer.isNarrowed()
+                ? null
+                : new EditorBuffer.PreparedEdit.Base(buffer.docVersion(), buffer.getVisibleContent());
         fileLoadExecutor.execute(() -> {
             try {
                 Runnable hook = beforeReloadReadForTest;
@@ -1917,6 +1922,8 @@ final class FileWorkflowCoordinator {
                 PreparedLoad read = prepareLoad(file, false);
                 // The differing-span rewrite needs no paragraphs; the segmented/capped profiles need them all.
                 PreparedLoad load = read.longLine() || read.truncated() ? read.preparedFor(buffer) : read.normalised();
+                com.editora.editor.InitialDocument doc = load.document();
+                EditorBuffer.@Nullable PreparedEdit inPlace = base != null && doc != null ? base.to(doc.text()) : null;
                 Platform.runLater(() -> {
                     boolean applied = false;
                     try {
@@ -1924,7 +1931,7 @@ final class FileWorkflowCoordinator {
                                 && buffer.getPath() != null
                                 && com.editora.config.PathKeys.sameNormalized(buffer.getPath(), file)) {
                             if (guard.stillHolds(buffer)) {
-                                applyPreparedReload(tab, buffer, load);
+                                applyPreparedReload(tab, buffer, load, inPlace);
                                 applied = true;
                             } else {
                                 // Left as it is: unsaved against a changed disk, which the external-change
@@ -1947,13 +1954,14 @@ final class FileWorkflowCoordinator {
     }
 
     /** Applies bytes prepared off-thread after the user explicitly chooses the external copy. FX thread. */
-    private void applyPreparedReload(@Nullable Tab tab, EditorBuffer buffer, PreparedLoad load) {
+    private void applyPreparedReload(
+            @Nullable Tab tab, EditorBuffer buffer, PreparedLoad load, EditorBuffer.@Nullable PreparedEdit inPlace) {
         // Only the span that differs is rewritten, but a change above the viewport still moves it and a fold
         // inside the span is lost: keep the user's place (caret line/column, scroll position, collapsed folds).
         ReloadViewState view = ReloadViewState.capture(buffer);
         host.historyCoordinator()
                 .record(buffer, HistoryRevision.REASON_EXTERNAL); // snapshot the in-memory version before disk wins
-        String note = applyPreparedLoad(buffer, load, true);
+        String note = applyPreparedLoad(buffer, load, inPlace);
         notePerfContentLoaded(buffer);
         buffer.markClean();
         view.restore();
@@ -2176,19 +2184,31 @@ final class FileWorkflowCoordinator {
         if (!encryption.beforeSave(buffer, buffer.getPath(), () -> save(buffer))) {
             return false; // a new encrypted file: its recipients are chosen first, then this save runs again
         }
-        updateTocForExplicitSave(buffer);
-        if (adminSaveApplicable(buffer.getPath())) {
+        host.editorSettings().applyPendingView(buffer); // a hidden tab's view settings (TOC levels) before saving
+        if (buffer.isMarkdown() && host.config().getSettings().isMarkdownTocUpdateOnSave()) {
+            // An explicit Save only (autosave never edits the buffer). The headings are parsed off the FX thread
+            // (PERF-01, Pauta 6.0.1); the write follows once the regenerated block is in the buffer.
+            buffer.markdown().updateTocForSave(() -> {
+                if (!buffer.isDisposed() && !refuseUnsavable(buffer) && buffer.getPath() != null) {
+                    writeFixed(buffer);
+                }
+            });
+            return true;
+        }
+        return writeFixed(buffer);
+    }
+
+    /** The write of {@link #saveFixed}, the table of contents regenerated. */
+    private boolean writeFixed(EditorBuffer buffer) {
+        Path file = buffer.getPath();
+        if (file == null) {
+            return false;
+        }
+        if (adminSaveApplicable(file)) {
             saveAsAdmin(buffer); // async elevated write; the buffer stays dirty until it completes
             return true;
         }
-        return writeBuffer(buffer, buffer.getPath());
-    }
-
-    private void updateTocForExplicitSave(EditorBuffer buffer) {
-        host.editorSettings().applyPendingView(buffer); // a hidden tab's view settings (TOC levels) before saving
-        if (buffer.isMarkdown() && host.config().getSettings().isMarkdownTocUpdateOnSave()) {
-            buffer.markdown().updateTocForSave(); // an explicit Save only: autosave never edits the buffer
-        }
+        return writeBuffer(buffer, file);
     }
 
     /**
@@ -2270,7 +2290,30 @@ final class FileWorkflowCoordinator {
     /** {@link #saveTracked} once the fixes on save, if any, are in the buffer. */
     @Nullable
     private CompletableFuture<Boolean> saveTrackedFixed(EditorBuffer buffer) {
-        updateTocForExplicitSave(buffer);
+        host.editorSettings().applyPendingView(buffer); // a hidden tab's view settings (TOC levels) before saving
+        if (buffer.isMarkdown() && host.config().getSettings().isMarkdownTocUpdateOnSave()) {
+            // The table of contents is regenerated off the FX thread (PERF-01, Pauta 6.0.1), then the write runs.
+            CompletableFuture<Boolean> saved = new CompletableFuture<>();
+            buffer.markdown().updateTocForSave(() -> {
+                if (buffer.isDisposed() || refuseUnsavable(buffer)) {
+                    saved.complete(false);
+                    return;
+                }
+                CompletableFuture<Boolean> write = writeTracked(buffer);
+                if (write == null) {
+                    saved.complete(true); // an elevated save, which reports itself
+                } else {
+                    write.whenComplete((ok, failure) -> saved.complete(Boolean.TRUE.equals(ok)));
+                }
+            });
+            return saved;
+        }
+        return writeTracked(buffer);
+    }
+
+    /** The write of {@link #saveTrackedFixed}, the table of contents regenerated. */
+    @Nullable
+    private CompletableFuture<Boolean> writeTracked(EditorBuffer buffer) {
         Path file = buffer.getPath();
         if (adminSaveApplicable(file)) {
             saveAsAdmin(buffer);
@@ -3225,7 +3268,8 @@ final class FileWorkflowCoordinator {
             }
             return new RemoteWritePlan(false, currentBytes, false);
         }
-        RemoteSaveChoice choice = promptRemoteSaveConflict(request, current);
+        // Its line endings resolved here, on the save worker: a Reload installs it without a scan on the FX thread.
+        RemoteSaveChoice choice = promptRemoteSaveConflict(request, current.normalised());
         return new RemoteWritePlan(choice == RemoteSaveChoice.OVERWRITE, currentBytes, false);
     }
 
@@ -3264,7 +3308,7 @@ final class FileWorkflowCoordinator {
                             .findFirst()
                             .orElse(null);
                     if (tab != null) {
-                        applyPreparedReload(tab, buffer, current);
+                        applyPreparedReload(tab, buffer, current, null); // the whole document, prepared off FX
                     }
                     choice.complete(RemoteSaveChoice.RELOAD);
                 } else {

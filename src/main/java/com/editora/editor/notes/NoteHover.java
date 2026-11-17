@@ -102,16 +102,27 @@ public final class NoteHover {
             if (n == null || n.body().isBlank()) {
                 hide();
             } else if (!n.id().equals(shownId)) {
-                shownId = n.id();
-                if (tip == null) {
-                    tip = PersonalNoteTooltip.create();
-                }
-                tip.setText(null);
-                tip.setGraphic(render(n.body()));
-                if (tip.isShowing()) {
-                    tip.hide();
-                }
-                tip.show(a, e.getScreenX() + UiZoom.px(12), e.getScreenY() + UiZoom.px(16));
+                java.util.UUID id = n.id();
+                shownId = id;
+                String body = n.body();
+                double x = e.getScreenX() + UiZoom.px(12);
+                double y = e.getScreenY() + UiZoom.px(16);
+                // The body is parsed off the FX thread (PERF-01, Pauta 6.0.1); the note shows when it lands,
+                // unless the pointer has left it or moved to another note meanwhile.
+                MarkdownRenderer.parseLater(body, ast -> {
+                    if (!id.equals(shownId) || a.getScene() == null) {
+                        return;
+                    }
+                    if (tip == null) {
+                        tip = PersonalNoteTooltip.create();
+                    }
+                    tip.setText(null);
+                    tip.setGraphic(render(body, ast));
+                    if (tip.isShowing()) {
+                        tip.hide();
+                    }
+                    tip.show(a, x, y);
+                });
             }
         });
         a.addEventFilter(MouseEvent.MOUSE_EXITED, e -> hide());
@@ -179,11 +190,14 @@ public final class NoteHover {
      * + syntax stylesheets are attached to the node (the tooltip lives in its own popup scene) so the
      * {@code .markdown-preview} rules resolve. Falls back to a plain wrapped label if rendering fails.
      */
-    private Node render(String body) {
+    private Node render(String body, org.commonmark.node.@Nullable Node ast) {
         Node node;
         try {
+            if (ast == null) {
+                throw new IllegalStateException("not parsed");
+            }
             node = MarkdownRenderer.renderPopup( // a popup: nothing in it takes the editor's keys
-                    MarkdownRenderer.parseForRender(body), baseDir.get(), null, MarkdownRenderer.ImagePolicy.DOCUMENT);
+                    ast, baseDir.get(), null, MarkdownRenderer.ImagePolicy.DOCUMENT);
         } catch (RuntimeException ex) {
             Label fallback = new Label(body);
             fallback.setWrapText(true);

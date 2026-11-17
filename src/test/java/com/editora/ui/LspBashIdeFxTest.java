@@ -136,6 +136,8 @@ class LspBashIdeFxTest {
         Path config = Files.createDirectories(root.resolve("config"));
         fx.ops.configManager = new com.editora.config.ConfigManager(config);
         fx.run(() -> fx.coordinator.applyBashIde()); // sets the loose root under the config folder
+        // The folder is made off the FX thread (PERF-01): the root is set once it exists.
+        SettingsRig.awaitFx("the loose root made", () -> fx.manager.looseRoot() != null);
         Path loose = fx.manager.looseRoot();
         org.junit.jupiter.api.Assertions.assertNotNull(loose);
         Files.createDirectories(root.resolve("bin"));

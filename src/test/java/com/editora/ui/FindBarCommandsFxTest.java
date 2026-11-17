@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * bar is open it steps to the next match.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(ConsoleFindInPlace.class)
 class FindBarCommandsFxTest {
 
     private static FxWindowFixture fx;

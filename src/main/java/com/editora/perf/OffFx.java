@@ -50,6 +50,14 @@ public final class OffFx {
         });
     }
 
+    /**
+     * Starts {@code task} where {@link #then}'s work runs (a virtual thread called {@code name}, or in place under
+     * {@link #runnerForTest}), for a caller that hands its own answer back (a {@code LatestOnly} filter).
+     */
+    public static void start(String name, Runnable task) {
+        runner.accept(name, task);
+    }
+
     /** As {@link #then} for work with no answer: {@code then} gets the failure, or null when it went through. */
     public static void run(String name, Work work, Consumer<@Nullable Throwable> then) {
         then(

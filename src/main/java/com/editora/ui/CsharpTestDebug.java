@@ -80,43 +80,48 @@ final class CsharpTestDebug {
         if (b == null || file == null || !"csharp".equals(b.getLanguage())) {
             return false;
         }
-        // The project above the file is found and read off the FX thread (PERF-01, Pauta 6.0.1); a C# file that
-        // is not in a test project goes on to {@code otherwise}, as a false answer did.
+        // The project above the file is found and read, and the test at the caret found in the text, off the FX
+        // thread (PERF-01, Pauta 6.0.1); a C# file that is not in a test project, or a caret in no test, goes on to
+        // {@code otherwise}, as a false answer did.
+        String text = b.getContent();
+        int caret = DebugCoordinator.caretLine(b);
         com.editora.perf.OffFx.then(
                 "CsharpTestDebug.debugAtCaret",
                 () -> {
                     Path project = DotnetLaunch.projectFile(file);
-                    return project != null && DotnetTests.isTestProject(read(project))
-                            ? java.util.Optional.of(project)
-                            : java.util.Optional.<Path>empty();
+                    if (project == null || !DotnetTests.isTestProject(read(project))) {
+                        return null;
+                    }
+                    DotnetTests.Target target = DotnetTests.testAt(text, caret);
+                    return target == null ? null : new Found(project, target);
                 },
                 found -> {
-                    Path project = found.or(java.util.Optional.empty()).orElse(null);
-                    if (project == null || !debugInProject(b, file, project)) {
+                    Found f = found.value();
+                    if (f == null) {
                         otherwise.run();
+                    } else {
+                        debugInProject(file, f.project(), f.target());
                     }
                 });
         return true;
     }
 
-    private boolean debugInProject(EditorBuffer b, Path file, Path project) {
-        DotnetTests.Target target = DotnetTests.testAt(b.getContent(), DebugCoordinator.caretLine(b));
-        if (target == null) {
-            return false;
-        }
+    /** The test project and the test at the caret. */
+    private record Found(Path project, DotnetTests.Target target) {}
+
+    private void debugInProject(Path file, Path project, DotnetTests.Target target) {
         if (!d.debugEffectiveFor("csharp")) {
             host.setStatus(d.unavailableMessage("csharp", file));
-            return true;
+            return;
         }
         Path root = project.toAbsolutePath().getParent();
         if (root == null || !ops.trustBuild(root, List.of(tr("dialog.trust.item.dotnet", project.getFileName())))) {
-            return true; // not trusted: nothing is built or run
+            return; // not trusted: nothing is built or run
         }
         d.nameSession(target.displayName());
         Runnable start = () -> start(file, project, root, target);
         d.s().relaunch = start; // Restart runs the same test again
         start.run();
-        return true;
     }
 
     /** The command that runs {@code target}'s tests of {@code project}, its host waiting for a debugger. */

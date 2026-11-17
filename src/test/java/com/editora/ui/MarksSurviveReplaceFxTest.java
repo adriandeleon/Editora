@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * apply all are — deleted the marks inside it, persisted the loss and told a live debug session the
  * breakpoints were gone.
  */
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the work runs off FX in the app; here in place
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class MarksSurviveReplaceFxTest {

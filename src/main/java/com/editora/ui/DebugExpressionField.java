@@ -74,6 +74,15 @@ final class DebugExpressionField {
     private final Label placeholder = new Label();
     private final DebugCompletion completion;
     private @Nullable IGrammar grammar;
+    /** Counts edits: a highlight worked out for an earlier text is dropped when it lands. */
+    private long edits;
+    /** Counts highlight asks: only the latest one is applied. */
+    private long highlightAsks;
+    /** How long typing must pause before the text is highlighted again. */
+    static final int HIGHLIGHT_PAUSE_MS = 120;
+
+    private final javafx.animation.PauseTransition highlightPause =
+            new javafx.animation.PauseTransition(javafx.util.Duration.millis(HIGHLIGHT_PAUSE_MS));
     private String languageFile = "";
     private double lineHeight = 18;
     private @Nullable Consumer<Boolean> onTab;
@@ -128,12 +137,14 @@ final class DebugExpressionField {
                 owner.complete(text, caret, cb);
             }
         });
-        area.textProperty().addListener((o, was, now) -> {
-            if (now.indexOf('\n') >= 0 && !multiLine.get()) {
+        area.plainTextChanges().subscribe(c -> {
+            edits++;
+            if (!multiLine.get() && c.getInserted().indexOf('\n') >= 0) {
                 multiLine.set(true); // pasted, or recalled from the history: a fragment of several lines
             }
-            highlight();
+            highlightPause.playFromStart(); // tokenized off the FX thread once typing pauses (PERF-01)
         });
+        highlightPause.setOnFinished(e -> highlight());
         multiLine.addListener((o, was, now) -> {
             area.pseudoClassStateChanged(MULTI_LINE, now);
             frame.pseudoClassStateChanged(MULTI_LINE, now);
@@ -275,24 +286,41 @@ final class DebugExpressionField {
         return languageFile;
     }
 
+    /** {@link com.editora.perf.BlockingSites} name of the field's tokenizing, done off the FX thread (PERF-01). */
+    static final String HIGHLIGHT_SITE = "DebugExpressionField.highlight";
+
+    /**
+     * Highlights the text in the grammar: tokenized off the FX thread (PERF-01, Pauta 6.0.1), the styles applied only
+     * when no edit and no later ask came meanwhile.
+     */
     private void highlight() {
-        String text = area.getText();
+        long ask = ++highlightAsks;
+        int length = area.getLength();
         IGrammar g = grammar;
-        if (text.isEmpty()) {
+        if (length == 0) {
             return;
         }
-        if (g == null || text.length() > MAX_HIGHLIGHTED) {
-            area.clearStyle(0, text.length());
+        if (g == null || length > MAX_HIGHLIGHTED) {
+            area.clearStyle(0, length);
             return;
         }
-        try {
-            StyleSpans<Collection<String>> spans = TextMateHighlighter.compute(text, g);
-            if (spans != null) {
-                area.setStyleSpans(0, spans);
-            }
-        } catch (RuntimeException ignored) {
-            // A tokenizer hiccup: the text stays as it was styled.
-        }
+        String text = area.getText();
+        long version = edits;
+        com.editora.perf.OffFx.then(
+                HIGHLIGHT_SITE,
+                () -> {
+                    try {
+                        return TextMateHighlighter.compute(text, g);
+                    } catch (RuntimeException e) {
+                        return null; // a tokenizer hiccup: the text stays as it was styled
+                    }
+                },
+                a -> {
+                    StyleSpans<Collection<String>> spans = a.value();
+                    if (spans != null && ask == highlightAsks && version == edits && grammar == g) {
+                        area.setStyleSpans(0, spans);
+                    }
+                });
     }
 
     /** As tall as its text (it wraps), between one line (four for a code fragment) and a bound; then it scrolls. */

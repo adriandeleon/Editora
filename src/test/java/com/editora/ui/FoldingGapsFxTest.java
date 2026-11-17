@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * per-change shift subscription, the merge into the chevron set, and the WorkspaceState round-trip.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // fold regions (PERF-01: detected off FX) land at once
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class FoldingGapsFxTest {
 

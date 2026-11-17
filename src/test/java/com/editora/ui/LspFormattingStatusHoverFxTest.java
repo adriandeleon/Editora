@@ -27,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * server (C5), and a long hover — a man page — made a popup taller than any screen (C3).
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // a popup's Markdown parse (PERF-01) lands at once
 class LspFormattingStatusHoverFxTest {
 
     @TempDir

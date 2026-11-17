@@ -243,6 +243,129 @@ applied only to the same edit count, worked out again otherwise); the Markdown p
 the FX thread and searches them off it (`PreviewFind.SEARCH_SITE`); the loose-files root a window did not find made by
 the launch is made off the thread (`LspManager.setLooseRoot`).
 
+The handlers follow it too (PERF-01, Pauta 6.0.1): no listener, key or mouse handler, cell factory, timer or
+`runLater` body parses, searches, diffs or encodes the user's data on the FX thread, at any size. Each moved place
+names a `BlockingSites` site, works on a snapshot (text, list or immutable copy) and applies its answer only to the
+same document version, list or caret. A stale answer is worked out again (up to three times) or dropped, and a
+command waiting for one is busy, so a second press is refused.
+
+- **Pickers and the index.** A picker's filter runs on `picker-search` through `ui/PickerSearch` (a `LatestOnly` per
+  picker, run where `OffFx` runs a command's work). The FX thread copies the rows and their match strings and keeps
+  the rows shown until the latest answer lands. An Enter (Tab, Open as Project) pressed meanwhile acts on that
+  answer. This covers the command palette, every `QuickOpen` picker (Loaded Sources and Modules too), Find File, the
+  Git log, the Settings search and its shortcut list, and the Structure, TODO, Bookmarks, Notes and Build Actions
+  filters. Search Everywhere searches a snapshot (`SearchEverywherePopup.Ops.sources`): the commands' enabled flags
+  and chords, and `IndexCoordinator.corpus()`, the index's unchanging file lists plus a `SymbolIndex.freeze()` copy
+  cached until the index changes. Go to Symbol, the Map's `@name` search, Go to Related File and Go to Definition's
+  project lookup search a corpus the same way. Go to Definition without a server scans the buffer through `OffFx`
+  and jumps only if the buffer, version and caret are unchanged. A save's declarations are scanned on the
+  `symbol-index` thread, in order with the walks. The Structure panel builds its outline off the thread from a copy
+  of the text, regions and symbols, with its doc comments and Python decorators; a row is coloured from its own
+  line only. The status bar's word count is counted off the thread whatever the size (`StatusWordCount.COUNT_SITE`).
+- **Language servers.** A `didChange` is queued on the FX thread with only its bookkeeping done (the shadow, the
+  version, the resync count). Its content changes are `lsp/LazyChangeEvents`: the compare with what the server holds
+  and the prefix/suffix splice are worked out on the session's writer thread as `DeferredSyncConsumer` encodes the
+  message, in wire order, so versions and order are unchanged. A text equal to the last one sent, but not the same
+  string, still goes out as an empty splice, and the caller hears `onIdentical` on the FX thread. Every other request
+  and notification is encoded on the writer too. The parameters of `workspace/executeCommand` and
+  `workspace/didChangeConfiguration` are frozen copies (`LanguageServerSession.frozen`: collections copied, JSON
+  deep-copied, nothing encoded). A resolve sends a server's item, which Editora changes only while mapping the
+  answer it came in.
+- **Folding and popups.** Fold regions are detected off the thread (`FoldManager.DETECT_SITE`) for every recompute
+  under a generation guard. A fold command asked while a detection is in flight waits for it (`whenRegionsKnown`).
+  Fold Block Comments and Markers scan on `KIND_SCAN_SITE`. A popup's Markdown (hover, signature and completion docs,
+  a personal note, the Map's hover docs, the PR review pane) is parsed on `MarkdownRenderer.POPUP_PARSE_SITE`. The
+  hover and a note show when the parse lands; the others show plain text first. A Markdown code fence asks the FX
+  thread only for a grammar already loaded (`MarkdownRenderer.cachedGrammarForInfo`); a cold one is loaded on the
+  fence highlighter's worker and the block is coloured when it lands. Line commands beside a collapsed fold
+  (`FoldManager.linesAsUnits`) look only at the hidden runs next to the lines they rewrite.
+- **Markdown editing.** Whether a line is code, front matter or raw HTML depends on every line above it.
+  `editor/markdown/MarkdownBlockMap` keeps that map per buffer: `MarkdownBlocks.scan` (`SCAN_SITE`) runs on a
+  snapshot off the thread after each edit, one scan out at a time. The keys and the list, heading, fence and table
+  commands look their lines up through `MarkdownLines.withKinds`, a scoped value bound for that very text. Until the
+  current version's scan lands, the map answers one version behind without scanning: lines above every edit exactly,
+  the edited lines from the first one, the lines below from their old place. The whole-document commands work on a
+  snapshot through `MarkdownEditing.offFx`: the table of contents (and its update before a save), a footnote, the link
+  commands, Format Document/Selection and heading numbers (`MarkdownFormatting.FORMAT_SITE`) and a paste of
+  structured HTML. A Ctrl/Cmd-click's link (`LINK_AT_SITE`), the heading crumbs, the agent's streamed reply
+  (`AgentPanel.PARSE_SITE`), the preview's Copy and the HTML export's check of the source go the same way. Mermaid
+  completion asks the line map whether the caret is in a mermaid fence.
+- **Editor commands.** Commands that search from the caret take the text, caret and anchor on the FX thread and
+  search on a virtual thread through `editor/CaretLook`: Select All Occurrences, Add Caret at Next Occurrence, Skip
+  Occurrence, Jump/Select to Matching Bracket, the sexp, defun and paragraph motions, Expand Selection, kill-sexp,
+  zap-to-char, Split into Lines and the Map card's moves. The answer is acted on only if the text, caret and
+  selection are unchanged. Toggle Comment works out its edit, and the reason for a refusal, off the thread
+  (`EditorBuffer.COMMENT_SITE`): a selection can be the whole document, and the comment rules read the whole text in
+  shell, HTML, PHP and INI. Narrow to Defun finds its bounds off the thread (`EditingCoordinator.DEFUN_SITE`). Query
+  Replace finds each match and plans "!" off the thread (`QUERY_REPLACE_SITE`); while a search is out, the session
+  holds the keys and acts on none of them except quitting. The JUnit test at the caret is read from a
+  `JavaTestScanner.CaretIndex` that the Run scan builds with its targets. Auto-rename tag reads the edited name from
+  a local window and finds the pair off the thread (`TagRenameMirror.MIRROR_SITE`). Typing `*` after `/*` looks at
+  most `IndentWindow.LOOK_BELOW_CHARS` below, as Enter does. Brace matching reads only the lines on screen in place.
+- **Whole-document rewrites and installs.** A rewrite never diffs on the FX thread. `EditorBuffer.PreparedEdit` is
+  worked out on the caller's worker (reload, Replace in Files, the Markdown link update, CSV Align/Shrink, Convert
+  Indentation, Markdown Format, MCP and ACP writes) and applied only to the version it was made for. Other callers
+  use `replaceWholeDocumentLater`/`replaceVisibleTextLater` (`WHOLE_EDIT_SITE`), which drop the rewrite rather than
+  overwrite text typed meanwhile. Text given to a new tab is prepared off the thread (`setContentLater`,
+  `PREPARE_TEXT_SITE`; jumps wait with `whenTextInstalled`). A note inside a replaced span is followed into the
+  replacement off the thread (`NoteManager.REPLACEMENT_SITE`). A window whose session no prefetch read, at launch or
+  with `--single-window`, is read off the thread and built when the read lands (`WindowManager.sessionReady`,
+  `SESSION_READ_SITE`).
+- **Consoles, Settings, grammars and the terminal.**
+  - A console's find bar searches a snapshot once typing pauses for 80 ms (`ConsoleFindBar.SEARCH_SITE`). The latest
+    ask wins, and text the output changed meanwhile is searched again.
+  - A console hover or click reads only the line under the pointer.
+  - Settings' modified markers, a row's reset and restore, and a window's re-apply compare and set property values
+    through their accessors, with no JSON (`SettingsModified`, `SettingsReapply`).
+  - The snippet editor and the theme preview tokenize off the thread.
+  - Every bundled grammar is loaded once on `grammars-warm` after the first window and kept. An FX caller only asks
+    for one already loaded (`GrammarRegistry.cachedForLanguageName`); otherwise it loads off the thread
+    (`whenLanguageLoaded`).
+  - The terminal's FX handlers never wait for the screen buffer's lock: they try it, and try again 4 ms later while
+    the emulator writes (`TerminalView.underLockSoon`).
+- **Debugger, diff and merge.**
+  - The line mapping between the launched text and the document (`LaunchedLines.SITE`, a Myers diff) is worked out
+    on a snapshot keyed by document version. The breakpoint send after an edit, a stop, Run to Cursor and Jump to
+    Line wait for it; other callers use the last mapping, and the file is sent again when it changes.
+  - `DebugTextScans` (a breakpoint line with no code, the test at the caret) runs off the thread per version.
+  - The merge resolver's Save (`MergeViewerPane.SAVE_SITE`, busy meanwhile; a close-save asks for the close again
+    once applied), Resolve Conflicts, Open in Diff Viewer and Apply Patch, and the diff viewer's applies parse and
+    compose off the thread.
+  - A diff's views are laid out where its model is made, on the diff-service thread (`DiffLayout`): the rows shown
+    with context folded, each pane's text, line numbers and changed-word offsets, for both views. A patch's own line
+    numbers and a pull request file's sides are worked out there too. The viewer only puts that text into its
+    panes. The Result editor counts its edits instead of reading its text on every keystroke, and the merge
+    resolver puts its Result together from the choices off the thread (a Save waits for it).
+  - The Map Changes card's words (the latest pick wins), the History card's lines and a code card's aids and uses
+    are worked out off the thread too.
+
+- **Rendering, logging and small reads.**
+  - A LaTeX formula is never parsed or rasterized on the FX thread (`MathImages.SITE`, one at a time under its
+    lock). The threads that parse a document for the preview, a popup or the agent panel draw its formulas into
+    the cache (`MarkdownRenderer.warmMath`), and print draws them with its other assets (`MarkdownPrintAssets`). A
+    formula the FX thread finds missing shows as an empty image of its style, filled when its rendering lands (its
+    source when it does not parse). JLaTeXMath's fonts are warmed on `math-warm`.
+  - Copy HTML renders the markup off the thread (`PreviewMenu.COPY_HTML_SITE`) and fills the clipboard when it
+    lands. A print preview's page images are decoded off the thread (`PrintService.DECODE_SITE`), and a page is
+    printed once `Pages.prepare` has its images.
+  - The debug expression field tokenizes off the thread once typing pauses for 120 ms
+    (`DebugExpressionField.HIGHLIGHT_SITE`). The diff viewers' application mark is read once on `bundled-warm` and
+    kept (`Icons.warmEditora`). A diff view whose kept layouts were dropped is laid out off the thread
+    (`DiffViewerPane.LAYOUT_SITE`). Saving a Map working set compares the two views property by property, with no
+    JSON.
+  - The session log is written by its own thread (`DebugLog`, `debug-log-writer`): a record logged on any thread
+    goes into the in-memory log and is queued, in order, for the session file and for the console, whose handlers
+    the log takes over. The quit waits for it (`DebugLog.flushWrites`, from `Application.stop()` and a shutdown
+    hook).
+  - The status bar's size is counted off the thread whatever the size (`StatusBar.SIZE_SITE`). Import from curl
+    converts the command off the thread (`CURL_IMPORT_SITE`). The start-up fallback reads the first window's fonts,
+    catalog and keymap on its own thread before the window is built (`App.FALLBACK_FIRST_WINDOW_SITE`) and builds
+    that window from `MainView`.
+
+`Handlers{Index,Lsp,Markdown,Editor,Console,Debug,Render}OffFxThreadFxTest` drive these paths and check that none of their
+`BlockingSites` is heard on the FX thread. `LspSyncOverWireFxTest` rebuilds the document from the changes a wired
+fake server receives, versions in order.
+
 ### 2. Debounce and coalesce
 
 Re-highlighting is debounced; overlay/ruler/minimap redraws coalesce to **one per pulse** with
