@@ -284,7 +284,8 @@ final class LogViewerCoordinator {
         if (resume != null && resume.snapshotSize() == snapshot.size()) {
             return resume.offset();
         }
-        return snapshot.modifiedMillis() >= 0 ? snapshot.size() : host.fileSize(file);
+        // No snapshot: from the file's end, measured on the follow's own thread (PERF-01, Pauta 6.0.1).
+        return snapshot.modifiedMillis() >= 0 ? snapshot.size() : -1;
     }
 
     private void stopFollow(EditorBuffer buffer) {

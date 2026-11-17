@@ -51,6 +51,11 @@ final class DebugOpsHost implements DebugCoordinator.Ops {
     }
 
     @Override
+    public void buildExecutableFacts(BuildTool tool, Path root) {
+        RunOpsHost.buildExecutableFacts(mc, tool, root);
+    }
+
+    @Override
     public boolean trustBuild(Path root, List<String> items) {
         return trustBuild(mc, root, items);
     }

@@ -382,24 +382,33 @@ final class DebugTableWindow {
                 failed(ev == null ? "" : ev.result());
                 return;
             }
-            PythonDataTable.Page page = PythonDataTable.parse(ev.result());
-            if (page.error() != null) {
-                failed("unsupported".equals(page.error()) ? tr("valuetable.dataUnsupported") : page.error());
-                return;
-            }
-            kind = page.kind();
-            shape = page.shapeText();
-            heading.setText(tr("valuetable.dataHeading", expression.isBlank() ? name : expression, kind, shape));
-            total = page.total();
-            width = page.width();
-            Map<String, String> types = new LinkedHashMap<>(dtypes);
-            types.putAll(PythonDataTable.dtypes(page));
-            dtypes = Map.copyOf(types);
-            rows.addAll(PythonDataTable.rows(page));
-            rebuild();
-            showNote();
-            showMore();
+            // The page's JSON is parsed off the FX thread (PERF-01, Pauta 6.0.1).
+            PythonDataTable.parseLater(ev.result(), page -> {
+                if (load == generation) {
+                    showPage(page);
+                }
+            });
         });
+    }
+
+    /** A page of the helper's answer, parsed: added to the table, or the reason it could not be. */
+    private void showPage(PythonDataTable.Page page) {
+        if (page.error() != null) {
+            failed("unsupported".equals(page.error()) ? tr("valuetable.dataUnsupported") : page.error());
+            return;
+        }
+        kind = page.kind();
+        shape = page.shapeText();
+        heading.setText(tr("valuetable.dataHeading", expression.isBlank() ? name : expression, kind, shape));
+        total = page.total();
+        width = page.width();
+        Map<String, String> types = new LinkedHashMap<>(dtypes);
+        types.putAll(PythonDataTable.dtypes(page));
+        dtypes = Map.copyOf(types);
+        rows.addAll(PythonDataTable.rows(page));
+        rebuild();
+        showNote();
+        showMore();
     }
 
     /** The helper could not show the value: the table stays empty and the note says why. */

@@ -4938,7 +4938,7 @@ final class MapSurface extends Region {
                                 && !entry.path().equals(base)
                         ? layoutRelative(base, entry.path()) + "/"
                         : entry.path().toString());
-        entry = canvasWithAttributes(entry);
+        entry = withAttributes(entry);
         String type = entry.symbolicLink()
                 ? tr("project.map.tooltip.symbolicLink")
                 : tr(entry.directory() ? "project.map.tooltip.folder" : "project.map.tooltip.file");
@@ -5090,10 +5090,41 @@ final class MapSurface extends Region {
     }
 
     /**
+     * A row listed by name only, with its size and time: read off the FX thread (PERF-01, Pauta 6.0.1). The tooltip
+     * shows the path and kind at once and gains the size and time when the look lands, if the row is still hovered.
+     */
+    private final DiskFacts<ProjectMapModel.Entry, ProjectMapModel.Entry> attributes = new DiskFacts<
+                    ProjectMapModel.Entry, ProjectMapModel.Entry>(
+                    "MapSurface.canvasWithAttributes", MapSurface::canvasWithAttributes)
+            .onLearned(() -> {
+                ProjectMapModel.Entry hoveredEntry = hovered == null ? null : entryByPath.get(hovered);
+                if (hoveredEntry != null) {
+                    nodeTooltip.setText(tooltipText(hoveredEntry));
+                }
+            });
+
+    private ProjectMapModel.Entry withAttributes(ProjectMapModel.Entry entry) {
+        if (!needsAttributes(entry)) {
+            return entry;
+        }
+        ProjectMapModel.Entry read = attributes.get(entry);
+        return read != null ? read : entry;
+    }
+
+    private static boolean needsAttributes(ProjectMapModel.Entry entry) {
+        return !(entry.directory()
+                || entry.isPlaceholder()
+                || entry.isSymbol()
+                || entry.size() >= 0
+                || entry.modifiedMillis() >= 0
+                || !com.editora.vfs.Vfs.isLocal(entry.path()));
+    }
+
+    /**
      * A row of a long folder listed by name only (position 15) carries no size or time: the tooltip reads them
      * for the one row it describes, from a local disk only. Any other row is returned as it is.
      */
-    private static ProjectMapModel.Entry canvasWithAttributes(ProjectMapModel.Entry entry) {
+    static ProjectMapModel.Entry canvasWithAttributes(ProjectMapModel.Entry entry) {
         if (entry.directory()
                 || entry.isPlaceholder()
                 || entry.isSymbol()

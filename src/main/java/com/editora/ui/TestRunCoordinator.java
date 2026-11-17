@@ -224,8 +224,6 @@ final class TestRunCoordinator implements TestRunHook {
     /** The package manager this npm run launched ({@code npm}, {@code pnpm} …): how test names are passed on. */
     private String npmManager = "npm";
 
-    private final List<String> npmSniff = new ArrayList<>();
-
     TestRunCoordinator(CoordinatorHost host, Ops ops) {
         com.editora.build.GradleDebugInit.prepare(List.of(TestDebug.GRADLE_TEST_TASK)); // a test debug's init script
         this.host = host;
@@ -279,7 +277,7 @@ final class TestRunCoordinator implements TestRunHook {
         fileBased = false;
         npm = false;
         tapDecided = false;
-        npmSniff.clear();
+        stage = null;
         seeded = false;
         followTarget = null;
         awaitingAttachFor = null;
@@ -340,7 +338,7 @@ final class TestRunCoordinator implements TestRunHook {
         tapDecided = false;
         nodeTestRun = false;
         npmManager = resolvedArgv == null || resolvedArgv.isEmpty() ? "npm" : resolvedArgv.get(0);
-        npmSniff.clear();
+        stage = new TestLineStage(tool, parser, fileBased, npm, NPM_SNIFF_LIMIT);
         seeded = false;
         followTarget = null;
         awaitingAttachFor = null;
@@ -381,10 +379,31 @@ final class TestRunCoordinator implements TestRunHook {
         return true;
     }
 
+    /**
+     * The claimed run's line stage: its output is parsed where it is read ({@link #prepareTestOutput}), off the FX
+     * thread (PERF-01, Pauta 6.0.1). Null between runs and for an external run.
+     */
+    private volatile @Nullable TestLineStage stage;
+
     @Override
     public void onTestOutput(String line, boolean stderr) {
-        if (currentRun == null) {
-            return;
+        prepareTestOutput(line, stderr).apply().run(); // a caller that hands a line on the FX thread: parsed here
+    }
+
+    @Override
+    public TestRunHook.PreparedLine prepareTestOutput(String line, boolean stderr) {
+        TestLineStage s = stage;
+        if (s == null) {
+            return new TestRunHook.PreparedLine(() -> {}, line);
+        }
+        TestLineStage.Line l = s.take(line, stderr);
+        return new TestRunHook.PreparedLine(() -> applyLine(s, l), l.shown());
+    }
+
+    /** On the FX thread: what a line of the claimed run came to ({@link TestLineStage#take}). */
+    private void applyLine(TestLineStage s, TestLineStage.Line l) {
+        if (currentRun == null || s != stage) {
+            return; // a newer run took over
         }
         // "Debug Test": the suspended test JVM prints the JDWP banner — attach as soon as we see it. Checked
         // before the file-based return, because for Maven/Gradle the console is the ONLY place it appears.
@@ -392,10 +411,10 @@ final class TestRunCoordinator implements TestRunHook {
         // banner only after the attached JVM ran, when the loop may already be waiting for the next fork, so
         // acting on it would attach a port that is gone (queued as "another JVM is waiting").
         if (awaitingAttachFor != null) {
-            if (mavenDebugPort > 0 && TestDebug.isSurefireTestsBanner(line)) {
+            if (mavenDebugPort > 0 && l.surefireBanner()) {
                 attachDeadline = System.currentTimeMillis() + attachDeadlineMs; // the tests start now
             }
-            int port = TestDebug.jdwpPort(line);
+            int port = l.jdwpPort();
             if (port > 0 && port != mavenDebugPort) {
                 // Kept for the whole run: every forked JVM prints its own banner and waits (review D11). A port
                 // already attached is the same JVM's banner printed again.
@@ -405,43 +424,20 @@ final class TestRunCoordinator implements TestRunHook {
             }
         }
         if (fileBased) {
-            if (currentTool == BuildTool.MAVEN && TestRunRecognizer.isNoTestsMatchingLine(line)) {
+            if (l.noTestsMatching()) {
                 sawNoTestsMatching = true; // a hand-typed -Dtest= without the reactor flags (review D9)
             }
-            if (currentTool == BuildTool.GRADLE) {
-                sawGradleTaskLines |= GradleTaskOutcomes.isTaskLine(line);
-                String reused = GradleTaskOutcomes.reusedTask(line);
-                if (reused != null) {
-                    reusedGradleTasks.add(reused);
-                }
+            sawGradleTaskLines |= l.gradleTaskLine();
+            String reused = l.reusedGradleTask();
+            if (reused != null) {
+                reusedGradleTasks.add(reused);
             }
             return; // JVM: results come from the report files, not the console
         }
-        if (npm && !tapDecided) {
-            npmSniff.add(line);
-            boolean tap = TapParser.looksLikeTap(npmSniff);
-            if (!tap && com.editora.test.NodeSpecParser.looksLikeSpec(npmSniff)) {
-                parser = new com.editora.test.NodeSpecParser(); // node --test's default reporter on a pipe
-                nodeTestRun = true;
-            }
-            if (tap || nodeTestRun) {
-                tapDecided = true;
-                TestResultParser p = parser; // TAP's from the start, or the spec parser just chosen
-                for (String buffered : npmSniff) {
-                    if (p != null) {
-                        mergeAll(p.onLine(buffered, false));
-                    }
-                }
-                npmSniff.clear();
-            } else if (npmSniff.size() > NPM_SNIFF_LIMIT) {
-                npmSniff.clear(); // keep sniffing cheaply; the exit handler shows the fallback banner
-            }
-            return;
-        }
-        TestResultParser p = parser; // a build tool's run always has one
-        if (p != null) {
-            mergeAll(p.onLine(line, stderr));
-        }
+        parser = l.parser();
+        nodeTestRun |= l.nodeTestRun();
+        tapDecided |= l.tapDecided();
+        mergeAll(l.suites());
     }
 
     @Override

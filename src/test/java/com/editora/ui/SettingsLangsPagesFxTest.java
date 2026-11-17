@@ -242,6 +242,8 @@ class SettingsLangsPagesFxTest {
             org.junit.jupiter.api.Assertions.assertEquals(
                     com.editora.web.Browsers.SYSTEM_DEFAULT + "-other", rig.settings.getHtmlPreviewBrowser());
 
+            // Whether a command is there is looked at off the FX thread (PERF-01); here in place, so it lands now.
+            com.editora.perf.OffFx.runnerForTest((name, task) -> task.run());
             SettingsRig.typeAndEnter(rig.control("httpNodeField"), "/no/such/dir/node");
             Label node = rig.<ToolStatusRow>control("httpNodeStatus").pill();
             org.junit.jupiter.api.Assertions.assertEquals(tr("settings.tool.notFound", "node"), node.getText());
@@ -255,6 +257,7 @@ class SettingsLangsPagesFxTest {
             org.junit.jupiter.api.Assertions.assertEquals(tr("settings.tool.notFound", "mvnx"), mvn.getText());
             SettingsRig.typeAndEnter(maven, "");
             assertTrue(mvn.getText().startsWith("mvn"), "back to the default command: " + mvn.getText());
+            com.editora.perf.OffFx.runnerForTest(null);
         });
     }
 

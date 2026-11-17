@@ -97,21 +97,28 @@ class HttpVariableEditorFxTest {
             buffer.setHttpHooks(buffer.httpHooks()
                     .withVariables(null, () -> new HttpVariableIndex.Context(Map.of("host", "http://h"), null)));
 
-            buffer.triggerCompletion();
-            assertTrue(buffer.completionShowing(), "the popup opened inside {{");
-            CompletionPopup popup = EditorFx.field(completion, "completionPopup");
-            assertEquals("host}}", popup.selected().insert());
-            area.fireEvent(EditorFx.pressed(KeyCode.ENTER, false, false));
-            assertEquals("@id = 7\nGET {{host}}", area.getText());
-            assertFalse(buffer.completionShowing());
+            // The variables are worked out off the FX thread (PERF-01); here in place, so the popup opens now.
+            com.editora.editor.completion.BufferCompletion.offerRunnerForTest(Runnable::run);
+            try {
+                buffer.triggerCompletion();
+                assertTrue(buffer.completionShowing(), "the popup opened inside {{");
+                CompletionPopup popup = EditorFx.field(completion, "completionPopup");
+                assertEquals("host}}", popup.selected().insert());
+                area.fireEvent(EditorFx.pressed(KeyCode.ENTER, false, false));
+                assertEquals("@id = 7\nGET {{host}}", area.getText());
+                assertFalse(buffer.completionShowing());
 
-            area.appendText("/x?n={{");
-            area.moveTo(area.getLength());
-            buffer.triggerCompletion();
-            assertTrue(buffer.completionShowing());
-            javafx.scene.control.ListView<Completion> list = EditorFx.field(popup, "list");
-            List<String> rows = list.getItems().stream().map(Completion::insert).toList();
-            assertTrue(rows.containsAll(List.of("host}}", "id}}", "$uuid}}")), rows.toString());
+                area.appendText("/x?n={{");
+                area.moveTo(area.getLength());
+                buffer.triggerCompletion();
+                assertTrue(buffer.completionShowing());
+                javafx.scene.control.ListView<Completion> list = EditorFx.field(popup, "list");
+                List<String> rows =
+                        list.getItems().stream().map(Completion::insert).toList();
+                assertTrue(rows.containsAll(List.of("host}}", "id}}", "$uuid}}")), rows.toString());
+            } finally {
+                com.editora.editor.completion.BufferCompletion.offerRunnerForTest(null);
+            }
             stage[0].close();
         });
     }

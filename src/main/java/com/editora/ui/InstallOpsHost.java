@@ -36,6 +36,11 @@ final class InstallOpsHost implements InstallCoordinator.Ops {
     }
 
     @Override
+    public String javaDebugPluginPath() {
+        return mc.dapManager.javaDebugPluginPath();
+    }
+
+    @Override
     public boolean mmdcAvailable() {
         return mc.mermaid.mmdcAvailable();
     }
@@ -52,9 +57,19 @@ final class InstallOpsHost implements InstallCoordinator.Ops {
 
     @Override
     public void reapplyToolSupport() {
-        // An install put a copy in place (or a failed one left the old): what was kept of the disk is stale.
-        LspServerCommands.forgetOwnCopies();
-        com.editora.dap.DebugAdapterLocator.forgetLocated();
+        // An install put a copy in place (or a failed one left the old): what was kept of the disk is stale. It is
+        // looked at again off the FX thread, and the support applied when it has been (PERF-01, Pauta 6.0.1): the
+        // FX thread re-probed every server's own copy and the java-debug plugin in place.
+        com.editora.perf.OffFx.run(
+                "install-reprobe",
+                () -> {
+                    LspServerCommands.reprobeOwnCopies();
+                    com.editora.dap.DebugAdapterLocator.relocateKept();
+                },
+                failed -> reapplyLooked());
+    }
+
+    private void reapplyLooked() {
         mc.lspManager.invalidateDetection();
         mc.lspCoordinator.applySupport();
         mc.debugCoordinator.applySupport();

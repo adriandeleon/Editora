@@ -305,7 +305,7 @@ public final class PinnedVersions {
      * install's), answered from memory on it (PERF-01, Pauta 6.0.1).
      */
     private static final com.editora.perf.Looked<Path, Path> CANONICAL =
-            new com.editora.perf.Looked<>("PinnedVersions.canonical", PinnedVersions::canonicalNow);
+            new com.editora.perf.Looked<>("PinnedVersions.canonical", PinnedVersions::canonicalNow, null);
 
     private static Path canonicalNow(Path abs) {
         Path existing = abs;

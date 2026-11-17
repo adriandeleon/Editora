@@ -75,16 +75,61 @@ public final class KeybindingsFile {
         private static final long serialVersionUID = 1L;
     }
 
+    /**
+     * A copy of the user's key bindings, taken on the FX thread in memory only (no JSON there: PERF-01, Pauta
+     * 6.0.1), which the sync thread renders, compares and parses into.
+     */
+    public record Bindings(
+            Map<String, Map<String, List<String>>> shared, Map<String, Map<String, List<String>>> macOnly) {
+
+        /** A deep copy of {@code settings}' bindings: cheap, and safe to hand to another thread. */
+        public static Bindings of(Settings settings) {
+            return new Bindings(copy(settings.getKeyBindings()), copy(settings.getKeyBindingsMacOnly()));
+        }
+
+        private static Map<String, Map<String, List<String>>> copy(
+                @Nullable Map<String, Map<String, List<String>>> byKeymap) {
+            Map<String, Map<String, List<String>>> out = new LinkedHashMap<>();
+            if (byKeymap != null) {
+                byKeymap.forEach((keymap, bindings) -> {
+                    if (keymap != null && bindings != null) {
+                        Map<String, List<String>> inner = new LinkedHashMap<>();
+                        bindings.forEach((command, chords) ->
+                                inner.put(command, chords == null ? new ArrayList<>() : new ArrayList<>(chords)));
+                        out.put(keymap, inner);
+                    }
+                });
+            }
+            return out;
+        }
+
+        /** Puts these bindings into {@code settings} (FX thread): memory only. */
+        public void applyTo(Settings settings) {
+            settings.setKeyBindings(copy(shared));
+            settings.setKeyBindingsMacOnly(copy(macOnly));
+        }
+    }
+
     /** The file for {@code settings}' bindings; null when there are none. */
     public static @Nullable String render(Settings settings) {
+        return render(Bindings.of(settings));
+    }
+
+    /** The file for {@code bindings}; null when there are none. Off the FX thread. */
+    public static @Nullable String render(Bindings bindings) {
         Map<String, String> entries = new LinkedHashMap<>();
-        put(entries, SHARED, settings.getKeyBindings());
-        put(entries, MAC_ONLY, settings.getKeyBindingsMacOnly());
+        put(entries, SHARED, bindings.shared());
+        put(entries, MAC_ONLY, bindings.macOnly());
         return text(entries);
     }
 
     /** Replaces {@code settings}' bindings, of every keymap, with those of {@code text} (null: no file, so none). */
     public static void apply(Settings settings, @Nullable String text) throws IOException {
+        parse(text).applyTo(settings);
+    }
+
+    /** The bindings {@code text} holds (null: no file, so none). Off the FX thread. */
+    public static Bindings parse(@Nullable String text) throws IOException {
         Map<String, Map<String, List<String>>> shared = new LinkedHashMap<>();
         Map<String, Map<String, List<String>>> macOnly = new LinkedHashMap<>();
         for (Map.Entry<String, String> e : entries(text).entrySet()) {
@@ -93,8 +138,7 @@ public final class KeybindingsFile {
                     .computeIfAbsent(parts[0], k -> new LinkedHashMap<>())
                     .put(parts[2], chords(e.getValue()));
         }
-        settings.setKeyBindings(shared);
-        settings.setKeyBindingsMacOnly(macOnly);
+        return new Bindings(shared, macOnly);
     }
 
     /**

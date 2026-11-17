@@ -69,6 +69,45 @@ public record ArchetypeDescriptor(List<RequiredProperty> requiredProperties) {
                 .toList();
     }
 
+    /** What {@link #warm} read, by archetype: the New Maven Project form asks the FX thread's question here. */
+    private static final java.util.Map<MavenArchetype, ArchetypeDescriptor> KNOWN =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * The descriptor {@link #warm} read for {@code archetype}; {@link #NONE} (the defaults: what the form shows
+     * for an archetype whose jar is not in the local repository) until it has. Memory only: the FX thread's ask.
+     */
+    public static ArchetypeDescriptor known(MavenArchetype archetype) {
+        return KNOWN.getOrDefault(archetype, NONE);
+    }
+
+    /** Whether {@link #warm} has read {@code archetype}'s descriptor. */
+    public static boolean isKnown(MavenArchetype archetype) {
+        return KNOWN.containsKey(archetype);
+    }
+
+    /**
+     * Reads the descriptors of {@code archetypes} from the local repository named by {@code userHome}'s Maven
+     * settings, on a thread of its own (PERF-01, Pauta 6.0.1: the settings file and the archetype jars are never
+     * read on the FX thread), then runs {@code then} on the FX thread so a form showing defaults shows the read ones.
+     */
+    public static void warm(Path userHome, List<MavenArchetype> archetypes, Runnable then) {
+        List<MavenArchetype> wanted = List.copyOf(archetypes);
+        com.editora.perf.OffFx.run(
+                "maven-archetype-descriptors",
+                () -> {
+                    Path repo = MavenPluginGoals.localRepository(userHome);
+                    for (MavenArchetype a : wanted) {
+                        try {
+                            KNOWN.put(a, readFromLocalRepository(repo, a));
+                        } catch (RuntimeException e) {
+                            KNOWN.put(a, NONE);
+                        }
+                    }
+                },
+                failure -> then.run());
+    }
+
     /** Parses a descriptor; a malformed one is {@link #NONE} rather than an error — the defaults then apply. */
     public static ArchetypeDescriptor parse(String xml) {
         if (xml == null || xml.isBlank()) {

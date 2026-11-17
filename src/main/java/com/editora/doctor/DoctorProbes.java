@@ -128,15 +128,25 @@ public final class DoctorProbes {
      * Whether a configured path is an executable file: looked at off the FX thread where a status row's check asks
      * ({@link #lookAt}), answered from memory on it (PERF-01, Pauta 6.0.1).
      */
-    private static final com.editora.perf.Looked<String, Boolean> EXECUTABLE =
-            new com.editora.perf.Looked<>("DoctorProbes.resolvedPath", exe -> {
+    private static final com.editora.perf.Looked<String, Boolean> EXECUTABLE = new com.editora.perf.Looked<>(
+            "DoctorProbes.resolvedPath",
+            exe -> {
                 try {
                     return Files.isExecutable(Path.of(exe));
                 } catch (RuntimeException e) {
                     return false;
                 }
-            });
+            },
+            Boolean.TRUE); // a path never looked at counts as there until it has been: no offer to install meanwhile
 
+    /** Whether {@link #resolvedPath} of {@code command} answers on the FX thread from a look made off it. */
+    public static boolean known(List<String> command) {
+        if (command == null || command.isEmpty()) {
+            return true;
+        }
+        String exe = command.get(0);
+        return exe.indexOf('/') >= 0 || exe.indexOf('\\') >= 0 ? EXECUTABLE.knows(exe) : ProcessRunner.onPathKnown(exe);
+    }
     /**
      * Looks at what {@link #resolvedPath} asks for {@code command} now, on this thread (off the FX thread), so the
      * FX thread's next ask answers from memory.

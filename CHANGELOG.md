@@ -740,6 +740,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   community themes' editor were drawn in the faintest text colour; they now use the muted one, 4.5:1 or more
   (ICON-09).
 
+- **Checks made as you type, switch tabs or follow a link look at the disk in the background.** A Markdown file's
+  lint settings, `.editorconfig` rules, Markdown and HTTP completion, spelling verdicts, a language server's project
+  folder and its Java project checks, links followed in Markdown, the terminal, the console and the agent's
+  transcript, Go to Super Method, the New Maven Project form, the SSH Connect form's Host field, Find in Files' folder,
+  the Problems window, the Map's tooltips, Local File History's view of a closed file, a log followed from its end,
+  the JDK lists, keymap switches, zoomed stylesheets, Reload User Themes, Settings sync and the debugger's frame
+  checks no longer wait for the disk on the UI thread. What you may notice: the first lint of a file in a folder not
+  seen before, a new misspelling's squiggle and a Markdown completion list appear a moment later; the SSH form fills
+  the user and port once you pause typing; a Map tooltip shows the size and date when they arrive; on the first
+  right-click of a folder outside any Maven project the Maven submenu can show briefly before it hides; a popup first
+  opened at a zoom other than 100% can show at 100% for a moment; a bundled font picked before the rest are loaded
+  shows in the fallback face until it is. A Run, Build or Debug command in a folder not looked at yet, a keymap
+  switch in the first moments after launch, Markdown lint's Fix and a `.http` run start once the background look or
+  parse lands; New Maven Project's Create waits until the folder has been checked, and a terminal link click on a path
+  waits for the path to be checked. A Settings row for a server command or debugger path you just typed says
+  "checking" until it is found. A save follows the `.editorconfig` as it is on disk at that moment.
+
 - **File commands, installs and plugins work on disk in the background.** Opening, renaming, moving and deleting
   files in the Project panel and on the Map, New Folder, New ▸ type, Save As's "replace it?" check, Revert, Rename
   File, Reopen Closed Tab, Go to Related File and Create Test, Find File's Enter on a typed path, a bookmark or a

@@ -322,6 +322,9 @@ class FileRoundTripFxTest {
 
     private static EditorBuffer load(FxWindowFixture fx, Path file) throws Exception {
         FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+        // A real open resolves the .editorconfig on its load thread; this in-place load on FX answers from
+        // what a look off the thread found, so look first, as the open does.
+        com.editora.editorconfig.EditorConfig.warm(file);
         return FxTestSupport.callOnFx(() -> {
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(file);

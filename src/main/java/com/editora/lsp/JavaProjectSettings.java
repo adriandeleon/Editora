@@ -60,6 +60,7 @@ public final class JavaProjectSettings {
         if (root == null || com.editora.vfs.Vfs.isRemote(root)) {
             return Map.of();
         }
+        com.editora.perf.BlockingSites.enter("JavaProjectSettings.forRoot");
         Map<String, Object> java = new HashMap<>();
         // A .java file at the root: the sections an IntelliJ-written .editorconfig gives Java files apply.
         Map<String, String> ij = EditorConfig.rawFor(root.resolve("Probe.java"));
@@ -295,6 +296,7 @@ public final class JavaProjectSettings {
      * build names (fifth review DN4). Only folders that exist; never {@code root} itself.
      */
     public static List<Path> styleFolders(Path root) {
+        com.editora.perf.BlockingSites.enter("JavaProjectSettings.styleFolders");
         java.util.Set<Path> out = new java.util.LinkedHashSet<>();
         out.add(root.resolve(".settings"));
         out.add(root.resolve("config"));

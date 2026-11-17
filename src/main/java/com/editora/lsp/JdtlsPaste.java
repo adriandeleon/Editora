@@ -154,7 +154,23 @@ public final class JdtlsPaste {
         synchronized (copies) {
             file = copies.get(pasted.replace("\r\n", "\n"));
         }
-        return file != null && java.nio.file.Files.isRegularFile(file) ? file : null;
+        if (file == null) {
+            return null;
+        }
+        if (onFx()) {
+            // Not looked at on the FX thread (PERF-01, Pauta 6.0.1): a file gone since makes jdtls answer nothing,
+            // and handlePasteEvent then asks again without it (AL3), as when this check said it was gone.
+            return file;
+        }
+        return java.nio.file.Files.isRegularFile(file) ? file : null;
+    }
+
+    private static boolean onFx() {
+        try {
+            return javafx.application.Platform.isFxApplicationThread();
+        } catch (RuntimeException | LinkageError e) {
+            return false;
+        }
     }
 
     /**

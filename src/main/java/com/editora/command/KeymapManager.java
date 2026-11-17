@@ -96,16 +96,100 @@ public class KeymapManager {
         String macResource = "/com/editora/keymaps/" + name + ".mac.json";
         String baseResource = "/com/editora/keymaps/" + name + ".json";
         String resource = mac && KeymapManager.class.getResource(macResource) != null ? macResource : baseResource;
+        Map<String, String> loaded = parsed(resource);
+        bindings.clear();
+        bindings.putAll(loaded);
+        warmTheOthers(mac);
+    }
+
+    /** Bundled keymap resource → its parsed bindings: read once (PERF-01, Pauta 6.0.1), never again on a switch. */
+    private static final Map<String, Map<String, String>> PARSED = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static final java.util.concurrent.atomic.AtomicBoolean WARMING =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /** The parsed bindings of bundled {@code resource}, read and kept on the first ask. */
+    static Map<String, String> parsed(String resource) {
+        Map<String, String> kept = PARSED.get(resource);
+        if (kept != null) {
+            return kept;
+        }
+        com.editora.perf.BlockingSites.enter("KeymapManager.parsed");
         try (InputStream in = KeymapManager.class.getResourceAsStream(resource)) {
             if (in == null) {
                 throw new IllegalArgumentException("Keymap resource not found: " + resource);
             }
-            Map<String, String> loaded = MAPPER.readValue(in, new TypeReference<Map<String, String>>() {});
-            bindings.clear();
-            bindings.putAll(loaded);
+            Map<String, String> loaded = Collections.unmodifiableMap(
+                    MAPPER.readValue(in, new TypeReference<LinkedHashMap<String, String>>() {}));
+            PARSED.put(resource, loaded);
+            return loaded;
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to read keymap " + resource, e);
         }
+    }
+
+    /** Completed once every bundled keymap (each platform's variant) is parsed and kept. */
+    private static final java.util.concurrent.CompletableFuture<Void> ALL_PARSED =
+            new java.util.concurrent.CompletableFuture<>();
+
+    /**
+     * After the first keymap is read (start-up's, which the rule allows), reads every bundled keymap, both
+     * variants, once on a thread of its own, so a later switch, a rebind's base or a {@link #defaults} ask finds
+     * it parsed instead of reading the resource on the FX thread (PERF-01, Pauta 6.0.1).
+     */
+    private static void warmTheOthers(boolean mac) {
+        if (!WARMING.compareAndSet(false, true)) {
+            return;
+        }
+        Thread.ofVirtual().name("keymaps-warm").start(KeymapManager::parseAllBundled);
+    }
+
+    /**
+     * Parses and keeps every bundled keymap (its own and its macOS variant), on the calling thread: the launch's
+     * prefetch or {@code keymaps-warm}. Never throws; a keymap that cannot be read is reported by its switch.
+     */
+    public static void parseAllBundled() {
+        try {
+            for (String name : AVAILABLE.keySet()) {
+                try {
+                    String macResource = "/com/editora/keymaps/" + name + ".mac.json";
+                    if (KeymapManager.class.getResource(macResource) != null) {
+                        parsed(macResource);
+                    }
+                    parsed("/com/editora/keymaps/" + name + ".json");
+                } catch (RuntimeException e) {
+                    // the switch reads it itself and reports the problem
+                }
+            }
+        } finally {
+            ALL_PARSED.complete(null);
+        }
+    }
+
+    /**
+     * Runs {@code then} on the FX thread once every bundled keymap is parsed: now when they are, else when the
+     * parse started at launch (or here) lands. A keymap switch, a rebuild of the shared keymap and a rebind wait
+     * through it, so no keymap is read on the FX thread after the first window (PERF-01, Pauta 6.0.1).
+     */
+    public static void whenParsed(Runnable then) {
+        if (ALL_PARSED.isDone()) {
+            then.run();
+            return;
+        }
+        if (WARMING.compareAndSet(false, true)) {
+            Thread.ofVirtual().name("keymaps-warm").start(KeymapManager::parseAllBundled);
+        }
+        ALL_PARSED.thenRun(() -> com.editora.perf.OffFx.onFx(then));
+    }
+
+    /** Whether every bundled keymap is parsed ({@link #whenParsed} runs at once). */
+    public static boolean allParsed() {
+        return ALL_PARSED.isDone();
+    }
+
+    /** TEST SEAM — whether {@code resource} is parsed and kept. */
+    static boolean isParsedForTest(String resource) {
+        return PARSED.containsKey(resource);
     }
 
     /**

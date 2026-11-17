@@ -422,6 +422,10 @@ class MavenProjectFlowFxTest {
                     tr("dialog.mavenProject.willCreate", dir.resolve("taken").resolve("demo-app")), rig.hint(card));
             Files.writeString(dir.resolve("taken").resolve("demo-app").resolve("README"), "x");
             FxTestSupport.runOnFx(() -> location.setText(dir.resolve("taken").toString() + "/"));
+            // The folder is looked at off the FX thread (PERF-01): the form refuses it when the answer lands.
+            for (int i = 0; i < 400 && !FxTestSupport.callOnFx(create::isDisabled); i++) {
+                Thread.sleep(10);
+            }
             assertTrue(FxTestSupport.callOnFx(create::isDisabled));
             assertEquals(tr("dialog.mavenProject.exists", dir.resolve("taken").resolve("demo-app")), rig.hint(card));
             FxTestSupport.runOnFx(create::fire);
@@ -488,6 +492,51 @@ class MavenProjectFlowFxTest {
             assertTrue(console.contains("[INFO] Generating project in Batch mode"), console);
             assertTrue(console.contains("[WARNING] something on stderr"), console);
             assertEquals(tr("run.exited", 0), rig.consoleStatus());
+        }
+    }
+
+    /**
+     * PERF-01 (Pauta 6.0.1): whether the target folder holds something is looked at off the FX thread. Until the
+     * answer lands Create is disabled and the form says it is checking; a folder that fills after the form looked
+     * is refused by the generation, which looks again before it writes.
+     */
+    @Test
+    void createWaitsForTheFolderLookAndTheGenerationLooksAgain(@TempDir Path dir) throws Exception {
+        try (Rig rig = new Rig(dir)) {
+            List<List<String>> runs = new CopyOnWriteArrayList<>();
+            FxTestSupport.runOnFx(
+                    () -> rig.coordinator.setRunnerForTest((workingDir, argv, listener) -> runs.add(argv)));
+            FxTestSupport.runOnFx(() -> rig.coordinator.newProject(dir));
+            rig.chooseArchetype(a -> a.artifactId().equals("maven-archetype-quickstart"));
+            Node card = rig.card();
+            assertNotNull(card);
+            Button create = rig.button(card, tr("dialog.mavenProject.create"));
+            TextField name = rig.formField(0);
+            Path projectDir = dir.resolve("demo-app");
+
+            List<Runnable> held = new CopyOnWriteArrayList<>();
+            com.editora.perf.OffFx.runnerForTest((n, task) -> held.add(task));
+            try {
+                FxTestSupport.runOnFx(() -> name.setText("demo-app"));
+                assertTrue(FxTestSupport.callOnFx(create::isDisabled), "not usable while the folder is unknown");
+                assertEquals(tr("dialog.mavenProject.checking", projectDir), rig.hint(card));
+            } finally {
+                com.editora.perf.OffFx.runnerForTest((n, task) -> task.run()); // in place again, as the class runs
+            }
+            held.forEach(Runnable::run); // the looks land
+            for (int i = 0; i < 400 && FxTestSupport.callOnFx(create::isDisabled); i++) {
+                Thread.sleep(10);
+            }
+            assertFalse(FxTestSupport.callOnFx(create::isDisabled));
+            assertEquals(tr("dialog.mavenProject.willCreate", projectDir), rig.hint(card));
+
+            // The folder fills after the form looked: the generation looks again and writes nothing.
+            Files.createDirectories(projectDir);
+            Files.writeString(projectDir.resolve("README"), "x");
+            FxTestSupport.runOnFx(create::fire);
+            FxTestSupport.drainFx();
+            assertEquals(List.of(), runs, "nothing generated into a folder that filled meanwhile");
+            assertFalse(Files.exists(projectDir.resolve("pom.xml")));
         }
     }
 

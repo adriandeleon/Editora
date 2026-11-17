@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Menu;
@@ -37,6 +38,22 @@ class MavenMenuFxTest {
         return (Menu) FxTestSupport.call(c, "mavenMenu", new Class[] {Path.class}, context);
     }
 
+    /**
+     * Asks for the menu once, so the pom above {@code context} is looked at (off the FX thread, PERF-01), waits for
+     * that look to land, and answers what the menu is then — what a right-click a moment later gets. Off the FX thread.
+     */
+    private static Menu settledMenuFor(MavenProjectCoordinator c, Path context) throws Exception {
+        FxTestSupport.callOnFx(() -> menuFor(c, context));
+        DiskFacts<Path, ?> looked = FxTestSupport.field(c, "pomAbove");
+        for (int i = 0; i < 300 && !MavenProjectCoordinator.isPomFile(context); i++) {
+            if (FxTestSupport.callOnFx(() -> looked.knows(context))) {
+                break;
+            }
+            Thread.sleep(10);
+        }
+        return FxTestSupport.callOnFx(() -> menuFor(c, context));
+    }
+
     private MavenProjectCoordinator coordinator(FxWindowFixture fx) {
         return FxTestSupport.field(fx.controller, "mavenProjectCoordinator");
     }
@@ -47,8 +64,9 @@ class MavenMenuFxTest {
         FxWindowFixture fx = FxWindowFixture.create();
         try {
             Files.writeString(dir.resolve("pom.xml"), "<project><packaging>jar</packaging></project>");
+            Menu settled = settledMenuFor(coordinator(fx), dir);
             FxTestSupport.runOnFx(() -> {
-                Menu menu = menuFor(coordinator(fx), dir);
+                Menu menu = settled;
                 assertNotNull(menu, "a folder holding a pom should offer Maven actions");
                 assertEquals(tr("menu.maven"), menu.getText());
                 assertTrue(
@@ -73,9 +91,9 @@ class MavenMenuFxTest {
         try {
             Path pom = dir.resolve("pom.xml");
             Files.writeString(pom, "<project><packaging>jar</packaging></project>");
+            Menu fromFile = settledMenuFor(coordinator(fx), pom);
+            Menu fromDir = settledMenuFor(coordinator(fx), dir);
             FxTestSupport.runOnFx(() -> {
-                Menu fromFile = menuFor(coordinator(fx), pom);
-                Menu fromDir = menuFor(coordinator(fx), dir);
                 assertNotNull(fromFile);
                 assertEquals(fromDir.getItems().size(), fromFile.getItems().size(), "one builder, one menu");
             });
@@ -92,7 +110,7 @@ class MavenMenuFxTest {
         Path dir = Files.createTempDirectory("editora-maven-menu-none");
         FxWindowFixture fx = FxWindowFixture.create();
         try {
-            FxTestSupport.runOnFx(() -> assertNull(menuFor(coordinator(fx), dir)));
+            assertNull(settledMenuFor(coordinator(fx), dir));
         } finally {
             fx.dispose();
             Files.deleteIfExists(dir);
@@ -111,12 +129,10 @@ class MavenMenuFxTest {
             Files.writeString(dir.resolve("pom.xml"), "<project><packaging>jar</packaging></project>");
             Path other = Files.writeString(dir.resolve("Main.java"), "class Main {}");
             Path lookalike = Files.writeString(dir.resolve("effective-pom.xml"), "<project/>");
-            FxTestSupport.runOnFx(() -> {
-                assertNotNull(menuFor(coordinator(fx), dir), "precondition: this really is a Maven project");
-                assertNull(menuFor(coordinator(fx), other));
-                // Not a file mvn will run against — a menu here would silently act on the pom.xml beside it.
-                assertNull(menuFor(coordinator(fx), lookalike));
-            });
+            assertNotNull(settledMenuFor(coordinator(fx), dir), "precondition: this really is a Maven project");
+            assertNull(settledMenuFor(coordinator(fx), other));
+            // Not a file mvn will run against — a menu here would silently act on the pom.xml beside it.
+            assertNull(settledMenuFor(coordinator(fx), lookalike));
         } finally {
             fx.dispose();
             try (var paths = Files.list(dir)) {
@@ -140,6 +156,9 @@ class MavenMenuFxTest {
             Path pom = Files.writeString(dir.resolve("pom.xml"), "<project><packaging>jar</packaging></project>");
             Path other = Files.writeString(dir.resolve("notes.txt"), "hello");
             ProjectPanel panel = FxTestSupport.field(fx.controller, "projectPanel");
+            for (Path row : List.of(pom, other, dir)) {
+                settledMenuFor(coordinator(fx), row); // the right-click a moment after the pom above was looked at
+            }
             FxTestSupport.runOnFx(() -> {
                 assertTrue(hasMavenMenu(panel, pom), "a pom.xml row must offer the Maven submenu");
                 assertFalse(hasMavenMenu(panel, other), "an ordinary file must not");
@@ -152,6 +171,27 @@ class MavenMenuFxTest {
                     Files.deleteIfExists(p);
                 }
             }
+            Files.deleteIfExists(dir);
+        }
+    }
+
+    /**
+     * Asked before the pom above was looked at (PERF-01: the look runs off the FX thread), the submenu is offered, not
+     * hidden; once the look says there is no pom, it hides itself.
+     */
+    @Test
+    void aMenuAskedBeforeTheLookIsOfferedThenHiddenWhenThereIsNoPom() throws Exception {
+        Path dir = Files.createTempDirectory("editora-maven-menu-early");
+        FxWindowFixture fx = FxWindowFixture.create();
+        try {
+            Menu early = FxTestSupport.callOnFx(() -> menuFor(coordinator(fx), dir));
+            assertNotNull(early, "nothing known yet: offered");
+            for (int i = 0; i < 300 && FxTestSupport.callOnFx(early::isVisible); i++) {
+                Thread.sleep(10);
+            }
+            assertFalse(FxTestSupport.callOnFx(early::isVisible), "hidden once the look found no pom");
+        } finally {
+            fx.dispose();
             Files.deleteIfExists(dir);
         }
     }

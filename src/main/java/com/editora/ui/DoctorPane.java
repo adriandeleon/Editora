@@ -1051,7 +1051,7 @@ final class DoctorPane extends Region implements TabContent {
      * when the row is shown (PERF-01, Pauta 6.0.1).
      */
     private static final com.editora.perf.Looked<Path, Boolean> EXISTS =
-            new com.editora.perf.Looked<>("DoctorPane.pathIn", Files::exists);
+            new com.editora.perf.Looked<>("DoctorPane.pathIn", Files::exists, Boolean.TRUE);
 
     private static void putOnClipboard(String text) {
         ClipboardContent cc = new ClipboardContent();

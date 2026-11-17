@@ -85,6 +85,9 @@ public final class MermaidImages {
     /** The newest cached render of each live preview surface; an older one of the same surface is dropped. */
     private static final PreviewSurfaces.Newest NEWEST = new PreviewSurfaces.Newest();
 
+    /** The cache keys of the sources seen, so the FX thread hashes none ({@link SourceKeys}). */
+    private static final SourceKeys KEYS = new SourceKeys();
+
     /** Drops what is cached for {@code surfaceKey} — its buffer was disposed and can never show it again. */
     static void release(String surfaceKey) {
         if (surfaceKey == null) {
@@ -228,10 +231,13 @@ public final class MermaidImages {
             java.util.function.DoubleUnaryOperator sizer,
             @Nullable String surfaceKey,
             boolean useDark) {
-        String key = key(source, useDark);
-        Cached hit = CACHE.get(key);
+        // The key is a hash of the whole source: worked out off the FX thread (PERF-01, Pauta 6.0.1). A source seen
+        // before has its key remembered, so an unchanged diagram is shown from the cache at once.
+        String tag = useDark ? "d" : "l";
+        String knownKey = KEYS.knownKey(tag, source);
+        Cached hit = knownKey == null ? null : CACHE.get(knownKey);
         if (hit != null && hit.expired()) {
-            CACHE.remove(key);
+            CACHE.remove(knownKey);
             hit = null;
         }
         if (hit != null) {
@@ -249,6 +255,16 @@ public final class MermaidImages {
         EXEC.submit(() -> {
             if (superseded(surfaceKey, gen)) {
                 return; // a newer pulse for this surface has arrived — skip the ~4 s Chromium spawn (#458)
+            }
+            String key = key(source, useDark);
+            KEYS.remember(tag, source, key);
+            Cached cached = CACHE.get(key);
+            if (cached != null && !cached.expired()) {
+                Platform.runLater(() -> applyCached(host, cached, sizer));
+                if (surfaceKey != null) {
+                    LATEST.remove(surfaceKey, gen);
+                }
+                return;
             }
             Cached result = renderNow(exe, maidExe, useMaid, source, useDark);
             store(key, result, surfaceKey);
@@ -393,6 +409,7 @@ public final class MermaidImages {
 
     /** Cache key = sha-256 of theme + source (so editing invalidates, but re-renders of the same text hit). */
     private static String key(String source, boolean dark) {
+        com.editora.perf.BlockingSites.enter("SourceKeys.hash"); // a hash of the whole source: never on FX
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             md.update(dark ? (byte) 1 : (byte) 0);
