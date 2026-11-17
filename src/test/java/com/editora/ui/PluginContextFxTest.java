@@ -44,6 +44,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the isolation that keeps one failing plugin from taking the window, or the other plugins, with it.
  */
 @Tag("fx")
+// A plugin's setText is a whole-document rewrite worked out off the FX thread (PERF-01): in place here, so it
+// lands before the next read. HandlersEditorOffFxThreadFxTest runs it where the app does.
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class PluginContextFxTest {
 
     private static final long WAIT_SECONDS = 60;
