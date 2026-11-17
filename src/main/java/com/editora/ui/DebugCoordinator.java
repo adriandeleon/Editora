@@ -294,13 +294,13 @@ final class DebugCoordinator {
     /** Inline-value fetch cap — frames can hold hundreds of locals; the overlay needs a name→value map. */
     private static final int MAX_INLINE_VALUES = 100;
 
-    private final CoordinatorHost host;
+    final CoordinatorHost host;
     /** The window's debug sessions; the focused one is shown and acted on ({@link #s()}). */
     private final DebugSessions sessions;
 
     private final LspManager lspManager;
     private final LspCoordinator lsp;
-    private final Ops ops;
+    final Ops ops;
     /** The console font to apply when the panel is built (set by every settings apply, panel or not). */
     private @Nullable String consoleFontFamily;
 
@@ -1025,10 +1025,7 @@ final class DebugCoordinator {
     /** Stops the session being handled: a before-launch build still running is what gets stopped; else the session. */
     private void stopOne() {
         stopChildren(); // a program's subprocesses go with it
-        com.editora.run.RunService testHost = s().testHost;
-        if (testHost != null) {
-            testHost.stop(); // C#'s Debug Test: the dotnet test run the session attached to
-        }
+        CsharpTestDebug.stopRun(s()); // C#'s Debug Test: the dotnet test run the session attached to
         s().closedBreakpointsRead = null; // a start still reading closed files' breakpoints is not made (review D104)
         if (beforeLaunchActive()) {
             beforeLaunch().stop();
@@ -5214,17 +5211,6 @@ final class DebugCoordinator {
      * Debug Test at Caret in a Rust file: the {@code #[test]} function at the caret, its test binary filtered to it
      * ({@link #debugRustFile}). False — nothing done — outside a test, or for any other buffer.
      */
-    boolean debugCsharpTestAtCaret(@Nullable EditorBuffer b) {
-        CsharpTestDebug c = csharpTests;
-        if (c == null) {
-            c = new CsharpTestDebug(this, host, ops);
-            csharpTests = c;
-        }
-        return c.debugAtCaret(b);
-    }
-
-    private @Nullable CsharpTestDebug csharpTests;
-
     boolean debugRustTestAtCaret(@Nullable EditorBuffer b) {
         if (b == null
                 || b.getPath() == null

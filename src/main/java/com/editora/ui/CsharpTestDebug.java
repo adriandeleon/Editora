@@ -28,10 +28,18 @@ final class CsharpTestDebug {
     private final CoordinatorHost host;
     private final DebugCoordinator.Ops ops;
 
-    CsharpTestDebug(DebugCoordinator d, CoordinatorHost host, DebugCoordinator.Ops ops) {
+    CsharpTestDebug(DebugCoordinator d) {
         this.d = d;
-        this.host = host;
-        this.ops = ops;
+        this.host = d.host;
+        this.ops = d.ops;
+    }
+
+    /** Ends {@code session}'s {@code dotnet test} run, if it has one (Stop). */
+    static void stopRun(DebugSession session) {
+        RunService run = session.testHost;
+        if (run != null) {
+            run.stop();
+        }
     }
 
     /**
