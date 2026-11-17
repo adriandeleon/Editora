@@ -2059,12 +2059,14 @@ public final class DapManager {
             lspLease = lsp.retain(file);
             DapClient c = new DapClient(sessionHost(epoch));
             c.setPaths(pathsFor(file));
+            boolean wrap = false;
             if (!attach && shared.programConsole) {
                 c.setRunsDebuggee(true);
                 LaunchConfig.inClientConsole(args);
             } else if (!attach) {
-                wrapForExitCode(file, args, epoch);
+                wrap = true; // on the connect thread below: making a wrapper writes files (PERF-01)
             }
+            boolean wrapExit = wrap;
             c.setBreakpoints(adapterBreakpoints(shared.breakpointsSupplier.get())); // snapshot on the FX thread
             c.setExceptionFilters(filtersFor("java"));
             if (!publishClient(epoch, c)) {
@@ -2074,45 +2076,52 @@ public final class DapManager {
             // Connect off the FX thread (the socket open blocks with retries), then launch/attach. The
             // connect future completes on the DAP reader thread, so every state change here must be
             // marshaled back to the FX thread (it touches the Debug panel + status bar).
-            io.submit(() -> connectJava(c, file, port).whenComplete((caps, e) -> {
-                if (e != null) {
-                    fail(epoch, tr("debug.error.connectFailed", msg(e)));
-                    return;
+            io.submit(() -> {
+                if (wrapExit) {
+                    // Before the launch request carries args: every launch path gets its wrapper, also one whose
+                    // plan made none ahead (a loose file compiled here, a compact file, a launch configuration).
+                    wrapForExitCode(file, args, epoch);
                 }
-                if (!isCurrent(epoch, c)) {
-                    c.dispose();
-                    return;
-                }
-                (attach ? c.attach(args) : c.launch(args)).whenComplete((v, le) -> {
-                    if (le != null) {
-                        String refused = attach ? DapErrors.refusedAttach(msg(le)) : null;
-                        if (refused != null) {
-                            // Nothing listens there: say so, and how a JVM is made to listen (review 2, A109).
-                            failWithConsole(
-                                    epoch,
-                                    tr("debug.console.attachRefused", refused),
-                                    tr("status.debug.attachRefused", refused));
-                            return;
-                        }
-                        fail(epoch, tr(attach ? "debug.error.attachFailed" : "debug.error.launchFailed", msg(le)));
+                connectJava(c, file, port).whenComplete((caps, e) -> {
+                    if (e != null) {
+                        fail(epoch, tr("debug.error.connectFailed", msg(e)));
                         return;
                     }
-                    // Running once the adapter has the program, not when the request left: until then
-                    // java-debug is still starting the JVM. A stop that came first has already said SUSPENDED.
-                    fx(() -> {
-                        if (!isCurrent(epoch, c)) {
+                    if (!isCurrent(epoch, c)) {
+                        c.dispose();
+                        return;
+                    }
+                    (attach ? c.attach(args) : c.launch(args)).whenComplete((v, le) -> {
+                        if (le != null) {
+                            String refused = attach ? DapErrors.refusedAttach(msg(le)) : null;
+                            if (refused != null) {
+                                // Nothing listens there: say so, and how a JVM is made to listen (review 2, A109).
+                                failWithConsole(
+                                        epoch,
+                                        tr("debug.console.attachRefused", refused),
+                                        tr("status.debug.attachRefused", refused));
+                                return;
+                            }
+                            fail(epoch, tr(attach ? "debug.error.attachFailed" : "debug.error.launchFailed", msg(le)));
                             return;
                         }
-                        if (state == State.STARTING) {
-                            setState(State.RUNNING);
-                        }
-                        if (!attach && args.get("javaExec") instanceof String javaExec && !javaExec.isBlank()) {
-                            listener.onDebuggeeRuntime(
-                                    List.of(realJavaExec(epoch, javaExec)), runtimeWhere(file), Map.of());
-                        }
+                        // Running once the adapter has the program, not when the request left: until then
+                        // java-debug is still starting the JVM. A stop that came first has already said SUSPENDED.
+                        fx(() -> {
+                            if (!isCurrent(epoch, c)) {
+                                return;
+                            }
+                            if (state == State.STARTING) {
+                                setState(State.RUNNING);
+                            }
+                            if (!attach && args.get("javaExec") instanceof String javaExec && !javaExec.isBlank()) {
+                                listener.onDebuggeeRuntime(
+                                        List.of(realJavaExec(epoch, javaExec)), runtimeWhere(file), Map.of());
+                            }
+                        });
                     });
                 });
-            }));
+            });
         });
     }
 
@@ -5775,7 +5784,8 @@ public final class DapManager {
      * Starts the program of a launch java-debug runs itself (the program console off) through a wrapper that
      * records its exit code: {@code args}' {@code javaExec} becomes the wrapper, which runs the real one. Only for
      * a program on this machine and not on Windows (see {@link JavaExitCodeWrapper}); and only when the launch
-     * names its {@code java} — without one java-debug picks its own, which the wrapper cannot know.
+     * names its {@code java} — without one java-debug picks its own, which the wrapper cannot know. Off the FX
+     * thread: the connect thread, before the launch request.
      */
     private void wrapForExitCode(@Nullable Path file, Map<String, Object> args, long epoch) {
         Object java = args.get("javaExec");
@@ -5786,13 +5796,15 @@ public final class DapManager {
             return;
         }
         try {
-            // Made ahead of time off the FX thread for this java (the launch's plan): taken here, the next one made.
-            JavaExitCodeWrapper wrapper = Platform.isFxApplicationThread()
-                    ? SPARE_EXIT_WRAPPERS.remove(real)
-                    : JavaExitCodeWrapper.create(real);
+            // Called on the connect thread, never the FX thread (PERF-01): the one made ahead for this java (a
+            // launch's plan makes it) is taken, else one is made here — a launch without its wrapper never
+            // reports its exit code (the regression of #1664 for a loose file). The next one is made ahead.
+            JavaExitCodeWrapper spare = SPARE_EXIT_WRAPPERS.remove(real);
+            JavaExitCodeWrapper wrapper = spare != null ? spare : JavaExitCodeWrapper.create(real);
             prepareExitWrapper(real);
-            if (wrapper == null) {
-                return; // none ready yet: this program runs as before, the next has one
+            if (!isCurrent(epoch)) {
+                wrapper.delete(); // stopped meanwhile: no program runs through it
+                return;
             }
             releaseExitWrapper();
             exitWrapper = new ExitWrapper(epoch, wrapper, real);
