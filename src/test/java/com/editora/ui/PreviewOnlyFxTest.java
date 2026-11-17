@@ -219,7 +219,8 @@ class PreviewOnlyFxTest {
             bar.findPrevious();
             assertEquals(3, find.current(), "stepping wraps around");
 
-            // The preview's text is searched off the FX thread (PERF-01): from here run in place, so each lands at once.
+            // The preview's text is searched off the FX thread (PERF-01): from here run in place, so each lands at
+            // once.
             com.editora.perf.OffFx.runnerForTest((name, task) -> task.run());
             FxTestSupport.<javafx.scene.control.CheckBox>field(bar, "caseSensitive")
                     .setSelected(true);
