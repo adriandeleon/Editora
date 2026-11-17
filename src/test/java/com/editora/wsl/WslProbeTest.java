@@ -16,6 +16,7 @@ import com.editora.process.ExecTargets;
 import com.editora.process.PortForward;
 import com.editora.process.ProcessRegistry;
 import com.editora.process.ProcessRunner;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -117,17 +118,24 @@ class WslProbeTest {
             awaitOutput(seen, "40 120");
 
             type(shell, "exec sleep 6010\n");
-            Thread.sleep(2000);
+            Await.holdsWithin(
+                    () -> wsl(distro, "pgrep -f '^sleep 6010$' | wc -l")
+                            .out()
+                            .strip()
+                            .equals("1"),
+                    java.time.Duration.ofSeconds(10));
             assertEquals(
                     "1", wsl(distro, "pgrep -f '^sleep 6010$' | wc -l").out().strip(), "the sleep running");
         } finally {
             shell.close();
         }
-        String left = "1";
-        for (int i = 0; i < 50 && !left.equals("0"); i++) {
-            Thread.sleep(200);
-            left = wsl(distro, "pgrep -f '^sleep 6010$' | wc -l").out().strip();
-        }
+        Await.holdsWithin(
+                () -> wsl(distro, "pgrep -f '^sleep 6010$' | wc -l")
+                        .out()
+                        .strip()
+                        .equals("0"),
+                java.time.Duration.ofSeconds(10));
+        String left = wsl(distro, "pgrep -f '^sleep 6010$' | wc -l").out().strip();
         assertEquals("0", left, "closing the terminal ended its program in the distribution");
     }
 
@@ -137,10 +145,7 @@ class WslProbeTest {
     }
 
     private static void awaitOutput(StringBuffer seen, String needle) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
-        while (System.nanoTime() < deadline && !seen.toString().contains(needle)) {
-            Thread.sleep(100);
-        }
+        Await.holdsWithin(() -> seen.toString().contains(needle), java.time.Duration.ofSeconds(60));
         assertTrue(
                 seen.toString().contains(needle), () -> "\"" + needle + "\" in the terminal's output: [" + seen + "]");
     }
@@ -166,20 +171,24 @@ class WslProbeTest {
                                 Map.of(),
                                 ExecSpec.Locale.PARSE_STABLE)
                         .withLongLived(true));
-        Thread.sleep(2000);
+        Await.holdsWithin(
+                () -> wsl(distro, "pgrep -f '^sleep 30[01]$' | wc -l")
+                        .out()
+                        .strip()
+                        .equals("2"),
+                java.time.Duration.ofSeconds(10));
         assertEquals("2", wsl(distro, "pgrep -f '^sleep 30[01]$' | wc -l").out().strip(), "both sleeps running");
 
         ProcessRegistry.killTree(p);
 
         assertTrue(p.waitFor(30, TimeUnit.SECONDS), "the program did not end");
-        String left = "";
-        for (int i = 0; i < 50; i++) {
-            left = wsl(distro, "pgrep -f '^sleep 30[01]$' | wc -l").out().strip();
-            if (left.equals("0")) {
-                break;
-            }
-            Thread.sleep(200);
-        }
+        Await.holdsWithin(
+                () -> wsl(distro, "pgrep -f '^sleep 30[01]$' | wc -l")
+                        .out()
+                        .strip()
+                        .equals("0"),
+                java.time.Duration.ofSeconds(10));
+        String left = wsl(distro, "pgrep -f '^sleep 30[01]$' | wc -l").out().strip();
         assertEquals("0", left, "left running in the distribution");
     }
 
@@ -199,7 +208,7 @@ class WslProbeTest {
         List<String> record = p.orphanRecord();
         assertEquals(WslExecTarget.ORPHAN_KIND, record.get(0), String.valueOf(record));
         List<String> fields = record.subList(1, record.size());
-        Thread.sleep(1000);
+        Await.holdsWithin(() -> sleeps().equals("2"), java.time.Duration.ofSeconds(10));
         assertEquals("2", sleeps(), "both sleeps running");
 
         // The crash: wsl.exe here dies with Editora (the only one still running is the program's).
@@ -214,7 +223,8 @@ class WslProbeTest {
         assertFalse(clients.isEmpty(), "wsl.exe is a child of this process");
         clients.forEach(ProcessHandle::destroyForcibly);
         assertTrue(p.waitFor(20, TimeUnit.SECONDS), "the launcher ended");
-        Thread.sleep(1000);
+        // Up to a second for them to end with it, if they do (the report says how many were left).
+        Await.holdsWithin(() -> sleeps().equals("0"), java.time.Duration.ofSeconds(1));
         String survived = sleeps();
         System.out.println("WSL probe: after its launcher was killed, " + survived + " of 2 sleeps were left running");
 
@@ -225,11 +235,8 @@ class WslProbeTest {
             assertEquals(survived, sleeps());
 
             assertTrue(WslExecTarget.reapOrphan(fields));
+            Await.holdsWithin(() -> sleeps().equals("0"), java.time.Duration.ofSeconds(10));
             String left = sleeps();
-            for (int i = 0; i < 50 && !left.equals("0"); i++) {
-                Thread.sleep(200);
-                left = sleeps();
-            }
             assertEquals("0", left, "stopped with its group");
         }
         assertFalse(WslExecTarget.reapOrphan(fields), "gone: nothing left to stop");

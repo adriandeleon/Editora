@@ -6,7 +6,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -349,14 +348,8 @@ class SingleInstanceTest {
         }
     }
 
-    /** Polls a condition for up to ~2 s (the delivery hop is another thread). */
+    /** Waits for a condition for up to 10 s (the delivery hop is another thread). */
     private static boolean waitFor(java.util.function.BooleanSupplier condition) throws InterruptedException {
-        for (int i = 0; i < 200; i++) {
-            if (condition.getAsBoolean()) {
-                return true;
-            }
-            TimeUnit.MILLISECONDS.sleep(10);
-        }
-        return false;
+        return com.editora.testkit.Await.holdsWithin(condition, java.time.Duration.ofSeconds(10));
     }
 }

@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -73,10 +74,17 @@ class DiffRefreshFxTest {
 
         // The regression trigger: a diff tab becomes the active tab in a No-Project window → repoRoot is nulled.
         applyState(git, GitService.RepoState.NONE);
+        Files.writeString(file, "WORKING-CONTENT-2\n");
         FxTestSupport.runOnFx(() -> FxTestSupport.invoke(diff, "refreshOpenDiffs"));
 
-        // Give an (erroneous) async re-fetch time to land, then assert the HEAD side still has its content.
-        settle(900);
+        // The refresh fetches the HEAD side, then the working side: once the new working text shows, the HEAD
+        // side's (possibly erroneous) re-fetch has landed too. Then the HEAD side must still have its content.
+        EventuallyFx.untilOnFx(
+                "the refresh to land (the working side re-read)",
+                Duration.ofSeconds(10),
+                () -> String.valueOf(FxTestSupport.<String>field(pane, "rightText"))
+                        .contains("WORKING-CONTENT-2"));
+        FxTestSupport.drainFx();
         String after = FxTestSupport.field(pane, "leftText");
         assertTrue(
                 after != null && !after.isBlank() && after.contains("HEAD-CONTENT"),
@@ -97,26 +105,16 @@ class DiffRefreshFxTest {
 
     /** Polls (off-FX) for the first open diff pane to exist with a non-null leftText, up to ~5s. */
     private Object awaitPaneWithLeftText(Object ops) throws Exception {
-        for (int i = 0; i < 100; i++) {
+        Object[] found = new Object[1];
+        EventuallyFx.holdsWithin(Duration.ofSeconds(5), () -> {
             Object pane = FxTestSupport.callOnFx(() -> {
                 List<?> panes = (List<?>) FxTestSupport.call(ops, "openDiffPanes", new Class<?>[] {});
                 return panes.isEmpty() ? null : panes.get(0);
             });
-            if (pane != null && FxTestSupport.field(pane, "leftText") != null) {
-                return pane;
-            }
-            Thread.sleep(50);
-        }
-        return null;
-    }
-
-    /** Lets queued FX work (an async re-fetch + Platform.runLater) drain for {@code millis}. */
-    private void settle(long millis) throws Exception {
-        long end = System.currentTimeMillis() + millis;
-        while (System.currentTimeMillis() < end) {
-            FxTestSupport.runOnFx(() -> {});
-            Thread.sleep(50);
-        }
+            found[0] = pane != null && FxTestSupport.field(pane, "leftText") != null ? pane : null;
+            return found[0] != null;
+        });
+        return found[0];
     }
 
     private static void git(Path dir, String... args) throws Exception {

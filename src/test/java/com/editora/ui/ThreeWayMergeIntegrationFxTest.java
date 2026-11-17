@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -14,12 +15,12 @@ import com.editora.diff.ConflictParser.ConflictSegment;
 import com.editora.editor.EditorBuffer;
 import com.editora.git.GitService;
 import com.editora.git.GitStatus;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @Tag("fx")
@@ -134,32 +135,36 @@ class ThreeWayMergeIntegrationFxTest {
 
     private static EditorBuffer awaitActiveBuffer(MainController controller, String expectedText) throws Exception {
         EditorArea area = FxTestSupport.field(controller, "editorArea");
-        for (int i = 0; i < 120; i++) {
-            Object data = FxTestSupport.callOnFx(() -> {
-                Tab selected = area.selectedTab();
-                return selected == null ? null : selected.getUserData();
-            });
-            if (data instanceof EditorBuffer buffer && buffer.text().contains(expectedText)) {
-                return buffer;
-            }
-            Thread.sleep(50);
-        }
-        return null;
+        EditorBuffer[] found = new EditorBuffer[1];
+        Await.holdsWithin(
+                () -> {
+                    Object data = onFx(() -> {
+                        Tab selected = area.selectedTab();
+                        return selected == null ? null : selected.getUserData();
+                    });
+                    return (found[0] = data instanceof EditorBuffer buffer
+                                            && buffer.text().contains(expectedText)
+                                    ? buffer
+                                    : null)
+                            != null;
+                },
+                Duration.ofSeconds(6));
+        return found[0];
     }
 
     private static MergeViewerPane awaitMergePane(MainController controller) throws Exception {
         EditorArea area = FxTestSupport.field(controller, "editorArea");
-        for (int i = 0; i < 120; i++) {
-            Object data = FxTestSupport.callOnFx(() -> {
-                Tab selected = area.selectedTab();
-                return selected == null ? null : selected.getUserData();
-            });
-            if (data instanceof MergeViewerPane pane) {
-                return assertInstanceOf(MergeViewerPane.class, data);
-            }
-            Thread.sleep(50);
-        }
-        return null;
+        MergeViewerPane[] found = new MergeViewerPane[1];
+        Await.holdsWithin(
+                () -> {
+                    Object data = onFx(() -> {
+                        Tab selected = area.selectedTab();
+                        return selected == null ? null : selected.getUserData();
+                    });
+                    return (found[0] = data instanceof MergeViewerPane pane ? pane : null) != null;
+                },
+                Duration.ofSeconds(6));
+        return found[0];
     }
 
     private static String git(Path dir, boolean expectSuccess, String... args) throws Exception {
@@ -176,5 +181,14 @@ class ThreeWayMergeIntegrationFxTest {
             throw new IllegalStateException(output);
         }
         return output;
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

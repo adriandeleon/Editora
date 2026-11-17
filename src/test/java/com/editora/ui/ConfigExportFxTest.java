@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -87,25 +88,17 @@ class ConfigExportFxTest {
 
     /** The showing dialog whose header is {@code header} (left open). */
     private static DialogPane awaitPane(String header) throws Exception {
-        long deadline = System.nanoTime() + 30_000_000_000L;
-        while (System.nanoTime() < deadline) {
-            DialogPane pane = FxTestSupport.callOnFx(() -> {
-                for (Window window : List.copyOf(Window.getWindows())) {
-                    if (window.isShowing()
-                            && window.getScene() != null
-                            && window.getScene().getRoot() instanceof DialogPane p
-                            && header.equals(p.getHeaderText())) {
-                        return p;
-                    }
+        return EventuallyFx.valueOnFx("the \"" + header + "\" dialog to show", Duration.ofSeconds(30), () -> {
+            for (Window window : List.copyOf(Window.getWindows())) {
+                if (window.isShowing()
+                        && window.getScene() != null
+                        && window.getScene().getRoot() instanceof DialogPane p
+                        && header.equals(p.getHeaderText())) {
+                    return p;
                 }
-                return null;
-            });
-            if (pane != null) {
-                return pane;
             }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("the \"" + header + "\" dialog never showed");
+            return null;
+        });
     }
 
     private static List<Path> zipsIn(Path dir, String prefix) throws Exception {
@@ -120,41 +113,31 @@ class ConfigExportFxTest {
 
     /** The one file the background export wrote to {@code dir}. */
     private static Path awaitOnlyFile(Path dir) throws Exception {
-        long deadline = System.nanoTime() + 30_000_000_000L;
-        while (System.nanoTime() < deadline) {
+        List<Path> all = new java.util.ArrayList<>();
+        EventuallyFx.until("an export to appear in " + dir, Duration.ofSeconds(30), () -> {
             try (Stream<Path> files = Files.list(dir)) {
-                List<Path> all = files.toList();
-                if (!all.isEmpty()) {
-                    assertEquals(1, all.size(), all.toString());
-                    return all.getFirst();
-                }
+                all.clear();
+                all.addAll(files.toList());
             }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("no export appeared in " + dir);
+            return !all.isEmpty();
+        });
+        assertEquals(1, all.size(), all.toString());
+        return all.getFirst();
     }
 
     /** Waits for the dialog with {@code header} to show, then closes it and returns its pane. */
     private static DialogPane awaitDialog(String header) throws Exception {
-        long deadline = System.nanoTime() + 30_000_000_000L;
-        while (System.nanoTime() < deadline) {
-            DialogPane pane = FxTestSupport.callOnFx(() -> {
-                for (Window window : List.copyOf(Window.getWindows())) {
-                    if (window.isShowing()
-                            && window.getScene() != null
-                            && window.getScene().getRoot() instanceof DialogPane p
-                            && header.equals(p.getHeaderText())) {
-                        window.hide();
-                        return p;
-                    }
+        return EventuallyFx.valueOnFx("the \"" + header + "\" dialog to show", Duration.ofSeconds(30), () -> {
+            for (Window window : List.copyOf(Window.getWindows())) {
+                if (window.isShowing()
+                        && window.getScene() != null
+                        && window.getScene().getRoot() instanceof DialogPane p
+                        && header.equals(p.getHeaderText())) {
+                    window.hide();
+                    return p;
                 }
-                return null;
-            });
-            if (pane != null) {
-                return pane;
             }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("the \"" + header + "\" dialog never showed");
+            return null;
+        });
     }
 }

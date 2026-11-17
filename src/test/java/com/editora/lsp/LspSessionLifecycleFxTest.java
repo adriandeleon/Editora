@@ -85,15 +85,8 @@ class LspSessionLifecycleFxTest {
 
     /** Polls until {@code condition} holds or the timeout expires, draining FX each round. */
     private static void awaitFx(java.util.function.BooleanSupplier condition, String what) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (System.nanoTime() < deadline) {
-            drainFx();
-            if (condition.getAsBoolean()) {
-                return;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("timed out waiting for: " + what);
+        drainFx();
+        com.editora.testkit.Await.until(condition, what, java.time.Duration.ofSeconds(10));
     }
 
     // --- #669: idle eviction ------------------------------------------------------------------------
@@ -127,8 +120,9 @@ class LspSessionLifecycleFxTest {
         Runnable lease = manager.retain(f);
 
         manager.closeDocument(f);
-        Thread.sleep(250);
         drainFx();
+        assertFalse(
+                manager.evictionPendingForTest("java", root), "no eviction is even scheduled for a retained session");
         assertTrue(manager.hasSessionForTest("java", root), "a session hosting a debug adapter is in use");
         assertFalse(sessions.get(0).isDisposed());
 
@@ -147,8 +141,8 @@ class LspSessionLifecycleFxTest {
         manager.openDocument(b, root, "java", "class B {}");
 
         manager.closeDocument(a);
-        Thread.sleep(200);
         drainFx();
+        assertFalse(manager.evictionPendingForTest("java", root), "no eviction is scheduled while B.java is open");
 
         assertTrue(manager.hasSessionForTest("java", root), "B.java is still open — the session must survive");
         assertTrue(manager.isManaged(b));
@@ -167,8 +161,8 @@ class LspSessionLifecycleFxTest {
 
         manager.openDocument(f, root, "java", "class A {}"); // reopened before the grace elapses
 
-        Thread.sleep(500);
         drainFx();
+        assertFalse(manager.evictionPendingForTest("java", root), "the pending eviction should have been cancelled");
         assertTrue(manager.hasSessionForTest("java", root), "the pending eviction should have been cancelled");
         assertTrue(manager.isManaged(f));
         assertEquals(1, sessions.size(), "no new session should have been created");
@@ -204,8 +198,7 @@ class LspSessionLifecycleFxTest {
         Path f = javaFile("A.java");
         manager.openDocument(f, root, "java", "class A {}");
 
-        manager.shutdownServer("java");
-        Thread.sleep(100);
+        manager.shutdownServer("java"); // synchronous: a crash notice would already be queued on the FX thread
         drainFx();
 
         assertTrue(crashedServers.isEmpty(), "shutdownServer must not look like a crash (#666)");
@@ -216,8 +209,7 @@ class LspSessionLifecycleFxTest {
         Path f = javaFile("A.java");
         manager.openDocument(f, root, "java", "class A {}");
 
-        manager.shutdownAll();
-        Thread.sleep(100);
+        manager.shutdownAll(); // synchronous: a crash notice would already be queued on the FX thread
         drainFx();
 
         assertTrue(crashedServers.isEmpty(), "shutdownAll must not look like a crash (#666)");
@@ -248,8 +240,7 @@ class LspSessionLifecycleFxTest {
         s.simulateServerDeathForTest();
         s.simulateServerDeathForTest();
         awaitFx(() -> !crashedServers.isEmpty(), "the crash callback");
-        Thread.sleep(100);
-        drainFx();
+        drainFx(); // each signal returned before the wait, so a second notice would already be queued
 
         assertEquals(1, crashedServers.size(), "the dead-reported latch must make this idempotent");
     }
@@ -438,7 +429,7 @@ class LspSessionLifecycleFxTest {
                         lockFile, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.WRITE);
                 var ignored = channel.lock()) { // the dying server still holds its lock
             manager.repairAfterExit("java@x", exited, "def456");
-            Thread.sleep(150);
+            assertFalse(manager.pendingExitsForTest().isDone(), "the repair waits for the server's exit");
             assertFalse(Files.exists(marker), "nothing is decided while the server is still exiting");
         }
         exited.complete(null);

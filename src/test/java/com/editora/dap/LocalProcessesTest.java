@@ -3,6 +3,7 @@ package com.editora.dap;
 import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -197,7 +198,7 @@ class LocalProcessesTest {
         Files.writeString(
                 source,
                 "class Sleeper { public static void main(String[] a) throws Exception {"
-                        + " Thread.sleep(60_000); } }");
+                        + " synchronized (Sleeper.class) { Sleeper.class.wait(60_000); } } }"); // a minute, idle
         String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
         Process p = new ProcessBuilder(
                         java,
@@ -207,18 +208,19 @@ class LocalProcessesTest {
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                 .start();
         try {
-            LocalProcesses.Target found = null;
-            long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-            while (found == null && System.nanoTime() < end) {
-                for (LocalProcesses.Target t : LocalProcesses.scan()) {
-                    if (t.pid() == p.pid()) {
-                        found = t;
-                    }
-                }
-                if (found == null) {
-                    Thread.sleep(200);
-                }
-            }
+            // Another process starting up: nothing in this JVM says when it is listening, so the scan is repeated.
+            LocalProcesses.Target[] seen = new LocalProcesses.Target[1];
+            com.editora.testkit.Await.holdsWithin(
+                    () -> {
+                        for (LocalProcesses.Target t : LocalProcesses.scan()) {
+                            if (t.pid() == p.pid()) {
+                                seen[0] = t;
+                            }
+                        }
+                        return seen[0] != null;
+                    },
+                    Duration.ofSeconds(20));
+            LocalProcesses.Target found = seen[0];
             assertTrue(found != null, "the JVM is listed");
             assertEquals(LocalProcesses.Kind.JAVA, found.kind());
             assertEquals("127.0.0.1:" + port, found.address());

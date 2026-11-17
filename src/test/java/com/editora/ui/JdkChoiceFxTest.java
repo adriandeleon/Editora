@@ -80,15 +80,6 @@ class JdkChoiceFxTest {
     }
 
     private static void waitFor(java.util.function.BooleanSupplier done, String what) throws Exception {
-        long until = System.nanoTime() + 10_000_000_000L;
-        while (System.nanoTime() < until) {
-            AtomicReference<Boolean> now = new AtomicReference<>(false);
-            FxTestSupport.runOnFx(() -> now.set(done.getAsBoolean()));
-            if (now.get()) {
-                return;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("timed out: " + what);
+        FxTestSupport.awaitFxCondition(done::getAsBoolean, what, java.time.Duration.ofSeconds(10));
     }
 }

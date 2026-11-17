@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * of; they used to be refused with "This link can't be opened".
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // a link's file checks answer before the call returns
 class MarkdownAnchorLinkFxTest {
 
     private static final String README = "# Readme\n\n- [Set up](#set-up)\n- [Again](#set-up-1)\n- [Gone](#gone)\n"
@@ -232,18 +233,13 @@ class MarkdownAnchorLinkFxTest {
     }
 
     private static void awaitLoaded(Path file) throws Exception {
-        long deadline = System.nanoTime() + 15_000_000_000L;
-        while (true) {
-            boolean done = FxTestSupport.callOnFx(() -> {
-                EditorBuffer b = bufferFor(file);
-                return b != null && workflows.loadingBuffers.isEmpty() && !b.isLoading();
-            });
-            if (done) {
-                break;
-            }
-            assertTrue(System.nanoTime() < deadline, "load never finished: " + file);
-            Thread.sleep(5);
-        }
+        OnFx.until(
+                () -> {
+                    EditorBuffer b = bufferFor(file);
+                    return b != null && workflows.loadingBuffers.isEmpty() && !b.isLoading();
+                },
+                "the load of " + file,
+                java.time.Duration.ofSeconds(15));
         settle();
     }
 
@@ -251,7 +247,11 @@ class MarkdownAnchorLinkFxTest {
         for (int i = 0; i < 6; i++) {
             FxTestSupport.drainFx();
         }
-        Thread.sleep(150);
+        // whatever a command opened has loaded
+        OnFx.until(
+                () -> workflows == null
+                        || (workflows.loadingBuffers.isEmpty() && (active() == null || !active().isLoading())),
+                "the open files to load");
         for (int i = 0; i < 6; i++) {
             FxTestSupport.drainFx();
         }

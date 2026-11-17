@@ -161,10 +161,7 @@ class JdtlsProjectStyleProbeTest {
         s.setJavaCleanups(List.of("addOverride"));
         try {
             assertTrue(s.start());
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(90);
-            while (!s.isInitialized() && System.nanoTime() < deadline) {
-                Thread.sleep(100);
-            }
+            com.editora.testkit.Await.holdsWithin(() -> s.isInitialized(), java.time.Duration.ofSeconds(90));
             assertTrue(s.isInitialized(), "real handshake");
             assertTrue(imported.await(120, TimeUnit.SECONDS), "the project imported");
             String app = src.resolve("App.java").toUri().toString();
@@ -179,26 +176,34 @@ class JdtlsProjectStyleProbeTest {
                     .count();
             int col = CHAIN.lines().toList().get(line).indexOf("collect(") + "collect(".length();
             // Chain search walks jdtls's type index, which is still being built just after the import: ask again.
-            List<String> chains = List.of();
-            int total = 0;
-            for (int attempt = 0; attempt < 20 && chains.isEmpty(); attempt++) {
-                var completion = get(s.completion(chain, new Position(line, col)));
-                List<CompletionItem> items = completion.isLeft()
-                        ? completion.getLeft()
-                        : completion.getRight().getItems();
-                total = items.size();
-                if (attempt == 0) {
-                    System.out.println("PROBE labels = "
-                            + items.stream().map(CompletionItem::getLabel).toList());
-                }
-                chains = items.stream()
-                        .map(CompletionItem::getLabel)
-                        .filter(l -> l.contains("Collectors."))
-                        .toList();
-                if (chains.isEmpty()) {
-                    Thread.sleep(1000);
-                }
-            }
+            List<String> chains = new java.util.ArrayList<>();
+            int[] counts = new int[2]; // [items in the last answer, answers]
+            com.editora.testkit.Await.holdsWithin(
+                    () -> {
+                        try {
+                            var completion = get(s.completion(chain, new Position(line, col)));
+                            List<CompletionItem> items = completion.isLeft()
+                                    ? completion.getLeft()
+                                    : completion.getRight().getItems();
+                            counts[0] = items.size();
+                            if (counts[1]++ == 0) {
+                                System.out.println("PROBE labels = "
+                                        + items.stream()
+                                                .map(CompletionItem::getLabel)
+                                                .toList());
+                            }
+                            chains.clear();
+                            items.stream()
+                                    .map(CompletionItem::getLabel)
+                                    .filter(l -> l.contains("Collectors."))
+                                    .forEach(chains::add);
+                        } catch (Exception e) {
+                            throw new IllegalStateException(e);
+                        }
+                        return !chains.isEmpty();
+                    },
+                    java.time.Duration.ofSeconds(20));
+            int total = counts[0];
             System.out.println("PROBE completion items = " + total);
             System.out.println("PROBE chain items = " + chains);
             assertTrue(chains.contains("Collectors.toList"), "chain completion: " + chains);
@@ -222,13 +227,22 @@ class JdtlsProjectStyleProbeTest {
             Path style = project.resolve("style.xml");
             Files.writeString(style, Files.readString(style).replace("value=\"next_line\"", "value=\"end_of_line\""));
             s.refreshProjectSettings();
-            String reformatted = "";
-            int attempts = 0;
-            for (int attempt = 0; attempt < 20 && !reformatted.contains("long go() {"); attempt++) {
-                attempts++;
-                Thread.sleep(300);
-                reformatted = applied(APP, get(s.formatting(app, new org.eclipse.lsp4j.FormattingOptions(4, true))));
-            }
+            String[] lastFormat = {""};
+            int[] tries = {0};
+            com.editora.testkit.Await.holdsWithin(
+                    () -> {
+                        tries[0]++;
+                        try {
+                            lastFormat[0] = applied(
+                                    APP, get(s.formatting(app, new org.eclipse.lsp4j.FormattingOptions(4, true))));
+                        } catch (Exception e) {
+                            throw new IllegalStateException(e);
+                        }
+                        return lastFormat[0].contains("long go() {");
+                    },
+                    java.time.Duration.ofSeconds(6));
+            String reformatted = lastFormat[0];
+            int attempts = tries[0];
             System.out.println("PROBE reformatted = " + reformatted.replace("\n", "\\n"));
             System.out.println("PROBE reformat attempts = " + attempts);
             assertTrue(reformatted.contains("long go() {"), "the edited profile's end-of-line brace");

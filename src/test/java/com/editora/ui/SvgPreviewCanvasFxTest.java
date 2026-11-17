@@ -1,6 +1,6 @@
 package com.editora.ui;
 
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
 import java.util.function.DoubleUnaryOperator;
 
 import javafx.scene.Node;
@@ -12,6 +12,7 @@ import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 
 import com.editora.editor.markdown.SvgImages;
+import com.editora.testkit.Await;
 import com.github.weisj.jsvg.ui.jfx.FXSVGCanvas;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -53,13 +54,28 @@ class SvgPreviewCanvasFxTest {
             st.setScene(new Scene(root, 800, 600));
             st.show();
         });
-        for (int i = 0; i < 100 && FxTestSupport.callOnFx(() -> canvasIn(host)) == null; i++) {
-            TimeUnit.MILLISECONDS.sleep(20);
-            FxTestSupport.runOnFx(() -> {});
-        }
+        Await.holdsWithin(() -> onFx(() -> canvasIn(host)) != null, Duration.ofSeconds(2));
         FxTestSupport.runOnFx(root::applyCss);
         FxTestSupport.runOnFx(root::layout);
         return host;
+    }
+
+    /** The share of sampled pixels (every second one each way) in the SVG's green fill. */
+    private static double greenShare(WritableImage shot) {
+        int w = (int) shot.getWidth();
+        int h = (int) shot.getHeight();
+        int painted = 0;
+        var reader = shot.getPixelReader();
+        for (int y = 0; y < h; y += 2) {
+            for (int x = 0; x < w; x += 2) {
+                Color c = reader.getColor(x, y);
+                if (c.getOpacity() > 0.9 && c.getGreen() > 0.5 && c.getRed() < 0.5 && c.getBlue() < 0.5) {
+                    painted++;
+                }
+            }
+        }
+        int sampled = ((h + 1) / 2) * ((w + 1) / 2);
+        return sampled == 0 ? 0 : (double) painted / sampled;
     }
 
     private static FXSVGCanvas canvasIn(Node host) {
@@ -104,14 +120,9 @@ class SvgPreviewCanvasFxTest {
     @Test
     void unparseableSvgShowsAnError() throws Exception {
         Node host = FxTestSupport.callOnFx(() -> SvgImages.node("this is not svg at all", w -> w));
-        for (int i = 0; i < 100; i++) {
-            TimeUnit.MILLISECONDS.sleep(20);
-            FxTestSupport.runOnFx(() -> {});
-            // the message label, under a "Line N, column M" link when the parser said where (XML review C15)
-            Boolean errored = FxTestSupport.callOnFx(() -> host.lookup(".svg-error") != null);
-            if (errored) {
-                return;
-            }
+        // the message label, under a "Line N, column M" link when the parser said where (XML review C15)
+        if (Await.holdsWithin(() -> onFx(() -> host.lookup(".svg-error") != null), Duration.ofSeconds(2))) {
+            return;
         }
         assertInstanceOf(StackPane.class, host);
         throw new AssertionError("expected an .svg-error label for unparseable input");
@@ -132,12 +143,16 @@ class SvgPreviewCanvasFxTest {
         Node host = laidOut(SVG, w -> w * 2); // 200x50 -> 400x100
         FXSVGCanvas canvas = FxTestSupport.callOnFx(() -> canvasIn(host));
         assertNotNull(canvas, "canvas present");
-        // Let the skin's first paint land before sampling.
-        for (int i = 0; i < 10; i++) {
-            FxTestSupport.runOnFx(() -> {});
-            TimeUnit.MILLISECONDS.sleep(20);
-        }
-        WritableImage shot = FxTestSupport.callOnFx(() -> canvas.snapshot(new SnapshotParameters(), null));
+        // The skin's first paint lands on a later pulse: snapshot on each pulse until most of the box shows the
+        // fill (or a while has passed), then check the last snapshot.
+        WritableImage[] last = new WritableImage[1];
+        Await.holdsWithin(
+                () -> {
+                    last[0] = onFx(() -> canvas.snapshot(new SnapshotParameters(), null));
+                    return last[0] != null && greenShare(last[0]) > 0.5;
+                },
+                Duration.ofSeconds(2));
+        WritableImage shot = last[0];
         assertNotNull(shot, "snapshot taken");
         int w = (int) shot.getWidth();
         int h = (int) shot.getHeight();
@@ -159,5 +174,14 @@ class SvgPreviewCanvasFxTest {
                 "expected the canvas to paint the SVG's green fill over most of its box, but only " + painted
                         + " of " + sampled + " sampled pixels matched — a canvas that lays out correctly and"
                         + " draws nothing passes every other assertion in this class");
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

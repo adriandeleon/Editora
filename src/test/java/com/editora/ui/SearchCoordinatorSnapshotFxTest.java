@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -12,6 +13,7 @@ import javafx.collections.FXCollections;
 
 import com.editora.io.DocumentWriteSequencer;
 import com.editora.search.SearchQuery;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -341,12 +343,19 @@ class SearchCoordinatorSnapshotFxTest {
             SearchCoordinator coordinator = coordinator(host, dir);
             async.onClose(coordinator::shutdown);
             FxTestSupport.runOnFx(coordinator::applyRipgrepSupport);
-            boolean recorded = false;
-            for (int i = 0; i < 400 && !recorded; i++) {
-                Thread.sleep(25);
-                recorded = FxTestSupport.callOnFx(() -> FxTestSupport.<Boolean>field(coordinator, "backendRipgrep"));
-            }
+            boolean recorded = Await.holdsWithin(
+                    () -> onFx(() -> FxTestSupport.<Boolean>field(coordinator, "backendRipgrep")),
+                    Duration.ofSeconds(10));
             assertTrue(recorded, "the value the popup's badge is set from when it is shown");
+        }
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

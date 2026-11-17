@@ -107,10 +107,8 @@ class GotoDefinitionWithoutLspFxTest {
             }
         }));
         FxTestSupport.runOnFx(() -> index.gotoDefinitionAtCaret());
-        for (int i = 0; i < 200 && opened.isEmpty(); i++) {
-            Thread.sleep(25); // the project walk runs on the index worker
-            FxTestSupport.runOnFx(() -> {});
-        }
+        // the project walk runs on the index worker; its answer opens the file on the FX thread
+        com.editora.testkit.Await.holdsWithin(() -> !opened.isEmpty(), java.time.Duration.ofSeconds(5));
         assertEquals(List.of(project.resolve("lib.sh")), opened);
         assertEquals(List.of(2), lines);
         assertEquals(

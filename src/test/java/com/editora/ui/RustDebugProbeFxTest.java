@@ -18,6 +18,7 @@ import com.editora.dap.DapModels;
 import com.editora.dap.DebugLanguages;
 import com.editora.dap.RustLaunch;
 import com.editora.process.ProcessRunner;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -358,13 +359,7 @@ class RustDebugProbeFxTest {
     }
 
     private static void await(String what, int seconds, BooleanSupplier condition) throws InterruptedException {
-        long end = System.nanoTime() + seconds * 1_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(50);
-        }
+        Await.until(condition, what, Duration.ofSeconds(seconds));
     }
 
     private static void awaitStop(DapManager dap, DebugCoordinator debug, int line) throws InterruptedException {

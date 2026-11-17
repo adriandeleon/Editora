@@ -21,6 +21,7 @@ import com.editora.config.TextAnchor;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.EditorFx;
 import com.editora.editor.FrameWatch;
+import com.editora.testkit.Await;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.TwoDimensional.Bias;
 import org.junit.jupiter.api.BeforeAll;
@@ -112,13 +113,7 @@ class NoteIndicatorsFxTest {
 
     /** Re-checks {@code done} on the FX thread for up to three seconds; returns its last answer. */
     private static boolean eventually(EditorBuffer buffer, Predicate<EditorBuffer> done) throws Exception {
-        for (int attempt = 0; attempt < 60; attempt++) {
-            if (EditorFx.callFx(() -> done.test(buffer))) {
-                return true;
-            }
-            Thread.sleep(50);
-        }
-        return false;
+        return Await.holdsWithin(EditorFx.checkOnFx(() -> done.test(buffer)), java.time.Duration.ofSeconds(3));
     }
 
     /** Whether the highlight on the row of the note at {@code start} begins where its first character does. */
@@ -338,14 +333,15 @@ class NoteIndicatorsFxTest {
             area.setParagraphGraphicFactory(counting[0]);
         });
         try {
-            settle();
+            settle(b[0], 0);
             offScreen.set(0);
+            int settled = EditorFx.callFx(() -> b[0].getFoldManager().settlesForTest()[0]);
             EditorFx.onFx(() -> {
                 for (int i = 0; i < 5; i++) {
                     b[0].getArea().insertText(0, "\n"); // every note moves down a line
                 }
             });
-            settle();
+            settle(b[0], settled);
             int built = offScreen.get();
             EditorFx.onFx(() -> {
                 NoteManager notes = b[0].getNoteManager();
@@ -367,10 +363,19 @@ class NoteIndicatorsFxTest {
         }
     }
 
-    /** Lets queued work and the fold manager's debounced recompute run. */
-    private static void settle() throws Exception {
+    /**
+     * Lets queued work, the settled-edit milestones and the fold manager's debounced recompute run: waits for a
+     * settle after the {@code before}th and for every detection to have answered.
+     */
+    private static void settle(EditorBuffer buffer, int before) throws Exception {
         EditorFx.drain();
-        Thread.sleep(400);
+        EditorFx.awaitEditsSettled(buffer);
+        Await.until(
+                EditorFx.checkOnFx(() -> {
+                    int[] s = buffer.getFoldManager().settlesForTest();
+                    return s[0] > before && s[2] == s[3];
+                }),
+                "the fold manager's settle and its detection");
         EditorFx.drain();
     }
 }

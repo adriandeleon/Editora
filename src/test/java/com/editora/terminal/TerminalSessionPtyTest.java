@@ -3,6 +3,7 @@ package com.editora.terminal;
 import java.time.Duration;
 import java.time.Instant;
 
+import com.editora.testkit.Await;
 import com.jediterm.core.util.TermSize;
 import com.jediterm.terminal.CursorShape;
 import com.jediterm.terminal.RequestOrigin;
@@ -91,11 +92,7 @@ class TerminalSessionPtyTest {
             session.resize(100, 30);
 
             TerminalTextBuffer buffer = session.getTextBuffer();
-            Instant deadline = Instant.now().plus(TIMEOUT);
-            while (Instant.now().isBefore(deadline)) {
-                if (buffer.getWidth() == 100 && buffer.getHeight() == 30) return;
-                Thread.sleep(50);
-            }
+            if (Await.holdsWithin(() -> buffer.getWidth() == 100 && buffer.getHeight() == 30, TIMEOUT)) return;
             assertTrue(false, "buffer stayed " + buffer.getWidth() + "x" + buffer.getHeight());
         } finally {
             session.close();
@@ -125,13 +122,8 @@ class TerminalSessionPtyTest {
     /** True once the shell has written anything at all — i.e. it is up and has printed a prompt. */
     private static boolean awaitReady(TerminalSession session) throws InterruptedException {
         TerminalTextBuffer buffer = session.getTextBuffer();
-        Instant deadline = Instant.now().plus(TIMEOUT);
-        while (Instant.now().isBefore(deadline)) {
-            if (!screen(buffer).isBlank()) return true;
-            if (!session.isRunning()) return false;
-            Thread.sleep(50);
-        }
-        return false;
+        Await.holdsWithin(() -> !screen(buffer).isBlank() || !session.isRunning(), TIMEOUT);
+        return !screen(buffer).isBlank();
     }
 
     private static boolean await(TerminalTextBuffer buffer, String needle) throws InterruptedException {
@@ -140,14 +132,9 @@ class TerminalSessionPtyTest {
 
     private static boolean await(TerminalTextBuffer buffer, String needle, Duration timeout)
             throws InterruptedException {
-        Instant deadline = Instant.now().plus(timeout);
-        while (Instant.now().isBefore(deadline)) {
-            // The command echoes once as typed and once as output; two occurrences means the shell
-            // actually ran it rather than merely echoing the keystrokes back.
-            if (countOccurrences(screen(buffer), needle) >= 2) return true;
-            Thread.sleep(50);
-        }
-        return false;
+        // The command echoes once as typed and once as output; two occurrences means the shell
+        // actually ran it rather than merely echoing the keystrokes back.
+        return Await.holdsWithin(() -> countOccurrences(screen(buffer), needle) >= 2, timeout);
     }
 
     private static int countOccurrences(String haystack, String needle) {

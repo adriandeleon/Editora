@@ -2,11 +2,11 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
@@ -647,11 +647,8 @@ class MapCardLinksFxTest {
         String text = Files.readString(file);
         FxTestSupport.runOnFx(
                 () -> search.find(root, new MapCardLinks.Request(kind, file, line, column, null, text), answers::add));
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (answers.isEmpty() && System.nanoTime() < deadline) {
-            FxTestSupport.drainFx();
-            TimeUnit.MILLISECONDS.sleep(10);
-        }
+        com.editora.testkit.Await.holdsWithin(() -> !answers.isEmpty(), java.time.Duration.ofSeconds(10));
+        FxTestSupport.drainFx();
         assertEquals(1, answers.size(), "one answer");
         return answers.getFirst();
     }
@@ -714,13 +711,6 @@ class MapCardLinksFxTest {
     }
 
     private static void waitForFx(BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("timed out");
+        OnFx.until(condition::getAsBoolean, "the condition", Duration.ofSeconds(15));
     }
 }

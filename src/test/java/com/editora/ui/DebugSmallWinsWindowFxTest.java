@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 
@@ -18,8 +19,10 @@ import javafx.scene.layout.HBox;
 
 import com.editora.command.CommandRegistry;
 import com.editora.dap.DapManager;
+import com.editora.dap.DapModels;
 import com.editora.dap.FakeDebugAdapter;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.eclipse.lsp4j.debug.SetBreakpointsArguments;
 import org.eclipse.lsp4j.debug.SourceBreakpoint;
 import org.junit.jupiter.api.AfterAll;
@@ -114,13 +117,7 @@ class DebugSmallWinsWindowFxTest {
     }
 
     private static void await(String what, BooleanSupplier condition) throws InterruptedException {
-        long end = System.nanoTime() + 20_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(25);
-        }
+        Await.until(condition, what, Duration.ofSeconds(20));
     }
 
     private void run(String command) throws Exception {
@@ -245,6 +242,17 @@ class DebugSmallWinsWindowFxTest {
                 : java.util.Arrays.stream(bps).map(SourceBreakpoint::getLine).toList();
     }
 
+    /** Waits until the editor has painted the stop on {@code line} (0-based): a timed stop shows its time then. */
+    private void awaitPainted(int line) throws Exception {
+        await(
+                "the stop on line " + (line + 1) + " painted",
+                () -> call(() -> {
+                    DapModels.StackFrameInfo painted = FxTestSupport.field(debug, "paintedFrame");
+                    return painted != null && painted.line() == line;
+                }));
+        FxTestSupport.drainFx();
+    }
+
     private static String elapsed(EditorBuffer b) {
         Object overlay = FxTestSupport.field(b, "inlineValues");
         return overlay == null ? null : FxTestSupport.field(overlay, "elapsed");
@@ -338,13 +346,13 @@ class DebugSmallWinsWindowFxTest {
         session.frameLine = 4;
         session.stop(1, "pause");
         await("paused", () -> call(manager::state) == DapManager.State.SUSPENDED);
-        Thread.sleep(200);
+        awaitPainted(3); // the stop's line is painted, and its time would be shown with it
         assertNull(call(() -> elapsed(b)), "a Pause's time is the user's");
 
         FxTestSupport.runOnFx(() -> fx.shared.getSettings().setDebugStepTiming(false));
         FxTestSupport.runOnFx(manager::resume);
         stopAt(session, 4, "step");
-        Thread.sleep(200);
+        awaitPainted(4);
         assertNull(call(() -> elapsed(b)), "the setting off");
     }
 

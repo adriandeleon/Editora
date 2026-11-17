@@ -14,6 +14,7 @@ import javafx.stage.Stage;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.EditorBuffer.MarkdownViewMode;
 import com.editora.editor.EditorFx;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -47,21 +48,20 @@ class PreviewSelectionCommandsFxTest {
             stage = EditorFx.show(buffer, 1000, 500);
             buffer.setMarkdownViewMode(mode);
         });
-        long end = System.nanoTime() + 20_000_000_000L;
-        while (!EditorFx.callFx(() -> {
-            MarkdownPreview p = EditorFx.field(EditorFx.field(buffer, "previewPanes"), "markdownPreview");
-            ScrollPane pane = EditorFx.field(EditorFx.field(buffer, "previewPanes"), "previewPane");
-            return p != null
-                    && p.isShowing()
-                    && p.column().getChildrenUnmodifiable().size() == 3
-                    && pane != null
-                    && pane.getScene() != null
-                    && pane.getScene().getWindow() != null
-                    && pane.getScene().getWindow().isShowing();
-        })) {
-            assertTrue(System.nanoTime() < end, "the preview never rendered");
-            Thread.sleep(20);
-        }
+        Await.until(
+                EditorFx.checkOnFx(() -> {
+                    MarkdownPreview p = EditorFx.field(EditorFx.field(buffer, "previewPanes"), "markdownPreview");
+                    ScrollPane pane = EditorFx.field(EditorFx.field(buffer, "previewPanes"), "previewPane");
+                    return p != null
+                            && p.isShowing()
+                            && p.column().getChildrenUnmodifiable().size() == 3
+                            && pane != null
+                            && pane.getScene() != null
+                            && pane.getScene().getWindow() != null
+                            && pane.getScene().getWindow().isShowing();
+                }),
+                "the preview never rendered",
+                java.time.Duration.ofSeconds(20));
         EditorFx.drain();
         return EditorFx.callFx(
                 () -> EditorFx.<MarkdownPreview>field(EditorFx.field(buffer, "previewPanes"), "markdownPreview"));
@@ -69,11 +69,7 @@ class PreviewSelectionCommandsFxTest {
 
     /** Waits (off the FX thread) until {@code done}, checked on it, holds. */
     private static void await(java.util.concurrent.Callable<Boolean> done, String otherwise) throws Exception {
-        long end = System.nanoTime() + 20_000_000_000L;
-        while (!EditorFx.callFx(done)) {
-            assertTrue(System.nanoTime() < end, otherwise);
-            Thread.sleep(20);
-        }
+        Await.until(EditorFx.checkOnFx(done), otherwise, java.time.Duration.ofSeconds(20));
         EditorFx.drain();
     }
 

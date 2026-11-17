@@ -45,11 +45,8 @@ class MavenMenuFxTest {
     private static Menu settledMenuFor(MavenProjectCoordinator c, Path context) throws Exception {
         FxTestSupport.callOnFx(() -> menuFor(c, context));
         DiskFacts<Path, ?> looked = FxTestSupport.field(c, "pomAbove");
-        for (int i = 0; i < 300 && !MavenProjectCoordinator.isPomFile(context); i++) {
-            if (FxTestSupport.callOnFx(() -> looked.knows(context))) {
-                break;
-            }
-            Thread.sleep(10);
+        if (!MavenProjectCoordinator.isPomFile(context)) {
+            OnFx.holdsWithin(() -> looked.knows(context), java.time.Duration.ofSeconds(3));
         }
         return FxTestSupport.callOnFx(() -> menuFor(c, context));
     }
@@ -186,9 +183,7 @@ class MavenMenuFxTest {
         try {
             Menu early = FxTestSupport.callOnFx(() -> menuFor(coordinator(fx), dir));
             assertNotNull(early, "nothing known yet: offered");
-            for (int i = 0; i < 300 && FxTestSupport.callOnFx(early::isVisible); i++) {
-                Thread.sleep(10);
-            }
+            OnFx.holdsWithin(() -> !early.isVisible(), java.time.Duration.ofSeconds(10));
             assertFalse(FxTestSupport.callOnFx(early::isVisible), "hidden once the look found no pom");
         } finally {
             fx.dispose();

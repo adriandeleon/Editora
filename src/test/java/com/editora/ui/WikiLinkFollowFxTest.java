@@ -2,10 +2,12 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -65,10 +67,7 @@ class WikiLinkFollowFxTest {
             throws Exception {
         log.clear();
         FxTestSupport.runOnFx(() -> follow.accept(address));
-        for (int i = 0; i < 250 && log.size() < entries; i++) {
-            Thread.sleep(20);
-            FxTestSupport.drainFx();
-        }
+        Await.holdsWithin(() -> log.size() >= entries, Duration.ofSeconds(5));
         FxTestSupport.drainFx();
         synchronized (log) {
             return List.copyOf(log);

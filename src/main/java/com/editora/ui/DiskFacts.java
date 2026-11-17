@@ -36,6 +36,7 @@ final class DiskFacts<K, V> {
     private final Set<K> pending = new HashSet<>();
     private Runnable onLearned = () -> {};
     private long freshNanos = FRESH_NANOS;
+    private java.util.function.LongSupplier clock = System::nanoTime;
     private @Nullable V assumed;
     private int asking;
 
@@ -63,6 +64,15 @@ final class DiskFacts<K, V> {
         return this;
     }
 
+    /**
+     * TEST SEAM — the clock an answer's age is read on ({@link System#nanoTime} by default), so a test can age an
+     * answer past {@link #FRESH_NANOS} without waiting that long.
+     */
+    DiskFacts<K, V> clockForTest(java.util.function.LongSupplier nanos) {
+        this.clock = nanos;
+        return this;
+    }
+
     /** Runs on the FX thread when a look lands with an answer that differs from the kept one. */
     DiskFacts<K, V> onLearned(Runnable listener) {
         this.onLearned = listener;
@@ -73,7 +83,7 @@ final class DiskFacts<K, V> {
     @Nullable
     V get(K key) {
         Kept<V> kept = known.get(key);
-        if (kept == null || System.nanoTime() - kept.at() >= freshNanos) {
+        if (kept == null || clock.getAsLong() - kept.at() >= freshNanos) {
             asking++;
             try {
                 ask(key);
@@ -115,7 +125,7 @@ final class DiskFacts<K, V> {
             if (known.size() >= MAX) {
                 known.clear();
             }
-            Kept<V> before = known.put(key, new Kept<>(value, System.nanoTime()));
+            Kept<V> before = known.put(key, new Kept<>(value, clock.getAsLong()));
             V was = before != null ? before.value() : assumed;
             if (asking == 0 && !value.equals(was)) {
                 onLearned.run();

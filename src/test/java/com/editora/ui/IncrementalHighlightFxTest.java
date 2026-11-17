@@ -115,17 +115,15 @@ class IncrementalHighlightFxTest {
 
     /** Waits until a pass covering every edit so far has been applied (nothing is owed any more). */
     private static void awaitHighlighted(EditorBuffer b) throws Exception {
-        for (int i = 0; i < 1200; i++) {
-            boolean done = FxTestSupport.callOnFx(() ->
-                    FxTestSupport.field(FxTestSupport.field(b, "highlighter"), "highlightLines") != null
-                            && "clean"
-                                    .equals(String.valueOf(FxTestSupport.<Object>field(
-                                            FxTestSupport.field(b, "highlighter"), "highlightDirty"))));
-            if (done) {
-                FxTestSupport.drainFx(); // the coalesced brace re-match the apply scheduled
-                return;
-            }
-            Thread.sleep(25);
+        if (com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.fxCondition(() ->
+                        FxTestSupport.field(FxTestSupport.field(b, "highlighter"), "highlightLines") != null
+                                && "clean"
+                                        .equals(String.valueOf(FxTestSupport.<Object>field(
+                                                FxTestSupport.field(b, "highlighter"), "highlightDirty")))),
+                java.time.Duration.ofSeconds(30))) {
+            FxTestSupport.drainFx(); // the coalesced brace re-match the apply scheduled
+            return;
         }
         throw new AssertionError("no highlight pass applied within 30s: highlightDirty="
                 + FxTestSupport.callOnFx(() -> String.valueOf(
@@ -296,10 +294,8 @@ class IncrementalHighlightFxTest {
             return b;
         });
         // The caret's line is not laid out here (no scene), so the pair is looked for off the FX thread (PERF-01).
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
-        while (braceMatched(buffer).isEmpty() && System.nanoTime() < deadline) {
-            Thread.sleep(10);
-        }
+        com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.unchecked(() -> !braceMatched(buffer).isEmpty()), java.time.Duration.ofSeconds(20));
         assertEquals(List.of(0, 10), braceMatched(buffer), "the pair spans three lines");
 
         // Typed right after the "(": the new character takes on its neighbour's style, the ")" moves one
@@ -320,10 +316,8 @@ class IncrementalHighlightFxTest {
         int close = FxTestSupport.callOnFx(() -> buffer.getArea().getText().lastIndexOf('}'));
         FxTestSupport.runOnFx(() -> buffer.getArea().moveTo(open + 1));
         // Past the near window the partner is looked for off the FX thread (PERF-01): it lands a moment later.
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
-        while (braceMatched(buffer).isEmpty() && System.nanoTime() < deadline) {
-            Thread.sleep(10);
-        }
+        com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.unchecked(() -> !braceMatched(buffer).isEmpty()), java.time.Duration.ofSeconds(20));
         assertEquals(List.of(open, close), braceMatched(buffer), "the class braces, four hundred lines apart");
 
         // The pass for this edit restyles one line at the top; the closing brace at the bottom has moved.

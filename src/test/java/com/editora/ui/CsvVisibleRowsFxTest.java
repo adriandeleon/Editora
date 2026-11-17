@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -174,13 +175,10 @@ class CsvVisibleRowsFxTest {
     }
 
     private void awaitExport(String exportingStatus) throws Exception {
-        for (int i = 0; i < 400; i++) {
+        EventuallyFx.holdsWithin(Duration.ofSeconds(20), () -> {
             String last = FxTestSupport.callOnFx(host::last);
-            if (Files.exists(destination) && last != null && !exportingStatus.equals(last)) {
-                break;
-            }
-            Thread.sleep(50);
-        }
+            return Files.exists(destination) && last != null && !exportingStatus.equals(last);
+        });
         FxTestSupport.drainFx();
         assertTrue(Files.exists(destination), "the export should have written " + destination);
     }
@@ -251,9 +249,9 @@ class CsvVisibleRowsFxTest {
         create(EditorBuffer.MarkdownViewMode.PREVIEW);
         filterSortAndSetHeader(true);
         run("csv.print");
-        for (int i = 0; i < 200 && FxTestSupport.callOnFx(() -> previews().isEmpty()); i++) {
-            Thread.sleep(50);
-        }
+        EventuallyFx.holdsWithin(
+                Duration.ofSeconds(10),
+                () -> FxTestSupport.callOnFx(() -> !previews().isEmpty()));
         assertEquals(1, FxTestSupport.callOnFx(() -> previews().size()), "the Print Preview opens");
         assertEquals(1, jobsCreated);
         assertTrue(

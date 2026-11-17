@@ -88,10 +88,8 @@ class IndexCoordinatorFxTest {
     /** Runs the walk + apply synchronously enough to assert on, by pumping the FX queue until it lands. */
     private static void buildAndSettle(IndexCoordinator c) throws Exception {
         FxTestSupport.runOnFx(() -> FxTestSupport.invoke(c, "rebuild"));
-        for (int i = 0; i < 80 && indexOf(c).symbolCount() == 0; i++) {
-            Thread.sleep(25);
-            FxTestSupport.runOnFx(() -> {});
-        }
+        com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.unchecked(() -> indexOf(c).symbolCount() > 0), java.time.Duration.ofSeconds(2));
     }
 
     @Test
@@ -201,10 +199,8 @@ class IndexCoordinatorFxTest {
                     .ensureBuilt(() -> order.add("second:" + h.coordinator().isBuilt()));
             assertTrue(order.isEmpty(), "neither runs before the walk lands");
         });
-        for (int i = 0; i < 200 && order.size() < 2; i++) {
-            Thread.sleep(25);
-            FxTestSupport.runOnFx(() -> {});
-        }
+        com.editora.testkit.Await.holdsWithin(() -> order.size() >= 2, java.time.Duration.ofSeconds(5));
+        FxTestSupport.drainFx();
         assertEquals(List.of("first:true", "second:true"), order);
     }
 

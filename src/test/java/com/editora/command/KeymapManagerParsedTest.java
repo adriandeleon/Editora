@@ -37,15 +37,10 @@ class KeymapManagerParsedTest {
     @Test
     void theOtherBundledKeymapsAreReadAheadOffTheCallingThread() throws Exception {
         new KeymapManager().loadNamed("default", false);
-        long deadline = System.nanoTime() + 10_000_000_000L;
-        boolean all = false;
-        while (!all && System.nanoTime() < deadline) {
-            all = KeymapManager.AVAILABLE.keySet().stream()
-                    .allMatch(n -> KeymapManager.isParsedForTest("/com/editora/keymaps/" + n + ".json"));
-            if (!all) {
-                Thread.sleep(20);
-            }
-        }
+        boolean all = com.editora.testkit.Await.holdsWithin(
+                () -> KeymapManager.AVAILABLE.keySet().stream()
+                        .allMatch(n -> KeymapManager.isParsedForTest("/com/editora/keymaps/" + n + ".json")),
+                java.time.Duration.ofSeconds(10));
         assertTrue(all, "every bundled keymap is parsed by the warm-up thread");
     }
 

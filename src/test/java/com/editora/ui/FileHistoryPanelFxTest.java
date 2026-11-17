@@ -745,12 +745,6 @@ class FileHistoryPanelFxTest {
     }
 
     private static void awaitOnFx(java.util.concurrent.Callable<Boolean> condition, String what) throws Exception {
-        long deadline = System.nanoTime() + 10_000_000_000L;
-        while (!FxTestSupport.callOnFx(condition)) {
-            if (System.nanoTime() > deadline) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(25);
-        }
+        FxTestSupport.awaitFxCondition(condition, what, java.time.Duration.ofSeconds(10));
     }
 }

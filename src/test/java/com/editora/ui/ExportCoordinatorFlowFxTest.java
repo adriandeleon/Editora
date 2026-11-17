@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -125,13 +126,9 @@ class ExportCoordinatorFlowFxTest {
     }
 
     private static void await(String what, BooleanSupplier condition) throws Exception {
-        for (int i = 0; i < 600; i++) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return;
-            }
-            Thread.sleep(50);
+        if (!EventuallyFx.holdsWithin(Duration.ofSeconds(30), () -> FxTestSupport.callOnFx(condition::getAsBoolean))) {
+            fail("timed out waiting for " + what);
         }
-        fail("timed out waiting for " + what);
     }
 
     private int stagingCount() {
@@ -161,10 +158,24 @@ class ExportCoordinatorFlowFxTest {
         return false;
     }
 
-    private static long exportThreads() {
+    private static java.util.Set<Thread> exportThreads() {
         return Thread.getAllStackTraces().keySet().stream()
                 .filter(t -> t.getName().equals("pdf-export") && t.isAlive())
-                .count();
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
+    /**
+     * Waits for the export threads started since {@code before} to end, then for what they posted to the FX thread
+     * to run.
+     */
+    private static void awaitExportThreadsEnded(java.util.Set<Thread> before) throws Exception {
+        for (Thread t : exportThreads()) {
+            if (!before.contains(t)) {
+                t.join(20_000);
+            }
+        }
+        FxTestSupport.drainFx();
+        FxTestSupport.drainFx();
     }
 
     @Test
@@ -235,7 +246,7 @@ class ExportCoordinatorFlowFxTest {
     @Test
     void closingTheWindowDropsRunningAndQueuedExportsAndTheirStagingFolders() throws Exception {
         create("first.pdf", "second.pdf");
-        long threadsBefore = exportThreads();
+        java.util.Set<Thread> threadsBefore = exportThreads();
         FxTestSupport.runOnFx(() -> {
             host.active = longFile();
             exports.exportCodePdf();
@@ -250,12 +261,7 @@ class ExportCoordinatorFlowFxTest {
         assertEquals(List.of(), stagingFolders(), "shutdown removes the staging folder of both");
 
         // The interrupted writer winds down on its thread; whatever it still reports must change nothing.
-        for (int i = 0; i < 400 && exportThreads() > threadsBefore; i++) {
-            Thread.sleep(50);
-        }
-        FxTestSupport.drainFx();
-        Thread.sleep(200);
-        FxTestSupport.drainFx();
+        awaitExportThreadsEnded(threadsBefore);
         assertEquals(List.of(), stagingFolders());
         assertFalse(Files.exists(temp.resolve("first.pdf")), "an interrupted export is not committed");
         assertFalse(Files.exists(temp.resolve("second.pdf")));
@@ -272,7 +278,7 @@ class ExportCoordinatorFlowFxTest {
         PdfExportService service = new PdfExportService();
         List<PdfExportService.Result> results = new CopyOnWriteArrayList<>();
         Path out = temp.resolve("direct.pdf");
-        long threadsBefore = exportThreads();
+        java.util.Set<Thread> threadsBefore = exportThreads();
         java.util.concurrent.CountDownLatch writing = new java.util.concurrent.CountDownLatch(1);
         service.onProgress(pages -> writing.countDown());
         // Text only a system fallback font can draw: an interrupt closes that font's file mid-read, which is
@@ -281,12 +287,7 @@ class ExportCoordinatorFlowFxTest {
         service.exportCode(text, "Long.java", false, true, 4, "letter", out, results::add);
         assertTrue(writing.await(30, java.util.concurrent.TimeUnit.SECONDS), "the export should start its pages");
         service.shutdown();
-        for (int i = 0; i < 400 && exportThreads() > threadsBefore; i++) {
-            Thread.sleep(50);
-        }
-        FxTestSupport.drainFx();
-        Thread.sleep(200);
-        FxTestSupport.drainFx();
+        awaitExportThreadsEnded(threadsBefore);
         for (PdfExportService.Result result : results) {
             assertFalse(result.ok(), "not a finished PDF");
             assertTrue(PdfExportService.cancelled(result), "but a cancelled one: " + result);

@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -98,10 +99,10 @@ class RowReasonsFxTest {
         return menu;
     }
 
+    /** Lets the menu just shown lay out: its skin and rows are made in the pulse that follows. */
     private static void settle() throws Exception {
         FxTestSupport.drainFx();
-        Thread.sleep(50);
-        FxTestSupport.drainFx();
+        PulseChecks.pulses(1);
     }
 
     private static MenuItem counting(MenuItem item, AtomicInteger runs) {
@@ -186,14 +187,12 @@ class RowReasonsFxTest {
         Node row = node(cut);
         Bounds at = FxTestSupport.callOnFx(() -> row.localToScreen(row.getBoundsInLocal()));
         FxTestSupport.runOnFx(() -> new Robot().mouseMove(at.getCenterX(), at.getCenterY()));
-        boolean showing = false;
-        for (int i = 0; i < 40 && !showing; i++) {
-            Thread.sleep(100);
-            showing = FxTestSupport.callOnFx(() -> {
-                Tooltip tip = RowReasons.tooltipOf(cut);
-                return tip != null && tip.isShowing();
-            });
-        }
+        boolean showing = PulseChecks.holdsOnFxWithin(
+                () -> {
+                    Tooltip tip = RowReasons.tooltipOf(cut);
+                    return tip != null && tip.isShowing();
+                },
+                Duration.ofSeconds(4));
         assertTrue(showing, "a grayed row's node gets the pointer, so its tooltip shows");
         FxTestSupport.runOnFx(() -> new Robot().mouseMove(0, 0));
     }

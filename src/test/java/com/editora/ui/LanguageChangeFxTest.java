@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 
 import javafx.scene.control.Label;
 
@@ -53,14 +54,7 @@ class LanguageChangeFxTest {
 
     /** Waits (bounded) until the active buffer's language is {@code language}. */
     private void awaitLanguage(String language) throws Exception {
-        for (int i = 0;
-                i < 200
-                        && !language.equals(FxTestSupport.callOnFx(
-                                () -> fx.controller.activeBuffer().getLanguage()));
-                i++) {
-            Thread.sleep(25);
-            FxTestSupport.drainFx();
-        }
+        OnFx.holdsWithin(() -> language.equals(fx.controller.activeBuffer().getLanguage()), Duration.ofSeconds(5));
         assertEquals(
                 language,
                 FxTestSupport.callOnFx(() -> fx.controller.activeBuffer().getLanguage()));
@@ -91,13 +85,11 @@ class LanguageChangeFxTest {
         Path script = dir.resolve("deploy");
         Files.writeString(script, "echo hi\n");
         FxTestSupport.runOnFx(() -> fx.controller.openAndNavigate(script, 1));
-        for (int i = 0;
-                i < 200
-                        && FxTestSupport.callOnFx(() -> fx.controller.activeBuffer() == null
-                                || fx.controller.activeBuffer().isLoading());
-                i++) {
-            Thread.sleep(25);
-        }
+        OnFx.until(
+                () -> fx.controller.activeBuffer() != null
+                        && !fx.controller.activeBuffer().isLoading(),
+                "the script to load",
+                Duration.ofSeconds(5));
         EditorBuffer b = active();
         FxTestSupport.runOnFx(() -> b.setRunEnabled(true));
         assertFalse(FxTestSupport.callOnFx(b::isRunnable), "plain text is not runnable");

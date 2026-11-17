@@ -2,7 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
 import java.util.function.BooleanSupplier;
 
 import com.editora.command.CommandRegistry;
@@ -37,12 +37,7 @@ class ClojureRunDebugWindowFxTest {
     Path dir;
 
     private static void await(String what, BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(120);
-        while (!FxTestSupport.callOnFx(condition::getAsBoolean)) {
-            assertTrue(System.nanoTime() < deadline, what + " never happened");
-            FxTestSupport.drainFx();
-            Thread.sleep(20);
-        }
+        EventuallyFx.untilOnFx(what + " never happened", Duration.ofSeconds(120), condition::getAsBoolean);
     }
 
     private static EditorBuffer open(MainController c, Path file) throws Exception {

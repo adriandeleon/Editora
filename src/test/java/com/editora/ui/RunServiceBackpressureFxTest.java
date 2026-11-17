@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -12,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 import javafx.application.Platform;
 
 import com.editora.run.RunService;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -289,6 +291,7 @@ class RunServiceBackpressureFxTest {
         CountDownLatch started = new CountDownLatch(1);
         CountDownLatch exited = new CountDownLatch(1);
         CountDownLatch releaseFx = new CountDownLatch(1);
+        java.util.Set<Thread> waitersBefore = runWaiters();
         String java = Path.of(System.getProperty("java.home"), "bin", isWindows() ? "java.exe" : "java")
                 .toString();
         List<String> command =
@@ -323,7 +326,13 @@ class RunServiceBackpressureFxTest {
         });
         Process process = awaitProcess(service); // started off the FX thread, which is busy
         assertTrue(process.waitFor(30, TimeUnit.SECONDS));
-        Thread.sleep(300);
+        // The run's waiter joins the output readers and queues the exit: all the flood is read (and queued, or
+        // dropped) while the FX thread is still busy.
+        for (Thread waiter : runWaiters()) {
+            if (!waitersBefore.contains(waiter)) {
+                assertTrue(waiter.join(Duration.ofSeconds(20)), "the run's readers ended");
+            }
+        }
         releaseFx.countDown();
         assertTrue(exited.await(20, TimeUnit.SECONDS));
         assertTrue(started.await(1, TimeUnit.SECONDS));
@@ -342,14 +351,18 @@ class RunServiceBackpressureFxTest {
     }
 
     private static Process awaitProcess(RunService service) throws Exception {
-        for (int i = 0; i < 100; i++) {
-            Process process = FxTestSupport.field(service, "current");
-            if (process != null) {
-                return process;
+        return Await.value(() -> FxTestSupport.<Process>field(service, "current"), "run process never started");
+    }
+
+    /** The live threads that wait for a run's process and then for its output ({@code RunService}'s "run-wait"). */
+    private static java.util.Set<Thread> runWaiters() {
+        java.util.Set<Thread> out = new java.util.HashSet<>();
+        for (Thread t : Thread.getAllStackTraces().keySet()) {
+            if (t.getName().equals("run-wait") && t.isAlive()) {
+                out.add(t);
             }
-            Thread.sleep(20);
         }
-        throw new AssertionError("run process never started");
+        return out;
     }
 
     private static boolean isWindows() {

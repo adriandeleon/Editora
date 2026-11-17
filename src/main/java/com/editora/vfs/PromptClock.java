@@ -15,6 +15,22 @@ import java.util.function.Supplier;
  */
 final class PromptClock {
 
+    /** How far a test has moved {@link #now} on (TEST SEAM, see {@link #passForTest}); only ever grows. */
+    private static final AtomicLong SKEW = new AtomicLong();
+
+    /** The clock the login deadline and the answering time are measured on: {@code System.nanoTime}, or later. */
+    static long now() {
+        return System.nanoTime() + SKEW.get();
+    }
+
+    /**
+     * TEST SEAM — moves {@link #now} on by {@code time}, as if that much had passed: a test plays a person who reads
+     * a fingerprint or a code off a phone for longer than the deadline without waiting for it.
+     */
+    static void passForTest(java.time.Duration time) {
+        SKEW.addAndGet(time.toNanos());
+    }
+
     private final AtomicLong accumulated = new AtomicLong();
     private final AtomicLong start = new AtomicLong();
 
@@ -27,17 +43,17 @@ final class PromptClock {
     long elapsedNanos() {
         long s = start.get();
         long acc = accumulated.get();
-        return s == 0 ? acc : acc + Math.max(0, System.nanoTime() - s);
+        return s == 0 ? acc : acc + Math.max(0, now() - s);
     }
 
     /** Runs {@code question}, counting the time it takes as answering time. */
     <T> T timed(Supplier<T> question) {
-        long t0 = System.nanoTime();
+        long t0 = now();
         start.set(t0);
         try {
             return question.get();
         } finally {
-            accumulated.addAndGet(System.nanoTime() - t0);
+            accumulated.addAndGet(now() - t0);
             start.set(0);
         }
     }

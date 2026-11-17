@@ -74,10 +74,8 @@ class HtmlServerNodeProbeFxTest {
         try {
             manager.configure(true, Map.of());
             Platform.runLater(() -> manager.openDocument(file, root, "html", text));
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
-            while (!manager.supportsDocumentColor(file) && System.nanoTime() < deadline) {
-                Thread.sleep(100);
-            }
+            com.editora.testkit.Await.holdsWithin(
+                    () -> manager.supportsDocumentColor(file), java.time.Duration.ofSeconds(60));
             assertTrue(manager.supportsDocumentColor(file), "the HTML server did not get ready:\n" + status);
 
             manager.pullDiagnostics(file);

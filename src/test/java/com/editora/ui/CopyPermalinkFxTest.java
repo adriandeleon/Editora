@@ -2,10 +2,10 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
-import java.util.concurrent.TimeUnit;
 
 import javafx.scene.Scene;
 import javafx.scene.control.ContextMenu;
@@ -215,10 +215,6 @@ class CopyPermalinkFxTest {
     }
 
     private static void await(String what, Callable<Boolean> condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-        while (!FxTestSupport.callOnFx(condition)) {
-            assertFalse(System.nanoTime() > deadline, "timed out waiting for " + what);
-            Thread.sleep(25);
-        }
+        EventuallyFx.untilOnFx(what, Duration.ofSeconds(15), condition);
     }
 }

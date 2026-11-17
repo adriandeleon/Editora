@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 
 import javafx.scene.control.Label;
 
@@ -9,6 +10,7 @@ import com.editora.command.CommandRegistry;
 import com.editora.dap.DapManager;
 import com.editora.dap.DebugAdapterLocator;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -95,7 +97,13 @@ class PlainFolderDebugProbeFxTest {
             FxTestSupport.runOnFx(() -> c.openAndNavigate(main, PRINT_LINE + 1));
             FxTestSupport.runOnFx(() -> c.activeBuffer().toggleBreakpoint(PRINT_LINE));
             await(debug, "Java debugging to be ready", 600, () -> FxTestSupport.callOnFx(debug::debugEffective));
-            Thread.sleep(Long.getLong("importWait", 15000)); // let jdtls import the folder
+            LspCoordinator lsp = FxTestSupport.field(c, "lspCoordinator");
+            await( // jdtls has imported the folder: its ready line was said
+                    debug,
+                    "jdtls's import of the folder",
+                    (int) (Long.getLong("importWait", 300_000) / 100),
+                    () -> FxTestSupport.callOnFx(() -> (Boolean) FxTestSupport.call(
+                            lsp, "serverSettled", new Class<?>[] {EditorBuffer.class}, c.activeBuffer())));
 
             // F5: built, launched, stopped at the breakpoint — not refused for jdtls's nested source root
             FxTestSupport.runOnFx(() -> registry.run("debug.start"));
@@ -141,14 +149,11 @@ class PlainFolderDebugProbeFxTest {
             assertEquals(DapManager.State.INACTIVE, FxTestSupport.callOnFx(dap::state));
         } finally {
             FxTestSupport.runOnFx(dap::stop);
-            for (int i = 0; i < 100 && FxTestSupport.callOnFx(dap::isActive); i++) {
-                Thread.sleep(100);
-            }
+            PulseChecks.holdsOnFxWithin(() -> !dap.isActive(), Duration.ofSeconds(10));
             fx.dispose();
             String path = dir.toString();
-            for (int i = 0; i < 300 && usingFolder(path); i++) {
-                Thread.sleep(100); // jdtls writes its workspace under dir for a moment after it is asked to stop
-            }
+            // jdtls writes its workspace under dir for a moment after it is asked to stop
+            Await.holdsWithin(() -> !usingFolder(path), Duration.ofSeconds(30));
         }
     }
 
@@ -156,18 +161,14 @@ class PlainFolderDebugProbeFxTest {
     private static void edit(MainController c, CommandRegistry registry, Path file, String from, String to)
             throws Exception {
         FxTestSupport.runOnFx(() -> c.openAndNavigate(file, 1));
-        for (int i = 0; i < 100; i++) { // the tab's text is read off the FX thread
-            boolean loaded = FxTestSupport.callOnFx(() -> {
-                EditorBuffer b = c.activeBuffer();
-                return b != null
-                        && file.equals(b.getPath())
-                        && b.getArea().getText().contains(from);
-            });
-            if (loaded) {
-                break;
-            }
-            Thread.sleep(100);
-        }
+        PulseChecks.holdsOnFxWithin( // the tab's text is read off the FX thread
+                () -> {
+                    EditorBuffer b = c.activeBuffer();
+                    return b != null
+                            && file.equals(b.getPath())
+                            && b.getArea().getText().contains(from);
+                },
+                Duration.ofSeconds(10));
         FxTestSupport.runOnFx(() -> {
             EditorBuffer b = c.activeBuffer();
             int at = b.getArea().getText().indexOf(from);
@@ -179,13 +180,9 @@ class PlainFolderDebugProbeFxTest {
     }
 
     private static void await(DebugCoordinator debug, String what, int tenths, Check check) throws Exception {
-        for (int i = 0; i < tenths; i++) {
-            if (check.holds()) {
-                return;
-            }
-            Thread.sleep(100);
+        if (!PulseChecks.holdsWithin(check::holds, Duration.ofMillis(100L * tenths))) {
+            throw new AssertionError(what + " never happened; console:\n" + console(debug));
         }
-        throw new AssertionError(what + " never happened; console:\n" + console(debug));
     }
 
     private static String console(DebugCoordinator debug) throws Exception {

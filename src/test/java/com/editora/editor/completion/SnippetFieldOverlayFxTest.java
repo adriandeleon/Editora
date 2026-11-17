@@ -57,10 +57,9 @@ class SnippetFieldOverlayFxTest {
 
     /** Lets queued runLaters and a layout pulse or two run. */
     private static void settle() throws Exception {
-        for (int i = 0; i < 4; i++) {
-            Thread.sleep(60);
-            onFx(() -> null);
-        }
+        onFx(() -> null);
+        com.editora.editor.EditorFx.awaitPulses(2);
+        onFx(() -> null);
     }
 
     private static int inked(SnippetFieldOverlay overlay) {

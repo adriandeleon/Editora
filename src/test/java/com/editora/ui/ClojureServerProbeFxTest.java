@@ -2,9 +2,9 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 import com.editora.text.LspDiagnostic;
 import org.junit.jupiter.api.Assumptions;
@@ -47,20 +47,17 @@ class ClojureServerProbeFxTest {
             FxTestSupport.runOnFx(() -> c.openAndNavigate(core, 1));
             LspCoordinator lsp = FxTestSupport.field(c, "lspCoordinator");
             FxTestSupport.runOnFx(() -> FxTestSupport.call(lsp, "applySupport", new Class<?>[] {}));
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(120);
-            while (true) {
-                FxTestSupport.drainFx();
+            List<List<LspDiagnostic>> last = new java.util.ArrayList<>(List.of(List.of()));
+            boolean found = EventuallyFx.holdsWithin(Duration.ofSeconds(120), () -> {
                 Map<Path, List<LspDiagnostic>> problems =
                         FxTestSupport.callOnFx(() -> FxTestSupport.field(lsp, "problems"));
                 List<LspDiagnostic> here =
                         problems.values().stream().flatMap(List::stream).toList();
-                if (here.stream().anyMatch(d -> d.message().contains("whom"))) {
-                    System.out.println("clojure-lsp problems: " + here);
-                    return;
-                }
-                assertTrue(System.nanoTime() < deadline, "no unresolved-symbol diagnostic from clojure-lsp: " + here);
-                Thread.sleep(200);
-            }
+                last.set(0, here);
+                return here.stream().anyMatch(d -> d.message().contains("whom"));
+            });
+            assertTrue(found, "no unresolved-symbol diagnostic from clojure-lsp: " + last.get(0));
+            System.out.println("clojure-lsp problems: " + last.get(0));
         }
     }
 }

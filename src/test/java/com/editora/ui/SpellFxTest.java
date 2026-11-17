@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -18,6 +19,7 @@ import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.spell.BufferSpell;
 import com.editora.editor.spell.SpellDictionaries;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -56,9 +58,7 @@ class SpellFxTest {
             stage.show();
         });
         open("warmup.txt", "warm up the dictionary\n");
-        for (int i = 0; i < 200 && SpellDictionaries.ifReady("en_US").isEmpty(); i++) {
-            Thread.sleep(50);
-        }
+        Await.holdsWithin(() -> SpellDictionaries.ifReady("en_US").isPresent(), Duration.ofSeconds(10));
         assertTrue(SpellDictionaries.ifReady("en_US").isPresent(), "the en_US dictionary builds");
         settle();
     }
@@ -97,11 +97,30 @@ class SpellFxTest {
 
     // ------------------------------------------------------------------------------------------ helpers
 
-    private static void settle() throws Exception {
-        FxTestSupport.drainFx();
-        Thread.sleep(150);
-        FxTestSupport.drainFx();
-        FxTestSupport.drainFx();
+    /**
+     * Lets what a step set off land: the active editor's highlighting (which decides what counts as a comment or a
+     * tag) and the spell check's code lines, then the pulses the overlay repaints on.
+     */
+    private void settle() throws Exception {
+        settle(() -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {}));
+    }
+
+    /** As {@link #settle()}, for the buffer {@code which} answers on the FX thread. */
+    private static void settle(java.util.concurrent.Callable<EditorBuffer> which) throws Exception {
+        FxPulses.await(1);
+        Await.until(
+                () -> {
+                    try {
+                        return FxTestSupport.callOnFx(() -> {
+                            EditorBuffer b = which.call();
+                            return b == null || !b.settlingForTest();
+                        });
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                },
+                "the editor's highlighting and spell check to settle");
+        FxPulses.await(2);
     }
 
     private EditorBuffer open(String name, String content) throws Exception {
@@ -804,7 +823,7 @@ class SpellFxTest {
 
     private static void setSpell(EditorBuffer b, boolean on) throws Exception {
         FxTestSupport.runOnFx(() -> b.spell().setEnabled(on));
-        settle(); // switching it on checks the document; that is not part of a keystroke
+        settle(() -> b); // switching it on checks the document; that is not part of a keystroke
     }
 
     private static long fastestKeystrokeMillis(EditorBuffer b) throws Exception {

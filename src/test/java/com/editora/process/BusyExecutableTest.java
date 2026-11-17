@@ -37,19 +37,25 @@ class BusyExecutableTest {
         IOException busy = assertThrows(IOException.class, () -> new ProcessBuilder(tool.toString()).start());
         assertTrue(BusyExecutable.isBusy(busy), "an open writer makes the exec fail: " + busy.getMessage());
 
-        Thread releaser = new Thread(() -> {
-            try {
-                Thread.sleep(50);
-                writer.close();
-            } catch (InterruptedException | IOException ignored) {
-                // the test fails on the start below
+        java.util.concurrent.atomic.AtomicInteger busyAttempts = new java.util.concurrent.atomic.AtomicInteger();
+        BusyExecutable.onBusyForTest = () -> { // released while the start waits out the busy file
+            if (busyAttempts.incrementAndGet() == 1) {
+                try {
+                    writer.close();
+                } catch (IOException ignored) {
+                    // the test fails on the start below
+                }
             }
-        });
-        releaser.start();
-        Process p = BusyExecutable.start(new ProcessBuilder(tool.toString()));
-        assertTrue(p.waitFor(10, TimeUnit.SECONDS));
-        assertEquals(3, p.exitValue());
-        releaser.join();
+        };
+        try {
+            Process p = BusyExecutable.start(new ProcessBuilder(tool.toString()));
+            assertTrue(p.waitFor(10, TimeUnit.SECONDS));
+            assertEquals(3, p.exitValue());
+            assertTrue(busyAttempts.get() >= 1, "it was busy, then released while waiting");
+        } finally {
+            BusyExecutable.onBusyForTest = null;
+            writer.close();
+        }
     }
 
     @Test

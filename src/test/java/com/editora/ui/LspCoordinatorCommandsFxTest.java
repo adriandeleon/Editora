@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -18,6 +19,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.lsp.FakeLanguageServer;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.LspTestHooks;
+import com.editora.testkit.Await;
 import com.google.gson.JsonParser;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyItem;
@@ -689,15 +691,13 @@ class LspCoordinatorCommandsFxTest {
      * hops to reach the FX thread than {@code settle} drains on a slow runner (macOS CI read it before it came).
      */
     private Popup awaitHoverPopup(String text) throws Exception {
-        long end = System.nanoTime() + 10_000_000_000L;
-        while (System.nanoTime() < end) {
-            Popup p = hoverPopup();
-            if (p != null && popupText(p).contains(text)) {
-                return p;
-            }
-            fx.settle();
-            Thread.sleep(20);
-        }
+        fx.settle();
+        OnFx.holdsWithin(
+                () -> {
+                    Popup p = hoverPopup();
+                    return p != null && popupText(p).contains(text);
+                },
+                Duration.ofSeconds(10));
         return hoverPopup();
     }
 
@@ -857,20 +857,29 @@ class LspCoordinatorCommandsFxTest {
     void aSaveRechecksTheProjectWhileProblemsShowsAllOfIt() throws Exception {
         EditorBuffer b = fx.open("A.java", SOURCE);
         fx.run(() -> fx.coordinator.notifyDocumentSaved(b, SOURCE));
-        Thread.sleep(1500);
+        // Whether a recheck follows is decided in the save itself: none is pending, and its timer is not running.
         fx.settle();
+        FxTestSupport.runOnFx(() -> {
+            assertTrue(
+                    FxTestSupport.<java.util.Set<?>>field(fx.coordinator, "pendingProjectRecheck")
+                            .isEmpty(),
+                    "no recheck is pending");
+            assertFalse(
+                    FxTestSupport.<javafx.animation.PauseTransition>field(fx.coordinator, "projectRecheck")
+                                    .getStatus()
+                            == javafx.animation.Animation.Status.RUNNING,
+                    "no recheck is timed");
+        });
         assertFalse(
                 fx.server().rawRequests.stream().anyMatch(r -> r.method().equals("java/buildWorkspace")),
                 "only the open files are listed: nothing to recheck");
 
         FxTestSupport.runOnFx(() -> fx.coordinator.setProjectWideProblems(true));
         fx.run(() -> fx.coordinator.notifyDocumentSaved(b, SOURCE));
-        long deadline = System.currentTimeMillis() + 5000;
-        while (fx.server().rawRequests.stream().noneMatch(r -> r.method().equals("java/buildWorkspace"))
-                && System.currentTimeMillis() < deadline) {
-            Thread.sleep(50);
-            fx.settle();
-        }
+        Await.holdsWithin(
+                () -> fx.server().rawRequests.stream().anyMatch(r -> r.method().equals("java/buildWorkspace")),
+                Duration.ofSeconds(5));
+        fx.settle();
         var build = fx.server().rawRequests.stream()
                 .filter(r -> r.method().equals("java/buildWorkspace"))
                 .findFirst()
@@ -888,12 +897,10 @@ class LspCoordinatorCommandsFxTest {
         fx.open("B.java", "class B {}\n");
         EditorBuffer a = fx.open("A.java", SOURCE);
         fx.run(() -> fx.coordinator.notifyDocumentSaved(a, SOURCE));
-        long deadline = System.currentTimeMillis() + 5000;
-        while (fx.server().rawRequests.stream().noneMatch(r -> r.method().equals("java/buildWorkspace"))
-                && System.currentTimeMillis() < deadline) {
-            Thread.sleep(50);
-            fx.settle();
-        }
+        Await.holdsWithin(
+                () -> fx.server().rawRequests.stream().anyMatch(r -> r.method().equals("java/buildWorkspace")),
+                Duration.ofSeconds(5));
+        fx.settle();
         assertTrue(
                 fx.server().rawRequests.stream().anyMatch(r -> r.method().equals("java/buildWorkspace")),
                 "B.java is rechecked after A.java's save");
@@ -913,15 +920,13 @@ class LspCoordinatorCommandsFxTest {
                 .filter(c -> c.getTextDocument().getUri().equals(bUri))
                 .count();
         fx.run(() -> fx.coordinator.notifyDocumentSaved(a, SOURCE));
-        long deadline = System.currentTimeMillis() + 5000;
-        while (fx.server().changed.stream()
+        Await.holdsWithin(
+                () -> fx.server().changed.stream()
                                 .filter(c -> c.getTextDocument().getUri().equals(bUri))
                                 .count()
-                        == before
-                && System.currentTimeMillis() < deadline) {
-            Thread.sleep(50);
-            fx.settle();
-        }
+                        > before,
+                Duration.ofSeconds(5));
+        fx.settle();
         var resent = fx.server().changed.stream()
                 .filter(c -> c.getTextDocument().getUri().equals(bUri))
                 .reduce((x, y) -> y)
@@ -1011,7 +1016,7 @@ class LspCoordinatorCommandsFxTest {
             fx.coordinator.onServerStatus("ProgressEnd", null);
             assertEquals(tr("status.lsp.server", "LSP", "Publish Diagnostics"), fx.host.lastStatus());
         });
-        Thread.sleep(com.editora.lsp.ServerStatusNarrator.QUIET_MILLIS * 3);
+        OnFx.holdsWithin(() -> tr("status.lsp.ready", "LSP").equals(fx.host.lastStatus()), Duration.ofSeconds(10));
         FxTestSupport.runOnFx(() -> assertEquals(tr("status.lsp.ready", "LSP"), fx.host.lastStatus()));
     }
 
@@ -1736,12 +1741,9 @@ class LspCoordinatorCommandsFxTest {
         int sessions = fx.fakes.size();
 
         fx.run(() -> fx.coordinator.offerLombok(root));
-        for (int i = 0;
-                i < 100 && !fx.host.statuses.contains(tr("status.lombok.installed", "lombok-1.18.48.jar"));
-                i++) {
-            Thread.sleep(20);
-            fx.settle();
-        }
+        OnFx.holdsWithin(
+                () -> fx.host.statuses.contains(tr("status.lombok.installed", "lombok-1.18.48.jar")),
+                Duration.ofSeconds(10));
         fx.quiesce();
         assertEquals(List.of(root), asked);
         assertEquals(List.of(config.resolve("plugins/lsp/lombok")), installedInto, "into Editora's own folder");
@@ -1761,10 +1763,8 @@ class LspCoordinatorCommandsFxTest {
             throw new java.io.IOException("offline");
         };
         fx.run(() -> fx.coordinator.offerLombok(root.resolve("p")));
-        for (int i = 0; i < 100 && fx.host.errors.isEmpty(); i++) {
-            Thread.sleep(20);
-            fx.settle();
-        }
+        OnFx.holdsWithin(() -> !fx.host.errors.isEmpty(), Duration.ofSeconds(10));
+        fx.settle();
         assertEquals(tr("status.lombok.failed", "offline"), fx.host.lastError());
     }
 
@@ -1946,19 +1946,14 @@ class LspCoordinatorCommandsFxTest {
 
     /** Waits for the completion request to reach the server, which takes a worker hop. */
     private void awaitCompletions(int count) throws Exception {
-        for (int i = 0; i < 200 && fx.server().completions.size() < count; i++) {
-            Thread.sleep(10);
-            fx.settle();
-        }
+        Await.holdsWithin(() -> fx.server().completions.size() >= count, Duration.ofSeconds(10));
+        fx.settle();
         assertEquals(count, fx.server().completions.size(), "the list was asked for");
     }
 
     /** Waits for the status a completion's render sets from the worker it filters on. */
     private void awaitStatus(String expected) throws Exception {
-        for (int i = 0; i < 200 && !expected.equals(fx.host.lastStatus()); i++) {
-            Thread.sleep(10);
-            fx.settle();
-        }
+        OnFx.holdsWithin(() -> expected.equals(fx.host.lastStatus()), Duration.ofSeconds(10));
         assertEquals(expected, fx.host.lastStatus());
     }
 
@@ -2019,10 +2014,7 @@ class LspCoordinatorCommandsFxTest {
 
     private void awaitError(String expected) throws Exception {
         // a failure without a project diagnostic is said after up to six seconds: one naming its folder may come
-        for (int i = 0; i < 900 && !expected.equals(fx.host.lastError()); i++) {
-            Thread.sleep(10);
-            fx.settle();
-        }
+        OnFx.holdsWithin(() -> expected.equals(fx.host.lastError()), Duration.ofSeconds(20));
         assertEquals(expected, fx.host.lastError());
     }
 
@@ -2394,10 +2386,9 @@ class LspCoordinatorCommandsFxTest {
         // again for a file that watcher covers, Bash review B16).
         java.nio.file.Files.writeString(root.resolve("pom.xml"), "<project><!-- fixed --></project>");
         fx.run(() -> fx.coordinator.watchedFilesReloaded(List.of(root.resolve("pom.xml"))));
-        for (int i = 0; i < 1500 && !fx.host.statuses.contains(tr("status.lsp.javaWorkspaceCleaning")); i++) {
-            Thread.sleep(10); // the watcher coalesces, then the batch reaches the FX thread
-            fx.settle();
-        }
+        // the watcher coalesces, then the batch reaches the FX thread
+        OnFx.holdsWithin(
+                () -> fx.host.statuses.contains(tr("status.lsp.javaWorkspaceCleaning")), Duration.ofSeconds(20));
         assertTrue(fx.host.statuses.contains(tr("status.lsp.javaWorkspaceCleaning")), fx.host.statuses.toString());
     }
 
@@ -2450,10 +2441,8 @@ class LspCoordinatorCommandsFxTest {
                 "jdtls");
         publish(b.getPath(), List.of(warning));
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
-        for (int i = 0; i < 200 && fx.host.lastError() == null; i++) {
-            Thread.sleep(10);
-            fx.settle();
-        }
+        OnFx.holdsWithin(() -> fx.host.lastError() != null, Duration.ofSeconds(10));
+        fx.settle();
         String said = fx.host.lastError();
         assertTrue(
                 said != null
@@ -2496,15 +2485,14 @@ class LspCoordinatorCommandsFxTest {
         fx.open("A.java", SOURCE);
         String uri = app.resolve("pom.xml").toUri().toString();
         boolean seen = false;
-        for (int i = 0; i < 300 && !seen; i++) {
-            if (i % 50 == 0) {
-                java.nio.file.Files.writeString(app.resolve("pom.xml"), "<project><!-- " + i + " --></project>");
-            }
-            Thread.sleep(20);
-            fx.settle();
-            seen = FxTestSupport.callOnFx(() -> List.copyOf(fx.server().watchedFiles)).stream()
-                    .flatMap(p -> p.getChanges().stream())
-                    .anyMatch(e -> e.getUri().equals(uri));
+        // Written again each second it is not heard: a watcher still being set up may miss a change.
+        for (int attempt = 0; attempt < 6 && !seen; attempt++) {
+            java.nio.file.Files.writeString(app.resolve("pom.xml"), "<project><!-- " + attempt + " --></project>");
+            seen = OnFx.holdsWithin(
+                    () -> List.copyOf(fx.server().watchedFiles).stream()
+                            .flatMap(p -> p.getChanges().stream())
+                            .anyMatch(e -> e.getUri().equals(uri)),
+                    Duration.ofSeconds(1));
         }
         assertTrue(seen, "app/pom.xml's change was sent");
     }
@@ -2617,7 +2605,8 @@ class LspCoordinatorCommandsFxTest {
                 "status.lsp.importProblemWhy",
                 "jdtls",
                 "Could not find method thisIsNotAConfiguration() for arguments [x]"));
-        Thread.sleep(800);
+        // the failure's own wait for a reason has ended: what it was going to say has been said
+        OnFx.until(() -> fx.coordinator.reasonedSaysPendingForTest() == 0, "the failed import's wait for its reason");
         fx.settle();
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
         assertEquals(1, fx.host.errors.size(), fx.host.errors.toString());
@@ -2721,10 +2710,7 @@ class LspCoordinatorCommandsFxTest {
         } finally {
             FxTestSupport.runOnFx(() -> com.editora.lsp.LspManager.releaseAfterInstall("java"));
         }
-        for (int i = 0; i < 200 && !fx.manager.isManaged(b.getPath()); i++) {
-            Thread.sleep(10);
-            fx.settle();
-        }
+        OnFx.holdsWithin(() -> fx.manager.isManaged(b.getPath()), Duration.ofSeconds(10));
         assertTrue(fx.manager.isManaged(b.getPath()), "reopened without a Restart Language Servers");
     }
 

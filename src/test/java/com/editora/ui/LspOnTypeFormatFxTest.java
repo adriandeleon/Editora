@@ -57,7 +57,9 @@ class LspOnTypeFormatFxTest {
                 area.fireEvent(new KeyEvent(KeyEvent.KEY_TYPED, ";", ";", null, false, false, false, false));
             });
             FxTestSupport.drainFx();
-            Thread.sleep(300);
+            // the answer comes back on a later pulse and is applied
+            OnFx.holdsWithin(
+                    () -> "class A {\n    foo();\n}\n".equals(b.getContent()), java.time.Duration.ofSeconds(10));
             FxTestSupport.drainFx();
 
             assertEquals("            foo();", lineAtRequest.get(), "the server is asked about the line as typed");

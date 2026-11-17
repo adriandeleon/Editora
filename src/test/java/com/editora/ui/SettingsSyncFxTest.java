@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -21,6 +22,7 @@ import com.editora.sync.FileSyncTarget;
 import com.editora.sync.SyncCategory;
 import com.editora.sync.SyncEngine;
 import com.editora.sync.SyncReport;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
@@ -105,16 +107,13 @@ class SettingsSyncFxTest {
     /** Runs "Sync Now" and waits for the run to end. */
     private SettingsSync.State syncNow() throws Exception {
         FxTestSupport.runOnFx(sync::syncNow);
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
-        while (System.nanoTime() < deadline) {
-            SettingsSync.State state = FxTestSupport.callOnFx(sync::state);
-            if (state.phase() != SettingsSync.Phase.SYNCING) {
-                FxTestSupport.drainFx();
-                return state;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("the sync did not finish");
+        SettingsSync.State[] state = new SettingsSync.State[1];
+        Await.until(
+                () -> (state[0] = onFx(sync::state)).phase() != SettingsSync.Phase.SYNCING,
+                "the sync did not finish",
+                Duration.ofSeconds(60));
+        FxTestSupport.drainFx();
+        return state[0];
     }
 
     private boolean problemMarkerShown() throws Exception {
@@ -264,5 +263,14 @@ class SettingsSyncFxTest {
         assertEquals(SettingsSync.Phase.OFF, syncNow().phase());
         assertTrue(otherSyncs().ok());
         assertFalse(Files.readString(other.resolve("dictionary.txt")).contains("zzafter"));
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

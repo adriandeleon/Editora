@@ -2,8 +2,8 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 
 import javafx.scene.control.Label;
 import javafx.scene.control.Tab;
@@ -121,12 +121,14 @@ class RemoteReadClosedFxTest {
                 FxTestSupport.call(fx.controller, "setStatus", new Class<?>[] {String.class}, "");
                 panel.openMapWindow(false);
             });
-            long mapDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-            while (!FxTestSupport.callOnFx(() -> panel.mapStatusLine().text()).endsWith(closed)
-                    && System.nanoTime() < mapDeadline) {
-                TimeUnit.MILLISECONDS.sleep(20);
-                async.awaitFx();
-            }
+            PulseChecks.holdsWithin(
+                    () -> {
+                        async.awaitFx();
+                        return FxTestSupport.callOnFx(
+                                        () -> panel.mapStatusLine().text())
+                                .endsWith(closed);
+                    },
+                    Duration.ofSeconds(20));
             String mapStatus =
                     FxTestSupport.callOnFx(() -> panel.mapStatusLine().text());
             assertTrue(mapStatus.endsWith(closed), mapStatus);
@@ -148,20 +150,22 @@ class RemoteReadClosedFxTest {
     }
 
     private static void awaitEcho(AsyncTestScope async, FxWindowFixture fx, String expected) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (!expected.equals(echo(fx)) && System.nanoTime() < deadline) {
-            TimeUnit.MILLISECONDS.sleep(20);
-            async.awaitFx();
-        }
+        PulseChecks.holdsWithin(
+                () -> {
+                    async.awaitFx();
+                    return expected.equals(echo(fx));
+                },
+                Duration.ofSeconds(20));
         assertEquals(expected, echo(fx));
     }
 
     private static void awaitEchoEnding(AsyncTestScope async, FxWindowFixture fx, String suffix) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (!echo(fx).endsWith(suffix) && System.nanoTime() < deadline) {
-            TimeUnit.MILLISECONDS.sleep(20);
-            async.awaitFx();
-        }
+        PulseChecks.holdsWithin(
+                () -> {
+                    async.awaitFx();
+                    return echo(fx).endsWith(suffix);
+                },
+                Duration.ofSeconds(20));
         assertTrue(echo(fx).endsWith(suffix), echo(fx));
     }
 

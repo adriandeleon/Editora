@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -83,14 +84,7 @@ class ProjectMapWindowReviewFxTest {
     }
 
     private static void waitFor(String what, BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("timed out waiting for " + what);
+        PulseChecks.untilOnFx(condition, "timed out waiting for " + what, Duration.ofSeconds(10));
     }
 
     // --- A1 / A13: the Map's root -----------------------------------------------------------------------

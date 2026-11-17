@@ -396,12 +396,10 @@ class LogViewerCoordinatorFxTest {
 
             // logrotate copytruncate, or a restart: the file starts over.
             java.nio.file.Files.writeString(file, "2026-10-06 11:00:00 INFO  new file\n");
-            long deadline = System.nanoTime() + 8_000_000_000L;
-            while (FxTestSupport.callOnFx(log::isLogFollowing)
-                    && !FxTestSupport.callOnFx(log::getContent).startsWith("2026-10-06 11:00:00")) {
-                assertTrue(System.nanoTime() < deadline, "the rotation was never noticed");
-                Thread.sleep(50);
-            }
+            OnFx.until(
+                    () -> !log.isLogFollowing() || log.getContent().startsWith("2026-10-06 11:00:00"),
+                    "the rotation to be noticed",
+                    java.time.Duration.ofSeconds(8));
 
             String text = FxTestSupport.callOnFx(log::getContent);
             assertTrue(text.startsWith("MY NOTE: incident starts here\n"), "the typed text survives: " + text);
@@ -425,10 +423,9 @@ class LogViewerCoordinatorFxTest {
     }
 
     private static void awaitContent(EditorBuffer buffer, String ending) throws Exception {
-        long deadline = System.nanoTime() + 8_000_000_000L;
-        while (!FxTestSupport.callOnFx(buffer::getContent).endsWith(ending)) {
-            assertTrue(System.nanoTime() < deadline, "the followed text never arrived: " + ending.strip());
-            Thread.sleep(50);
-        }
+        OnFx.until(
+                () -> buffer.getContent().endsWith(ending),
+                "the followed text to arrive: " + ending.strip(),
+                java.time.Duration.ofSeconds(8));
     }
 }

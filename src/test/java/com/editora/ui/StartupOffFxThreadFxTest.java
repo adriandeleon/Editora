@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,6 +23,7 @@ import com.editora.config.SharedConfig;
 import com.editora.editor.UiZoom;
 import com.editora.perf.BlockingSites;
 import com.editora.plugin.PluginManager;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -181,10 +183,10 @@ class StartupOffFxThreadFxTest {
     /** Builds the restored windows one by one, as their turns come (a read still running defers its turn). */
     private void drainRestore() throws Exception {
         for (int i = 0; i < 400 && FxTestSupport.callOnFx(wm::restorePending); i++) {
+            // a read still running queues its window's turn when it lands
+            Await.holdsWithin(() -> onFx(() -> !scheduled.isEmpty() || !wm.restorePending()), Duration.ofSeconds(10));
             Runnable next = FxTestSupport.callOnFx(scheduled::poll);
-            if (next == null) {
-                Thread.sleep(25);
-            } else {
+            if (next != null) {
                 FxTestSupport.runOnFx(next);
             }
         }
@@ -324,5 +326,14 @@ class StartupOffFxThreadFxTest {
             assertTrue(first != null && first == AppIcons.icon(16), "one image, kept");
             assertTrue(AppIcons.icon(999) == null, "a size that is not bundled");
         });
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

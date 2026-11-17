@@ -64,18 +64,32 @@ class LargeFileOpenPerfFxTest {
         // monitor for minutes on a slow runner, wedging every later java highlight in the suite — and in
         // the app, closing a big tab right after an edit did the same. The mechanism is size-independent,
         // so a small buffer pins it fast.
+        // A twin left open, edited in the same FX turn, starts the same debounce timers: once its debounced pass
+        // has been dispatched, the disposed buffer's would have been too.
+        EditorBuffer[] twin = new EditorBuffer[1];
+        long[] twinGen = new long[1];
         EditorBuffer buf = FxTestSupport.callOnFx(() -> {
             EditorBuffer b = new EditorBuffer();
+            EditorBuffer t = new EditorBuffer();
             b.setContent("class D { int x; }\n");
+            t.setContent("class D { int x; }\n");
             b.setLanguageOverride("java");
+            t.setLanguageOverride("java");
             b.dispose();
+            twin[0] = t;
+            twinGen[0] = highlightGen(t);
             return b;
         });
-        long genAfterDispose = FxTestSupport.callOnFx(
-                () -> FxTestSupport.<Long>field(FxTestSupport.field(buf, "highlighter"), "highlightGen"));
-        // Outlive the ~300 ms debounce with margin; applyHighlighting bumps highlightGen at dispatch, so
-        // an unchanged gen is exactly "no new pass was dispatched".
-        Thread.sleep(900);
+        long genAfterDispose = FxTestSupport.callOnFx(() -> highlightGen(buf));
+        try {
+            // applyHighlighting bumps highlightGen at dispatch, so an unchanged gen is exactly "no new pass was
+            // dispatched".
+            OnFx.until(
+                    () -> settledSequenceDone(twin[0]) && highlightGen(twin[0]) > twinGen[0],
+                    "the open twin's debounced highlighting pass");
+        } finally {
+            FxTestSupport.runOnFx(twin[0]::dispose);
+        }
         long genLater = FxTestSupport.callOnFx(
                 () -> FxTestSupport.<Long>field(FxTestSupport.field(buf, "highlighter"), "highlightGen"));
         org.junit.jupiter.api.Assertions.assertEquals(
@@ -84,22 +98,45 @@ class LargeFileOpenPerfFxTest {
 
     @Test
     void largeFileModeSkipsTheDebouncedWholeDocumentFoldScan() throws Exception {
+        // A twin not in large-file mode, loaded in the same FX turn, runs FoldManager's succession debounce: once
+        // its scan has found folds, the large file's would have run too.
+        EditorBuffer[] twin = new EditorBuffer[1];
         EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
             EditorBuffer b = new EditorBuffer();
             b.setLanguageOverride("java");
             b.setLargeFile(true); // the loader now applies this before the initial replacement
             b.setInitialContent("class A {\n  void f() {\n  }\n}\n".repeat(2000));
+            EditorBuffer t = new EditorBuffer();
+            t.setLanguageOverride("java");
+            t.setInitialContent("class A {\n  void f() {\n  }\n}\n".repeat(2000));
+            twin[0] = t;
             return b;
         });
         try {
-            Thread.sleep(700); // outlive FoldManager's 250 ms succession debounce
+            OnFx.until(
+                    () -> !twin[0].getFoldManager().regions().isEmpty(),
+                    "the twin's debounced whole-document fold scan");
             assertEquals(
                     0,
                     FxTestSupport.callOnFx(
                             () -> buffer.getFoldManager().regions().size()),
                     "large-file insertion must not trigger heuristic folding");
         } finally {
-            FxTestSupport.runOnFx(buffer::dispose);
+            FxTestSupport.runOnFx(() -> {
+                buffer.dispose();
+                twin[0].dispose();
+            });
         }
+    }
+
+    /** Every settled-edit milestone of {@code b}'s last edit has fired (its debounce timer is not armed). */
+    private static boolean settledSequenceDone(EditorBuffer b) {
+        Object settled = FxTestSupport.field(b, "settledEdits");
+        return FxTestSupport.<Long>field(settled, "armedMillis") == -1
+                && FxTestSupport.<Long>field(settled, "cursorMillis") > 0;
+    }
+
+    private static long highlightGen(EditorBuffer b) {
+        return FxTestSupport.<Long>field(FxTestSupport.field(b, "highlighter"), "highlightGen");
     }
 }

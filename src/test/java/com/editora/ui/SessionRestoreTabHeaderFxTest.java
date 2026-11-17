@@ -2,10 +2,12 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 
 import javafx.scene.control.Tab;
 
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -47,10 +49,7 @@ class SessionRestoreTabHeaderFxTest {
 
         FxWindowFixture fx = FxWindowFixture.create(cfg, false, false, false, List.of(), controller -> {});
         try {
-            long deadline = System.nanoTime() + 20_000_000_000L;
-            while (!allLoaded(fx, files) && System.nanoTime() < deadline) {
-                Thread.sleep(50);
-            }
+            Await.holdsWithin(() -> onFx(() -> allLoaded(fx, files)), Duration.ofSeconds(20));
             FxTestSupport.drainFx();
             FxTestSupport.runOnFx(() -> {
                 int seen = 0;
@@ -81,5 +80,14 @@ class SessionRestoreTabHeaderFxTest {
             }
             return true;
         });
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

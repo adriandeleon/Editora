@@ -149,7 +149,7 @@ class BeforeLaunchGateFxTest {
             System.out.flush();
             // Not System.in.read(): a step that takes no input has its stdin closed (BeforeLaunchStep), so that
             // returned at once and the step could be over before the test looked — busy or not was a race.
-            Thread.sleep(Long.MAX_VALUE); // until Stop kills it
+            Thread.currentThread().join(); // until Stop kills it
         }
     }
 

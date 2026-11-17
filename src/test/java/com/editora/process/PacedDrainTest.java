@@ -57,6 +57,7 @@ class PacedDrainTest {
         List<Runnable> handed = new CopyOnWriteArrayList<>();
         PacedDrain[] drain = new PacedDrain[1];
         boolean[] again = {true};
+        CountDownLatch handedOver = new CountDownLatch(2);
         drain[0] = new PacedDrain(
                 () -> {
                     if (again[0]) {
@@ -64,13 +65,13 @@ class PacedDrainTest {
                         drain[0].request(); // an item that arrived while this drain was emptying the buffer
                     }
                 },
-                handed::add);
+                r -> {
+                    handed.add(r);
+                    handedOver.countDown();
+                });
         drain[0].request();
         handed.get(0).run();
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (handed.size() < 2 && System.nanoTime() < deadline) {
-            Thread.sleep(2);
-        }
+        handedOver.await(5, TimeUnit.SECONDS);
         assertEquals(2, handed.size(), "it is not lost: a second hand-over follows");
     }
 }

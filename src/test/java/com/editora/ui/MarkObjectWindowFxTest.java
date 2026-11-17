@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 
@@ -16,6 +17,7 @@ import javafx.scene.text.TextFlow;
 import com.editora.command.CommandRegistry;
 import com.editora.dap.DapManager;
 import com.editora.dap.FakeDebugAdapter;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -93,13 +95,7 @@ class MarkObjectWindowFxTest {
     }
 
     private static void await(String what, BooleanSupplier condition) throws InterruptedException {
-        long end = System.nanoTime() + 20_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(25);
-        }
+        Await.until(condition, what, Duration.ofSeconds(20));
     }
 
     private FakeDebugAdapter.Session stopped() throws Exception {

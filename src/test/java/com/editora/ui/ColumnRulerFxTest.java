@@ -2,8 +2,11 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import javafx.animation.AnimationTimer;
 import javafx.scene.shape.Line;
 
 import com.editora.config.ConfigManager;
@@ -182,10 +185,20 @@ class ColumnRulerFxTest {
      * and leave it to land inside the next counted window.
      */
     private static void settle(int pulses) throws Exception {
-        for (int i = 0; i < pulses; i++) {
-            FxTestSupport.runOnFx(() -> {});
-            Thread.sleep(10);
+        CountDownLatch frames = new CountDownLatch(pulses);
+        AnimationTimer counter = new AnimationTimer() {
+            @Override
+            public void handle(long now) {
+                frames.countDown();
+            }
+        };
+        FxTestSupport.runOnFx(counter::start);
+        try {
+            assertTrue(frames.await(10, TimeUnit.SECONDS), pulses + " pulses ran");
+        } finally {
+            FxTestSupport.runOnFx(counter::stop);
         }
+        FxTestSupport.drainFx();
     }
 
     /**
@@ -194,14 +207,24 @@ class ColumnRulerFxTest {
      * sleep cannot say that: how long a measure takes to arrive depends on the pulse it waits for.
      */
     private void awaitRulerIdle() throws Exception {
-        int quiet = 0;
-        for (int i = 0; i < 1000 && quiet < 8; i++) {
-            boolean pending = FxTestSupport.callOnFx(
-                    () -> (boolean) FxTestSupport.call(buffer, "rulerMeasurePending", new Class<?>[] {}));
-            quiet = pending ? 0 : quiet + 1;
-            Thread.sleep(10);
+        CountDownLatch rested = new CountDownLatch(1);
+        int[] quiet = {0};
+        AnimationTimer watcher = new AnimationTimer() {
+            @Override
+            public void handle(long now) {
+                boolean pending = (boolean) FxTestSupport.call(buffer, "rulerMeasurePending", new Class<?>[] {});
+                quiet[0] = pending ? 0 : quiet[0] + 1;
+                if (quiet[0] >= 8) {
+                    rested.countDown();
+                }
+            }
+        };
+        FxTestSupport.runOnFx(watcher::start);
+        try {
+            assertTrue(rested.await(10, TimeUnit.SECONDS), "the ruler never came to rest (8 quiet pulses)");
+        } finally {
+            FxTestSupport.runOnFx(watcher::stop);
         }
-        assertEquals(8, quiet, "the ruler never came to rest");
     }
 
     private static void settleUnchecked(int pulses) {

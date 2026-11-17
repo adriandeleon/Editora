@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
@@ -126,19 +127,12 @@ class DebugReviewCWindowFxTest {
     private EditorBuffer open(Path file) throws Exception {
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
                 FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, file));
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (true) {
-            FxTestSupport.drainFx();
-            EditorBuffer b = active();
-            if (b != null
-                    && file.equals(b.getPath())
-                    && !FxTestSupport.callOnFx(b::getContent).isEmpty()) {
-                FxTestSupport.runOnFx(debug::applyGating);
-                return b;
-            }
-            assertTrue(System.nanoTime() < deadline, "the file never opened: " + file);
-            Thread.sleep(20);
-        }
+        EditorBuffer b = EventuallyFx.valueOnFx("the file to open: " + file, Duration.ofSeconds(10), () -> {
+            EditorBuffer a = (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {});
+            return a != null && file.equals(a.getPath()) && !a.getContent().isEmpty() ? a : null;
+        });
+        FxTestSupport.runOnFx(debug::applyGating);
+        return b;
     }
 
     private FakeDebugAdapter.Session connect(FakeDebugAdapter adapter, Path file) throws Exception {
@@ -161,16 +155,8 @@ class DebugReviewCWindowFxTest {
     }
 
     private void await(String what, Callable<Boolean> condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (true) {
-            FxTestSupport.drainFx();
-            if (FxTestSupport.callOnFx(condition)) {
-                FxTestSupport.drainFx();
-                return;
-            }
-            assertTrue(System.nanoTime() < deadline, what);
-            Thread.sleep(15);
-        }
+        EventuallyFx.untilOnFx(what, Duration.ofSeconds(10), condition);
+        FxTestSupport.drainFx();
     }
 
     private void stopAt(FakeDebugAdapter.Session session, Path file, int line1, String reason) throws Exception {

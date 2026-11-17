@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -105,12 +106,7 @@ class DebugCodeChangesFxTest {
     // --- harness --------------------------------------------------------------------------------------
 
     private static void await(String what, ThrowingCheck condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (!condition.holds()) {
-            assertTrue(System.nanoTime() < deadline, what + " never happened");
-            FxTestSupport.drainFx();
-            Thread.sleep(20);
-        }
+        EventuallyFx.until(what + " never happened", Duration.ofSeconds(20), condition::holds);
     }
 
     private static void set(Object target, String name, Object value) {

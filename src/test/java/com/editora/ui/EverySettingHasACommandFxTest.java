@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -314,14 +315,31 @@ class EverySettingHasACommandFxTest {
                 context.accept(settings());
                 return json.valueToTree(settings());
             });
-            FxTestSupport.runOnFx(() -> runAnswering(id, pick, other));
-            FxTestSupport.drainFx();
-            changed.addAll(diff(before, FxTestSupport.callOnFx(() -> json.valueToTree(settings()))));
-            if (changed.isEmpty()) {
-                // Nothing yet: what it started on a worker may still be on its way back.
-                Thread.sleep(40);
+            // What the command starts off the FX thread is counted while it runs, so the test can wait for it.
+            java.util.concurrent.atomic.AtomicInteger working = new java.util.concurrent.atomic.AtomicInteger();
+            com.editora.perf.OffFx.runnerForTest((name, task) -> {
+                working.incrementAndGet();
+                Thread.ofVirtual().name(name).start(() -> {
+                    try {
+                        task.run();
+                    } finally {
+                        working.decrementAndGet();
+                    }
+                });
+            });
+            try {
+                FxTestSupport.runOnFx(() -> runAnswering(id, pick, other));
                 FxTestSupport.drainFx();
                 changed.addAll(diff(before, FxTestSupport.callOnFx(() -> json.valueToTree(settings()))));
+                if (changed.isEmpty()) {
+                    // Nothing yet: what it started on a worker may still be on its way back.
+                    com.editora.testkit.Await.until(
+                            () -> working.get() == 0, id + "'s work off the FX thread", Duration.ofSeconds(10));
+                    FxTestSupport.drainFx();
+                    changed.addAll(diff(before, FxTestSupport.callOnFx(() -> json.valueToTree(settings()))));
+                }
+            } finally {
+                com.editora.perf.OffFx.runnerForTest(null);
             }
             if (!answeredAForm) {
                 break;

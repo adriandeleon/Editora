@@ -752,6 +752,8 @@ public class EditorBuffer implements TabContent {
             area, spellOverlay, this::getFocusedArea, () -> language, this::isEditable, () -> largeFile);
     /** Bumped on every language/grammar change (FX thread only); drops a stale deferred grammar load. */
     private long languageGen;
+    /** Grammars {@link #applyLanguageDeferred} is still loading (FX thread only); see {@link #settlingForTest}. */
+    private int grammarLoadsInFlight;
     /** Named definitions from the last tokenization (FX-thread confined); drives the Structure view. */
     List<TextMateHighlighter.Symbol> symbols = List.of();
     /** Notified (on the FX thread) after {@link #symbols} is refreshed. */
@@ -2933,6 +2935,14 @@ public class EditorBuffer implements TabContent {
         runGutter.whenRunScanned(then);
     }
 
+    /**
+     * TEST SEAM — whether a settled-edit milestone (highlighting, lint, the preview's reload, LSP sync, …) is still
+     * to fire for the last edit. A test waits for it to turn false instead of sleeping past the slowest one.
+     */
+    public boolean settledEditsPendingForTest() {
+        return settledEdits.pendingForTest();
+    }
+
     /** TEST SEAM — lands a Run scan still in flight now, scanning in place; the app uses {@link #whenRunScanned}. */
     public void settleRunScanForTest() {
         runGutter.settleRunScanForTest();
@@ -4854,9 +4864,17 @@ public class EditorBuffer implements TabContent {
     private void applyLanguageDeferred(String name, String fileName) {
         applyLanguage(name, null); // bumps languageGen; show plain text now
         long gen = languageGen;
+        grammarLoadsInFlight++;
         HIGHLIGHT_POOL.execute(() -> {
-            IGrammar g = GrammarRegistry.shared().forFileName(fileName);
+            IGrammar g;
+            try {
+                g = GrammarRegistry.shared().forFileName(fileName);
+            } catch (RuntimeException | LinkageError e) {
+                Platform.runLater(() -> grammarLoadsInFlight--);
+                throw e;
+            }
             Platform.runLater(() -> {
+                grammarLoadsInFlight--;
                 if (gen != languageGen) {
                     return; // a newer language change superseded this load
                 }
@@ -5262,6 +5280,19 @@ public class EditorBuffer implements TabContent {
         this.loading = loading;
         applyEditable();
         setLineHighlightOn(LineHighlighter.wanted(area)); // held back while loading (see LineHighlighter)
+    }
+
+    /**
+     * TEST SEAM — whether work the last edit or load set off is still to land: a settled-edit milestone (the
+     * highlighting pass at 150 ms, the TODO marks, …) not fired yet, a grammar still loading, a highlighting pass
+     * not back, or the spell check's code-lines scan owed. A test waits for this to turn false instead of for a
+     * while. FX thread only.
+     */
+    public boolean settlingForTest() {
+        return settledEdits.pendingForTest()
+                || grammarLoadsInFlight > 0
+                || highlighter.passesInFlight > 0
+                || spellOverlay.settlingForTest();
     }
 
     /** True while this is a shell whose document has not arrived: its (empty) text is not the file. */

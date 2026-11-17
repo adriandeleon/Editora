@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -271,14 +272,7 @@ class ProjectMapViewFxTest {
     }
 
     private static void waitForFx(BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return;
-            }
-            TimeUnit.MILLISECONDS.sleep(20);
-        }
-        assertTrue(FxTestSupport.callOnFx(condition::getAsBoolean), "timed out waiting for the FX state");
+        PulseChecks.untilOnFx(condition, "timed out waiting for the FX state", Duration.ofSeconds(5));
     }
 
     private static boolean hasStyleClass(javafx.scene.Node node, String styleClass) {

@@ -6,6 +6,7 @@ import java.nio.file.Path;
 
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -111,7 +112,7 @@ class BufferReleasedOnCloseFxTest {
             registry.run("bookmarks.toggle");
             registry.run("buffer.closeAll");
         });
-        return new WeakReference<>(buffer);
+        return new WeakReference<>(buffer, collectedBuffers);
     }
 
     /**
@@ -152,9 +153,9 @@ class BufferReleasedOnCloseFxTest {
                 FxTestSupport.callOnFx(() -> editing.lastYankBuffer.get() == buffer),
                 "precondition: the yank slot points at this buffer");
         FxTestSupport.runOnFx(() -> registry.run("file.save"));
-        Thread.sleep(400); // as above: the save is asynchronous, and a dirty close would open a modal prompt
+        awaitSaved(buffer); // as above: the save is asynchronous, and a dirty close would open a modal prompt
         FxTestSupport.runOnFx(() -> registry.run("buffer.closeAll"));
-        return new WeakReference<>(buffer);
+        return new WeakReference<>(buffer, collectedBuffers);
     }
 
     /** Opens the file, edits it (so undo checkpoints exist), saves and closes it. Returns a weak handle. */
@@ -171,19 +172,47 @@ class BufferReleasedOnCloseFxTest {
                 CodeArea area = buffer.getFocusedArea();
                 area.insertText(0, "// edit " + n + "\n");
             });
-            Thread.sleep(600); // let the UndoMerge.PAUSE debounce capture a checkpoint
+            com.editora.editor.EditorFx.awaitEditsSettled(buffer); // the UndoMerge.PAUSE debounce captured one
         }
 
         CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
         // Save before closing: a dirty buffer raises a modal "save changes?" dialog, which would block the
         // FX thread for the rest of the run in a headless test.
         FxTestSupport.runOnFx(() -> registry.run("file.save"));
-        Thread.sleep(400);
+        awaitSaved(buffer);
         FxTestSupport.runOnFx(() -> registry.run("buffer.closeAll"));
-        return new WeakReference<>(buffer);
+        return new WeakReference<>(buffer, collectedBuffers);
     }
 
-    /** Waits, with GC pressure, for the referent to be cleared. Generous: this is a liveness assertion. */
+    /** Where the weak handles above are enqueued once their buffer is collected. */
+    private final java.lang.ref.ReferenceQueue<EditorBuffer> collectedBuffers = new java.lang.ref.ReferenceQueue<>();
+
+    /**
+     * Waits for the save to land: the local writer has run every write queued on it (a buffer whose edits undid
+     * themselves is clean before its save is written), its answer is back on the FX thread, and the buffer is clean.
+     */
+    private void awaitSaved(EditorBuffer buffer) throws Exception {
+        FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+        for (int round = 0; round < 2; round++) {
+            FxTestSupport.drainFx();
+            workflows.autoSaveExecutor.submit(() -> {}).get(30, java.util.concurrent.TimeUnit.SECONDS);
+        }
+        FxTestSupport.drainFx();
+        Await.until(
+                () -> {
+                    try {
+                        return !FxTestSupport.callOnFx(buffer::isDirty);
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                },
+                "the save landed");
+    }
+
+    /**
+     * Waits, with GC pressure, for the referent to be cleared. Generous: this is a liveness assertion. Each round
+     * asks for a collection and waits for a handle to be enqueued, waking as soon as one is.
+     */
     private boolean collected(WeakReference<?> ref) throws Exception {
         for (int attempt = 0; attempt < 40; attempt++) {
             FxTestSupport.runOnFx(() -> {}); // drain the FX queue: a pending event can hold the last edge
@@ -191,7 +220,7 @@ class BufferReleasedOnCloseFxTest {
             if (ref.get() == null) {
                 return true;
             }
-            Thread.sleep(150);
+            collectedBuffers.remove(150);
         }
         return ref.get() == null;
     }

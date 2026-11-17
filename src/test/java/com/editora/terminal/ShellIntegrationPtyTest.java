@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
+import com.editora.testkit.Await;
 import com.pty4j.PtyProcessBuilder;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
@@ -165,7 +166,9 @@ class ShellIntegrationPtyTest {
             await("a folder whose name has URL characters", () -> events.contains("cwd " + odd));
             long before = events.stream().filter(e -> e.startsWith("mark D")).count();
             connector.write("true\n".getBytes(StandardCharsets.UTF_8));
-            Thread.sleep(300);
+            await(
+                    "the first true's D mark",
+                    () -> events.stream().filter(e -> e.startsWith("mark D")).count() >= before + 1);
             connector.write("true\n".getBytes(StandardCharsets.UTF_8));
             await(
                     "a D mark for a repeat that HISTCONTROL=ignoreboth keeps out of history",
@@ -190,10 +193,7 @@ class ShellIntegrationPtyTest {
     }
 
     private void await(String what, java.util.function.BooleanSupplier done) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (System.nanoTime() < deadline && !done.getAsBoolean()) {
-            Thread.sleep(20);
-        }
+        Await.holdsWithin(done, java.time.Duration.ofSeconds(20));
         assertTrue(done.getAsBoolean(), () -> "timed out waiting for " + what + ": " + events);
     }
 }

@@ -116,17 +116,16 @@ class GitMultiFileReviewFxTest {
 
     private static PatchReviewPane awaitReview(MainController controller, PatchReviewPane previous) throws Exception {
         EditorArea area = FxTestSupport.field(controller, "editorArea");
-        for (int i = 0; i < 120; i++) {
-            Object data = FxTestSupport.callOnFx(() -> {
-                Tab selected = area.selectedTab();
-                return selected == null ? null : selected.getUserData();
-            });
-            if (data instanceof PatchReviewPane review && review != previous) {
-                return review;
-            }
-            Thread.sleep(50);
-        }
-        return null;
+        Object[] found = {null};
+        com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.fxCondition(() -> {
+                    Tab selected = area.selectedTab();
+                    Object data = selected == null ? null : selected.getUserData();
+                    found[0] = data instanceof PatchReviewPane && data != previous ? data : null;
+                    return found[0] != null;
+                }),
+                java.time.Duration.ofSeconds(6));
+        return (PatchReviewPane) found[0];
     }
 
     private static String git(Path dir, String... args) throws Exception {

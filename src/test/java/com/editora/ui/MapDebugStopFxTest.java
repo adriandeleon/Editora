@@ -2,9 +2,9 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
 import javafx.scene.Group;
@@ -400,18 +400,11 @@ class MapDebugStopFxTest {
     private static void settle() throws Exception {
         for (int i = 0; i < 5; i++) {
             FxTestSupport.runOnFx(() -> {});
-            TimeUnit.MILLISECONDS.sleep(20);
+            OnFx.pulses(1);
         }
     }
 
     private static void waitFor(BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return;
-            }
-            TimeUnit.MILLISECONDS.sleep(20);
-        }
-        assertNotNull(null, "timed out");
+        OnFx.until(condition::getAsBoolean, "the condition", Duration.ofSeconds(15));
     }
 }

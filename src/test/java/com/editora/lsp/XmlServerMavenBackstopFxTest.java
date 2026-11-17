@@ -53,7 +53,7 @@ class XmlServerMavenBackstopFxTest {
             assertEquals(
                     StartRefusal.Kind.XML_LOADS_MAVEN,
                     refused.get(30, TimeUnit.SECONDS).kind());
-            Thread.sleep(300);
+            // The refusal is posted after the session was dropped, so a crash notice would already be queued.
             CompletableFuture<Void> drained = new CompletableFuture<>();
             Platform.runLater(() -> drained.complete(null));
             drained.get(5, TimeUnit.SECONDS);

@@ -61,6 +61,17 @@ final class FxCall {
 
     /** As {@link #call(Supplier, long)}, against an arbitrary single-threaded executor (the test seam). */
     static <T> T call(Executor fx, BooleanSupplier onFxThread, Supplier<T> task, long timeoutMillis) throws Exception {
+        return call(fx, onFxThread, task, timeoutMillis, () -> {});
+    }
+
+    /**
+     * TEST SEAM — as {@link #call(Executor, BooleanSupplier, Supplier, long)}, running {@code secondPeriod} on the
+     * caller's thread when the first period has run out with the task already started, as the second begins: a test
+     * lets its task finish there, rather than making it take longer than the first period (QUAL-07).
+     */
+    static <T> T call(
+            Executor fx, BooleanSupplier onFxThread, Supplier<T> task, long timeoutMillis, Runnable secondPeriod)
+            throws Exception {
         if (onFxThread.getAsBoolean()) {
             return task.get();
         }
@@ -83,6 +94,7 @@ final class FxCall {
                 if (state.compareAndSet(PENDING, CANCELLED)) {
                     throw new NotStarted(timeoutMillis);
                 }
+                secondPeriod.run();
             }
             try {
                 return result.get(timeoutMillis, TimeUnit.MILLISECONDS);

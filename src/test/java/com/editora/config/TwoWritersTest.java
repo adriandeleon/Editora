@@ -277,10 +277,15 @@ class TwoWritersTest {
         sharedA.saveHistory();
         assertTrue(sharedA.flushWrites());
         // The collection runs on the history worker. A body nothing references is the witness that it ran.
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
-        while (blobCount() != 4 && System.nanoTime() < deadline) {
-            Thread.sleep(10);
-        }
+        com.editora.testkit.Await.holdsWithin(
+                () -> {
+                    try {
+                        return blobCount() == 4;
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                },
+                java.time.Duration.ofSeconds(10));
 
         String index = read("history/index.json");
         assertTrue(index.contains("/x/b.txt"), "the other process's revisions are still listed: " + index);

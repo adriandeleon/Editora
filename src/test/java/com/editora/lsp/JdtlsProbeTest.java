@@ -42,7 +42,7 @@ class JdtlsProbeTest {
         pb.redirectError(ProcessBuilder.Redirect.DISCARD);
         Process proc = pb.start();
 
-        LanguageClient client = new ProbeClient();
+        ProbeClient client = new ProbeClient();
         Launcher<LanguageServer> launcher =
                 LSPLauncher.createClientLauncher(client, proc.getInputStream(), proc.getOutputStream());
         LanguageServer server = launcher.getRemoteProxy();
@@ -65,8 +65,9 @@ class JdtlsProbeTest {
         server.getTextDocumentService()
                 .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(uri, "java", 1, text)));
 
-        System.out.println("\n=== waiting 45s for the project import ===");
-        Thread.sleep(45_000);
+        System.out.println("\n=== waiting for the project import ===");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                client.ready.await(180, TimeUnit.SECONDS), "jdtls never said the project was imported");
 
         // Line 15 (0-based) = "        System.out.println(greeter.greet(\"prefix\", 2));"; col 41 = after greet(
         int line = 15;
@@ -87,8 +88,8 @@ class JdtlsProbeTest {
         java_.put("signatureHelp", sig);
         java.util.Map<String, Object> settings = new java.util.HashMap<>();
         settings.put("java", java_);
+        // jdtls handles the notification before the request sent after it
         server.getWorkspaceService().didChangeConfiguration(new DidChangeConfigurationParams(settings));
-        Thread.sleep(3000);
 
         System.out.println("\n=== SIGNATURE HELP (after enabling the preference) ===");
         var p2 = new SignatureHelpParams(new TextDocumentIdentifier(uri), new Position(line, col));
@@ -110,7 +111,6 @@ class JdtlsProbeTest {
         String oldUri = oldFile.toUri().toString();
         server.getTextDocumentService()
                 .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(oldUri, "java", 1, oldText)));
-        Thread.sleep(3000);
         int classLine = -1;
         String[] oldLines = oldText.split("\n");
         for (int i = 0; i < oldLines.length; i++) {
@@ -169,6 +169,17 @@ class JdtlsProbeTest {
     }
 
     private static final class ProbeClient implements LanguageClient {
+
+        /** Counted down when jdtls says the project is imported ({@code language/status} ServiceReady). */
+        final java.util.concurrent.CountDownLatch ready = new java.util.concurrent.CountDownLatch(1);
+
+        @org.eclipse.lsp4j.jsonrpc.services.JsonNotification("language/status")
+        public void languageStatus(java.util.Map<String, Object> status) {
+            if ("ServiceReady".equals(status.get("type"))) {
+                ready.countDown();
+            }
+        }
+
         @Override
         public void telemetryEvent(Object o) {}
 

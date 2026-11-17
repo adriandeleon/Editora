@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -71,12 +72,7 @@ class EncryptedFilesFxTest {
     }
 
     private static void await(String what, Callable<Boolean> condition) throws Exception {
-        long deadline = System.nanoTime() + 30_000_000_000L;
-        while (!FxTestSupport.callOnFx(condition)) {
-            assertTrue(System.nanoTime() < deadline, "timed out waiting for: " + what);
-            Thread.sleep(10);
-            FxTestSupport.drainFx();
-        }
+        EventuallyFx.untilOnFx(what, Duration.ofSeconds(30), condition);
     }
 
     /** The buffer of {@code file}'s tab, or null (FX thread). */

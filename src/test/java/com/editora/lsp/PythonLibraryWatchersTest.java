@@ -4,7 +4,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -39,14 +38,15 @@ class PythonLibraryWatchersTest {
     void aPackageInstalledIntoSitePackagesIsReported(@TempDir Path tmp) throws Exception {
         Path sp = venv(tmp.resolve(".venv"));
         List<LspManager.WatchedFile> seen = new CopyOnWriteArrayList<>();
-        try (RootWatcher w = RootWatcher.startShallow(sp, seen::addAll)) {
+        try (RootWatcher w = RootWatcher.startShallow(sp, changes -> {
+            seen.addAll(changes);
+            com.editora.testkit.Await.changed(); // the watcher's thread heard it: look now
+        })) {
             assertNotNull(w);
             Path pkg = Files.createDirectories(sp.resolve("requests"));
             Files.writeString(pkg.resolve("__init__.py"), "");
-            long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-            while (seen.stream().noneMatch(c -> c.file().equals(pkg)) && System.nanoTime() < until) {
-                Thread.sleep(50);
-            }
+            com.editora.testkit.Await.holdsWithin(
+                    () -> seen.stream().anyMatch(c -> c.file().equals(pkg)), java.time.Duration.ofSeconds(10));
             assertTrue(
                     seen.contains(new LspManager.WatchedFile(pkg, LspManager.WatchedKind.CREATED)),
                     "pip install's package folder: " + seen);

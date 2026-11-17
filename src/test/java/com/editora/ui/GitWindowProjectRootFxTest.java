@@ -53,17 +53,10 @@ class GitWindowProjectRootFxTest {
 
     /** The refresh runs git off the FX thread; an answer of "not a repository" sets the root to null. */
     private static void awaitRepoRoot(MainController window, Path expected) throws Exception {
-        long deadline = System.nanoTime() + 30_000_000_000L;
-        Path root = null;
-        while (System.nanoTime() < deadline) {
-            FxTestSupport.drainFx();
-            root = FxTestSupport.callOnFx(window.git::repoRoot);
-            if (expected.equals(root)) {
-                return;
-            }
-            Thread.sleep(20);
-        }
-        assertEquals(expected, root);
+        com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.fxCondition(() -> expected.equals(window.git.repoRoot())),
+                java.time.Duration.ofSeconds(30));
+        assertEquals(expected, FxTestSupport.callOnFx(window.git::repoRoot));
     }
 
     private static MainController controllerFor(FxWindowFixture fx, String key) {

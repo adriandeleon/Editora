@@ -67,6 +67,14 @@ final class SettledEditDispatcher {
         armedMillis = -1;
     }
 
+    /**
+     * TEST SEAM — whether a milestone is still to fire for the last edit: false once every settled-edit action due
+     * for it has run, which is what a test waits for instead of a pause longer than the slowest milestone (QUAL-07).
+     */
+    boolean pendingForTest() {
+        return !disposed && armedMillis >= 0;
+    }
+
     int taskCount() {
         return tasks.size();
     }

@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -11,6 +12,7 @@ import javafx.application.Platform;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.perf.AfterFirstPaint;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -49,17 +51,13 @@ class StartupDeferralFxTest {
 
     /** Polls until the CLI target is loaded into an editable buffer (the load lands off the FX thread). */
     private static void awaitLoaded(MainController controller, Path file) throws Exception {
-        for (int i = 0; i < 200; i++) {
-            boolean loaded = FxTestSupport.callOnFx(() -> {
-                EditorBuffer b = (EditorBuffer) FxTestSupport.call(controller, "activeBuffer", new Class<?>[] {});
-                return b != null && file.equals(b.getPath()) && b.isEditable();
-            });
-            if (loaded) {
-                return;
-            }
-            Thread.sleep(50);
-        }
-        throw new AssertionError("the target file did not load");
+        Await.until(
+                () -> onFx(() -> {
+                    EditorBuffer b = (EditorBuffer) FxTestSupport.call(controller, "activeBuffer", new Class<?>[] {});
+                    return b != null && file.equals(b.getPath()) && b.isEditable();
+                }),
+                "the target file did not load",
+                Duration.ofSeconds(10));
     }
 
     @Test
@@ -110,12 +108,20 @@ class StartupDeferralFxTest {
         awaitLoaded(fx.controller, file);
 
         FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
-        for (int i = 0; i < 200 && AfterFirstPaint.held(); i++) {
-            Thread.sleep(50); // the frame after the content landed lets the probes go
-        }
+        // the frame after the content landed lets the probes go
+        Await.holdsWithin(() -> !AfterFirstPaint.held(), Duration.ofSeconds(10));
         assertFalse(AfterFirstPaint.held(), "released after the first content painted");
         assertTrue(workflows.perfPaintTimerStarted, "the content-loaded path armed the first-paint timer");
         assertTrue(probeRan.get(), "the held probe ran");
         assertTrue(probeOnFx.get(), "on the FX thread, where its starters belong");
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

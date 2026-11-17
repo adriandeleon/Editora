@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Set;
 
 import javafx.scene.control.Tab;
@@ -38,14 +37,13 @@ class GitWindowsOnDiffTabFxTest {
         try {
             MainController controller = fx.controller;
             TabPane tabs = FxTestSupport.field(controller, "tabPane");
-            Instant deadline = Instant.now().plus(Duration.ofSeconds(10));
-            while (!FxTestSupport.callOnFx(() -> {
-                Tab selected = tabs.getSelectionModel().getSelectedItem();
-                return selected != null && selected.getUserData() instanceof DiffViewerPane;
-            })) {
-                assertTrue(Instant.now().isBefore(deadline), "the diff tab opened");
-                Thread.sleep(20);
-            }
+            FxTestSupport.awaitFxCondition(
+                    () -> {
+                        Tab selected = tabs.getSelectionModel().getSelectedItem();
+                        return selected != null && selected.getUserData() instanceof DiffViewerPane;
+                    },
+                    "the diff tab to open",
+                    Duration.ofSeconds(10));
             ToolWindowManager toolWindows = FxTestSupport.field(controller, "toolWindows");
             ToolWindow log = FxTestSupport.field(controller, "gitLogToolWindow");
             ToolWindow commit = FxTestSupport.field(controller, "commitToolWindow");

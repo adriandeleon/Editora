@@ -8,8 +8,6 @@ import java.util.Random;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import javafx.application.Platform;
-
 import com.editora.perf.BlockingSites;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.Position;
@@ -202,28 +200,25 @@ class LspSyncOverWireFxTest {
     }
 
     private static List<DidChangeTextDocumentParams> await(FakeLanguageServer fake, int count) throws Exception {
-        long deadline = System.nanoTime() + 30_000_000_000L;
-        while (System.nanoTime() < deadline) {
-            try {
-                List<DidChangeTextDocumentParams> copy = new ArrayList<>(fake.changed);
-                if (copy.size() >= count && !fake.opened.isEmpty()) {
-                    return copy;
-                }
-            } catch (ConcurrentModificationException racing) {
-                // the fake is still adding: look again
-            }
-            Thread.sleep(20);
+        List<DidChangeTextDocumentParams> copy = new ArrayList<>();
+        boolean got = com.editora.testkit.Await.holdsWithin(
+                () -> {
+                    try {
+                        copy.clear();
+                        copy.addAll(fake.changed);
+                        return copy.size() >= count && !fake.opened.isEmpty();
+                    } catch (ConcurrentModificationException racing) {
+                        return false; // the fake is still adding: look again
+                    }
+                },
+                java.time.Duration.ofSeconds(30));
+        if (!got) {
+            throw new AssertionError("the fake got " + fake.changed.size() + " of " + count + " changes");
         }
-        throw new AssertionError("the fake got " + fake.changed.size() + " of " + count + " changes");
+        return copy;
     }
 
     private static void waitFor(java.util.function.BooleanSupplier done) throws Exception {
-        long deadline = System.nanoTime() + 10_000_000_000L;
-        while (!done.getAsBoolean() && System.nanoTime() < deadline) {
-            java.util.concurrent.CountDownLatch drained = new java.util.concurrent.CountDownLatch(1);
-            Platform.runLater(drained::countDown);
-            drained.await();
-            Thread.sleep(10);
-        }
+        com.editora.testkit.Await.holdsWithin(done, java.time.Duration.ofSeconds(10)); // re-checked after each FX pulse
     }
 }

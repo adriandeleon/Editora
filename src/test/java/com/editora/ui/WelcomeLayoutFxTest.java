@@ -17,6 +17,7 @@ import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
 import com.editora.config.Project;
 import com.editora.config.RecentFiles;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -165,15 +166,14 @@ class WelcomeLayoutFxTest {
             made[0] = pane;
         });
         // Whether a folder is gone is learnt off the FX thread; the page is built again when the answer lands.
-        List<String> numbered = List.of();
-        for (int i = 0; i < 200; i++) {
-            numbered = FxTestSupport.callOnFx(() ->
-                    made[0].numberedEntries().stream().map(Hyperlink::getText).toList());
-            if (!numbered.contains("gone")) {
-                break;
-            }
-            Thread.sleep(25);
-        }
+        List<String> numbered = Await.value(
+                () -> {
+                    List<String> now = onFx(() -> made[0].numberedEntries().stream()
+                            .map(Hyperlink::getText)
+                            .toList());
+                    return now.contains("gone") ? null : now;
+                },
+                "the gone project left out");
         // notes has the newest file, so it leads; a project whose folder is gone is not offered.
         assertEquals(List.of("notes", "site", "todo.md", "index.html"), numbered);
         FxTestSupport.runOnFx(() -> {
@@ -254,5 +254,14 @@ class WelcomeLayoutFxTest {
             }
         }
         return null;
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

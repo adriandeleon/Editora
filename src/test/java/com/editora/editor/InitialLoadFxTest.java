@@ -11,6 +11,7 @@ import javafx.application.Platform;
 
 import com.editora.editops.LineEndings;
 import com.editora.editops.TextFingerprint;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -228,8 +229,11 @@ class InitialLoadFxTest {
         EditorBuffer buffer = holder[0];
         try {
             await(() -> applied.get() == 1);
-            TimeUnit.MILLISECONDS.sleep(600); // well past the 250 ms settle of the load's own insertion
-            runOnFx(() -> assertEquals(1, applied.get(), "the settle after the load found its scan already done"));
+            await(() -> buffer.getFoldManager().settlesForTest()[0] >= 1); // the 250 ms settle of the load's insertion
+            runOnFx(() -> {
+                assertEquals(0, buffer.getFoldManager().settlesForTest()[1], "the settle started no detection");
+                assertEquals(1, applied.get(), "the settle after the load found its scan already done");
+            });
             runOnFx(() -> buffer.getArea().appendText("class B {\n}\n"));
             await(() -> applied.get() == 2);
         } finally {
@@ -258,15 +262,14 @@ class InitialLoadFxTest {
 
     /** Polls {@code condition} on the FX thread until it holds; the background detection posts back there. */
     private static void await(Supplier<Boolean> condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        boolean[] met = {false};
-        while (!met[0]) {
-            assertTrue(System.nanoTime() < deadline, "condition never held");
-            runOnFx(() -> met[0] = condition.get());
-            if (!met[0]) {
-                TimeUnit.MILLISECONDS.sleep(10);
-            }
-        }
+        Await.until(
+                EditorFx.check(() -> {
+                    boolean[] met = {false};
+                    runOnFx(() -> met[0] = condition.get());
+                    return met[0];
+                }),
+                "condition never held",
+                java.time.Duration.ofSeconds(20));
     }
 
     private static void runOnFx(Runnable task) throws Exception {

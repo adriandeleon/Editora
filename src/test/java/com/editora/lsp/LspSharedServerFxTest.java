@@ -101,15 +101,8 @@ class LspSharedServerFxTest {
     }
 
     private static void awaitFx(java.util.function.BooleanSupplier condition, String what) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (System.nanoTime() < deadline) {
-            drainFx();
-            if (condition.getAsBoolean()) {
-                return;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("timed out waiting for: " + what);
+        drainFx();
+        com.editora.testkit.Await.until(condition, what, Duration.ofSeconds(10));
     }
 
     @Test

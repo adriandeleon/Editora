@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
@@ -9,6 +10,7 @@ import java.util.function.BooleanSupplier;
 import com.editora.editor.EditorBuffer;
 import com.editora.i18n.Messages;
 import com.editora.lsp.LspManager;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -77,11 +79,19 @@ class LspStartFailureFxTest {
     }
 
     private static void await(String what, BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (!condition.getAsBoolean()) {
-            assertTrue(System.nanoTime() < deadline, "timed out waiting until " + what);
-            Thread.sleep(50);
+        Await.until(condition, what, Duration.ofSeconds(20));
+    }
+
+    /**
+     * The failed start, and anything its answer set off on the FX thread, has run to the end: no start is under way
+     * and the FX thread has heard everything the start threads posted.
+     */
+    private void awaitStartsSettled() throws Exception {
+        for (int round = 0; round < 3; round++) {
+            FxTestSupport.drainFx();
+            await("no server start under way", manager::startsIdleForTest);
         }
+        FxTestSupport.drainFx();
     }
 
     private long startsAnnounced() throws Exception {
@@ -122,8 +132,7 @@ class LspStartFailureFxTest {
     void aFailedStartLeavesTheTabQuietAndIsNotRetried() throws Exception {
         EditorBuffer buffer = openAndFail();
 
-        Thread.sleep(500); // a retry, if one were coming, would have started by now
-        FxTestSupport.drainFx();
+        awaitStartsSettled(); // a retry, if one were coming, would have started by now
         FxTestSupport.runOnFx(() -> {
             assertFalse(manager.isManaged(buffer.getPath()));
             assertFalse(buffer.isLspActive());
@@ -141,8 +150,7 @@ class LspStartFailureFxTest {
 
         // What startup does 22 more times: another server answers its probe.
         FxTestSupport.runOnFx(() -> coordinator.serverDetected("go", true));
-        Thread.sleep(500);
-        FxTestSupport.drainFx();
+        awaitStartsSettled();
         assertEquals(1, startsAnnounced(), "a probe of gopls must not re-open a Python tab");
         assertFalse(FxTestSupport.callOnFx(buffer::isLspActive));
 

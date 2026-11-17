@@ -104,12 +104,6 @@ class LazyContextMenuFxTest {
     }
 
     private static boolean waitUntil(java.util.function.BooleanSupplier condition) throws Exception {
-        for (int i = 0; i < 250; i++) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return true;
-            }
-            Thread.sleep(20);
-        }
-        return false;
+        return OnFx.holdsWithin(condition::getAsBoolean, java.time.Duration.ofSeconds(5));
     }
 }

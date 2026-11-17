@@ -159,10 +159,7 @@ class RemoteJavaDebugFxTest {
         session.framePath = hostFile;
         session.frameLine = 4;
         session.stop(1, "breakpoint");
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (stops.isEmpty() && System.nanoTime() < deadline) {
-            Thread.sleep(20);
-        }
+        com.editora.testkit.Await.holdsWithin(() -> !stops.isEmpty(), java.time.Duration.ofSeconds(10));
         assertEquals(file, stops.get(0).get(0).file(), "the frame is the remote file");
     }
 

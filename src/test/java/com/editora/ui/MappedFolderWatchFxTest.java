@@ -2,11 +2,13 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import com.editora.process.ExecTargets;
 import com.editora.process.MappedTestTarget;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -71,23 +73,13 @@ class MappedFolderWatchFxTest {
     }
 
     private void awaitChange(Path path) throws InterruptedException {
-        for (int i = 0; i < 300; i++) {
-            if (seen.stream().anyMatch(c -> c.path().equals(path))) {
-                return;
-            }
-            Thread.sleep(50);
+        if (!Await.holdsWithin(() -> seen.stream().anyMatch(c -> c.path().equals(path)), Duration.ofSeconds(15))) {
+            throw new AssertionError("never reported " + path + "; saw " + seen);
         }
-        throw new AssertionError("never reported " + path + "; saw " + seen);
     }
 
     private void awaitWatch(boolean remotely, String what) throws Exception {
-        for (int i = 0; i < 200; i++) {
-            if (FxTestSupport.callOnFx(panel::watchesRemotely) == remotely) {
-                return;
-            }
-            Thread.sleep(50);
-        }
-        throw new AssertionError(what);
+        OnFx.until(() -> panel.watchesRemotely() == remotely, what, Duration.ofSeconds(10));
     }
 
     @Test
@@ -96,8 +88,12 @@ class MappedFolderWatchFxTest {
 
         watcher = RemoteWatcher.start(folder, seen::addAll);
         assertNotNull(watcher);
-        Thread.sleep(1500); // the poll's first stamp must predate the change
-        Files.writeString(folder.resolve("src/New.java"), "class New {}\n");
+        // The poll reports what is newer than its stamp, which it takes as it starts: dated a minute ahead, the change
+        // is newer than the stamp whenever the stamp was taken.
+        Path changed = Files.writeString(folder.resolve("src/New.java"), "class New {}\n");
+        Files.setLastModifiedTime(
+                changed,
+                java.nio.file.attribute.FileTime.from(java.time.Instant.now().plusSeconds(60)));
 
         awaitChange(folder.resolve("src/New.java"));
         assertTrue(

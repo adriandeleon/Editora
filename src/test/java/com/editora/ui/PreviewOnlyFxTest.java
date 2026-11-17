@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -119,22 +120,17 @@ class PreviewOnlyFxTest {
         EditorBuffer b = open(md.toString());
         FxTestSupport.runOnFx(() -> b.setMarkdownViewMode(MarkdownViewMode.PREVIEW));
         javafx.scene.control.ScrollPane[] pane = new javafx.scene.control.ScrollPane[1];
-        for (int i = 0; i < 300; i++) {
-            pane[0] = FxTestSupport.callOnFx(
-                    () -> FxTestSupport.field(FxTestSupport.field(b, "previewPanes"), "previewPane"));
-            boolean ready = FxTestSupport.callOnFx(() -> {
-                b.getNode().applyCss();
-                b.getNode().layout();
-                return pane[0] != null
-                        && pane[0].getContent() != null
-                        && pane[0].getContent().getLayoutBounds().getHeight()
-                                > pane[0].getViewportBounds().getHeight() + 500;
-            });
-            if (ready) {
-                break;
-            }
-            Thread.sleep(10);
-        }
+        PulseChecks.holdsOnFxWithin(
+                () -> {
+                    pane[0] = FxTestSupport.field(FxTestSupport.field(b, "previewPanes"), "previewPane");
+                    b.getNode().applyCss();
+                    b.getNode().layout();
+                    return pane[0] != null
+                            && pane[0].getContent() != null
+                            && pane[0].getContent().getLayoutBounds().getHeight()
+                                    > pane[0].getViewportBounds().getHeight() + 500;
+                },
+                Duration.ofSeconds(10));
         int caret = FxTestSupport.callOnFx(() -> b.getArea().getCaretPosition());
         FxTestSupport.runOnFx(() -> pane[0].setVvalue(0));
         run("nav.lineDown");
@@ -178,10 +174,7 @@ class PreviewOnlyFxTest {
         EditorBuffer b = ref[0];
         FindReplaceBar bar = barRef[0];
         // (the render lands from the preview pool)
-        for (int i = 0; i < 200 && FxTestSupport.callOnFx(() -> b.previewFind() == null); i++) {
-            Thread.sleep(10);
-            FxTestSupport.drainFx();
-        }
+        PulseChecks.holdsOnFxWithin(() -> b.previewFind() != null, Duration.ofSeconds(10));
         FxTestSupport.drainFx();
         FxTestSupport.runOnFx(() -> {
             bar.show(false);
@@ -189,15 +182,15 @@ class PreviewOnlyFxTest {
             FxTestSupport.invoke(bar, "recompute");
         });
         // The marks sit on the rendered blocks, and a loaded machine may not have built them all yet.
-        for (int i = 0;
-                i < 500
-                        && FxTestSupport.callOnFx(
-                                () -> b.getNode().lookupAll(".md-find-match").size() < 4);
-                i++) {
-            Thread.sleep(10);
-            FxTestSupport.drainFx();
-            FxTestSupport.runOnFx(() -> FxTestSupport.invoke(bar, "recompute"));
-        }
+        PulseChecks.holdsOnFxWithin(
+                () -> {
+                    if (b.getNode().lookupAll(".md-find-match").size() >= 4) {
+                        return true;
+                    }
+                    FxTestSupport.invoke(bar, "recompute");
+                    return false;
+                },
+                Duration.ofSeconds(5));
         FxTestSupport.runOnFx(() -> {
             PreviewFind find = b.previewFind();
             // "needle" + "Needle" in the paragraph, the inline code and the plain code block (one each).

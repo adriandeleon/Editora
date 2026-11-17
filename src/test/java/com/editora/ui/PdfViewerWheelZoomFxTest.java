@@ -1,6 +1,7 @@
 package com.editora.ui;
 
 import java.nio.file.Path;
+import java.time.Duration;
 
 import javafx.event.Event;
 import javafx.geometry.Bounds;
@@ -46,9 +47,8 @@ class PdfViewerWheelZoomFxTest {
             new Scene((Parent) p.node(), 600, 400);
             return p;
         });
-        for (int i = 0; i < 200 && FxTestSupport.callOnFx(() -> FxTestSupport.field(pane, "image")) == null; i++) {
-            Thread.sleep(50);
-        }
+        PulseChecks.untilOnFx(
+                () -> FxTestSupport.field(pane, "image") != null, "the page rendered", Duration.ofSeconds(10));
         FxTestSupport.runOnFx(() -> layout(pane));
         assertTrue(FxTestSupport.callOnFx(() -> FxTestSupport.field(pane, "image") != null), "the page rendered");
         return pane;

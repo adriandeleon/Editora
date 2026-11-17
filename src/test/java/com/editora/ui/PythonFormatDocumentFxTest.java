@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Tag;
@@ -162,9 +163,10 @@ class PythonFormatDocumentFxTest {
 
             FxTestSupport.runOnFx(() -> c.activeBuffer().getArea().insertText(0, "a=1\n"));
             FxTestSupport.runOnFx(() -> registry.run("file.save"));
+            // The save's last FX step marks the buffer clean and asks for the format on save there (it is off).
+            PulseChecks.untilOnFx(() -> !c.activeBuffer().isDirty(), "the save", Duration.ofSeconds(15));
             FxTestSupport.drainFx();
-            Thread.sleep(1500); // a format would have run by now
-            FxTestSupport.drainFx();
+            assertFalse(FxTestSupport.callOnFx(() -> c.activeBuffer().isDirty()), "no format edit came after it");
             assertEquals("a=1\nprint(1)\n", Files.readString(app), "off by default: saved as typed");
 
             FxTestSupport.runOnFx(() -> settings[0].setPythonFormatOnSave(true));
@@ -172,12 +174,10 @@ class PythonFormatDocumentFxTest {
             FxTestSupport.runOnFx(() -> registry.run("file.save"));
             // The second save writes the file off the FX thread and marks the buffer clean in a later FX step, so
             // the formatted text on disk alone does not mean the save has finished: wait for both.
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-            while ((!Files.readString(app).equals("b = 2\na = 1\nprint(1)\n")
-                            || FxTestSupport.callOnFx(() -> c.activeBuffer().isDirty()))
-                    && System.nanoTime() < deadline) {
-                FxTestSupport.drainFx();
-            }
+            PulseChecks.holdsWithin(
+                    () -> Files.readString(app).equals("b = 2\na = 1\nprint(1)\n")
+                            && !FxTestSupport.callOnFx(() -> c.activeBuffer().isDirty()),
+                    Duration.ofSeconds(15));
             assertEquals("b = 2\na = 1\nprint(1)\n", Files.readString(app), "formatted, then saved again");
             assertFalse(FxTestSupport.callOnFx(() -> c.activeBuffer().isDirty()));
         }

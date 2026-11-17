@@ -91,12 +91,10 @@ class FirstWindowOnlyFxTest {
         try (FxWindowFixture fx = FxWindowFixture.create(
                 dir, false, false, false, List.of(new MainController.OpenTarget(file, -1, -1)), true, c -> {})) {
             // The file is read off the FX thread: wait for its editor, then for the load's own runLater work.
-            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
-            while (FxTestSupport.callOnFx(() -> FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[0]))
-                    == null) {
-                assertTrue(System.nanoTime() < deadline, "the file never opened");
-                Thread.sleep(20);
-            }
+            FxTestSupport.awaitFxCondition(
+                    () -> FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[0]) != null,
+                    "the file to open",
+                    java.time.Duration.ofSeconds(10));
             for (int i = 0; i < 3; i++) {
                 FxTestSupport.runOnFx(() -> {});
             }

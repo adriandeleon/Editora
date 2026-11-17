@@ -4,7 +4,6 @@ import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
 import javafx.scene.text.Font;
 
@@ -59,10 +58,7 @@ class FontsDeferredLoadFxTest {
 
             // The deferred load, as App.start arms it after the first painted frame.
             FxTestSupport.runOnFx(Fonts::loadRemainingAfterNextPaint);
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-            while (!Fonts.allLoaded() && System.nanoTime() < deadline) {
-                Thread.sleep(20);
-            }
+            com.editora.testkit.Await.holdsWithin(Fonts::allLoaded, java.time.Duration.ofSeconds(20));
             assertTrue(Fonts.allLoaded(), "the deferred load did not register every family in time");
             CompletableFuture<Void> load = Fonts.loadRemainingAsync();
             assertTrue(load.isDone(), "a second request returns the finished load");

@@ -13,6 +13,7 @@ import javafx.scene.input.KeyEvent;
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
 import com.editora.markdown.MarkdownLint;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -55,14 +56,15 @@ class MarkdownLintProjectFxTest {
 
     /** Looks until {@code probe} answers non-null: up to a minute, since macOS only has a polling file watcher. */
     private static <T> T await(String what, Callable<T> probe) throws Exception {
-        for (int i = 0; i < 1200; i++) {
-            T value = FxTestSupport.callOnFx(probe::call);
-            if (value != null) {
-                return value;
-            }
-            Thread.sleep(50);
-        }
-        throw new AssertionError("timed out waiting for " + what);
+        return Await.value(
+                () -> {
+                    try {
+                        return FxTestSupport.callOnFx(probe::call);
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                },
+                what);
     }
 
     private MainController projectWindow(Path root) throws Exception {

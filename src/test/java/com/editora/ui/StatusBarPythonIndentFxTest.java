@@ -5,6 +5,7 @@ import javafx.scene.control.Label;
 import com.editora.command.CommandRegistry;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -46,8 +47,16 @@ class StatusBarPythonIndentFxTest {
             int tab = b.getArea().getText().indexOf('\t');
             b.getArea().replaceText(tab, tab + 1, "        "); // the user re-indents the line with spaces
         });
-        Thread.sleep(400); // the check runs once per typing burst
-        FxTestSupport.drainFx();
+        // the check runs once per typing burst, when it has settled
+        Await.until(
+                () -> {
+                    try {
+                        return FxTestSupport.callOnFx(() -> !indent.getText().contains("mixed"));
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                },
+                "the indent segment re-checked after the burst");
         FxTestSupport.runOnFx(() -> {
             assertFalse(indent.getText().contains("mixed"), indent.getText());
             assertEquals("Set tab size", indent.getTooltip().getText());

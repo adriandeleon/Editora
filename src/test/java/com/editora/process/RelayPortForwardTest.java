@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -194,10 +195,18 @@ class RelayPortForwardTest {
         for (int i = 0; i < 50; i++) {
             RelayPortForward forward = RelayPortForward.open(SocketRelay::new);
             int port = forward.localPort();
-            Thread.sleep(1); // the accept thread is waiting in accept()
+            Thread acceptor = acceptorOf(forward);
+            // the accept thread is waiting in accept(): a virtual thread parked on the socket
+            Await.until(() -> acceptor.getState() == Thread.State.WAITING, "the accept thread waits in accept()");
             forward.close();
             assertThrows(
                     IOException.class, () -> new Socket(InetAddress.getLoopbackAddress(), port).close(), "cycle " + i);
         }
+    }
+
+    private static Thread acceptorOf(RelayPortForward forward) throws ReflectiveOperationException {
+        java.lang.reflect.Field f = RelayPortForward.class.getDeclaredField("acceptor");
+        f.setAccessible(true);
+        return (Thread) f.get(forward);
     }
 }

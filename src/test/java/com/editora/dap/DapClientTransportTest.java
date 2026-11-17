@@ -218,11 +218,10 @@ class DapClientTransportTest {
             client.dispose();
 
             // The reader has ended once no client session thread is still reading.
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-            while (clientReaderAlive() && records.isEmpty()) {
-                assertTrue(System.nanoTime() < deadline, "the client's DAP reader never ended");
-                Thread.onSpinWait();
-            }
+            assertTrue(
+                    com.editora.testkit.Await.holdsWithin(
+                            () -> !clientReaderAlive() || !records.isEmpty(), Duration.ofSeconds(10)),
+                    "the client's DAP reader never ended");
             assertTrue(
                     records.isEmpty(),
                     () -> "lsp4j logged the stream close: "

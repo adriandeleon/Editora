@@ -14,6 +14,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.paint.Paint;
 import javafx.stage.Stage;
 
+import com.editora.testkit.Await;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.AfterEach;
@@ -23,7 +24,6 @@ import org.testfx.api.FxToolkit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * A content render caches its image without touching the rest of the window. Snapshotting the on-screen
@@ -88,11 +88,10 @@ class MinimapRenderOffWindowFxTest {
             labelRef.set(label);
         });
         int before = Minimap.RENDERS_FOR_TEST.get();
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (Minimap.RENDERS_FOR_TEST.get() == before || cached(minimapRef.get()) == null) {
-            assertTrue(System.nanoTime() < deadline, "the first content render never ran");
-            Thread.sleep(20);
-        }
+        Await.until(
+                com.editora.editor.EditorFx.check(
+                        () -> Minimap.RENDERS_FOR_TEST.get() != before && cached(minimapRef.get()) != null),
+                "the first content render never ran");
 
         var fillBefore = new AtomicReference<Paint>();
         var fillAfter = new AtomicReference<Paint>();

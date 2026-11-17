@@ -66,10 +66,7 @@ class NarrowedWholeBufferWritersFxTest {
         long before = FxTestSupport.callOnFx(b::docVersion);
         assertTrue(FxTestSupport.callOnFx(() -> registry.run("markdownLint.fix")));
         // The fixes are worked out off the FX thread (PERF-01) and applied when they land.
-        long deadline = System.currentTimeMillis() + 10_000;
-        while (FxTestSupport.callOnFx(b::docVersion) == before && System.currentTimeMillis() < deadline) {
-            Thread.sleep(50);
-        }
+        OnFx.holdsWithin(() -> b.docVersion() != before, java.time.Duration.ofSeconds(10));
         FxTestSupport.drainFx();
         assertWholeFileIs(doc.replace("spaces   \n", "spaces\n"), b);
     }
@@ -139,10 +136,7 @@ class NarrowedWholeBufferWritersFxTest {
         });
         long before = FxTestSupport.callOnFx(b::docVersion);
         assertTrue(FxTestSupport.callOnFx(() -> registry.run(ExternalTool.commandIdFor("Upcase"))));
-        long deadline = System.currentTimeMillis() + 10_000;
-        while (FxTestSupport.callOnFx(b::docVersion) == before && System.currentTimeMillis() < deadline) {
-            Thread.sleep(50);
-        }
+        OnFx.holdsWithin(() -> b.docVersion() != before, java.time.Duration.ofSeconds(10));
         FxTestSupport.drainFx();
         assertWholeFileIs(DOC.toUpperCase(java.util.Locale.ROOT), b);
     }
@@ -200,13 +194,6 @@ class NarrowedWholeBufferWritersFxTest {
     }
 
     private static boolean waitFor(Callable<Boolean> onFx) throws Exception {
-        long end = System.currentTimeMillis() + 10_000;
-        while (System.currentTimeMillis() < end) {
-            if (Boolean.TRUE.equals(FxTestSupport.callOnFx(onFx))) {
-                return true;
-            }
-            Thread.sleep(50);
-        }
-        return false;
+        return OnFx.holdsWithin(() -> Boolean.TRUE.equals(onFx.call()), java.time.Duration.ofSeconds(10));
     }
 }

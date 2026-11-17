@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.util.HexFormat;
 import java.util.Map;
 
@@ -46,12 +47,11 @@ class CommittedSaveFingerprintFxTest {
                 assertTrue(workflows.save(b));
                 return b;
             });
-            long deadline = System.nanoTime() + 20_000_000_000L;
-            while (FxTestSupport.callOnFx(() -> workflows.hasPendingSave(buffer) || buffer.isDirty())) {
-                assertTrue(System.nanoTime() < deadline, "save never completed");
-                Thread.sleep(5);
-                FxTestSupport.drainFx();
-            }
+            EventuallyFx.untilOnFx(
+                    "save never completed",
+                    Duration.ofSeconds(20),
+                    () -> !workflows.hasPendingSave(buffer) && !buffer.isDirty());
+            FxTestSupport.drainFx();
 
             byte[] onDisk = Files.readAllBytes(file);
             String expected = HexFormat.of()

@@ -38,7 +38,7 @@ class ProcessRegistryRemoteTest {
         ProcessRegistry.killTree(p);
 
         assertTrue(p.waitFor(1, TimeUnit.SECONDS));
-        Thread.sleep(ProcessRegistry.GRACE_MS + 300);
+        ProcessRegistry.afterGraceForTest().get(ProcessRegistry.GRACE_MS + 10_000, TimeUnit.MILLISECONDS);
         assertEquals(List.of(false), p.signals, "already gone at the grace period: no second signal");
     }
 

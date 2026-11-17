@@ -2,9 +2,9 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
@@ -14,6 +14,7 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.Region;
 import javafx.stage.Stage;
 
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -653,18 +654,17 @@ class ProjectMapCardFlowFxTest {
      * can read the previous frame's connector — or none yet — on a slow machine.
      */
     private static void awaitConnectedTo(Fixture map, Path key, Supplier<double[]> row, String what) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (true) {
-            try {
-                FxTestSupport.runOnFx(() -> assertConnectedTo(map, key, row.get(), what));
-                return;
-            } catch (AssertionError | RuntimeException e) {
-                if (System.nanoTime() >= deadline) {
-                    throw e;
-                }
-            }
-            Thread.sleep(25);
-        }
+        PulseChecks.holdsWithin(
+                () -> {
+                    try {
+                        FxTestSupport.runOnFx(() -> assertConnectedTo(map, key, row.get(), what));
+                        return true;
+                    } catch (AssertionError | RuntimeException e) {
+                        return false;
+                    }
+                },
+                Duration.ofSeconds(10));
+        FxTestSupport.runOnFx(() -> assertConnectedTo(map, key, row.get(), what)); // says why, if it never did
     }
 
     /** Asserts the connector of {@code key}'s card starts at the row box {@code row}, on its middle. */
@@ -800,13 +800,6 @@ class ProjectMapCardFlowFxTest {
     }
 
     private static void waitFor(BooleanSupplier condition, String what) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (System.nanoTime() < deadline) {
-            if (condition.getAsBoolean()) {
-                return;
-            }
-            Thread.sleep(25);
-        }
-        throw new AssertionError("timed out waiting for " + what);
+        Await.until(condition, what, Duration.ofSeconds(10));
     }
 }

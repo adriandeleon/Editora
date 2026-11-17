@@ -75,12 +75,15 @@ class FrameFilesFxTest {
             }
         });
         assertTrue(onFx(() -> FrameFiles.isFile(never)), "unknown: the frame is not hidden");
-        long deadline = System.nanoTime() + 5_000_000_000L;
-        boolean seen = false;
-        while (!seen && System.nanoTime() < deadline) {
-            seen = !onFx(() -> FrameFiles.isFile(never));
-            Thread.sleep(10);
-        }
+        boolean seen = com.editora.testkit.Await.holdsWithin(
+                () -> {
+                    try {
+                        return !onFx(() -> FrameFiles.isFile(never));
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                },
+                java.time.Duration.ofSeconds(5));
         assertTrue(seen, "the look behind the answer lands");
     }
 }

@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.Callable;
 
@@ -13,6 +14,7 @@ import com.editora.config.PathKeys;
 import com.editora.config.PersonalNote;
 import com.editora.config.TextAnchor;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -81,17 +83,14 @@ class TwoWindowsMarksFxTest {
 
     /** Polls {@code probe} on the FX thread until it returns non-null (and not {@code false}). */
     private static <T> T await(String what, Callable<T> probe) throws Exception {
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
-        while (true) {
-            T value = FxTestSupport.callOnFx(probe);
-            if (value != null && !Boolean.FALSE.equals(value)) {
-                return value;
-            }
-            if (System.nanoTime() > deadline) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(25);
-        }
+        Object[] value = new Object[1];
+        Await.until(
+                () -> (value[0] = onFx(probe)) != null && !Boolean.FALSE.equals(value[0]),
+                what,
+                Duration.ofSeconds(20));
+        @SuppressWarnings("unchecked")
+        T found = (T) value[0];
+        return found;
     }
 
     private static PersonalNote note(EditorBuffer buffer, int line, String lineText, String body) {
@@ -240,5 +239,14 @@ class TwoWindowsMarksFxTest {
         FxTestSupport.runOnFx(() -> bufferA.toggleBreakpoint(0));
         await("A's breakpoint to leave window B", () -> breakpointsIn(bufferB).equals(List.of(2)));
         assertEquals(List.of(2), storedBreakpoints());
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

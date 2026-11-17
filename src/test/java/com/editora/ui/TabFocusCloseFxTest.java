@@ -1,10 +1,13 @@
 package com.editora.ui;
 
+import java.time.Duration;
+
 import javafx.scene.Node;
 import javafx.scene.input.MouseEvent;
 
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -58,6 +61,13 @@ class TabFocusCloseFxTest {
         return (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
     }
 
+    /** {@link #focusOwner()}, called on the FX thread. */
+    private Node focusOwnerNow() {
+        return ((javafx.stage.Stage) FxTestSupport.field(fx.controller, "stage"))
+                .getScene()
+                .getFocusOwner();
+    }
+
     /** The window's focus owner (its scene, not an editor's, which a split moves between groups). */
     private Node focusOwner() throws Exception {
         return FxTestSupport.callOnFx(() -> ((javafx.stage.Stage) FxTestSupport.field(fx.controller, "stage"))
@@ -80,10 +90,8 @@ class TabFocusCloseFxTest {
         settle();
         EditorBuffer now = active();
         assertTrue(now != null && now != before, "another tab is shown");
-        for (int i = 0; i < 100 && now.getFocusedArea() != focusOwner(); i++) { // JavaFX moves it on a later pulse
-            Thread.sleep(20);
-            settle();
-        }
+        // JavaFX moves it on a later pulse
+        Await.holdsWithin(() -> onFx(() -> now.getFocusedArea() == focusOwnerNow()), Duration.ofSeconds(2));
         assertSame(now.getFocusedArea(), focusOwner());
     }
 
@@ -136,10 +144,8 @@ class TabFocusCloseFxTest {
             settle();
             EditorBuffer now = active();
             assertTrue(now != null && now != before, "the other group's tab");
-            for (int i = 0; i < 100 && now.getFocusedArea() != focusOwner(); i++) { // a split settles over pulses
-                Thread.sleep(20);
-                settle();
-            }
+            // a split settles over pulses
+            Await.holdsWithin(() -> onFx(() -> now.getFocusedArea() == focusOwnerNow()), Duration.ofSeconds(2));
             assertSame(now.getFocusedArea(), focusOwner());
         } finally {
             FxTestSupport.runOnFx(() -> reg.run("view.unsplitEditorGroups"));
@@ -171,13 +177,18 @@ class TabFocusCloseFxTest {
                 r.run("buffer.close");
             });
             settle();
-            Node owner = null;
-            for (int i = 0; i < 100 && !onWelcomePage(owner); i++) { // JavaFX moves focus on a later pulse
-                Thread.sleep(20);
-                settle();
-                owner = FxTestSupport.callOnFx(scene::getFocusOwner);
-            }
-            Node focused = owner;
+            Node[] owner = new Node[1];
+            // JavaFX moves focus on a later pulse
+            Await.holdsWithin(
+                    () -> {
+                        try {
+                            return onWelcomePage(owner[0] = onFx(scene::getFocusOwner));
+                        } catch (Exception e) {
+                            throw new IllegalStateException(e);
+                        }
+                    },
+                    Duration.ofSeconds(2));
+            Node focused = owner[0];
             assertTrue(
                     focused != null && !"newButton".equals(focused.getId()),
                     "not the toolbar's New button: " + focused);
@@ -225,21 +236,26 @@ class TabFocusCloseFxTest {
             settle();
             FxTestSupport.runOnFx(() -> r.run("buffer.close"));
             settle();
-            Node owner = null;
-            for (int i = 0; i < 100; i++) {
-                owner = FxTestSupport.callOnFx(scene::getFocusOwner);
-                if (owner != null && owner.getStyleClass().contains("editor-area")) {
-                    break;
-                }
-                Thread.sleep(20);
-                settle();
-            }
-            Node focused = owner;
+            Node[] owner = new Node[1];
+            Await.holdsWithin(
+                    () -> (owner[0] = onFx(scene::getFocusOwner)) != null
+                            && owner[0].getStyleClass().contains("editor-area"),
+                    Duration.ofSeconds(2));
+            Node focused = owner[0];
             assertTrue(
                     focused != null && focused.getStyleClass().contains("editor-area"),
                     "the file's editor: " + focused);
         } finally {
             own.dispose();
+        }
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

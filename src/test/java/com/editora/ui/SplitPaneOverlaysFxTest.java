@@ -42,6 +42,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SplitPaneOverlaysFxTest {
 
     private FxWindowFixture fx;
+    /** The window {@link #settle} waits on (it is static, as its callers are). */
+    private static FxWindowFixture window;
+
     private CommandRegistry registry;
     private int files;
 
@@ -49,6 +52,7 @@ class SplitPaneOverlaysFxTest {
     void setUp() throws Exception {
         FxTestSupport.bootToolkit();
         fx = FxWindowFixture.create();
+        window = fx;
         registry = FxTestSupport.field(fx.controller, "registry");
         FxTestSupport.runOnFx(() -> {
             Stage stage = FxTestSupport.field(fx.controller, "stage");
@@ -73,12 +77,26 @@ class SplitPaneOverlaysFxTest {
         FxTestSupport.drainFx();
     }
 
+    /**
+     * Waits until the active buffer has nothing left to land (the settled-edit milestones that draw the TODO marks,
+     * the highlighting, the fold scan), then for two pulses: the overlays follow the layout a step changed.
+     */
     private static void settle() throws Exception {
-        for (int i = 0; i < 3; i++) {
-            FxTestSupport.drainFx();
-            Thread.sleep(120);
-        }
-        FxTestSupport.drainFx();
+        FxPulses.await(2);
+        com.editora.testkit.Await.until(
+                () -> {
+                    try {
+                        return FxTestSupport.callOnFx(() -> {
+                            EditorBuffer b = (EditorBuffer)
+                                    FxTestSupport.call(window.controller, "activeBuffer", new Class[] {});
+                            return b == null || !b.settlingForTest();
+                        });
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                },
+                "the active buffer to settle");
+        FxPulses.await(2);
     }
 
     private EditorBuffer open(String name, String content) throws Exception {

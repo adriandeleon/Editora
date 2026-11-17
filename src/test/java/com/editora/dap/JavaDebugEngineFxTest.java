@@ -325,8 +325,7 @@ class JavaDebugEngineFxTest {
         FakeDebugAdapter.Session session = launch();
         session.output("first line\n");
         session.terminate(); // java-debug says the program is done while its output is still on its way
-        session.awaitDelivered();
-        Thread.sleep(100);
+        session.awaitDelivered(); // the end has reached the client: what follows trails it
         session.output("last line\n");
         awaitEvent("INACTIVE");
         List<String> seen = events();
@@ -340,7 +339,8 @@ class JavaDebugEngineFxTest {
     void aSessionWhoseOutputHadStoppedEndsAtOnce() throws Exception {
         FakeDebugAdapter.Session session = launch();
         session.output("only line\n");
-        Thread.sleep(OutputTail.QUIET_MILLIS + 200);
+        awaitEvent("out:only line");
+        onFx(() -> dap.ageLastOutputForTest(OutputTail.QUIET_MILLIS + 200)); // the output stopped a while ago
         long t0 = System.nanoTime();
         session.terminate();
         awaitEvent("INACTIVE");

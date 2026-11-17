@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -137,11 +138,8 @@ class DapSessionLifecycleFxTest {
     }
 
     private static void awaitState(DapManager manager, DapManager.State wanted, String why) throws Exception {
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
-        while (FxTestSupport.callOnFx(manager::state) != wanted) {
-            assertTrue(System.nanoTime() < deadline, why + " (state never became " + wanted + ")");
-            Thread.sleep(10);
-        }
+        EventuallyFx.untilOnFx(
+                why + " (state never became " + wanted + ")", Duration.ofSeconds(10), () -> manager.state() == wanted);
     }
 
     /** A manager connected to {@code adapter}, as after a launch; the adapter's side is the returned session. */
@@ -165,10 +163,12 @@ class DapSessionLifecycleFxTest {
         try (var adapter = new com.editora.dap.FakeDebugAdapter(false)) {
             DapManager manager = new DapManager(null);
             List<String> errors = new java.util.concurrent.CopyOnWriteArrayList<>();
+            java.util.concurrent.CountDownLatch errored = new java.util.concurrent.CountDownLatch(1);
             RecordingListener listener = new RecordingListener() {
                 @Override
                 public void onError(String message) {
                     errors.add(message);
+                    errored.countDown();
                 }
             };
             manager.setListener(listener);
@@ -181,10 +181,8 @@ class DapSessionLifecycleFxTest {
             session.awaitRequest("next");
             session.awaitDelivered();
             FxTestSupport.runOnFx(() -> {});
-            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
-            while (errors.isEmpty() && System.nanoTime() < deadline) {
-                Thread.sleep(10);
-            }
+            errored.await(10, java.util.concurrent.TimeUnit.SECONDS);
+            FxTestSupport.drainFx();
 
             assertEquals(DapManager.State.SUSPENDED, FxTestSupport.callOnFx(manager::state));
             assertFalse(FxTestSupport.callOnFx(manager::isStepping));

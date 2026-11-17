@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -85,27 +87,29 @@ class ProcessRegistryOrphansTest {
         p.record = RECORD;
 
         ProcessRegistry.track(p);
-        List<ProcessRegistry.LedgerEntry> rows = List.of();
-        for (int i = 0; i < 100 && rows.isEmpty(); i++) {
-            Thread.sleep(50);
-            rows = rows(mine());
-        }
+        joinRemoteThread();
+        List<ProcessRegistry.LedgerEntry> rows = rows(mine());
         assertEquals(1, rows.size(), "recorded in this process's own ledger");
         assertEquals(RECORD, rows.get(0).remote());
 
         p.exit(0);
-        for (int i = 0; i < 100 && !rows.isEmpty(); i++) {
-            Thread.sleep(50);
-            rows = rows(mine());
-        }
-        assertEquals(List.of(), rows, "it ended: nothing left to reap");
+        Await.holdsWithin(
+                () -> {
+                    try {
+                        return rows(mine()).isEmpty();
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                },
+                java.time.Duration.ofSeconds(5));
+        assertEquals(List.of(), rows(mine()), "it ended: nothing left to reap");
     }
 
     @Test
     void aTargetThatEndsEditorasProgramsItselfRecordsNothing() throws Exception {
         FakeRemoteProcess p = new FakeRemoteProcess(true); // an SSH session's: no record
         ProcessRegistry.track(p);
-        Thread.sleep(300);
+        joinRemoteThread(); // it asked the target and decided
 
         assertEquals(List.of(), rows(mine()));
         p.exit(0);
@@ -130,10 +134,7 @@ class ProcessRegistryOrphansTest {
 
         ProcessRegistry.reapOrphans();
 
-        for (int i = 0; i < 100 && reaped.isEmpty(); i++) {
-            Thread.sleep(50);
-        }
-        Thread.sleep(300); // time for a wrong second call to show
+        joinRemoteThread(); // every row has been handed to its reaper: a wrong second call would be here
         assertEquals(
                 List.of(RECORD.subList(1, RECORD.size())), reaped, "only the dead editor's program, with its fields");
         assertFalse(Files.exists(deadLedger), "the dead editor's ledger is gone");
@@ -156,5 +157,12 @@ class ProcessRegistryOrphansTest {
                 ProcessRegistry.LedgerEntry.remote(List.of("test-throws", "y"), DEAD)));
 
         assertEquals(0, reaped);
+    }
+
+    private static void joinRemoteThread() throws InterruptedException {
+        Thread t = ProcessRegistry.lastRemoteThreadForTest;
+        assertNotNull(t, "a remote thread was started");
+        t.join(java.time.Duration.ofSeconds(10));
+        assertFalse(t.isAlive(), "the remote thread finished");
     }
 }

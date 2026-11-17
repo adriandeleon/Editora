@@ -164,7 +164,7 @@ public final class ProcessRegistry {
             // Editora's programs by itself when Editora goes (an SSH session) records nothing; one that does
             // not (a container) says how to find the program again, which asks the target, so off this thread.
             p.onExit().thenRun(() -> untrack(p));
-            Thread.ofVirtual().name("orphan-record").start(() -> recordRemote(remote));
+            lastRemoteThreadForTest = Thread.ofVirtual().name("orphan-record").start(() -> recordRemote(remote));
             return;
         }
         LedgerEntry entry = LedgerEntry.of(p);
@@ -313,6 +313,20 @@ public final class ProcessRegistry {
             destroyRoot(p, true);
             untrack(p);
         }
+    }
+
+    /**
+     * TEST SEAM — the last thread started to record a remote program or to hand rows to their reapers, so a test
+     * joins it instead of waiting a fixed time.
+     */
+    static volatile @Nullable Thread lastRemoteThreadForTest;
+
+    /**
+     * TEST SEAM — a task on the grace-period scheduler due {@link #GRACE_MS} from now: once it has run, so has
+     * every grace-period task scheduled before it (one thread, earlier first).
+     */
+    static java.util.concurrent.Future<?> afterGraceForTest() {
+        return SCHEDULER.schedule(() -> {}, GRACE_MS, TimeUnit.MILLISECONDS);
     }
 
     /** Whether {@code p} is tracked: started, not yet ended or killed. */
@@ -731,7 +745,8 @@ public final class ProcessRegistry {
         }
         if (!remoteOrphans.isEmpty()) {
             // A target may be slow to answer (a WSL distribution boots first): not on the startup path.
-            Thread.ofVirtual().name("orphan-reaper-remote").start(() -> reapRemote(remoteOrphans));
+            lastRemoteThreadForTest =
+                    Thread.ofVirtual().name("orphan-reaper-remote").start(() -> reapRemote(remoteOrphans));
         }
     }
 

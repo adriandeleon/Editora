@@ -8,7 +8,6 @@ import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import javafx.beans.value.ChangeListener;
@@ -439,17 +438,7 @@ class GitConfirmationsSayWhatIsLostFxTest {
     }
 
     private static <T> T await(Callable<T> probe) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (true) {
-            T value = probe.call();
-            if (value != null) {
-                return value;
-            }
-            if (System.nanoTime() > deadline) {
-                throw new AssertionError("timed out waiting for a confirmation dialog");
-            }
-            Thread.sleep(20);
-        }
+        return FxTestSupport.awaitValue(probe, "a confirmation dialog", java.time.Duration.ofSeconds(20));
     }
 
     /** Lets a cancelled command finish doing nothing: Git worker, history worker and FX queue all idle. */

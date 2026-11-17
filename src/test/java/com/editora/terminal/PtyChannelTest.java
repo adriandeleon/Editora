@@ -7,6 +7,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import com.editora.process.PosixShell;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
@@ -64,6 +65,8 @@ class PtyChannelTest {
         // A container keeps a shell whose exec client went, so a quit must not exit before the hang-up is sent.
         CompletableFuture<Long> hungUp = new CompletableFuture<>();
         CompletableFuture<Long> recorded = new CompletableFuture<>();
+        java.util.concurrent.CountDownLatch hangingUp = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch answer = new java.util.concurrent.CountDownLatch(1);
         var env = new HashMap<>(System.getenv());
         env.put("SHELL", "/bin/sh");
         PtyChannel channel = PtyChannel.start(
@@ -72,8 +75,9 @@ class PtyChannelTest {
                 80,
                 24,
                 pid -> {
+                    hangingUp.countDown();
                     try {
-                        Thread.sleep(400); // a `docker exec kill` takes a while
+                        answer.await(); // a `docker exec kill` takes a while: until the test lets it finish
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                     }
@@ -93,17 +97,35 @@ class PtyChannelTest {
         });
         var shell = channel.shell();
         try {
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-            while (System.nanoTime() < deadline && !com.editora.process.ProcessRegistry.isTracked(shell)) {
-                Thread.sleep(20);
-            }
+            Await.holdsWithin(
+                    () -> com.editora.process.ProcessRegistry.isTracked(shell), java.time.Duration.ofSeconds(20));
             assertTrue(com.editora.process.ProcessRegistry.isTracked(shell), "tracked once its pid is known");
             assertEquals(channel.pid(), recorded.get(10, TimeUnit.SECONDS), "and recorded for a crash-time reap");
 
             channel.close(); // the window closing: the hang-up starts on its own thread
+            // The hang-up finishes only once the hook below is waiting for it (or has returned without, which fails).
+            Thread hook = Thread.currentThread();
+            java.util.concurrent.atomic.AtomicBoolean signalling = new java.util.concurrent.atomic.AtomicBoolean();
+            java.util.concurrent.atomic.AtomicBoolean returned = new java.util.concurrent.atomic.AtomicBoolean();
+            Thread answerer = Thread.ofVirtual().start(() -> {
+                try {
+                    hangingUp.await();
+                    Await.until(
+                            () -> returned.get() || (signalling.get() && hook.getState() == Thread.State.TIMED_WAITING),
+                            "the hook waits for the hang-up");
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    answer.countDown();
+                }
+            });
+            signalling.set(true);
             shell.signalTreeNow(true, 5_000); // what the shutdown hook does with a stubborn remote process
+            boolean hungUpWhenReturned = hungUp.isDone();
+            returned.set(true);
+            answerer.join();
 
-            assertTrue(hungUp.isDone(), "the hook returned only once the hang-up was sent");
+            assertTrue(hungUpWhenReturned, "the hook returned only once the hang-up was sent");
             assertTrue(waitForEnd(channel));
         } finally {
             channel.close();
@@ -116,18 +138,11 @@ class PtyChannelTest {
     }
 
     private static void await(StringBuffer seen, String needle) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (System.nanoTime() < deadline && !seen.toString().contains(needle)) {
-            Thread.sleep(20);
-        }
+        Await.holdsWithin(() -> seen.toString().contains(needle), java.time.Duration.ofSeconds(20));
         assertTrue(seen.toString().contains(needle), () -> "\"" + needle + "\" in: [" + seen + "]");
     }
 
     private static boolean waitForEnd(PtyChannel channel) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (System.nanoTime() < deadline && channel.isOpen()) {
-            Thread.sleep(20);
-        }
-        return !channel.isOpen();
+        return Await.holdsWithin(() -> !channel.isOpen(), java.time.Duration.ofSeconds(10));
     }
 }

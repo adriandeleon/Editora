@@ -1,13 +1,14 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 import javafx.scene.Scene;
 import javafx.scene.control.TreeView;
 import javafx.scene.layout.StackPane;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -90,26 +91,26 @@ class StructureAttachFxTest {
 
         // Wait for what the test means: the regions land, and the outline is rebuilt from them. Both happen
         // in one FX turn (the manager applies the regions and tells the panel), so one read sees both.
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        Object[] landed = null;
-        while (System.nanoTime() < deadline) {
-            landed = FxTestSupport.callOnFx(() -> new Object[] {
-                buffer.getFoldManager().regions().size(),
-                panel.outline(),
-                FxTestSupport.<Integer>field(panel, "treeBuilds"),
-                FxTestSupport.<TreeView<?>>field(panel, "tree").getRoot() == null
-                        ? 0
-                        : FxTestSupport.<TreeView<?>>field(panel, "tree")
-                                .getRoot()
-                                .getChildren()
-                                .size()
-            });
-            // The regions land, then the outline is built from them off the FX thread and shown (PERF-01).
-            if ((Integer) landed[0] > 0 && (Integer) landed[2] > buildsAtAttach) {
-                break;
-            }
-            Thread.sleep(5);
-        }
+        Object[][] read = new Object[1][];
+        Await.holdsWithin(
+                () -> {
+                    Object[] landed = onFx(() -> new Object[] {
+                        buffer.getFoldManager().regions().size(),
+                        panel.outline(),
+                        FxTestSupport.<Integer>field(panel, "treeBuilds"),
+                        FxTestSupport.<TreeView<?>>field(panel, "tree").getRoot() == null
+                                ? 0
+                                : FxTestSupport.<TreeView<?>>field(panel, "tree")
+                                        .getRoot()
+                                        .getChildren()
+                                        .size()
+                    });
+                    read[0] = landed;
+                    // The regions land, then the outline is built from them off the FX thread and shown (PERF-01).
+                    return (Integer) landed[0] > 0 && (Integer) landed[2] > buildsAtAttach;
+                },
+                Duration.ofSeconds(20));
+        Object[] landed = read[0];
         assertNotNull(landed);
         assertTrue((Integer) landed[0] > 0, "the background detection landed its regions");
         @SuppressWarnings("unchecked")
@@ -123,5 +124,14 @@ class StructureAttachFxTest {
 
     private static long generation(EditorBuffer buffer) {
         return FxTestSupport.<Long>field(buffer.getFoldManager(), "recomputeGeneration");
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

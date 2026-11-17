@@ -66,10 +66,7 @@ class SplitUndoHistoryFxTest {
     }
 
     private static void settle() throws Exception {
-        FxTestSupport.drainFx();
-        Thread.sleep(150);
-        FxTestSupport.drainFx();
-        FxTestSupport.drainFx();
+        FxPulses.await(2); // the layout and focus a step changed land on the next pulse
     }
 
     private EditorBuffer open(String name, String content) throws Exception {

@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -371,11 +372,9 @@ class DoctorCoordinatorFxTest {
         assertFalse(rowOf(doctor, "lsp.python").update(), "nothing is said to be newer before anyone asks");
 
         FxTestSupport.runOnFx(doctor::checkNewer);
-        long deadline = System.currentTimeMillis() + 10_000;
-        while (!rowOf(doctor, "lsp.python").update() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(20);
-            FxTestSupport.drainFx();
-        }
+        EventuallyFx.holdsWithin(
+                Duration.ofSeconds(10), () -> rowOf(doctor, "lsp.python").update());
+        FxTestSupport.drainFx();
 
         DoctorCheck row = rowOf(doctor, "lsp.python");
         assertEquals(DoctorStatus.OK, row.status());

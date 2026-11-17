@@ -4,7 +4,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.Callable;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import javafx.scene.Node;
@@ -263,8 +262,10 @@ class GitHubUiFlowsFxTest {
                 "the roll-up to turn green without a refresh",
                 () -> checks.getText().startsWith("✓"));
         assertTrue(logged("pr checks") > before, "it was asked for again");
+        GitFeatureFx.settleGitHub(github);
         long settled = logged("pr checks");
-        Thread.sleep(400);
+        assertFalse(pollScheduled(), "a finished roll-up schedules no further poll");
+        GitFeatureFx.settleGitHub(github);
         assertEquals(settled, logged("pr checks"), "a finished roll-up is not polled any more");
     }
 
@@ -280,7 +281,11 @@ class GitHubUiFlowsFxTest {
         await("the poll to come due and be deferred", () -> FxTestSupport.<Boolean>field(github, "pollDeferred"));
         long asked = logged("pr checks");
         Files.writeString(bin.resolve("checks.json"), PASSED);
-        Thread.sleep(300);
+        GitFeatureFx.settleGitHub(github);
+        assertTrue(
+                FxTestSupport.callOnFx(() -> FxTestSupport.<Boolean>field(github, "pollDeferred")),
+                "the poll still waits for the focus");
+        assertFalse(pollScheduled(), "and no timer will run it meanwhile");
         assertEquals(asked, logged("pr checks"), "no gh call while the window is unfocused");
 
         FxTestSupport.runOnFx(() -> {
@@ -689,12 +694,16 @@ class GitHubUiFlowsFxTest {
         }
     }
 
+    /** Whether a checks poll's timer is counting down (the only thing that would ask gh again by itself). */
+    private boolean pollScheduled() throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            javafx.animation.PauseTransition timer = FxTestSupport.field(github, "pollTimer");
+            return timer != null && timer.getStatus() == javafx.animation.Animation.Status.RUNNING;
+        });
+    }
+
     /** Polls {@code condition} on the FX thread until it holds. */
     private static void await(String what, Callable<Boolean> condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (!FxTestSupport.callOnFx(condition)) {
-            assertFalse(System.nanoTime() > deadline, "timed out waiting for " + what);
-            Thread.sleep(25);
-        }
+        FxTestSupport.awaitFxCondition(condition, what, java.time.Duration.ofSeconds(20));
     }
 }

@@ -57,22 +57,16 @@ class HtmlPreviewPathChangeFxTest {
 
     /** Polls {@code url} until its answer passes {@code ok} (the settled-edit pulse is asynchronous). */
     private static Got await(String url, Predicate<Got> ok, String what) throws Exception {
-        long deadline = System.nanoTime() + 20_000_000_000L;
-        Got got = get(url);
-        while (!ok.test(got)) {
-            assertTrue(System.nanoTime() < deadline, "timed out waiting for " + what + "; last: " + got);
-            Thread.sleep(50);
-            got = get(url);
-        }
-        return got;
+        Got[] got = {get(url)};
+        // a site the preview's own server serves: its answer is the only thing to look at
+        boolean held = com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.unchecked(() -> ok.test(got[0] = get(url))), java.time.Duration.ofSeconds(20));
+        assertTrue(held, "timed out waiting for " + what + "; last: " + got[0]);
+        return got[0];
     }
 
     private static void awaitFx(String what, Callable<Boolean> condition) throws Exception {
-        long deadline = System.nanoTime() + 30_000_000_000L;
-        while (!FxTestSupport.callOnFx(condition)) {
-            assertTrue(System.nanoTime() < deadline, "timed out waiting for: " + what);
-            Thread.sleep(10);
-        }
+        FxTestSupport.awaitFxCondition(condition, what, java.time.Duration.ofSeconds(30));
     }
 
     /** A window on a project folder, previewing with a recording system opener; returns the opened URLs. */
@@ -108,11 +102,8 @@ class HtmlPreviewPathChangeFxTest {
     private static String preview(FxWindowFixture fx, List<String> opened, Path entry) throws Exception {
         open(fx, entry);
         FxTestSupport.runOnFx(fx.controller.htmlPreview::open);
-        long deadline = System.nanoTime() + 20_000_000_000L;
-        while (opened.isEmpty()) {
-            assertTrue(System.nanoTime() < deadline, "the preview opened");
-            Thread.sleep(20);
-        }
+        com.editora.testkit.Await.until(
+                () -> !opened.isEmpty(), "the preview to open", java.time.Duration.ofSeconds(20));
         String url = opened.get(0);
         return url.substring(0, url.lastIndexOf('/'));
     }
@@ -216,7 +207,7 @@ class HtmlPreviewPathChangeFxTest {
             Files.delete(notes); // what the banner's Move to Trash leaves
             assertEquals(404, get(base + "/notes.txt").status());
             type(notesBuffer, "LATER SECRET ");
-            Thread.sleep(900); // past the settled-edit pulse: nothing may come of it
+            FxTestSupport.awaitSettled(notesBuffer); // past the settled-edit pulse: nothing may come of it
             assertEquals(404, get(base + "/notes.txt").status());
             assertEquals(404, get(base + "/notes.txt.gpg").status());
 

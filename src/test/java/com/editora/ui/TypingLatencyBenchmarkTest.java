@@ -76,10 +76,7 @@ class TypingLatencyBenchmarkTest {
                     () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
             assertNotNull(b, "the file opened into a buffer");
             FxTestSupport.runOnFx(() -> b.getFocusedArea().requestFocus());
-            for (int i = 0; i < 8; i++) {
-                FxTestSupport.runOnFx(() -> {});
-                Thread.sleep(20);
-            }
+            FxPulses.await(8); // the deferred passes run on pulses: let that many go by
             int before = pulseReceiverCount();
             assertTrue(before >= 0, "pulse-receiver introspection works on this JDK");
             for (int i = 0; i < KEYSTROKES; i++) {
@@ -123,10 +120,7 @@ class TypingLatencyBenchmarkTest {
                 b.getFocusedArea().requestFocus();
                 b.getFocusedArea().moveTo(10);
             });
-            for (int i = 0; i < 8; i++) {
-                FxTestSupport.runOnFx(() -> {});
-                Thread.sleep(20);
-            }
+            FxPulses.await(8); // the deferred passes run on pulses: let that many go by
             List<com.editora.editor.lsp.CodeAction> actions =
                     List.of(new com.editora.editor.lsp.CodeAction("Fix it", "quickfix", true, null));
 
@@ -184,21 +178,24 @@ class TypingLatencyBenchmarkTest {
             });
             // Wait for the scroll to land rather than for a fixed time: on a loaded machine the file's
             // deferred work (highlighting, Git gutter, minimap) can outlast any sleep chosen here.
-            for (int i = 0; i < 150; i++) {
-                boolean atEnd = FxTestSupport.callOnFx(() -> {
-                    CodeArea a = b.getFocusedArea();
-                    int last = a.getParagraphs().size() - 1;
-                    if (a.getVisibleParagraphs().isEmpty() || a.lastVisibleParToAllParIndex() < last) {
-                        a.showParagraphAtBottom(last);
-                        return false;
-                    }
-                    return true;
-                });
-                if (atEnd && i >= 8) {
-                    break;
-                }
-                Thread.sleep(20);
-            }
+            FxPulses.await(8);
+            com.editora.testkit.Await.holdsWithin(
+                    () -> {
+                        try {
+                            return FxTestSupport.callOnFx(() -> {
+                                CodeArea a = b.getFocusedArea();
+                                int last = a.getParagraphs().size() - 1;
+                                if (a.getVisibleParagraphs().isEmpty() || a.lastVisibleParToAllParIndex() < last) {
+                                    a.showParagraphAtBottom(last);
+                                    return false;
+                                }
+                                return true;
+                            });
+                        } catch (Exception e) {
+                            throw new IllegalStateException(e);
+                        }
+                    },
+                    java.time.Duration.ofSeconds(3));
             FxTestSupport.runOnFx(b::startAceJumpLine);
             FxTestSupport.runOnFx(() -> {});
             Object overlay = FxTestSupport.callOnFx(() -> FxTestSupport.field(b, "aceJump"));
@@ -314,10 +311,7 @@ class TypingLatencyBenchmarkTest {
     }
 
     private void measure(String label, java.util.function.Supplier<CodeArea> area) throws Exception {
-        for (int i = 0; i < 10; i++) {
-            FxTestSupport.runOnFx(() -> {});
-            Thread.sleep(30);
-        }
+        FxPulses.await(10); // the deferred passes run on pulses: let that many go by
         for (int i = 0; i < 200; i++) {
             fireInto(area.get(), 'x');
         }
@@ -352,10 +346,7 @@ class TypingLatencyBenchmarkTest {
                 EditorBuffer b = FxTestSupport.callOnFx(
                         () -> (EditorBuffer) FxTestSupport.call(w.controller, "activeBuffer", new Class[] {}));
                 FxTestSupport.runOnFx(() -> b.getFocusedArea().requestFocus());
-                for (int i = 0; i < 8; i++) {
-                    FxTestSupport.runOnFx(() -> {});
-                    Thread.sleep(30);
-                }
+                FxPulses.await(8); // the deferred passes run on pulses: let that many go by
                 int before = pulseReceiverCount();
                 List<Double> us = new ArrayList<>();
                 for (int i = 0; i < 500; i++) {
@@ -391,10 +382,7 @@ class TypingLatencyBenchmarkTest {
                         file));
                 EditorBuffer b = FxTestSupport.callOnFx(
                         () -> (EditorBuffer) FxTestSupport.call(w.controller, "activeBuffer", new Class[] {}));
-                for (int i = 0; i < 8; i++) {
-                    FxTestSupport.runOnFx(() -> {});
-                    Thread.sleep(30);
-                }
+                FxPulses.await(8); // the deferred passes run on pulses: let that many go by
                 int before = pulseReceiverCount();
                 List<Double> us = new ArrayList<>();
                 for (int i = 0; i < 500; i++) {
@@ -466,10 +454,7 @@ class TypingLatencyBenchmarkTest {
         // CRITICAL: an UNFOCUSED caret does not blink, so an unfocused control cannot leak blink timers.
         // Without this the comparison is meaningless — it would just be measuring which areas had focus.
         FxTestSupport.runOnFx(() -> area.get().requestFocus());
-        for (int i = 0; i < 5; i++) {
-            FxTestSupport.runOnFx(() -> {});
-            Thread.sleep(30);
-        }
+        FxPulses.await(5); // the deferred passes run on pulses: let that many go by
         boolean focused = FxTestSupport.callOnFx(() -> area.get().isFocused());
         int before = pulseReceiverCount();
         for (int i = 0; i < 500; i++) {
@@ -493,10 +478,7 @@ class TypingLatencyBenchmarkTest {
                     FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, file));
             EditorBuffer b = FxTestSupport.callOnFx(
                     () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
-            for (int i = 0; i < 10; i++) {
-                FxTestSupport.runOnFx(() -> {});
-                Thread.sleep(30);
-            }
+            FxPulses.await(10); // the deferred passes run on pulses: let that many go by
             System.out.printf(
                     "[typing] keystrokes=%5d  pulseReceivers=%5d  latency=%s%n", 0, pulseReceiverCount(), "-");
             for (int round = 1; round <= 8; round++) {
@@ -565,10 +547,7 @@ class TypingLatencyBenchmarkTest {
                 if (sel != active) {
                     System.out.println("           WARNING: active buffer is not the one under test");
                 }
-                for (int i = 0; i < 5; i++) {
-                    FxTestSupport.runOnFx(() -> {});
-                    Thread.sleep(30);
-                }
+                FxPulses.await(5); // the deferred passes run on pulses: let that many go by
                 for (int i = 0; i < 150; i++) {
                     fireInto(active.getFocusedArea(), 'x');
                 }
@@ -727,10 +706,7 @@ class TypingLatencyBenchmarkTest {
                     FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, file));
             EditorBuffer buffer = FxTestSupport.callOnFx(
                     () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
-            for (int i = 0; i < 10; i++) {
-                FxTestSupport.runOnFx(() -> {});
-                Thread.sleep(30);
-            }
+            FxPulses.await(10); // the deferred passes run on pulses: let that many go by
             FxTestSupport.runOnFx(
                     () -> buffer.getFocusedArea().moveTo(buffer.getFocusedArea().getLength() / 2));
             System.out.println(
@@ -800,10 +776,7 @@ class TypingLatencyBenchmarkTest {
                     System.out.println("[typing] " + c[0] + ": no buffer, skipped");
                     continue;
                 }
-                for (int i = 0; i < 10; i++) {
-                    FxTestSupport.runOnFx(() -> {});
-                    Thread.sleep(30);
-                }
+                FxPulses.await(10); // the deferred passes run on pulses: let that many go by
                 FxTestSupport.runOnFx(() ->
                         buffer.getFocusedArea().moveTo(buffer.getFocusedArea().getLength() / 2));
                 for (int i = 0; i < 150; i++) {
@@ -841,10 +814,7 @@ class TypingLatencyBenchmarkTest {
                     continue;
                 }
                 // Let the initial highlight / fold / overlay passes settle before measuring.
-                for (int i = 0; i < 10; i++) {
-                    FxTestSupport.runOnFx(() -> {});
-                    Thread.sleep(30);
-                }
+                FxPulses.await(10); // the deferred passes run on pulses: let that many go by
                 // Park the caret mid-document so edits land in a realistic spot (not the empty tail).
                 FxTestSupport.runOnFx(() ->
                         buffer.getFocusedArea().moveTo(buffer.getFocusedArea().getLength() / 2));

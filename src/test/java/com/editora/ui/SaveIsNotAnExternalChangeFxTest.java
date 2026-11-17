@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 
@@ -12,6 +13,7 @@ import javafx.scene.control.TreeView;
 
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -34,14 +36,13 @@ class SaveIsNotAnExternalChangeFxTest {
     }
 
     private static <T> T await(Callable<T> probe) throws Exception {
-        for (int i = 0; i < 250; i++) {
-            T value = FxTestSupport.callOnFx(probe::call);
-            if (value != null) {
-                return value;
-            }
-            Thread.sleep(20);
+        Object[] value = new Object[1];
+        if (!Await.holdsWithin(() -> (value[0] = onFx(probe)) != null, Duration.ofSeconds(5))) {
+            throw new AssertionError("timed out");
         }
-        throw new AssertionError("timed out");
+        @SuppressWarnings("unchecked")
+        T found = (T) value[0];
+        return found;
     }
 
     @Test
@@ -94,6 +95,15 @@ class SaveIsNotAnExternalChangeFxTest {
                             .filter(item -> file.equals(item.getValue()))
                             .findFirst()
                             .orElse(null)));
+        }
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

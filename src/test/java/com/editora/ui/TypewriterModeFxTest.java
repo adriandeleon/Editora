@@ -1,6 +1,7 @@
 package com.editora.ui;
 
 import java.nio.file.Path;
+import java.time.Duration;
 
 import javafx.scene.Scene;
 import javafx.scene.layout.StackPane;
@@ -8,6 +9,7 @@ import javafx.stage.Stage;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.TypewriterMode;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -29,26 +31,25 @@ class TypewriterModeFxTest {
      * until two readings agree, since the scroll lands a pulse or two after the caret moved.
      */
     private static double offCentre(EditorBuffer buffer) throws Exception {
-        double last = Double.NaN;
-        long deadline = System.nanoTime() + 10_000_000_000L;
-        while (System.nanoTime() < deadline) {
-            FxTestSupport.runOnFx(() -> {}); // let a pulse through
-            Double now = FxTestSupport.callOnFx(() -> {
-                var area = buffer.getArea();
-                int first = area.firstVisibleParToAllParIndex();
-                int lastVisible = area.lastVisibleParToAllParIndex();
-                if (lastVisible - first < 5) {
-                    return null; // not laid out yet
-                }
-                return (area.getCurrentParagraph() - (first + lastVisible) / 2.0) / (lastVisible - first);
-            });
-            if (now != null && Math.abs(now - last) < 0.002) {
-                return now;
-            }
-            last = now == null ? Double.NaN : now;
-            Thread.sleep(30);
-        }
-        return last;
+        double[] last = {Double.NaN};
+        // Read once per FX pulse until two readings in a row agree.
+        Await.holdsWithin(
+                () -> {
+                    Double now = onFx(() -> {
+                        var area = buffer.getArea();
+                        int first = area.firstVisibleParToAllParIndex();
+                        int lastVisible = area.lastVisibleParToAllParIndex();
+                        if (lastVisible - first < 5) {
+                            return null; // not laid out yet
+                        }
+                        return (area.getCurrentParagraph() - (first + lastVisible) / 2.0) / (lastVisible - first);
+                    });
+                    boolean agreed = now != null && Math.abs(now - last[0]) < 0.002;
+                    last[0] = now == null ? Double.NaN : now;
+                    return agreed;
+                },
+                Duration.ofSeconds(10));
+        return last[0];
     }
 
     @Test
@@ -92,6 +93,15 @@ class TypewriterModeFxTest {
             assertTrue(FxTestSupport.callOnFx(() -> !TypewriterMode.isOn(buffer.getArea())));
         } finally {
             FxTestSupport.runOnFx(stage::close);
+        }
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

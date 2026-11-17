@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
@@ -12,6 +13,7 @@ import com.editora.lsp.LspManager;
 import com.editora.lsp.LspTestHooks;
 import com.editora.lsp.XmlGrammarBinding;
 import com.editora.lsp.XmlServer;
+import com.editora.testkit.Await;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -339,11 +341,8 @@ class XmlLspActionsFxTest {
     }
 
     private static void waitFor(java.util.function.BooleanSupplier done) throws Exception {
-        long until = System.currentTimeMillis() + 10_000;
-        while (!done.getAsBoolean() && System.currentTimeMillis() < until) {
-            FxTestSupport.runOnFx(() -> {});
-            Thread.sleep(20);
-        }
+        FxTestSupport.drainFx();
+        Await.holdsWithin(done, Duration.ofSeconds(10));
         assertTrue(done.getAsBoolean(), "timed out");
     }
 }

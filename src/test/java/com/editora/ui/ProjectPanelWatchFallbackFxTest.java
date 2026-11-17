@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.WatchService;
+import java.time.Duration;
 
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
@@ -46,18 +47,13 @@ class ProjectPanelWatchFallbackFxTest {
             assertTrue(WatchServices.isPolling(ws), "a polling watcher stands in");
 
             Path made = Files.writeString(root.resolve("second.txt"), "2"); // by a terminal, git, another program
-            long end = System.nanoTime() + 15_000_000_000L;
-            boolean seen = false;
-            while (!seen && System.nanoTime() < end) {
-                seen = FxTestSupport.callOnFx(() -> {
-                    TreeView<Path> tree = FxTestSupport.field(shown, "tree");
-                    TreeItem<Path> top = tree.getRoot();
-                    return top != null && top.getChildren().stream().anyMatch(i -> made.equals(i.getValue()));
-                });
-                if (!seen) {
-                    Thread.sleep(50);
-                }
-            }
+            boolean seen = PulseChecks.holdsOnFxWithin(
+                    () -> {
+                        TreeView<Path> tree = FxTestSupport.field(shown, "tree");
+                        TreeItem<Path> top = tree.getRoot();
+                        return top != null && top.getChildren().stream().anyMatch(i -> made.equals(i.getValue()));
+                    },
+                    Duration.ofSeconds(15));
             assertTrue(seen, "the tree shows the new file");
         } finally {
             WatchServices.setOpenerForTest(previous);

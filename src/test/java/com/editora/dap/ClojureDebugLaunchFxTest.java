@@ -119,12 +119,10 @@ class ClojureDebugLaunchFxTest {
     }
 
     private void awaitError() throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
-        while (errors.isEmpty()) {
-            assertTrue(System.nanoTime() < deadline, "no error reported; output: " + output);
-            onFx(() -> {});
-            Thread.sleep(20);
-        }
+        assertTrue(
+                com.editora.testkit.Await.holdsWithin(() -> !errors.isEmpty(), java.time.Duration.ofSeconds(60)),
+                "no error reported; output: " + output);
+        onFx(() -> {});
     }
 
     private void debug(Path file) throws Exception {
@@ -147,11 +145,9 @@ class ClojureDebugLaunchFxTest {
         Files.writeString(core, "(ns my-app.core)\n(defn -main [& args] (println args))\n");
 
         debug(core);
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (!Files.exists(argsFile)) {
-            assertTrue(System.nanoTime() < deadline, "the stand-in never ran: " + errors + " " + output);
-            Thread.sleep(20);
-        }
+        assertTrue(
+                com.editora.testkit.Await.holdsWithin(() -> Files.exists(argsFile), java.time.Duration.ofSeconds(30)),
+                "the stand-in never ran: " + errors + " " + output);
         List<String> argv = Files.readAllLines(argsFile);
         assertEquals(stand.toString(), argv.get(0));
         assertTrue(

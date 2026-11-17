@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +15,7 @@ import javafx.scene.layout.Region;
 import javafx.stage.Stage;
 
 import com.editora.i18n.Messages;
+import com.editora.testkit.Await;
 import com.editora.vfs.RemoteConnection;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -172,11 +174,7 @@ class SettingsRemoteSitesFxTest {
             String expanded = System.getProperty("user.home") + "/.ssh/editora-test-no-such-key";
             assertEquals(expanded, fx.shared.getConnections().get(0).keyPath());
             assertEquals(expanded, f.get(4).getText());
-            long deadline = System.nanoTime() + 10_000_000_000L;
-            while (System.nanoTime() < deadline
-                    && FxTestSupport.callOnFx(() -> f.get(4).getTooltip()) == null) {
-                Thread.sleep(20);
-            }
+            Await.holdsWithin(() -> onFx(() -> f.get(4).getTooltip()) != null, Duration.ofSeconds(10));
             assertEquals(
                     Messages.tr("settings.remote.check.keyMissing", expanded),
                     FxTestSupport.callOnFx(() -> f.get(4).getTooltip().getText()));
@@ -321,6 +319,15 @@ class SettingsRemoteSitesFxTest {
                 assertTrue(allowed.isDisabled());
                 assertFalse(formFields(w).get(1).isDisabled(), "the site itself stays editable");
             });
+        }
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

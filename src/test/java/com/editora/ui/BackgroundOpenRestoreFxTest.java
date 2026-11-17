@@ -13,6 +13,7 @@ import com.editora.config.Bookmark;
 import com.editora.config.Breakpoint;
 import com.editora.config.ConfigManager;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -64,7 +65,7 @@ class BackgroundOpenRestoreFxTest {
         workflows = FxTestSupport.field(c, "fileWorkflows");
         registry = FxTestSupport.field(c, "registry");
         config = FxTestSupport.field(c, "config");
-        settle(300);
+        settle();
     }
 
     @AfterAll
@@ -82,7 +83,10 @@ class BackgroundOpenRestoreFxTest {
         EditorBuffer bg = FxTestSupport.callOnFx(() ->
                 (EditorBuffer) FxTestSupport.call(c, "openBackgroundBuffer", new Class<?>[] {Path.class}, helper));
         assertNotNull(bg);
-        settle(300);
+        Await.holdsWithin(
+                () -> onFx(() -> List.copyOf(bg.getBreakpointManager().lines()).equals(List.of(2, 3))
+                        && List.copyOf(bg.getBookmarkManager().lines()).equals(List.of(4))),
+                java.time.Duration.ofSeconds(10));
         assertEquals(
                 List.of(2, 3),
                 FxTestSupport.callOnFx(
@@ -96,7 +100,7 @@ class BackgroundOpenRestoreFxTest {
         FxTestSupport.runOnFx(() -> registry.run("debug.toggleBreakpoint"));
         caret(bg, 6);
         FxTestSupport.runOnFx(() -> registry.run("bookmarks.toggle"));
-        settle(900); // the persist is debounced
+        awaitStored(helper, List.of(2, 3, 5), List.of(4, 6)); // the persist is debounced
 
         assertEquals(List.of(2, 3, 5), storedBreakpointLines(helper), "one toggle adds to the stored list");
         assertEquals(List.of(4, 6), storedBookmarkLines(helper));
@@ -108,7 +112,7 @@ class BackgroundOpenRestoreFxTest {
         Path helper = Files.writeString(work.resolve("Pinned.java"), SOURCE.replace("Helper", "Pinned"));
         EditorBuffer opened = markAndKeepOpen(helper);
         FxTestSupport.runOnFx(() -> registry.run("view.toggleReadOnly"));
-        settle(300);
+        Await.holdsWithin(() -> onFx(opened::isViewMode), java.time.Duration.ofSeconds(10));
         assertTrue(FxTestSupport.callOnFx(opened::isViewMode), "pinned through the real command");
         closeTab(helper);
 
@@ -121,12 +125,8 @@ class BackgroundOpenRestoreFxTest {
         };
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
                 c, "openBackgroundBufferAsync", new Class<?>[] {Path.class, Consumer.class}, helper, done));
-        long deadline = System.nanoTime() + 15_000_000_000L;
-        while (landed.get() == null) {
-            assertTrue(System.nanoTime() < deadline, "background open never completed");
-            Thread.sleep(5);
-            FxTestSupport.drainFx();
-        }
+        Await.until(() -> landed.get() != null, "background open never completed", java.time.Duration.ofSeconds(15));
+        FxTestSupport.drainFx();
         EditorBuffer bg = landed.get();
 
         assertFalse(editableAtDone[0], "a pinned file is not editable when the caller is handed it");
@@ -156,12 +156,8 @@ class BackgroundOpenRestoreFxTest {
         Consumer<EditorBuffer> done = landed::set;
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
                 c, "openBackgroundBufferAsync", new Class<?>[] {Path.class, Consumer.class}, file, done));
-        long deadline = System.nanoTime() + 15_000_000_000L;
-        while (landed.get() == null) {
-            assertTrue(System.nanoTime() < deadline, "background open never completed");
-            Thread.sleep(5);
-            FxTestSupport.drainFx();
-        }
+        Await.until(() -> landed.get() != null, "background open never completed", java.time.Duration.ofSeconds(15));
+        FxTestSupport.drainFx();
         EditorBuffer bg = landed.get();
         assertEquals(
                 Integer.valueOf(3),
@@ -180,15 +176,14 @@ class BackgroundOpenRestoreFxTest {
     /** Breakpoints on lines 2 and 3 and a bookmark on line 4, set through the real commands. */
     private static EditorBuffer markAndKeepOpen(Path file) throws Exception {
         FxTestSupport.runOnFx(() -> workflows.openPath(file));
-        long deadline = System.nanoTime() + 15_000_000_000L;
-        while (!FxTestSupport.callOnFx(() -> {
-            EditorBuffer b = bufferFor(file);
-            return b != null && workflows.loadingBuffers.isEmpty() && !b.isLoading();
-        })) {
-            assertTrue(System.nanoTime() < deadline, "load never finished");
-            Thread.sleep(5);
-        }
-        settle(300);
+        Await.until(
+                () -> onFx(() -> {
+                    EditorBuffer b = bufferFor(file);
+                    return b != null && workflows.loadingBuffers.isEmpty() && !b.isLoading();
+                }),
+                "load never finished",
+                java.time.Duration.ofSeconds(15));
+        settle();
         EditorBuffer b = FxTestSupport.callOnFx(() -> bufferFor(file));
         caret(b, 2);
         FxTestSupport.runOnFx(() -> registry.run("debug.toggleBreakpoint"));
@@ -196,7 +191,7 @@ class BackgroundOpenRestoreFxTest {
         FxTestSupport.runOnFx(() -> registry.run("debug.toggleBreakpoint"));
         caret(b, 4);
         FxTestSupport.runOnFx(() -> registry.run("bookmarks.toggle"));
-        settle(900);
+        awaitStored(file, List.of(2, 3), List.of(4));
         assertEquals(List.of(2, 3), storedBreakpointLines(file), "fixture: breakpoints persisted");
         assertEquals(List.of(4), storedBookmarkLines(file), "fixture: bookmark persisted");
         return b;
@@ -238,7 +233,7 @@ class BackgroundOpenRestoreFxTest {
     private static void select(Path file) throws Exception {
         FxTestSupport.runOnFx(
                 () -> FxTestSupport.<EditorArea>field(c, "editorArea").select(tabFor(file)));
-        settle(100);
+        settle();
     }
 
     private static void caret(EditorBuffer b, int line) throws Exception {
@@ -252,13 +247,37 @@ class BackgroundOpenRestoreFxTest {
                 FxTestSupport.call(c, "closeTab", new Class<?>[] {Tab.class}, t);
             }
         });
-        settle(300);
+        Await.until(() -> onFx(() -> tabFor(file) == null), "the tab closed");
+        settle();
     }
 
-    private static void settle(long millis) throws Exception {
+    /** Waits until the stored breakpoints and bookmarks of {@code file} are these (their persist is debounced). */
+    private static void awaitStored(Path file, List<Integer> breakpoints, List<Integer> bookmarks) throws Exception {
+        Await.holdsWithin(
+                () -> {
+                    try {
+                        return storedBreakpointLines(file).equals(breakpoints)
+                                && storedBookmarkLines(file).equals(bookmarks);
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                },
+                java.time.Duration.ofSeconds(10));
+    }
+
+    /** Lets queued FX work run and every load finish. */
+    private static void settle() throws Exception {
         FxTestSupport.drainFx();
-        Thread.sleep(millis);
+        Await.until(() -> onFx(() -> workflows.loadingBuffers.isEmpty()), "every load finished");
         FxTestSupport.drainFx();
-        FxTestSupport.drainFx();
+    }
+
+    /** {@code task}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> task) {
+        try {
+            return FxTestSupport.callOnFx(task);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

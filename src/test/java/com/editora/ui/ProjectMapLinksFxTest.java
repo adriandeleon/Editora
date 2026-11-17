@@ -2,10 +2,10 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
 import javafx.scene.control.Label;
@@ -287,8 +287,11 @@ class ProjectMapLinksFxTest {
             assertEquals(MapCardLinks.MAX_CARDS + 1, set.labelsForTest().size());
             assertTrue(cards.codeCard(app) == source, "the card asked from stays open");
             FxTestSupport.invoke(view, "reload"); // the orphan check: src/use is not open on the map
+            assertTrue(FxTestSupport.<Boolean>field(view, "loadInFlight"), "the reload is under way");
         });
-        TimeUnit.MILLISECONDS.sleep(600);
+        // the reload's listing landed, and with it the check of which result cards stay
+        PulseChecks.untilOnFx(
+                () -> !FxTestSupport.<Boolean>field(view, "loadInFlight"), "the reload", Duration.ofSeconds(15));
         FxTestSupport.runOnFx(cards::drawConnectors);
         FxTestSupport.runOnFx(() -> {});
         FxTestSupport.runOnFx(() -> assertEquals(
@@ -474,13 +477,6 @@ class ProjectMapLinksFxTest {
     }
 
     private static void waitFor(BooleanSupplier condition, String message) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return;
-            }
-            TimeUnit.MILLISECONDS.sleep(20);
-        }
-        assertNotNull(null, "timed out: " + message);
+        PulseChecks.untilOnFx(condition, "timed out: " + message, Duration.ofSeconds(15));
     }
 }

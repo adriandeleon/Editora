@@ -79,13 +79,10 @@ class JdtlsExtensionContractProbeTest {
         try {
             assertTrue(s.start());
             s.didOpen(uri, "java", SOURCE);
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(70);
-            while (!s.isInitialized() && System.nanoTime() < deadline) Thread.sleep(100);
+            com.editora.testkit.Await.holdsWithin(s::isInitialized, java.time.Duration.ofSeconds(70));
             assertTrue(s.isInitialized(), "real handshake");
-            deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-            while (s.capabilities().getSignatureHelpProvider() == null && System.nanoTime() < deadline) {
-                Thread.sleep(50);
-            }
+            com.editora.testkit.Await.holdsWithin(
+                    () -> s.capabilities().getSignatureHelpProvider() != null, java.time.Duration.ofSeconds(20));
             assertNotNull(
                     s.capabilities().getSignatureHelpProvider(),
                     "jdtls dynamic signature-help registration must update effective capabilities");
@@ -203,12 +200,11 @@ class JdtlsExtensionContractProbeTest {
             assertFalse(items.isEmpty());
             record("firstResolvedCompletion", get(s.resolveCompletion(items.get(0))));
             s.didChange(uri, SOURCE.replace("private int count", "private MissingType count"));
-            deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-            while (System.nanoTime() < deadline
-                    && diagnostics.stream()
-                            .noneMatch(d -> d.getDiagnostics().stream()
-                                    .anyMatch(x -> x.getMessage().toString().contains("MissingType"))))
-                Thread.sleep(100);
+            com.editora.testkit.Await.holdsWithin(
+                    () -> diagnostics.stream()
+                            .anyMatch(d -> d.getDiagnostics().stream()
+                                    .anyMatch(x -> x.getMessage().toString().contains("MissingType"))),
+                    java.time.Duration.ofSeconds(30));
             assertTrue(
                     diagnostics.stream()
                             .anyMatch(d -> d.getDiagnostics().stream()
@@ -269,8 +265,7 @@ class JdtlsExtensionContractProbeTest {
             assertTrue(session.start());
             session.didOpen(api.toUri().toString(), "java", apiText);
             session.didOpen(app.toUri().toString(), "java", appText);
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(90);
-            while (!session.isInitialized() && System.nanoTime() < deadline) Thread.sleep(100);
+            com.editora.testkit.Await.holdsWithin(session::isInitialized, java.time.Duration.ofSeconds(90));
             assertTrue(session.isInitialized(), "Gradle workspace handshake");
             assertFalse(get(session.documentSymbol(api.toUri().toString())).isEmpty());
             assertFalse(get(session.documentSymbol(app.toUri().toString())).isEmpty());

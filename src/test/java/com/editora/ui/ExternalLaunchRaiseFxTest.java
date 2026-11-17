@@ -1,7 +1,7 @@
 package com.editora.ui;
 
 import java.lang.reflect.Method;
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
 
 import javafx.scene.Scene;
 import javafx.scene.layout.StackPane;
@@ -73,13 +73,7 @@ class ExternalLaunchRaiseFxTest {
 
     /** Polls for up to ~5 s; the release rides a short animation timer, not the caller's thread. */
     private static boolean waitUntil(BooleanCheck condition) throws Exception {
-        for (int i = 0; i < 250; i++) {
-            if (condition.get()) {
-                return true;
-            }
-            TimeUnit.MILLISECONDS.sleep(20);
-        }
-        return false;
+        return EventuallyFx.holdsWithin(Duration.ofSeconds(5), condition::get);
     }
 
     /** A condition that may throw, since reading FX state hops threads. */

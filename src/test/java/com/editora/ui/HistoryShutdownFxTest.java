@@ -114,7 +114,7 @@ class HistoryShutdownFxTest {
         String file = "/w/slow.txt";
         String content = "handed over while the application stops\n";
         CountDownLatch handingOver = new CountDownLatch(1);
-        CountDownLatch shutdownCalled = new CountDownLatch(1);
+        CountDownLatch shutdownWaits = new CountDownLatch(1);
         FxTestSupport.runOnFx(() -> shared.historyService()
                 .snapshotWithOutcome(
                         Path.of(file),
@@ -127,14 +127,32 @@ class HistoryShutdownFxTest {
                         1,
                         outcome -> {
                             handingOver.countDown();
-                            awaitQuietly(shutdownCalled);
-                            sleepQuietly(200); // long enough for a shutdown that does not wait to close the writer
+                            awaitQuietly(shutdownWaits); // until a shutdown that waits is waiting, or one is over
                             shared.historyBucket("").put(file, List.of(outcome.revision()));
                             shared.saveHistory();
                         }));
         assertTrue(handingOver.await(10, TimeUnit.SECONDS), "the result reached the FX thread");
-        shutdownCalled.countDown();
-        assertTrue(shared.shutdown(), "the index write made by the callback was accepted and durable");
+        java.util.concurrent.CompletableFuture<Boolean> durable = new java.util.concurrent.CompletableFuture<>();
+        Thread shutter = Thread.ofPlatform().name("history-shutdown").start(() -> {
+            try {
+                durable.complete(shared.shutdown());
+            } catch (Throwable t) {
+                durable.completeExceptionally(t);
+            }
+        });
+        // The callback goes on once the shutdown is waiting for the hand-over (its thread parked in
+        // deliverPending), or once a shutdown that does not wait has already returned and closed the writer.
+        try {
+            com.editora.testkit.Await.until(
+                    () -> !shutter.isAlive()
+                            || (shutter.getState() == Thread.State.TIMED_WAITING
+                                    && java.util.Arrays.stream(shutter.getStackTrace())
+                                            .anyMatch(f -> f.getMethodName().equals("deliverPending"))),
+                    "the shutdown to wait for the hand-over, or to end");
+        } finally {
+            shutdownWaits.countDown();
+        }
+        assertTrue(durable.get(30, TimeUnit.SECONDS), "the index write made by the callback was accepted and durable");
         String index = Files.readString(dir.resolve("history").resolve("index.json"));
         assertTrue(index.contains(HistoryBlobStore.sha256(content)), "the index lists the revision");
     }
@@ -142,14 +160,6 @@ class HistoryShutdownFxTest {
     private static void awaitQuietly(CountDownLatch latch) {
         try {
             latch.await(10, TimeUnit.SECONDS);
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
-    private static void sleepQuietly(long millis) {
-        try {
-            Thread.sleep(millis);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
         }

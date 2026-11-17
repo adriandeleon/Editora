@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.function.BooleanSupplier;
@@ -12,6 +13,7 @@ import com.editora.dap.DapManager;
 import com.editora.dap.FakeDebugAdapter;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.debug.BreakpointManager;
+import com.editora.testkit.Await;
 import org.eclipse.lsp4j.debug.SetBreakpointsArguments;
 import org.eclipse.lsp4j.debug.SourceBreakpoint;
 import org.junit.jupiter.api.AfterAll;
@@ -95,13 +97,7 @@ class TriggeredBreakpointsWindowFxTest {
     }
 
     private static void await(String what, BooleanSupplier condition) throws InterruptedException {
-        long end = System.nanoTime() + 20_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(25);
-        }
+        Await.until(condition, what, Duration.ofSeconds(20));
     }
 
     private void run(String command) throws Exception {

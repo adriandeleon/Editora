@@ -35,7 +35,18 @@ class DapClientCloseTest {
                                 read.complete(-2);
                             }
                         });
-                Thread.sleep(200); // the reader is in its read
+                // the reader is in its read: blocked in the socket's native read (or parked waiting for bytes)
+                com.editora.testkit.Await.until(
+                        () -> {
+                            StackTraceElement[] stack = reader.getStackTrace();
+                            return stack.length > 0
+                                    && (stack[0].isNativeMethod()
+                                            || stack[0].getMethodName().startsWith("park"))
+                                    && java.util.Arrays.stream(stack)
+                                            .anyMatch(f -> f.getClassName().endsWith("NioSocketImpl")
+                                                    && f.getMethodName().equals("implRead"));
+                        },
+                        "the reader to block in its read");
                 long t0 = System.nanoTime();
 
                 DapClient.closeSocket(client);

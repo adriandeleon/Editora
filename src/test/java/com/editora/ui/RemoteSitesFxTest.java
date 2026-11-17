@@ -1,6 +1,7 @@
 package com.editora.ui;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.TreeMap;
@@ -277,9 +278,8 @@ class RemoteSitesFxTest {
         FxTestSupport.runOnFx(() -> fromConfig.getItems().getFirst().fire());
 
         // The config is asked about the host once typing pauses (off the FX thread, PERF-01).
-        for (int i = 0; i < 300 && !List.of("box", "2222", "ana", "", "").equals(values(form)); i++) {
-            Thread.sleep(10);
-        }
+        PulseChecks.holdsWithin(
+                () -> List.of("box", "2222", "ana", "", "").equals(values(form)), Duration.ofSeconds(5));
         assertEquals(List.of("box", "2222", "ana", "", ""), values(form));
         String shown = FxTestSupport.callOnFx(() -> {
             StringBuilder text = new StringBuilder();
@@ -293,11 +293,8 @@ class RemoteSitesFxTest {
         List<TextField> fields = fields(form);
         FxTestSupport.runOnFx(() -> fields.get(2).setText("me"));
         FxTestSupport.runOnFx(() -> fields.get(0).setText("plain.example.test"));
-        for (int i = 0;
-                i < 300 && !List.of("plain.example.test", "22", "me", "", "").equals(values(form));
-                i++) {
-            Thread.sleep(10);
-        }
+        PulseChecks.holdsWithin(
+                () -> List.of("plain.example.test", "22", "me", "", "").equals(values(form)), Duration.ofSeconds(5));
         assertEquals(List.of("plain.example.test", "22", "me", "", ""), values(form));
     }
 
@@ -514,9 +511,7 @@ class RemoteSitesFxTest {
             Window dialog = shown.get(30, TimeUnit.SECONDS);
             Object result = answer.get(30, TimeUnit.SECONDS);
             assertTrue(result == null || Boolean.FALSE.equals(result), "an unanswered question was taken as " + result);
-            for (int i = 0; i < 100 && FxTestSupport.callOnFx(dialog::isShowing); i++) {
-                Thread.sleep(20);
-            }
+            PulseChecks.holdsOnFxWithin(() -> !dialog.isShowing(), Duration.ofSeconds(2));
             return FxTestSupport.callOnFx(dialog::isShowing);
         } finally {
             FxTestSupport.runOnFx(() -> {

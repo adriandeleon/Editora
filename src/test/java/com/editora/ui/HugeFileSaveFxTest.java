@@ -113,10 +113,10 @@ class HugeFileSaveFxTest {
 
         CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
         FxTestSupport.runOnFx(() -> registry.run("file.save"));
-        for (int i = 0; i < 100 && !"hello\nworld\n".equals(Files.readString(file)); i++) {
-            Thread.sleep(20);
-            FxTestSupport.runOnFx(() -> {});
-        }
+        // the save writes off the FX thread: the file is what tells
+        com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.unchecked(() -> "hello\nworld\n".equals(Files.readString(file))),
+                java.time.Duration.ofSeconds(2));
 
         assertEquals("hello\nworld\n", Files.readString(file), "a normal save still writes");
     }

@@ -75,9 +75,7 @@ class DictionaryWordsTest {
         }
         DictionaryWords.clearCache();
         DictionaryWords.ensureLoaded("es_MX", null);
-        for (int i = 0; i < 400 && !DictionaryWords.isReady("es_MX"); i++) {
-            Thread.sleep(25);
-        }
+        com.editora.testkit.Await.holdsWithin(() -> DictionaryWords.isReady("es_MX"), java.time.Duration.ofSeconds(10));
         assertTrue(DictionaryWords.isReady("es_MX"), "the es_MX word list loads");
         List<String> out = DictionaryWords.startingWith("es_MX", "desar", Set.of(), 10);
         assertFalse(out.isEmpty(), "es_MX offers words for \"desar\"");
