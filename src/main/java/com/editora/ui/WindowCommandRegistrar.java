@@ -367,6 +367,9 @@ final class WindowCommandRegistrar {
 
         void requestSave();
 
+        /** Re-applies the settings to every window, as the Settings window does after one of its rows changes. */
+        void settingsApplied();
+
         void nextBuffer();
 
         void previousBuffer();
@@ -2077,6 +2080,9 @@ final class WindowCommandRegistrar {
                         "markdown.setTocMaxLevel", () -> host.editorSettings().promptMarkdownTocLevel(true)));
         MarkdownSettingCommands.register(
                 host.registry(), host.editorSettings(), () -> host.config().getSettings());
+        // The rest of the Settings rows' settings (SET-06, Pauta 6.0.1), one command per page or setting.
+        SettingCommands.register(
+                host.registry(), host.editorSettings(), () -> host.config().getSettings(), host::settingsApplied);
         MarkdownSourceCommands.register(host);
         host.registry().register(Command.of("nav.aceJump", host::startAceJump));
         host.registry().register(Command.of("nav.aceJumpLine", host::startAceJumpLine));

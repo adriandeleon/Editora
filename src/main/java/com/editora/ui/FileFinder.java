@@ -122,7 +122,9 @@ public class FileFinder {
         list = new ListView<>();
         hint = new Label();
         input.setPromptText(tr("filefinder.prompt"));
+        input.setAccessibleText(tr("filefinder.prompt"));
         list.setItems(items);
+        list.setAccessibleText(tr("filefinder.prompt"));
         UiZoom.prefHeight(list, LIST_HEIGHT);
         list.setCellFactory(v -> new EntryCell());
 
@@ -487,7 +489,7 @@ public class FileFinder {
                                     ? Icons.project()
                                     : FileIcons.forFileName(fileName == null ? item.toString() : fileName.toString()),
                             label);
-            setGraphic(box);
+            setGraphic(CellNames.read(box));
         }
     }
 }

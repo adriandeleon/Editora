@@ -65,6 +65,7 @@ public final class MessageLogPopup {
         header.getStyleClass().add("message-log-header");
 
         list.getStyleClass().add("message-log-list");
+        list.setAccessibleText(tr("messagelog.title"));
         UiZoom.prefSize(list, WIDTH, LIST_HEIGHT);
         // Rows are selectable (multiple) so they can be copied to the clipboard.
         list.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
@@ -111,7 +112,7 @@ public final class MessageLogPopup {
                 } else if (item.severity() == MessageLog.Severity.WARN) {
                     msg.getStyleClass().add("message-log-warn");
                 }
-                setGraphic(box);
+                setGraphic(CellNames.read(box));
             }
         });
 
@@ -163,6 +164,7 @@ public final class MessageLogPopup {
         // echo lands here), so finding the one line you want by scrolling is the slow path.
         filter.getStyleClass().add("message-log-filter");
         filter.setPromptText(tr("messagelog.filter"));
+        filter.setAccessibleText(tr("messagelog.filter"));
         filter.textProperty().addListener((o, a, b) -> applyFilter());
         // Down / Enter move into the results without leaving the field, matching the filterable tool
         // windows; the list's own keys (⌘C, Esc) still work once focus is there.

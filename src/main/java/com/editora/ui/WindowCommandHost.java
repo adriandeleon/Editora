@@ -60,6 +60,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public void settingsApplied() {
+        mc.onSettingsApplied(mc.config.getSettings());
+    }
+
+    @Override
     public CommandRegistry registry() {
         return mc.registry;
     }

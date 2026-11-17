@@ -383,6 +383,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         // Filter row: narrows the showing segment's rows as you type, with a trailing clear ("✕") button.
         // Typing here can't clash with the list's bare n/p nav — that handler is on the ListView, not the field.
         filterField.setPromptText(tr("github.panel.filterPrompt"));
+        filterField.setAccessibleText(tr("github.panel.filterPrompt"));
         filterField.getStyleClass().add("git-log-filter");
         filterField.textProperty().addListener((o, w, n) -> applyFilter(n));
         HBox.setHgrow(filterField, Priority.ALWAYS);
@@ -393,6 +394,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         FilterFieldNav.install(filterField, list, this::activateSelected);
 
         list.getStyleClass().add("git-tree");
+        list.setAccessibleText(tr("toolwindow.github"));
         list.setItems(visibleItems);
         list.setCellFactory(v -> new ItemCell());
         list.setPlaceholder(placeholder);

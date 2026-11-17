@@ -181,8 +181,17 @@ final class Chrome {
      * Commands under a gated prefix that only change a setting the Settings page lets you change while the
      * feature is off, so the palette does not grey them out either.
      */
-    private static final java.util.Set<String> SETTINGS_COMMANDS =
-            java.util.Set.of("plugins.toggleRequireSignature", "plugins.setRegistryUrl");
+    private static final java.util.Set<String> SETTINGS_COMMANDS = java.util.Set.of(
+            "plugins.toggleRequireSignature",
+            "plugins.setRegistryUrl",
+            // SettingCommands (SET-06): the rows they change stay editable while their feature is off.
+            "debug.changeSetting",
+            "lsp.changeSetting",
+            "agent.setClientCommand",
+            "github.setCommand",
+            "spell.setDefaultLanguage",
+            "ai.setApiKey",
+            "markdownLint.setRuleSeverity");
 
     private static FeatureRule rule(
             java.util.function.Predicate<PaletteGates> enabled, String prefix, String toggleId, String... extraIds) {

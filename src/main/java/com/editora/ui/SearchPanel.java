@@ -86,6 +86,7 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
     public SearchPanel(Actions actions) {
         this.actions = actions;
         getStyleClass().add("search-panel");
+        tree.setAccessibleText(tr("toolwindow.search"));
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         UiZoom.spacing(this, 6);
         UiZoom.padding(this, 6);
@@ -97,6 +98,7 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
         queryCombo.setPromptText(tr("search.queryPrompt"));
         queryCombo.setVisibleRowCount(12);
         replaceField.setPromptText(tr("search.replacePrompt"));
+        replaceField.setAccessibleText(tr("search.replacePrompt"));
         caseBox.setTooltip(ControlNames.tooltip(tr("search.caseTip")));
         regexBox.setTooltip(ControlNames.tooltip(tr("search.regexTip")));
         wordBox.setTooltip(ControlNames.tooltip(tr("find.wholeWord")));

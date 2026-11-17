@@ -662,6 +662,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
         tree.setShowRoot(true);
         tree.getStyleClass().add("project-tree");
+        tree.setAccessibleText(tr("toolwindow.project"));
         // Multi-select (Ctrl/Cmd- and Shift-click) so several files can be dragged/deleted at once, like a
         // file manager. Keyboard nav (onKey) uses clearAndSelect, so arrows still move a single selection.
         tree.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
@@ -734,6 +735,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     private void buildFilter() {
         filterField.setPromptText(tr("project.filterPrompt"));
+        filterField.setAccessibleText(tr("project.filterPrompt"));
         filterField.getStyleClass().add("project-filter");
         filterField.textProperty().addListener((o, w, n) -> {
             if (!loading) {
@@ -785,6 +787,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      */
     private VBox buildMapWindowContent() {
         mapFilterField.setPromptText(tr("project.map.filterPrompt"));
+        mapFilterField.setAccessibleText(tr("project.map.filterPrompt"));
         mapFilterField.getStyleClass().add("project-filter");
         mapFilterField.setId("project-map-filter");
         mapFilterField.textProperty().addListener((o, w, n) -> {

@@ -101,6 +101,7 @@ final class PluginDialogs {
         area.setPrefColumnCount(COLUMNS);
         area.setPrefRowCount(Math.min(14, rows(body)));
         area.getStyleClass().add("git-error-text");
+        area.setAccessibleText(alert.getHeaderText()); // the details of what the header says failed
         alert.getDialogPane().setContent(area);
         Dialogs.showAndWait(alert);
     }

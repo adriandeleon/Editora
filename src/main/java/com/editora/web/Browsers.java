@@ -416,6 +416,11 @@ public final class Browsers {
         };
     }
 
+    /** The ids of the browsers Editora knows how to find, in the order it looks for them. */
+    public static List<String> knownIds() {
+        return SPECS.stream().map(Spec::id).toList();
+    }
+
     /** The display name of a known browser id (or of a launcher id, its file name), for a browser not found. */
     public static String knownName(String id) {
         Spec s = specFor(id);
