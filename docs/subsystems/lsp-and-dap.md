@@ -1037,6 +1037,7 @@ project's breakpoints live in its `.ts`/`.tsx` sources.
 | `csharp` | `EXTERNAL` | netcoredbg: `netcoredbg --interpreter=vscode` over stdio (`STDIO`); see **C#** below. |
 | `ruby` | `EXTERNAL` | rdbg, which is the program itself: `rdbg --command --open --stop-at-load --host=127.0.0.1 --port=0 -- ruby <file>`, the port read from its `Debugger can attach via TCP/IP` line (`ANNOUNCED_PORT`); see **Ruby** below. |
 | `php` | `EXTERNAL` | vscode-php-debug: `node phpDebug.js` over stdio, which starts `php` with Xdebug; see **PHP** below. |
+| `bash` | `EXTERNAL` | vscode-bash-debug: `node bashDebug.js` over stdio, which runs the script under the bashdb it ships; see **Bash** below. |
 | `scala` | `LANGUAGE_SERVER` | An adapter the language server starts on request ([`HostedDebugAdapter`](../../src/main/java/com/editora/dap/HostedDebugAdapter.java)): Metals' `workspace/executeCommand debug-adapter-start` with `{path, runType: "run", args, jvmOptions, env}` compiles the build target and answers `{name, uri: "tcp://host:port"}`; `DapClient.connect(port, "scala")`, then `launch {name, noDebug: false}`. Metals' adapter runs the program and reports its output. Only for a file of an sbt, Mill, Gradle or Maven build (`ScalaRun.ownerOf`); a script or a Scala CLI project falls back (`DapServerRegistry.fallbackKind`) to `JVM`: `scala-cli run --java-opt <agent> <file> -- args`, the agent in place of `JvmScriptRun.AGENT_ARGUMENT`, and breakpoints bound by file name (Scala packages need not follow folders). |
 
 **External adapters.** A `Kind.EXTERNAL` profile carries an [`ExternalAdapter`](../../src/main/java/com/editora/dap/ExternalAdapter.java):
@@ -1243,6 +1244,24 @@ filters (`Exception`, `Error`, `Warning`, `Notice`, `Deprecated`, `*`) are off b
 connects to a listening adapter, which a launch.json `php` configuration without a `program` ("Listen for Xdebug")
 starts.
 
+**Bash.** The `bash` profile (a shell file: `editorLanguages` `shell`) is bashdb through vscode-bash-debug (rogalmic,
+MIT), `bashDebug.js` on Node.js over stdio; its `.vsix` ships bashdb 5.0 (`extension/bashdb_dir`), which runs on Bash
+5.2. `InstalledAdapter.BASH_DEBUG` finds it as configured (`Settings.bashDebugPath`), else in Editora's install
+(`plugins/dap/bash/extension/out/bashDebug.js`), else in VS Code's `rogalmic.bash-debug-*`. Settings → Debugging →
+Bash's Install fetches the pinned `.vsix` from Open VSX (0.3.9, its last release; SHA-256 checked). Only a Bash script
+is debugged (`ScriptLaunch.isBashScript`: a `bash` or `sh` shebang, or none, and no other shell's extension); another
+shell's says so (`status.debug.shellNotBash`, pointing at Run with Trace). F5 sends `ScriptLaunch.bashLaunch` (the
+script as `program`, its folder as `cwd`, output in the Debug console); `DapManager.runExternal` adds the programs the
+adapter checks by absolute path (`withBashTools`: the bashdb beside `bashDebug.js`, and `bash`, `cat`, `mkfifo`,
+`pkill` from the PATH), keeping a launch.json's own. Three things are Editora's: bashdb stops at the script's first
+command and the adapter reports it as any stop, so a Bash session's first stop on a line with no breakpoint is passed
+on (`DapManager.passesBashEntry`); bash-debug's Variables shows only `$PWD` and `$?`, the script's variables being read
+by name (a watch, a hover: `total` gives `declare -- total="0"`), so `$total` and `${total}` are sent bare
+(`adapterExpression` → `ScriptLaunch.bashName`; with a `$`, bashdb expands it in its own shell, where it is empty); and
+a shell run configuration still is not debugged (`status.debug.shellNotDebuggable`). No exception filters, no attach.
+`BashDebugWindowFxTest` (a stand-in adapter) covers the launch, the first stop passed, the watch and a zsh script;
+`BashDebugProbeFxTest` stops in a loop on the real adapter, reads its variables, steps and runs to the end.
+
 `CsharpDebugProbeFxTest`, `RubyDebugProbeFxTest` and `PhpDebugProbeFxTest`, opt-in, run in CI with the pinned
 adapters (`setup-dotnet`, the runner's Ruby with the debug gem, `php-xdebug`). `PresetDebugWindowFxTest` drives the
 window against stand-ins for all three adapters and for `dotnet` (`DebugCoordinator.dotnetCommand`).
@@ -1280,6 +1299,7 @@ the fields VS Code reads itself are left out (`name`, its tasks, `console`, `pre
 | `coreclr` | netcoredbg | as written (`program` is the built assembly; a `preLaunchTask` builds it); an attach by `processId`. C# Dev Kit's `dotnet` type is not supported. |
 | `rdbg` | rdbg | a launch runs `rdbg … -- <command> <script> <args>` (`LaunchRoute.rdbgTail`: `command` defaults to `ruby`, `useBundler` puts `bundle exec` first) in its `cwd` with its `env`; an attach connects to a local `debugPort` (`rdbgPort`; `DapManager.startPortAttach`). |
 | `php` | vscode-php-debug | as written; without a `program` it listens for Xdebug ("Listen for Xdebug"). `${port}` is left for the adapter. |
+| `bashdb` | vscode-bash-debug | as written (a launch; the programs it names are filled in where it names none). No attach. |
 | `java` | java-debug | a transient run configuration (`LaunchRoute.javaRunConfiguration`: `mainClass`, `projectName`, quoted `args` and `vmArgs`, `cwd`, `env`); a `mainClass` that is a `.java` file debugs that file. |
 | a user's adapter | it | as written. |
 

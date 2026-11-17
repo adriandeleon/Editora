@@ -886,6 +886,16 @@ final class DoctorCoordinator {
                     return found != null ? base.ok(found) : base.missing("doctor.tip.missing", "rdbg");
                 }));
             }
+            if (s.isBashDebugEnabled()) {
+                String configured = scope.debugTool("bash", s.getBashDebugPath());
+                DoctorCheck check = DoctorCheck.checking("debug.bash", "debug", tr("doctor.label.bashDebug"), "")
+                        .withSettings("debug");
+                specs.add(probe(check, base -> {
+                    String found =
+                            com.editora.dap.DapManager.locateExternal(com.editora.dap.DebugLanguages.BASH, configured);
+                    return found != null ? base.ok(found) : base.missing("doctor.tip.missing", "bash-debug");
+                }));
+            }
             if (s.isPhpDebugEnabled()) {
                 String configured = scope.debugTool("php", s.getPhpDebugPath());
                 DoctorCheck check = DoctorCheck.checking("debug.php", "debug", tr("doctor.label.phpDebug"), "")

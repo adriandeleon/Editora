@@ -2355,6 +2355,9 @@ public final class DapManager {
         if (DebugLanguages.CSHARP.equals(language)) {
             return InstalledAdapter.NETCOREDBG;
         }
+        if (DebugLanguages.BASH.equals(language)) {
+            return InstalledAdapter.BASH_DEBUG;
+        }
         return DebugLanguages.PHP.equals(language) ? InstalledAdapter.PHP_DEBUG : null;
     }
 
@@ -2480,10 +2483,17 @@ public final class DapManager {
             List<DapModels.FileBreakpoints> bps,
             @Nullable List<String> filters,
             long epoch,
-            Map<String, Object> launch,
+            Map<String, Object> request,
             List<String> programTail)
             throws Exception {
         int port = external.transport() == ExternalAdapter.Transport.PORT_ARGUMENT ? freePort() : -1;
+        // vscode-bash-debug checks each program it names: its bashdb, bash, cat, mkfifo, pkill, by absolute path.
+        Map<String, Object> launch = DebugLanguages.BASH.equals(language) && executable != null
+                ? ScriptLaunch.withBashTools(
+                        request,
+                        Path.of(executable),
+                        name -> ProcessRunner.resolveExecutable(List.of(name)).getFirst())
+                : request;
         List<String> argv = new ArrayList<>(external.argv(executable, port));
         if (language == DebugLanguages.GDB) {
             argv.addAll(1, EvaluationLimits.gdbArguments(shared.evaluationTimeLimit)); // before -i dap
@@ -5003,7 +5013,7 @@ public final class DapManager {
         if (console) {
             consoleEvaluations++;
         }
-        c.evaluateFull(expression, frameId, context) // the full answer: a string result can be repaired from it
+        c.evaluateFull(adapterExpression(expression), frameId, context) // the full answer: a string can be repaired
                 .thenCompose(full -> repairString(c, full))
                 .whenComplete((full, e) -> fx(() -> {
                     if (console && client == c) {
@@ -5095,7 +5105,7 @@ public final class DapManager {
         if (code) {
             consoleEvaluations++;
         }
-        c.evaluateFull(expression, frameId, context)
+        c.evaluateFull(adapterExpression(expression), frameId, context)
                 .thenCompose(r -> repairString(c, r))
                 .whenComplete((r, e) -> fx(() -> {
                     if (code && client == c) {
@@ -5121,7 +5131,7 @@ public final class DapManager {
             cb.accept(null);
             return;
         }
-        c.evaluateFull(expression, frameId, "hover")
+        c.evaluateFull(adapterExpression(expression), frameId, "hover")
                 .thenCompose(r -> repairString(c, r))
                 .whenComplete((r, e) -> fx(() -> {
                     if (client == c) {
@@ -5296,6 +5306,9 @@ public final class DapManager {
                     if (e != null) {
                         LOG.log(Level.WARNING, "stackTrace failed for thread " + threadId, e);
                     }
+                    if (event && passesBashEntry(c, threadId, frames)) {
+                        return; // bashdb's own stop at the script's first line, where no breakpoint is
+                    }
                     if (event) {
                         if (allThreadsStopped) {
                             stoppedThreads.clear(); // one stop stands for all of them, and so will one continue
@@ -5319,6 +5332,54 @@ public final class DapManager {
                         reportException(epoch, c, threadId, stopCount);
                     }
                 }));
+    }
+
+    /**
+     * {@code expression} as the session's debugger reads it: in a Bash session, a variable written as in a script
+     * ({@code $total}, {@code ${total}}) is named bare, as bashdb's {@code examine} wants it (with a {@code $} it is
+     * expanded in the debugger's own shell, where the script's variables are not set). Else as it is.
+     */
+    String adapterExpression(String expression) {
+        return DebugLanguages.BASH.id().equals(sessionLanguage) ? ScriptLaunch.bashName(expression) : expression;
+    }
+
+    /** Whether this Bash session has had its first stop (bashdb stops at the script's first line). */
+    private boolean bashEntryPassed;
+
+    /**
+     * bashdb stops at the script's first command, and vscode-bash-debug reports it as any other stop: the first stop
+     * of a Bash session, on a line with no breakpoint, is not shown and the script goes on (as a program started under
+     * any other debugger does). True when that is so.
+     */
+    private boolean passesBashEntry(DapClient c, int threadId, @Nullable List<DapModels.StackFrameInfo> frames) {
+        if (bashEntryPassed || !DebugLanguages.BASH.id().equals(sessionLanguage)) {
+            return false;
+        }
+        bashEntryPassed = true;
+        DapModels.StackFrameInfo top = frames == null || frames.isEmpty() ? null : frames.getFirst();
+        if (top == null || top.file() == null || breakpointAt(top.file(), top.line())) {
+            return false;
+        }
+        c.resume(threadId);
+        return true;
+    }
+
+    /** Whether a breakpoint is set on 0-based {@code line} of {@code file}. */
+    private boolean breakpointAt(Path file, int line) {
+        for (DapModels.FileBreakpoints fb : shared.breakpointsSupplier.get()) {
+            if (fb.file() != null
+                    && fb.file()
+                            .toAbsolutePath()
+                            .normalize()
+                            .equals(file.toAbsolutePath().normalize())) {
+                for (DapModels.LineBreakpoint b : fb.breakpoints()) {
+                    if (b.line() == line) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /** Asks which exception {@code threadId} stopped on and reports it, unless the stop has ended meanwhile. */
@@ -5957,6 +6018,7 @@ public final class DapManager {
             if (!isCurrent(epoch)) {
                 return false;
             }
+            bashEntryPassed = false; // a new session: bashdb stops at its script's first line again
             candidate.setMemberBreakpoints(shared.memberBreakpoints); // sent on its initialized event
             candidate.setExtraExceptionFilters(exceptionExtras()); // its language's exception breakpoints need
             String language = sessionLanguage;

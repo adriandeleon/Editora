@@ -11,6 +11,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -22,6 +23,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * subprocess ever spawns in CI.
  */
 @Tag("fx")
+@ExtendWith(
+        OffFxInPlace
+                .class) // the Doctor looks at the disk off the FX thread first; here it lands as the command returns
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class DoctorTabFxTest {
 

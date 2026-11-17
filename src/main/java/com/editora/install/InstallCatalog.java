@@ -971,6 +971,9 @@ public final class InstallCatalog {
         if (PHP_DEBUG_STEP.equals(stepId)) {
             return Optional.of(phpDebug());
         }
+        if (BASH_DEBUG_STEP.equals(stepId)) {
+            return Optional.of(bashDebug());
+        }
         if (!KOTLIN_LSP_STEP.equals(stepId)) {
             return Optional.empty();
         }
@@ -1044,6 +1047,24 @@ public final class InstallCatalog {
                 "",
                 4,
                 15);
+    }
+
+    /**
+     * vscode-php-debug (MIT, github.com/xdebug/vscode-php-debug): one {@code .vsix} for every platform, a zip holding
+     * {@code extension/out/phpDebug.js}, which runs on Node.js. The hash is the release asset's SHA-256 as GitHub
+     * publishes it for the tag, checked against a downloaded copy.
+     */
+    private static PinnedServer bashDebug() {
+        PinnedAsset vsix = new PinnedAsset(
+                "https://open-vsx.org/api/rogalmic/bash-debug/" + BASH_DEBUG_VERSION + "/file/rogalmic.bash-debug-"
+                        + BASH_DEBUG_VERSION + ".vsix",
+                "7fc154642bf3fcfa27a903fd44235bc902d93e737939c7b411ece6fe10f5f458",
+                Packing.ZIP);
+        java.util.Map<Platform, PinnedAsset> assets = new java.util.EnumMap<>(Platform.class);
+        for (Platform p : Platform.values()) {
+            assets.put(p, vsix);
+        }
+        return new PinnedServer(BASH_DEBUG_STEP, BASH_DEBUG_VERSION, assets, "bashDebug.js", "", 2, 8);
     }
 
     /**
@@ -1407,6 +1428,21 @@ public final class InstallCatalog {
             return Optional.of(
                     List.of(toolStep(RDBG_STEP, Prereq.RUBY, List.of("gem", "install", "--user-install", "debug"))));
         }
+        if (BASH_DEBUG_STEP.equals(key)) {
+            boolean linuxHost = currentPlatform() == Platform.LINUX_X64 || currentPlatform() == Platform.LINUX_ARM;
+            return Optional.of(List.of(new Step(
+                    BASH_DEBUG_STEP,
+                    Kind.PINNED_SERVER,
+                    linuxHost ? Set.of() : Set.of(Prereq.TAR),
+                    List.of(),
+                    null,
+                    null,
+                    null,
+                    null,
+                    false,
+                    BASH_DEBUG_DIR,
+                    null)));
+        }
         if (PHP_DEBUG_STEP.equals(key)) {
             boolean linux = currentPlatform() == Platform.LINUX_X64 || currentPlatform() == Platform.LINUX_ARM;
             return Optional.of(List.of(new Step(
@@ -1451,6 +1487,15 @@ public final class InstallCatalog {
 
     /** Where vscode-php-debug is unpacked, relative to the config dir; {@code InstalledAdapter.PHP_DEBUG} looks there. */
     public static final String PHP_DEBUG_DIR = "plugins/dap/php";
+
+    /** The vscode-bash-debug step's id, its Settings key and its recipe's ({@link #pinnedServer}). */
+    public static final String BASH_DEBUG_STEP = "bash-debug";
+
+    /** The vscode-bash-debug release Editora installs (its last, from Open VSX). Bump with its hash in {@link #pinnedServer}. */
+    public static final String BASH_DEBUG_VERSION = "0.3.9";
+
+    /** Where vscode-bash-debug is unpacked, relative to the config dir; {@code InstalledAdapter.BASH_DEBUG} looks there. */
+    public static final String BASH_DEBUG_DIR = "plugins/dap/bash";
 
     /** The netcoredbg step's id, its Settings key and its recipe's ({@link #pinnedServer}). */
     public static final String NETCOREDBG_STEP = "netcoredbg";

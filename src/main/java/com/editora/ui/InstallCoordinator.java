@@ -137,7 +137,8 @@ final class InstallCoordinator {
                     InstallCatalog.CODELLDB_STEP,
                     InstallCatalog.NETCOREDBG_STEP,
                     InstallCatalog.RDBG_STEP,
-                    InstallCatalog.PHP_DEBUG_STEP -> installDebugger(key);
+                    InstallCatalog.PHP_DEBUG_STEP,
+                    InstallCatalog.BASH_DEBUG_STEP -> installDebugger(key);
             case "python" -> installSupport(Lang.PYTHON);
             case "javascript" -> installSupport(Lang.JAVASCRIPT);
             case "mermaid" -> installSupport(Lang.MERMAID);
@@ -194,6 +195,7 @@ final class InstallCoordinator {
             case InstallCatalog.NETCOREDBG_STEP -> "netcoredbg";
             case InstallCatalog.RDBG_STEP -> "rdbg";
             case InstallCatalog.PHP_DEBUG_STEP -> "PHP Debug (Xdebug)";
+            case InstallCatalog.BASH_DEBUG_STEP -> "Bash Debug";
             default -> "CodeLLDB";
         };
     }
