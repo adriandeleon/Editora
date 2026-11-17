@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -131,30 +132,38 @@ class ExpandSelectionChainFxTest {
         } finally {
             com.editora.perf.OffFx.runnerForTest(null);
         }
-        for (int i = 0; i < 100 && !manager.supportsSelectionRanges(file); i++) {
-            Thread.sleep(50);
-            FxTestSupport.drainFx();
-        }
+        com.editora.testkit.Await.holdsWithin(() -> manager.supportsSelectionRanges(file), Duration.ofSeconds(5));
+        FxTestSupport.drainFx();
         assertTrue(manager.supportsSelectionRanges(file), "the fake server is attached");
 
         // Ladder 1 in method a(): the first press is local, the second uses the fetched chain.
         FxTestSupport.runOnFx(() -> b.getArea().moveTo(SRC.indexOf("alpha") + 2));
-        FxTestSupport.runOnFx(() -> registry.run("edit.expandSelection"));
-        for (int i = 0; i < 100; i++) { // let the chain for ladder 1 arrive
-            Thread.sleep(20);
-            FxTestSupport.drainFx();
-            List<?> chain = FxTestSupport.callOnFx(() -> (List<?>)
-                    FxTestSupport.call(coordinator, "selectionChain", new Class<?>[] {EditorBuffer.class}, b));
-            if (!chain.isEmpty()) {
-                break;
-            }
-        }
-        FxTestSupport.runOnFx(() -> registry.run("edit.expandSelection"));
+        expand(registry, b);
+        // let the chain for ladder 1 arrive
+        EventuallyFx.holdsWithin(
+                Duration.ofSeconds(2),
+                () -> !FxTestSupport.<List<?>>callOnFx(() -> (List<?>) FxTestSupport.call(
+                                coordinator, "selectionChain", new Class<?>[] {EditorBuffer.class}, b))
+                        .isEmpty());
+        expand(registry, b);
         assertEquals("int alpha = 1;", FxTestSupport.callOnFx(() -> b.getArea().getSelectedText()));
 
         // Ladder 2: move into method b() — no edit in between — and press once.
         FxTestSupport.runOnFx(() -> b.getArea().moveTo(SRC.indexOf("beta") + 2));
-        FxTestSupport.runOnFx(() -> registry.run("edit.expandSelection"));
+        expand(registry, b);
         assertEquals("beta", FxTestSupport.callOnFx(() -> b.getArea().getSelectedText()));
+    }
+
+    /**
+     * Presses Expand Selection and waits for it to land: the next range is looked for off the FX thread and applied
+     * when it comes back (PERF-01), which changes the selection.
+     */
+    private static void expand(CommandRegistry registry, EditorBuffer b) throws Exception {
+        String before = FxTestSupport.callOnFx(() -> b.getArea().getSelectedText());
+        FxTestSupport.runOnFx(() -> registry.run("edit.expandSelection"));
+        EventuallyFx.holdsWithin(
+                Duration.ofSeconds(5),
+                () -> !before.equals(FxTestSupport.callOnFx(() -> b.getArea().getSelectedText())));
+        FxTestSupport.drainFx();
     }
 }
