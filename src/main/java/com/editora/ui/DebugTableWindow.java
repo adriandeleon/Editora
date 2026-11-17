@@ -29,6 +29,7 @@ import javafx.scene.layout.VBox;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.Window;
+import javafx.stage.WindowEvent;
 
 import com.editora.dap.DapModels;
 import com.editora.editor.ControlNames;
@@ -524,15 +525,23 @@ final class DebugTableWindow {
         });
     }
 
-    /** A fresh Scene has no stylesheets: the owner's are mirrored, so a theme switch reaches the window too. */
+    /**
+     * A fresh Scene has no stylesheets: the owner's are mirrored, so a theme switch reaches the window too. Only while
+     * the window shows: the owner's list holding a listener of a closed window kept every closed table alive.
+     */
     private void mirrorStylesheets(Window owner) {
         if (owner.getScene() == null) {
             return;
         }
         ObservableList<String> sheets = owner.getScene().getStylesheets();
+        ListChangeListener<String> mirror =
+                change -> stage.getScene().getStylesheets().setAll(sheets);
         stage.getScene().getStylesheets().setAll(sheets);
-        sheets.addListener((ListChangeListener<String>)
-                change -> stage.getScene().getStylesheets().setAll(sheets));
+        stage.addEventHandler(WindowEvent.WINDOW_SHOWING, e -> {
+            stage.getScene().getStylesheets().setAll(sheets);
+            sheets.addListener(mirror);
+        });
+        stage.addEventHandler(WindowEvent.WINDOW_HIDDEN, e -> sheets.removeListener(mirror));
     }
 
     // --- test reads ----------------------------------------------------------------------------------------
@@ -563,5 +572,9 @@ final class DebugTableWindow {
 
     ValueTable model() {
         return model;
+    }
+
+    Stage stage() {
+        return stage;
     }
 }

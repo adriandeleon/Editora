@@ -74,6 +74,7 @@ class LaunchJsonWindowFxTest {
         manager = FxTestSupport.field(fx.controller, "dapManager");
         debug = FxTestSupport.field(fx.controller, "debugCoordinator");
         root = Files.createDirectories(fx.configDir.resolve("proj")).toRealPath();
+        fx.shared.getTrustStore().trust(root); // its preLaunchTasks run only in a trusted folder
         Files.createDirectories(root.resolve(".vscode"));
         launchJson = Files.writeString(root.resolve(".vscode/launch.json"), LAUNCH);
         Files.writeString(root.resolve(".vscode/tasks.json"), TASKS);

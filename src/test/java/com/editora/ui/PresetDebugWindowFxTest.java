@@ -204,6 +204,7 @@ class PresetDebugWindowFxTest {
     @Test
     void aCsharpBuildThatFailsOrMakesNothingLaunchesNothing() throws Exception {
         Path scratch = Files.createDirectories(fx.configDir.resolve("scratch")).toRealPath();
+        fx.shared.getTrustStore().trust(scratch); // a lone C# file's build asks for trust too
         Files.writeString(scratch.resolve("fail.cs"), "int x = \"s\";\n");
         Files.writeString(scratch.resolve("empty.cs"), "System.Console.WriteLine(1);\n");
         open(scratch.resolve("fail.cs"));

@@ -65,6 +65,11 @@ public final class NumberViews {
             return null;
         }
         Width width = width(type, language);
+        if (isCharType(t) && isJvm(language) && value.codePointCount(0, value.length()) == 1) {
+            // java-debug shows a char bare: 7 is the character '7' (55), and " " a space, which strip() would lose.
+            BigInteger n = BigInteger.valueOf(value.codePointAt(0));
+            return width.bits() > 0 ? inWidth(n, width) : n;
+        }
         Matcher m = DECIMAL.matcher(v);
         if (m.matches() && !isFloatType(t)) {
             BigInteger n = new BigInteger(m.group(2));
@@ -136,10 +141,7 @@ public final class NumberViews {
             }
             default -> {}
         }
-        boolean jvm = switch (language == null ? "" : language) {
-            case "java", "kotlin", "scala", "groovy", "clojure" -> true;
-            default -> false;
-        };
+        boolean jvm = isJvm(language);
         if (t.equals("char")) {
             return jvm ? new Width(16, false) : "rust".equals(language) ? new Width(32, false) : new Width(8, true);
         }
@@ -220,6 +222,14 @@ public final class NumberViews {
                 || t.startsWith("float")
                 || t.equals("f32")
                 || t.equals("f64");
+    }
+
+    /** Whether {@code language}'s sessions run on java-debug, which shows a {@code char} bare ({@code A}). */
+    private static boolean isJvm(@Nullable String language) {
+        return switch (language == null ? "" : language) {
+            case "java", "kotlin", "scala", "groovy", "clojure" -> true;
+            default -> false;
+        };
     }
 
     private static boolean isCharType(String t) {

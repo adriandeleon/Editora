@@ -101,6 +101,7 @@ class BashSettingsPageFxTest {
         Map<String, javafx.scene.control.Button> installs = FxTestSupport.field(window, "installButtons");
 
         commit(row("lsp.bash.shfmtPath"), dir.resolve("nowhere/shfmt").toString());
+        pillShows(status, com.editora.i18n.Messages.tr("settings.tool.notFound", "shfmt"));
         assertEquals(
                 com.editora.i18n.Messages.tr("settings.tool.notFound", "shfmt"),
                 FxTestSupport.callOnFx(() -> status.get("shfmt").pill().getText()));
@@ -110,6 +111,7 @@ class BashSettingsPageFxTest {
         java.nio.file.Path shfmt = java.nio.file.Files.writeString(dir.resolve("shfmt"), "#!/bin/sh\n");
         assertTrue(shfmt.toFile().setExecutable(true));
         commit(row("lsp.bash.shfmtPath"), shfmt.toString());
+        pillShows(status, com.editora.i18n.Messages.tr("settings.tool.found", "shfmt", shfmt.toString()));
         assertEquals(
                 com.editora.i18n.Messages.tr("settings.tool.found", "shfmt", shfmt.toString()),
                 FxTestSupport.callOnFx(() -> status.get("shfmt").pill().getText()));
@@ -147,5 +149,15 @@ class BashSettingsPageFxTest {
         commit(row("lsp.bash.explainshellEndpoint"), "https://explain.example.com");
         assertEquals("https://explain.example.com", settings.getBashExplainshellEndpoint());
         commit(row("lsp.bash.explainshellEndpoint"), "");
+    }
+
+    /** Waits for shfmt's pill to say {@code text}: the tools are looked for off the FX thread (PERF-01). */
+    private static void pillShows(Map<String, ToolStatusRow> status, String text) throws Exception {
+        long until = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        while (!text.equals(
+                        FxTestSupport.callOnFx(() -> status.get("shfmt").pill().getText()))
+                && System.nanoTime() < until) {
+            Thread.sleep(20);
+        }
     }
 }

@@ -76,6 +76,11 @@ class JsColumnBreakpointsProbeFxTest {
                 b.getFocusedArea().moveTo(LINE, 25); // in the arrow's body
                 debug.toggleLambdaBreakpointAtCaret();
             });
+            // Whether the line has code is scanned off the FX thread (PERF-01): the breakpoint is set when it lands.
+            await(
+                    "the arrow's breakpoint set",
+                    10,
+                    () -> call(() -> b.getBreakpointManager().get(LINE) != null));
             assertEquals(
                     List.of(1), call(() -> b.getBreakpointManager().get(LINE).lambdas()));
             assertTrue(call(() -> b.getBreakpointManager().get(LINE).lambdasOnly()));

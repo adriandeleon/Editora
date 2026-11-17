@@ -124,6 +124,27 @@ class ProgramFilesTest {
         assertTrue(ProgramFiles.sections(dir.resolve("c")).contains(".debug_line"));
     }
 
+    @Test
+    void aMacOsProgramsDwarfIsInItsDebugInfoSectionOrItsDsymBundle(@TempDir Path dir) throws Exception {
+        assertEquals(
+                ProgramFiles.Kind.NATIVE,
+                ProgramFiles.kind(
+                        Files.write(dir.resolve("c"), machO(List.of("__text", "__debug_info", "__debug_line")))));
+        assertEquals(
+                ProgramFiles.Kind.RUST,
+                ProgramFiles.kind(
+                        Files.write(dir.resolve("r"), machO(List.of("__text", "__debug_info", "__debug_gdb_scri")))));
+        Path bundled = Files.write(dir.resolve("app"), machO(List.of("__text", "__data")));
+        assertEquals(null, ProgramFiles.kind(bundled), "no DWARF and no bundle");
+        Path dwarfDir = Files.createDirectories(dir.resolve("app.dSYM/Contents/Resources/DWARF"));
+        assertEquals(ProgramFiles.Kind.NATIVE, ProgramFiles.kind(bundled), "a bundle");
+        Files.write(dwarfDir.resolve("app"), machO(List.of("__debug_info", "__debug_gdb_scri")));
+        assertEquals(ProgramFiles.Kind.RUST, ProgramFiles.kind(bundled), "the bundle's DWARF tells Rust");
+        Path linux = Files.write(dir.resolve("elf"), elf(List.of(".text")));
+        Files.createDirectories(dir.resolve("elf.dSYM"));
+        assertEquals(null, ProgramFiles.kind(linux), "a bundle counts for a Mach-O program only");
+    }
+
     /** A 32-bit big-endian ELF file with sections named {@code names} (the name table last). */
     static byte[] elf32BigEndian(List<String> names) {
         java.io.ByteArrayOutputStream table = new java.io.ByteArrayOutputStream();

@@ -39,6 +39,14 @@ class DiffViewerBehaviorFxTest {
         FxTestSupport.bootToolkit();
     }
 
+    /** The collapse switch is remembered for the next diff, JVM-wide: a test before this one may have turned it off. */
+    @org.junit.jupiter.api.BeforeEach
+    void collapseByDefault() throws Exception {
+        java.lang.reflect.Field remembered = DiffViewerPane.class.getDeclaredField("rememberedCollapseContext");
+        remembered.setAccessible(true);
+        remembered.setBoolean(null, true);
+    }
+
     @Test
     void collapsesLongUnchangedRunsByDefault() throws Exception {
         StringBuilder left = new StringBuilder();

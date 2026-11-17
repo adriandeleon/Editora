@@ -167,6 +167,30 @@ class SettingsLangsPagesFxTest {
         });
     }
 
+    /** Every adapter with settings of its own has a card: Bash's too, with its switch and its path. */
+    @Test
+    void everyAdapterWithSettingsHasACardBashsToo() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            rig.show();
+            Map<String, ToolStatusRow> pills = rig.control("debugStatusLabels");
+            Map<String, CheckBox> switches = rig.control("debugEnableChecks");
+            Map<String, TextField> paths = rig.control("debugCommandFields");
+            for (DebugAdapterSettings.Binding b : DebugAdapterSettings.all()) {
+                if (b.id().equals("cpp")) {
+                    continue; // C and C++ share Rust's CodeLLDB card
+                }
+                assertTrue(pills.containsKey(b.id()), b.id() + " has a card");
+                // Java's is on whenever debugging is: its card has no switch of its own.
+                assertTrue(b.id().equals("java") || switches.containsKey(b.id()), b.id() + " has a switch");
+            }
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    tr("settings.debug.enable.bash"), switches.get("bash").getText());
+            assertFalse(switches.get("bash").getText().startsWith("settings."), "a real label");
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    "bashDebug.js", paths.get("bash").getPromptText());
+        });
+    }
+
     /** A tool missing for a feature that is off gets the neutral pill; red is for a feature that is on. */
     @Test
     void aMissingToolIsRedOnlyWhileItsFeatureIsOn() throws Exception {

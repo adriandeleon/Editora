@@ -86,6 +86,12 @@ class IndexCoordinatorStaleFxTest {
                 c.onBufferSaved(buffer);
                 c.onBufferSaved(buffer); // a second save must not list it twice
             });
+            // A save is indexed on the index's worker (PERF-01): it is offered once that lands.
+            long until = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+            while (symbols(c, "Fresh").isEmpty() && System.nanoTime() < until) {
+                Thread.sleep(20);
+            }
+            FxTestSupport.drainFx(); // the second save's answer too
             assertEquals(List.of("Fresh.java"), files(c, "Fresh"));
             assertEquals(List.of("Fresh"), symbols(c, "Fresh"));
         } finally {

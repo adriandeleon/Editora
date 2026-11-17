@@ -68,6 +68,10 @@ class NumberViewsTest {
         assertEquals("10", as("'\\n'", "char", "cpp", Radix.DECIMAL));
         assertEquals("65", as("A", "char", "java", Radix.DECIMAL));
         assertEquals("0x41", as("A", "char", "java", Radix.HEX));
+        assertEquals("55", as("7", "char", "java", Radix.DECIMAL), "the character 7, not the number");
+        assertEquals("0x37", as("7", "char", "java", Radix.HEX));
+        assertEquals("32", as(" ", "char", "java", Radix.DECIMAL), "a space");
+        assertEquals("7", as("7", "int", "java", Radix.DECIMAL), "an int is its number");
         assertEquals("'A'", as("65", "", "go", Radix.CHARACTER), "a rune");
         assertEquals("'\\n'", as("10", "int", "java", Radix.CHARACTER));
         assertEquals("'\\x01'", as("1", "unsigned char", "cpp", Radix.CHARACTER));

@@ -350,14 +350,6 @@ final class DebugCoordinator {
     /** The buffer currently carrying inline values + an active hover (cleared on resume/terminate). */
     private @Nullable EditorBuffer debugValuesBuffer;
 
-    /**
-     * Re-anchored breakpoints of files with <em>no</em> open tab, computed off the FX thread at each session
-     * start (see {@link #withClosedBreakpoints}). Merged into {@link #collectBreakpoints()} so a breakpoint
-     * in a closed file is armed like VS Code / IntelliJ, not silently inert. {@code volatile}: written on the
-     * FX thread, read by the DAP supplier (also the FX thread, but keep it safe).
-     */
-    private volatile List<DapModels.FileBreakpoints> closedBreakpoints = List.of();
-
     // Coalesce the per-edit (line-shift) breakpoint persist off the FX hot path — see schedulePersistBreakpoints.
     // Only the synchronous breakpoints.json write is debounced; the adapter update stays immediate. (#551)
     private final javafx.animation.PauseTransition persistDebounce =
@@ -449,7 +441,7 @@ final class DebugCoordinator {
 
     private boolean factsKnown(String name, Runnable asks, Runnable again) {
         DebugSession session = s();
-        return facts.known(name, asks, () -> inSession(session, again));
+        return facts.known(name, session, asks, () -> inSession(session, again));
     }
 
     /** Runs {@code r} later on the FX thread as {@code session}'s; callable from any thread. */
@@ -457,8 +449,17 @@ final class DebugCoordinator {
         Platform.runLater(() -> inSession(session, r));
     }
 
+    /**
+     * {@link DebugPlanning#offFx}, its answer handled as the session being handled now: a launch's plan lands after
+     * the user (or a compound's next member) moved focus, and must start the session that asked for it.
+     */
+    private <T> void planOffFx(
+            String name, java.util.concurrent.Callable<T> work, Consumer<DebugPlanning.Answer<T>> then) {
+        DebugPlanning.offFx(name, work, asThisSession(then));
+    }
+
     /** {@code c}, run as the session being handled now ({@link #s()}) whenever it is called. */
-    private <T> Consumer<T> asThisSession(Consumer<T> c) {
+    private <T extends @Nullable Object> Consumer<T> asThisSession(Consumer<T> c) {
         DebugSession session = s();
         return value -> inSession(session, () -> c.accept(value));
     }
@@ -546,6 +547,9 @@ final class DebugCoordinator {
                 source -> openReferenceSource(source, doc -> {}));
         triggered = new TriggeredBreakpoints(host, ops);
         groups = new BreakpointGroups(host, ops, this::breakpointsPicker, memberBreakpoints, this::sendClosed);
+        stacks = new DebugStacks(this);
+        // Delve's binaries of earlier sessions (it leaves them when Stop ends one) go; a recent one may still run.
+        Thread.ofVirtual().name("editora-dlv-cleanup").start(com.editora.dap.GoLaunch::deleteStaleDebugBinaries);
         pinnedValues = new PinnedValues(host, ops, this::dap);
         // Each stop's pinned values are kept with it in Debug History.
         pinnedValues.setOnPainted((b, shown) -> {
@@ -557,6 +561,9 @@ final class DebugCoordinator {
 
     /** Values pinned to lines. */
     private final PinnedValues pinnedValues;
+
+    /** Thread Dump and Parallel Stacks. */
+    private final DebugStacks stacks;
 
     PinnedValues pinnedValues() {
         return pinnedValues;
@@ -1072,7 +1079,7 @@ final class DebugCoordinator {
         } else {
             Runnable owner = s().relaunch == ONE_SHOT_ATTACH ? s().ownerStop : null;
             s().ownerStop = null;
-            queuedAttaches.clear(); // Stop ends the whole run, its other JVMs included
+            s().queuedAttaches.clear(); // Stop ends the whole run, its other JVMs included
             dap().stop();
             if (owner != null) {
                 owner.run();
@@ -1085,6 +1092,12 @@ final class DebugCoordinator {
      * ({@code null}): the window opens with Stop usable and its spinner on, like a before-launch build.
      */
     void setPendingAttach(@Nullable Runnable cancel) {
+        DebugSession waiter = attachWaiter;
+        if (dispatching == null && waiter != null && sessions.all().contains(waiter)) {
+            inSession(waiter, () -> setPendingAttach(cancel));
+            return;
+        }
+        attachWaiter = cancel != null ? s() : null;
         boolean was = s().pendingAttachStop != null;
         s().pendingAttachStop = cancel;
         if (cancel != null && !was) {
@@ -1180,6 +1193,7 @@ final class DebugCoordinator {
         if (service != null) {
             service.shutdown();
         }
+        CsharpTestDebug.stopRun(session); // a C# test host waiting for a debugger would wait on forever
     }
 
     /** The session's program is running (not paused, starting or being built for): what Pause acts on (C206). */
@@ -1191,6 +1205,7 @@ final class DebugCoordinator {
     boolean sessionLive() {
         return dap().state() != DapManager.State.INACTIVE
                 || beforeLaunchActive()
+                || CsharpTestDebug.running(s())
                 || s().pendingBuild != null
                 || s().pendingAttachStop != null;
     }
@@ -1345,7 +1360,7 @@ final class DebugCoordinator {
         lspManager.setDebugBundles(bundles); // set before sessions start — jdtls always gets the bundle
         appliedDebugBundles = bundles;
         if (!on) {
-            dap().stop();
+            forEachSession(() -> dap().stop()); // every session: a background one would go on stopping unseen
         }
         if (changed) {
             lspManager.restartServer("java"); // reload a running jdtls with/without the bundle (no-op if none)
@@ -1539,7 +1554,7 @@ final class DebugCoordinator {
                     }
                     for (DapModels.FileBreakpoints fb : computed) {
                         if (ops.bufferForPath(fb.file()) == null) { // opened meanwhile: its tab sent them
-                            s().sentBreakpoints.put(fb.file(), fb);
+                            s().closedBreakpoints.put(key(fb.file()), fb);
                             dap().updateBreakpoints(fb);
                         }
                     }
@@ -1865,9 +1880,12 @@ final class DebugCoordinator {
         if (file == null) {
             return;
         }
-        if (dap().isActive()) {
-            snapshotLaunched(buffer); // opened during a session: as on disk, which is what the program was built from
-        }
+        forEachSession(
+                () -> { // each live session's: its program was built from the file as on disk
+                    if (dap().isActive()) {
+                        snapshotLaunched(buffer);
+                    }
+                });
         List<Breakpoint> stored = ops.breakpointMap().getOrDefault(key(file), List.of());
         seenInStore.put(buffer, MarkMerge.keys(stored, Breakpoint::line));
         buffer.getBreakpointManager().setTriggerLabels(triggered::labelOf);
@@ -2007,7 +2025,7 @@ final class DebugCoordinator {
             return;
         }
         DebugSession session = s(); // the file on disk is read off the FX thread (PERF-01), for this session
-        DebugPlanning.offFx(
+        planOffFx(
                 "debug-launched-lines",
                 () -> {
                     List<String> lines = ClosedFileBreakpoints.readLinesOrNull(file);
@@ -2069,7 +2087,7 @@ final class DebugCoordinator {
 
     /**
      * Every armed breakpoint sent to the adapter: open buffers' live breakpoints merged with
-     * {@link #closedBreakpoints} (files with no open tab, re-anchored at session start). A closed file that
+     * the session's closed-file ones (files with no open tab, re-anchored at session start). A closed file that
      * has since been opened is taken from its live buffer, not the cached snapshot.
      */
     private List<DapModels.FileBreakpoints> collectBreakpoints() {
@@ -2086,7 +2104,7 @@ final class DebugCoordinator {
                 out.add(fb);
             }
         });
-        for (DapModels.FileBreakpoints fb : closedBreakpoints) {
+        for (DapModels.FileBreakpoints fb : s().closedBreakpoints.values()) {
             if (fb.file() != null && !open.contains(key(fb.file())) && !breakpointsMuted) {
                 out.add(fb);
             }
@@ -2096,7 +2114,7 @@ final class DebugCoordinator {
 
     /**
      * Re-anchors the persisted breakpoints of files with no open tab (off the FX thread), caches them in
-     * {@link #closedBreakpoints}, then runs {@code then} on the FX thread. Called before every session start
+     * the session's closed-file breakpoints, then runs {@code then} on the FX thread. Called before every session start
      * so the initial {@code setBreakpoints} includes closed files. The open-tab set + a copy of the map are
      * snapshotted on the FX thread; the file reads happen on a daemon thread.
      */
@@ -2121,7 +2139,8 @@ final class DebugCoordinator {
                             return; // stopped, or replaced by another start, while the files were read
                         }
                         s().closedBreakpointsRead = null;
-                        closedBreakpoints = computed;
+                        s().closedBreakpoints.clear();
+                        computed.forEach(fb -> s().closedBreakpoints.put(key(fb.file()), fb));
                         then.run();
                     });
                 },
@@ -2189,12 +2208,7 @@ final class DebugCoordinator {
                     panel().setState(state);
                 }
                 evaluateWindows.forEach(DebugEvaluateWindow::sessionChanged); // their results were that stop's
-                if (threadDumpWindow != null) {
-                    threadDumpWindow.sessionChanged(); // Take Again needs a live session
-                }
-                if (parallelStacksWindow != null) {
-                    parallelStacksWindow.sessionChanged();
-                }
+                stacks.sessionChanged(); // Take Again needs a live session
                 tableWindows.removeIf(w -> !w.isShowing());
                 tableWindows.forEach(DebugTableWindow::sessionChanged); // Refresh needs a paused program
                 if (state != DapManager.State.RUNNING && state != DapManager.State.SUSPENDED) {
@@ -2259,8 +2273,10 @@ final class DebugCoordinator {
                 }
                 if (state == DapManager.State.INACTIVE
                         && s().relaunch == ONE_SHOT_ATTACH
-                        && !queuedAttaches.isEmpty()) {
-                    later(queuedAttaches.poll()); // the next JVM of the same run is waiting
+                        && !s().queuedAttaches.isEmpty()) {
+                    later(s().queuedAttaches.poll()); // the next JVM of the same run is waiting
+                } else if (state == DapManager.State.INACTIVE && attachWaiter == s() && s().pendingAttachStop == null) {
+                    attachWaiter = null; // its run attached its last JVM: the next run's goes where it is started
                 } else if (state == DapManager.State.INACTIVE
                         && s().pendingAttachStop != null
                         && !beforeLaunchActive()) {
@@ -2276,6 +2292,7 @@ final class DebugCoordinator {
                     ops.openToolWindow();
                 }
                 if (state == DapManager.State.INACTIVE) {
+                    CsharpTestDebug.ended(s()); // its dotnet test run, once it has said how the tests went
                     stopChildren(); // the program ended: its subprocesses' sessions with it
                     DebugSession self = s();
                     if (self.parent != null && !shown()) {
@@ -2340,11 +2357,11 @@ final class DebugCoordinator {
                     return;
                 }
                 if (dumpStop) {
-                    dumpAndContinue();
+                    stacks.dumpAndContinue();
                     return;
                 }
                 if (dumpWanted) {
-                    takeThreadDump(s(), false, null);
+                    stacks.takeThreadDump(s(), false, null);
                 }
                 if (!recording) {
                     // Before the call stack is set: that shows the stop's line, and the time goes after it.
@@ -2361,6 +2378,7 @@ final class DebugCoordinator {
                     return;
                 }
                 removeTemporaryBreakpointHit(reason, frames);
+                dap().stopShown(); // a Run to Cursor ends at a stop the user sees
                 if (shown > 0) {
                     // A JDK or library frame jdtls can show is "library code", not "no source" (review 2, B107).
                     host.setStatus(tr(
@@ -3276,7 +3294,7 @@ final class DebugCoordinator {
         String wanted = key(file);
         List<DapModels.FileBreakpoints> sent =
                 new ArrayList<>(s().sentBreakpoints.values());
-        sent.addAll(closedBreakpoints);
+        sent.addAll(s().closedBreakpoints.values());
         for (DapModels.FileBreakpoints fb : sent) {
             if (fb.file() != null && key(fb.file()).equals(wanted)) {
                 for (DapModels.LineBreakpoint lb : fb.breakpoints()) {
@@ -3385,7 +3403,7 @@ final class DebugCoordinator {
      * in the JDK or a dependency names a {@code jdt:} URI, a jar entry, {@code <frozen importlib>} or a path
      * from the machine that built it — none of which can be opened as a tab.
      */
-    private boolean hasSource(DapModels.StackFrameInfo frame) {
+    boolean hasSource(DapModels.StackFrameInfo frame) {
         if (frame == null || frame.file() == null) {
             return false;
         }
@@ -3577,7 +3595,7 @@ final class DebugCoordinator {
             paths.add(project.resolve(".editora").resolve("debug-adapters.json"));
         }
         long read = ++adaptersRead; // the files are read off the FX thread (PERF-01): the last ask's answer wins
-        DebugPlanning.offFx("debug-adapters-read", () -> DebugPlanning.readAdapters(paths), answer -> {
+        planOffFx("debug-adapters-read", () -> DebugPlanning.readAdapters(paths), answer -> {
             var found = answer.value();
             if (read != adaptersRead || found == null) {
                 return;
@@ -3606,7 +3624,7 @@ final class DebugCoordinator {
         if (file == null) {
             return;
         }
-        DebugPlanning.offFx("debug-adapters-edit", () -> DebugPlanning.ensureAdaptersFile(file), answer -> {
+        planOffFx("debug-adapters-edit", () -> DebugPlanning.ensureAdaptersFile(file), answer -> {
             if (answer.failure() != null) {
                 host.setStatus(tr("debug.error.startFailed", answer.why()));
             } else {
@@ -3722,7 +3740,8 @@ final class DebugCoordinator {
 
     /** The launch.json for the active file's project, read off the FX thread ({@link DebugPlanning#readLaunchJson}). */
     private void readLaunchJson(@Nullable EditorBuffer b, boolean sayNone, Consumer<@Nullable LaunchFile> then) {
-        DebugPlanning.readLaunchJson(host, ops.projectRoot(), b == null ? null : b.getPath(), sayNone, then);
+        DebugPlanning.readLaunchJson(
+                host, ops.projectRoot(), b == null ? null : b.getPath(), sayNone, asThisSession(then));
     }
 
     /** An entry of Debug: Start Configuration: one of launch.json's configurations, or one of its compounds. */
@@ -4005,9 +4024,24 @@ final class DebugCoordinator {
         } catch (com.editora.dap.LaunchJson.Cancelled e) {
             return;
         }
-        Runnable start = () -> startRoute(workspace, name, body, b);
+        // Restart runs all of this again (the task included), not only the adapter's start: an edited program is
+        // saved and built again before it is debugged.
+        Runnable again = () -> resolveAndRun(launchJson, workspace, name, raw, answers, b);
+        boolean launch = !"attach".equals(body.get("request"));
+        Runnable[] start = new Runnable[1];
+        start[0] = () -> {
+            // The adapter reads the program from disk: edits are saved first (off the FX thread, then this again).
+            DebugSession session = s(); // the saves answer later: then again as this session
+            if (!savedOrThen(buffersUnder(workspace, null), () -> inSession(session, start[0]))) {
+                return;
+            }
+            startRoute(workspace, name, body, b);
+            if (launch) {
+                s().relaunch = again;
+            }
+        };
         if (!(body.get("preLaunchTask") instanceof String task) || task.isBlank()) {
-            start.run();
+            start[0].run();
             return;
         }
         preLaunchTask(launchJson, workspace, task, b, answers, argv -> {
@@ -4022,7 +4056,7 @@ final class DebugCoordinator {
                             workspace,
                             java.util.Map.of(),
                             beforeLaunchConsole(),
-                            () -> later(start));
+                            () -> later(start[0]));
         });
     }
 
@@ -4034,7 +4068,21 @@ final class DebugCoordinator {
             @Nullable EditorBuffer b,
             java.util.Map<String, String> answers,
             Consumer<List<String>> then) {
-        DebugPlanning.preLaunchTask(host, launchJson, label, () -> launchContext(workspace, b, answers), answers, then);
+        DebugPlanning.preLaunchTask(
+                host, launchJson, label, () -> launchContext(workspace, b, answers), answers, asThisSession(argv -> {
+                    // A tasks.json command is the folder's own code: it runs only in a folder the user trusts, as a
+                    // build does.
+                    if (ops.trustBuild(workspace, List.of(tr("dialog.trust.item.preLaunchTask", label)))) {
+                        Runnable[] run = new Runnable[1];
+                        DebugSession session = s();
+                        run[0] = () -> { // the task builds what is on disk: edits are saved first
+                            if (savedOrThen(buffersUnder(workspace, null), () -> inSession(session, run[0]))) {
+                                then.accept(argv);
+                            }
+                        };
+                        run[0].run();
+                    }
+                }));
     }
 
     /** Starts a resolved configuration on the debugger its type names. */
@@ -4220,7 +4268,11 @@ final class DebugCoordinator {
                                 java.util.Map<String, Object> resolved = new java.util.LinkedHashMap<>(request);
                                 resolved.remove("cargo");
                                 resolved.put("program", exe.toString());
+                                Runnable whole = s().relaunch; // Restart builds with cargo again (resolveAndRun)
                                 startExternalSession(anchor, profile, resolved, name);
+                                if (whole != null) {
+                                    s().relaunch = whole;
+                                }
                             });
                         }));
     }
@@ -4379,7 +4431,7 @@ final class DebugCoordinator {
     }
 
     /** Opens {@code file} at 0-based {@code line}: a double-clicked instruction's source line. */
-    private void openSourceLine(Path file, int line) {
+    void openSourceLine(Path file, int line) {
         ops.openPath(file);
         EditorBuffer b = ops.bufferForPath(file);
         if (b != null && line >= 0) {
@@ -4604,7 +4656,7 @@ final class DebugCoordinator {
         // The test lines are the Run scan's and the main class a parse: both made off the FX thread (PERF-01).
         b.whenRunScanned(() -> {
             String text = b.getContent();
-            DebugPlanning.offFx("debug-own-main", () -> DebugPlanning.ownMainClass(text), a -> {
+            planOffFx("debug-own-main", () -> DebugPlanning.ownMainClass(text), a -> {
                 s().startCleared = true; // Debug Test's own check (clearToDebugTest) has been answered here
                 boolean test = debugsTest(b, a.value());
                 s().startCleared = false;
@@ -4820,7 +4872,7 @@ final class DebugCoordinator {
 
     /** {@link #debugGoFile} for {@code path} with text {@code text} and the caret on {@code caret} (-1: nowhere). */
     private void debugGo(Path path, String text, int caret, List<String> args, LaunchExtras extras) {
-        DebugPlanning.offFx( // the module is a folder walk, the test at the caret a scan: off the FX thread (PERF-01)
+        planOffFx( // the module is a folder walk, the test at the caret a scan: off the FX thread (PERF-01)
                 "debug-go-plan",
                 () -> {
                     Path module = com.editora.dap.GoLaunch.moduleRoot(path);
@@ -4901,7 +4953,7 @@ final class DebugCoordinator {
 
     /** {@link #debugRustFile} for {@code path} with text {@code text} and the caret on {@code caret} (-1: nowhere). */
     private void debugRust(Path path, String text, int caret, List<String> args, LaunchExtras extras) {
-        DebugPlanning.offFx( // the package and its programs are looked for off the FX thread (PERF-01)
+        planOffFx( // the package and its programs are looked for off the FX thread (PERF-01)
                 "debug-rust-plan",
                 () -> {
                     Path root = com.editora.dap.RustLaunch.packageRoot(path);
@@ -5037,7 +5089,7 @@ final class DebugCoordinator {
     /** {@link #debugNativeFile} for {@code path}, a lone file compiled as C++ ({@code cpp}) or as C. */
     private void debugNative(Path path, boolean cpp, List<String> args, LaunchExtras extras) {
         Path out = nativeOutputDir();
-        DebugPlanning.offFx( // the project's build files are looked for off the FX thread (PERF-01)
+        planOffFx( // the project's build files are looked for off the FX thread (PERF-01)
                 "debug-native-plan",
                 () -> {
                     Path cmake = com.editora.dap.NativeBuild.cmakeRoot(path);
@@ -5087,7 +5139,7 @@ final class DebugCoordinator {
             return;
         }
         boolean terminal = host.settings().isDebugProgramConsole();
-        DebugPlanning.offFx( // CMake's codemodel request and the output folder are written off the FX thread
+        planOffFx( // CMake's codemodel request and the output folder are written off the FX thread
                 "debug-native-prepare",
                 () -> {
                     if (plan.buildDir() != null) {
@@ -5165,7 +5217,7 @@ final class DebugCoordinator {
      * ({@link com.editora.dap.DotnetLaunch}).
      */
     private void debugCsharpFile(Path path, List<String> args) {
-        DebugPlanning.offFx( // the project file is a folder walk with listings: off the FX thread (PERF-01)
+        planOffFx( // the project file is a folder walk with listings: off the FX thread (PERF-01)
                 "debug-dotnet-plan",
                 () -> com.editora.dap.DotnetLaunch.plan(path, com.editora.dap.DotnetLaunch.projectFile(path)),
                 a -> {
@@ -5176,10 +5228,10 @@ final class DebugCoordinator {
     }
 
     private void debugCsharpPlanned(Path path, List<String> args, com.editora.dap.DotnetLaunch.Plan plan) {
-        if (plan.project()
-                && !ops.trustBuild(
-                        plan.root(),
-                        List.of(tr("dialog.trust.item.dotnet", plan.target().getFileName())))) {
+        // A lone file too: the SDK's build of it imports the folders' Directory.Build.props / .targets, which are code.
+        if (!ops.trustBuild(
+                plan.root(),
+                List.of(tr("dialog.trust.item.dotnet", plan.target().getFileName())))) {
             return; // not trusted: nothing is built
         }
         nameSession(plan.sessionName());
@@ -5262,14 +5314,14 @@ final class DebugCoordinator {
         start.run();
     }
 
-    /** The edited buffers of {@code language} under {@code root}: a build reads them from disk. */
-    List<EditorBuffer> buffersUnder(@Nullable Path root, String language) {
+    /** The edited buffers of {@code language} (null: of any) under {@code root}: a build reads them from disk. */
+    List<EditorBuffer> buffersUnder(@Nullable Path root, @Nullable String language) {
         List<EditorBuffer> out = new ArrayList<>();
         host.forEachBuffer(other -> {
             Path p = other.getPath();
             if (other.isDirty()
                     && p != null
-                    && language.equals(other.getLanguage())
+                    && (language == null || language.equals(other.getLanguage()))
                     && root != null
                     && p.toAbsolutePath().startsWith(root)) {
                 out.add(other);
@@ -5400,12 +5452,11 @@ final class DebugCoordinator {
         String settingsJdk = host.settings().getMavenJdkHome();
         // What the launch reads from the disk is looked at off the FX thread first (PERF-01): the trust gate's
         // project files, the build root and its pom, the JDK's java, PATH's java. What follows answers from that.
-        DebugPlanning.offFx(
-                "debug-file-plan", () -> DebugPlanning.warmJavaLaunch(language, path, text, settingsJdk), a -> {
-                    if (a.value() != null) {
-                        launchBufferPlanned(b, path, language, nodeArgs, a.value());
-                    }
-                });
+        planOffFx("debug-file-plan", () -> DebugPlanning.warmJavaLaunch(language, path, text, settingsJdk), a -> {
+            if (a.value() != null) {
+                launchBufferPlanned(b, path, language, nodeArgs, a.value());
+            }
+        });
     }
 
     private void launchBufferPlanned(
@@ -5602,7 +5653,7 @@ final class DebugCoordinator {
         s().pendingBuild = token;
         showPreparing(routing); // from the first moment: the source-folder step can wait seconds on jdtls (C203)
         DebugSession session = s();
-        DebugPlanning.offFx( // the file's package clause is read off the FX thread (PERF-01)
+        planOffFx( // the file's package clause is read off the FX thread (PERF-01)
                 "debug-loose-package",
                 () -> com.editora.dap.JavaSourceRootFix.declaredPackage(readQuietly(routing)),
                 a -> com.editora.dap.JavaSourceRootFix.correct(
@@ -6077,7 +6128,7 @@ final class DebugCoordinator {
         }
         Path window = ops.projectRoot();
         String jdk = host.settings().getMavenJdkHome(); // the project and the plan are read off the FX thread
-        DebugPlanning.offFx("debug-config-plan", () -> DebugPlanning.planJava(cfg, routing, window, jdk), a -> {
+        planOffFx("debug-config-plan", () -> DebugPlanning.planJava(cfg, routing, window, jdk), a -> {
             if (a.value() != null) {
                 debugJavaConfig(cfg, routing, a.value());
             }
@@ -6254,7 +6305,7 @@ final class DebugCoordinator {
             return;
         }
         Path root = ops.projectRoot(); // its files are read off the FX thread (PERF-01)
-        DebugPlanning.offFx("debug-config-plan", () -> DebugPlanning.readConfig(cfg, root, false, true), a -> {
+        planOffFx("debug-config-plan", () -> DebugPlanning.readConfig(cfg, root, false, true), a -> {
             if (a.value() != null) {
                 debugJvmScriptConfig(cfg, args, a.value());
             }
@@ -6354,7 +6405,7 @@ final class DebugCoordinator {
         Path root = ops.projectRoot(); // its files are read off the FX thread (PERF-01)
         boolean text = com.editora.run.ScriptRunCommand.GO.equals(cfg.type())
                 || com.editora.run.ScriptRunCommand.RUST.equals(cfg.type());
-        DebugPlanning.offFx("debug-config-plan", () -> DebugPlanning.readConfig(cfg, root, text, false), a -> {
+        planOffFx("debug-config-plan", () -> DebugPlanning.readConfig(cfg, root, text, false), a -> {
             if (a.value() != null) {
                 debugCompiledConfig(cfg, args, a.value());
             }
@@ -6448,7 +6499,7 @@ final class DebugCoordinator {
      */
     private void debugKotlinProgram(Path source, @Nullable Path cwd, String java, java.util.Map<String, String> env) {
         Path config = host.configDir(); // the compiler, the source's hash and the jar cache: off the FX thread
-        DebugPlanning.offFx("debug-kotlin-plan", () -> DebugPlanning.readKotlin(source, config), a -> {
+        planOffFx("debug-kotlin-plan", () -> DebugPlanning.readKotlin(source, config), a -> {
             var read = a.value();
             if (a.failure() != null || read == null) {
                 host.setStatus(tr("debug.error.startFailed", a.why()));
@@ -6487,7 +6538,7 @@ final class DebugCoordinator {
                         cwd != null ? cwd : source.getParent(),
                         env,
                         beforeLaunchConsole(),
-                        () -> DebugPlanning.offFx(
+                        () -> planOffFx(
                                 "debug-kotlin-finish",
                                 () -> {
                                     com.editora.run.KotlinBuild.finish(plan);
@@ -6810,10 +6861,10 @@ final class DebugCoordinator {
     }
 
     /**
-     * JVMs of the same run that printed their banner while one of them was being debugged (several surefire
-     * forks, a multi-module build), attached in turn as each session ends (review D11). Each waits suspended.
+     * The session a Debug Test run is waiting for its JVM in ({@link #setPendingAttach}): the run's callbacks come
+     * from the test runner, while the user may have focused another session meanwhile — its attach goes here.
      */
-    private final java.util.ArrayDeque<Runnable> queuedAttaches = new java.util.ArrayDeque<>();
+    private @Nullable DebugSession attachWaiter;
 
     /**
      * As above; {@code stopOwner} ends the test or build run that started the JVM: Stop on this session runs
@@ -6821,6 +6872,11 @@ final class DebugCoordinator {
      * the test or app running on (review A4).
      */
     void attachToPort(Path anchorFile, String attachHost, int port, @Nullable Runnable stopOwner) {
+        DebugSession waiter = attachWaiter;
+        if (dispatching == null && waiter != null && sessions.all().contains(waiter)) {
+            inSession(waiter, () -> attachToPort(anchorFile, attachHost, port, stopOwner));
+            return;
+        }
         if (anchorFile != null
                 && !factsKnown( // the anchor's project routes the attach: looked at off the FX thread (PERF-01)
                         "debug-attach-look",
@@ -6829,12 +6885,14 @@ final class DebugCoordinator {
             return;
         }
         if (s().relaunch == ONE_SHOT_ATTACH && dap().isActive()) {
-            queuedAttaches.add(() -> attachToPort(anchorFile, attachHost, port, stopOwner));
+            s().queuedAttaches.add(() -> attachToPort(anchorFile, attachHost, port, stopOwner));
             host.setStatus(tr("status.debug.attachQueued", port));
             return;
         }
         if (s().pendingAttachStop != null) {
+            DebugSession run = attachWaiter; // the run's next forks still attach here, until the run ends
             setPendingAttach(null); // the wait is over: from here Stop goes through the session (ownerStop)
+            attachWaiter = run;
         }
         s().ownerStop = stopOwner;
         s().announceStart = stopOwner != null; // "Attaching the debugger on port …" would outlive it (review 2, A105)
@@ -7532,7 +7590,7 @@ final class DebugCoordinator {
             return;
         }
         Path root = ops.projectRoot(); // its files are read off the FX thread (PERF-01)
-        DebugPlanning.offFx("debug-config-plan", () -> DebugPlanning.readNode(cfg, root), a -> {
+        planOffFx("debug-config-plan", () -> DebugPlanning.readNode(cfg, root), a -> {
             if (a.value() != null) {
                 debugNodeConfig(cfg, args, nodeOptions, root, a.value());
             }
@@ -8423,9 +8481,6 @@ final class DebugCoordinator {
 
     // --- Thread Dump: every thread's stack at one moment (IntelliJ's Get Thread Dump) -----------------
 
-    /** The Thread Dump window, built on the first dump; one for all sessions, showing the last dump taken. */
-    private @Nullable DebugThreadDumpWindow threadDumpWindow;
-
     /** The View as Table windows open: one per collection asked for. */
     private final List<DebugTableWindow> tableWindows = new ArrayList<>();
 
@@ -8505,7 +8560,7 @@ final class DebugCoordinator {
      * editor left where it is — the way to see what a program that hangs is doing.
      */
     void threadDump() {
-        takeStacks(false);
+        stacks.take(false);
     }
 
     /**
@@ -8514,7 +8569,7 @@ final class DebugCoordinator {
      * program is paused for them and goes on after.
      */
     void parallelStacks() {
-        takeStacks(true);
+        stacks.take(true);
     }
 
     /**
@@ -8542,60 +8597,6 @@ final class DebugCoordinator {
                         : tr(manager.isRecording() ? "status.debug.recordingOn" : "status.debug.recordingOff")));
     }
 
-    /** Takes every thread's stack for Parallel Stacks ({@code parallel}) or Thread Dump. */
-    private void takeStacks(boolean parallel) {
-        DebugSession session = s();
-        session.dumpForParallel = parallel && session.dap.state() != DapManager.State.INACTIVE;
-        switch (session.dap.state()) {
-            case SUSPENDED -> takeThreadDump(session, false, null);
-            case RUNNING -> {
-                session.dumpPause = true;
-                host.setStatus(tr("status.debug.threadDumpPausing"));
-                session.dap.pause();
-            }
-            default -> host.setStatus(tr("status.debug.threadDumpNoSession"));
-        }
-    }
-
-    /** The {@code pause} stop Thread Dump asked for: the dump is taken, then the program goes on. */
-    private void dumpAndContinue() {
-        DebugSession session = s();
-        int serial = session.stopSerial;
-        takeThreadDump(session, true, () -> {
-            // Unless the user acted first (a step, Stop) or it stopped again meanwhile.
-            if (serial == session.stopSerial && session.dap.state() == DapManager.State.SUSPENDED) {
-                session.dap.resume();
-            }
-        });
-    }
-
-    /**
-     * Asks {@code session} for every thread's stack and shows the dump; {@code afterwards} runs once the stacks are in
-     * (the program may go on then), before the window opens.
-     */
-    private void takeThreadDump(DebugSession session, boolean pausedForIt, @Nullable Runnable afterwards) {
-        String name = session.sessionLabel.isEmpty() ? dumpSessionName(session) : session.sessionLabel;
-        boolean parallel = session.dumpForParallel;
-        session.dumpForParallel = false;
-        session.dap.threadStacks(stacks -> {
-            if (afterwards != null) {
-                afterwards.run();
-            }
-            if (stacks.isEmpty()) {
-                host.setStatus(tr("status.debug.threadDumpEmpty"));
-                return;
-            }
-            ThreadDump dump = new ThreadDump(name, java.time.LocalTime.now(), pausedForIt, stacks);
-            if (parallel) {
-                parallelStacksWindow().show(host.window(), new ParallelStacks(dump));
-                host.setStatus(tr("status.debug.parallelStacksTaken", stacks.size()));
-                return;
-            }
-            threadDumpWindow().show(host.window(), dump);
-            host.setStatus(tr("status.debug.threadDumpTaken", stacks.size()));
-        });
-    }
-
     /** Says which exception the stop is on: the Debug window's state line, the exception card and the status bar. */
     void showExceptionInfo(DapModels.ExceptionInfo info) {
         // Which exception: the one thing an exception stop has to say, and the stop event does not.
@@ -8606,112 +8607,16 @@ final class DebugCoordinator {
         host.setStatus(tr("status.debug.stoppedOnException", DebugFeedback.exceptionSummary(info, false)));
     }
 
-    /** A session without a label is named by the file it debugs, else plainly. */
-    private static String dumpSessionName(DebugSession session) {
-        Path file = session.dap.debugFile();
-        return file != null && file.getFileName() != null ? file.getFileName().toString() : tr("threaddump.untitled");
-    }
-
-    private DebugThreadDumpWindow threadDumpWindow() {
-        DebugThreadDumpWindow window = threadDumpWindow;
-        if (window == null) {
-            window = new DebugThreadDumpWindow(new DebugThreadDumpWindow.Actions() {
-                @Override
-                public void openFrame(DapModels.StackFrameInfo frame) {
-                    openDumpFrame(frame);
-                }
-
-                @Override
-                public void openText(String title, String text) {
-                    ops.openReadOnlyDoc(title, text, "text");
-                }
-
-                @Override
-                public void takeAgain() {
-                    threadDump();
-                }
-
-                @Override
-                public boolean canTakeAgain() {
-                    DapManager.State state = dap().state();
-                    return state == DapManager.State.SUSPENDED || state == DapManager.State.RUNNING;
-                }
-            });
-            threadDumpWindow = window;
-        }
-        return window;
-    }
-
-    private @Nullable DebugParallelStacksWindow parallelStacksWindow;
-
-    private DebugParallelStacksWindow parallelStacksWindow() {
-        DebugParallelStacksWindow window = parallelStacksWindow;
-        if (window == null) {
-            window = new DebugParallelStacksWindow(new DebugParallelStacksWindow.Actions() {
-                @Override
-                public void openFrame(DapModels.StackFrameInfo frame) {
-                    openDumpFrame(frame);
-                }
-
-                @Override
-                public void takeAgain() {
-                    parallelStacks();
-                }
-
-                @Override
-                public boolean canTakeAgain() {
-                    DapManager.State state = dap().state();
-                    return state == DapManager.State.SUSPENDED || state == DapManager.State.RUNNING;
-                }
-            });
-            parallelStacksWindow = window;
-        }
-        return window;
-    }
-
     /** The Parallel Stacks window, when one was opened (test read). */
     @Nullable
     DebugParallelStacksWindow parallelStacksWindowIfOpen() {
-        return parallelStacksWindow;
+        return stacks.parallelStacksWindow;
     }
 
     /** The Thread Dump window, when one was opened (test read). */
     @Nullable
     DebugThreadDumpWindow threadDumpWindowIfOpen() {
-        return threadDumpWindow;
-    }
-
-    /**
-     * Opens a dumped frame's code: its file at its line; a library class's source, as the call stack opens one; or the
-     * debugger's own copy, while the session lasts. The frame is a snapshot's, so the execution line is not drawn.
-     */
-    private void openDumpFrame(DapModels.StackFrameInfo frame) {
-        Path file = frame.file();
-        if (file != null && hasSource(frame)) {
-            openSourceLine(file, frame.line());
-            return;
-        }
-        Path anchor = dap().debugFile();
-        String uri = frame.sourceUri();
-        if (uri != null && anchor != null) {
-            ops.openLibraryFrame(anchor, uri, frame.line(), lib -> {});
-            return;
-        }
-        DapModels.LoadedSource reference = frame.reference();
-        if (reference != null && dap().state() != DapManager.State.INACTIVE) {
-            openReferenceSource(reference, doc -> {
-                int line = Math.max(0, frame.line());
-                doc.getFocusedArea()
-                        .moveTo(
-                                Math.min(
-                                        line,
-                                        doc.getFocusedArea().getParagraphs().size() - 1),
-                                0);
-                doc.getFocusedArea().requestFollowCaret();
-            });
-            return;
-        }
-        host.setStatus(tr("status.debug.noSource", DebugPanelText.frameName(frame.name())));
+        return stacks.threadDumpWindow;
     }
 
     /** Focuses the evaluate field at the top of Variables ({@code debug.focusEvaluate}). */
@@ -8891,21 +8796,27 @@ final class DebugCoordinator {
     /**
      * A user save (not an autosave) reached the language server. During a Java session in {@code auto} mode
      * the change goes into the running program at once and the console says what happened; in {@code manual}
-     * mode the status bar says how to apply it. FX thread.
+     * mode the status bar says how to apply it. Every Java session that can take it, not only the one shown (a
+     * client and its server). FX thread.
      */
     void sourceSaved(EditorBuffer buffer) {
         Path file = buffer == null ? null : buffer.getPath();
-        if (!isJavaSource(file) || !dap().canReplaceCode()) {
+        if (!isJavaSource(file)) {
             return;
         }
-        s().savedSinceReplace.add(file);
-        switch (codeReplaceMode()) {
-            case AUTO -> requestCodeReplace(file, false);
-            case MANUAL -> host.setStatus(tr("debug.hcr.manualHint"));
-            case OFF -> {
-                // the user chose to keep the running code as it is
+        forEachSession(() -> {
+            if (!dap().canReplaceCode()) {
+                return;
             }
-        }
+            s().savedSinceReplace.add(file);
+            switch (codeReplaceMode()) {
+                case AUTO -> requestCodeReplace(file, false);
+                case MANUAL -> host.setStatus(tr("debug.hcr.manualHint"));
+                case OFF -> {
+                    // the user chose to keep the running code as it is
+                }
+            }
+        });
     }
 
     /**
@@ -8980,18 +8891,21 @@ final class DebugCoordinator {
         Set<Path> covered = new LinkedHashSet<>(s().savedSinceReplace);
         long session = s().codeReplaceSession;
         host.setStatus(tr("debug.hcr.applying"));
-        dap().applyCodeChanges(file, outcome -> {
-            if (session != s().codeReplaceSession) {
-                return; // its session ended meanwhile, which reset all of this (review D101)
-            }
-            s().codeReplaceRunning = false;
-            reportCodeReplace(outcome, covered, asked);
-            Path again = s().codeReplaceAgain;
-            s().codeReplaceAgain = null;
-            if (again != null && dap().canReplaceCode()) {
-                requestCodeReplace(again, false);
-            }
-        });
+        dap().applyCodeChanges(
+                        file,
+                        asThisSession(
+                                outcome -> { // answered as the session that asked
+                                    if (session != s().codeReplaceSession) {
+                                        return; // its session ended meanwhile, which reset all of this (review D101)
+                                    }
+                                    s().codeReplaceRunning = false;
+                                    reportCodeReplace(outcome, covered, asked);
+                                    Path again = s().codeReplaceAgain;
+                                    s().codeReplaceAgain = null;
+                                    if (again != null && dap().canReplaceCode()) {
+                                        requestCodeReplace(again, false);
+                                    }
+                                }));
     }
 
     /** Says how a replace ended: status bar always, Debug console for anything the user must act on. */
@@ -9277,7 +9191,13 @@ final class DebugCoordinator {
     /** The breakpoints of the window's files, and what can be done to them (see {@link BreakpointsPicker}). */
     BreakpointsPicker breakpointsPicker() {
         return new BreakpointsPicker(
-                host, ops, this::allManagers, this::toggleMuteBreakpoints, () -> breakpointsMuted, memberBreakpoints);
+                        host,
+                        ops,
+                        this::allManagers,
+                        this::toggleMuteBreakpoints,
+                        () -> breakpointsMuted,
+                        memberBreakpoints)
+                .sendingClosed(this::sendClosed);
     }
 
     /** Debug: Move Breakpoint to Group… — on the caret line (see {@link BreakpointGroups#moveToGroupAtCaret}). */
@@ -9303,11 +9223,21 @@ final class DebugCoordinator {
         groups.importBreakpoints();
     }
 
+    /** The file a breakpoint store key names, or null (a remote host not connected, a key it cannot read). */
+    private static @Nullable Path storedPath(String key) {
+        try {
+            return com.editora.vfs.Vfs.parseStorable(key);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
     /**
-     * Breakpoints just saved for files with no tab ({@code saved}, by file key) are sent to each live session: an
-     * import mid-session. The files are re-anchored off the FX thread.
+     * Breakpoints just saved for files with no tab ({@code saved}, by file key; an empty list: none left) are sent to
+     * each live session as its start would have: re-anchored off the FX thread, triggered ones held back, lambdas
+     * aimed at. An import mid-session, an edit in the Breakpoints list or on a Map card.
      */
-    private void sendClosed(Map<String, List<Breakpoint>> saved) {
+    void sendClosed(Map<String, List<Breakpoint>> saved) {
         if (breakpointsMuted) {
             return; // sent when Mute is turned off
         }
@@ -9324,9 +9254,17 @@ final class DebugCoordinator {
                     if (!dap().isActive()) {
                         return;
                     }
-                    for (DapModels.FileBreakpoints fb : computed) {
+                    Map<String, DapModels.FileBreakpoints> byKey = new LinkedHashMap<>();
+                    computed.forEach(fb -> byKey.put(key(fb.file()), fb));
+                    for (String k : copy.keySet()) { // a file left with none is told so: its last one was removed
+                        Path p = byKey.containsKey(k) ? null : storedPath(k);
+                        if (p != null) {
+                            byKey.put(k, new DapModels.FileBreakpoints(p, List.of()));
+                        }
+                    }
+                    for (DapModels.FileBreakpoints fb : byKey.values()) {
                         if (ops.bufferForPath(fb.file()) == null) { // opened meanwhile: its tab sent them
-                            s().sentBreakpoints.put(fb.file(), fb);
+                            s().closedBreakpoints.put(key(fb.file()), fb);
                             dap().updateBreakpoints(fb);
                         }
                     }
@@ -9353,7 +9291,7 @@ final class DebugCoordinator {
                         dap().updateBreakpoints(fb);
                     }
                 });
-                for (DapModels.FileBreakpoints fb : closedBreakpoints) {
+                for (DapModels.FileBreakpoints fb : s().closedBreakpoints.values()) {
                     if (fb.file() != null && !open.contains(key(fb.file()))) {
                         dap().updateBreakpoints(
                                         breakpointsMuted ? new DapModels.FileBreakpoints(fb.file(), List.of()) : fb);

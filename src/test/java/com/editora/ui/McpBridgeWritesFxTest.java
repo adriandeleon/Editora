@@ -77,12 +77,15 @@ class McpBridgeWritesFxTest {
 
         // Text the client was shown, outside the region, is found.
         assertNull(mcp.editBuffer(path, "foo = 4", "foo = 40", false));
+        // an edit outside the region rewrites the whole document off the FX thread (PERF-01): it lands a moment later
+        waitFor(() -> "foo = 1\nfoo = 2\nfoo = 3\nfoo = 40\n".equals(b.getContent()));
         assertEquals("foo = 1\nfoo = 2\nfoo = 3\nfoo = 40\n", content(b));
 
         // replace_all reaches every occurrence, not only the ones in the region.
         EditorBuffer all = open("narrow-all.txt", doc);
         narrowToLine(all, doc, 1);
         assertNull(mcp.editBuffer(all.getPath().toString(), "=", ":=", true));
+        waitFor(() -> "foo := 1\nfoo := 2\nfoo := 3\nfoo := 4\n".equals(all.getContent()));
         assertEquals("foo := 1\nfoo := 2\nfoo := 3\nfoo := 4\n", content(all));
         discard(b, all);
     }

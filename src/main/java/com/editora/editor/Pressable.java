@@ -43,7 +43,9 @@ public final class Pressable {
             }
         });
         node.addEventHandler(KeyEvent.KEY_PRESSED, e -> {
-            if (isActivationKey(e.getCode(), e.isShortcutDown() || e.isAltDown() || e.isShiftDown())) {
+            if (isActivationKey(
+                    e.getCode(),
+                    e.isShortcutDown() || e.isControlDown() || e.isMetaDown() || e.isAltDown() || e.isShiftDown())) {
                 e.consume();
                 press(node);
             }

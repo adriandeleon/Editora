@@ -42,6 +42,35 @@ final class CsharpTestDebug {
         }
     }
 
+    /** Whether {@code session}'s {@code dotnet test} run is still going: building, or waiting to be attached to. */
+    static boolean running(DebugSession session) {
+        RunService run = session.testHost;
+        return run != null && run.isRunning();
+    }
+
+    /**
+     * How long a test run may go on after its session ended: it prints its summary, then exits by itself. TEST SEAM.
+     */
+    static javafx.util.Duration summaryGrace = javafx.util.Duration.seconds(10);
+
+    /**
+     * {@code session} ended: its {@code dotnet test} run is stopped if it is still going a little later. When the
+     * attach failed, its test host would wait for a debugger forever.
+     */
+    static void ended(DebugSession session) {
+        RunService run = session.testHost;
+        if (run == null || !run.isRunning()) {
+            return;
+        }
+        javafx.animation.PauseTransition grace = new javafx.animation.PauseTransition(summaryGrace);
+        grace.setOnFinished(e -> {
+            if (session.testHost == run && run.isRunning() && !session.dap.isActive()) {
+                run.stop();
+            }
+        });
+        grace.play();
+    }
+
     /**
      * Debugs the C# test at the caret of {@code b}, when {@code b} is a file of a test project with a test there (or a
      * test class around the caret). False — nothing done — for any other buffer.

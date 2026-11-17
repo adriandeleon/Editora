@@ -53,6 +53,53 @@ class GoLaunchTest {
     }
 
     @Test
+    void aRawStringsLinesAreNeitherADeclarationNorAClosingBrace() {
+        String text = """
+                package calc
+
+                func TestTemplate(t *testing.T) {
+                	src := `
+                func main() {
+                }
+                /* not a comment
+                `
+                	check(t, src)
+                }
+
+                const doc = `
+                func TestFake(t *testing.T) {
+                `
+                """;
+        assertEquals("TestTemplate", GoLaunch.testAt(text, 8), "below a } inside a raw string");
+        assertEquals("TestTemplate", GoLaunch.testAt(text, 5), "inside the raw string");
+        assertNull(GoLaunch.testAt(text, 13), "a func line inside a raw string is no test");
+        assertNull(GoLaunch.testAt(text, 11));
+    }
+
+    @Test
+    void aDebugBinaryIsDeletedAndStaleOnesAreCleanedUp(@TempDir Path dir) throws Exception {
+        Path old = Files.writeString(dir.resolve("editora-dlv-old"), "x");
+        Path fresh = Files.writeString(dir.resolve("editora-dlv-new"), "x");
+        Path other = Files.writeString(dir.resolve("other-old"), "x");
+        java.time.Instant now = java.time.Instant.now();
+        java.nio.file.attribute.FileTime twoHoursAgo =
+                java.nio.file.attribute.FileTime.from(now.minus(java.time.Duration.ofHours(2)));
+        Files.setLastModifiedTime(old, twoHoursAgo);
+        Files.setLastModifiedTime(other, twoHoursAgo);
+        assertEquals(1, GoLaunch.deleteStaleDebugBinaries(dir, now.minus(java.time.Duration.ofHours(1))));
+        assertFalse(Files.exists(old));
+        assertTrue(Files.exists(fresh), "a running session's");
+        assertTrue(Files.exists(other), "not Editora's");
+        GoLaunch.deleteDebugBinary(other.toString());
+        assertTrue(Files.exists(other), "only a debug binary is deleted");
+        GoLaunch.deleteDebugBinary(fresh.toString());
+        assertFalse(Files.exists(fresh));
+        GoLaunch.deleteDebugBinary(fresh.toString()); // already gone: nothing
+        GoLaunch.deleteDebugBinary(null);
+        assertTrue(GoLaunch.debugBinary().contains("editora-dlv-"));
+    }
+
+    @Test
     void aTestRunsByNameAndABenchmarkWithoutTheTests() {
         assertEquals(List.of("-test.run", "^TestAdd$"), GoLaunch.testArgs("TestAdd"));
         assertEquals(List.of("-test.run", "^FuzzParse$"), GoLaunch.testArgs("FuzzParse"), "its seed corpus");

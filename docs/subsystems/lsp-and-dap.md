@@ -1388,7 +1388,11 @@ program run before a column breakpoint (which js-debug places with more work) wa
 `ProcessRegistry.killTree`s the adapter subprocess tree (same wrapper-orphan reasoning as LSP). The
 standalone adapters' stderr is drained into `AdapterStderr` (an undrained PIPE deadlocks, like the LSP
 servers; DAP traffic is on stdin/stdout or the socket) and its last lines are added to a start failure's
-message.
+message. An adapter that dies while the session starts (state STARTING, or a `launch`/`attach` it never answered:
+`gdb -i dap` before GDB 14, a crashing CodeLLDB or debugpy) is reported by `DapManager.onTransportClosed` with that
+tail, for every adapter — the connect or launch failure that would say so arrives after the session has ended, and
+is dropped. The tail is kept per session (`SessionStderr`), so a session with no drained adapter (java-debug in
+jdtls, a remote js-debug) never shows the last one's.
 
 **The JavaScript launch.** [`dap/JsLaunch`](../../src/main/java/com/editora/dap/JsLaunch.java) builds the
 `launch` body: the program runs on the Node.js `run/NodeRuntimes` resolves for the file (`runtimeExecutable`
@@ -1500,8 +1504,13 @@ a plain `continue` naming one thread would leave every other thread suspended �
 stepped thread. The "Suspend all threads when one stops" setting is java-debug's `suspendAllThreads`
 (`JavaDebugSettings`, read when a session starts): breakpoints suspend with `SUSPEND_ALL`, and java-debug's own
 `continue` then resumes the whole program. *Force Run to Cursor* (`DapManager.forceRunToCursor`) sends every
-other file an empty breakpoint set and the caret's file only the cursor line, then resumes; the next stop's
-`clearTempBreakpoint` sends the real sets again (`forceRunMuted`). *Show Numbers as Hexadecimal*
+other file an empty breakpoint set and the caret's file only the cursor line, then resumes; `clearTempBreakpoint`
+sends the real sets again (`forceRunMuted`) when the trip ends. A Run to Cursor trip ends at a stop on the cursor
+line, at a stop elsewhere the program is not resumed from (a step, a new Run to Cursor, a stop reached by anything but
+a resume), at a stop the window shows the user (`DapManager.stopShown`, as VS Code and IntelliJ end it), and with
+the session (`DapManager.settleTempBreakpoint`): the window resumes some stops without showing them (a logpoint it
+writes, a recording breakpoint, filters or a hit count that did not match, Thread Dump's pause), and clearing the
+temporary breakpoint at every stop left Run to Cursor never arriving. *Show Numbers as Hexadecimal*
 (`DapManager.setHexValues`) puts `format: {hex: true}` on every `variables` and `evaluate` request of the session and
 the next ones (java-debug, debugpy and GDB honour it; js-debug, CodeLLDB and Delve ignore it), and forgets the stop's cached answers. The opt-in `DebugQuickWinsProbeFxTest` checks this against the
 installed adapters in a real window (a worker thread's output stops while paused), along with temporary breakpoints
@@ -1862,7 +1871,8 @@ the adapter's message), fills the tokens from the stop's frames (`DebugPanelText
 message for `$CALLSTACK`) and the `threads` answer, writes the line to the console and resumes. The stop is quiet like
 a recording breakpoint's (`DebugSession.quietStop`): not shown, not in Debug History, and a step or Stop meanwhile wins.
 The program pauses briefly at each hit, which the form says; a message without tokens is the adapter's, as before.
-As with a recording breakpoint, the stop ends a Run to Cursor under way (`clearTempBreakpoint`).
+As with a recording breakpoint, the stop does not end a Run to Cursor under way: the resume carries it on
+(`DapManager.settleTempBreakpoint`).
 An adapter without `supportsLogPoints` (netcoredbg 3.2.0) ignores every `logMessage` and stops on the breakpoint after
 checking its condition, so `logpointToWrite` takes any logpoint of such a session the same way, tokens or not
 (`DapClient.supportsLogPoints`; capabilities not known yet count as supporting). A hit count the adapter does not
@@ -2278,8 +2288,15 @@ before). Debug Both makes a session on `DapManager.newSession()` — the same `D
 the focused one. Everything a session's manager hands the FX thread runs as that session's: its listener and its
 panel's `Actions` are proxies that wrap each call in `inSession` (`inSessionProxy`), and `DapManager.fx()` runs every
 reply through `setCallbackWrapper`. Launch steps that finish later carry the session that started them —
-`BeforeLaunchStep.setContext`, `later()`/`laterIn()`, `startOffFx`, `asThisSession` for the jdtls build — so a tab
-clicked meanwhile does not launch into the wrong session. Only the focused session (`shown()`) marks the editor
+`BeforeLaunchStep.setContext`, `later()`/`laterIn()`, `startOffFx`, `asThisSession` for the jdtls build, and
+`planOffFx` for every plan read off the FX thread (launch.json and tasks.json reads included) — so a tab clicked
+meanwhile, or a compound's next member focused before the first one's plan lands, does not launch into the wrong
+session. `DebugFacts` refuses a second look only for the same session. A Debug Test run's attaches go to the session
+waiting for them (`attachWaiter`), whichever is focused; each session keeps its own queued JVMs (`queuedAttaches`)
+and its own closed-file breakpoints (`DebugSession.closedBreakpoints`), and an edit to a closed file's breakpoints
+(Breakpoints list, Map card, import) is sent through `sendClosed` as a session start would: re-anchored, triggered ones
+held back. Debug support off, a file opened mid-session and hot code replace on save act on every session; Thread
+Dump and Parallel Stacks keep the session their stacks came from (`DebugStacks`). Only the focused session (`shown()`) marks the editor
 (execution line, inline values, exception card, breakpoint states, pins) and the status bar's debug state; a session
 that stops, other than on a recording breakpoint, is focused (`focusSession`), which takes the last one's marks off
 the editor and puts the new one's on. Breakpoint changes, Mute, hex values, exception filters and member breakpoints
