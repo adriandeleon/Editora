@@ -16,7 +16,7 @@
 
 .minimap { -fx-background-color: -color-bg-default; -fx-border-color: -color-border-default; }
 
-.editor-area .lineno { -fx-background-color: -color-bg-subtle; -fx-text-fill: -color-fg-subtle; }
+.editor-area .lineno { -fx-background-color: -color-bg-subtle; -fx-text-fill: -color-fg-muted; }
 .editor-area .fold-header-line { -fx-background-color: -color-bg-subtle; }
 .editor-area .fold-gutter { -fx-background-color: -color-bg-subtle; }
 .editor-area .fold-gutter .lineno { -fx-background-color: transparent; }
@@ -65,6 +65,6 @@
 /* Project tree: folder accent + muted file. */
 .project-tree { -project-folder-color: -color-accent-fg; -project-file-color: -color-fg-muted; }
 
-/* Bookmark / note gutter markers. */
-.editor-area .fold-gutter .bookmark-marker { -fx-fill: -color-warning-emphasis; }
-.editor-area .fold-gutter .note-marker { -fx-fill: -color-danger-emphasis; }
+/* Bookmark / note gutter markers: the accent, told apart by shape (amber and red are states, ICON-18). */
+.editor-area .fold-gutter .bookmark-marker { -fx-fill: -color-accent-emphasis; }
+.editor-area .fold-gutter .note-marker { -fx-fill: -color-accent-emphasis; }

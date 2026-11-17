@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -165,29 +166,39 @@ class DebugReview3CFxTest {
     void theConsolesUnderMixedThemesDrawStderrOnTheBackgroundItWasMadeFor() throws Exception {
         for (String[] themes : List.of(
                 new String[] {"Editora Dark", "editora-light"}, new String[] {"Editora Light", "editora-dark"})) {
-            double[] contrast = FxTestSupport.callOnFx(() -> {
+            Color[][] drawn = FxTestSupport.callOnFx(() -> {
                 DebugPanel debug = new DebugPanel(noop());
                 debug.appendOutput("Exception in thread main\n", "stderr");
                 RunPanel run = new RunPanel(() -> {});
                 run.appendOutput("Traceback (most recent call last):", true);
                 CodeArea debugConsole = FxTestSupport.field(debug, "console");
                 CodeArea runConsole = FxTestSupport.field(run, "output");
-                double before = stderrContrast(debug, debugConsole, themes);
+                Color[] before = stderrColours(debug, debugConsole, themes);
                 debug.setPlainValueColours(true);
                 run.setUiColours(true);
-                return new double[] {
-                    before, stderrContrast(debug, debugConsole, themes), stderrContrast(run, runConsole, themes)
+                return new Color[][] {
+                    before, stderrColours(debug, debugConsole, themes), stderrColours(run, runConsole, themes)
                 };
             });
+            // What the fix is for: the UI's red on the editor theme's ground. After it, each console draws the UI
+            // theme's red on the UI theme's ground, a pair StyleContrastTest holds at 4.5:1 in both Editora themes
+            // (lightTintedText…, darkTintedTextStaysAa), so no ratio is computed here (ICON-14, Pauta 6.0.1).
             String which = themes[0] + " UI, " + themes[1] + " editor";
-            assertTrue(contrast[0] < 4.5, which + ": the problem the fix is for, " + contrast[0]);
-            assertTrue(contrast[1] >= 4.5, which + ": Debug console stderr " + contrast[1]);
-            assertTrue(contrast[2] >= 4.5, which + ": Run console stderr " + contrast[2]);
+            java.util.Map<String, String> ui = StyleContrastTest.palette(
+                    themes[0].toLowerCase(java.util.Locale.ROOT).replace(' ', '-'));
+            Color red = StyleContrastTest.color(ui, "-color-danger-fg");
+            Color ground = StyleContrastTest.color(ui, "-color-bg-default");
+            assertNotEquals(ground, drawn[0][1], which + ": the problem the fix is for, the editor theme's ground");
+            for (int i = 1; i < 3; i++) {
+                String console = i == 1 ? "Debug" : "Run";
+                assertEquals(red, drawn[i][0], which + ": " + console + " console stderr ink");
+                assertEquals(ground, drawn[i][1], which + ": " + console + " console ground");
+            }
         }
     }
 
-    /** The contrast of {@code console}'s stderr text on its background, {@code panel} rendered under {@code themes}. */
-    private static double stderrContrast(Parent panel, CodeArea console, String[] themes) {
+    /** {@code console}'s stderr ink and its background, {@code panel} rendered under {@code themes}. */
+    private static Color[] stderrColours(Parent panel, CodeArea console, String[] themes) {
         StackPane root = new StackPane(panel);
         Stage stage = new Stage();
         try {
@@ -212,24 +223,10 @@ class DebugReview3CFxTest {
             Color back = bg == null || bg.getFills().isEmpty()
                     ? Color.WHITE
                     : (Color) bg.getFills().get(bg.getFills().size() - 1).getFill();
-            return contrast((Color) text.getFill(), back);
+            return new Color[] {(Color) text.getFill(), back};
         } finally {
             stage.hide();
             root.getChildren().clear();
         }
-    }
-
-    private static double contrast(Color a, Color b) {
-        double la = luminance(a);
-        double lb = luminance(b);
-        return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
-    }
-
-    private static double luminance(Color c) {
-        return 0.2126 * channel(c.getRed()) + 0.7152 * channel(c.getGreen()) + 0.0722 * channel(c.getBlue());
-    }
-
-    private static double channel(double v) {
-        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
     }
 }

@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -668,30 +667,8 @@ class ProjectMapLayoutFxTest {
         });
     }
 
-    @Test
-    void rowAndConnectorInkReachesThreeToOneInBothEditoraThemes() throws Exception {
-        for (String theme : List.of("editora-light", "editora-dark")) {
-            Map<String, String> palette = palette(theme);
-            Color background = color(palette, "-color-bg-default");
-            Color card = color(palette, "-color-bg-subtle");
-            Color border = ProjectMapView.rowBorderColor(
-                    color(palette, "-color-border-default"), color(palette, "-color-fg-muted"));
-            assertTrue(
-                    contrast(border, card) >= 3.0,
-                    theme + ": a row's border against its card is " + contrast(border, card));
-            Color connector = background.interpolate(
-                    color(palette, "-color-accent-emphasis"), ProjectMapView.connectorOpacity(false, true));
-            assertTrue(
-                    contrast(connector, background) >= 3.0,
-                    theme + ": an ordinary connector is " + contrast(connector, background));
-            assertTrue(
-                    contrast(color(palette, "-color-accent-fg"), card) >= 4.5,
-                    theme + ": an open file's label is " + contrast(color(palette, "-color-accent-fg"), card));
-            assertTrue(
-                    contrast(color(palette, "-color-fg-default"), color(palette, "-color-accent-subtle")) >= 4.5,
-                    theme + ": the unfocused selection's label");
-        }
-    }
+    // The rows' and connectors' ink on their grounds is StyleContrastTest's arithmetic
+    // (mapRowAndConnectorInkReachesThreeToOneInBothEditoraThemes): it needs no toolkit (ICON-14, Pauta 6.0.1).
 
     // ---- toolbar, breadcrumbs, help and accessibility (U5, U12, U13, U15) ----------------------------
 
@@ -1023,12 +1000,7 @@ class ProjectMapLayoutFxTest {
             }
         }
         assertTrue(noteRules >= 5);
-        for (String theme : List.of("editora-light", "editora-dark")) {
-            Map<String, String> palette = palette(theme);
-            assertTrue(
-                    contrast(color(palette, "-color-fg-default"), color(palette, "-color-warning-subtle")) >= 7.0,
-                    theme + ": note text on the note sheet");
-        }
+        // Note text on the note sheet: StyleContrastTest.noteSheetsCarryTheThemesInk (ICON-14).
     }
 
     // ---- fixture -------------------------------------------------------------------------------------
@@ -1306,40 +1278,5 @@ class ProjectMapLayoutFxTest {
             }
         }
         throw new AssertionError("no rule for " + selector);
-    }
-
-    /** {@code -color-*} tokens of a control theme's {@code .root} palette. */
-    private static Map<String, String> palette(String theme) throws Exception {
-        String css = read("atlantafx-themes/" + theme + ".css");
-        int start = css.indexOf(".root {");
-        String block = css.substring(start, css.indexOf("\n}", start));
-        Map<String, String> tokens = new HashMap<>();
-        Matcher m = Pattern.compile("(-color-[a-z0-9-]+)\\s*:\\s*([^;]+);").matcher(block);
-        while (m.find()) {
-            tokens.put(m.group(1), m.group(2).trim());
-        }
-        return tokens;
-    }
-
-    private static Color color(Map<String, String> palette, String token) {
-        String value = palette.get(token);
-        while (palette.containsKey(value)) {
-            value = palette.get(value);
-        }
-        return Color.web(value);
-    }
-
-    private static double contrast(Color a, Color b) {
-        double la = luminance(a);
-        double lb = luminance(b);
-        return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
-    }
-
-    private static double luminance(Color c) {
-        return 0.2126 * channel(c.getRed()) + 0.7152 * channel(c.getGreen()) + 0.0722 * channel(c.getBlue());
-    }
-
-    private static double channel(double v) {
-        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
     }
 }

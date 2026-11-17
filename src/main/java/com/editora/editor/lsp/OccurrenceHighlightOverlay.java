@@ -10,6 +10,7 @@ import javafx.scene.paint.Color;
 
 import com.editora.editor.AfterLayoutPaint;
 import com.editora.editor.CanvasGuards;
+import com.editora.editor.OverlayPalette;
 import com.editora.editor.SecondaryPane;
 import com.editora.editor.TabSurface;
 import org.fxmisc.richtext.CodeArea;
@@ -28,9 +29,11 @@ import org.jspecify.annotations.Nullable;
  */
 public final class OccurrenceHighlightOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
-    private static final Color READ = Color.web("#90a4ae", 0.28); // neutral blue-gray wash
-    private static final Color WRITE = Color.web("#ffb74d", 0.32); // warmer — the symbol is assigned here
-    private static final Color WRITE_BORDER = Color.web("#ffb74d", 0.9);
+    /**
+     * A read is a neutral wash; a write, where the symbol is assigned, the accent with a ruled edge (not orange:
+     * amber means a warning, ICON-18). The theme's, through {@link OverlayPalette}, re-read on a theme change.
+     */
+    private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
 
     private final CodeArea area;
     private final Canvas canvas = new Canvas(1, 1);
@@ -60,6 +63,10 @@ public final class OccurrenceHighlightOverlay extends Region implements Secondar
         setMouseTransparent(true);
         setVisible(false);
         getChildren().add(canvas);
+        OverlayPalette.track(area, getChildren(), palette -> {
+            colors = palette;
+            scheduleRedraw();
+        });
         area.viewportDirtyEvents().subscribe(ignore -> scheduleRedraw());
         area.estimatedScrollXProperty().addListener((o, a, b) -> scheduleRedraw());
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
@@ -193,10 +200,10 @@ public final class OccurrenceHighlightOverlay extends Region implements Secondar
             if (b == null || b.getMaxX() < 0 || b.getMinX() > w || b.getMaxY() < 0 || b.getMinY() > h) {
                 continue;
             }
-            g.setFill(write ? WRITE : READ);
+            g.setFill(write ? colors.occurrenceWrite() : colors.occurrenceRead());
             g.fillRect(b.getMinX(), b.getMinY(), b.getWidth(), b.getHeight());
             if (write) {
-                g.setStroke(WRITE_BORDER);
+                g.setStroke(colors.occurrenceWriteBorder());
                 g.setLineWidth(1);
                 g.strokeRect(b.getMinX() + 0.5, b.getMinY() + 0.5, b.getWidth() - 1, b.getHeight() - 1);
             }

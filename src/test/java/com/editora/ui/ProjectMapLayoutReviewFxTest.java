@@ -4,7 +4,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -38,7 +37,6 @@ import javafx.scene.input.PickResult;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
-import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.stage.Stage;
 
@@ -360,22 +358,8 @@ class ProjectMapLayoutReviewFxTest {
 
     // ---- B19: faded rows ------------------------------------------------------------------------------
 
-    @Test
-    void aFadedLabelRecedesButKeepsAReadableContrastInBothEditoraThemes() throws Exception {
-        for (String theme : List.of("editora-light", "editora-dark")) {
-            Map<String, String> palette = palette(theme);
-            Color ground = color(palette, "-color-bg-subtle");
-            Color text = color(palette, "-color-fg-default");
-            Color faded = ProjectMapView.fadedInk(text, ground, 3.5, 0.62);
-            double contrast = ProjectMapView.contrastRatio(faded, ground);
-            assertTrue(contrast >= 3.5, theme + ": " + contrast);
-            assertTrue(
-                    contrast < ProjectMapView.contrastRatio(text, ground) - 2,
-                    theme + ": a faded label is visibly fainter: " + contrast);
-        }
-        Color weak = Color.web("#999999");
-        assertEquals(weak, ProjectMapView.fadedInk(weak, Color.WHITE, 3.5, 0.62), "ink already under the floor stays");
-    }
+    // A faded label's floor is StyleContrastTest.aFadedMapLabelRecedesButStaysReadableInBothEditoraThemes: pure
+    // arithmetic, no toolkit (ICON-14, Pauta 6.0.1).
 
     // ---- B13 / B25: fonts and targets -----------------------------------------------------------------
 
@@ -697,26 +681,5 @@ class ProjectMapLayoutReviewFxTest {
         try (var in = ProjectMapLayoutReviewFxTest.class.getResourceAsStream(STYLES + path)) {
             return new String(in.readAllBytes(), StandardCharsets.UTF_8).replaceAll("(?s)/\\*.*?\\*/", "");
         }
-    }
-
-    /** {@code -color-*} tokens of a bundled control theme, aliases resolved by {@link #color}. */
-    private static Map<String, String> palette(String theme) throws Exception {
-        String css = read("atlantafx-themes/" + theme + ".css");
-        int start = css.indexOf(".root {");
-        String block = css.substring(start, css.indexOf("\n}", start));
-        Map<String, String> tokens = new HashMap<>();
-        Matcher m = Pattern.compile("(-color-[a-z0-9-]+)\\s*:\\s*([^;]+);").matcher(block);
-        while (m.find()) {
-            tokens.put(m.group(1), m.group(2).trim());
-        }
-        return tokens;
-    }
-
-    private static Color color(Map<String, String> palette, String token) {
-        String value = palette.get(token);
-        while (palette.containsKey(value)) {
-            value = palette.get(value);
-        }
-        return Color.web(value);
     }
 }

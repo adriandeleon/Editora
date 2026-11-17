@@ -87,11 +87,9 @@ class DebugValuePopupThemeFxTest {
                 assertTrue(popup.isShowing());
                 Label header = FxTestSupport.field(popup, "textHeader");
                 header.getScene().getRoot().applyCss();
-                Color fill = (Color) header.getTextFill();
-                Color background = Color.web("#232736");
-                assertTrue(
-                        contrast(fill, background) >= 4.5,
-                        "header " + fill + " on " + background + ": contrast " + contrast(fill, background));
+                // The window's ink, not the editor theme's: StyleContrastTest holds that ink on the overlay ground
+                // reads (popupInkReadsOnTheOverlayGround), so no ratio is computed here (ICON-14, Pauta 6.0.1).
+                assertEquals(Color.web("#e8eaf3"), header.getTextFill(), "the dark window's -color-fg-default");
                 for (javafx.css.Styleable s = header; s != null; s = s.getStyleableParent()) {
                     assertFalse(
                             s.getStyleClass().contains("editor-area"),
@@ -219,20 +217,5 @@ class DebugValuePopupThemeFxTest {
                 stage.close();
             });
         }
-    }
-
-    /** WCAG contrast ratio of two colours. */
-    private static double contrast(Color a, Color b) {
-        double la = luminance(a);
-        double lb = luminance(b);
-        return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
-    }
-
-    private static double luminance(Color c) {
-        return 0.2126 * channel(c.getRed()) + 0.7152 * channel(c.getGreen()) + 0.0722 * channel(c.getBlue());
-    }
-
-    private static double channel(double v) {
-        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
     }
 }

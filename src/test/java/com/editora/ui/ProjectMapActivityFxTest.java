@@ -134,13 +134,16 @@ class ProjectMapActivityFxTest {
                 WritableImage shot = map.stage().getScene().snapshot(null);
                 Color hotFill = fillOf(map, shot, hot);
                 Color quietFill = fillOf(map, shot, root.resolve("pkg/hot/quiet.go"));
+                // The heat is the accent (ICON-18): the hot row is tinted, a quiet one is not. How far the tint and
+                // the meter stand off their grounds is StyleContrastTest's arithmetic (ICON-14); here, that they are
+                // drawn at all.
                 assertTrue(
-                        warmth(hotFill) > warmth(quietFill) + 0.02,
-                        theme + ": the hot row is warmer than a quiet one " + hotFill + " vs " + quietFill);
+                        distance(hotFill, quietFill) > 0.02,
+                        theme + ": the hot row is tinted, a quiet one is not " + hotFill + " vs " + quietFill);
                 Color meterHot = meterOf(map, shot, hot);
                 assertTrue(
-                        ProjectMapView.contrastRatio(meterHot, hotFill) >= 2.5,
-                        theme + ": the meter stands off its row " + meterHot + " on " + hotFill);
+                        distance(meterHot, hotFill) > 0.15,
+                        theme + ": the meter is drawn on its row " + meterHot + " on " + hotFill);
 
                 // The selection's fill is its own; the meter still shows the heat.
                 map.view().revealPath(hot);
@@ -149,7 +152,7 @@ class ProjectMapActivityFxTest {
                 Color selectedFill = fillOf(map, selected, hot);
                 Color selectedMeter = meterOf(map, selected, hot);
                 assertTrue(
-                        ProjectMapView.contrastRatio(selectedMeter, selectedFill) >= 2.5,
+                        distance(selectedMeter, selectedFill) > 0.15,
                         theme + ": a selected hot row keeps its meter " + selectedMeter + " on " + selectedFill);
             });
         }
@@ -265,8 +268,14 @@ class ProjectMapActivityFxTest {
         return shot.getPixelReader().getColor((int) Math.round(scene.getX()), (int) Math.round(scene.getY()));
     }
 
-    private static double warmth(@org.jspecify.annotations.Nullable Color color) {
-        return color == null ? 0 : color.getRed() - color.getBlue();
+    /** How far apart two colours are: the sum of their channels' differences (0 when either is missing). */
+    private static double distance(
+            @org.jspecify.annotations.Nullable Color a, @org.jspecify.annotations.Nullable Color b) {
+        return a == null || b == null
+                ? 0
+                : Math.abs(a.getRed() - b.getRed())
+                        + Math.abs(a.getGreen() - b.getGreen())
+                        + Math.abs(a.getBlue() - b.getBlue());
     }
 
     /** A row as last projected, {@code {x, y, w, h}}, or null when it is not laid out. */
