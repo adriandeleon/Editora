@@ -51,6 +51,7 @@ com.editora.ui.NativeDebugProbeFxTest
 com.editora.ui.DisassemblyMemoryProbeFxTest
 com.editora.ui.LaunchJsonProbeFxTest
 com.editora.ui.CsharpDebugProbeFxTest
+com.editora.ui.CsharpTestDebugProbeFxTest
 com.editora.ui.RubyDebugProbeFxTest
 com.editora.ui.PhpDebugProbeFxTest
 com.editora.ui.DebugHistoryProbeFxTest

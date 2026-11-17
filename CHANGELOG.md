@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Debug Test at Caret in C#.** In an xUnit, NUnit or MSTest project, Debug Test at Caret runs the test the caret
+  is in (or every test of its class) under `dotnet test` and attaches the debugger to it, so its breakpoints stop with
+  the test's values. Stop ends the run; Restart runs the same test again.
 - **Breakpoints in Django and Jinja templates.** A breakpoint on a line of a Django or Jinja template stops there,
   with the template's variables (the context, a loop's item and `forloop`) in the Debug window. Editora turns it on for
   a project that uses Django (a `manage.py`, or Django in its requirements) or Jinja (Jinja2 or Flask in its
