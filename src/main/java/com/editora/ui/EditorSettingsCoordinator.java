@@ -918,6 +918,77 @@ final class EditorSettingsCoordinator {
         });
     }
 
+    /**
+     * A picker titled by {@code commandId}'s command, whose rows show {@code detail} beside them (a setting's
+     * value), opening on {@code current} when it is one of them: the first step of a command that changes one
+     * of several settings ({@link SettingCommands}).
+     */
+    <T> void pickSetting(
+            String commandId,
+            List<T> rows,
+            java.util.function.Function<T, String> label,
+            java.util.function.Function<T, String> detail,
+            @Nullable T current,
+            java.util.function.Consumer<T> onChoose) {
+        QuickOpen<T> picker =
+                new QuickOpen<>(commandTitle(commandId), tr("palette.setting.pick"), () -> rows, label, detail, row -> {
+                    if (row != null) {
+                        onChoose.accept(row);
+                    }
+                });
+        if (current != null && rows.contains(current)) {
+            picker.setCurrentItem(() -> current);
+        }
+        picker.setOverlayHost(host.overlayHost());
+        picker.show(host.stage());
+    }
+
+    /**
+     * Asks for a new value of the setting called {@code name}, starting from {@code initial}; a {@code secret}
+     * (an API key) is typed into a field that shows dots, as its Settings row does.
+     */
+    void promptSettingValue(String name, String initial, boolean secret, java.util.function.Consumer<String> onAccept) {
+        if (!secret) {
+            host.promptText(name, tr("palette.setting.value"), initial, onAccept);
+            return;
+        }
+        javafx.scene.control.PasswordField field = new javafx.scene.control.PasswordField();
+        field.setText(initial);
+        field.setPrefColumnCount(32);
+        javafx.scene.layout.VBox body = com.editora.editor.UiZoom.spacing(
+                new javafx.scene.layout.VBox(new javafx.scene.control.Label(tr("palette.setting.value")), field), 6);
+        OverlayInput.show(
+                host.overlayHost(),
+                name,
+                body,
+                field,
+                tr("dialog.ok"),
+                null,
+                () -> onAccept.accept(field.getText()),
+                null,
+                false);
+    }
+
+    /**
+     * The tail of a command that has just written the setting called {@code name}: save, re-apply, show it in an
+     * open Settings window, and say what it is now ({@code shown}).
+     */
+    void settingWritten(String name, String shown, @Nullable Runnable apply) {
+        host.requestSave();
+        if (apply != null) {
+            apply.run();
+        }
+        if (host.settingsWindow() != null) {
+            host.settingsWindow().syncAll();
+        }
+        host.setStatus(tr("status.settingChanged", name, shown));
+    }
+
+    /** Says {@code message} in the status bar (a value a command could not keep, and why). */
+    void status(String message) {
+        host.setStatus(message);
+    }
+
     /** A command's palette title, for a status line written by the code that applied its value. */
     String titleOf(String commandId) {
         return commandTitle(commandId);

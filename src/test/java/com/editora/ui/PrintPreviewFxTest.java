@@ -962,4 +962,137 @@ class PrintPreviewFxTest {
             assertTrue(stage().getHeight() <= screen.getHeight());
         });
     }
+
+    /** What a preview shows of the UI zoom: the window's sizes and the page's. */
+    private record Measured(
+            double barFont,
+            double barGap,
+            double minWidth,
+            double screenScale,
+            double paperZoom,
+            String zoomShown,
+            double pageFont,
+            double pageWidth,
+            double printedFont) {}
+
+    /** A page holding one line of text, styled by the stylesheets alone, as a Markdown page is. */
+    private static final class TextPaginator implements PrintService.Paginator {
+        @Override
+        public List<Node> paginate(PageLayout layout) {
+            Label text = new Label("Printed text");
+            javafx.scene.layout.VBox page = new javafx.scene.layout.VBox(text);
+            page.setPrefSize(layout.getPrintableWidth(), layout.getPrintableHeight());
+            return List.of(page);
+        }
+    }
+
+    /** Opens a preview at a UI zoom of {@code percent} with the page at "100%", measures it, prints and closes. */
+    private Measured measureAt(int percent) throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            com.editora.editor.UiZoom.install();
+            Themes.applyUiZoom(percent);
+        });
+        FakeJob job = new FakeJob(letter());
+        open(job, new TextPaginator());
+        zoomTo(PrintZoom.Setting.percent(1));
+        Measured measured = FxTestSupport.callOnFx(() -> {
+            stage().getScene().getRoot().applyCss();
+            StackPane sheet = part("sheet");
+            javafx.scene.layout.VBox page =
+                    (javafx.scene.layout.VBox) sheet.getChildren().get(0);
+            page.applyCss();
+            Label text = (Label) page.getChildren().get(0);
+            return new Measured(
+                    this.<Label>part("pageBefore").getFont().getSize(),
+                    this.<javafx.scene.layout.HBox>part("barTop").getSpacing(),
+                    stage().getMinWidth(),
+                    preview.zoomFactor(),
+                    preview.paperZoom(),
+                    this.<javafx.scene.control.MenuButton>part("zoomMenu").getText(),
+                    text.getFont().getSize(),
+                    page.prefWidth(-1),
+                    Double.NaN);
+        });
+        fire("print");
+        Label printed = (Label)
+                ((javafx.scene.layout.VBox) job.printed.get(0)).getChildren().get(0);
+        double printedFont = FxTestSupport.callOnFx(() -> printed.getFont().getSize());
+        FxTestSupport.runOnFx(() -> {
+            if (stage().isShowing()) {
+                stage().close();
+            }
+        });
+        preview = null;
+        return new Measured(
+                measured.barFont(),
+                measured.barGap(),
+                measured.minWidth(),
+                measured.screenScale(),
+                measured.paperZoom(),
+                measured.zoomShown(),
+                measured.pageFont(),
+                measured.pageWidth(),
+                printedFont);
+    }
+
+    /**
+     * WIN-12 (Pauta 6.0.1): the preview follows the UI zoom like every other window: its bar's text and gaps and
+     * its minimum size grow with it, and the page at "100%" is drawn as large as the text around it. What is
+     * printed does not: the page's own text is the same size at every UI zoom, on screen and on paper.
+     */
+    @Test
+    void theWindowFollowsTheUiZoomAndThePagesStayAtTheirPrintedSize() throws Exception {
+        try {
+            Measured at100 = measureAt(100);
+            Measured at150 = measureAt(150);
+            assertEquals(at100.barFont() * 1.5, at150.barFont(), 0.05, "the bar's text follows the zoom");
+            assertEquals(at100.barGap() * 1.5, at150.barGap(), 1e-9, "and its gaps");
+            assertEquals(at100.minWidth() * 1.5, at150.minWidth(), 1e-9, "and the window's minimum size");
+            assertEquals(1.0, at100.screenScale(), 1e-9, "at 100% a point is a pixel");
+            assertEquals(1.5, at150.screenScale(), 1e-9, "at 150% the page at \"100%\" is half as large again");
+            assertEquals(1.0, at150.paperZoom(), 1e-9);
+            assertEquals("100%", at100.zoomShown());
+            assertEquals("100%", at150.zoomShown(), "the zoom control says the page's own size");
+            assertEquals(at100.pageFont(), at150.pageFont(), 1e-9, "the page's text is not restyled");
+            assertEquals(at100.pageWidth(), at150.pageWidth(), 1e-9, "nor its layout");
+            assertEquals(at100.printedFont(), at150.printedFont(), 1e-9, "and it prints at the same size");
+            assertEquals(at100.pageFont(), at100.printedFont(), 1e-9);
+        } finally {
+            FxTestSupport.runOnFx(() -> Themes.applyUiZoom(com.editora.config.Settings.DEFAULT_UI_ZOOM));
+        }
+    }
+
+    /** A change of the UI zoom while the preview is open restyles it at once, the page's scale with it. */
+    @Test
+    void aUiZoomChangeReachesAnOpenPreview() throws Exception {
+        try {
+            FxTestSupport.runOnFx(() -> {
+                com.editora.editor.UiZoom.install();
+                Themes.applyUiZoom(100);
+            });
+            open(new FakeJob(letter()), new TextPaginator());
+            zoomTo(PrintZoom.Setting.percent(1));
+            double gap = FxTestSupport.callOnFx(
+                    () -> this.<javafx.scene.layout.HBox>part("barTop").getSpacing());
+            FxTestSupport.runOnFx(() -> Themes.applyUiZoom(120));
+            settle();
+            assertEquals(1.2, factor(), 1e-9, "the page at \"100%\" follows");
+            assertEquals(
+                    gap * 1.2,
+                    FxTestSupport.callOnFx(
+                            () -> this.<javafx.scene.layout.HBox>part("barTop").getSpacing()),
+                    1e-9);
+            assertEquals(
+                    List.of(),
+                    FxTestSupport.callOnFx(() -> stage().getScene().getStylesheets().stream()
+                            .filter(sheet -> sheet.equals(com.editora.editor.UiZoom.base(sheet)))
+                            .filter(sheet -> sheet.endsWith("app.css"))
+                            .toList()),
+                    "the window's app.css is the zoomed copy");
+            fire("zoomIn");
+            assertEquals(PrintZoom.Setting.percent(1.25), setting(), "the steps are of the page's own size");
+        } finally {
+            FxTestSupport.runOnFx(() -> Themes.applyUiZoom(com.editora.config.Settings.DEFAULT_UI_ZOOM));
+        }
+    }
 }

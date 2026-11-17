@@ -223,9 +223,12 @@ about. [`UiZoom`](../src/main/java/com/editora/editor/UiZoom.java) has both halv
   counts), what is measured from another node or the screen, what comes from saved state (window geometry,
   split positions, a Project Map card's place and size), and content with a zoom of its own: the editor's
   text and everything drawn in the editor font, a terminal's grid, the Markdown preview's own zoom.
-- **Paper stays at 100%.** A scene that lays a page out for print or export, and the Print Preview window
-  that shows those pages, is pinned with `UiZoom.pin(scene)`: it keeps the 100% sheets whatever the zoom, or
-  a page paginated at one size would be drawn at another.
+- **Paper stays at 100%.** A scene that lays a page out for print or export is pinned with
+  `UiZoom.pin(scene)`: it keeps the 100% sheets whatever the zoom, or a page paginated at one size would be
+  drawn at another. The Print Preview window follows the zoom like every other one (WIN-12); only the page it
+  shows is paper, drawn in a `SubScene` pinned with `UiZoom.pin(subScene)`, whose root carries the 100% sheets
+  and whose user-agent sheet is the theme's 100% one. Its "100%" draws a point as one pixel times the UI zoom,
+  so the page is as large as the text around it; what is printed is the page as paginated.
 - The text zoom (`Settings.fontZoom`, the editor's font) is a different setting with its own three commands;
   the keymaps bind Ctrl/Cmd with `=`, `-` and `0` to it, and the UI zoom's commands ship unbound.
 

@@ -26,6 +26,7 @@ import javafx.geometry.Insets;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.SubScene;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
@@ -95,6 +96,10 @@ public final class UiZoom {
     private static final Set<Scene> PINNED =
             Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
 
+    /** The sub-scenes kept at 100% ({@link #pin(SubScene)}), for the same reason. */
+    private static final Set<SubScene> PINNED_SUBSCENES =
+            Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
+
     private static boolean installed;
 
     private UiZoom() {}
@@ -158,8 +163,9 @@ public final class UiZoom {
     }
 
     /**
-     * Keeps {@code scene} at 100% whatever the zoom: paper. A scene that lays a page out for print or export,
-     * and the window that shows those pages, must measure and draw at the sizes the page was paginated at.
+     * Keeps {@code scene} at 100% whatever the zoom: paper. A scene that lays a page out for print or export must
+     * measure and draw at the sizes the page was paginated at (the window that shows such pages keeps only them
+     * at 100%: {@link #pin(SubScene)}).
      * Its sheets are the 100% ones and, while the app is zoomed, its user-agent sheet is the theme's 100% one.
      */
     public static <S extends Scene> S pin(S scene) {
@@ -167,6 +173,18 @@ public final class UiZoom {
         PINNED.add(scene);
         repin(scene);
         return scene;
+    }
+
+    /**
+     * Keeps the paper inside a zoomed window at 100%: {@code subScene}'s user-agent sheet is the theme's 100% one
+     * and the sheets its root carries are the 100% ones, while the window around it follows the zoom. Its root's
+     * sheets win over the window's zoomed copies of the same sheets, rule for rule, so what it holds is styled as
+     * it was paginated. The Print Preview's page is one.
+     */
+    public static <S extends SubScene> S pin(S subScene) {
+        PINNED_SUBSCENES.add(subScene);
+        repin(subScene);
+        return subScene;
     }
 
     /** Gives every pinned scene the theme's 100% sheet again: call after the theme's sheet changes. FX thread. */
@@ -177,6 +195,26 @@ public final class UiZoom {
         }
         for (Scene scene : pinned) {
             repin(scene);
+        }
+        List<SubScene> pinnedSubScenes;
+        synchronized (PINNED_SUBSCENES) {
+            pinnedSubScenes = new ArrayList<>(PINNED_SUBSCENES);
+        }
+        for (SubScene subScene : pinnedSubScenes) {
+            repin(subScene);
+        }
+    }
+
+    private static void repin(SubScene subScene) {
+        String theme = javafx.application.Application.getUserAgentStylesheet();
+        // Always its own: the window around it, and the application, have the zoomed theme.
+        subScene.setUserAgentStylesheet(theme == null ? null : base(theme));
+        Parent root = subScene.getRoot();
+        if (root != null) {
+            List<String> wanted = bases(root.getStylesheets());
+            if (!wanted.equals(root.getStylesheets())) {
+                root.getStylesheets().setAll(wanted);
+            }
         }
     }
 
