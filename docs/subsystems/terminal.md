@@ -1,6 +1,6 @@
 # Integrated terminal
 
-Status: **in progress**, reviewed 2026-10-18 and fixed in one pass ([ADR 0014](../decisions/0014-integrated-terminal.md)). The Terminal tool window
+Status: **in progress** ([ADR 0014](../decisions/0014-integrated-terminal.md)). The Terminal tool window
 runs shells where a project's commands run: this machine, an SSH host, a dev container or a WSL distribution.
 Open Terminal Here opens one, links in the output open in the editor, and shell integration reports the
 shell's folder and its prompts. Scrollback search, OSC 8 links and type-ahead work in every tab, and Run and
@@ -428,7 +428,7 @@ theme. Published values are kept as they are (Solarized's bright black is its ow
 - Search matches within a row: text a soft wrap split across two rows is not found as one.
 - JediTerm's history listener fires only on resizes and clears; `TerminalView` derives the history shift on
   every model change instead (`pushedLines`, a scrolled-back view, the selection).
-- Not done, from the 2026-10-18 review: strikethrough and curly underline (JediTerm 3.74 has no such style),
+- Not done: strikethrough and curly underline (JediTerm 3.74 has no such style),
   `PIPESTATUS` for a user's own `PROMPT_COMMAND` after ours (bash cannot rebuild it at the top level), box-drawing
   glyphs drawn as shapes.
 - The scrollbar is coloured through the looked-up colours `-terminal-thumb` and `-terminal-thumb-hover`
