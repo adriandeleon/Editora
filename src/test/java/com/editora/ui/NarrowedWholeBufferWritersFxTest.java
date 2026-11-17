@@ -62,7 +62,14 @@ class NarrowedWholeBufferWritersFxTest {
     void fixingMarkdownLintReplacesTheWholeFile() throws Exception {
         String doc = "# Title\n\nIntro with trailing spaces   \n\n## Section A\n\nText A.\n\n## Section B\n\nText B.\n";
         EditorBuffer b = openNarrowed("doc.md", doc, 4, 7);
+        long before = FxTestSupport.callOnFx(b::docVersion);
         assertTrue(FxTestSupport.callOnFx(() -> registry.run("markdownLint.fix")));
+        // The fixes are worked out off the FX thread (PERF-01) and applied when they land.
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (FxTestSupport.callOnFx(b::docVersion) == before && System.currentTimeMillis() < deadline) {
+            Thread.sleep(50);
+        }
+        FxTestSupport.drainFx();
         assertWholeFileIs(doc.replace("spaces   \n", "spaces\n"), b);
     }
 

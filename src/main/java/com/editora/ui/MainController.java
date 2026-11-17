@@ -5134,21 +5134,10 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     @Nullable
     String suggestedMainClass() {
-        EditorBuffer b = activeBuffer();
-        if (b == null || b.getPath() == null || !"java".equals(b.getLanguage())) {
-            return null;
-        }
-        // Prefer the main class a Gradle `application` block declares — that's what `gradle run` would launch,
-        // so a config saved in such a project matches the build rather than whichever file happens to be open.
-        String declared = com.editora.build.GradleApplication.mainClass(
-                com.editora.build.SpringBoot.readGradleBuildFile(JavaProjectRoot.find(b.getPath())));
-        if (declared != null) {
-            return declared;
-        }
-        List<com.editora.run.MainMethodScanner.MainMethod> mains =
-                com.editora.run.MainMethodScanner.scan(b.getContent());
-        return mains.isEmpty() ? null : mains.get(0).fqn();
+        return mainClassSuggestions.suggest(activeBuffer()); // worked out off the FX thread (PERF-01)
     }
+
+    final MainClassSuggestions mainClassSuggestions = new MainClassSuggestions();
 
     /**
      * This <em>window's</em> project root, or null when it has no project open.

@@ -102,12 +102,14 @@ public final class LogTailService {
     /**
      * Starts following {@code file} from {@code startOffset} — the end of what the buffer already holds —
      * decoding with {@code charset}. Returns a {@link Handle}; events are delivered to {@code listener} on
-     * the FX thread.
+     * the FX thread. A negative {@code startOffset} follows from the file's end as it is when the follow starts,
+     * measured on the poll thread (PERF-01, Pauta 6.0.1: no stat on the FX thread).
      */
     public Handle follow(Path file, long startOffset, Charset charset, Listener listener) {
-        Handle handle = new Handle(startOffset);
+        Handle handle = new Handle(Math.max(0, startOffset));
         Poll poll = new Poll(file, startOffset, charset, listener, handle);
-        handle.future = scheduler.scheduleWithFixedDelay(poll, pollMillis, pollMillis, TimeUnit.MILLISECONDS);
+        handle.future = scheduler.scheduleWithFixedDelay(
+                poll, startOffset < 0 ? 0 : pollMillis, pollMillis, TimeUnit.MILLISECONDS);
         if (handle.isStopped()) {
             handle.future.cancel(false); // stopped between construction and scheduling
         }
@@ -138,6 +140,16 @@ public final class LogTailService {
         @Override
         public void run() {
             if (handle.isStopped()) {
+                return;
+            }
+            if (offset < 0) {
+                com.editora.perf.BlockingSites.enter("LogTailService.fromEnd");
+                try {
+                    offset = java.nio.file.Files.size(file);
+                } catch (java.io.IOException | RuntimeException e) {
+                    offset = 0; // gone or unreadable: whatever appears under this name is read from its start
+                }
+                handle.delivered.set(offset);
                 return;
             }
             try {

@@ -108,6 +108,21 @@ public final class DebugAdapterLocator {
      * locations under {@code home} are scanned. Returns the jar path, or empty if none is found.
      */
     public static Optional<Path> locate(String configuredPath, Path home) {
+        // Off the FX thread a fresh look, kept; on it what was last looked at (an install's step look, the launch's
+        // warm-up), so Install's "is java-debug there" and Settings answer from memory (PERF-01, Pauta 6.0.1).
+        LocateKey key = new LocateKey(configuredPath == null ? "" : configuredPath, home);
+        return onFx() && LOCATED.knows(key) ? LOCATED.get(key) : LOCATED.prepare(key);
+    }
+
+    private static boolean onFx() {
+        try {
+            return javafx.application.Platform.isFxApplicationThread();
+        } catch (RuntimeException | LinkageError e) {
+            return false;
+        }
+    }
+
+    private static Optional<Path> locateNow(String configuredPath, Path home) {
         if (configuredPath != null && !configuredPath.isBlank()) {
             Path p = Path.of(configuredPath);
             if (Files.isRegularFile(p)) {
@@ -130,16 +145,26 @@ public final class DebugAdapterLocator {
      * install {@linkplain #forgetLocated forgets} it.
      */
     private static final com.editora.perf.ProbeCache<LocateKey, Optional<Path>> LOCATED =
-            new com.editora.perf.ProbeCache<>("java-debug-locate", key -> locate(key.configuredPath(), key.home()));
+            new com.editora.perf.ProbeCache<>("java-debug-locate", key -> locateNow(key.configuredPath(), key.home()));
 
     /** {@link #locate}, from what is kept when it was looked up before in this run. */
     public static Optional<Path> locateKept(String configuredPath, Path home) {
         return LOCATED.get(new LocateKey(configuredPath == null ? "" : configuredPath, home));
     }
 
+    /** Whether {@link #locateKept} has an answer kept for these (it then answers from memory). */
+    public static boolean locatedKnown(String configuredPath, Path home) {
+        return LOCATED.knows(new LocateKey(configuredPath == null ? "" : configuredPath, home));
+    }
+
     /** Looks the plugin up now, on the calling thread, and keeps the answer: the launch's warm-up. */
     public static void prepareLocate(String configuredPath, Path home) {
         LOCATED.prepare(new LocateKey(configuredPath == null ? "" : configuredPath, home));
+    }
+
+    /** Looks every kept plugin lookup up again now, on this thread (off the FX thread): after an install. */
+    public static void relocateKept() {
+        LOCATED.reprobeKept();
     }
 
     /** Drops what {@link #locateKept} kept: an install changed what is on disk. */

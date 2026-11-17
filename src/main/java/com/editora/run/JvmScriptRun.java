@@ -113,6 +113,33 @@ public final class JvmScriptRun {
             boolean debug,
             Map<String, String> env,
             Map<String, String> inherited) {
+        return launch(language, tool, executable, file, fileArg, args, vmArgs, debug, env, inherited, null);
+    }
+
+    /**
+     * What {@link #launch} reads of a Clojure {@code file} (its head, its project's files), read here: off the FX
+     * thread, by a plan, so the launch made on the FX thread reads nothing (PERF-01, Pauta 6.0.1). Null for any
+     * other language.
+     */
+    public static ClojureRun.@Nullable Plan clojurePlan(String language, @Nullable Path file) {
+        return "clojure".equals(language) && file != null
+                ? ClojureRun.plan(file, head(file), Files::isRegularFile)
+                : null;
+    }
+
+    /** {@link #launch}, with the Clojure plan {@link #clojurePlan} read already ({@code known}; null: read now). */
+    public static Launch launch(
+            String language,
+            @Nullable String tool,
+            String executable,
+            @Nullable Path file,
+            String fileArg,
+            List<String> args,
+            String vmArgs,
+            boolean debug,
+            Map<String, String> env,
+            Map<String, String> inherited,
+            ClojureRun.@Nullable Plan known) {
         String vm = vmArgs == null ? "" : vmArgs.strip();
         if (takesJvmOptionsInArgv(language)) {
             List<String> options = ProgramArgs.tokenize(vm);
@@ -130,7 +157,7 @@ public final class JvmScriptRun {
                     null,
                     withJvmOption(env, inherited, jvmOptionsVariable(language), vm));
         }
-        ClojureRun.Plan plan = ClojureRun.plan(file, head(file), Files::isRegularFile);
+        ClojureRun.Plan plan = known != null ? known : ClojureRun.plan(file, head(file), Files::isRegularFile);
         plan = new ClojureRun.Plan(clojure, plan.directory(), plan.mainNamespace(), plan.inProject(), plan.extraPath());
         List<String> options = new ArrayList<>(List.of(ClojureRun.REPORT_TO_STDERR));
         if (debug) {

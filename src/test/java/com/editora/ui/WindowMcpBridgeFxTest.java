@@ -465,7 +465,14 @@ class WindowMcpBridgeFxTest {
                 buffer.setViewMode(false);
                 buffer.getArea().appendText("v2\n");
             });
-            assertTrue(FxTestSupport.callOnFx(() -> window.workflows.adminSaveApplicable(file)), "precondition");
+            // Looked at off the FX thread as the file was read (writable then); asked again behind once that look
+            // is old, or when admin save is turned on (PERF-01): wait for the FX thread's answer to follow the disk.
+            FxTestSupport.runOnFx(window.workflows::pushAdminEditAvailable);
+            long until = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(15);
+            while (!FxTestSupport.callOnFx(() -> window.workflows.adminSaveApplicable(file))) {
+                assertTrue(System.nanoTime() < until, "precondition");
+                Thread.sleep(20);
+            }
 
             String refused = window.mcp.saveBuffer(file.toString());
 

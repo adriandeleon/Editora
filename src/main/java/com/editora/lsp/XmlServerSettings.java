@@ -226,10 +226,64 @@ public record XmlServerSettings(
                 return null; // no folder to be relative to (the loose files' root): left out, as a missing catalog is
             }
             Path under = root.resolve(path).normalize();
-            return !mustExist || Files.isRegularFile(under) ? under.toString() : null;
+            return !mustExist || catalogThere(under) ? under.toString() : null;
         } catch (InvalidPathException e) {
             return mustExist ? null : v;
         }
+    }
+
+    private record Looked(boolean there, long at) {}
+
+    /** Whether each relative catalog is there, as last looked at (off the FX thread). */
+    private static final Map<Path, Looked> CATALOGS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Told, on the FX thread, when a catalog's look found it there or gone since: the settings are pushed again. */
+    private static final List<Runnable> CATALOG_LISTENERS = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** Hears every catalog look that changed an answer ({@link #catalogThere}); {@link #unlisten} when done. */
+    public static void listen(Runnable onChange) {
+        CATALOG_LISTENERS.add(onChange);
+    }
+
+    public static void unlisten(Runnable onChange) {
+        CATALOG_LISTENERS.remove(onChange);
+    }
+
+    /**
+     * Whether the relative catalog {@code file} is there. Off the FX thread it looks; on it it answers the last look
+     * (a catalog not looked at yet is left out, as a missing one is) and looks again behind it, telling the listeners
+     * when the answer changed (PERF-01, Pauta 6.0.1).
+     */
+    static boolean catalogThere(Path file) {
+        boolean fx;
+        try {
+            fx = javafx.application.Platform.isFxApplicationThread();
+        } catch (RuntimeException | LinkageError e) {
+            fx = false;
+        }
+        if (!fx) {
+            return lookCatalog(file);
+        }
+        Looked kept = CATALOGS.get(file);
+        if (kept == null || System.nanoTime() - kept.at() > 5_000_000_000L) {
+            Thread.ofVirtual().name("xml-catalog-look").start(() -> {
+                boolean before = kept != null && kept.there();
+                if (lookCatalog(file) != before) {
+                    javafx.application.Platform.runLater(() -> CATALOG_LISTENERS.forEach(Runnable::run));
+                }
+            });
+        }
+        return kept != null && kept.there();
+    }
+
+    private static boolean lookCatalog(Path file) {
+        com.editora.perf.BlockingSites.enter("XmlServerSettings.resolve");
+        boolean there = Files.isRegularFile(file);
+        if (CATALOGS.size() > 256) {
+            CATALOGS.clear();
+        }
+        CATALOGS.put(file, new Looked(there, System.nanoTime()));
+        return there;
     }
 
     private static String expandHome(String v) {

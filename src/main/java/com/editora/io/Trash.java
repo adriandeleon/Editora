@@ -76,10 +76,21 @@ public final class Trash {
 
     private Trash() {}
 
+    /**
+     * Finds {@link #system} on a thread of its own, so the FX thread's first ask (a pasted image dropped at a save,
+     * the encrypted file's Move to Trash) answers from memory (PERF-01, Pauta 6.0.1). Each window asks as it opens.
+     */
+    public static void warm() {
+        if (system == null) {
+            Thread.ofVirtual().name("trash-look").start(Trash::system);
+        }
+    }
+
     /** The trash of the platform Editora is running on ({@link #NONE} where there is none). */
     public static Bin system() {
         Bin bin = system;
         if (bin == null) {
+            com.editora.perf.BlockingSites.enter("Trash.system");
             bin = forPlatform(
                     com.editora.Os.current(),
                     System.getProperty("user.home"),

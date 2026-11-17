@@ -87,7 +87,7 @@ public final class Vfs {
      * its tab asks on the FX thread (PERF-01, Pauta 6.0.1). A remote file is a round trip to its host.
      */
     private static final com.editora.perf.Looked<Path, Boolean> WRITABLE =
-            new com.editora.perf.Looked<>("Vfs.isWritableOnDisk", Vfs::writableNow);
+            new com.editora.perf.Looked<>("Vfs.isWritableOnDisk", Vfs::writableNow, Boolean.TRUE);
 
     private static boolean writableNow(Path path) {
         if (isLocal(path)) {

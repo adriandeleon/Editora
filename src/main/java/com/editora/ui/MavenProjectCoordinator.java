@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -52,7 +53,6 @@ import com.editora.maven.ArchetypeGenerate;
 import com.editora.maven.CentralVersions;
 import com.editora.maven.MavenArchetype;
 import com.editora.maven.MavenCoordinates;
-import com.editora.maven.MavenPluginGoals;
 import com.editora.maven.MavenProjectExtras;
 import com.editora.maven.MavenProjectSpec;
 import com.editora.maven.PomEdits;
@@ -235,7 +235,12 @@ final class MavenProjectCoordinator {
      * because a brand-new project has nothing to lose; an existing pom does.
      */
     void updateVersions() {
-        updateVersions(nearestPom(ops.defaultParentDir()));
+        // The walk up to the pom stats a folder per level: off the FX thread (PERF-01, Pauta 6.0.1).
+        Path from = ops.defaultParentDir();
+        com.editora.perf.OffFx.then(
+                "MavenProjectCoordinator.nearestPom", () -> Optional.ofNullable(nearestPom(from)), found -> {
+                    updateVersions(found.or(Optional.empty()).orElse(null));
+                });
     }
 
     /** The check in flight, so a second invocation cancels it rather than queueing behind it. */
@@ -679,31 +684,77 @@ final class MavenProjectCoordinator {
         if (!host.settings().isMavenSupport() || context == null) {
             return null;
         }
-        boolean directory = Files.isDirectory(context);
-        if (!directory && !isPomFile(context)) {
-            return null;
+        Optional<Path> found;
+        if (isPomFile(context)) {
+            found = Optional.of(context); // the row or tab of a pom.xml names its own pom: nothing to look at
+        } else {
+            // Is it a folder, and which pom is above it: looked at off the FX thread (PERF-01, Pauta 6.0.1).
+            // Until the answer lands the submenu is offered (not hidden), and hidden once the look says there is
+            // no pom; its rows ask for the pom when picked.
+            found = pomAbove.get(context);
         }
-        Path pom = nearestPom(directory ? context : context.getParent());
-        if (pom == null) {
+        if (found != null && found.isEmpty()) {
             return null; // no Maven project here — the New Maven Project entry lives elsewhere
         }
-        // Every item acts on THIS pom's folder. Rerun Last and Stop are window-wide (they belong to whatever
-        // ran last, wherever that was), so a menu that names a pom does not offer them; the palette and the
-        // tool window do.
-        Path root = pom.getParent();
         javafx.scene.control.Menu menu = new javafx.scene.control.Menu(tr("menu.maven"), Icons.maven());
         menu.getItems()
                 .addAll(
                         com.editora.editor.MenuChords.tag(
-                                item("command.maven.updateVersions", Icons.refresh(), () -> updateVersions(pom)),
+                                item(
+                                        "command.maven.updateVersions",
+                                        Icons.refresh(),
+                                        () -> withPom(context, found, this::updateVersions)),
                                 "maven.updateVersions"),
                         com.editora.editor.MenuChords.tag(
-                                item("command.maven.showActions", Icons.run(), () -> ops.showActionsAt(root)),
+                                item(
+                                        "command.maven.showActions",
+                                        Icons.run(),
+                                        () -> withPom(context, found, pom -> ops.showActionsAt(pom.getParent()))),
                                 "maven.showActions"),
                         com.editora.editor.MenuChords.tag(
-                                item("command.maven.runCustom", Icons.terminal(), () -> ops.runCustomAt(root)),
+                                item(
+                                        "command.maven.runCustom",
+                                        Icons.terminal(),
+                                        () -> withPom(context, found, pom -> ops.runCustomAt(pom.getParent()))),
                                 "maven.runCustom"));
+        if (found == null) {
+            pendingMavenMenus.put(context, menu);
+        }
         return menu;
+    }
+
+    /**
+     * The pom above a folder (empty for a file that is not a pom, or a folder with none), looked at off the FX
+     * thread. A menu built before its answer landed is hidden when it lands empty.
+     */
+    private final DiskFacts<Path, Optional<Path>> pomAbove = new DiskFacts<Path, Optional<Path>>(
+                    "MavenProjectCoordinator.mavenMenu",
+                    context -> Files.isDirectory(context) ? Optional.ofNullable(nearestPom(context)) : Optional.empty())
+            .onLearned(this::pomsLearned);
+
+    private final Map<Path, javafx.scene.control.Menu> pendingMavenMenus = new java.util.WeakHashMap<>();
+
+    private void pomsLearned() {
+        pendingMavenMenus.entrySet().removeIf(e -> {
+            Optional<Path> known = pomAbove.known(e.getKey());
+            if (known == null) {
+                return false;
+            }
+            e.getValue().setVisible(known.isPresent());
+            return true;
+        });
+    }
+
+    /** Runs {@code action} with the pom a menu row acts on: known, or looked at off the FX thread first. */
+    private void withPom(Path context, @Nullable Optional<Path> found, java.util.function.Consumer<Path> action) {
+        if (found != null && found.isPresent()) {
+            action.accept(found.get());
+            return;
+        }
+        com.editora.perf.OffFx.then(
+                "MavenProjectCoordinator.nearestPom",
+                () -> Files.isDirectory(context) ? Optional.ofNullable(nearestPom(context)) : Optional.<Path>empty(),
+                a -> a.or(Optional.empty()).ifPresent(action));
     }
 
     /** Whether {@code file} is a Maven project file — the exact name {@code mvn} itself looks for. */
@@ -1017,6 +1068,13 @@ final class MavenProjectCoordinator {
     // --- Step 2: the coordinates form -------------------------------------------------------------
 
     private void showForm(MavenArchetype archetype, Path parentDir) {
+        if (descriptorsFromRepository) {
+            // The archetype's descriptor (a jar in ~/.m2, and settings.xml for where that is) is read off the FX
+            // thread, then the form is built with its rows (PERF-01, Pauta 6.0.1).
+            ArchetypeDescriptor.warm(
+                    Path.of(userHome()), List.of(archetype), () -> showForm(archetype, parentDir, null, null));
+            return;
+        }
         showForm(archetype, parentDir, null, null);
     }
 
@@ -1107,6 +1165,14 @@ final class MavenProjectCoordinator {
 
         BooleanProperty valid = new SimpleBooleanProperty(false);
         Path base = parentDir != null ? parentDir : ops.defaultParentDir();
+        // Whether the target folder holds something: looked at off the FX thread as the fields change (PERF-01,
+        // Pauta 6.0.1). Until the answer for the folder typed lands, Create is disabled and the form says it is
+        // checking; the generation looks again off the FX thread before it writes.
+        Runnable[] recheck = {() -> {}};
+        DiskFacts<Path, Boolean> occupiedFolders = new DiskFacts<Path, Boolean>(
+                        "MavenProjectCoordinator.revalidate", MavenProjectCoordinator::isOccupied)
+                .freshFor(0)
+                .onLearned(() -> recheck[0].run());
         Runnable revalidate = () -> {
             MavenProjectSpec spec = specFrom(
                     archetype, nameField, locationField, groupField, versionField, packageField, base, userHome());
@@ -1114,7 +1180,9 @@ final class MavenProjectCoordinator {
             // An existing folder is refused only when it holds something: Maven would otherwise generate into
             // a populated folder and half-merge with whatever is already there. An empty one — made ahead of
             // time, or left by a failed attempt — is exactly where the project should go.
-            boolean occupied = dir != null && Files.exists(dir) && !isEmptyDirectory(dir);
+            Boolean occupiedNow = dir == null ? Boolean.FALSE : occupiedFolders.get(dir);
+            boolean checking = occupiedNow == null;
+            boolean occupied = Boolean.TRUE.equals(occupiedNow);
             String missingProperty = null;
             for (Map.Entry<String, TextField> e : propertyFields.entrySet()) {
                 if (e.getValue().getText() == null || e.getValue().getText().isBlank()) {
@@ -1123,7 +1191,7 @@ final class MavenProjectCoordinator {
                 }
             }
             String problem = spec.firstProblem();
-            valid.set(problem == null && !occupied && missingProperty == null);
+            valid.set(problem == null && !occupied && !checking && missingProperty == null);
             target.getStyleClass().remove("overlay-form-error");
             if (problem != null
                     && !(problem.equals("artifactId") && spec.artifactId().isEmpty())) {
@@ -1135,6 +1203,8 @@ final class MavenProjectCoordinator {
             } else if (occupied) {
                 target.setText(tr("dialog.mavenProject.exists", dir));
                 target.getStyleClass().add("overlay-form-error");
+            } else if (checking) {
+                target.setText(tr("dialog.mavenProject.checking", dir)); // why Create waits
             } else if (missingProperty != null) {
                 target.setText(tr("status.mavenProject.invalid", missingProperty));
                 target.getStyleClass().add("overlay-form-error");
@@ -1151,6 +1221,7 @@ final class MavenProjectCoordinator {
             });
         }
         propertyFields.values().forEach(f -> f.textProperty().addListener((o, a, b) -> revalidate.run()));
+        recheck[0] = revalidate;
 
         TextField urlField = field(keymap, 30);
         ComboBox<String> releaseCombo = new ComboBox<>();
@@ -1194,9 +1265,18 @@ final class MavenProjectCoordinator {
         // common path never opens this section at all.
         advanced.expandedProperty().addListener((o, was, now) -> {
             if (now && releaseCombo.getItems().isEmpty()) {
-                for (Integer major : JavaRuntimes.majorsDescending(JavaRuntimes.discover())) {
-                    releaseCombo.getItems().add(String.valueOf(major));
-                }
+                // The walk of the JDK install roots runs off the FX thread (PERF-01, Pauta 6.0.1); the combo is
+                // editable meanwhile, so a release can be typed before the list lands.
+                com.editora.perf.OffFx.then(
+                        "MavenProjectCoordinator.javaReleases",
+                        () -> JavaRuntimes.majorsDescending(JavaRuntimes.discover()),
+                        found -> {
+                            if (releaseCombo.getItems().isEmpty()) {
+                                for (Integer major : found.or(List.of())) {
+                                    releaseCombo.getItems().add(String.valueOf(major));
+                                }
+                            }
+                        });
             }
         });
         // Collapsed by default — the common path is the five fields above — unless the archetype asks for
@@ -1269,13 +1349,15 @@ final class MavenProjectCoordinator {
     }
 
     /** Where descriptors come from: the user's local repository, unless a test says otherwise. */
-    private java.util.function.Function<MavenArchetype, ArchetypeDescriptor> descriptors =
-            archetype -> ArchetypeDescriptor.readFromLocalRepository(
-                    MavenPluginGoals.localRepository(Path.of(userHome())), archetype);
+    private java.util.function.Function<MavenArchetype, ArchetypeDescriptor> descriptors = ArchetypeDescriptor::known;
+
+    /** Whether {@link #descriptors} answers what {@link ArchetypeDescriptor#warm} read (no test replaced it). */
+    private boolean descriptorsFromRepository = true;
 
     /** Test seam: the descriptors the form sees, so a test does not depend on what {@code ~/.m2} holds. */
     void setDescriptorsForTest(java.util.function.Function<MavenArchetype, ArchetypeDescriptor> descriptors) {
         this.descriptors = descriptors;
+        this.descriptorsFromRepository = false;
     }
 
     private static String userHome() {
@@ -1290,6 +1372,11 @@ final class MavenProjectCoordinator {
             case "groupId", "version", "location", "archetype" -> tr("dialog.mavenProject." + problem);
             default -> problem;
         };
+    }
+
+    /** Whether {@code dir} exists and is not an empty folder: the form's "already there" check, off FX. */
+    static boolean isOccupied(Path dir) {
+        return Files.exists(dir) && !isEmptyDirectory(dir);
     }
 
     private static boolean isEmptyDirectory(Path dir) {
@@ -1371,6 +1458,9 @@ final class MavenProjectCoordinator {
         DebugPlanning.offFx(
                 "maven-generate-plan",
                 () -> {
+                    if (isOccupied(projectDir)) {
+                        return GeneratePlan.OCCUPIED; // filled since the form looked: refused, nothing written
+                    }
                     Files.createDirectories(parent);
                     // Generating next to an UNRELATED Maven project fails outright: archetype:generate tries to add
                     // the new project as a <module> of whatever project it finds in the working directory, and
@@ -1387,6 +1477,11 @@ final class MavenProjectCoordinator {
                     GeneratePlan plan = a.value();
                     if (a.failure() != null || plan == null) {
                         host.setError(tr("status.mavenProject.mkdirFailed", a.why()));
+                    } else if (plan == GeneratePlan.OCCUPIED) {
+                        host.setError(tr("dialog.mavenProject.exists", projectDir));
+                        if (backToForm != null) {
+                            backToForm.run();
+                        }
                     } else {
                         generate(spec, extras, projectDir, parent, plan);
                     }
@@ -1395,7 +1490,10 @@ final class MavenProjectCoordinator {
 
     /** What New Maven Project read before Maven starts: the parent pom's packaging, a scratch folder, a descriptor. */
     private record GeneratePlan(
-            @Nullable String parentPackaging, @Nullable Path scratch, ArchetypeDescriptor descriptor) {}
+            @Nullable String parentPackaging, @Nullable Path scratch, ArchetypeDescriptor descriptor) {
+        /** The target folder holds something (looked at again just before writing). */
+        static final GeneratePlan OCCUPIED = new GeneratePlan(null, null, ArchetypeDescriptor.NONE);
+    }
 
     private void generate(
             MavenProjectSpec spec, MavenProjectExtras extras, Path projectDir, Path parent, GeneratePlan plan) {

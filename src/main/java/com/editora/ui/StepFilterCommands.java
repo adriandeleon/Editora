@@ -100,8 +100,15 @@ final class StepFilterCommands {
         }
         String language = d.dap().sessionLanguage();
         String file = f.file() == null ? null : f.file().toString();
-        String suggested = StepFilters.suggest(language, f.name(), file, StepFilters.sourcePackage(source(f.file())));
-        add(new StepFilter(true, language, suggested));
+        // The frame's file is read (when no tab holds it) and its package found off the FX thread (PERF-01,
+        // Pauta 6.0.1); the form opens when the answer lands.
+        EditorBuffer open = f.file() == null ? null : ops.bufferForPath(f.file());
+        String openText = open == null ? null : open.getArea().getText();
+        Path onDisk = f.file();
+        com.editora.perf.OffFx.then(
+                "StepFilterCommands.source",
+                () -> StepFilters.sourcePackage(openText != null ? openText : read(onDisk)),
+                pkg -> add(new StepFilter(true, language, StepFilters.suggest(language, f.name(), file, pkg.or("")))));
     }
 
     /** Opens the form for {@code initial}; a filter saved is added to Settings and told to every session. */
@@ -119,14 +126,10 @@ final class StepFilterCommands {
         });
     }
 
-    /** The text of {@code file}: its open tab's, else read (the package a JVM class is in); "" when neither. */
-    private String source(@Nullable Path file) {
+    /** The text of {@code file} read from disk (the package a JVM class is in); "" when it cannot be. */
+    private static String read(@Nullable Path file) {
         if (file == null) {
             return "";
-        }
-        EditorBuffer open = ops.bufferForPath(file);
-        if (open != null) {
-            return open.getArea().getText();
         }
         try {
             return Files.size(file) > 2_000_000 ? "" : Files.readString(file);

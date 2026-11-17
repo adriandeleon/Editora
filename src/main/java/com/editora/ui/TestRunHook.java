@@ -29,6 +29,19 @@ interface TestRunHook {
     /** A raw output line of a claimed run (forwarded from {@code BuildService.Listener.onOutput}). */
     void onTestOutput(String line, boolean stderr);
 
+    /**
+     * What a claimed run's raw output line comes to, worked out on the thread that read it from the process, not
+     * on the FX thread (PERF-01, Pauta 6.0.1): {@code apply} runs on the FX thread with what the line's parse found,
+     * and {@code shown} is what the raw Output console shows for it (null: nothing). Lines are prepared one at a
+     * time and in order. Default: the line handed to {@link #onTestOutput} and {@link #consoleLine} as it is.
+     */
+    default PreparedLine prepareTestOutput(String line, boolean stderr) {
+        return new PreparedLine(() -> onTestOutput(line, stderr), consoleLine(line, stderr));
+    }
+
+    /** A prepared output line ({@link #prepareTestOutput}). */
+    record PreparedLine(Runnable apply, @Nullable String shown) {}
+
     /** The claimed run exited with {@code code}. */
     void onTestExit(int code);
 

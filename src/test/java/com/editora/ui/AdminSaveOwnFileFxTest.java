@@ -90,7 +90,12 @@ class AdminSaveOwnFileFxTest {
             Files.setPosixFilePermissions(foreign, PosixFilePermissions.fromString("r--r--r--"));
             Files.setPosixFilePermissions(lockedDir, PosixFilePermissions.fromString("r-xr-xr-x"));
             async.onClose(() -> Files.setPosixFilePermissions(lockedDir, PosixFilePermissions.fromString("rwxr-xr-x")));
-            assertTrue(FxTestSupport.callOnFx(() -> workflows.adminSaveApplicable(foreign)));
+            // A file never read: looked at off the FX thread behind the first ask (PERF-01), then answered.
+            long until = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+            while (!FxTestSupport.callOnFx(() -> workflows.adminSaveApplicable(foreign))) {
+                assertTrue(System.nanoTime() < until, "the look behind never answered");
+                Thread.sleep(20);
+            }
         }
     }
 }

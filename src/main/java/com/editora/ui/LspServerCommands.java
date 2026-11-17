@@ -147,6 +147,23 @@ final class LspServerCommands {
                 new OwnCopyKey(serverId, command == null ? "" : command, configDir, jdkHome == null ? "" : jdkHome));
     }
 
+    /** Whether {@link #withOwnCopy} for these has an answer kept (it then answers from memory). */
+    static boolean ownCopyKnown(
+            String serverId, @Nullable String command, @Nullable Path configDir, @Nullable String jdkHome) {
+        return OWN_COPIES.knows(key(serverId, command, configDir, jdkHome));
+    }
+
+    /** Looks {@link #withOwnCopy}'s answer up now, on this thread (off the FX thread), and keeps it. */
+    static void prepareOwnCopy(
+            String serverId, @Nullable String command, @Nullable Path configDir, @Nullable String jdkHome) {
+        OWN_COPIES.prepare(key(serverId, command, configDir, jdkHome));
+    }
+
+    private static OwnCopyKey key(
+            String serverId, @Nullable String command, @Nullable Path configDir, @Nullable String jdkHome) {
+        return new OwnCopyKey(serverId, command == null ? "" : command, configDir, jdkHome == null ? "" : jdkHome);
+    }
+
     /** What {@link #withOwnCopy} is asked: a server, its configured command, the config folder and the JDK. */
     record OwnCopyKey(String serverId, String raw, @Nullable Path configDir, String jdk) {}
 
@@ -156,7 +173,16 @@ final class LspServerCommands {
      * ({@link #prepareOwnCopies}); an install {@linkplain #forgetOwnCopies forgets} it.
      */
     private static final com.editora.perf.ProbeCache<OwnCopyKey, String> OWN_COPIES =
-            new com.editora.perf.ProbeCache<>("lsp-own-copies", LspServerCommands::probeOwnCopy);
+            new com.editora.perf.ProbeCache<>("lsp-own-copies", LspServerCommands::probeOwnCopySafely);
+
+    /** {@link #probeOwnCopy}, never throwing: a copy that cannot be looked at is not used (the command as set). */
+    private static String probeOwnCopySafely(OwnCopyKey key) {
+        try {
+            return probeOwnCopy(key);
+        } catch (RuntimeException e) {
+            return key.raw();
+        }
+    }
 
     /** Looks up, on the calling thread, every server's launch command for {@code s}: the launch's warm-up. */
     static void prepareOwnCopies(com.editora.config.Settings s, @Nullable Path configDir) {
@@ -169,6 +195,11 @@ final class LspServerCommands {
     /** Looks at every kept launch command again, off the FX thread; {@code onChange} when one moved. */
     static void refreshOwnCopies(Runnable onChange) {
         OWN_COPIES.refresh(onChange);
+    }
+
+    /** Looks every kept launch command up again now, on this thread (off the FX thread): after an install. */
+    static void reprobeOwnCopies() {
+        OWN_COPIES.reprobeKept();
     }
 
     /** Drops the kept launch commands: an install or removal changed what is on disk. */

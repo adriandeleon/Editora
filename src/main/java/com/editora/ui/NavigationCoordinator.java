@@ -595,11 +595,11 @@ final class NavigationCoordinator {
         }
         String text = b == null ? "" : b.text();
         host.indexCoordinator()
-                .ensureBuilt(() -> openRelated(
+                .ensureBuilt(() -> HtmlRelated.assetsOfLater( // scanned and stat-ed off the FX thread (PERF-01)
+                        text,
                         current,
-                        names,
-                        HtmlRelated.assetsOf(
-                                text, current, host.indexCoordinator().indexedRoot())));
+                        host.indexCoordinator().indexedRoot(),
+                        assets -> openRelated(current, names, assets)));
     }
 
     void openRelated(Path current, List<String> names) {

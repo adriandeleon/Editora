@@ -233,14 +233,7 @@ final class SuperMethodWalk {
         if (open != null) {
             return open;
         }
-        return texts.computeIfAbsent(file, f -> {
-                    try {
-                        return java.util.Optional.of(java.nio.file.Files.readString(f));
-                    } catch (java.io.IOException | RuntimeException e) {
-                        return java.util.Optional.empty();
-                    }
-                })
-                .orElse(null);
+        return texts.computeIfAbsent(file, SuperMethodWalk::readText).orElse(null); // read ahead off FX by visit
     }
 
     /**
@@ -255,14 +248,7 @@ final class SuperMethodWalk {
         String sent = lspManager.sentText(ask.path(), file);
         String disk = sent == null
                 ? null
-                : texts.computeIfAbsent(file, f -> {
-                            try {
-                                return java.util.Optional.of(java.nio.file.Files.readString(f));
-                            } catch (java.io.IOException | RuntimeException e) {
-                                return java.util.Optional.empty();
-                            }
-                        })
-                        .orElse(null);
+                : texts.computeIfAbsent(file, SuperMethodWalk::readText).orElse(null); // read ahead off FX by visit
         if (sent == null || disk == null || sent.equals(disk)) {
             return line;
         }
@@ -317,8 +303,33 @@ final class SuperMethodWalk {
                         own -> visited(type, order, depth, subtype, members, declared, own));
                 return;
             }
+            Path file = type.file();
+            if (declared != null && file != null && !texts.containsKey(file) && readsDisk(type, file)) {
+                // A closed supertype's file is read off the FX thread (PERF-01, Pauta 6.0.1), then the walk goes on.
+                com.editora.perf.OffFx.then("SuperMethodWalk.textOf", () -> readText(file), read -> {
+                    texts.putIfAbsent(file, read.or(java.util.Optional.empty()));
+                    visited(type, order, depth, subtype, members, declared, textOf(type));
+                });
+                return;
+            }
             visited(type, order, depth, subtype, members, declared, declared == null ? null : textOf(type));
         });
+    }
+
+    /** Whether {@link #textOf} or {@link #onDisk} would read {@code file} from disk: not the anchor, not open here. */
+    private boolean readsDisk(LspManager.HierarchyNode type, Path file) {
+        boolean anchor = ask.libraryUri() != null
+                ? ask.libraryUri().equals(type.libraryUri())
+                : ask.path().equals(file);
+        return !anchor && openText.apply(file) == null;
+    }
+
+    private static java.util.Optional<String> readText(Path f) {
+        try {
+            return java.util.Optional.of(java.nio.file.Files.readString(f));
+        } catch (java.io.IOException | RuntimeException e) {
+            return java.util.Optional.empty();
+        }
     }
 
     /** {@link #visit}'s rest, with {@code type}'s outline and {@code own}, its file's text (null if none). */

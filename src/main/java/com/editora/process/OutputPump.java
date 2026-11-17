@@ -67,7 +67,20 @@ public final class OutputPump {
         default void partial(String text, boolean stderr) {
             line(text, stderr);
         }
+
+        /**
+         * Called on the reader thread for each complete line, before it is queued: what to run on the FX thread for
+         * it. A sink that parses its lines (test results) does it here, off the FX thread (PERF-01, Pauta 6.0.1),
+         * and hands the FX thread what it found. Lines of both streams are prepared one at a time, in the order
+         * they are queued. Default: {@link #line} on the FX thread.
+         */
+        default Runnable prepare(String text, boolean stderr) {
+            return () -> line(text, stderr);
+        }
     }
+
+    /** Held while a line is prepared and queued, so lines are prepared in the order the FX thread sees them. */
+    private final Object prepareLock = new Object();
 
     /** The line delivered in place of output dropped under {@link Overflow#DROP_OLDEST}. */
     public static final String OUTPUT_DROPPED = "[output truncated while the UI was busy]";
@@ -282,7 +295,9 @@ public final class OutputPump {
             length -= ChildText.incompleteUtf8Tail(line, length); // the cap may have cut a character in two
         }
         String text = ChildText.decode(line, 0, length) + (truncated ? LINE_TRUNCATED : "");
-        enqueue(self, gen, text.length(), true, () -> sink.line(text, stderr), sink, stderr, false);
+        synchronized (prepareLock) {
+            enqueue(self, gen, text.length(), true, sink.prepare(text, stderr), sink, stderr, false);
+        }
     }
 
     /**

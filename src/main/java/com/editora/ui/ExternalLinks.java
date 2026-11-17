@@ -291,7 +291,21 @@ final class ExternalLinks {
         if (link == null) {
             return; // nothing was asked for (an item with no URL) — not a refusal worth reporting
         }
-        switch (classify(link, documentFile, projectRoot, anchor != null)) {
+        // Classifying a local link stats it and resolves its real path: off the FX thread (PERF-01, Pauta 6.0.1).
+        looked("link-classify", () -> classify(link, documentFile, projectRoot, anchor != null), target -> {
+            if (target != null) {
+                dispatch(target, browser, editor, anchor, status);
+            }
+        });
+    }
+
+    private static void dispatch(
+            Target target,
+            @Nullable Consumer<String> browser,
+            Consumer<Path> editor,
+            java.util.function.@Nullable BiConsumer<Path, String> anchor,
+            Consumer<String> status) {
+        switch (target) {
             case InDocument d -> { // only classified when anchor != null
                 if (anchor != null) {
                     anchor.accept(d.file(), d.fragment());
@@ -305,6 +319,31 @@ final class ExternalLinks {
             case InEditor e -> editor.accept(e.file());
             case Refused r -> status.accept(tr(r.messageKey(), r.detail()));
         }
+    }
+
+    /**
+     * Runs {@code look} (it touches the disk) and hands its answer to {@code then}: on the JavaFX thread the look
+     * runs on a virtual thread named {@code name} and {@code then} runs back on the FX thread (PERF-01, Pauta
+     * 6.0.1); off it, both run here and now. A look that throws answers null.
+     */
+    static <T> void looked(String name, java.util.concurrent.Callable<T> look, Consumer<@Nullable T> then) {
+        boolean fx;
+        try {
+            fx = javafx.application.Platform.isFxApplicationThread();
+        } catch (RuntimeException | LinkageError e) {
+            fx = false;
+        }
+        if (fx) {
+            com.editora.perf.OffFx.then(name, look, answer -> then.accept(answer.value()));
+            return;
+        }
+        @Nullable T value;
+        try {
+            value = look.call();
+        } catch (Exception e) {
+            value = null;
+        }
+        then.accept(value);
     }
 
     /** {@link #open} with the JavaFX {@code HostServices} as the OS opener (it may be null before startup). */

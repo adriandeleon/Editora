@@ -786,12 +786,8 @@ public final class ProcessRunner {
         if (exe.isEmpty() || exe.indexOf('/') >= 0 || exe.indexOf('\\') >= 0) {
             return command; // already an absolute/relative path
         }
-        if (onFxThread() && !augmentedPathReady()) {
-            // The login shell's PATH is not known yet: looked up on what is, and not kept, so the next ask (once
-            // the warm-up has it) finds a version manager's tool.
-            com.editora.perf.BlockingSites.enter("PATH lookup");
-            return resolveExecutable(command, augmentedPath(), com.editora.Os.isWindows());
-        }
+        // On the FX thread a name nothing has looked up yet is left as it is (ProcessBuilder may still find it) and
+        // looked up behind, on the full PATH, for the next ask (PERF-01, Pauta 6.0.1).
         String found = ON_PATH.get(exe);
         return found == null || found.equals(exe) ? command : rewriteFirst(command, found);
     }
@@ -803,7 +799,13 @@ public final class ProcessRunner {
     private static final com.editora.perf.Looked<String, String> ON_PATH = new com.editora.perf.Looked<>(
             "PATH lookup",
             exe -> resolveExecutable(List.of(exe), augmentedPath(), com.editora.Os.isWindows())
-                    .get(0));
+                    .get(0),
+            null);
+
+    /** Whether {@code exe}'s place on the PATH is known, so {@link #resolveExecutable(List)} answers it on FX. */
+    public static boolean onPathKnown(String exe) {
+        return exe.isEmpty() || exe.indexOf('/') >= 0 || exe.indexOf('\\') >= 0 || ON_PATH.knows(exe);
+    }
 
     /**
      * As {@link #resolveExecutable(List)}, against the one folder {@code dir} instead of the augmented PATH: a bare

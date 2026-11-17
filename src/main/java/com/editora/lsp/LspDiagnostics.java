@@ -205,7 +205,9 @@ final class LspDiagnostics {
         if (!m.builds.buildCaptures.isEmpty()) {
             m.builds.captureBuildErrors(source, file, DiagnosticMapper.map(params.getDiagnostics()));
         }
-        if (sourceUri == null && openDocumentDiagnosticsOnly && !LspManager.projectLevel(file)) {
+        // Looked at here, on the reader thread, for every file not open: the FX thread then answers from memory.
+        boolean projectLevel = sourceUri == null && LspManager.projectLevel(file);
+        if (sourceUri == null && openDocumentDiagnosticsOnly && !projectLevel) {
             // Nobody shows a file that is not open here, and a server publishes for its whole project
             // (jdtls: once per file on import). Dropped on this, the reader, thread: each one used to
             // cost the FX thread a queued task, a search of the tabs and a path resolution to learn that.

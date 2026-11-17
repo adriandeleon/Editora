@@ -80,6 +80,7 @@ final class NodeTestRunner {
         List<String> sniff = new java.util.ArrayList<>();
         // TAP on stdout for the tree, node's spec report on stderr for the console (review C108).
         boolean split = com.editora.run.NodeRunPlan.splitReporters(ready.plan().argv());
+        TestParseQueue parses = new TestParseQueue("node-test-output-parse", this::results);
         RunCoordinator.TestStream hooks = new RunCoordinator.TestStream() {
             @Override
             public @Nullable Boolean console(String text, boolean stderr) {
@@ -91,6 +92,11 @@ final class NodeTestRunner {
                 if (!shown[0] || (split && stderr)) {
                     return;
                 }
+                parses.parse(() -> parse(text, stderr)); // on the parse thread, in order (PERF-01, Pauta 6.0.1)
+            }
+
+            /** On the parse thread: sniffs the reporter, then parses with it. */
+            private List<ParsedSuite> parse(String text, boolean stderr) {
                 if (parser[0] == null) {
                     sniff.add(text);
                     if (TapParser.looksLikeTap(sniff)) {
@@ -101,15 +107,16 @@ final class NodeTestRunner {
                         if (sniff.size() > 200) {
                             sniff.clear();
                         }
-                        return;
+                        return List.of();
                     }
+                    List<ParsedSuite> found = new java.util.ArrayList<>();
                     for (String s : sniff) {
-                        results(parser[0].onLine(s, false));
+                        found.addAll(parser[0].onLine(s, false));
                     }
                     sniff.clear();
-                    return;
+                    return found;
                 }
-                results(parser[0].onLine(text, stderr));
+                return parser[0].onLine(text, stderr);
             }
 
             @Override
@@ -118,10 +125,8 @@ final class NodeTestRunner {
                     launchFailed[0] = true;
                     return;
                 }
-                if (parser[0] != null) {
-                    results(parser[0].onExit(code));
-                }
-                host.testRunCoordinator().finishExternalRun(code);
+                parses.parse(() -> parser[0] != null ? parser[0].onExit(code) : List.of());
+                parses.then(() -> host.testRunCoordinator().finishExternalRun(code));
             }
         };
         if (host.runCoordinator()

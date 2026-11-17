@@ -40,6 +40,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * 127.0.0.1 server receives (from Editora and from the copied command, run by the real curl), what the saved history
  * holds on disk, and what the status bar says.
  */
+// Run again and Enter on a run find their request off the FX thread (PERF-01); the test reads at once.
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 @Tag("fx")
 class HttpHistoryRound3FxTest {
 

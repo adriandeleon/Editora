@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * disabled commands report rather than acting.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class HttpClientCoordinatorFxTest {
 

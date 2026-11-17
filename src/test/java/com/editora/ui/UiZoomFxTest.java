@@ -44,6 +44,17 @@ class UiZoomFxTest {
         FxTestSupport.bootToolkit();
         fx = FxWindowFixture.create();
         FxTestSupport.runOnFx(UiZoom::install);
+        // The FX thread never reads or scales a sheet (PERF-01): the launch makes the copies its window needs ahead,
+        // off it, and so does this test, for the zooms it switches to, before it reads them on the FX thread.
+        String theme = FxTestSupport.callOnFx(javafx.application.Application::getUserAgentStylesheet);
+        List<String> sheets = new ArrayList<>(List.of(APP_CSS));
+        sheets.addAll(FxTestSupport.callOnFx(() -> new ArrayList<>(mainScene().getStylesheets())));
+        if (theme != null) {
+            sheets.add(UiZoom.base(theme));
+        }
+        for (int percent : new int[] {150, 80}) {
+            UiZoom.prepare(UiZoom.bases(sheets), percent);
+        }
     }
 
     @AfterEach

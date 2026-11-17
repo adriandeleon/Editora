@@ -1427,6 +1427,12 @@ final class LanguageServerSession implements LanguageClient {
      * settings for is sent nothing — see {@link LspServerSettings}.
      */
     private void pushConfiguration() {
+        if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && onFxThread()) {
+            // jdtls's settings carry the project's style, read from its build file, formatter profile and
+            // .editorconfig: read and pushed on a thread of its own, in order (PERF-01, Pauta 6.0.1).
+            JAVA_STYLE.execute(this::pushConfiguration);
+            return;
+        }
         java.util.Map<String, Object> settings = TypeScriptServer.SERVER_ID.equals(serverId)
                 ? typeScriptSettings
                 : LspServerSettings.push(
@@ -1468,6 +1474,19 @@ final class LanguageServerSession implements LanguageClient {
                     .didChangeConfiguration(new org.eclipse.lsp4j.DidChangeConfigurationParams(settings));
         } catch (RuntimeException e) {
             LOG.log(Level.FINE, "didChangeConfiguration failed", e);
+        }
+    }
+
+    /** Where a Java server's settings push reads the project's style: one thread, so pushes stay in order. */
+    private static final java.util.concurrent.ExecutorService JAVA_STYLE =
+            java.util.concurrent.Executors.newSingleThreadExecutor(
+                    Thread.ofPlatform().daemon().name("java-style").factory());
+
+    private static boolean onFxThread() {
+        try {
+            return javafx.application.Platform.isFxApplicationThread();
+        } catch (RuntimeException | LinkageError e) {
+            return false;
         }
     }
 

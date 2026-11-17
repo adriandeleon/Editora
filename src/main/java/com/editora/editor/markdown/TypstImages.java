@@ -102,6 +102,9 @@ public final class TypstImages {
     /** The newest cached render of each preview surface; an older one of the same surface is dropped. */
     private static final PreviewSurfaces.Newest NEWEST = new PreviewSurfaces.Newest();
 
+    /** The cache keys of the sources seen, so the FX thread hashes none ({@link SourceKeys}). */
+    private static final SourceKeys KEYS = new SourceKeys();
+
     /**
      * Drops what is held for a preview whose buffer was disposed: its retained last-good pages and its
      * newest render. Until this existed a closed document's pages stayed until others pushed them out.
@@ -260,10 +263,13 @@ public final class TypstImages {
             @Nullable Path fileDir,
             @Nullable Path root,
             @Nullable String displayName) {
-        String key = key(source, fileDir, root);
-        Cached hit = CACHE.get(key);
+        // The key is a hash of the whole source: worked out off the FX thread (PERF-01, Pauta 6.0.1). A source seen
+        // before has its key remembered, so an unchanged page is shown from the cache at once.
+        String tag = fileDir + "\u0000" + root;
+        String knownKey = KEYS.knownKey(tag, source);
+        Cached hit = knownKey == null ? null : CACHE.get(knownKey);
         if (hit != null && hit.expired()) {
-            CACHE.remove(key);
+            CACHE.remove(knownKey);
             hit = null;
         }
         if (hit != null) {
@@ -283,6 +289,16 @@ public final class TypstImages {
         }
         EXEC.submit(() -> {
             if (surfaceKey != null && superseded(surfaceKey, gen, LATEST.get(surfaceKey))) {
+                return;
+            }
+            String key = key(source, fileDir, root);
+            KEYS.remember(tag, source, key);
+            Cached cached = CACHE.get(key);
+            if (cached != null && !cached.expired()) {
+                Platform.runLater(() -> applyCached(host, cached, sizer, retainKey));
+                if (surfaceKey != null) {
+                    LATEST.remove(surfaceKey, gen);
+                }
                 return;
             }
             TypstRenderer.Pages r = TypstRenderer.renderPages(cmd, source, fileDir, root, displayName);
@@ -395,6 +411,7 @@ public final class TypstImages {
      * other's render.
      */
     private static String key(String source, @Nullable Path fileDir, @Nullable Path root) {
+        com.editora.perf.BlockingSites.enter("SourceKeys.hash"); // a hash of the whole source: never on FX
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             md.update(source.getBytes(StandardCharsets.UTF_8));
