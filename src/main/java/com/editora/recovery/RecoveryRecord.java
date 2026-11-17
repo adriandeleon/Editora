@@ -10,9 +10,11 @@ import org.jspecify.annotations.Nullable;
  * @param path the file's storable path ({@code Vfs.toStorableString}), or {@code null} for an untitled buffer
  * @param title the tab title, shown in the offer
  * @param displayName an untitled buffer's suggested file name, or {@code null}
- * @param charset the charset label the buffer would save with
+ * @param charset the charset label the buffer would save with, or {@code null} when a hand-edited record lacks it
+ *     (the restored buffer then detects one as a load does)
  * @param bom whether that save writes a byte-order mark where the charset allows one
- * @param lineEnding {@code LF}, {@code CRLF} or {@code CR}: the line ending the buffer would save with
+ * @param lineEnding {@code LF}, {@code CRLF} or {@code CR}: the line ending the buffer would save with; {@code null}
+ *     when a hand-edited record lacks it (the text then keeps {@code \n})
  * @param baseModifiedMillis modified time of the file as last loaded or saved; negative when none was recorded
  * @param baseSize size of the file as last loaded or saved
  * @param baseFingerprint SHA-256 of the file's bytes as last loaded or saved, or {@code null}
@@ -28,9 +30,9 @@ public record RecoveryRecord(
         @Nullable String path,
         String title,
         @Nullable String displayName,
-        String charset,
+        @Nullable String charset,
         boolean bom,
-        String lineEnding,
+        @Nullable String lineEnding,
         long baseModifiedMillis,
         long baseSize,
         @Nullable String baseFingerprint,
@@ -46,9 +48,9 @@ public record RecoveryRecord(
             @Nullable String path,
             String title,
             @Nullable String displayName,
-            String charset,
+            @Nullable String charset,
             boolean bom,
-            String lineEnding,
+            @Nullable String lineEnding,
             long baseModifiedMillis,
             long baseSize,
             @Nullable String baseFingerprint,
