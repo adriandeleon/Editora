@@ -126,8 +126,22 @@ A control that works with the mouse but cannot be reached, seen or named from th
 - **Two commands move between the regions of the window**, `window.other` and `window.otherReverse` (the
   editor, then each open tool window), and every keymap binds both (`KeymapsTest`).
 - **Colour**: text people must read uses `-color-fg-muted` or stronger (`-color-fg-subtle` is ~3:1 —
-  disabled/decorative only); ink on an `-emphasis` fill is `-color-fg-emphasis`, never `white`; state
-  colours come from the `-state-*` tokens, never a hex. `StyleContrastTest` pins the ratios.
+  disabled/decorative only, and `StyleContrastTest` walks every rule for it); ink on an `-emphasis` fill is
+  `-color-fg-emphasis`, never `white`. A warning, an error or a success is painted with its token on
+  `app.css`'s `.root` — `-state-amber`, `-state-red`, `-state-green`, each with `-bg` (the role's subtle tint),
+  `-hover` (its muted tint) and `-emphasis` (its solid fill) — never with the role behind it
+  (`-color-danger-fg`) and never a hex (ICON-07, Pauta 6.0.1). Those three colours mean only "not durable yet" or
+  a warning, broken (with breakpoints, a recording and a destructive menu row), and verified (found, added,
+  passing, running) (ICON-18): a bookmark, a note, Stop, a deleted line and the Map's heat take the accent or
+  the ink. No component rule holds a fixed colour (ICON-08): a colour with no role (a scrim, a shadow, the printed
+  paper, the default editor theme's Primer palette, the rainbow hues) is a token on a `.root` block, and a rule
+  names it. Content colours that are not states have tokens of their own on the roles: `-ansi-*` for a program's
+  ANSI colours, `-data-string` and `-data-literal` for the data previews' highlighting. `StyleColourGuardTest`
+  (a guard) holds all three, and fails a colour literal in main code: a canvas painter reads the theme through
+  `editor/ThemeProbes` (zero-sized probes styled by an `.ink-probe-*` rule in `app.css`, re-read on a theme change;
+  `OverlayPalette.track` for the editor overlays) and falls back to `Color.gray(…)`, never a hue. Categorical hues (the
+  Git log's lanes, a timeline's tags) are the six `-lane-*` ladders, none of them a state's; `StyleContrastTest` pins the ratios, and only it computes one: an FX test checks
+  which colour a node took, never a contrast (ICON-14).
 - **Failures** go to the error channel. A message whose key is `status.…Failed` / `…Error` is routed
   there automatically wherever it is reported (`StatusSeverity`); `…cannot…` / `…invalid…` are warnings.
   Name new failure keys accordingly, or call `setError`. The name decides, with no list of exceptions: a

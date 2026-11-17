@@ -153,7 +153,6 @@ public final class DeploymentsWindow {
         TextField remoteRoot = field("deploy-root", "deploy.field.rootPrompt");
         Label rootProblem = new Label();
         rootProblem.getStyleClass().add("deploy-root-problem");
-        rootProblem.setStyle("-fx-text-fill: -color-danger-fg;");
         rootProblem.managedProperty().bind(rootProblem.textProperty().isNotEmpty());
         rootProblem.visibleProperty().bind(rootProblem.managedProperty());
         TextArea excludes = new TextArea();

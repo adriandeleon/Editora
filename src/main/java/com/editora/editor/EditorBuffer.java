@@ -754,12 +754,15 @@ public class EditorBuffer implements TabContent {
      *  area's inline style and the overlays' fonts are set by that call, so the first one must always
      *  apply even when it happens to match them. */
     private boolean fontApplied;
-    /** Current-line highlight fill; varies per editor theme (see {@link #setLineHighlightColor}). */
-    private Color lineHighlightColor = Color.web("#dfe7f0");
-    /** Minimap block + viewport colors; vary per editor theme (see {@link #setMinimapColors}). */
-    private Color minimapText = Color.web("#9aa5b1");
+    /**
+     * Current-line highlight fill; varies per editor theme (see {@link #setLineHighlightColor}). Until the theme
+     * sets it, a faint neutral wash, no theme's colour (ICON-08).
+     */
+    private Color lineHighlightColor = Color.gray(0.5, 0.12);
+    /** Minimap block + viewport colors; vary per editor theme (see {@link #setMinimapColors}); neutral until then. */
+    private Color minimapText = Color.gray(0.6);
 
-    private Color minimapViewport = Color.web("#0969da", 0.14);
+    private Color minimapViewport = Color.gray(0.5, 0.14);
     /** Visual tab width (columns); applied to the minimap and persisted via Settings. */
     int tabSize = 4;
     // EditorConfig overrides (null = no override → fall back to detection/global). See com.editora.editorconfig.

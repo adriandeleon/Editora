@@ -281,7 +281,7 @@ shows again). `MapCardLinks.showStop` opens the card of the declaration that hol
 when it has no outline, waiting for the outline as a search hit does), as a preview the next stop replaces where it
 stood unless something keeps it, and marks it: `ProjectMapPreview.setExecutionLine` puts the editor's `exec-line`
 paragraph style (with `exec-exception`) on the line, the execution arrow in the gutter's breakpoint strip (shown for it
-even where breakpoints are not) and the `project-map-debug-stop` amber border on the card. The card is one of the
+even where breakpoints are not) and the `project-map-debug-stop` accent border on the card (the execution line's accent, ICON-18). The card is one of the
 picked cards, so the orphan check leaves it, and the Map pans to it (`MapCards.panTo`) without taking the keyboard.
 Beside it `MapCallStack` (a `MapSideColumn`, shown without focus) lists the stack top first, the shown frame marked,
 frames with no file greyed and label or fold rows unpickable; Enter or a click hands the frame to
@@ -707,8 +707,9 @@ keymap), as the Notes box in the editor does. A note card follows the store: whe
 progress is kept), and it closes when its notes are deleted. A blanked note is not a deletion — its text
 is restored and the status bar says so. Each note in it is headed, as its sticky sheet is, by its line or lines
 (the noted text as the tooltip); pressing the heading opens the file at the note. A folder's note has none.
-A note card is styled from the theme's warning (amber) tokens, so it is a pale sheet on light themes and a
-dark amber one on dark themes.
+A note card is a sheet in the note's accent wash (`-note-paper` and `-note-edge` on `app.css`'s `.root`, chained to the
+theme's accent-subtle and accent-muted) over the opaque ground, with the theme's ink on it: amber means "not durable
+yet", not "a note" (ICON-18, Pauta 6.0.1).
 
 A code or declaration card carries its own Personal Notes. Selecting text in it brings up a floating bar over
 the selection — the Markdown buffer's (`MarkdownFormatBar.placeY`/`trackMouse`), with one **Add Personal Note**
@@ -720,12 +721,12 @@ does not look pressed, says why, and a press turns that option off. A stored not
 card's text as an editor tab finds it (`ProjectMapStickyNotes.reanchored`, `NoteAnchors.relocate`), so a file
 changed outside Editora does not mark the wrong line; one whose text is gone is headed "Text not found in the file"
 and not marked. It sticks them on the card as **sticky
-notes** (`ProjectMapStickyNotes`): one small editable amber sheet per note, headed by its line and a × that
+notes** (`ProjectMapStickyNotes`): one small editable sheet per note, in the note card's accent wash, headed by its line and a × that
 closes that one note on the card (`closeNote`: it stays in the store and comes back when the card's notes are shown
 again; closing the last turns the Notes button off), each tied by a
 note-coloured connector from a dot on the card's edge at its line (the text's top or bottom when scrolled past)
 to the sheet. While the sheets are in sight, each note's text in the card is marked as an editor tab marks it —
-the editor's `NoteHighlightOverlay` over the card's text, an amber wash with a marker at the note's start, the whole
+the editor's `NoteHighlightOverlay` over the card's text, a blue wash with a marker at the note's start, the whole
 line for a line note (`ProjectMapPreview.noteSpans`). The sheets stand outside the card's right edge, else its left, else on the card against its right
 edge (`side`, by the room the whole stack needs), each as near its line as the sheets above allow, a further
 column when they run past the card's foot (`stack`). Notes past what two such stacks hold (`sheetsShown`, at
@@ -1611,7 +1612,7 @@ stops at the first older one, as `git log` always does, so a history with backda
 
 A row's heat step (`heatLevel`, 0–4) compares its count with the busiest file (a file) or the busiest folder at its
 depth (a folder) on a log scale; a folder's step is never above its parent's, so a deep folder with one commit does
-not show full heat beside cooler parents (B5, position 7). The fill mixes `-state-amber` (probe `project-map-probe-heat`) in by
+not show full heat beside cooler parents (B5, position 7). The fill mixes the accent (`-color-accent-fg`, probe `project-map-probe-heat`; amber is a warning's, ICON-18) in by
 `HEAT_TINT` (5–18%), less where a theme needs it so the label keeps 4.5:1 and muted ink 3:1 (`tinted`; Editora's own
 themes get the full tint), on unselected rows only; a heat meter along the row's foot, a quarter of the row's width
 per step, carries the heat on selected rows too (in the on-accent ink on the focused selection) and stands 3:1 off its

@@ -12,6 +12,7 @@ import javafx.scene.paint.Color;
 import com.editora.editor.AfterLayoutPaint;
 import com.editora.editor.CanvasGuards;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.OverlayPalette;
 import com.editora.editor.SecondaryPane;
 import com.editora.editor.TabSurface;
 import com.editora.mermaid.MaidOutput;
@@ -27,7 +28,9 @@ import org.jspecify.annotations.Nullable;
  */
 public final class MermaidLintOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
-    private static final Color SQUIGGLE = Color.web("#e5484d");
+    /** A mistake's squiggle: the theme's error red (a misspelling or a broken diagram is an error), re-read on a theme change. */
+    private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
+
     private static final double AMP = 1.6;
     private static final double STEP = 2.0;
 
@@ -59,6 +62,7 @@ public final class MermaidLintOverlay extends Region implements SecondaryPane.Fo
         // and the 1x1 canvas holds no full-viewport GPU texture (almost every buffer is not a diagram).
         setVisible(false);
         getChildren().add(canvas);
+        OverlayPalette.track(area, getChildren(), palette -> colors = palette);
         area.viewportDirtyEvents().subscribe(ignore -> scheduleRedraw());
         area.multiPlainChanges().subscribe(ignore -> scheduleRedraw());
         area.estimatedScrollXProperty().addListener((o, a, b) -> scheduleRedraw());
@@ -171,7 +175,7 @@ public final class MermaidLintOverlay extends Region implements SecondaryPane.Fo
             int total = area.getParagraphs().size();
             int first = Math.max(0, area.firstVisibleParToAllParIndex());
             int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
-            g.setStroke(SQUIGGLE);
+            g.setStroke(colors.error());
             g.setLineWidth(1.0);
             for (MaidOutput.Diagnostic d : diagnostics) {
                 int p = d.line() - 1;

@@ -23,15 +23,23 @@
    for free. Periwinkle has no AtlantaFX role — it is a brand hue — so it is a literal;
    the flagship dark theme overrides it (editor-themes/editora-dark.css). */
 .root {
+    /* Amber, red and green each have a -bg (the role's subtle tint), a -hover (its muted tint: a hover state, or
+       a tint or rule stronger than -bg) and an -emphasis (its solid fill, under -color-fg-emphasis ink). A
+       component rule that colours a warning, an error or a success names these, never the role behind them
+       (ICON-07, Pauta 6.0.1); nothing else is amber, red or green (ICON-18): bookmarks, notes, Stop, deleted
+       lines and the Map's heat are accent or neutral. StyleColourGuardTest holds both. */
     -state-amber: -color-warning-fg;
     -state-amber-bg: -color-warning-subtle;
     -state-amber-hover: -color-warning-muted;
+    -state-amber-emphasis: -color-warning-emphasis;
     -state-red: -color-danger-fg;
     -state-red-bg: -color-danger-subtle;
     -state-red-hover: -color-danger-muted;
+    -state-red-emphasis: -color-danger-emphasis;
     -state-green: -color-success-fg;
     -state-green-bg: -color-success-subtle;
     -state-green-hover: -color-success-muted;
+    -state-green-emphasis: -color-success-emphasis;
     -state-accent: -color-accent-fg;
     -state-accent-bg: -color-accent-subtle;
     -state-accent-hover: -color-accent-muted;
@@ -59,6 +67,76 @@
        Editor themes set .editor-area's background directly, which no other rule can read — so each
        one also restates it here. Defaults to the panel surface for themes that don't. */
     -editor-surface: -color-bg-default;
+
+    /* A Personal Note's sheet (the gutter preview, the Map's note card and sticky notes): an accent wash, not
+       the amber of "not durable yet" (ICON-18). Layered over an opaque ground where a theme's tint is see-through. */
+    -note-paper: -color-accent-subtle;
+    -note-edge: -color-accent-muted;
+    -note-strong: -color-accent-emphasis;
+
+    /* Colours the theme has no role for (ICON-08): a scrim behind an overlay, the shadows under floating cards
+       and popups, the printed page, and the purple of a Markdown IMPORTANT alert (a ladder of the ground, like
+       the Git hues above). Component rules name these, never the literal. */
+    -scrim: rgba(0, 0, 0, 0.18);
+    -scrim-strong: rgba(0, 0, 0, 0.78);
+    -shadow-faint: rgba(0, 0, 0, 0.18);
+    -shadow-soft: rgba(0, 0, 0, 0.25);
+    -shadow: rgba(27, 30, 42, 0.28);
+    -shadow-card: rgba(0, 0, 0, 0.32);
+    -shadow-strong: rgba(0, 0, 0, 0.35);
+    -shadow-deep: rgba(0, 0, 0, 0.42);
+    -paper: #ffffff;
+
+    /* Colours that render content, not the app's state (ICON-18): the colours a program prints with ANSI escapes,
+       and the string and literal hues of the data previews (JSON, YAML, TOML, XML, a workflow's conditions),
+       which highlight data the way an editor theme highlights code. They sit on the theme's roles so they read
+       on its ground, under names of their own, so no state token paints them. */
+    -ansi-red: -color-danger-fg;
+    -ansi-green: -color-success-fg;
+    -ansi-yellow: -color-warning-fg;
+    -data-string: -color-success-fg;
+    -data-literal: -color-warning-fg;
+    -md-violet: ladder(-color-bg-default, #a371f7 49%, #8250df 50%);
+
+    /* Six categorical hues for what needs telling apart and means nothing else: the Git log's graph lanes and a
+       timeline's tags. Ladders of the ground (a light tint on a dark ground, a deep one on a light ground), all
+       blue to magenta: none is amber, red or green, which mean states (ICON-18). StyleContrastTest holds them at 3:1
+       on every bundled theme's ground. */
+    -lane-0: ladder(-color-bg-default, #79b8ff 49%, #0969da 50%);
+    -lane-1: ladder(-color-bg-default, #56d4dd 49%, #1b7c83 50%);
+    -lane-2: ladder(-color-bg-default, #d2a8ff 49%, #8250df 50%);
+    -lane-3: ladder(-color-bg-default, #f778ba 49%, #bf3989 50%);
+    -lane-4: ladder(-color-bg-default, #a5b4fc 49%, #4f46e5 50%);
+    -lane-5: ladder(-color-bg-default, #b1bac4 49%, #57606a 50%);
+
+    /* The printed page (a Project Map printed or saved as PDF): paper, white whatever the theme, so its ink and
+       marks are a light palette of its own. */
+    -print-ground: #ffffff;
+    -print-surface: #f6f8fa;
+    -print-border: #d0d7de;
+    -print-ink: #1f2328;
+    -print-muted: #59636e;
+    -print-accent: #0969da;
+    -print-on-accent: #ffffff;
+    -print-warning: #9a6700;
+    -print-success: #1a7f37;
+    -print-danger: #d1242f;
+    -print-olive: #6e7b25;
+    -print-violet: #8250df;
+
+    /* The default editor theme, Primer Light: the editor surface and gutter when no editor theme stylesheet is
+       loaded (EditorThemes.BARE). An editor theme is its own palette and has no AtlantaFX role, so these are its
+       literals, as an editor-themes/*.css file's are; the rules below name them. */
+    -primer-ground: #ffffff;
+    -primer-ink: #24292f;
+    -primer-selection: #b6e3ff;
+    -primer-rule: #d0d7de;
+    -primer-minimap: #fbfcfd;
+    -primer-minimap-edge: #eaeef2;
+    -primer-gutter: #f6f8fa;
+    -primer-lineno: #636c76;
+    -primer-fold-header: #eef1f5;
+    -primer-link: #0969da;
 }
 
 /* A status pill: a tinted, rounded chip that says "this state is worth noticing".
@@ -77,7 +155,7 @@
 }
 
 .editor-area {
-    -fx-background-color: #ffffff;
+    -fx-background-color: -primer-ground;
     -fx-font-family: "JetBrains Mono", "monospace";
     -fx-font-size: 14px;
 }
@@ -88,46 +166,46 @@
 }
 
 .editor-area .text {
-    -fx-fill: #24292f;
+    -fx-fill: -primer-ink;
 }
 
 .editor-area .caret {
-    -fx-stroke: #24292f;
+    -fx-stroke: -primer-ink;
 }
 
 .editor-area .selection {
-    -fx-fill: #b6e3ff;
+    -fx-fill: -primer-selection;
 }
 
 /* Thin vertical line marking the 80-column boundary. */
 .column-ruler {
-    -fx-stroke: #d0d7de;
+    -fx-stroke: -primer-rule;
     -fx-opacity: 0.7;
 }
 
 /* Document overview docked on the editor's right edge. */
 .minimap {
-    -fx-background-color: #fbfcfd;
-    -fx-border-color: #eaeef2;
+    -fx-background-color: -primer-minimap;
+    -fx-border-color: -primer-minimap-edge;
     -fx-border-width: 0 0 0 1;
 }
 
 /* Line-number gutter */
 .editor-area .lineno {
-    -fx-background-color: #f6f8fa;
-    -fx-text-fill: #8c959f;
+    -fx-background-color: -primer-gutter;
+    -fx-text-fill: -primer-lineno;
     -fx-font-family: "monospace";
     -fx-padding: 0 8 0 8;
 }
 
 /* Folded header line: shade the whole line so it's clearly a collapsed region. */
 .editor-area .fold-header-line {
-    -fx-background-color: #eef1f5;
+    -fx-background-color: -primer-fold-header;
 }
 
 /* Folding gutter: line number + IntelliJ-style fold chevron. */
 .editor-area .fold-gutter {
-    -fx-background-color: #f6f8fa;
+    -fx-background-color: -primer-gutter;
     -fx-padding: 0 4 0 0;
 }
 
@@ -137,7 +215,7 @@
 }
 
 .editor-area .fold-chevron {
-    -fx-text-fill: #8c959f;
+    -fx-text-fill: -primer-lineno;
     -fx-font-family: "sans-serif";
     -fx-font-size: 17.5px; /* 35% larger than the former 13px — easier to see/hit (#530) */
     -fx-min-width: 19;
@@ -151,30 +229,31 @@
 }
 
 .editor-area .fold-chevron:hover {
-    -fx-text-fill: #0969da;
+    -fx-text-fill: -primer-link;
 }
 
-/* Bookmark glyph in the gutter (light orange; a brighter shade is used on dark editor themes). A node
-   is only created for bookmarked lines, so this rule never touches unbookmarked rows. */
+/* Bookmark glyph in the gutter: the accent, a place the user marked (amber means "not durable yet", ICON-18).
+   A node is only created for bookmarked lines, so this rule never touches unbookmarked rows. Each editor theme
+   restates it in its own accent. */
 .editor-area .fold-gutter .bookmark-marker {
-    -fx-fill: #e08a33;
+    -fx-fill: -primer-link;
 }
 
-/* The code-action lightbulb, on the caret line in the bookmark column: one colour for quick actions, red when there
-   is a quick fix (IntelliJ's two bulbs). The adaptive editor themes and Primer Light keep these, a hue apart from the
-   warning-coloured bookmark (seventh review AR3); the other editor themes set their own. A UI theme whose accent is
+/* The code-action lightbulb, on the caret line in the bookmark column: the muted ink for quick actions, a hue apart
+   from the accent bookmark (seventh review AR3), and red when there is a quick fix, which is a fix for an error
+   (IntelliJ's two bulbs). The adaptive editor themes and Primer Light keep these; the other editor themes set their
+   own in the same two meanings. A UI theme whose accent is
    its warning colour (Summer Dark, Navy Dark, Fall Dark, Blacky) sets -editora-bulb-assist on .editor-area, which is
    nearer the bulb than this default (eighth review AR3). */
-.root { -editora-bulb-assist: -color-accent-emphasis; }
+.root { -editora-bulb-assist: -color-fg-muted; }
 .editor-area .fold-gutter .bulb-marker { -fx-fill: -editora-bulb-assist; }
-.editor-area .fold-gutter .bulb-marker.fix { -fx-fill: -color-danger-emphasis; }
+.editor-area .fold-gutter .bulb-marker.fix { -fx-fill: -state-red-emphasis; }
 .editor-area .fold-gutter .bookmark-slot:hover .bulb-marker { -fx-opacity: 0.8; }
 
-/* Personal Note glyph in the gutter — a deep orange comment bubble, deliberately distinct from the
-   softer amber bookmark marker above. A brighter shade is used on dark editor themes. Only created
-   for noted lines. */
+/* Personal Note glyph in the gutter: a comment bubble in the accent, told apart from the bookmark ribbon by its
+   shape. Each editor theme restates it in its own accent. Only created for noted lines. */
 .editor-area .fold-gutter .note-marker {
-    -fx-fill: #e65100;
+    -fx-fill: -primer-link;
     -fx-cursor: hand;
 }
 
@@ -197,7 +276,7 @@
     -fx-background-insets: 0 0 0 2;
 }
 .editor-area .fold-gutter .git-change-bar.git-added {
-    -fx-background-color: -color-success-emphasis;
+    -fx-background-color: -state-green-emphasis;
 }
 .editor-area .fold-gutter .git-change-bar.git-modified {
     -fx-background-color: -color-accent-emphasis;
@@ -205,10 +284,10 @@
 /* Lines removed above this row: a wedge on the row's top edge instead of a stripe down its side, so it
    cannot be read as "this line was modified". */
 .editor-area .fold-gutter .git-change-bar .git-deleted-wedge {
-    -fx-fill: -color-danger-emphasis;
+    -fx-fill: -color-fg-muted;
 }
 .editor-area .fold-gutter .git-change-bar.git-deleted:hover .git-deleted-wedge {
-    -fx-fill: -color-danger-fg;
+    -fx-fill: -color-fg-default;
 }
 
 /* The card a change bar opens (GitHunkPopup): the old lines over the new ones, each in a read-only text
@@ -240,18 +319,18 @@
     -fx-background-color: transparent;
 }
 .git-hunk-popup .git-hunk-old {
-    -fx-border-color: -color-danger-emphasis;
+    -fx-border-color: -color-neutral-emphasis;
     -fx-text-fill: -color-fg-default;
 }
 .git-hunk-popup .git-hunk-old .content {
-    -fx-background-color: -color-danger-subtle;
+    -fx-background-color: -color-neutral-subtle;
 }
 .git-hunk-popup .git-hunk-new {
-    -fx-border-color: -color-success-emphasis;
+    -fx-border-color: -state-green-emphasis;
     -fx-text-fill: -color-fg-default;
 }
 .git-hunk-popup .git-hunk-new .content {
-    -fx-background-color: -color-success-subtle;
+    -fx-background-color: -state-green-bg;
 }
 .git-hunk-popup .git-hunk-actions {
     -fx-padding: 8 0 0 0;
@@ -291,19 +370,12 @@
     -fx-text-fill: -color-fg-default;
 }
 
-/* Personal Notes read like a soft paper annotation rather than editor chrome. Keep this intentionally
-   paler than a saturated Post-it while retaining dark text in every app theme. The popup shell is styled
-   inline because Tooltip replaces its private scene; this class overrides the Markdown renderer's
-   looked-up colors, whose normal background would otherwise cover that yellow shell. */
+/* Personal Notes read as an annotation on the theme's overlay ground, ruled in the note's accent wash (the
+   popup shell is styled inline in PersonalNoteTooltip, because Tooltip replaces its private scene). The note's
+   Markdown keeps the theme's own ink, so it reads in every app theme (ICON-08: no fixed paper colour). */
 .personal-note-tooltip-content {
-    -color-bg-default: #fff9c4;
-    -color-bg-subtle: #fff3ad;
-    -color-fg-default: #3d3520;
-    -color-fg-muted: #6b6040;
-    -color-border-muted: #eadf9b;
-    -color-accent-fg: #705a00;
-    -fx-background-color: #fff9c4;
-    -fx-text-fill: #3d3520;
+    -fx-background-color: -color-bg-overlay;
+    -fx-text-fill: -color-fg-default;
 }
 
 /* Hover preview of a collapsed region's hidden content. The colors are set inline per editor theme
@@ -311,12 +383,12 @@
 .fold-preview-tooltip {
     -fx-font-family: "JetBrains Mono", "monospace";
     -fx-font-size: 12px;
-    -fx-background-color: #ffffff;
-    -fx-text-fill: #24292f;
-    -fx-border-color: #d0d7de;
+    -fx-background-color: -primer-ground;
+    -fx-text-fill: -primer-ink;
+    -fx-border-color: -primer-rule;
     -fx-border-width: 1;
     -fx-padding: 6 8 6 8;
-    -fx-effect: dropshadow(gaussian, rgba(31,35,40,0.2), 12, 0.15, 0, 3);
+    -fx-effect: dropshadow(gaussian, -shadow-soft, 12, 0.15, 0, 3);
 }
 
 /* Plain runs in the rich fold preview need Text's -fx-fill (Tooltip's -fx-text-fill only colors its
@@ -413,7 +485,7 @@
     -fx-fill: -color-fg-muted;
 }
 .notes-tree .tree-cell.note-orphaned .note-label {
-    -fx-fill: -color-danger-fg;
+    -fx-fill: -state-red;
 }
 
 /* ---- Git (Commit) tool window ---- */
@@ -472,7 +544,7 @@
 /* Lines added / deleted at the right edge of a Commit-window row. */
 .git-tree .git-count { -fx-font-size: 11px; }
 .git-tree .git-count-added { -fx-text-fill: -state-green; }
-.git-tree .git-count-deleted { -fx-text-fill: -state-red; }
+.git-tree .git-count-deleted { -fx-text-fill: -color-fg-muted; }
 /* Commit tool window toolbar: compact icon buttons (legible, no truncated text labels). */
 .git-toolbar-button {
     -fx-padding: 3 5 3 5;
@@ -590,7 +662,7 @@
 }
 /* A local branch whose upstream was deleted on the remote: usually a merged leftover to delete. */
 .branch-upstream.branch-gone {
-    -fx-text-fill: -color-warning-fg;
+    -fx-text-fill: -state-amber;
 }
 /* The per-row "more" button: the visible way into a branch's secondary actions. Compact, so it never
    grows the menu-height row it sits in. */
@@ -608,7 +680,7 @@
    whose label is not a direct child (MainMenuBar). The chord keeps its own colour. */
 .menu-item.danger > .label,
 .menu-item.danger .menu-item-title {
-    -fx-text-fill: -color-danger-fg;
+    -fx-text-fill: -state-red;
 }
 /* A menu bar row whose command cannot run now (MainMenuBar.showAvailability): grayed as a disabled row is, but
    still a row, so its tooltip can say why. The palette dims its grayed rows the same way. */
@@ -675,6 +747,19 @@
 .markwhen-section-band { -fx-background-color: -color-bg-subtle; }
 .markwhen-bar { -fx-background-color: -color-accent-emphasis; -fx-background-radius: 3; }
 .markwhen-point { -fx-fill: -color-accent-emphasis; }
+/* A tag that declares no colour of its own: one of the theme's six lane hues (MarkwhenPaint.laneClass). */
+.markwhen-bar.markwhen-lane-0, .markwhen-cal-chip.markwhen-lane-0 { -fx-background-color: -lane-0; }
+.markwhen-point.markwhen-lane-0 { -fx-fill: -lane-0; }
+.markwhen-bar.markwhen-lane-1, .markwhen-cal-chip.markwhen-lane-1 { -fx-background-color: -lane-1; }
+.markwhen-point.markwhen-lane-1 { -fx-fill: -lane-1; }
+.markwhen-bar.markwhen-lane-2, .markwhen-cal-chip.markwhen-lane-2 { -fx-background-color: -lane-2; }
+.markwhen-point.markwhen-lane-2 { -fx-fill: -lane-2; }
+.markwhen-bar.markwhen-lane-3, .markwhen-cal-chip.markwhen-lane-3 { -fx-background-color: -lane-3; }
+.markwhen-point.markwhen-lane-3 { -fx-fill: -lane-3; }
+.markwhen-bar.markwhen-lane-4, .markwhen-cal-chip.markwhen-lane-4 { -fx-background-color: -lane-4; }
+.markwhen-point.markwhen-lane-4 { -fx-fill: -lane-4; }
+.markwhen-bar.markwhen-lane-5, .markwhen-cal-chip.markwhen-lane-5 { -fx-background-color: -lane-5; }
+.markwhen-point.markwhen-lane-5 { -fx-fill: -lane-5; }
 .markwhen-placeholder { -fx-text-fill: -color-fg-muted; -fx-font-style: italic; }
 
 /* Markwhen calendar (month-grid) view. */
@@ -763,13 +848,13 @@
 .md-preview-paused-button { -fx-font-size: 12px; -fx-padding: 2 10 2 10; }
 /* Find in the preview: a match is a label cut out of its run of text (a Text has no background). */
 .markdown-preview .md-find-match {
-    -fx-background-color: -color-warning-muted;
+    -fx-background-color: -color-accent-muted;
     -fx-background-radius: 2;
     -fx-text-fill: -color-fg-default;
     -fx-padding: 0;
 }
 .markdown-preview .md-find-match.md-find-current {
-    -fx-background-color: -color-warning-emphasis;
+    -fx-background-color: -color-accent-emphasis;
     -fx-text-fill: -color-fg-emphasis;
 }
 /* A preview in a tab of its own: a slim header naming the file it shows, with the follow/lock switch. */
@@ -802,6 +887,8 @@
 /* Text selected in the preview: a translucent layer above the text (the column is opaque, nothing can go
    under it). The swatch only carries the colour to shapes made after the CSS pass. */
 .md-selection-layer { -fx-opacity: 0.32; }
+/* A picture shown enlarged over the window: the strong scrim behind it (PreviewLightbox). */
+.md-lightbox { -fx-background-color: -scrim-strong; }
 .md-selection-fill { -fx-fill: -color-accent-emphasis; }
 .md-caret-marker { -fx-background-color: -color-accent-muted; -fx-background-radius: 2; }
 /* GitHub alerts (> [!NOTE] …): one colour per kind — the rule down the side, the icon and the title. */
@@ -812,13 +899,11 @@
     -fx-padding: 6 0 6 12;
     -fx-spacing: 8;
 }
-.markdown-preview .md-alert-tip { -md-alert: -color-success-fg; }
-/* (The themes have no purple token: one that reads on light and dark; each preview theme has its own.) */
-.markdown-preview .md-alert-important { -md-alert: #8957e5; }
-.md-light .markdown-preview .md-alert-important { -md-alert: #8250df; }
-.md-dark .markdown-preview .md-alert-important { -md-alert: #a371f7; }
-.markdown-preview .md-alert-warning { -md-alert: -color-warning-fg; }
-.markdown-preview .md-alert-caution { -md-alert: -color-danger-fg; }
+.markdown-preview .md-alert-tip { -md-alert: -color-fg-muted; }
+/* (The themes have no purple role: -md-violet is a ladder of the ground, so it reads on light and dark grounds.) */
+.markdown-preview .md-alert-important { -md-alert: -md-violet; }
+.markdown-preview .md-alert-warning { -md-alert: -state-amber; }
+.markdown-preview .md-alert-caution { -md-alert: -state-red; }
 .markdown-preview .md-alert-title {
     -fx-text-fill: -md-alert;
     -fx-font-weight: bold;
@@ -827,7 +912,7 @@
 .markdown-preview .md-alert-icon { -fx-fill: -md-alert; }
 /* ==highlight==: a marker stroke behind the words (labels cut at the spaces, so the line still breaks). */
 .markdown-preview .md-mark-word {
-    -fx-background-color: -color-warning-muted;
+    -fx-background-color: -color-accent-muted;
     -fx-text-fill: -color-fg-default;
     -fx-font-family: "Inter", "sans-serif";
     -fx-padding: 0;
@@ -936,7 +1021,7 @@
     -fx-cursor: hand;
 }
 .markdown-preview .md-code-copy:hover { -fx-background-color: -color-bg-default; }
-.markdown-preview .md-code-copy.md-code-copied .icon-line { -fx-stroke: -color-success-fg; }
+.markdown-preview .md-code-copy.md-code-copied .icon-line { -fx-stroke: -state-green; }
 
 /* The "back to where it was referred to" arrow at the end of a footnote definition. */
 .markdown-preview .md-footnote-back { -fx-font-size: 0.9em; }
@@ -949,8 +1034,8 @@
 .markdown-preview .md-math-block-wrap { -fx-alignment: center; -fx-padding: 8 0 8 0; }
 .markdown-preview .md-math-error {
     -fx-font-family: monospace;
-    -fx-text-fill: -color-danger-fg;
-    -fx-background-color: -color-danger-subtle;
+    -fx-text-fill: -state-red;
+    -fx-background-color: -state-red-bg;
     -fx-background-radius: 4;
     -fx-padding: 0 4 0 4;
 }
@@ -959,12 +1044,12 @@
 .md-mermaid { -fx-alignment: center; -fx-padding: 6 0 6 0; }
 .md-mermaid .mermaid-placeholder { -fx-text-fill: -color-fg-muted; -fx-font-style: italic; }
 .md-mermaid .mermaid-error {
-    -fx-text-fill: -color-danger-fg;
+    -fx-text-fill: -state-red;
     -fx-font-family: monospace;
     -fx-padding: 8;
-    -fx-background-color: -color-danger-subtle;
+    -fx-background-color: -state-red-bg;
     -fx-background-radius: 6;
-    -fx-border-color: -color-danger-muted;
+    -fx-border-color: -state-red-hover;
     -fx-border-radius: 6;
 }
 
@@ -973,12 +1058,12 @@
 .md-diagram .diagram-placeholder { -fx-text-fill: -color-fg-muted; -fx-font-style: italic; }
 .md-diagram .diagram-extra-note { -fx-text-fill: -color-fg-muted; -fx-font-style: italic; -fx-font-size: 0.9em; }
 .md-diagram .diagram-error {
-    -fx-text-fill: -color-danger-fg;
+    -fx-text-fill: -state-red;
     -fx-font-family: monospace;
     -fx-padding: 8;
-    -fx-background-color: -color-danger-subtle;
+    -fx-background-color: -state-red-bg;
     -fx-background-radius: 6;
-    -fx-border-color: -color-danger-muted;
+    -fx-border-color: -state-red-hover;
     -fx-border-radius: 6;
 }
 
@@ -988,12 +1073,12 @@
     -fx-effect: dropshadow(gaussian, -color-shadow-default, 8, 0, 0, 2);
 }
 .md-diagram .typst-error {
-    -fx-text-fill: -color-danger-fg;
+    -fx-text-fill: -state-red;
     -fx-font-family: monospace;
     -fx-padding: 8;
-    -fx-background-color: -color-danger-subtle;
+    -fx-background-color: -state-red-bg;
     -fx-background-radius: 6;
-    -fx-border-color: -color-danger-muted;
+    -fx-border-color: -state-red-hover;
     -fx-border-radius: 6;
 }
 
@@ -1001,12 +1086,12 @@
 .md-svg { -fx-alignment: center; -fx-padding: 6 0 6 0; }
 .md-svg .svg-placeholder { -fx-text-fill: -color-fg-muted; -fx-font-style: italic; }
 .md-svg .svg-error {
-    -fx-text-fill: -color-danger-fg;
+    -fx-text-fill: -state-red;
     -fx-font-family: monospace;
     -fx-padding: 8;
-    -fx-background-color: -color-danger-subtle;
+    -fx-background-color: -state-red-bg;
     -fx-background-radius: 6;
-    -fx-border-color: -color-danger-muted;
+    -fx-border-color: -state-red-hover;
     -fx-border-radius: 6;
 }
 
@@ -1016,12 +1101,12 @@
 .structured-key { -fx-fill: -color-fg-default; }
 .structured-punct { -fx-fill: -color-fg-muted; }
 .structured-count { -fx-fill: -color-fg-muted; }
-.structured-string { -fx-fill: -color-success-fg; }
+.structured-string { -fx-fill: -data-string; }
 .structured-number { -fx-fill: -color-accent-fg; }
-.structured-boolean { -fx-fill: -color-warning-fg; }
+.structured-boolean { -fx-fill: -data-literal; }
 .structured-null { -fx-fill: -color-fg-muted; }
 .structured-error {
-    -fx-text-fill: -color-danger-fg;
+    -fx-text-fill: -state-red;
     -fx-font-family: monospace;
     -fx-padding: 10;
     -fx-wrap-text: true;
@@ -1035,8 +1120,8 @@
 .xml-tree { -fx-font-family: monospace; -fx-background-color: -color-bg-default; }
 .xml-tree .xml-row { -fx-font-family: monospace; }
 .xml-tag { -fx-fill: -color-accent-fg; }
-.xml-attr-name { -fx-fill: -color-warning-fg; }
-.xml-attr-value { -fx-fill: -color-success-fg; }
+.xml-attr-name { -fx-fill: -data-literal; }
+.xml-attr-value { -fx-fill: -data-string; }
 .xml-text { -fx-fill: -color-fg-default; }
 .xml-punct { -fx-fill: -color-fg-muted; }
 .xml-comment { -fx-fill: -color-fg-muted; -fx-font-style: italic; }
@@ -1058,23 +1143,23 @@
 .crontab-header { -fx-text-fill: -color-fg-muted; -fx-padding: 0 0 8 0; }
 .crontab-assign { -fx-text-fill: -color-fg-muted; -fx-font-family: monospace; }
 .crontab-job { -fx-padding: 8 0 8 0; -fx-spacing: 2; -fx-border-color: transparent transparent -color-border-muted transparent; -fx-border-width: 0 0 0.5 0; }
-.crontab-job-error { -fx-padding: 8; -fx-spacing: 2; -fx-background-color: -color-danger-subtle; -fx-background-radius: 6; }
+.crontab-job-error { -fx-padding: 8; -fx-spacing: 2; -fx-background-color: -state-red-bg; -fx-background-radius: 6; }
 .crontab-command { -fx-text-fill: -color-accent-fg; -fx-font-family: monospace; }
 .crontab-schedule { -fx-text-fill: -color-fg-default; }
 .crontab-nextruns { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.9em; }
-.crontab-error { -fx-text-fill: -color-danger-fg; }
+.crontab-error { -fx-text-fill: -state-red; }
 
 /* fstab mount preview — theme-aware via AtlantaFX semantic colors. */
 .fstab-preview-scroll { -fx-background-color: -color-bg-default; }
 .fstab-preview { -fx-background-color: -color-bg-default; -fx-padding: 10; -fx-spacing: 2; }
 .fstab-header { -fx-text-fill: -color-fg-muted; -fx-padding: 0 0 8 0; }
 .fstab-entry { -fx-padding: 8 0 8 0; -fx-spacing: 2; -fx-border-color: transparent transparent -color-border-muted transparent; -fx-border-width: 0 0 0.5 0; }
-.fstab-entry-error { -fx-padding: 8; -fx-spacing: 2; -fx-background-color: -color-danger-subtle; -fx-background-radius: 6; }
+.fstab-entry-error { -fx-padding: 8; -fx-spacing: 2; -fx-background-color: -state-red-bg; -fx-background-radius: 6; }
 .fstab-target { -fx-text-fill: -color-accent-fg; -fx-font-family: monospace; }
 .fstab-summary { -fx-text-fill: -color-fg-default; }
 .fstab-options { -fx-text-fill: -color-fg-muted; }
 .fstab-check { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.9em; }
-.fstab-error { -fx-text-fill: -color-danger-fg; }
+.fstab-error { -fx-text-fill: -state-red; }
 
 /* systemd unit preview — theme-aware via AtlantaFX semantic colors. */
 .systemd-preview-scroll { -fx-background-color: -color-bg-default; }
@@ -1113,9 +1198,9 @@
 .ghactions-job { -fx-padding: 8 0 8 0; -fx-spacing: 2; -fx-border-color: transparent transparent -color-border-muted transparent; -fx-border-width: 0 0 0.5 0; }
 .ghactions-job-title { -fx-text-fill: -color-accent-fg; -fx-font-family: monospace; }
 .ghactions-job-meta { -fx-text-fill: -color-fg-muted; }
-.ghactions-job-if { -fx-text-fill: -color-warning-fg; -fx-font-size: 0.9em; }
+.ghactions-job-if { -fx-text-fill: -data-literal; -fx-font-size: 0.9em; }
 .ghactions-step { -fx-text-fill: -color-fg-default; -fx-padding: 0 0 0 12; }
-.ghactions-error { -fx-text-fill: -color-danger-fg; }
+.ghactions-error { -fx-text-fill: -state-red; }
 
 /* Maven pom.xml summary preview — theme-aware via AtlantaFX semantic colors. */
 .pom-preview-scroll { -fx-background-color: -color-bg-default; }
@@ -1136,14 +1221,14 @@
 .pom-value { -fx-text-fill: -color-fg-default; }
 .pom-version { -fx-text-fill: -color-accent-fg; }
 /* A version this file supplies indirectly, via its own <dependencyManagement>/<pluginManagement>. */
-.pom-version-managed { -fx-text-fill: -color-success-fg; }
+.pom-version-managed { -fx-text-fill: -color-fg-muted; }
 /* A version this file can't resolve — it comes from a parent pom we haven't read. */
-.pom-version-unknown { -fx-text-fill: -color-fg-subtle; -fx-font-style: italic; -fx-font-size: 0.9em; }
+.pom-version-unknown { -fx-text-fill: -color-fg-muted; -fx-font-style: italic; -fx-font-size: 0.9em; }
 .pom-tag { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.9em; }
 .pom-goals { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.9em; -fx-padding: 0 0 2 16; }
 .pom-profile-title { -fx-text-fill: -color-accent-fg; -fx-font-weight: bold; -fx-padding: 16 0 0 0; }
 .pom-empty { -fx-text-fill: -color-fg-muted; -fx-font-style: italic; }
-.pom-error { -fx-text-fill: -color-danger-fg; }
+.pom-error { -fx-text-fill: -state-red; }
 .pom-activation { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.9em; -fx-font-style: italic; -fx-padding: 0 0 2 0; }
 .pom-filter { -fx-font-size: 0.95em; -fx-max-width: 320; }
 .pom-tags { -fx-hgap: 4; }
@@ -1160,13 +1245,13 @@
 .structured-tree .tree-cell:filled:selected .structured-punct,
 .structured-tree .tree-cell:filled:selected .structured-count,
 .structured-tree .tree-cell:filled:selected .structured-null { -fx-fill: -color-fg-muted; }
-.structured-tree .tree-cell:filled:selected .structured-string { -fx-fill: -color-success-fg; }
+.structured-tree .tree-cell:filled:selected .structured-string { -fx-fill: -data-string; }
 .structured-tree .tree-cell:filled:selected .structured-number { -fx-fill: -color-accent-fg; }
-.structured-tree .tree-cell:filled:selected .structured-boolean { -fx-fill: -color-warning-fg; }
+.structured-tree .tree-cell:filled:selected .structured-boolean { -fx-fill: -data-literal; }
 
 .xml-tree .tree-cell:filled:selected .xml-tag { -fx-fill: -color-accent-fg; }
-.xml-tree .tree-cell:filled:selected .xml-attr-name { -fx-fill: -color-warning-fg; }
-.xml-tree .tree-cell:filled:selected .xml-attr-value { -fx-fill: -color-success-fg; }
+.xml-tree .tree-cell:filled:selected .xml-attr-name { -fx-fill: -data-literal; }
+.xml-tree .tree-cell:filled:selected .xml-attr-value { -fx-fill: -data-string; }
 .xml-tree .tree-cell:filled:selected .xml-text { -fx-fill: -color-fg-default; }
 .xml-tree .tree-cell:filled:selected .xml-punct,
 .xml-tree .tree-cell:filled:selected .xml-comment { -fx-fill: -color-fg-muted; }
@@ -1197,7 +1282,7 @@
 .openapi-detail { -fx-font-family: monospace; -fx-text-fill: -color-fg-default; -fx-padding: 0 0 0 12; }
 .openapi-schema-name { -fx-font-family: monospace; -fx-font-weight: bold; -fx-text-fill: -color-accent-fg; }
 .openapi-schema { -fx-spacing: 2; -fx-padding: 6 0 6 0; }
-.openapi-deprecated { -fx-text-fill: -color-danger-fg; -fx-font-size: 0.85em; }
+.openapi-deprecated { -fx-text-fill: -state-amber; -fx-font-size: 0.85em; }
 .openapi-method {
     -fx-font-weight: bold;
     -fx-font-size: 0.8em;
@@ -1207,11 +1292,11 @@
     -fx-min-width: 56;
     -fx-alignment: center;
 }
-.openapi-method-get { -fx-background-color: -color-success-emphasis; }
+.openapi-method-get { -fx-background-color: -color-accent-emphasis; }
 .openapi-method-post { -fx-background-color: -color-accent-emphasis; }
-.openapi-method-put { -fx-background-color: -color-warning-emphasis; }
-.openapi-method-patch { -fx-background-color: -color-warning-emphasis; }
-.openapi-method-delete { -fx-background-color: -color-danger-emphasis; }
+.openapi-method-put { -fx-background-color: -color-accent-emphasis; }
+.openapi-method-patch { -fx-background-color: -color-accent-emphasis; }
+.openapi-method-delete { -fx-background-color: -color-accent-emphasis; }
 /* Neutral emphasis is a mid grey in both themes, where white is the readable ink (4.8:1 / 6.6:1). */
 .openapi-method-head, .openapi-method-options, .openapi-method-trace {
     -fx-background-color: -color-neutral-emphasis;
@@ -1332,7 +1417,7 @@
 .http-env-pill:hover { -fx-opacity: 1; -fx-border-color: -color-border-default; }
 .http-env-pill .http-env-pill-text { -fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: -state-accent; }
 .http-env-pill .http-env-pill-chevron { -fx-font-size: 10px; -fx-text-fill: -color-fg-muted; }
-.http-env-pill .http-env-dot { -fx-fill: -state-green; }
+.http-env-pill .http-env-dot { -fx-fill: -color-accent-emphasis; }
 .http-env-pill:none .http-env-pill-text { -fx-text-fill: -color-fg-muted; }
 .http-env-pill:none .http-env-dot { -fx-fill: transparent; -fx-stroke: -color-fg-muted; -fx-stroke-width: 1; }
 .status-bar .status-http-env:none { -fx-text-fill: -color-fg-muted; }
@@ -1362,7 +1447,7 @@
 .log-controls .log-level-combo .list-cell { -fx-font-size: 12px; -fx-padding: 0 4 0 6; }
 .log-controls .log-filter-field { -fx-pref-width: 320; -fx-max-width: 480; -fx-padding: 0 8 0 8; }
 /* Not a valid regular expression: it still filters, as plain text. */
-.log-controls .log-filter-field:literal { -fx-border-color: -color-warning-emphasis; -fx-border-radius: 4; }
+.log-controls .log-filter-field:literal { -fx-border-color: -state-amber-emphasis; -fx-border-radius: 4; }
 .log-controls .log-state { -fx-text-fill: -color-fg-muted; -fx-font-size: 12px; }
 
 /* The preview's −/+ zoom control (top-left of the preview pane). */
@@ -1505,8 +1590,8 @@
 }
 .project-map-results-partial {
     -fx-font-size: 0.8em;
-    -fx-text-fill: -color-warning-fg;
-    -fx-border-color: -color-warning-fg;
+    -fx-text-fill: -state-amber;
+    -fx-border-color: -state-amber;
     -fx-border-radius: 8;
     -fx-padding: 0 6 0 6;
 }
@@ -1522,10 +1607,10 @@
     -fx-text-fill: -color-fg-muted;
 }
 .project-map-status-text.project-map-status-warn {
-    -fx-text-fill: -color-warning-fg;
+    -fx-text-fill: -state-amber;
 }
 .project-map-status-text.project-map-status-error {
-    -fx-text-fill: -color-danger-fg;
+    -fx-text-fill: -state-red;
 }
 
 /* Canvas project map. Filters are native controls for focus/accessibility; only the hierarchy is painted. */
@@ -1601,7 +1686,7 @@
     -fx-border-color: -color-border-default;
     -fx-border-radius: 8;
     -fx-padding: 10 14 12 14;
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.3), 16, 0.12, 0, 5);
+    -fx-effect: dropshadow(gaussian, -shadow-card, 16, 0.12, 0, 5);
 }
 .project-map-help-heading {
     -fx-font-size: 10px;
@@ -1648,12 +1733,12 @@
 /* Rows are off the map, not faded: the badge keeps that from going unnoticed. */
 .project-map-narrowed-badge {
     -fx-font-size: 0.85em;
-    -fx-background-color: -color-warning-subtle;
+    -fx-background-color: -state-amber-bg;
     -fx-background-radius: 10;
-    -fx-border-color: -color-warning-muted;
+    -fx-border-color: -state-amber-hover;
     -fx-border-radius: 10;
     -fx-padding: 2 8 2 8;
-    -fx-text-fill: -color-warning-fg;
+    -fx-text-fill: -state-amber;
 }
 .project-map-filter-clear {
     -fx-background-color: transparent;
@@ -1769,7 +1854,7 @@
     -fx-text-alignment: center;
 }
 .project-map-preview {
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.42), 22, 0.16, 0, 7);
+    -fx-effect: dropshadow(gaussian, -shadow-deep, 22, 0.16, 0, 7);
 }
 .project-map-preview-frame {
     -fx-background-color: -color-bg-default;
@@ -1791,17 +1876,17 @@
 }
 /* A declaration nothing uses (Map gap 11): its "no uses" in the warning colour, as an unused name stands out. */
 .project-map-card-structure-row:unused .project-map-usages {
-    -fx-text-fill: -color-warning-fg;
+    -fx-text-fill: -state-amber;
 }
 /* The mouse resting on a card's text: the problems there, coloured by severity, above the documentation. */
 .project-map-hover-problem {
     -fx-text-fill: -color-fg-default;
 }
 .project-map-hover-problem:error {
-    -fx-text-fill: -color-danger-fg;
+    -fx-text-fill: -state-red;
 }
 .project-map-hover-problem:warning {
-    -fx-text-fill: -color-warning-fg;
+    -fx-text-fill: -state-amber;
 }
 .project-map-preview-title {
     -fx-font-size: 11px;
@@ -1868,21 +1953,21 @@
     -fx-text-fill: -state-amber;
     -fx-font-weight: bold;
 }
-/* A Personal Notes card is a sticky note in either theme: the warning (amber) family gives a pale
-   yellow sheet on light themes and a dark amber one on dark themes, with the theme's own ink on it. */
+/* A Personal Notes card is a sheet in the note's accent wash (-note-paper, -note-edge), with the theme's own ink
+   on it; not amber, which means "not durable yet" (ICON-18). */
 .project-map-note-preview-frame,
 .project-map-note-preview-scroll,
 .project-map-note-preview-scroll > .viewport,
 .project-map-note-preview-notes {
-    -fx-background-color: -color-warning-subtle;
+    -fx-background-color: -note-paper;
 }
 .project-map-note-preview-frame {
     /* Over the opaque background: some themes' warning tints are translucent, and the map must not show through. */
-    -fx-background-color: -color-bg-default, -color-warning-subtle;
-    -fx-border-color: -color-warning-muted;
+    -fx-background-color: -color-bg-default, -note-paper;
+    -fx-border-color: -note-edge;
 }
 .project-map-note-preview-header {
-    -fx-background-color: -color-warning-muted, -color-warning-subtle;
+    -fx-background-color: -note-edge, -note-paper;
     -fx-background-insets: 0, 0 0 1 0;
     -fx-border-color: transparent;
 }
@@ -1891,18 +1976,18 @@
     -fx-text-fill: -color-fg-default;
 }
 .project-map-note-preview-kind {
-    -fx-background-color: -color-warning-muted;
+    -fx-background-color: -note-edge;
     -fx-background-radius: 4;
     -fx-padding: 1 5 1 5;
     -fx-font-size: 8px;
     -fx-font-weight: bold;
 }
 .project-map-note-preview-editor {
-    -fx-control-inner-background: -color-warning-subtle;
+    -fx-control-inner-background: -note-paper;
     -fx-text-fill: -color-fg-default;
-    -fx-highlight-fill: -color-warning-muted;
+    -fx-highlight-fill: -note-edge;
     -fx-highlight-text-fill: -color-fg-default;
-    -fx-border-color: -color-warning-muted;
+    -fx-border-color: -note-edge;
     -fx-border-radius: 4;
     -fx-background-radius: 4;
     -fx-font-size: 12px;
@@ -1949,10 +2034,10 @@
     -fx-padding: 0 6 0 6;
 }
 .project-map-history-card .project-map-history-diff .list-cell.project-map-history-added {
-    -fx-background-color: -color-success-subtle;
+    -fx-background-color: -state-green-bg;
 }
 .project-map-history-card .project-map-history-diff .list-cell.project-map-history-removed {
-    -fx-background-color: -color-danger-subtle;
+    -fx-background-color: -color-neutral-subtle;
 }
 .project-map-history-card .project-map-history-diff .list-cell.project-map-history-hunk {
     -fx-text-fill: -color-fg-muted;
@@ -2008,10 +2093,10 @@
     -fx-padding: 0 4 0 0;
 }
 .project-map-changes-card .project-map-changes-diff .list-cell.project-map-changes-added {
-    -fx-background-color: -color-success-subtle;
+    -fx-background-color: -state-green-bg;
 }
 .project-map-changes-card .project-map-changes-diff .list-cell.project-map-changes-removed {
-    -fx-background-color: -color-danger-subtle;
+    -fx-background-color: -color-neutral-subtle;
 }
 .project-map-changes-card .project-map-changes-diff .list-cell.project-map-changes-hunk {
     -fx-background-color: -color-accent-subtle;
@@ -2025,10 +2110,10 @@
 }
 /* The words a changed line changes (round 3, item 3), deeper than the line's own wash, as GitHub marks them. */
 .project-map-changes-card .project-map-changes-diff .list-cell.project-map-changes-added .label.project-map-changes-word {
-    -fx-background-color: -color-success-muted;
+    -fx-background-color: -state-green-hover;
 }
 .project-map-changes-card .project-map-changes-diff .list-cell.project-map-changes-removed .label.project-map-changes-word {
-    -fx-background-color: -color-danger-muted;
+    -fx-background-color: -color-neutral-muted;
 }
 .project-map-changes-card .project-map-changes-against {
     -fx-font-size: 12px;
@@ -2077,7 +2162,7 @@
     -fx-fill: transparent;
 }
 .project-map-deps-edge.project-map-deps-mutual {
-    -fx-stroke: -color-warning-emphasis;
+    -fx-stroke: -state-amber-emphasis;
     -fx-stroke-dash-array: 5 3;
 }
 .project-map-deps-node,
@@ -2096,7 +2181,7 @@
     -fx-font-weight: bold;
 }
 .project-map-deps-node.project-map-deps-mutual {
-    -fx-border-color: -color-warning-emphasis;
+    -fx-border-color: -state-amber-emphasis;
 }
 .project-map-deps-node:hover,
 .project-map-deps-row:hover {
@@ -2133,8 +2218,8 @@
     -fx-text-fill: -color-fg-emphasis;
 }
 .project-map-deps-cell.project-map-deps-cycle {
-    -fx-background-color: -color-danger-subtle;
-    -fx-border-color: -color-danger-emphasis;
+    -fx-background-color: -state-red-bg;
+    -fx-border-color: -state-red-emphasis;
     -fx-text-fill: -color-fg-default;
 }
 .project-map-deps-cell.project-map-deps-picked,
@@ -2179,11 +2264,11 @@
 .project-map-metrics-table .project-map-metrics-number {
     -fx-alignment: center-right;
 }
-.project-map-metrics-table .table-cell.project-map-metrics-heat-1 { -fx-background-color: -color-warning-subtle; }
-.project-map-metrics-table .table-cell.project-map-metrics-heat-2 { -fx-background-color: -color-warning-muted; }
-.project-map-metrics-table .table-cell.project-map-metrics-heat-3 { -fx-background-color: -color-danger-subtle; }
+.project-map-metrics-table .table-cell.project-map-metrics-heat-1 { -fx-background-color: -color-accent-subtle; }
+.project-map-metrics-table .table-cell.project-map-metrics-heat-2 { -fx-background-color: -color-accent-muted; }
+.project-map-metrics-table .table-cell.project-map-metrics-heat-3 { -fx-background-color: -color-accent-subtle, -color-accent-muted; }
 .project-map-metrics-table .table-cell.project-map-metrics-heat-4 {
-    -fx-background-color: -color-danger-muted;
+    -fx-background-color: -color-accent-muted, -color-accent-muted;
     -fx-font-weight: bold;
 }
 /* The Project Map's Symbol Graph card (round 2): a declaration with its callers, callees, supertypes, subtypes. */
@@ -2296,7 +2381,7 @@
 }
 /* A code card's Notes button, lit while its notes are stuck on it. */
 .project-map-preview-notes:selected {
-    -fx-background-color: -color-warning-muted;
+    -fx-background-color: -note-edge;
     -fx-text-fill: -color-fg-default;
 }
 /* A file card's Structure button, lit while its Structure column is out. */
@@ -2321,7 +2406,7 @@
     -fx-padding: 2 6 2 6;
 }
 .project-map-preview-find-field:missing {
-    -fx-background-color: -color-danger-subtle;
+    -fx-background-color: -state-red-bg;
 }
 .project-map-preview-find-count {
     -fx-font-size: 10px;
@@ -2332,7 +2417,7 @@
 .project-map-card-structure {
     -fx-background-color: -color-bg-default;
     -fx-background-radius: 8;
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.32), 14, 0.12, 0, 5);
+    -fx-effect: dropshadow(gaussian, -shadow-card, 14, 0.12, 0, 5);
 }
 .project-map-card-structure-tint {
     -fx-background-color: -state-violet;
@@ -2392,17 +2477,17 @@
 .project-map-results-filter {
     -fx-font-size: 11px;
 }
-/* The debugger's stop card (Map gaps round 3, item 2): the editor's execution-line amber on its frame, and the call
+/* The debugger's stop card (Map gaps round 3, item 2): the editor's execution-line accent on its frame, and the call
    stack beside it, the frame shown marked as the execution arrow is, frames with no file greyed. */
 .project-map-preview.project-map-debug-stop > .project-map-preview-frame {
-    -fx-border-color: #f0b429;
+    -fx-border-color: -color-accent-emphasis;
     -fx-border-width: 2;
 }
 .project-map-call-stack-list .list-cell {
     -fx-padding: 3 6 3 4;
 }
 .project-map-call-stack-list .list-cell:shown .project-map-call-stack-mark {
-    -fx-fill: #f0b429;
+    -fx-fill: -color-accent-emphasis;
 }
 .project-map-call-stack-list .list-cell:shown .project-map-call-stack-name {
     -fx-font-weight: bold;
@@ -2443,18 +2528,18 @@
 .project-map-link-more:focused {
     -fx-background-color: -color-bg-default, -color-accent-muted;
 }
-/* A code card's Personal Notes, one sticky sheet per note beside it, in the note card's amber family. Some
+/* A code card's Personal Notes, one sticky sheet per note beside it, in the note card's accent wash. Some
    themes' warning tints are translucent: each sits on the opaque background so the map never shows through. */
 .project-map-sticky-note {
-    -fx-background-color: -color-bg-default, -color-warning-subtle;
+    -fx-background-color: -color-bg-default, -note-paper;
     -fx-background-radius: 3;
-    -fx-border-color: -color-warning-muted;
+    -fx-border-color: -note-edge;
     -fx-border-radius: 3;
     -fx-border-width: 1;
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.32), 12, 0.12, 2, 4);
+    -fx-effect: dropshadow(gaussian, -shadow-card, 12, 0.12, 2, 4);
 }
 .project-map-sticky-note-header {
-    -fx-background-color: -color-warning-muted;
+    -fx-background-color: -note-edge;
     -fx-background-radius: 3 3 0 0;
     -fx-padding: 3 8 3 7;
     -fx-cursor: move;
@@ -2473,7 +2558,7 @@
     -fx-cursor: hand;
 }
 .project-map-sticky-note-close:hover {
-    -fx-background-color: -color-warning-emphasis;
+    -fx-background-color: -note-strong;
     -fx-text-fill: -color-fg-emphasis;
     -fx-background-radius: 3;
 }
@@ -2488,7 +2573,7 @@
 }
 .project-map-sticky-note-editor {
     -fx-text-fill: -color-fg-default;
-    -fx-highlight-fill: -color-warning-muted;
+    -fx-highlight-fill: -note-edge;
     -fx-highlight-text-fill: -color-fg-default;
     -fx-background-insets: 0;
     -fx-border-width: 0;
@@ -2505,7 +2590,7 @@
 .project-map-probe-accent-fg { -fx-fill: -color-accent-fg; }
 .project-map-probe-accent-subtle { -fx-fill: -color-accent-subtle; }
 .project-map-probe-focus-ring { -fx-fill: -focus-ring; }
-.project-map-probe-danger { -fx-fill: -color-danger-fg; }
+.project-map-probe-danger { -fx-fill: -state-red; }
 .project-map-probe-on-accent { -fx-fill: -color-fg-emphasis; }
 .project-map-probe-warning { -fx-fill: -state-amber; }
 .project-map-probe-success { -fx-fill: -state-green; }
@@ -2514,9 +2599,34 @@
 .project-map-probe-olive { -fx-fill: -state-olive; }
 .project-map-probe-violet { -fx-fill: -state-violet; }
 .project-map-probe-structure { -fx-fill: -state-violet; }
+/* Canvas painters' probes (editor/ThemeProbes): what the overlays, stripes, the minimap, the Git log's lanes and the
+   Map's printed page paint with, read from the theme because a Canvas cannot be styled (ICON-08). */
+.ink-probe-red { -fx-fill: -state-red; }
+.ink-probe-amber { -fx-fill: -state-amber; }
+.ink-probe-green { -fx-fill: -state-green; }
+.ink-probe-accent { -fx-fill: -color-accent-emphasis; }
+.ink-probe-accent-fg { -fx-fill: -color-accent-fg; }
+.ink-probe-lane-0 { -fx-fill: -lane-0; }
+.ink-probe-lane-1 { -fx-fill: -lane-1; }
+.ink-probe-lane-2 { -fx-fill: -lane-2; }
+.ink-probe-lane-3 { -fx-fill: -lane-3; }
+.ink-probe-lane-4 { -fx-fill: -lane-4; }
+.ink-probe-lane-5 { -fx-fill: -lane-5; }
+.ink-probe-print-ground { -fx-fill: -print-ground; }
+.ink-probe-print-surface { -fx-fill: -print-surface; }
+.ink-probe-print-border { -fx-fill: -print-border; }
+.ink-probe-print-ink { -fx-fill: -print-ink; }
+.ink-probe-print-muted { -fx-fill: -print-muted; }
+.ink-probe-print-accent { -fx-fill: -print-accent; }
+.ink-probe-print-on-accent { -fx-fill: -print-on-accent; }
+.ink-probe-print-warning { -fx-fill: -print-warning; }
+.ink-probe-print-success { -fx-fill: -print-success; }
+.ink-probe-print-danger { -fx-fill: -print-danger; }
+.ink-probe-print-olive { -fx-fill: -print-olive; }
+.ink-probe-print-violet { -fx-fill: -print-violet; }
 /* "Show recent changes" (Map explore): a hot row's tint and heat meter. The hottest tint keeps the label at 4.5:1
    and muted ink at 3:1, and the meter stands 3:1 off its row, in every bundled theme (StyleContrastTest). */
-.project-map-probe-heat { -fx-fill: -state-amber; }
+.project-map-probe-heat { -fx-fill: -color-accent-fg; }
 .project-tree .tree-cell {
     -fx-text-fill: -color-fg-default;
     -fx-padding: 1 4 1 4;
@@ -2561,8 +2671,8 @@
 .git-tree .git-status-modified { -fx-text-fill: -color-accent-fg; }
 .project-tree .git-status-modified .toolbar-icon, .git-tree .git-status-modified .toolbar-icon { -fx-fill: -color-accent-fg; }
 .project-tree .git-status-added, .project-tree .git-status-added .project-file-name,
-.git-tree .git-status-added { -fx-text-fill: -color-success-fg; }
-.project-tree .git-status-added .toolbar-icon, .git-tree .git-status-added .toolbar-icon { -fx-fill: -color-success-fg; }
+.git-tree .git-status-added { -fx-text-fill: -state-green; }
+.project-tree .git-status-added .toolbar-icon, .git-tree .git-status-added .toolbar-icon { -fx-fill: -state-green; }
 .project-tree .git-status-untracked, .project-tree .git-status-untracked .project-file-name,
 .git-tree .git-status-untracked { -fx-text-fill: -state-olive; }
 .project-tree .git-status-untracked .toolbar-icon, .git-tree .git-status-untracked .toolbar-icon { -fx-fill: -state-olive; }
@@ -2573,8 +2683,8 @@
 .git-tree .git-status-deleted { -fx-text-fill: -color-fg-muted; }
 .project-tree .git-status-deleted .toolbar-icon, .git-tree .git-status-deleted .toolbar-icon { -fx-fill: -color-fg-muted; }
 .project-tree .git-status-conflict, .project-tree .git-status-conflict .project-file-name,
-.git-tree .git-status-conflict { -fx-text-fill: -color-danger-fg; }
-.project-tree .git-status-conflict .toolbar-icon, .git-tree .git-status-conflict .toolbar-icon { -fx-fill: -color-danger-fg; }
+.git-tree .git-status-conflict { -fx-text-fill: -state-red; }
+.project-tree .git-status-conflict .toolbar-icon, .git-tree .git-status-conflict .toolbar-icon { -fx-fill: -state-red; }
 .project-tree .git-status-dir-changed { -fx-text-fill: -color-accent-fg; }
 /* The M/A/D/R/U indicator (FileIcons.withStatusLetter) is its own Label inside the cell, so that it can
    be bold while the file name beside it is not. Being a child, it does not pick up the cell's
@@ -2583,7 +2693,7 @@
 .project-tree .git-status-modified .git-status-letter,
 .git-tree .git-status-modified .git-status-letter { -fx-text-fill: -color-accent-fg; }
 .project-tree .git-status-added .git-status-letter,
-.git-tree .git-status-added .git-status-letter { -fx-text-fill: -color-success-fg; }
+.git-tree .git-status-added .git-status-letter { -fx-text-fill: -state-green; }
 .project-tree .git-status-untracked .git-status-letter,
 .git-tree .git-status-untracked .git-status-letter { -fx-text-fill: -state-olive; }
 .project-tree .git-status-renamed .git-status-letter,
@@ -2591,7 +2701,7 @@
 .project-tree .git-status-deleted .git-status-letter,
 .git-tree .git-status-deleted .git-status-letter { -fx-text-fill: -color-fg-muted; }
 .project-tree .git-status-conflict .git-status-letter,
-.git-tree .git-status-conflict .git-status-letter { -fx-text-fill: -color-danger-fg; }
+.git-tree .git-status-conflict .git-status-letter { -fx-text-fill: -state-red; }
 /* Git Log and GitHub lists: one text line per row, the height of the Commit window's tree rows. The
    theme gives every list cell a fixed 3em (42px) whatever it holds, which showed two commits in the
    default bottom panel. Em-relative so the rows follow the UI font. */
@@ -2617,7 +2727,7 @@
     -fx-text-fill: -color-fg-muted;
 }
 .git-log-panel .git-ref-head { -fx-text-fill: -color-accent-fg; -fx-font-weight: bold; }
-.git-log-panel .git-ref-local { -fx-text-fill: -color-success-fg; }
+.git-log-panel .git-ref-local { -fx-text-fill: -color-fg-default; }
 .git-log-panel .git-ref-remote { -fx-text-fill: -state-violet; }
 .git-log-panel .git-ref-tag { -fx-text-fill: -state-olive; }
 /* "Showing the newest N commits" + Load More, under a commit list with older history still to load. */
@@ -2712,8 +2822,8 @@
 }
 /* Workflow-run state glyphs in the GitHub tool window's Runs segment — same semantic palette as the
    .git-status-* file colors, so every AtlantaFX theme inherits correctly. */
-.git-tree .github-run-success { -fx-text-fill: -color-success-fg; }
-.git-tree .github-run-failure { -fx-text-fill: -color-danger-fg; }
+.git-tree .github-run-success { -fx-text-fill: -state-green; }
+.git-tree .github-run-failure { -fx-text-fill: -state-red; }
 .git-tree .github-run-running { -fx-text-fill: -color-accent-fg; }
 .git-tree .github-run-queued { -fx-text-fill: -color-fg-muted; }
 .git-tree .github-run-cancelled { -fx-text-fill: -color-fg-muted; }
@@ -2750,7 +2860,7 @@
     -fx-padding: 8 10 8 10;
 }
 .pr-review-body { -fx-text-fill: -color-fg-default; }
-.pr-review-adds { -fx-text-fill: -color-success-fg; }
+.pr-review-adds { -fx-text-fill: -state-green; }
 .pr-review-dels { -fx-text-fill: -color-fg-muted; }
 .pr-review-action { -fx-text-fill: -color-accent-fg; }
 .pr-review-files { -fx-padding: 6 0 0 0; }
@@ -2760,7 +2870,7 @@
 .pr-review-file-link { -fx-text-fill: -color-fg-default; }
 /* Color the per-file status letter + icon by change kind, reusing the Project-tree/Commit palette. */
 .pr-review-file-row.git-status-added .pr-review-file-status,
-.pr-review-file-row.git-status-added .toolbar-icon { -fx-text-fill: -color-success-fg; -fx-fill: -color-success-fg; }
+.pr-review-file-row.git-status-added .toolbar-icon { -fx-text-fill: -state-green; -fx-fill: -state-green; }
 .pr-review-file-row.git-status-modified .pr-review-file-status,
 .pr-review-file-row.git-status-modified .toolbar-icon { -fx-text-fill: -color-accent-fg; -fx-fill: -color-accent-fg; }
 .pr-review-file-row.git-status-deleted .pr-review-file-status,
@@ -3084,7 +3194,7 @@
     -fx-border-color: -color-border-default;
     -fx-border-width: 1;
     -fx-padding: 8;
-    -fx-effect: dropshadow(gaussian, rgba(31,35,40,0.25), 16, 0.2, 0, 4);
+    -fx-effect: dropshadow(gaussian, -shadow-soft, 16, 0.2, 0, 4);
 }
 
 .switcher-column {
@@ -3152,7 +3262,7 @@
     -fx-border-width: 1;
     -fx-border-radius: 12;
     -fx-padding: 8;
-    -fx-effect: dropshadow(gaussian, rgba(27, 30, 42, 0.28), 44, 0.16, 0, 18);
+    -fx-effect: dropshadow(gaussian, -shadow, 44, 0.16, 0, 18);
 }
 .message-log-header {
     -fx-font-size: 14px;
@@ -3249,11 +3359,11 @@
    open read-only still shows its status; the unsaved amber is restated after it, because "you have not
    saved this" outranks "this differs from HEAD" and the file will be modified once it is saved. */
 .tab.git-status-modified .tab-title { -fx-text-fill: -color-accent-fg; }
-.tab.git-status-added .tab-title { -fx-text-fill: -color-success-fg; }
+.tab.git-status-added .tab-title { -fx-text-fill: -state-green; }
 .tab.git-status-untracked .tab-title { -fx-text-fill: -state-olive; }
 .tab.git-status-renamed .tab-title { -fx-text-fill: -state-violet; }
 .tab.git-status-deleted .tab-title { -fx-text-fill: -color-fg-muted; }
-.tab.git-status-conflict .tab-title { -fx-text-fill: -color-danger-fg; }
+.tab.git-status-conflict .tab-title { -fx-text-fill: -state-red; }
 .tab .tab-header.dirty .tab-title { -fx-text-fill: -state-amber; }
 
 /* Tab drag-to-reorder: dim the tab being dragged, and show an insertion line on the
@@ -3274,13 +3384,13 @@
    distinguishable at a glance — and the unread-error badge keeps a marker up after the echo has moved on,
    which is what stops a failure vanishing unnoticed. Semantic colors, so both track the theme. */
 .status-message.status-echo-error {
-    -fx-text-fill: -color-danger-fg;
+    -fx-text-fill: -state-red;
 }
 .status-message.status-echo-warn {
-    -fx-text-fill: -color-warning-fg;
+    -fx-text-fill: -state-amber;
 }
 .status-unread-errors {
-    -fx-background-color: -color-danger-emphasis;
+    -fx-background-color: -state-red-emphasis;
     -fx-text-fill: -color-fg-emphasis;
     -fx-background-radius: 8;
     -fx-padding: 0 6 0 6;
@@ -3288,10 +3398,10 @@
     -fx-font-weight: bold;
 }
 .message-log-error {
-    -fx-text-fill: -color-danger-fg;
+    -fx-text-fill: -state-red;
 }
 .message-log-warn {
-    -fx-text-fill: -color-warning-fg;
+    -fx-text-fill: -state-amber;
 }
 
 /* Dragging a tab onto an editor group's body: a translucent accent wash over the region the tab would
@@ -3496,16 +3606,17 @@
     -fx-padding: 0 6 0 6;
 }
 
-/* "dev mode" toolbar badge, shown only when launched with --dev (the state red). */
+/* "dev mode" toolbar badge, shown only when launched with --dev: the accent, since a dev launch is neither an
+   error nor a warning (ICON-18). */
 .dev-mode-badge {
-    -fx-text-fill: -state-red;
+    -fx-text-fill: -color-accent-fg;
     -fx-font-size: 13px;
     -fx-font-weight: bold;
     -fx-padding: 0 6 0 6;
 }
 
 /* Marks a build made off master between releases (pom version ends in -SNAPSHOT). Amber, the
-   "not durable yet" hue — distinct from the red dev-mode badge beside it. */
+   "not durable yet" hue — distinct from the accent dev-mode badge beside it. */
 .snapshot-badge {
     -fx-text-fill: -state-amber;
     -fx-font-size: 13px;
@@ -3519,11 +3630,11 @@
 }
 
 .recent-remove .toolbar-icon {
-    -fx-fill: #6e7781;
+    -fx-fill: -color-fg-muted;
 }
 
 .recent-remove:hover .toolbar-icon {
-    -fx-fill: #cf222e;
+    -fx-fill: -color-fg-default;
 }
 
 /* Toolbar SVG icons */
@@ -3707,7 +3818,7 @@
 .view-mode-bar {
     /* No bottom rule: the amber ground already separates the banner from the code under it, and the line
        sat directly above the first line of text, reading as part of the document. */
-    -fx-background-color: #fff8e1;
+    -fx-background-color: -state-amber-bg;
     -fx-border-width: 0;
     /* The vertical insets are the gap above and below the Enable Editing button — at 1px it sat hard
        against the banner's edges. This is the one dial that trades against the banner staying short, so
@@ -3724,16 +3835,16 @@
 }
 
 .view-mode-bar .view-mode-title {
-    -fx-text-fill: #8a6d00;
+    -fx-text-fill: -state-amber;
     -fx-font-weight: bold;
 }
 
 .view-mode-bar .view-mode-desc {
-    -fx-text-fill: #6b5800;
+    -fx-text-fill: -color-fg-default;
 }
 
 .view-mode-bar .view-mode-note {
-    -fx-text-fill: #6b5800;
+    -fx-text-fill: -color-fg-muted;
     -fx-font-style: italic;
 }
 
@@ -3762,7 +3873,7 @@
 }
 /* An encoding Editora could not detect: shown through a lossless stand-in, so it reads as a warning. */
 .status-bar .status-format-group .status-encoding-assumed {
-    -fx-text-fill: -color-warning-fg;
+    -fx-text-fill: -state-amber;
 }
 .status-bar .status-format-sep {
     -fx-text-fill: -color-fg-subtle;
@@ -3807,13 +3918,13 @@
     /* The kit layers two shadows (a tight contact one + a wide ambient one); JavaFX takes a single
        dropshadow, so this is the wide one with a short offset — the contact edge is carried by the
        1px border instead. */
-    -fx-effect: dropshadow(gaussian, rgba(27, 30, 42, 0.28), 44, 0.16, 0, 18);
+    -fx-effect: dropshadow(gaussian, -shadow, 44, 0.16, 0, 18);
 }
 
 /* Full-scene backdrop behind an in-scene overlay (command palette, pickers): a faint scrim that also
    makes the region pickable so a click outside the card dismisses it (see OverlayHost). */
 .overlay-backdrop {
-    -fx-background-color: rgba(0, 0, 0, 0.18);
+    -fx-background-color: -scrim;
 }
 
 /* In-scene input form card (rename, clone, notes, go-to-line, …) shown in the OverlayHost — replaces the
@@ -3822,6 +3933,8 @@
     -fx-padding: 14;
     -fx-spacing: 10;
 }
+/* Deployments: what is wrong with the remote root as typed (an error, the state red). */
+.deploy-root-problem { -fx-text-fill: -state-red; }
 /* The reason a stay-open form's action failed (create pull request, submit review), above its buttons. */
 .overlay-form-error {
     -fx-text-fill: -state-red;
@@ -3902,7 +4015,7 @@
     -fx-border-color: -color-border-default;
     -fx-border-width: 1;
     -fx-border-radius: 12;
-    -fx-effect: dropshadow(gaussian, rgba(27, 30, 42, 0.28), 44, 0.16, 0, 18);
+    -fx-effect: dropshadow(gaussian, -shadow, 44, 0.16, 0, 18);
 }
 .prefix-key-hint .prefix-key-hint-prefix {
     -fx-text-fill: -state-key;
@@ -4374,7 +4487,7 @@
     -fx-background-color: -color-bg-default;
     -fx-border-color: -color-border-default;
     -fx-border-width: 1;
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.35), 10, 0.1, 0, 2);
+    -fx-effect: dropshadow(gaussian, -shadow-strong, 10, 0.1, 0, 2);
 }
 .completion-list {
     -fx-background-color: transparent;
@@ -4444,7 +4557,7 @@
     -fx-border-color: -color-border-default;
     -fx-border-width: 1;
     -fx-padding: 8 10 8 10;
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.35), 10, 0.1, 0, 2);
+    -fx-effect: dropshadow(gaussian, -shadow-strong, 10, 0.1, 0, 2);
 }
 .completion-doc-scroll {
     -fx-background-color: transparent;
@@ -4544,7 +4657,7 @@
     -fx-border-width: 1;
     -fx-background-radius: 6;
     -fx-border-radius: 6;
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.35), 10, 0.1, 0, 2);
+    -fx-effect: dropshadow(gaussian, -shadow-strong, 10, 0.1, 0, 2);
 }
 .markdown-format-bar .md-fmt-btn {
     -fx-padding: 2 7 2 7;
@@ -4573,7 +4686,7 @@
     -fx-border-width: 1;
     -fx-background-radius: 6;
     -fx-border-radius: 6;
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.35), 10, 0.1, 0, 2);
+    -fx-effect: dropshadow(gaussian, -shadow-strong, 10, 0.1, 0, 2);
 }
 .ai-actions-bar .ai-actions-btn {
     -fx-padding: 2 7 2 7;
@@ -5106,15 +5219,15 @@
 .csv-grid-table .csv-grid-col-editor { -fx-font-weight: bold; }
 .csv-grid .csv-grid-filter { -fx-pref-height: 24; }
 /* Inconsistent-column ("ragged") rows: a faint warning wash so a wrong field count stands out. */
-.csv-grid-table .table-row-cell:csv-ragged { -fx-background-color: -color-danger-subtle; }
-.csv-grid-table .table-row-cell:csv-ragged:selected { -fx-background-color: -color-danger-muted; }
+.csv-grid-table .table-row-cell:csv-ragged { -fx-background-color: -state-red-bg; }
+.csv-grid-table .table-row-cell:csv-ragged:selected { -fx-background-color: -state-red-hover; }
 
 /* Markdown Lint tool window: a flat list of diagnostics with a severity dot. */
 .markdown-lint-panel .markdown-lint-summary { -fx-text-fill: -color-fg-muted; }
 .markdown-lint-panel .markdown-lint-file { -fx-font-weight: bold; }
 .markdown-lint-panel .markdown-lint-tag { -fx-background-radius: 5; }
-.markdown-lint-panel .markdown-lint-tag.lint-error { -fx-background-color: -color-danger-fg; }
-.markdown-lint-panel .markdown-lint-tag.lint-warning { -fx-background-color: -color-warning-fg; }
+.markdown-lint-panel .markdown-lint-tag.lint-error { -fx-background-color: -state-red; }
+.markdown-lint-panel .markdown-lint-tag.lint-warning { -fx-background-color: -state-amber; }
 .markdown-lint-panel .markdown-lint-tag.lint-hint { -fx-background-color: -color-accent-fg; }
 .markdown-lint-panel .markdown-lint-file-row { -fx-font-weight: bold; }
 /* Hover tooltip on a TODO scrollbar-overview stripe mark (the matched line's text). */
@@ -5146,7 +5259,7 @@
     -fx-border-radius: 6;
     -fx-background-radius: 6;
     -fx-padding: 8 12 8 12;
-    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.25), 10, 0.0, 0, 2);
+    -fx-effect: dropshadow(gaussian, -shadow-soft, 10, 0.0, 0, 2);
 }
 
 /* A hover's code is a signature, not a document: no language tag sitting on top of its first line (B12). The
@@ -5165,8 +5278,8 @@
     -fx-border-width: 0 0 0 3;
     -fx-border-color: -color-border-default;
 }
-.lsp-hover-problem.error { -fx-border-color: -color-danger-emphasis; }
-.lsp-hover-problem.warning { -fx-border-color: -color-warning-emphasis; }
+.lsp-hover-problem.error { -fx-border-color: -state-red-emphasis; }
+.lsp-hover-problem.warning { -fx-border-color: -state-amber-emphasis; }
 
 /* Run tool window (Java 25 compact source files). */
 .run-panel .run-status { -fx-text-fill: -color-fg-muted; }
@@ -5264,7 +5377,7 @@
     -fx-border-width: 1;
 }
 /* Quick Evaluate's failure, in the value popup: the adapter's reason, drawn as an error. */
-.debug-value-popup .debug-value-line:failed { -fx-text-fill: -color-danger-fg; }
+.debug-value-popup .debug-value-line:failed { -fx-text-fill: -state-red; }
 /* Thread selector over the frames list. */
 .debug-panel .debug-threads {
     -fx-font-size: 12px;
@@ -5284,7 +5397,7 @@
 .debug-panel .debug-disassembly-address,
 .debug-panel .debug-disassembly-symbol,
 .debug-panel .debug-disassembly-source { -fx-opacity: 0.65; }
-.debug-panel .debug-disassembly-list .list-cell.debug-disassembly-current { -fx-background-color: rgba(210, 153, 34, 0.32); }
+.debug-panel .debug-disassembly-list .list-cell.debug-disassembly-current { -fx-background-color: -color-accent-muted; }
 .debug-panel .debug-thread-shown { -fx-font-weight: bold; }
 .debug-panel .debug-thread-paused { -fx-fill: -color-accent-fg; }
 /* Rich frame cells: frame name + muted ":line, File" location (IntelliJ-style). */
@@ -5328,7 +5441,7 @@
     -fx-background-radius: 4;
     -fx-border-radius: 4;
     -fx-padding: 4;
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.25), 8, 0, 0, 2);
+    -fx-effect: dropshadow(gaussian, -shadow-soft, 8, 0, 0, 2);
 }
 .debug-value-popup .debug-value-line {
     -fx-font-size: 12px;
@@ -5343,7 +5456,7 @@
 /* The exception card under the line that threw: the title red when the program does not catch it. */
 .debug-exception-card { -fx-padding: 8; -fx-spacing: 4; }
 .debug-exception-card .debug-exception-title { -fx-font-weight: bold; -fx-text-fill: -color-fg-muted; }
-.debug-exception-card .debug-exception-title.debug-exception-uncaught { -fx-text-fill: -color-danger-fg; }
+.debug-exception-card .debug-exception-title.debug-exception-uncaught { -fx-text-fill: -state-red; }
 .debug-exception-card .debug-exception-type {
     -fx-font-family: "JetBrains Mono", monospace;
     -fx-font-weight: bold;
@@ -5391,7 +5504,7 @@
 /* Toggle Breakpoint's dot in the editor's right-click menu (review 2 C110). */
 .debug-menu-breakpoint { -fx-fill: -state-red; }
 /* Add Logpoint's diamond beside it: the gutter logpoint's blue. */
-.debug-menu-logpoint { -fx-fill: #1f6feb; }
+.debug-menu-logpoint { -fx-fill: -color-accent-emphasis; }
 /* The Run console's stdin field (compact, like the Debug evaluate field). */
 .run-panel .run-input {
     -fx-font-size: 12px;
@@ -5426,12 +5539,12 @@
     -fx-text-fill: -color-fg-muted;
 }
 .build-tasks-trust.build-tasks-trusted {
-    -fx-background-color: -color-success-subtle;
-    -fx-text-fill: -color-success-fg;
+    -fx-background-color: -state-green-bg;
+    -fx-text-fill: -state-green;
 }
 .build-tasks-trust.build-tasks-untrusted {
-    -fx-background-color: -color-warning-subtle;
-    -fx-text-fill: -color-warning-fg;
+    -fx-background-color: -state-amber-bg;
+    -fx-text-fill: -state-amber;
 }
 .build-tasks-revoke {
     -fx-font-size: 11px;
@@ -5442,7 +5555,7 @@
     -fx-padding: 2 4 4 4;
 }
 .build-tasks-notice-text {
-    -fx-text-fill: -color-danger-fg;
+    -fx-text-fill: -state-red;
     -fx-font-size: 11px;
 }
 /* Rows of the "Projects" section: the build roots found below the open project. */
@@ -5498,9 +5611,9 @@
 /* JUnit test gutter ▶ — accent, so it's tellable-apart from the green script/make ▶. */
 .run-marker.test-run-marker { -fx-fill: -color-accent-fg; }
 .fold-gutter .run-slot:hover .run-marker.test-run-marker { -fx-fill: -color-accent-emphasis; }
-/* A .http request in flight: its ▶ turns into a red ■ that cancels it. */
-.run-marker.http-running-marker { -fx-fill: -state-red; }
-.fold-gutter .run-slot:hover .run-marker.http-running-marker { -fx-fill: derive(-state-red, 25%); }
+/* A .http request in flight: its ▶ turns into a ■ that cancels it, in the ink: Stop is an action, not an error. */
+.run-marker.http-running-marker { -fx-fill: -color-fg-default; }
+.fold-gutter .run-slot:hover .run-marker.http-running-marker { -fx-fill: derive(-color-fg-default, 25%); }
 /* A .http request that ran: its ▶ takes the outcome's colour (green stays the plain ▶'s). */
 .run-marker.http-result-redirect { -fx-fill: -state-accent; }
 .run-marker.http-result-client-error,
@@ -5513,15 +5626,16 @@
 .fold-gutter .run-slot:hover .run-marker.http-result-server-error,
 .fold-gutter .run-slot:hover .run-marker.http-result-failed { -fx-fill: derive(-state-red, 25%); }
 
-/* Gutter breakpoint dot (leftmost strip). Plain = solid red; a conditional one carries "=" marks, a temporary one
+/* Gutter breakpoint dot (leftmost strip). Plain = solid red (a breakpoint is red's meaning); a conditional one carries "=" marks, a temporary one
    (removed once hit) a "1", a logpoint is a diamond (shape as well as colour, review C11); disabled is grey. */
-.breakpoint-marker { -fx-fill: #e51400; }
-.breakpoint-marker.breakpoint-conditional { -fx-fill: #b8860b; }
-.breakpoint-marker.breakpoint-logpoint { -fx-fill: #1f6feb; }
+.breakpoint-marker { -fx-fill: -state-red-emphasis; }
+.breakpoint-marker.breakpoint-conditional { -fx-fill: -state-red-emphasis; }
+.breakpoint-marker.breakpoint-logpoint { -fx-fill: -color-accent-emphasis; }
 .breakpoint-marker.breakpoint-disabled { -fx-fill: -color-fg-muted; -fx-opacity: 0.85; }
-/* A recording breakpoint (Debug History keeps the stop, the program goes on): purple, with a ring over it. */
-.breakpoint-marker.breakpoint-recording { -fx-fill: #8957e5; }
-.breakpoint-condition-mark { -fx-fill: white; }
+/* A recording breakpoint (Debug History keeps the stop, the program goes on): red, with a ring over it. A logpoint is
+   the accent; amber and purple are no breakpoint's (ICON-18, ICON-08). */
+.breakpoint-marker.breakpoint-recording { -fx-fill: -state-red-emphasis; }
+.breakpoint-condition-mark { -fx-fill: -color-fg-emphasis; }
 /* Mark Object: the label of a marked object, before its value wherever it shows (Variables, watches, the hover). */
 .debug-val-mark { -fx-fill: -color-accent-fg; -fx-font-weight: bold; }
 /* While a debug session is live: a breakpoint the adapter has not bound (its class is not loaded yet, or
@@ -5532,13 +5646,13 @@
 /* Mute Breakpoints: every glyph faded (opacity reads the same on light and dark themes) — none of them stops. */
 .breakpoint-marker.breakpoint-muted,
 .breakpoint-condition-mark.breakpoint-muted { -fx-opacity: 0.35; }
-.fold-gutter .breakpoint-slot:hover { -fx-background-color: rgba(229, 20, 0, 0.12); }
+.fold-gutter .breakpoint-slot:hover { -fx-background-color: -state-red-bg; }
 
 /* Current execution line while the debugger is suspended (a RichTextFX paragraph style). A translucent
-   amber wash so it reads over syntax colors; the caret-line highlight is see-through on this line
+   accent wash (IntelliJ's execution point; amber means "not durable yet") so it reads over syntax colors; the caret-line highlight is see-through on this line
    (ExecutionLine), and the gutter strip carries an arrow. */
-.editor-area .paragraph-text.exec-line { -fx-background-color: rgba(210, 153, 34, 0.32); }
-.exec-arrow { -fx-fill: #f0b429; -fx-stroke: #7a5200; -fx-stroke-width: 1.6; }
+.editor-area .paragraph-text.exec-line { -fx-background-color: -color-accent-muted; }
+.exec-arrow { -fx-fill: -color-accent-emphasis; -fx-stroke: -color-accent-fg; -fx-stroke-width: 1.6; }
 /* While paused, a hovered line number turns into Run to Here's arrow (IntelliJ's gutter Run to Cursor): the number
    is hidden under it, so the gutter keeps its width. */
 .editor-area .lineno.run-to-here,
@@ -5547,7 +5661,7 @@
 /* Thread Dump window: what each thread was doing, muted; frames with no code to open, muted too. */
 .thread-dump-window .thread-dump-state,
 .thread-dump-window .thread-dump-note { -fx-text-fill: -color-fg-muted; }
-.thread-dump-window .thread-dump-frames .list-cell.thread-dump-no-source { -fx-text-fill: -color-fg-subtle; }
+.thread-dump-window .thread-dump-frames .list-cell.thread-dump-no-source { -fx-text-fill: -color-fg-muted; }
 .thread-dump-window .thread-dump-frames .list-cell.thread-dump-no-source:selected { -fx-text-fill: -color-fg-emphasis; }
 /* Parallel Stacks: a box per set of threads that share frames, the shown thread's way drawn in the accent. */
 .parallel-stacks-window .thread-dump-note { -fx-text-fill: -color-fg-muted; }
@@ -5572,9 +5686,9 @@
 .parallel-stacks-edge { -fx-stroke: -color-border-default; -fx-stroke-width: 1.5; }
 .parallel-stacks-edge.parallel-stacks-shown { -fx-stroke: -color-accent-emphasis; }
 /* Stopped on an exception: the execution line in red (review C13). */
-.editor-area .paragraph-text.exec-line.exec-exception { -fx-background-color: rgba(229, 20, 0, 0.22); }
-/* An earlier stop's line, gone back to in the Debug window's history: grey, not the live amber. */
-.editor-area .paragraph-text.exec-line.exec-history { -fx-background-color: rgba(128, 128, 128, 0.26); }
+.editor-area .paragraph-text.exec-line.exec-exception { -fx-background-color: -state-red-bg; }
+/* An earlier stop's line, gone back to in the Debug window's history: grey, not the live accent. */
+.editor-area .paragraph-text.exec-line.exec-history { -fx-background-color: -color-neutral-muted; }
 .debug-history-banner { -fx-padding: 3 8 3 8; -fx-background-color: -color-accent-subtle; -fx-background-radius: 4; }
 
 /* --- Diff viewer ---------------------------------------------------------------------------------
@@ -5596,17 +5710,17 @@
 .diff-lineno { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; -fx-padding: 0 6 0 0; -fx-opacity: 0.8; }
 .diff-sign { -fx-text-fill: -color-fg-muted; -fx-font-family: "JetBrains Mono", monospace; }
 .diff-change-sign { -fx-font-weight: bold; -fx-alignment: center; }
-.diff-left .diff-change-sign { -fx-text-fill: -color-danger-fg; }
-.diff-right .diff-change-sign { -fx-text-fill: -color-success-fg; }
+.diff-left .diff-change-sign { -fx-text-fill: -color-fg-muted; }
+.diff-right .diff-change-sign { -fx-text-fill: -state-green; }
 /* Per-line diff backgrounds (RichTextFX paragraph styles). */
-.diff-area .paragraph-text.diff-added { -fx-background-color: rgba(63, 185, 80, 0.16); }
-.diff-area .paragraph-text.diff-removed { -fx-background-color: rgba(248, 81, 73, 0.16); }
-.diff-area .paragraph-text.diff-modified { -fx-background-color: rgba(210, 153, 34, 0.16); }
-.diff-area .paragraph-text.diff-filler { -fx-background-color: rgba(140, 148, 158, 0.10); }
+.diff-area .paragraph-text.diff-added { -fx-background-color: -state-green-bg; }
+.diff-area .paragraph-text.diff-removed { -fx-background-color: -color-neutral-subtle; }
+.diff-area .paragraph-text.diff-modified { -fx-background-color: -color-accent-subtle; }
+.diff-area .paragraph-text.diff-filler { -fx-background-color: -color-neutral-subtle; }
 .diff-area .paragraph-text.diff-collapsed { -fx-background-color: -color-bg-subtle; -fx-border-color: transparent transparent -color-border-muted transparent; -fx-font-style: italic; }
 /* Intra-line changed words: a stronger box behind the glyphs (RichTextFX's text-background property,
    since a JavaFX Text node can't paint -fx-background-color), keeping the syntax token color. */
-.diff-area .text.diff-word { -rtfx-background-color: rgba(210, 153, 34, 0.40); }
+.diff-area .text.diff-word { -rtfx-background-color: -color-accent-muted; }
 /* "Apply change" chevron in the editable side's gutter (IntelliJ-style hunk-accept arrow). */
 .diff-apply { -fx-cursor: hand; }
 .diff-apply .toolbar-icon { -fx-fill: -color-accent-fg; }
@@ -5632,10 +5746,10 @@
 .merge-conflict-header { -fx-font-weight: bold; -fx-text-fill: -color-fg-default; }
 .merge-side-label { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; }
 .merge-side { -fx-border-width: 0; }
-.merge-ours { -fx-control-inner-background: rgba(63, 185, 80, 0.10); }
-.merge-theirs { -fx-control-inner-background: rgba(68, 147, 248, 0.10); }
-.merge-base { -fx-control-inner-background: rgba(139, 148, 158, 0.12); }
-.merge-chosen { -fx-text-fill: -color-success-fg; -fx-font-size: 11px; }
+.merge-ours { -fx-control-inner-background: -color-accent-subtle; }
+.merge-theirs { -fx-control-inner-background: -color-neutral-subtle; }
+.merge-base { -fx-control-inner-background: -color-neutral-subtle; }
+.merge-chosen { -fx-text-fill: -state-green; -fx-font-size: 11px; }
 .merge-result-box { -fx-background-color: -color-bg-default; }
 /* References preview runs: same scheme as the Structure signature runs above. */
 .references-panel .reference-code {
@@ -5892,6 +6006,8 @@
 
 /* PDF viewer — mirrors the image viewer, plus page navigation. */
 .pdf-viewer { -fx-background-color: -color-bg-default; }
+/* Print preview: the sheet is paper, white in every theme (the printer's, not the window's ground), lifted by a shadow. */
+.print-preview-sheet { -fx-background-color: -paper; -fx-effect: dropshadow(gaussian, -shadow-strong, 12, 0, 0, 3); }
 .pdf-viewer-bar {
     -fx-background-color: -color-bg-subtle;
     -fx-border-color: transparent transparent -color-border-default transparent;
@@ -5927,7 +6043,7 @@
     -fx-border-width: 0 0 1 0;
 }
 .hex-viewer-size { -fx-text-fill: -color-fg-default; }
-.hex-viewer-truncated { -fx-text-fill: -color-warning-fg; -fx-font-size: 0.9em; }
+.hex-viewer-truncated { -fx-text-fill: -state-amber; -fx-font-size: 0.9em; }
 .hex-viewer-readonly {
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 0.85em;
@@ -5947,9 +6063,9 @@
 
 /* Test Results tool window (IntelliJ-style test runner). Status glyph colors are theme-aware semantic
    vars, so they adapt to every bundled/user theme with no per-theme override. */
-.toolbar-icon.test-icon-pass { -fx-fill: -color-success-fg; }
-.toolbar-icon.test-icon-fail { -fx-fill: -color-danger-fg; }
-.toolbar-icon.test-icon-skip { -fx-fill: -color-warning-fg; }
+.toolbar-icon.test-icon-pass { -fx-fill: -state-green; }
+.toolbar-icon.test-icon-fail { -fx-fill: -state-red; }
+.toolbar-icon.test-icon-skip { -fx-fill: -state-amber; }
 .test-runner .test-status { -fx-text-fill: -color-fg-muted; }
 /* Count chips double as status filters: flat like the Labels they replaced, dimmed while switched off. */
 .test-runner .test-chip {
@@ -5969,12 +6085,12 @@
    the status colour at higher specificity. */
 .test-runner .test-chip { -fx-text-fill: -color-fg-muted; -fx-opacity: 0.55; }
 .test-runner .test-chip:selected { -fx-opacity: 1.0; }
-.test-runner .test-chip-pass:selected { -fx-text-fill: -color-success-fg; }
-.test-runner .test-chip-fail:selected { -fx-text-fill: -color-danger-fg; }
-.test-runner .test-chip-skip:selected { -fx-text-fill: -color-warning-fg; }
+.test-runner .test-chip-pass:selected { -fx-text-fill: -state-green; }
+.test-runner .test-chip-fail:selected { -fx-text-fill: -state-red; }
+.test-runner .test-chip-skip:selected { -fx-text-fill: -state-amber; }
 .test-runner .test-elapsed { -fx-text-fill: -color-fg-muted; }
 .test-runner .test-progress { -fx-pref-width: 140px; }
-.test-runner .test-progress.test-progress-failed .bar { -fx-background-color: -color-danger-fg; }
+.test-runner .test-progress.test-progress-failed .bar { -fx-background-color: -state-red; }
 .test-runner .test-duration { -fx-text-fill: -color-fg-muted; -fx-font-size: 11px; }
 .test-runner .test-tree {
     -fx-background-color: transparent;
@@ -6011,7 +6127,7 @@
 
 /* Settings → Macros: a command step whose id names no command (it would be skipped at replay). */
 .macro-step-unknown {
-    -fx-text-fill: -color-danger-fg;
+    -fx-text-fill: -state-red;
 }
 
 /* ---- UI Kit line icons -------------------------------------------------------------------------
@@ -6072,18 +6188,18 @@
 /* The project tree's folder/file glyphs follow the theme's tree colours. */
 .project-tree .folder-cell .icon-line { -fx-stroke: -project-folder-color; }
 .project-tree .file-cell .icon-line { -fx-stroke: -project-file-color; }
-.project-tree .project-bookmark-indicator.icon-line { -fx-stroke: -state-amber; }
+.project-tree .project-bookmark-indicator.icon-line { -fx-stroke: -color-accent-fg; }
 .project-tree .project-note-indicator.icon-line { -fx-stroke: -color-accent-fg; }
 .project-tree .modified-file .icon-line { -fx-stroke: -state-amber; }
 .project-tree .git-status-modified .icon-line, .git-tree .git-status-modified .icon-line { -fx-stroke: -color-accent-fg; }
-.project-tree .git-status-added .icon-line, .git-tree .git-status-added .icon-line { -fx-stroke: -color-success-fg; }
+.project-tree .git-status-added .icon-line, .git-tree .git-status-added .icon-line { -fx-stroke: -state-green; }
 .project-tree .git-status-untracked .icon-line, .git-tree .git-status-untracked .icon-line { -fx-stroke: -state-olive; }
 .project-tree .git-status-renamed .icon-line, .git-tree .git-status-renamed .icon-line { -fx-stroke: -state-violet; }
 .project-tree .git-status-deleted .icon-line, .git-tree .git-status-deleted .icon-line { -fx-stroke: -color-fg-muted; }
 
 /* Semantic one-off colours that the Material glyphs get through .toolbar-icon variants. */
 .icon-line.icon-run { -fx-stroke: -state-green; }
-.icon-line.icon-stop { -fx-stroke: -state-red; }
+.icon-line.icon-stop { -fx-stroke: -color-fg-default; }
 .icon-line.icon-warn { -fx-stroke: -state-amber; }
 
 /* ---- Tab strip (UI Kit v1) ----------------------------------------------------------------------
@@ -6142,11 +6258,11 @@
     -fx-background-radius: 0, 0;
 }
 
-/* Toolbar run cluster (UI Kit): play is green, debug is accent, stop is red — the one place the
-   toolbar speaks state colours. The buttons carry these classes from setupRunConfigToolbar. */
+/* Toolbar run cluster (UI Kit): play is green (running), debug is accent, stop is the ink, its square its own shape
+   (Stop is an action, not an error: ICON-18). The buttons carry these classes from setupRunConfigToolbar. */
 .run-config-play .icon-line { -fx-stroke: -state-green; }
 .run-config-bug .icon-line { -fx-stroke: -state-accent; }
-.run-config-stop .icon-line { -fx-stroke: -state-red; }
+.run-config-stop .icon-line { -fx-stroke: -color-fg-default; }
 
 /* ---- Control geometry (UI Kit v1) --------------------------------------------------------------
    The kit rounds controls harder than AtlantaFX: buttons 8px, combos/fields 7px, menus 8px. AtlantaFX
@@ -6167,11 +6283,11 @@
    property whatever their specificity. Restate them on the kit's ground, in the theme's order. */
 .combo-box-base:success, .combo-box-base:success:focused,
 .choice-box:success, .choice-box:success:focused {
-    -fx-background-color: -color-success-emphasis, -color-bg-subtle;
+    -fx-background-color: -state-green-emphasis, -color-bg-subtle;
 }
 .combo-box-base:danger, .combo-box-base:danger:focused,
 .choice-box:danger, .choice-box:danger:focused {
-    -fx-background-color: -color-danger-emphasis, -color-bg-subtle;
+    -fx-background-color: -state-red-emphasis, -color-bg-subtle;
 }
 .combo-box-base:focused, .choice-box:focused {
     -fx-background-color: -color-accent-emphasis, -color-bg-subtle;
@@ -6275,7 +6391,7 @@
    overlay cards (see OverlayHost), not windows, so their effect bounds route nothing.
    Pinned by MenuPopupBoundsFxTest. */
 .context-menu {
-    -fx-effect: dropshadow(gaussian, rgba(27, 30, 42, 0.28), 16, 0.16, 0, 16);
+    -fx-effect: dropshadow(gaussian, -shadow, 16, 0.16, 0, 16);
 }
 
 /* Tool window panels: rounded corners, no drawn frame. The panel is bounded by the editor on one
@@ -6467,7 +6583,7 @@
     -fx-background-color: -color-bg-overlay;
     -fx-background-radius: 12;
     -fx-border-radius: 12;
-    -fx-effect: dropshadow(gaussian, rgba(27, 30, 42, 0.28), 44, 0.16, 0, 18);
+    -fx-effect: dropshadow(gaussian, -shadow, 44, 0.16, 0, 18);
 }
 .switcher-path,
 .switcher-hint {
@@ -6519,7 +6635,7 @@
     -fx-background-color: -color-bg-default;
     -fx-border-color: transparent transparent -color-border-muted transparent;
     -fx-border-width: 0 0 1 0;
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.18), 6, 0, 0, 2);
+    -fx-effect: dropshadow(gaussian, -shadow-faint, 6, 0, 0, 2);
     /* No -fx-padding: StickyScrollBar sets the left inset to the code's text column, and a stylesheet value
        would win over it on every CSS pass. */
 }
@@ -6668,7 +6784,7 @@
 }
 /* A tab whose bell rang while it was out of sight, until it is selected. */
 .terminal-panel .terminal-tabs > .tab-header-area .tab.terminal-bell .tab-label {
-    -fx-text-fill: -color-warning-fg;
+    -fx-text-fill: -state-amber;
     -fx-font-weight: bold;
 }
 /* A tab whose program posted a notification (OSC 9 / 777) while it was out of sight; it outranks the bell. */
@@ -6678,7 +6794,7 @@
 }
 /* The same marks on a terminal moved into the editor (TerminalEditorTab mirrors them onto its editor tab). */
 .tab.terminal-editor-tab.terminal-bell .tab-title {
-    -fx-text-fill: -color-warning-fg;
+    -fx-text-fill: -state-amber;
     -fx-font-weight: bold;
 }
 .tab.terminal-editor-tab.terminal-notified .tab-title {
@@ -6688,8 +6804,8 @@
 /* The scrollback bar, coloured from the terminal palette rather than the control theme: TerminalView sets
    -terminal-thumb / -terminal-thumb-hover on the bar itself (Termina's rules). */
 .terminal-scroll-bar {
-    -terminal-thumb: rgba(128, 128, 128, 0.35);
-    -terminal-thumb-hover: rgba(128, 128, 128, 0.6);
+    -terminal-thumb: -color-neutral-muted;
+    -terminal-thumb-hover: -color-neutral-emphasis;
 }
 .terminal-scroll-bar:vertical {
     -fx-background-color: transparent;
@@ -6727,12 +6843,12 @@
 /* A remote terminal whose connection went: its text stays, with this strip across the top offering to reconnect.
    Amber, the "not durable" state — the scrollback below is a record, not a live shell. */
 .terminal-lost-banner {
-    -fx-background-color: -color-warning-subtle;
-    -fx-border-color: transparent transparent -color-warning-muted transparent;
+    -fx-background-color: -state-amber-bg;
+    -fx-border-color: transparent transparent -state-amber-hover transparent;
     -fx-padding: 6 10 6 10;
 }
 .terminal-lost-banner .label {
-    -fx-text-fill: -color-warning-fg;
+    -fx-text-fill: -state-amber;
 }
 /* A shell on another machine still connecting: a quiet line in the middle of its tab. */
 .terminal-connecting {
@@ -6782,7 +6898,7 @@
     -fx-text-fill: -color-fg-muted;
 }
 .encryption-locked-hint {
-    -fx-text-fill: -color-fg-subtle;
+    -fx-text-fill: -color-fg-muted;
     -fx-font-size: 11px;
 }
 .encryption-details {
@@ -6910,7 +7026,7 @@
     -fx-border-radius: 6;
     -fx-border-width: 1;
     -fx-padding: 2 4 2 4;
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.28), 10, 0.1, 0, 3);
+    -fx-effect: dropshadow(gaussian, -shadow-card, 10, 0.1, 0, 3);
 }
 .project-map-trail-bar-button {
     -fx-padding: 1 6 1 6;
@@ -6943,7 +7059,7 @@
 }
 .project-map-trail-editor {
     -fx-padding: 8;
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.42), 22, 0.16, 0, 7);
+    -fx-effect: dropshadow(gaussian, -shadow-deep, 22, 0.16, 0, 7);
 }
 .project-map-trail-editor-header {
     -fx-cursor: move;

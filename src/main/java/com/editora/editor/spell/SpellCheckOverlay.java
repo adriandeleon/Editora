@@ -12,6 +12,7 @@ import javafx.scene.paint.Color;
 
 import com.editora.editor.AfterLayoutPaint;
 import com.editora.editor.CanvasGuards;
+import com.editora.editor.OverlayPalette;
 import com.editora.editor.SecondaryPane;
 import com.editora.editor.TabSurface;
 import org.fxmisc.richtext.CodeArea;
@@ -29,7 +30,9 @@ import org.jspecify.annotations.Nullable;
  */
 public final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
-    private static final Color SQUIGGLE = Color.web("#e5484d");
+    /** A mistake's squiggle: the theme's error red (a misspelling or a broken diagram is an error), re-read on a theme change. */
+    private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
+
     private static final double AMP = 1.6; // squiggle peak-to-baseline amplitude (px)
     private static final double STEP = 2.0; // half-wavelength (px)
 
@@ -181,6 +184,7 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
         getStyleClass().add("spellcheck-overlay");
         setMouseTransparent(true);
         getChildren().add(canvas);
+        OverlayPalette.track(area, getChildren(), palette -> colors = palette);
         area.viewportDirtyEvents().subscribe(ignore -> scheduleRedraw());
         area.multiPlainChanges().subscribe(ignore -> scheduleRedraw());
         // Recompute fenced-code line ranges off the debounced edit pulse (O(lines), not per keystroke);
@@ -499,7 +503,7 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
             GraphicsContext g = canvas.getGraphicsContext2D();
             double w = canvas.getWidth();
             double h = canvas.getHeight();
-            g.setStroke(SQUIGGLE);
+            g.setStroke(colors.error());
             g.setLineWidth(1.0);
             javafx.geometry.Point2D origin = canvas.localToScreen(0, 0);
             javafx.geometry.Point2D unit = canvas.localToScreen(1, 1);

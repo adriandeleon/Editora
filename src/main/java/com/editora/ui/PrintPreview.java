@@ -326,7 +326,7 @@ final class PrintPreview {
         notice.visibleProperty().bind(notice.textProperty().isNotEmpty());
 
         sheet.setAlignment(Pos.TOP_LEFT);
-        sheet.setStyle("-fx-background-color: white; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.35), 12, 0, 0, 3);");
+        sheet.getStyleClass().add("print-preview-sheet"); // the paper and its shadow: app.css tokens (ICON-08)
         // The sheet is scaled by the zoom setting, anchored top-left.
         sheet.getTransforms().add(zoom);
         scroll.viewportBoundsProperty().addListener((obs, old, bounds) -> fitSheet());

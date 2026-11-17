@@ -64,7 +64,7 @@ public final class MarkdownLintStripe extends Region implements SecondaryPane.Fo
         UiZoom.maxWidth(this, WIDTH);
         getChildren().add(canvas);
         area.multiPlainChanges().subscribe(ignore -> scheduleRedraw());
-        OverlayPalette.track(area, palette -> {
+        OverlayPalette.track(area, getChildren(), palette -> {
             warning = palette.warning(); // resolved on a theme change, not per paint
             error = palette.error();
             hint = palette.info();
