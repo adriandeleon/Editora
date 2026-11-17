@@ -66,6 +66,7 @@ public final class RemoteConnectionsPanel extends VBox implements ToolWindowCont
         empty.setWrapText(true);
 
         list.getStyleClass().add("remote-list");
+        list.setAccessibleText(tr("toolwindow.remote"));
         list.setPlaceholder(empty);
         VBox.setVgrow(list, Priority.ALWAYS);
         list.setCellFactory(lv -> new ConnectionCell());

@@ -16,8 +16,11 @@ import org.jspecify.annotations.Nullable;
  */
 public final class TodoColors {
 
-    /** Used for a value that is not a valid colour (the default amber). */
-    private static final String FALLBACK = "#E5C07B";
+    /**
+     * Used for a value that is not a valid colour: a mid grey, no theme's and no state's. A valid value is the
+     * user's own colour for a TODO pattern (Settings), theirs to choose.
+     */
+    private static final Color FALLBACK = Color.gray(0.55);
 
     /** Far more than the patterns anyone configures; reached only by a stream of malformed values. */
     private static final int MAX = 256;
@@ -43,7 +46,7 @@ public final class TodoColors {
             try {
                 color = Color.web(web, alpha);
             } catch (RuntimeException invalid) {
-                color = Color.web(FALLBACK, alpha);
+                color = Color.color(FALLBACK.getRed(), FALLBACK.getGreen(), FALLBACK.getBlue(), alpha);
             }
             if (cache.size() >= MAX) {
                 cache.clear();

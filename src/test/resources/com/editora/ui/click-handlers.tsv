@@ -1,0 +1,133 @@
+# Every click handler in src/main/java on a node, and why it needs no keyboard or screen-reader path of its own
+# (ACC-02, Pauta 6.0.1). Read by ClickHandlersGuardTest. One line per file, receiver and method, tab-separated:
+#   path<TAB>receiver<TAB>method<TAB>reason
+# A node built from panes or labels that acts as a button is a PressableLabel / PressableBox / PressablePane
+# (com.editora.editor.Pressable) and needs no line here. A new handler on anything else needs one: a Control
+# (its own role and keys), or the command or key that does the same, or why it is no action (a drag, a raise).
+com/editora/editor/BufferInlays.java	a	addEventFilter	the editor (a CodeArea) or a console: a code lens click; the keyboard runs the lens action through lsp.codeActions
+com/editora/editor/completion/BufferCompletion.java	a	addEventFilter	the editor (a CodeArea) or a console: a press dismisses the code-action popup; not an action of its own
+com/editora/editor/completion/CompletionPopup.java	list	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/editor/debug/DebugHover.java	a	addEventFilter	the editor (a CodeArea) or a console: Alt+click Quick Evaluate and hover; debug.quickEvaluate does it from the keyboard
+com/editora/editor/debug/DebugHover.java	a	addEventHandler	the editor (a CodeArea) or a console: Alt+click Quick Evaluate and hover; debug.quickEvaluate does it from the keyboard
+com/editora/editor/DiagnosticStripe.java	this	addEventHandler	a canvas stripe beside the scroll bar: a click jumps to a mark; lsp.nextProblem / lsp.previousProblem do it from the keyboard
+com/editora/editor/EditorBuffer.java	a	addEventFilter	the editor (a CodeArea) or a console: Ctrl-click go to definition / open link; lsp.gotoDefinition and markdown.openLink are the keys
+com/editora/editor/fold/FoldManager.java	bar	setOnMouseClicked	gutter change bar: opens the change's diff; git.peekNextChange and git.nextChange are the keyboard path
+com/editora/editor/fold/FoldManager.java	bpSlot	setOnMouseClicked	gutter breakpoint slot; debug.toggleBreakpoint (and Shift-click's conditional breakpoint through the breakpoint commands) is the keyboard path
+com/editora/editor/fold/FoldManager.java	chevron	setOnMouseClicked	gutter fold chevron; view.toggleFold / view.fold / view.unfold are the keyboard path
+com/editora/editor/fold/FoldManager.java	marker	setOnMouseClicked	gutter run marker; file.run and test.runAtCaret run the same from the keyboard
+com/editora/editor/fold/FoldManager.java	slot	setOnMouseClicked	gutter blame annotation; git.toggleBlame and git.blameShowCommit are the keyboard path
+com/editora/editor/fold/StickyScrollBar.java	flow	setOnMouseClicked	sticky scope header: a click jumps to the scope line; view.gotoParentFold / nav.goToLine reach it from the keyboard
+com/editora/editor/http/HttpResultMarks.java	a	addEventFilter	the editor (a CodeArea) or a console: a click on a request result mark; http.openResponseInTab and http.runRequest are the keys
+com/editora/editor/lsp/CodeActionPopup.java	list	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/editor/markdown/MarkdownFormatBar.java	view	addEventFilter	the editor (a CodeArea) or a console: tracks a selection drag so the format bar waits for the release; not an action
+com/editora/editor/markdown/MarkdownLintStripe.java	this	addEventHandler	a canvas stripe: a click jumps to a lint mark; the Markdown Lint tool window and its list are the keyboard path
+com/editora/editor/markdown/MarkdownPreview.java	column	addEventHandler	preview double-click puts the editor caret on the source line; preview.goToSource does it from the keyboard
+com/editora/editor/markdown/MarkdownPreview.java	scrollPane	addEventFilter	a ScrollPane (a Control)
+com/editora/editor/markdown/MarkdownRenderer.java	child	setOnMouseClicked	a link run in the rendered preview (a Text in a TextFlow); the link is followed from the source with markdown.openLink
+com/editora/editor/markdown/MarkdownRenderer.java	picture	setOnMouseClicked	an enlargeable picture: a Tab stop with the BUTTON role, opened with Enter or Space; no FIRE yet (the picture is an arbitrary node)
+com/editora/editor/markdown/PreviewFind.java	piece	setOnMouseClicked	copies a link run's own click to the pieces a find highlight splits it into (see MarkdownRenderer child)
+com/editora/editor/markdown/PreviewLightbox.java	backdrop	setOnMouseClicked	the lightbox backdrop: a click closes it, as Esc does
+com/editora/editor/markdown/PreviewSelection.java	column	addEventHandler	text selection by dragging in the preview; not an action
+com/editora/editor/minimap/Minimap.java	canvas	addEventHandler	the minimap canvas: press and drag scroll the editor, which the keyboard scrolls itself
+com/editora/editor/notes/NoteHover.java	a	addEventFilter	the editor (a CodeArea) or a console: a click on an inline note marker opens the note; notes.editNote does it at the caret
+com/editora/editor/Pressable.java	node	addEventHandler	the pressable helper itself: BUTTON role, FIRE, Enter and Space
+com/editora/editor/RowReasons.java	node	addEventFilter	a grayed menu row says why it is grayed on a click; its accessible text says the same (KBD-04)
+com/editora/editor/structured/PomPreview.java	label	setOnMouseClicked	a pom preview section title folds its section; pom.toggleView switches to the XML, where the editor's fold commands work
+com/editora/editor/structured/PomPreview.java	node	setOnMouseClicked	a pom preview link jumps to its line in the XML; pom.toggleView shows the XML, reached with nav.goToLine
+com/editora/editor/todo/TodoStripe.java	this	addEventHandler	a canvas stripe: a click jumps to a TODO; todo.next does it from the keyboard
+com/editora/terminal/TerminalView.java	this	addEventFilter	the terminal grid: mouse reporting and selection for the program inside; the keyboard is the terminal's own input
+com/editora/ui/BookmarksPanel.java	tree	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/BranchPopup.java	more	setOnMouseClicked	a Button (a Control)
+com/editora/ui/BranchPopup.java	this	setOnMouseClicked	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
+com/editora/ui/BuildActionsPopup.java	list	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/BuildActionsTree.java	tree	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/BuildToolPanel.java	area	addEventHandler	the editor (a CodeArea) or a console: URL and Git links in the output; the output is selectable text, and the same files open from the Git tool window
+com/editora/ui/CommandPalette.java	this	setOnMouseClicked	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
+com/editora/ui/ContextMenuDismissal.java	window	addEventFilter	window-level filters that close a context menu on a press outside it; not an action
+com/editora/ui/CsvGridPanel.java	label	setOnMouseClicked	a column header: a double-click renames it; csv.renameColumn does it from the keyboard
+com/editora/ui/CsvGridPanel.java	table	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/DebugDisassemblyView.java	list	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/DebugEvaluateWindow.java	tree	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/DebugPanel.java	console	setOnMouseClicked	the editor (a CodeArea) or a console: a stack-trace link in the debug console; the Call Stack list opens the same frames with Enter
+com/editora/ui/DebugPanel.java	stack	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/DebugPanel.java	threadList	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/DebugPanel.java	variables	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/DebugThreadDumpWindow.java	frameList	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/DebugValuePopup.java	tree	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/DiffViewerPane.java	scrollPane	addEventFilter	records which side leads the synchronized scroll; not an action
+com/editora/ui/EditorTabListeners.java	mc.editorArea	addEventFilter	a press in the editor ends the Emacs mark; not an action
+com/editora/ui/FileFinder.java	this	setOnMouseClicked	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
+com/editora/ui/GitHubPanel.java	list	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/GitHubPanel.java	text	setOnMouseClicked	the "more" row of the list: Enter on the selected row loads more (a cell of a Control)
+com/editora/ui/GitLogPanel.java	commits	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/GitLogPanel.java	files	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/GitPanel.java	tree	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/GitStashPopup.java	this	setOnMouseClicked	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
+com/editora/ui/HierarchyPanel.java	tree	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/HttpRunList.java	this	setOnMouseClicked	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
+com/editora/ui/MacroCoordinator.java	scene	addEventFilter	scene filter that records mouse use while a macro records; not an action
+com/editora/ui/MacroSettingsPane.java	commands	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/MainController.java	removeBtn	addEventFilter	a Button (a Control)
+com/editora/ui/MapCallStack.java	this	addEventHandler	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
+com/editora/ui/MapFloatingCard.java	resizeGrip	addEventHandler	resizes the card by dragging; not an action (projectMap.cardZoomIn and projectMap.cardZoomOut scale it from the keyboard)
+com/editora/ui/MapFloatingCard.java	this	addEventFilter	a press raises the card; focus does the same (focusWithin)
+com/editora/ui/MapFloatingCard.java	titleBar	addEventHandler	drags the card; not an action (projectMap.cardClose, projectMap.cardPin and the other card commands act on it from the keyboard)
+com/editora/ui/MapHierarchyTree.java	this	addEventHandler	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
+com/editora/ui/MapResultsList.java	this	addEventHandler	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
+com/editora/ui/MapSideColumn.java	column	addEventFilter	a press raises the column; focus does the same (focusWithin)
+com/editora/ui/MapSurface.java	scene	addEventFilter	scene filter of the Project Map: ends a pan outside the surface; not an action
+com/editora/ui/MapSurface.java	this	addEventHandler	the Project Map canvas: every row is a TREE_ITEM node with FIRE/EXPAND/COLLAPSE (MapAccessibleRows) and the map's keys move, open and fold
+com/editora/ui/MarkdownBacklinks.java	list	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/MarkdownLintPanel.java	list	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/NotesPanel.java	tree	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/OverlayHost.java	backdrop	addEventHandler	the overlay backdrop: a press closes the overlay, as Esc does
+com/editora/ui/ProblemsPanel.java	tree	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/ProjectCombo.java	delete	addEventFilter	a Button (a Control)
+com/editora/ui/ProjectMapCardStructure.java	column	addEventFilter	a press raises the card; focus does the same (focusWithin)
+com/editora/ui/ProjectMapCardStructure.java	this	addEventHandler	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
+com/editora/ui/ProjectMapChangesCard.java	this	setOnMouseClicked	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
+com/editora/ui/ProjectMapDependencyCard.java	this	addEventHandler	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
+com/editora/ui/ProjectMapHistoryCard.java	this	setOnMouseClicked	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
+com/editora/ui/ProjectMapMetricsCard.java	this	addEventHandler	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
+com/editora/ui/ProjectMapNotePreview.java	resizeGrip	addEventHandler	resizes the card by dragging; not an action (projectMap.cardZoomIn and projectMap.cardZoomOut scale it from the keyboard)
+com/editora/ui/ProjectMapNotePreview.java	this	addEventFilter	a press raises the card; focus does the same (focusWithin)
+com/editora/ui/ProjectMapNotePreview.java	titleBar	addEventHandler	drags the card; not an action (projectMap.cardClose, projectMap.cardPin and the other card commands act on it from the keyboard)
+com/editora/ui/ProjectMapOverviewCard.java	resizeGrip	addEventHandler	resizes the card by dragging; not an action (projectMap.cardZoomIn and projectMap.cardZoomOut scale it from the keyboard)
+com/editora/ui/ProjectMapOverviewCard.java	this	addEventFilter	a press raises the card; focus does the same (focusWithin)
+com/editora/ui/ProjectMapOverviewCard.java	titleBar	addEventHandler	drags the card; not an action (projectMap.cardClose, projectMap.cardPin and the other card commands act on it from the keyboard)
+com/editora/ui/ProjectMapPreview.java	cutFooter	setOnMouseClicked	"Open to read the rest" footer: the card's Open button beside it is the keyboard path
+com/editora/ui/ProjectMapPreview.java	editor	addEventFilter	the editor (a CodeArea) or a console: the preview card's read-only editor; a press is caret placement
+com/editora/ui/ProjectMapPreview.java	resizeGrip	addEventHandler	resizes the card by dragging; not an action (projectMap.cardZoomIn and projectMap.cardZoomOut scale it from the keyboard)
+com/editora/ui/ProjectMapPreview.java	this	addEventFilter	a press raises the card; focus does the same (focusWithin)
+com/editora/ui/ProjectMapPreview.java	titleBar	addEventHandler	drags the card; not an action (projectMap.cardClose, projectMap.cardPin and the other card commands act on it from the keyboard)
+com/editora/ui/ProjectMapStickyNotes.java	header	addEventHandler	drags a sticky note; not an action
+com/editora/ui/ProjectMapStickyNotes.java	this	addEventHandler	a press raises the note; focus does the same
+com/editora/ui/ProjectMapSymbolGraphCard.java	this	addEventHandler	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
+com/editora/ui/ProjectMapTrailEditor.java	header	addEventHandler	drags the trail editor; not an action
+com/editora/ui/ProjectMapTrailEditor.java	stops	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/ProjectMapTrailEditor.java	this	addEventFilter	a press raises the trail editor; focus does the same
+com/editora/ui/ProjectMapTrailNote.java	top	addEventHandler	drags a trail note; not an action
+com/editora/ui/ProjectMapTrails.java	title	setOnMouseClicked	the trail bar title brings back a closed stop; projectMap.trailShowStop does it from the keyboard
+com/editora/ui/ProjectPanel.java	tree	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/PrReviewPane.java	row	setOnMouseClicked	a file row: a click anywhere fires its Hyperlink, which is the Tab stop
+com/editora/ui/QuickOpen.java	this	setOnMouseClicked	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
+com/editora/ui/RecipientPicker.java	this	setOnMouseClicked	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
+com/editora/ui/ReferencesPanel.java	tree	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/RemoteConnectionsPanel.java	list	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/RunPanel.java	console	setOnMouseClicked	the editor (a CodeArea) or a console: a stack-trace link in the console; the Problems and Test Results trees open the same lines with Enter
+com/editora/ui/RunPanel.java	output	addEventHandler	the editor (a CodeArea) or a console: URL links in the run output; selectable text, copied and opened from the keyboard
+com/editora/ui/SearchEverywherePopup.java	this	setOnMouseClicked	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
+com/editora/ui/SearchInFilesPopup.java	this	setOnMouseClicked	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does
+com/editora/ui/SearchPanel.java	tree	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/SettingsKeymapsPage.java	row	setOnMouseClicked	a shortcut row: the arrow keys and Enter or Space select it (onShortcutListKey)
+com/editora/ui/StepFiltersEditor.java	list	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/StructurePanel.java	tree	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/TableSizePicker.java	cell	setOnMouseClicked	a size cell: the picker takes arrow keys and Enter (TableSizePicker.step)
+com/editora/ui/TestRunnerPanel.java	tree	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/TodoPanel.java	tree	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/ToolbarSettingsPane.java	available	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/ToolbarSettingsPane.java	current	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/TypeRenderersEditor.java	list	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/UndoHistoryPanel.java	list	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
+com/editora/ui/WelcomePane.java	row	setOnMouseClicked	a Welcome row: a click anywhere fires its Hyperlink, which is the Tab stop
+com/editora/ui/WorkspaceSymbolPopup.java	this	setOnMouseClicked	a cell or row of a list, tree or table (a Control): Enter on the selected row does what the click does

@@ -204,10 +204,17 @@ final class MapSurface extends Region {
     /** Zoom levels tried, in order, to bring a hidden column filter back for the {@code /} key. */
     private static final double[] FILTER_ZOOM_STEPS = {0.8, 1.0};
     /** The same light palette for the row icons, which are styled nodes rasterized through CSS. */
-    private static final String OUTPUT_ICON_STYLE = "-project-folder-color: #0969da; -project-file-color: #59636e;"
-            + " -state-amber: #9a6700; -state-olive: #4f5c10; -state-violet: #6538c2;"
-            + " -color-accent-fg: #0969da; -color-success-fg: #1a7f37; -color-danger-fg: #d1242f;"
-            + " -color-fg-muted: #59636e;";
+    private static final String OUTPUT_ICON_STYLE =
+            "-project-folder-color: -print-accent; -project-file-color: -print-muted;"
+                    + " -state-amber: -print-warning; -state-olive: -print-olive; -state-violet: -print-violet;"
+                    + " -state-green: -print-success; -state-red: -print-danger; -color-accent-fg: -print-accent;"
+                    + " -color-fg-muted: -print-muted;";
+    /**
+     * A probe's colour before any stylesheet has filled it (the first paint of a Map not yet in a scene): a mid grey
+     * that is no theme's and reads on light and dark grounds alike. Every colour the Map paints is the theme's,
+     * through a probe (ICON-08, Pauta 6.0.1).
+     */
+    private static final Color UNSTYLED = Color.gray(0.5);
 
     private final Canvas liveCanvas = new Canvas(1, 1);
     /** The overview, on a canvas of its own above the cards; see {@link #drawOverview}. */
@@ -244,6 +251,8 @@ final class MapSurface extends Region {
     private final Rectangle structureProbe = probe("project-map-probe-structure");
     /** The heat of "Show recent changes" (Map explore position 3): a row's tint and its meter. */
     private final Rectangle activityHeatProbe = probe("project-map-probe-heat");
+    /** The printed page's colours ({@link #outputPalette}). */
+    private final com.editora.editor.ThemeProbes printProbes;
     /** The heat meter's ink by heat, row fill and text colour ({@link ProjectMapActivity#meterInk}). */
     private final Map<List<Color>, Color> activityMeterInks = new HashMap<>();
     /** Heat-tinted row fills by fill, heat, text, muted ink and step ({@link ProjectMapActivity#tinted}). */
@@ -515,6 +524,21 @@ final class MapSurface extends Region {
                         violetProbe,
                         structureProbe,
                         activityHeatProbe);
+        printProbes = new com.editora.editor.ThemeProbes(
+                getChildren(),
+                () -> {},
+                "print-ground",
+                "print-surface",
+                "print-border",
+                "print-ink",
+                "print-muted",
+                "print-accent",
+                "print-on-accent",
+                "print-warning",
+                "print-success",
+                "print-danger",
+                "print-olive",
+                "print-violet");
         UiZoom.minSize(this, 80, 100);
         overviewForwardsInput();
         setFocusTraversable(true);
@@ -1134,7 +1158,7 @@ final class MapSurface extends Region {
             return;
         }
         g.setGlobalAlpha(0.85 * strength);
-        g.setStroke(color(accentProbe, Color.web("#388bfd")));
+        g.setStroke(color(accentProbe, UNSTYLED));
         g.setLineWidth(3);
         double grow = 4 + 6 * (1 - strength);
         g.strokeRoundRect(
@@ -1748,17 +1772,17 @@ final class MapSurface extends Region {
                     rows,
                     links,
                     new ProjectMapSvg.Palette(
-                            ProjectMapSvg.hex(color(bgProbe, Color.WHITE)),
-                            ProjectMapSvg.hex(color(surfaceProbe, Color.web("#f6f8fa"))),
-                            ProjectMapSvg.hex(color(borderProbe, Color.web("#d0d7de"))),
-                            ProjectMapSvg.hex(mix(color(surfaceProbe, Color.web("#f6f8fa")), structureTint(), 0.16)),
-                            "#ffffff",
-                            ProjectMapSvg.hex(color(borderProbe, Color.web("#d0d7de"))),
-                            ProjectMapSvg.hex(color(textProbe, Color.web("#1f2328"))),
-                            ProjectMapSvg.hex(color(mutedProbe, Color.web("#59636e"))),
-                            ProjectMapSvg.hex(color(accentProbe, Color.web("#0969da"))),
-                            ProjectMapSvg.hex(color(folderProbe, Color.web("#0969da"))),
-                            ProjectMapSvg.hex(color(fileProbe, Color.web("#59636e"))),
+                            ProjectMapSvg.hex(color(bgProbe, UNSTYLED)),
+                            ProjectMapSvg.hex(color(surfaceProbe, UNSTYLED)),
+                            ProjectMapSvg.hex(color(borderProbe, UNSTYLED)),
+                            ProjectMapSvg.hex(mix(color(surfaceProbe, UNSTYLED), structureTint(), 0.16)),
+                            ProjectMapSvg.hex(color(bgProbe, UNSTYLED)),
+                            ProjectMapSvg.hex(color(borderProbe, UNSTYLED)),
+                            ProjectMapSvg.hex(color(textProbe, UNSTYLED)),
+                            ProjectMapSvg.hex(color(mutedProbe, UNSTYLED)),
+                            ProjectMapSvg.hex(color(accentProbe, UNSTYLED)),
+                            ProjectMapSvg.hex(color(folderProbe, UNSTYLED)),
+                            ProjectMapSvg.hex(color(fileProbe, UNSTYLED)),
                             ProjectMapSvg.hex(structureTint())),
                     title);
         } finally {
@@ -1840,25 +1864,36 @@ final class MapSurface extends Region {
         return page;
     }
 
-    /** Primer Light, whatever the live theme: ink on white is what a printer and a PDF reader expect. */
+    /**
+     * The printed page's palette, whatever the live theme: ink on white is what a printer and a PDF reader expect. Its
+     * colours are app.css's {@code -print-*} tokens (paper, which no theme role describes), read through probes of
+     * their own; the heat is the paper's accent, as it is the theme's live (ICON-18).
+     */
     private Map<Rectangle, Color> outputPalette() {
         Map<Rectangle, Color> palette = new java.util.IdentityHashMap<>();
-        palette.put(bgProbe, Color.WHITE);
-        palette.put(surfaceProbe, Color.web("#f6f8fa"));
-        palette.put(borderProbe, Color.web("#d0d7de"));
-        palette.put(textProbe, Color.web("#1f2328"));
-        palette.put(mutedProbe, Color.web("#59636e"));
-        palette.put(accentProbe, Color.web("#0969da"));
-        palette.put(onAccentProbe, Color.WHITE);
-        palette.put(warningProbe, Color.web("#9a6700"));
-        palette.put(successProbe, Color.web("#1a7f37"));
-        palette.put(folderProbe, Color.web("#0969da"));
-        palette.put(fileProbe, Color.web("#59636e"));
-        palette.put(oliveProbe, Color.web("#6e7b25"));
-        palette.put(violetProbe, Color.web("#8250df"));
-        palette.put(structureProbe, Color.web("#8250df"));
-        palette.put(activityHeatProbe, Color.web("#9a6700"));
+        palette.put(bgProbe, printed("ground"));
+        palette.put(surfaceProbe, printed("surface"));
+        palette.put(borderProbe, printed("border"));
+        palette.put(textProbe, printed("ink"));
+        palette.put(mutedProbe, printed("muted"));
+        palette.put(accentProbe, printed("accent"));
+        palette.put(onAccentProbe, printed("on-accent"));
+        palette.put(warningProbe, printed("warning"));
+        palette.put(successProbe, printed("success"));
+        palette.put(dangerProbe, printed("danger"));
+        palette.put(folderProbe, printed("accent"));
+        palette.put(fileProbe, printed("muted"));
+        palette.put(oliveProbe, printed("olive"));
+        palette.put(violetProbe, printed("violet"));
+        palette.put(structureProbe, printed("violet"));
+        palette.put(activityHeatProbe, printed("accent"));
         return palette;
+    }
+
+    /** The paper's colour {@code name} ({@code -print-<name>}), read through its probe. */
+    private Color printed(String name) {
+        Color value = printProbes.get("print-" + name);
+        return value != null ? value : UNSTYLED;
     }
 
     String zoomPercent() {
@@ -2167,6 +2202,7 @@ final class MapSurface extends Region {
         TextField filter = new TextField();
         filter.getStyleClass().add("project-map-column-filter");
         filter.setPromptText(tr("project.map.column.filter"));
+        filter.setAccessibleText(tr("project.map.column.filter"));
         filter.setAccessibleHelp(tr("project.map.column.filterHelp"));
         String query = columnQueries.get(id);
         if (query != null) {
@@ -2785,18 +2821,18 @@ final class MapSurface extends Region {
         double height = canvas.getHeight();
         GraphicsContext g = canvas.getGraphicsContext2D();
         g.setGlobalAlpha(1);
-        g.setFill(color(bgProbe, Color.web("#0f141c")));
+        g.setFill(color(bgProbe, UNSTYLED));
         g.fillRect(0, 0, width, height);
         lastPaintedConnectorCount = 0;
         WorldLayout world = projected;
         if (entries.isEmpty() || world == null) {
-            g.setFill(color(mutedProbe, Color.web("#8b949e")));
+            g.setFill(color(mutedProbe, UNSTYLED));
             g.setFont(mapFont(FontWeight.NORMAL, FontPosture.REGULAR, 13));
             g.fillText(tr(loadPending ? "project.map.loading" : "project.map.empty"), 18, 28);
             return;
         }
         drawColumns(g);
-        g.setStroke(color(accentProbe, Color.web("#58a6ff")));
+        g.setStroke(color(accentProbe, UNSTYLED));
         // Rows were added column by column, so the two lists are walked together: a column's rows
         // share one parent row and, in a vertical flow, one card edge to route to.
         int next = 0;
@@ -3335,12 +3371,12 @@ final class MapSurface extends Region {
         GraphicsContext g = overviewCanvas.getGraphicsContext2D();
         g.clearRect(0, 0, overviewWidth, overviewHeight);
         g.setGlobalAlpha(0.94);
-        g.setFill(color(surfaceProbe, Color.web("#161d27")));
+        g.setFill(color(surfaceProbe, UNSTYLED));
         g.fillRoundRect(0.5, 0.5, overviewWidth - 1, overviewHeight - 1, 8, 8);
         g.setStroke(rowBorder());
         g.setLineWidth(1);
         g.strokeRoundRect(0.5, 0.5, overviewWidth - 1, overviewHeight - 1, 8, 8);
-        Color muted = color(mutedProbe, Color.web("#8b949e"));
+        Color muted = color(mutedProbe, UNSTYLED);
         Color structureMuted = mix(muted, structureTint(), 0.6);
         for (ColumnBox box : columnBoxes) {
             g.setFill(isStructureColumn(box.column().id()) ? structureMuted : muted);
@@ -3361,7 +3397,7 @@ final class MapSurface extends Region {
         double top = clampInto(insetY - minY * scaleY, 3, frameBottom);
         double right = clampInto(insetX + (viewportWidth - minX) * scaleX, 3, frameRight);
         double bottom = clampInto(insetY + (viewportHeight - minY) * scaleY, 3, frameBottom);
-        g.setStroke(color(accentProbe, Color.web("#58a6ff")));
+        g.setStroke(color(accentProbe, UNSTYLED));
         g.setLineWidth(1.5);
         g.strokeRect(left, top, Math.max(2, right - left), Math.max(2, bottom - top));
         g.setGlobalAlpha(1);
@@ -3381,7 +3417,7 @@ final class MapSurface extends Region {
         if (cards.isEmpty()) {
             return;
         }
-        Color accent = color(accentProbe, Color.web("#58a6ff"));
+        Color accent = color(accentProbe, UNSTYLED);
         g.setStroke(accent);
         g.setLineWidth(1);
         for (MapCards.OpenCard card : cards) {
@@ -3472,11 +3508,11 @@ final class MapSurface extends Region {
     }
 
     private void drawColumns(GraphicsContext g) {
-        Color surface = color(surfaceProbe, Color.web("#161d27"));
-        Color border = color(borderProbe, Color.web("#303946"));
+        Color surface = color(surfaceProbe, UNSTYLED);
+        Color border = color(borderProbe, UNSTYLED);
         Color structureSurface = mix(surface, structureTint(), STRUCTURE_COLUMN_TINT);
         Color structureBorder = mix(border, structureTint(), 0.35);
-        Color accent = color(accentProbe, Color.web("#388bfd"));
+        Color accent = color(accentProbe, UNSTYLED);
         // The root and the folders of a compacted chain have no row: their column's title is selected.
         ColumnBox selectedHeader = headerFor(selected);
         for (ColumnBox box : columnBoxes) {
@@ -3526,7 +3562,7 @@ final class MapSurface extends Region {
                 titleRoom = right - titleLeft;
             }
             g.setGlobalAlpha(headerSelected ? 1 : 0.88);
-            g.setFill(headerSelected ? color(accentTextProbe, accent) : color(textProbe, Color.web("#d8dee9")));
+            g.setFill(headerSelected ? color(accentTextProbe, accent) : color(textProbe, UNSTYLED));
             g.setFont(mapFont(FontWeight.SEMI_BOLD, FontPosture.REGULAR, titleSize));
             boolean titleFits = titleWidth <= titleRoom;
             // A chain keeps its last folders (the ones its rows are in) when it must be cut.
@@ -3541,7 +3577,7 @@ final class MapSurface extends Region {
             if (headerSelected && titleFits && column.compacted()) {
                 underlineChainFolder(g, column, titleLeft, baseline, titleSize);
             }
-            g.setFill(color(mutedProbe, Color.web("#8b949e")));
+            g.setFill(color(mutedProbe, UNSTYLED));
             if (showCount) {
                 g.setFont(mapFont(FontWeight.NORMAL, FontPosture.REGULAR, countSize));
                 g.setTextAlign(TextAlignment.RIGHT);
@@ -3745,14 +3781,13 @@ final class MapSurface extends Region {
         // A faded row recedes through its fill and border; its label only fades as far as a readable
         // floor, and its marks keep most of their ink (Map review B19).
         g.setGlobalAlpha(dimmed ? DIMMED_ALPHA : 1.0);
-        Color accent = color(accentProbe, Color.web("#388bfd"));
-        Color surface = color(surfaceProbe, Color.web("#202938"));
+        Color accent = color(accentProbe, UNSTYLED);
+        Color surface = color(surfaceProbe, UNSTYLED);
         if (entry.isSymbol()) {
             surface = mix(surface, structureTint(), STRUCTURE_ROW_TINT);
         }
-        dimmedGround = dimmed
-                ? mix(mix(color(bgProbe, Color.web("#0f141c")), color(surfaceProbe, surface), 0.64), surface, 0.38)
-                : null;
+        dimmedGround =
+                dimmed ? mix(mix(color(bgProbe, UNSTYLED), color(surfaceProbe, surface), 0.64), surface, 0.38) : null;
         Color fill =
                 focusedSelection ? accent : isSelected ? color(accentSubtleProbe, mix(surface, accent, 0.22)) : surface;
         int heat = activityHeatLevel(entry);
@@ -3804,14 +3839,12 @@ final class MapSurface extends Region {
         Color ink = focusedSelection
                 ? onAccent()
                 : problemCount.errors() > 0
-                        ? color(
-                                dangerProbe,
-                                Color.web("#f85149")) // as the editor's explorer: a name with errors is red
+                        ? color(dangerProbe, UNSTYLED) // as the editor's explorer: a name with errors is red
                         : problemCount.warnings() > 0
-                                ? color(warningProbe, Color.web("#d29922"))
+                                ? color(warningProbe, UNSTYLED)
                                 : openPaths.contains(entry.path())
                                         ? color(accentTextProbe, accent)
-                                        : color(textProbe, Color.web("#d8dee9"));
+                                        : color(textProbe, UNSTYLED);
         g.setFont(rowFont(isSelected));
         // A name wider than the row (the width is capped) loses its middle; the tooltip has it whole.
         String label = entry.name();
@@ -3846,7 +3879,7 @@ final class MapSurface extends Region {
         boolean chevron = branches(entry);
         double right = box.x() + box.width() - (chevron ? CHEVRON_ZONE : 8) * zoom;
         String line = symbol == null ? "" : tr("structure.line", symbol.line() + 1);
-        Color muted = onAccentFill ? onAccent() : color(mutedProbe, Color.web("#8b949e"));
+        Color muted = onAccentFill ? onAccent() : color(mutedProbe, UNSTYLED);
         g.setFill(muted);
         g.setFont(mapFont(FontWeight.NORMAL, FontPosture.REGULAR, Math.max(8, 10 * zoom)));
         g.setTextAlign(TextAlignment.RIGHT);
@@ -3867,7 +3900,7 @@ final class MapSurface extends Region {
         double width = measuredLabelWidth(label) * zoom;
         fillLabel(
                 g,
-                onAccentFill ? onAccent() : color(textProbe, Color.web("#d8dee9")),
+                onAccentFill ? onAccent() : color(textProbe, UNSTYLED),
                 width <= room ? label : elide(label, 12 * zoom, room),
                 labelLeft,
                 box.y() + 20.5 * zoom);
@@ -3887,7 +3920,7 @@ final class MapSurface extends Region {
         boolean open = view.structure.isOpen(entry.path());
         double cx = box.x() + box.width() - (PREVIEW_ZONE + STRUCTURE_ZONE / 2) * zoom;
         double cy = box.y() + box.height() / 2;
-        Color ink = onAccentFill ? onAccent() : color(hot ? textProbe : mutedProbe, Color.web("#8b949e"));
+        Color ink = onAccentFill ? onAccent() : color(hot ? textProbe : mutedProbe, UNSTYLED);
         if (open || hot) {
             double radius = 9 * zoom;
             double previous = g.getGlobalAlpha();
@@ -3944,8 +3977,8 @@ final class MapSurface extends Region {
      */
     private void layoutDrawBlockRow(GraphicsContext g, NodeBox box) {
         ProjectMapModel.Entry entry = box.entry();
-        Color accent = color(accentProbe, Color.web("#388bfd"));
-        Color muted = color(mutedProbe, Color.web("#8b949e"));
+        Color accent = color(accentProbe, UNSTYLED);
+        Color muted = color(mutedProbe, UNSTYLED);
         boolean isSelected = entry.path().equals(selected);
         boolean match = filters != null && filters.active() && emphasized.contains(entry.path());
         boolean faded = !prominence(entry.path()) || layoutIgnoredReason(entry) != null;
@@ -3974,10 +4007,10 @@ final class MapSurface extends Region {
      * while a search or a filter is on, how many of them match (review 3 B8).
      */
     private void layoutDrawBlockLabels(GraphicsContext g, double width, double height) {
-        Color surface = color(surfaceProbe, Color.web("#161d27"));
-        Color text = color(textProbe, Color.web("#d8dee9"));
-        Color muted = color(mutedProbe, Color.web("#8b949e"));
-        Color accent = color(accentProbe, Color.web("#388bfd"));
+        Color surface = color(surfaceProbe, UNSTYLED);
+        Color text = color(textProbe, UNSTYLED);
+        Color muted = color(mutedProbe, UNSTYLED);
+        Color accent = color(accentProbe, UNSTYLED);
         boolean filtering = filters != null && filters.active();
         Font titleFont = mapFont(FontWeight.SEMI_BOLD, FontPosture.REGULAR, 11);
         Font detailFont = mapFont(FontWeight.NORMAL, FontPosture.REGULAR, 10);
@@ -4036,11 +4069,11 @@ final class MapSurface extends Region {
         boolean more = entry.isMore();
         g.setGlobalAlpha(1);
         if (entry.path().equals(selected) || more && entry.path().equals(hovered)) {
-            g.setStroke(color(accentProbe, Color.web("#388bfd")));
+            g.setStroke(color(accentProbe, UNSTYLED));
             g.setLineWidth(1.5 * zoom);
             g.strokeRoundRect(box.x(), box.y(), box.width(), box.height(), 8 * zoom, 8 * zoom);
         }
-        g.setFill(more ? color(textProbe, Color.web("#d8dee9")) : color(mutedProbe, Color.web("#8b949e")));
+        g.setFill(more ? color(textProbe, UNSTYLED) : color(mutedProbe, UNSTYLED));
         g.setFont(mapFont(more ? FontWeight.SEMI_BOLD : FontWeight.NORMAL, FontPosture.REGULAR, 12 * zoom));
         g.fillText(entry.name(), box.x() + 10 * zoom, layoutRowContent(box).y() + 20.5 * zoom);
     }
@@ -4110,7 +4143,7 @@ final class MapSurface extends Region {
 
     /** The border that separates a row from its card (see {@link #rowBorderColor}). */
     private Color rowBorder() {
-        return rowBorderColor(color(borderProbe, Color.web("#3a4554")), color(mutedProbe, Color.web("#8b949e")));
+        return rowBorderColor(color(borderProbe, UNSTYLED), color(mutedProbe, UNSTYLED));
     }
 
     /**
@@ -4145,7 +4178,7 @@ final class MapSurface extends Region {
         boolean hot = hoveredAffordance == Affordance.CHEVRON && entry.path().equals(hovered) && !outputPaint;
         double cx = box.x() + box.width() - 13 * zoom;
         double cy = box.y() + box.height() / 2;
-        Color ink = onAccentFill ? onAccent() : color(hot ? textProbe : mutedProbe, Color.web("#8b949e"));
+        Color ink = onAccentFill ? onAccent() : color(hot ? textProbe : mutedProbe, UNSTYLED);
         if (expanded || hot) {
             double radius = 8 * zoom;
             g.setFill(ink);
@@ -4189,7 +4222,7 @@ final class MapSurface extends Region {
         boolean hot = rowHovered && hoveredAffordance == Affordance.PREVIEW;
         double cx = box.x() + box.width() - PREVIEW_ZONE * zoom / 2;
         double cy = box.y() + box.height() / 2;
-        Color ink = onAccentFill ? onAccent() : color(hot ? textProbe : mutedProbe, Color.web("#8b949e"));
+        Color ink = onAccentFill ? onAccent() : color(hot ? textProbe : mutedProbe, UNSTYLED);
         if (hot) {
             double previous = g.getGlobalAlpha();
             g.setGlobalAlpha(previous * 0.16);
@@ -4230,7 +4263,7 @@ final class MapSurface extends Region {
         double cx = box.x() + box.width() - (CHEVRON_ZONE + markers + MODULE_BADGE_WIDTH / 2 + 2) * zoom;
         double cy = box.y() + box.height() / 2;
         double half = 5 * zoom;
-        g.setStroke(onAccentFill ? onAccent() : color(structureProbe, Color.web("#8250df")));
+        g.setStroke(onAccentFill ? onAccent() : color(structureProbe, UNSTYLED));
         g.setLineWidth(Math.max(1, 1.2 * zoom));
         // A box seen from the front, with its lid: the package glyph.
         g.strokeRect(cx - half, cy - half * 0.55, half * 2, half * 1.55);
@@ -4245,7 +4278,7 @@ final class MapSurface extends Region {
         if (!entry.isFile() || !openPaths.contains(entry.path())) {
             return;
         }
-        g.setFill(selectedNode ? onAccent() : color(accentProbe, Color.web("#388bfd")));
+        g.setFill(selectedNode ? onAccent() : color(accentProbe, UNSTYLED));
         g.fillRoundRect(box.x() + 2 * zoom, box.y() + 7 * zoom, 3 * zoom, box.height() - 14 * zoom, 3 * zoom, 3 * zoom);
     }
 
@@ -4260,10 +4293,7 @@ final class MapSurface extends Region {
         double cy = iconY + 15 * zoom;
         g.setFill(ground);
         g.fillOval(cx - r - 1.2 * zoom, cy - r - 1.2 * zoom, 2 * (r + 1.2 * zoom), 2 * (r + 1.2 * zoom));
-        g.setFill(
-                count.errors() > 0
-                        ? color(dangerProbe, Color.web("#f85149"))
-                        : color(warningProbe, Color.web("#d29922")));
+        g.setFill(count.errors() > 0 ? color(dangerProbe, UNSTYLED) : color(warningProbe, UNSTYLED));
         g.fillOval(cx - r, cy - r, 2 * r, 2 * r);
     }
 
@@ -4322,10 +4352,10 @@ final class MapSurface extends Region {
     private void drawReviewMark(GraphicsContext g, NodeBox box, char mark) {
         g.setFill(
                 switch (mark) {
-                    case 'A', 'U' -> color(successProbe, Color.web("#3fb950"));
-                    case 'D' -> color(dangerProbe, Color.web("#f85149"));
-                    case '*' -> color(mutedProbe, Color.web("#8b949e"));
-                    default -> color(accentProbe, Color.web("#388bfd"));
+                    case 'A', 'U' -> color(successProbe, UNSTYLED);
+                    case 'D' -> color(mutedProbe, UNSTYLED); // deleted: neutral, as in the Git tree
+                    case '*' -> color(mutedProbe, UNSTYLED);
+                    default -> color(accentProbe, UNSTYLED);
                 });
         double inset = 5 * zoom;
         g.fillRoundRect(box.x() + 1.5 * zoom, box.y() + inset, 3 * zoom, box.height() - 2 * inset, 3 * zoom, 3 * zoom);
@@ -4337,9 +4367,9 @@ final class MapSurface extends Region {
      */
     private Color dependencyInk(int mark) {
         return switch (mark) {
-            case MapDependencyOverlay.USES -> color(violetProbe, Color.web("#b392f0"));
-            case MapDependencyOverlay.USED_BY -> color(oliveProbe, Color.web("#a9b84a"));
-            default -> color(warningProbe, Color.web("#d29922"));
+            case MapDependencyOverlay.USES -> color(violetProbe, UNSTYLED);
+            case MapDependencyOverlay.USED_BY -> color(oliveProbe, UNSTYLED);
+            default -> color(warningProbe, UNSTYLED);
         };
     }
 
@@ -4501,7 +4531,7 @@ final class MapSurface extends Region {
             x -= 11 * zoom;
         }
         if (modifiedPaths.contains(entry.path())) {
-            g.setFill(onAccentFill ? onAccent() : color(warningProbe, Color.web("#d29922")));
+            g.setFill(onAccentFill ? onAccent() : color(warningProbe, UNSTYLED));
             g.fillOval(x - 6 * zoom, box.y() + 13 * zoom, 6 * zoom, 6 * zoom);
         }
     }
@@ -4509,12 +4539,12 @@ final class MapSurface extends Region {
     /** The Project tree's colour for each Git status (see {@code .project-tree .git-status-*}). */
     private Color gitColor(GitFileStatus status) {
         return switch (status) {
-            case ADDED -> color(successProbe, Color.web("#3fb950"));
-            case UNTRACKED -> color(oliveProbe, Color.web("#6e7b25"));
-            case RENAMED -> color(violetProbe, Color.web("#8250df"));
-            case DELETED -> color(mutedProbe, Color.web("#8b949e"));
-            case CONFLICT -> color(dangerProbe, Color.web("#f85149"));
-            case MODIFIED -> color(accentTextProbe, Color.web("#58a6ff"));
+            case ADDED -> color(successProbe, UNSTYLED);
+            case UNTRACKED -> color(oliveProbe, UNSTYLED);
+            case RENAMED -> color(violetProbe, UNSTYLED);
+            case DELETED -> color(mutedProbe, UNSTYLED);
+            case CONFLICT -> color(dangerProbe, UNSTYLED);
+            case MODIFIED -> color(accentTextProbe, UNSTYLED);
         };
     }
 
@@ -4525,13 +4555,13 @@ final class MapSurface extends Region {
         double y = box.y() + 10 * zoom;
         g.setLineWidth(Math.max(1, 1.25 * zoom));
         if (notedPaths.contains(entry.path())) {
-            g.setStroke(selectedNode ? onAccent() : color(accentTextProbe, Color.web("#388bfd")));
+            g.setStroke(selectedNode ? onAccent() : color(accentTextProbe, UNSTYLED));
             g.strokeRoundRect(x - 4 * zoom, y, 8 * zoom, 7 * zoom, 2 * zoom, 2 * zoom);
             g.strokeLine(x - 2 * zoom, y + 7 * zoom, x - 4 * zoom, y + 9 * zoom);
             x -= MARKER_WIDTH * zoom;
         }
         if (bookmarkedPaths.contains(entry.path())) {
-            g.setStroke(selectedNode ? onAccent() : color(warningProbe, Color.web("#d29922")));
+            g.setStroke(selectedNode ? onAccent() : color(warningProbe, UNSTYLED));
             g.beginPath();
             g.moveTo(x - 3.5 * zoom, y);
             g.lineTo(x + 3.5 * zoom, y);
@@ -5006,8 +5036,8 @@ final class MapSurface extends Region {
         double inset = 8 * zoom;
         double length = (box.width() - inset * 2) * heat / ProjectMapActivity.LEVELS;
         double thickness = Math.max(2, 2.5 * zoom);
-        Color heatInk = color(activityHeatProbe, Color.web("#d29922"));
-        Color text = color(textProbe, Color.web("#d8dee9"));
+        Color heatInk = color(activityHeatProbe, UNSTYLED);
+        Color text = color(textProbe, UNSTYLED);
         g.setFill(
                 onAccentFill
                         ? onAccent()
@@ -5019,9 +5049,9 @@ final class MapSurface extends Region {
 
     /** A row's fill at a heat step, kept readable ({@link ProjectMapActivity#tinted}); cached by its inputs. */
     private Color activityTinted(Color fill, int heat) {
-        Color heatInk = color(activityHeatProbe, Color.web("#d29922"));
-        Color text = color(textProbe, Color.web("#d8dee9"));
-        Color muted = color(mutedProbe, Color.web("#8b949e"));
+        Color heatInk = color(activityHeatProbe, UNSTYLED);
+        Color text = color(textProbe, UNSTYLED);
+        Color muted = color(mutedProbe, UNSTYLED);
         return activityTints.computeIfAbsent(
                 List.of(fill, heatInk, text, muted, heat),
                 key -> ProjectMapActivity.tinted(fill, heatInk, heat, text, muted));
@@ -6505,12 +6535,12 @@ final class MapSurface extends Region {
     }
 
     private Color structureTint() {
-        return color(structureProbe, Color.web("#8250df"));
+        return color(structureProbe, UNSTYLED);
     }
 
     /** Text, glyphs and markers drawn over the selected node's accent fill. */
     private Color onAccent() {
-        return color(onAccentProbe, Color.WHITE);
+        return color(onAccentProbe, UNSTYLED);
     }
 
     private Color color(Rectangle probe, Color fallback) {
@@ -6522,12 +6552,12 @@ final class MapSurface extends Region {
     }
 
     Color accentColor() {
-        return color(accentProbe, Color.web("#58a6ff"));
+        return color(accentProbe, UNSTYLED);
     }
 
-    /** Ink for a Personal Notes card's connector: the theme's note (amber) colour. */
+    /** Ink for a Personal Notes card's connector: the note's accent, as its sheet is (ICON-18). */
     Color noteColor() {
-        return color(warningProbe, Color.web("#b08a00"));
+        return color(accentTextProbe, UNSTYLED);
     }
 
     /**

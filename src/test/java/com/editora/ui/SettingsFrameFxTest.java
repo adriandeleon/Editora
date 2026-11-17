@@ -585,9 +585,8 @@ class SettingsFrameFxTest {
                 assertTrue(chip != null, "a bound command shows its chord");
                 javafx.scene.paint.Color ink =
                         (javafx.scene.paint.Color) ((javafx.scene.control.Labeled) chip).getTextFill();
-                assertTrue(
-                        StyleContrastTest.contrast(ink, Themes.backgroundFor("Editora Dark")) >= 4.5,
-                        "a periwinkle that reads on the dark window: " + ink);
+                // The dark window's own periwinkle; StyleContrastTest holds that it reads there (ICON-14).
+                assertEquals(ChordChipThemeFxTest.keyInk(stage), ink, "the app theme's periwinkle, not the editor's");
                 stage.hide();
                 javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(Themes.DEFAULT));
             });

@@ -304,6 +304,7 @@ final class RecipientPicker {
             }
         });
         Label formatLabel = new Label(tr("encryption.info.format"));
+        formatLabel.setLabelFor(format);
         HBox formatRow = UiZoom.spacing(new HBox(formatLabel, format), 6);
         formatRow.setAlignment(Pos.CENTER_LEFT);
         CheckBox remember =

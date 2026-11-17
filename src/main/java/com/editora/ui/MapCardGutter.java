@@ -12,11 +12,9 @@ import java.util.function.IntFunction;
 import javafx.event.EventHandler;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.AccessibleRole;
 import javafx.scene.Cursor;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
-import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
@@ -25,6 +23,7 @@ import javafx.scene.shape.Polygon;
 import javafx.scene.text.Font;
 
 import com.editora.editor.LazyTooltip;
+import com.editora.editor.PressablePane;
 import com.editora.editor.fold.FoldManager;
 import com.editora.run.MainMethodScanner;
 import com.editora.test.JavaTestScanner;
@@ -208,12 +207,12 @@ final class MapCardGutter {
     }
 
     private static StackPane breakpointSlot(int line, @Nullable Breakpoint breakpoint, IntConsumer onBreakpoint) {
-        StackPane slot = new StackPane();
+        // Pressed by a click or a screen reader; not a Tab stop (the card's own keys toggle a breakpoint).
+        PressablePane slot = new PressablePane(() -> onBreakpoint.accept(line), false);
         slot.getStyleClass().add("breakpoint-slot");
         fixWidth(slot, BREAKPOINT_WIDTH);
         slot.setMaxHeight(Double.MAX_VALUE);
         slot.setCursor(Cursor.HAND);
-        slot.setAccessibleRole(AccessibleRole.BUTTON);
         slot.setAccessibleText(tr("project.map.gutter.breakpoint", line + 1));
         if (breakpoint != null) {
             slot.getChildren().add(FoldManager.breakpointMarker(breakpoint.classes()));
@@ -222,12 +221,6 @@ final class MapCardGutter {
             }
         }
         ownPointer(slot);
-        slot.setOnMouseClicked(e -> {
-            if (e.getButton() == MouseButton.PRIMARY) {
-                onBreakpoint.accept(line);
-                e.consume();
-            }
-        });
         return slot;
     }
 
@@ -237,19 +230,13 @@ final class MapCardGutter {
         slot.setAlignment(Pos.CENTER_RIGHT);
         fixWidth(slot, RUN_WIDTH);
         if (run != null) {
-            Node glyph = FoldManager.runGlyph(run.test() != null ? "test-run-marker" : null);
+            PressablePane glyph = new PressablePane(() -> onRun.accept(run), false);
+            glyph.getChildren().add(FoldManager.runGlyph(run.test() != null ? "test-run-marker" : null));
             glyph.setCursor(Cursor.HAND);
             String tip = run.tooltip();
             LazyTooltip.install(glyph, () -> tip, null);
-            glyph.setAccessibleRole(AccessibleRole.BUTTON);
             glyph.setAccessibleText(tip);
             ownPointer(glyph);
-            glyph.setOnMouseClicked(e -> {
-                if (e.getButton() == MouseButton.PRIMARY) {
-                    onRun.accept(run);
-                    e.consume();
-                }
-            });
             slot.getChildren().add(glyph);
         }
         return slot;

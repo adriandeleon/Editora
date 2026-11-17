@@ -131,8 +131,9 @@ class MarkwhenViewsFxTest {
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("an event inside a group is on the calendar"));
         assertTrue(
-                grouped.getStyle().contains("rgba("),
-                "a tag whose colour does not parse falls back to the palette: " + grouped.getStyle());
+                grouped.getStyleClass().stream().anyMatch(c -> c.startsWith("markwhen-lane-")),
+                "a tag whose colour does not parse falls back to one of the theme's lane hues: "
+                        + grouped.getStyleClass());
         // Tooltip.install keeps the tooltip in the node's properties, not in Control#tooltipProperty.
         Tooltip tip = (Tooltip) grouped.getProperties().get("javafx.scene.control.Tooltip");
         assertNotNull(tip, "a chip names its dates and tags on hover");

@@ -236,6 +236,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
 
     private void build() {
         filterField.setPromptText(tr("structure.filterPrompt"));
+        filterField.setAccessibleText(tr("structure.filterPrompt"));
         filterField.getStyleClass().add("structure-filter");
         filterField.textProperty().addListener((o, w, n) -> applyFilter(n));
         FilterFieldNav.install(filterField, tree, this::activateSelected); // Down/Enter → into / open the results
@@ -272,6 +273,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         sortCombo.setValue(SortMode.POSITION);
         FocusCommands.bind(this, "structure.sortBy", sortCombo::show); // the choices, in the drop-down itself
         sortCombo.getStyleClass().add("structure-sort");
+        sortCombo.setAccessibleText(tr("command.structure.sortBy"));
         sortCombo.setConverter(new StringConverter<>() {
             @Override
             public String toString(SortMode m) {
@@ -307,6 +309,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
 
         tree.setShowRoot(false);
         tree.getStyleClass().add("structure-tree");
+        tree.setAccessibleText(tr("toolwindow.structure"));
         tree.setCellFactory(t -> new StructureCell());
         RowContextMenu.install(tree); // Menu key / Shift+F10 open the selected row's menu (cells are not focusable)
         // The symbol menu's commands (structure.bookmarkSelected…) fire its rows for the selected symbol.
@@ -1695,7 +1698,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             javafx.scene.text.Text line = new javafx.scene.text.Text("  " + tr("structure.line", item.line() + 1));
             line.getStyleClass().add("structure-line-number");
             box.getChildren().add(line);
-            setGraphic(box);
+            setGraphic(CellNames.read(box));
         }
 
         private static javafx.scene.text.Text styledText(SyntaxRun run, String role) {

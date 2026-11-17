@@ -50,6 +50,7 @@ import com.editora.diff.DiffText;
 import com.editora.diff.PatchWriter;
 import com.editora.editor.ControlNames;
 import com.editora.editor.MenuChords;
+import com.editora.editor.PressableBox;
 import com.editora.editor.TabContent;
 import com.editora.editor.UiZoom;
 import com.editora.editor.highlight.GrammarRegistry;
@@ -1640,6 +1641,7 @@ public final class DiffViewerPane implements TabContent {
         connectorCanvas.widthProperty().bind(layered.widthProperty());
         connectorCanvas.heightProperty().bind(layered.heightProperty());
         layered.getChildren().add(connectorCanvas);
+        connectorCanvas.readThemeFrom(layered.getChildren());
         leftPaneBox = leftBox;
         sideBySideNode = layered;
     }
@@ -1797,11 +1799,28 @@ public final class DiffViewerPane implements TabContent {
 
         private Color bandColor(DiffConnectorModel.Kind kind, boolean selected) {
             double opacity = selected ? 0.52 : 0.30;
-            return switch (kind) {
-                case ADDED -> Color.rgb(63, 185, 80, opacity);
-                case REMOVED -> Color.rgb(248, 81, 73, opacity);
-                case MODIFIED -> Color.rgb(210, 153, 34, opacity);
+            // The theme's green for added lines and its accent for changed ones, through probes; removed lines are
+            // the neutral, as the diff's rows and the gutter draw them: red is for errors (ICON-18, Pauta 6.0.1).
+            com.editora.editor.ThemeProbes theme = probes;
+            Color base = switch (kind) {
+                case ADDED -> theme == null ? NEUTRAL : theme.get(com.editora.editor.ThemeProbes.GREEN, NEUTRAL);
+                case REMOVED -> NEUTRAL;
+                case MODIFIED -> theme == null ? NEUTRAL : theme.get(com.editora.editor.ThemeProbes.ACCENT_FG, NEUTRAL);
             };
+            return Color.color(base.getRed(), base.getGreen(), base.getBlue(), opacity);
+        }
+
+        /** A mid grey that reads on light and dark grounds alike: removed lines, and any colour no theme has given. */
+        private static final Color NEUTRAL = Color.gray(0.55);
+        /** The theme's colours, once the canvas's container hosts their probes. */
+        private com.editora.editor.@Nullable ThemeProbes probes;
+
+        void readThemeFrom(javafx.collections.ObservableList<javafx.scene.Node> host) {
+            probes = new com.editora.editor.ThemeProbes(
+                    host,
+                    this::requestDraw,
+                    com.editora.editor.ThemeProbes.GREEN,
+                    com.editora.editor.ThemeProbes.ACCENT_FG);
         }
 
         private record VisibleBand(double top, double bottom) {}
@@ -2441,31 +2460,25 @@ public final class DiffViewerPane implements TabContent {
 
     /** A fixed-width gutter cell holding {@code icon} (clickable, with {@code tip}) or empty for alignment. */
     private HBox arrowSlot(@Nullable Node icon, String tip, Runnable onClick) {
-        HBox slot = new HBox();
+        if (icon == null) {
+            HBox empty = new HBox();
+            fixSlotWidth(empty);
+            return empty;
+        }
+        PressableBox slot = new PressableBox(onClick); // a click, Enter or Space, or a screen reader's press
+        fixSlotWidth(slot);
+        slot.getStyleClass().add("diff-apply");
+        slot.setAccessibleText(tip);
+        Tooltip.install(slot, ControlNames.tooltip(tip));
+        slot.getChildren().add(icon);
+        return slot;
+    }
+
+    private static void fixSlotWidth(HBox slot) {
         UiZoom.minWidth(slot, 16);
         UiZoom.prefWidth(slot, 16);
         UiZoom.maxWidth(slot, 16);
         slot.setAlignment(Pos.CENTER);
-        if (icon != null) {
-            slot.getStyleClass().add("diff-apply");
-            slot.setAccessibleRole(AccessibleRole.BUTTON);
-            slot.setAccessibleText(tip);
-            slot.setFocusTraversable(true);
-            Tooltip.install(slot, ControlNames.tooltip(tip));
-            slot.setOnMouseClicked(e -> {
-                onClick.run();
-                e.consume();
-            });
-            slot.setOnKeyPressed(e -> {
-                if (e.getCode() == javafx.scene.input.KeyCode.ENTER
-                        || e.getCode() == javafx.scene.input.KeyCode.SPACE) {
-                    onClick.run();
-                    e.consume();
-                }
-            });
-            slot.getChildren().add(icon);
-        }
-        return slot;
     }
 
     /** Whole-hunk apply: replaces the editable side's contiguous change block at {@code start} with the

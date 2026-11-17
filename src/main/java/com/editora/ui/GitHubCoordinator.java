@@ -1694,6 +1694,7 @@ final class GitHubCoordinator {
         area.setPrefColumnCount(52);
         area.setPrefRowCount(Math.min(14, (int) body.lines().count() + 1));
         area.getStyleClass().add("git-error-text");
+        area.setAccessibleText(alert.getHeaderText()); // the details of what the header says failed
         alert.getDialogPane().setContent(area);
         Dialogs.showAndWait(alert);
     }

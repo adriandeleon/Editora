@@ -133,6 +133,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         header.setAlignment(Pos.CENTER_LEFT);
 
         filterField.setPromptText(tr("testrunner.filterPrompt"));
+        filterField.setAccessibleText(tr("testrunner.filterPrompt"));
         filterField.getStyleClass().add("bookmarks-filter");
         HBox.setHgrow(filterField, Priority.ALWAYS);
         filterField.textProperty().addListener((obs, old, q) -> rebuild());
@@ -141,6 +142,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         filterBar.setAlignment(Pos.CENTER_LEFT);
 
         tree.getStyleClass().add("test-tree");
+        tree.setAccessibleText(tr("toolwindow.testResults"));
         tree.setShowRoot(false);
         rootItem.setExpanded(true);
         tree.setCellFactory(t -> new TestTreeCell());

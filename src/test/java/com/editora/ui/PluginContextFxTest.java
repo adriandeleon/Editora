@@ -639,7 +639,7 @@ class PluginContextFxTest {
                 false,
                 false,
                 false,
-                false,
+                true, // still since the press: a click, not the end of a drag
                 null);
     }
 }

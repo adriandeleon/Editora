@@ -27,8 +27,6 @@ import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputControl;
 import javafx.scene.control.ToggleGroup;
-import javafx.scene.effect.BlurType;
-import javafx.scene.effect.DropShadow;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.ScrollEvent;
@@ -39,7 +37,6 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
-import javafx.scene.paint.Color;
 import javafx.scene.transform.Scale;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
@@ -345,18 +342,16 @@ final class PrintPreview {
         notice.visibleProperty().bind(notice.textProperty().isNotEmpty());
 
         sheet.setAlignment(Pos.TOP_LEFT);
-        sheet.setStyle("-fx-background-color: white;");
+        // The paper: app.css tokens (ICON-08), from the paper's own 100% sheets; its shadow is the SubScene's own
+        // style class in the window's zoomed sheets, so it scales with the interface.
+        sheet.getStyleClass().add("print-preview-sheet");
         // The sheet is scaled by the zoom setting, anchored top-left, inside the paper's own 100% scene.
         sheet.getTransforms().add(zoom);
         Parent paperRoot = paper.getRoot();
         addStylesheet(paperRoot.getStylesheets(), "/com/editora/styles/app.css");
         addStylesheet(paperRoot.getStylesheets(), "/com/editora/styles/syntax.css");
         UiZoom.pin(paper);
-        UiZoom.follow(
-                paper,
-                "shadow",
-                () -> paper.setEffect(new DropShadow(
-                        BlurType.GAUSSIAN, Color.rgb(0, 0, 0, 0.35), UiZoom.px(12), 0, 0, UiZoom.px(3))));
+        paper.getStyleClass().add("print-preview-paper");
         scroll.viewportBoundsProperty().addListener((obs, old, bounds) -> fitSheet());
         scroll.addEventFilter(ScrollEvent.SCROLL, this::onWheel);
         scroll.setFitToWidth(true);

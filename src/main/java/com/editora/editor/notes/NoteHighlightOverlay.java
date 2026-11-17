@@ -12,6 +12,7 @@ import javafx.scene.paint.Color;
 
 import com.editora.editor.AfterLayoutPaint;
 import com.editora.editor.CanvasGuards;
+import com.editora.editor.OverlayPalette;
 import com.editora.editor.SecondaryPane;
 import com.editora.editor.TabSurface;
 import org.fxmisc.richtext.CodeArea;
@@ -30,12 +31,13 @@ import org.jspecify.annotations.Nullable;
  */
 public final class NoteHighlightOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
-    // A soft amber wash painted like a text selection: a flat, contiguous fill (no per-line outline or
-    // rounded corners) so a multi-line note traces the same shape as the editor's selection.
-    private static final Color FILL = Color.web("#fbc02d", 0.22);
-    // A small solid corner triangle painted at each note's start character — the inline "there's a note
-    // here" marker (replaces the old gutter glyph). Deeper amber than the wash so it reads on top of it.
-    private static final Color GLYPH = Color.web("#f57f17", 0.95);
+    // A soft wash in the theme's accent painted like a text selection: a flat, contiguous fill (no per-line outline
+    // or rounded corners) so a multi-line note traces the same shape as the editor's selection; and a small solid
+    // corner triangle at each note's start character, the inline "there's a note here" marker, in the accent
+    // moved to 3:1 on the editor's ground. The accent, as a note's gutter mark and sheets are: amber means "not
+    // durable yet" (ICON-18, Pauta 6.0.1). Re-read on a theme change (OverlayPalette).
+    private Color fill = OverlayPalette.of(Color.WHITE).searchMatch();
+    private Color glyph = OverlayPalette.of(Color.WHITE).searchActiveBorder();
     private static final double GLYPH_SIZE = 8.75;
 
     private final CodeArea area;
@@ -85,6 +87,11 @@ public final class NoteHighlightOverlay extends Region implements SecondaryPane.
         getStyleClass().add("note-highlight-overlay");
         setMouseTransparent(true);
         getChildren().add(canvas);
+        OverlayPalette.track(area, getChildren(), palette -> {
+            Color accent = palette.searchActiveBorder();
+            fill = Color.color(accent.getRed(), accent.getGreen(), accent.getBlue(), 0.18);
+            glyph = accent;
+        });
         area.viewportDirtyEvents().subscribe(ignore -> scheduleRedraw());
         area.multiPlainChanges().subscribe(ignore -> scheduleRedraw());
         area.estimatedScrollXProperty().addListener((o, a, b) -> scheduleRedraw());
@@ -319,7 +326,7 @@ public final class NoteHighlightOverlay extends Region implements SecondaryPane.
                 double left = Math.max(x, textLeft);
                 if (right > left) {
                     // Flat, square fill so adjacent rows join seamlessly (like a selection), not separate pills.
-                    g.setFill(FILL);
+                    g.setFill(fill);
                     g.fillRect(left, top, Math.max(1, right - left), bottom - top);
                     if (boxesForTest != null) {
                         boxesForTest.add(new double[] {left, top, right, bottom});
@@ -328,7 +335,7 @@ public final class NoteHighlightOverlay extends Region implements SecondaryPane.
                 // The inline note marker: a small corner triangle at the very start of the note's span (drawn
                 // once, on the note's first row, while that character is not scrolled under the gutter).
                 if (line == startLine && r == 0 && x >= textLeft - 0.5) {
-                    g.setFill(GLYPH);
+                    g.setFill(glyph);
                     g.fillPolygon(new double[] {x, x + GLYPH_SIZE, x}, new double[] {top, top, top + GLYPH_SIZE}, 3);
                 }
             }
