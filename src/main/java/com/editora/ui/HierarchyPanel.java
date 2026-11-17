@@ -65,6 +65,7 @@ public final class HierarchyPanel extends VBox implements ToolWindowContent {
     public HierarchyPanel(Loader loader) {
         this.loader = loader;
         getStyleClass().add("hierarchy-panel");
+        tree.setAccessibleText(tr("toolwindow.hierarchy"));
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         UiZoom.spacing(this, 6);
         UiZoom.padding(this, 6);

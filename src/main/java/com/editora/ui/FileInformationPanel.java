@@ -208,6 +208,7 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
     private void addRow(GridPane g, int row, String key, TextField valueField) {
         Label k = new Label(key);
         k.getStyleClass().add("file-info-key");
+        k.setLabelFor(valueField); // the value reads as its key
         GridPane.setHgrow(valueField, Priority.ALWAYS);
         GridPane.setHalignment(valueField, HPos.RIGHT);
         g.add(k, 0, row);

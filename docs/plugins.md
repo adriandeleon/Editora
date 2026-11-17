@@ -1,11 +1,14 @@
 # Editora plugins
 
-Editora supports **plugins** so you can add functionality without forking the app. A plugin is a folder in
-your config directory containing a `plugin.json` manifest plus, optionally, a Java jar and asset folders.
+This guide is for people who write plugins: the folder layout, the manifest, the Java API, how Editora loads,
+installs and trusts a plugin, packaging and the registry. How to install, update, remove and troubleshoot
+plugins as a user is in the user guide on the website:
+[Plugins](https://editora-project.dev/docs/plugins).
 
-> ⚠️ **Plugins run with full trust** — no sandbox, exactly like VS Code / IntelliJ extensions. A plugin can
-> read and write your files and run programs. Only install plugins you trust. The feature is **off by
-> default**; enable it (and each plugin individually) in **Settings → Plugins**, then **restart**.
+A plugin is a folder in the config directory containing a `plugin.json` manifest plus, optionally, a Java jar
+and asset folders. Plugins run with full trust, like VS Code and IntelliJ extensions: there is no sandbox, and
+a plugin can read and write the user's files and run programs. The feature is off by default, each plugin is
+enabled on its own, and nothing loads until the next start.
 
 ## Where plugins live
 
@@ -38,9 +41,6 @@ updating or removing a plugin takes effect **on the next launch** — there is n
 to read the live list, so a declined update, a plugin just switched off, or two versions of one plugin could
 run before a restart.) Settings → Plugins compares each row with the launch set and says what a restart will
 change, with a *Restart now* next to it.
-
-Starting Editora with **`--disable-plugins`** loads no plugin at all for that session (nothing is saved) — the
-way out of a plugin that hangs or breaks Editora at startup. The Settings page and Doctor say when it is on.
 
 ## The manifest (`plugin.json`)
 
@@ -177,31 +177,29 @@ transforms, hashing, a scratchpad tool window, an external-formatter runner, a l
 with complete source — see the catalog in the registry repo
 [adriandeleon/editora-plugins](https://github.com/adriandeleon/editora-plugins) under `plugins/<id>/`.
 
-## Installing plugins
+## How installs work
 
-Three ways, all gated by *Settings → Plugins* (enable plugins first; an install loads on the next launch):
+There are three ways in, all behind *Settings → Plugins* and its *Enable plugins* switch; the user guide
+describes them for users. For the code:
 
-1. **Browse a registry** — *Settings → Plugins → Browse plugins…* (or the `plugins.browse` command) fetches
-   a curated `index.json` over HTTPS and lists installable plugins (greyed when it needs a newer Editora,
-   marked when it is deprecated). Picking one downloads its `.zip`, **verifies the SHA-256**, checks that
-   the archive is the plugin and version the entry names, and stages it. The registry URL is
-   *Settings → Plugins → Registry URL* (a baked-in default you can override; only `https://` addresses are
-   taken). Settings steps aside while the picker is open and comes back when it closes.
-2. **Install from a file** — *Settings → Plugins → Install from file…* (or `plugins.installFromDisk`) picks
-   a local plugin `.zip` and stages it (no checksum — you chose the file).
-3. **Hand-copy** — drop a plugin folder into `<configDir>/plugins/<id>/`, hit *Reload*, then tick it (which
-   asks the consent below) and restart.
+- **Registry** (`plugins.browse`): fetches the registry's `index.json` over HTTPS, downloads the chosen
+  entry's `.zip`, **verifies its SHA-256**, checks that the archive is the plugin and version the entry names,
+  and stages it. Entries that need a newer Editora are greyed, deprecated ones marked. The registry URL is a
+  setting with a baked-in default; only `https://` addresses are taken.
+- **From a file** (`plugins.installFromDisk`): stages a local `.zip`, with no checksum to match.
+- **By hand**: a folder copied into `<configDir>/plugins/<id>/` is found by *Reload Plugins* and goes through
+  the same consent when it is ticked.
 
 **Staged installs.** An archive is unpacked into a staging folder beside the plugins
-(`plugins/.installing-*`) and nothing in `plugins/` changes until you have seen what it does and chosen
-*Enable*. *Cancel* leaves the plugins folder as it was: a declined update keeps the version you had —
+(`plugins/.installing-*`) and nothing in `plugins/` changes until the user has seen what it does and chosen
+*Enable*. *Cancel* leaves the plugins folder as it was: a declined update keeps the version installed before —
 enabled, if it was. The question says what kind of install it is: *Install*, *Update X 1.0 → 1.1*,
 *Reinstall*, a *downgrade*, or *Replace A with B* when a different plugin declares an installed plugin's id
 (it would take that plugin's place and its saved `data/`). A plugin that runs in this session is not replaced
 under itself — its jar is open, and Windows cannot move or delete an open jar: the new version waits as
 `plugins/.pending-<id>` and is swapped in at the next start, before anything loads. An install over a
 plugin folder that is a symbolic link (a plugin under development) is refused. Status and errors appear on
-the Plugins page under the buttons as well as in the status bar, in your language, in a dialog titled
+the Plugins page under the buttons as well as in the status bar, in the user's language, in a dialog titled
 "Plugins".
 
 **Removing.** *Remove* on a row deletes that row's folder after naming the plugin and the data it saved.
@@ -214,9 +212,9 @@ read with a hard size cap (a hostile registry can't exhaust memory), HTTPS-only,
 downgrade. Remote installs require a matching SHA-256.
 
 **Consent at enable.** Because enabling a plugin arms its code on the next launch, Editora shows a
-**capability-disclosure confirm** before any plugin is enabled (after a Browse/file install, and when you
-tick a plugin's checkbox): its **main class and every jar** its loader reads, each **external command** with
-its title, its exact argv (quoted, part by part) and where it runs, each **chord** in your keymap's notation
+**capability-disclosure confirm** before any plugin is enabled (after a Browse/file install, and when a
+plugin's checkbox is ticked): its **main class and every jar** its loader reads, each **external command** with
+its title, its exact argv (quoted, part by part) and where it runs, each **chord** in the active keymap's notation
 with the command it replaces (or removes), and the snippets and templates it adds. Manifest strings are
 escaped (line breaks, tabs, control and bidi characters are shown, not obeyed) and capped, the list scrolls
 inside a fixed-height box, and *Cancel* is the default button. A plugin whose `plugin.json` could not be read
@@ -225,7 +223,7 @@ cannot be ticked at all — there is nothing to disclose. The registry URL is co
 
 **Consent is bound to what was shown.** `plugins.json` stores, with each enabled plugin, a fingerprint of
 that disclosure (main class, jar names, commands, keymaps — not the name or version). A plugin whose
-capabilities differ from what you agreed to — an update that adds code or a command, or something else put
+capabilities differ from what the user agreed to — an update that adds code or a command, or something else put
 into the folder of a plugin removed by hand — does not load; its row says "Changed since you enabled it", and
 ticking it shows the new disclosure. Entries of plugins whose folder is gone are dropped at launch, so a
 stale consent cannot arm whatever appears under that name later. (Plugins enabled before fingerprints
@@ -236,7 +234,7 @@ security decisions for the user alone.
 
 This is consent, not a sandbox — see Limitations.
 
-## Publishing & installing (registry)
+## Publishing (registry)
 
 A registry is a single **`index.json`** you host over HTTPS (a `raw.githubusercontent.com` file or GitHub
 Pages). Each entry points at a plugin **`.zip`** whose top level is the plugin folder contents
@@ -310,11 +308,21 @@ app-level plugin lifecycle or buffer events, no `${file}` variables in declarati
 settings page, and no gutter-marker contributions yet. These are deferred; the manifest/registry generalizes
 to them.
 
-## Troubleshooting
+## Trying a plugin while you write it
 
-- **A plugin does nothing.** Look at its row in Settings → Plugins (a load error, "failed to start", "main
-  class not found", "changed since you enabled it", or a restart pill) and at Doctor → Plugins.
-- **Editora hangs or crashes at startup since a plugin was installed.** Start it with `--disable-plugins`,
-  then switch the plugin off or remove it in Settings → Plugins.
-- **A plugin's chord does nothing.** It may be shadowed by a binding of yours (yours win), or meant for
-  another keymap — see `keymaps` above.
+- Use a separate configuration (`--dev`, which uses `~/.editora-dev`, or `--config-dir <dir>`), so a plugin
+  under development is installed and enabled there rather than in the configuration you work in.
+- Put the plugin folder, or a symbolic link to your build output, at `<configDir>/plugins/<id>/`, click
+  *Reload Plugins*, tick it and restart. An install from a registry or a file over a folder that is a symbolic
+  link is refused, so a linked plugin under development is never overwritten.
+- When it does nothing, its row in *Settings → Plugins* says why (a load error, "failed to start", "main class
+  not found", "changed since you enabled it", or a pending restart), and so does Doctor → Plugins. Changing the
+  main class, the jars, a command or a chord changes the disclosure fingerprint, so the plugin has to be ticked
+  again before it loads.
+- A chord that does nothing may be shadowed by a binding of your own (yours win), or given only for another
+  keymap (`keymaps` above).
+- Starting Editora with **`--disable-plugins`** loads no plugin at all for that session (nothing is saved) —
+  the way out of a plugin that hangs or breaks startup. The Settings page and Doctor say when it is on.
+
+What users see when a plugin fails, and what to do about it, is in the user guide's
+[troubleshooting](https://editora-project.dev/docs/plugins#troubleshooting).

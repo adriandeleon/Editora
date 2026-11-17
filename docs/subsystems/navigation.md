@@ -9,8 +9,9 @@ this subsystem existed; what was missing underneath was that nothing was *ranked
 navigation existed only where a language server did. The pieces below close those two, and
 everything else here sits on top of them.
 
-The [navigation roadmap](../navigation-roadmap.md) records the sequencing and the decisions that
-were considered and rejected. This document describes what is in the tree.
+The [navigation roadmap](../reference/navigation-roadmap.md), kept under `reference/`, records how this
+was sequenced and what was considered and rejected along the way. This document describes what is in the
+tree.
 
 ## The pieces
 

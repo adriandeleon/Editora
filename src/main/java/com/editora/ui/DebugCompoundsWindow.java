@@ -19,7 +19,6 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
-import javafx.scene.control.cell.CheckBoxListCell;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -149,7 +148,7 @@ final class DebugCompoundsWindow {
                 commit();
             }
         });
-        members.setCellFactory(CheckBoxListCell.forListView(this::tickedProperty));
+        members.setCellFactory(CellNames.checkBoxes(this::tickedProperty));
         members.setPlaceholder(new Label(tr("debug.compound.noConfigurations")));
         stopAll.setOnAction(e -> commit());
 

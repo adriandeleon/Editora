@@ -73,12 +73,12 @@ not attached after `ATTACH_DEADLINE` (30 s) stops the script. The window's debug
 (`DebugCoordinator.isDebuggableBuffer`), and a breakpoint goes only on a script line (`HttpScriptLines`;
 `breakpointAllowed`, for the gutter click and the toggle and edit commands).
 
-## Safety rules (adl, 2026-10-15 and 2026-10-16)
+## Safety rules
 
 - A pre-request script that cannot run (off, untrusted, no folder, no Node, a file problem, an error, a timeout, a
   crash) keeps its request unsent: `status.http.preScriptNotRun` with an `http.preScript.why.*` reason.
   `client.exit()` is not an error. Scripts never see secrets (`request.environment.get` is the env file as written).
-- Debug Request only: `--allow-inspector` with the permission model kept (adl, 2026-10-16); the inspector listens
+- Debug Request only: `--allow-inspector` with the permission model kept; the inspector listens
   on a random 127.0.0.1 port while the session lasts. `--allow-inspector` exists from Node 24.12 / 25.0; before
   that the permission model shuts the inspector for good, so a debugged script there runs without `--permission`
   (`HttpScripts.launchFlags` / `allowsInspector`), and the debugger is told (`Debugger.attach(…, unguardedNode)`)

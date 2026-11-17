@@ -26,7 +26,7 @@ Some tests check the repository, not the program: no Javadoc comment stacked on 
 message catalogs in step (`MessagesTest`), every shipped dependency named in `NOTICE`
 (`NoticeCoverageTest`), every place that starts a process classified by locale
 (`ChildLocalePolicyTest`), the workflows' pinned actions (`ReleaseSupplyChainTest`), the `fx` tag on every
-test class that starts the toolkit (`FxTestTagsTest`). A change anywhere can
+test class that starts the toolkit (`FxTestTagsTest`), the shape of `CHANGELOG.md` (`ChangelogFormatTest`). A change anywhere can
 break one, and the narrow tests for the change never run them, so they failed first in CI: in the week to
 12 November 2026 they were the only failure in 17 of the 35 pull-request runs that failed, each a
 fifteen-minute run spent on something that takes seconds to check.
@@ -37,7 +37,7 @@ They carry `@Tag("guard")`. Run them before every push:
 mvn test -Dgroups=guard
 ```
 
-That is 24 classes and 100 tests, about half a minute once the project is compiled, most of it Maven
+That is 28 classes and 110 tests, about half a minute once the project is compiled, most of it Maven
 starting.
 
 A new test of this kind gets the tag. It qualifies when it is pure (no toolkit), reads source files,
@@ -428,8 +428,8 @@ mvn test -Dtest=JdtlsTypingProbeTest -Dgroups=probe -Dlsp.java.probe.command=/ab
 Use JDK 25 and a current JDT LS. Project readiness is checked through completion, not a fixed startup
 sleep. The probe waits for its server process to exit before JUnit deletes the temporary workspace.
 It reports known server gaps separately; add `-Dlsp.java.probe.strict=true` to fail on the reproduced
-same-file type/import conflict when evaluating a JDT LS upgrade. See the
-[Java editing review](subsystems/java-editing-review.md) for the exact reproduction and limits.
+same-file type/import conflict when evaluating a JDT LS upgrade. See
+[Java interactive editing](subsystems/java-editing.md) for the conflict and the other limits.
 For the full client pipeline, add `-Deditora.completion.trace=true` to the editor JVM or to
 `JavaTypingCompletionFxTest`; timings contain stage names and durations, never source text.
 

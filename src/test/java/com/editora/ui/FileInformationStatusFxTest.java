@@ -43,11 +43,11 @@ class FileInformationStatusFxTest {
         FxTestSupport.runOnFx(() -> {
             registry.run("file.new"); // makes the buffer-scoped File Information window available
             manager.close(fileInfo);
-            size.getOnMouseClicked().handle(null);
+            ((StatusSegment) size).fire();
         });
         assertTrue(FxTestSupport.callOnFx(() -> manager.isOpen(fileInfo)));
 
-        FxTestSupport.runOnFx(() -> size.getOnMouseClicked().handle(null));
+        FxTestSupport.runOnFx(() -> ((StatusSegment) size).fire());
         assertFalse(FxTestSupport.callOnFx(() -> manager.isOpen(fileInfo)));
         assertTrue(manager.getRegisteredToolWindows().contains(fileInfo));
         assertFalse(

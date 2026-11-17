@@ -354,8 +354,8 @@ plain `normalize()` matching silently dropped every diagnostic.
 
 ### Completion, symbols, and the loading bar
 
-The [Java editing review](java-editing-review.md) maps the keystroke-to-popup pipeline, protocol
-coverage, measured timings, behavioral regressions, and known differences from IDEA.
+[Java interactive editing](java-editing.md) maps the keystroke-to-popup pipeline, completion
+sessions, timing, the tests and probes, and the limits that belong to JDT LS.
 `CompletionSource` retains list completeness and a cancellation handle. Mapping/ranking and list
 filtering run off FX; `CompletionSession` tracks compatible prefix edits and rebases acceptance ranges.
 Member triggers run on the next FX turn, Java identifiers use a 90 ms settled milestone, and ordinary
@@ -373,8 +373,8 @@ the jdtls launcher script, `-D` for a direct `java`; `JDK_JAVA_OPTIONS` only as 
 unrecognized wrapper, because a debuggee started inside jdtls inherits the environment), unless the command
 or inherited JVM environment explicitly sets it. Wire ordering alone does not await JDT lifecycle
 jobs; the option prevents completion/resolve from reading an older working copy. The server waits
-internally while FX remains asynchronous. The [review](java-editing-review.md) records the measured
-latency tradeoff and the remaining same-file import conflict.
+internally while FX remains asynchronous, at some cost in server latency;
+[Java interactive editing](java-editing.md) has the remaining same-file import conflict.
 
 - **Completion** fires on the server's advertised trigger characters, not just `.` — `triggerCharsOf`
   reads `completionProvider.triggerCharacters` from the cached capabilities (so `<` triggers HTML, `:`

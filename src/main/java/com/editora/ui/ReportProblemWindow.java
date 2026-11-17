@@ -133,6 +133,7 @@ public final class ReportProblemWindow {
         TextArea area = new TextArea();
         area.setWrapText(false);
         area.getStyleClass().add("debug-log-area");
+        area.setAccessibleText(tr("report.title"));
         VBox.setVgrow(area, Priority.ALWAYS);
 
         Label status = new Label();

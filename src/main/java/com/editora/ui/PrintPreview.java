@@ -14,7 +14,9 @@ import javafx.print.PageRange;
 import javafx.print.PrinterJob;
 import javafx.scene.Group;
 import javafx.scene.Node;
+import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.SubScene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuButton;
@@ -25,6 +27,8 @@ import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputControl;
 import javafx.scene.control.ToggleGroup;
+import javafx.scene.effect.BlurType;
+import javafx.scene.effect.DropShadow;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.ScrollEvent;
@@ -35,12 +39,14 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
 import javafx.scene.transform.Scale;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.Window;
 
 import com.editora.editor.ControlNames;
+import com.editora.editor.UiZoom;
 import com.editora.print.PrintService;
 import org.jspecify.annotations.Nullable;
 
@@ -147,6 +153,11 @@ final class PrintPreview {
         }
     }
 
+    /*
+     * The window's sizes, in px at 100%: like every other window, the preview follows the UI zoom (WIN-12, Pauta
+     * 6.0.1), so each is multiplied by it where it is used. The page itself is paper and is not restyled: see
+     * {@link #paper}.
+     */
     private static final double WIDTH = 760;
     private static final double HEIGHT = 860;
     private static final double MIN_WIDTH = 520;
@@ -166,8 +177,10 @@ final class PrintPreview {
      * each time the window opens.
      */
     static final class Memory {
-        double width = WIDTH;
-        double height = HEIGHT;
+        /** The window's last size; not a number until a preview has closed (it then opens at the default). */
+        double width = Double.NaN;
+
+        double height = Double.NaN;
         PrintZoom.Setting zoom = PrintZoom.Setting.FIT_PAGE;
     }
 
@@ -196,7 +209,14 @@ final class PrintPreview {
     private final StackPane sheet = new StackPane();
     private final Scale zoom = new Scale(1, 1, 0, 0);
     private PrintZoom.Setting zoomSetting;
-    private final StackPane paperHolder = new StackPane(new Group(sheet));
+    /**
+     * The page, drawn in a scene of its own that stays at 100% while the window around it follows the UI zoom
+     * ({@link UiZoom#pin(SubScene)}): the pages were paginated at 100% and are printed as they are drawn here, so
+     * a zoomed stylesheet must not reach them. Sized to the scaled sheet by {@link #fitSheet}.
+     */
+    private final SubScene paper = new SubScene(new Group(sheet), 1, 1);
+
+    private final StackPane paperHolder = new StackPane(new Group(paper));
     private final ScrollPane scroll = new ScrollPane(paperHolder);
     /** "Page [ 3 ] of 15": the number is a field that jumps to the page typed into it. */
     private final Label pageBefore = new Label(tr("print.preview.pageBefore"));
@@ -208,12 +228,12 @@ final class PrintPreview {
     private final Button zoomIn = new Button("+");
     private final ToggleGroup zoomChoices = new ToggleGroup();
     /** The bar's three groups — page, zoom, actions — and its two rows (the second only when narrow). */
-    private final HBox pager = new HBox(4);
+    private final HBox pager = UiZoom.spacing(new HBox(), 4);
 
-    private final HBox zooms = new HBox(2);
-    private final HBox actions = new HBox(BAR_GAP);
-    private final HBox barTop = new HBox(BAR_GAP);
-    private final HBox barBottom = new HBox(BAR_GAP);
+    private final HBox zooms = UiZoom.spacing(new HBox(), 2);
+    private final HBox actions = UiZoom.spacing(new HBox(), BAR_GAP);
+    private final HBox barTop = UiZoom.spacing(new HBox(), BAR_GAP);
+    private final HBox barBottom = UiZoom.spacing(new HBox(), BAR_GAP);
     private final Label infoLabel = new Label();
     private final Label notice = new Label();
     /** The "no such page" text while it is what {@link #notice} shows; the next page turn takes it away. */
@@ -298,7 +318,7 @@ final class PrintPreview {
         infoLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
         infoLabel.setStyle("-fx-text-fill: -color-fg-muted;");
         HBox.setHgrow(infoLabel, Priority.ALWAYS);
-        HBox.setMargin(infoLabel, new Insets(0, 8, 0, 8));
+        UiZoom.follow(infoLabel, "margin", () -> HBox.setMargin(infoLabel, UiZoom.insets(0, 8, 0, 8)));
         // Related controls sit closer together than the groups do. When the window narrows, the
         // printer/paper text gives way first (it elides); when even that is not enough, the three action
         // buttons move to a row of their own (see arrangeBar) — no control is ever squeezed to "…".
@@ -314,27 +334,35 @@ final class PrintPreview {
         barBottom.setAlignment(Pos.CENTER_RIGHT);
         barBottom.setVisible(false);
         barBottom.setManaged(false);
-        VBox bar = new VBox(BAR_GAP, barTop, barBottom);
-        bar.setPadding(new Insets(BAR_GAP));
+        VBox bar = UiZoom.padding(UiZoom.spacing(new VBox(barTop, barBottom), BAR_GAP), BAR_GAP);
         bar.getStyleClass().add("print-preview-bar");
 
         notice.setWrapText(true);
         notice.setMaxWidth(Double.MAX_VALUE);
-        notice.setPadding(new Insets(8, 12, 8, 12));
+        UiZoom.padding(notice, 8, 12, 8, 12);
         notice.setStyle("-fx-background-color: -color-accent-subtle;");
         notice.managedProperty().bind(notice.visibleProperty());
         notice.visibleProperty().bind(notice.textProperty().isNotEmpty());
 
         sheet.setAlignment(Pos.TOP_LEFT);
-        sheet.setStyle("-fx-background-color: white; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.35), 12, 0, 0, 3);");
-        // The sheet is scaled by the zoom setting, anchored top-left.
+        sheet.setStyle("-fx-background-color: white;");
+        // The sheet is scaled by the zoom setting, anchored top-left, inside the paper's own 100% scene.
         sheet.getTransforms().add(zoom);
+        Parent paperRoot = paper.getRoot();
+        addStylesheet(paperRoot.getStylesheets(), "/com/editora/styles/app.css");
+        addStylesheet(paperRoot.getStylesheets(), "/com/editora/styles/syntax.css");
+        UiZoom.pin(paper);
+        UiZoom.follow(
+                paper,
+                "shadow",
+                () -> paper.setEffect(new DropShadow(
+                        BlurType.GAUSSIAN, Color.rgb(0, 0, 0, 0.35), UiZoom.px(12), 0, 0, UiZoom.px(3))));
         scroll.viewportBoundsProperty().addListener((obs, old, bounds) -> fitSheet());
         scroll.addEventFilter(ScrollEvent.SCROLL, this::onWheel);
         scroll.setFitToWidth(true);
         scroll.setFitToHeight(true);
         scroll.setFocusTraversable(true);
-        paperHolder.setPadding(new Insets(SHEET_GAP));
+        UiZoom.padding(paperHolder, SHEET_GAP);
         paperHolder.setStyle("-fx-background-color: derive(-color-bg-default, -6%);");
 
         BorderPane root = new BorderPane();
@@ -351,11 +379,11 @@ final class PrintPreview {
         FocusCommands.press(root, "print.pageSetup", setup);
         FocusCommands.bind(root, "print.zoom", zoomMenu::show); // the zoom choices, chosen in their own drop-down
         Scene scene = new Scene(root);
-        addStylesheet(scene, "/com/editora/styles/app.css");
-        addStylesheet(scene, "/com/editora/styles/syntax.css");
-        // The pages shown here were paginated at 100% and go to the printer as they are drawn, so this window
-        // stays at 100% whatever the UI zoom: a zoomed sheet would restyle the pages it holds.
-        com.editora.editor.UiZoom.pin(scene);
+        // The window follows the UI zoom like every other one; the page keeps its own 100% sheets (paper).
+        addStylesheet(scene.getStylesheets(), "/com/editora/styles/app.css");
+        addStylesheet(scene.getStylesheets(), "/com/editora/styles/syntax.css");
+        // A change of the UI zoom while the preview is open: the page's size in the window follows it.
+        UiZoom.follow(paperHolder, "uiZoom", this::fitSheet);
         scene.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
         stage.setScene(scene);
         stage.setTitle(tr("print.preview.title"));
@@ -363,11 +391,18 @@ final class PrintPreview {
         // Blocks only the window that is printing; other Editora windows stay usable.
         stage.initModality(Modality.WINDOW_MODAL);
         // The size this main window's preview had last time, still limited to the screen it opens on now.
-        Dimension2D size = WindowPlacement.clampSize(memory.width, memory.height, WindowPlacement.screenOf(owner), 0.9);
-        stage.setMinWidth(MIN_WIDTH);
-        stage.setMinHeight(MIN_HEIGHT);
-        stage.setWidth(Math.max(MIN_WIDTH, size.getWidth()));
-        stage.setHeight(Math.max(MIN_HEIGHT, size.getHeight()));
+        // The first time, the default size at the UI zoom; afterwards the size it was left at.
+        Dimension2D size = WindowPlacement.clampSize(
+                Double.isNaN(memory.width) ? UiZoom.size(WIDTH) : memory.width,
+                Double.isNaN(memory.height) ? UiZoom.size(HEIGHT) : memory.height,
+                WindowPlacement.screenOf(owner),
+                0.9);
+        UiZoom.follow(stage, () -> {
+            stage.setMinWidth(UiZoom.size(MIN_WIDTH));
+            stage.setMinHeight(UiZoom.size(MIN_HEIGHT));
+        });
+        stage.setWidth(Math.max(UiZoom.size(MIN_WIDTH), size.getWidth()));
+        stage.setHeight(Math.max(UiZoom.size(MIN_HEIGHT), size.getHeight()));
         WindowPlacement.centerOnOwner(stage, owner, stage.getWidth(), stage.getHeight());
         stage.setOnCloseRequest(e -> {
             e.consume();
@@ -388,7 +423,7 @@ final class PrintPreview {
      * four-digit page count).
      */
     private void arrangeBar(double width) {
-        double oneRow = pager.prefWidth(-1) + zooms.prefWidth(-1) + actions.prefWidth(-1) + 7 * BAR_GAP;
+        double oneRow = pager.prefWidth(-1) + zooms.prefWidth(-1) + actions.prefWidth(-1) + 7 * UiZoom.px(BAR_GAP);
         boolean wrap = width > 0 && width < oneRow;
         if (wrap == (actions.getParent() == barBottom)) {
             return;
@@ -456,9 +491,17 @@ final class PrintPreview {
         return zoomSetting;
     }
 
-    /** The scale the sheet is drawn at right now (1.0 = 100%). */
+    /** The scale the sheet is drawn at right now, on screen (1.0 = 1 px per point). */
     double zoomFactor() {
         return zoom.getX();
+    }
+
+    /**
+     * The scale the sheet is drawn at as the zoom control says it (1.0 = "100%"): the on-screen scale over the
+     * UI zoom, since at a UI zoom of 150% the page at "100%" is drawn half as large again, as the text around it.
+     */
+    double paperZoom() {
+        return zoom.getX() / UiZoom.factor();
     }
 
     /**
@@ -495,11 +538,11 @@ final class PrintPreview {
     }
 
     private void zoomIn() {
-        setZoom(PrintZoom.Setting.percent(PrintZoom.stepUp(zoom.getX())));
+        setZoom(PrintZoom.Setting.percent(PrintZoom.stepUp(paperZoom())));
     }
 
     private void zoomOut() {
-        setZoom(PrintZoom.Setting.percent(PrintZoom.stepDown(zoom.getX())));
+        setZoom(PrintZoom.Setting.percent(PrintZoom.stepDown(paperZoom())));
     }
 
     /** Ctrl+wheel zooms; a plain wheel scrolls the sheet as before. */
@@ -579,12 +622,17 @@ final class PrintPreview {
                 sheet.getPrefHeight(),
                 view.getWidth(),
                 view.getHeight(),
-                SHEET_GAP + SHEET_SHADOW);
+                UiZoom.px(SHEET_GAP + SHEET_SHADOW),
+                UiZoom.factor());
         zoom.setX(factor);
         zoom.setY(factor);
-        zoomMenu.setText(PrintZoom.percentOf(factor) + "%");
-        zoomOut.setDisable(factor <= PrintZoom.MIN + 0.005);
-        zoomIn.setDisable(factor >= PrintZoom.MAX - 0.005);
+        // The page's scene is as large as the scaled sheet; the window's own zoom never reaches inside it.
+        paper.setWidth(Math.max(1, sheet.getPrefWidth() * factor));
+        paper.setHeight(Math.max(1, sheet.getPrefHeight() * factor));
+        double shown = paperZoom();
+        zoomMenu.setText(PrintZoom.percentOf(shown) + "%");
+        zoomOut.setDisable(shown <= PrintZoom.MIN + 0.005);
+        zoomIn.setDisable(shown >= PrintZoom.MAX - 0.005);
     }
 
     /** "Page 3 of 15" — what the page controls say together (their accessible text; read by tests). */
@@ -714,7 +762,7 @@ final class PrintPreview {
             navigate(index + direction);
             return;
         }
-        double step = KEY_SCROLL / hidden * (scroll.getVmax() - scroll.getVmin());
+        double step = UiZoom.px(KEY_SCROLL) / hidden * (scroll.getVmax() - scroll.getVmin());
         scroll.setVvalue(Math.max(scroll.getVmin(), Math.min(scroll.getVmax(), v + direction * step)));
     }
 
@@ -889,7 +937,7 @@ final class PrintPreview {
         if (stage.isMaximized() || stage.isFullScreen() || stage.isIconified()) {
             return; // not a size to open the next preview at
         }
-        if (stage.getWidth() >= MIN_WIDTH && stage.getHeight() >= MIN_HEIGHT) {
+        if (stage.getWidth() >= UiZoom.size(MIN_WIDTH) && stage.getHeight() >= UiZoom.size(MIN_HEIGHT)) {
             memory.width = stage.getWidth();
             memory.height = stage.getHeight();
         }
@@ -906,10 +954,11 @@ final class PrintPreview {
         closeWith(onCancel);
     }
 
-    private static void addStylesheet(Scene scene, String resource) {
+    /** Adds the 100% sheet {@code resource}: a window's sheets are re-pointed to the UI zoom as it shows. */
+    private static void addStylesheet(List<String> sheets, String resource) {
         java.net.URL url = PrintPreview.class.getResource(resource);
         if (url != null) {
-            scene.getStylesheets().add(url.toExternalForm());
+            sheets.add(url.toExternalForm());
         }
     }
 }

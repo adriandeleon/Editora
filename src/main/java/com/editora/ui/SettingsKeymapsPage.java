@@ -122,10 +122,12 @@ final class SettingsKeymapsPage {
         Card sec = w.card(p, tr("settings.shortcuts.title"));
         shortcutFilter = new TextField();
         shortcutFilter.setPromptText(tr("settings.shortcuts.filter"));
+        shortcutFilter.setAccessibleText(tr("settings.shortcuts.filter"));
         shortcutFilter.textProperty().addListener((o, was, now) -> refreshShortcuts());
         ListView<Shortcut> shortcutList = new ListView<>();
         this.shortcutList = shortcutList;
         shortcutList.getStyleClass().add("shortcut-list");
+        shortcutList.setAccessibleText(tr("command.help.keyboardShortcuts"));
         shortcutList.setCellFactory(view -> new ShortcutCell());
         shortcutList.addEventHandler(KeyEvent.KEY_PRESSED, this::onShortcutListKey);
         // Tab lands on the selected row (the one that shows Record and Reset), else on the first.

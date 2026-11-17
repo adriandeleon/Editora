@@ -21,6 +21,7 @@ import javafx.scene.text.TextFlow;
 
 import com.editora.agent.AcpJson;
 import com.editora.editor.ControlNames;
+import com.editora.editor.PressableLabel;
 import com.editora.editor.UiZoom;
 import com.editora.editor.markdown.MarkdownRenderer;
 import org.jspecify.annotations.Nullable;
@@ -86,9 +87,10 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     static final int RENDER_INTERVAL_MILLIS = 120;
 
     private final Label status = new Label();
-    private final Label agentLabel = new Label();
-    private final Label modelLabel = new Label();
-    private final Label modeLabel = new Label();
+    // The client, the model and the mode each open their picker: buttons to the keyboard and a screen reader.
+    private final PressableLabel agentLabel = new PressableLabel(() -> {});
+    private final PressableLabel modelLabel = new PressableLabel(() -> {});
+    private final PressableLabel modeLabel = new PressableLabel(() -> {});
     private final VBox planBox = UiZoom.spacing(new VBox(), 2);
     private final VBox transcriptBox = UiZoom.spacing(new VBox(), 4);
     private final ScrollPane transcriptScroll = new ScrollPane(transcriptBox);
@@ -169,11 +171,11 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
 
         status.getStyleClass().add("agent-status");
         agentLabel.getStyleClass().add("agent-header-label");
-        agentLabel.setOnMouseClicked(e -> onPickAgentClient.run());
+        agentLabel.setAction(onPickAgentClient);
         modelLabel.getStyleClass().add("agent-header-label");
-        modelLabel.setOnMouseClicked(e -> onPickModel.run());
+        modelLabel.setAction(onPickModel);
         modeLabel.getStyleClass().add("agent-header-label");
-        modeLabel.setOnMouseClicked(e -> onPickMode.run());
+        modeLabel.setAction(onPickMode);
         // Each is named after its command, with the chord the keymap binds to it; this one in its own words.
         iconButton(detachButton, Icons.detach(), this::toggleDetached);
         CommandTips.name(detachButton, "agent.toggleDetached", () -> tr(detached ? "agent.redock" : "agent.detach"));
@@ -210,6 +212,7 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         transcriptBox.heightProperty().addListener((obs, oldV, newV) -> transcriptScroll.setVvalue(1.0));
 
         input.setPromptText(tr("agent.inputPrompt"));
+        input.setAccessibleText(tr("agent.inputPrompt"));
         input.setWrapText(true);
         input.setPrefRowCount(3);
         input.getStyleClass().add("agent-input");
@@ -539,13 +542,18 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     private void wireInlineCodePaths(Node node) {
         if (node instanceof Label label && label.getStyleClass().contains("md-inline-code")) {
             String text = label.getText();
-            if (looksLikePath(text)) {
-                label.getStyleClass().add("agent-code-path");
-                label.setOnMouseClicked(e -> onOpenPath.accept(text));
-                Tooltip.install(label, ControlNames.tooltip(tr("agent.openFileTooltip")));
+            if (looksLikePath(text) && label.getParent() instanceof javafx.scene.layout.Pane pane) {
+                // The span becomes a button that opens the file: a click, or Tab and Enter, or a screen reader.
+                PressableLabel link = new PressableLabel(() -> onOpenPath.accept(text));
+                link.setText(text);
+                link.getStyleClass().setAll(label.getStyleClass());
+                link.getStyleClass().add("agent-code-path");
+                link.setAccessibleHelp(tr("agent.openFileTooltip"));
+                Tooltip.install(link, ControlNames.tooltip(tr("agent.openFileTooltip")));
+                pane.getChildren().set(pane.getChildren().indexOf(label), link);
             }
         } else if (node instanceof Parent parent) {
-            for (Node child : parent.getChildrenUnmodifiable()) {
+            for (Node child : java.util.List.copyOf(parent.getChildrenUnmodifiable())) {
                 wireInlineCodePaths(child);
             }
         }

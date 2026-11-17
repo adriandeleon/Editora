@@ -22,16 +22,10 @@ architecture and contributor guidance; the exhaustive historical notes are prese
 - [pauta.md](pauta.md) — the Pauta edition Editora works toward, `pauta.json` and its exceptions, the
   conformance helper and the Pauta window, and what a change that touches a rule must update.
 
-## Roadmaps
-
-- [navigation-roadmap.md](navigation-roadmap.md) — where code navigation stands, the four gaps
-  that matter (ranking, a server-free symbol index, a unified finder, non-destructive jumps), and
-  the order to close them in.
-
 ## How-to
 
-- [native-image-staticfx.md](native-image-staticfx.md) — isolated native experiment, metadata,
-  RichTextFX acceptance gate, benchmark commands and measured limitations.
+- [native-image-staticfx.md](native-image-staticfx.md) — the opt-in native experiment: isolation,
+  metadata, building and running it, the RichTextFX acceptance gate and the benchmark tools.
 
 - [extending.md](extending.md) — recipes: add a command, a setting, an LSP server, a DAP
   adapter, a language/grammar, a tool window, a Canvas overlay, a feature coordinator.
@@ -83,8 +77,9 @@ architecture and contributor guidance; the exhaustive historical notes are prese
   triggers and which thread writes what.
 - [subsystems/http-scripts.md](subsystems/http-scripts.md) — HTTP Client `@assert`/`@capture` checks,
   JavaScript response handlers on Node.js (shim protocol, trust, permission model), session variables.
-- [subsystems/java-editing-review.md](subsystems/java-editing-review.md) — Java typing/completion
-  pipeline, IntelliJ comparison, regression coverage, performance evidence and remaining server gaps.
+- [subsystems/java-editing.md](subsystems/java-editing.md) — Java typing/completion pipeline,
+  completion sessions, imports, signature help and undo, timing, the limits JDT LS owns, and the tests
+  and probes.
 
 ## Decisions
 
@@ -106,4 +101,5 @@ architecture and contributor guidance; the exhaustive historical notes are prese
 ## Detailed reference
 
 - [reference/](reference/README.md) — exhaustive command, release, architecture, convention, and
-  packaging catalogs retained for established subsystem details and implementation history.
+  packaging catalogs retained for established subsystem details and implementation history, with the
+  dated records: the code-navigation roadmap and the native experiment's results.
