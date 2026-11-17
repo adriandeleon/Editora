@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
-import java.util.function.Predicate;
 
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
@@ -45,7 +44,10 @@ public final class MergeViewerPane implements TabContent {
 
     private final String title;
     private final ConflictFile file;
-    private final Predicate<String> onSave;
+    private final java.util.function.BiConsumer<String, Consumer<Boolean>> onSave;
+    /** Set while a save waits for its answer (the document may be read off the FX thread first). */
+    private boolean saving;
+
     private final List<Choice> choices;
     private final String lineSeparator;
     private final boolean finalNewline;
@@ -69,11 +71,11 @@ public final class MergeViewerPane implements TabContent {
             String lineSeparator,
             boolean finalNewline,
             Consumer<String> onSave) {
-        this(title, file, fontFamily, fontSize, lineSeparator, finalNewline, text -> {
+        this(title, file, fontFamily, fontSize, lineSeparator, finalNewline, (text, done) -> {
             if (onSave != null) {
                 onSave.accept(text);
             }
-            return true;
+            done.accept(true);
         });
     }
 
@@ -84,10 +86,10 @@ public final class MergeViewerPane implements TabContent {
             int fontSize,
             String lineSeparator,
             boolean finalNewline,
-            Predicate<String> onSave) {
+            java.util.function.BiConsumer<String, Consumer<Boolean>> onSave) {
         this.title = title;
         this.file = file;
-        this.onSave = onSave == null ? text -> false : onSave;
+        this.onSave = onSave == null ? (text, done) -> done.accept(false) : onSave;
         this.lineSeparator = lineSeparator == null || lineSeparator.isEmpty() ? "\n" : lineSeparator;
         this.finalNewline = finalNewline;
         this.fontStyle = "-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;";
@@ -259,12 +261,24 @@ public final class MergeViewerPane implements TabContent {
         manuallyEdited = false;
     }
 
+    /**
+     * Applies the result. The answer may come later (a closed document is read again off the FX thread first):
+     * true only when it was applied before this returns. A press while a save waits does nothing.
+     */
     private boolean saveResult() {
-        if (!onSave.test(resultTextForSave())) {
+        if (saving) {
             return false;
         }
-        draftDirty = false;
-        return true;
+        saving = true;
+        boolean[] applied = {false};
+        onSave.accept(resultTextForSave(), ok -> {
+            saving = false;
+            if (ok) {
+                draftDirty = false;
+                applied[0] = true;
+            }
+        });
+        return applied[0];
     }
 
     private String resultTextForSave() {

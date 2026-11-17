@@ -34,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * it is honoured only for a folder the user has trusted.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class LspProjectOverridesFxTest {
 
     private static final String PROJECT_JDTLS = "/opt/project/bin/jdtls";

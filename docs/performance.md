@@ -128,10 +128,35 @@ look refreshes (`JavaProjectRoot.find`, `JdkToolchain.isGone`, `inheritedJavaExe
 `JavaLaunchPlan.Inputs`, a bare name on PATH, a build wrapper, the trust question's summary; detection warms the
 wrapper and the summary for the tasks tree's header and the Settings row). A window close's question about busy
 terminals answers from each local shell's watcher and the last answer of a remote host; the MCP server binds on
-`mcp-start`. What still reads the disk on the FX thread: the first look at a key no plan looked at (each named to
-`BlockingSites`), Debug's core dump and C# assembly stats, Git's path stats (clone destination, `nearestRepository`,
-untracked folders), Diff's and the Doctor's single stats, a New Maven Project's follow-up (`afterGenerate`), and a
-remote terminal never asked yet (left out of the close question).
+`mcp-start`. File commands, installs and plugins follow it too (PERF-01, Pauta 6.0.1). `perf/OffFx.then(name, work, then)` runs a
+command's disk work on a virtual thread named for it and hands the answer, or the failure, back on the FX thread
+(`OffFx.runnerForTest` runs it in place); the command keeps a busy flag so a second press starts nothing. That covers
+the Project panel's New Folder, Rename, Move, Undo Move and the delete's look (`MoveProceed`: a rename participant
+hears when the move has landed, then the tabs follow), Save As, Revert, the command-line targets, Find File's Enter,
+New ▸ type, Create Test, Reopen Closed Tab, Rename File, the dictionaries, bookmarks and notes, Local History's
+captures and folder view, a pasted or dropped image, the merge resolution's reopen, the Diff commands, Git's clone,
+init, untracked folders and clone follow-up, the exports and Save Output, the HTML preview's site root, the Typst
+export's commit (`PendingExport.take`), Run Configurations Browse, New Maven Project's follow-up, Update Versions on
+a closed pom, the LSP rename look (`LspRename.RenameLook`), Move to a new package, Undo Refactoring's read of closed
+files, Settings' theme and sync folders, the plugin install's commit, uninstall and Reload, and the install checks
+(`InstallCoordinator.StepDisk`, `ServerDisk`). A workspace edit's disk view is a `WorkspaceFileSnapshot` taken on the
+workspace worker for local paths too, and its journal's COMMIT is written there. Small facts asked again and again
+answer from a `Looked` memory a look off the thread fills: whether a file may be written and whether a save needs the
+administrator (looked at as the file is read), its repository (`GitPathScope.nearestRepository`,
+`GitService.realPath`), Editora's ShellCheck and shfmt, `PinnedVersions.canonical`, a configured tool's path
+(`DoctorProbes.resolvedPath`), a Recent Locations row, a history file being gone, the Map's remembered places, a
+preview image's stamp and a rooted image path. A file chooser opens on its start folder without a look first
+(`ui/ChooserStart`: JavaFX checks it, and a refused one is dropped). The emoji table and the technical dictionary are
+read at launch and with the spell dictionary. The safety copy before a bulk edit in a buffer with no undo
+(`HistoryCoordinator.recordSafetyCopy`) takes the text in memory and queues its write on the history worker, in
+order with every later capture of the file; the edit goes on at once, and the quit drains the worker. `FilesOffFxThreadFxTest` drives a representative set and checks that
+none of their `BlockingSites` is heard on the FX thread.
+
+What still reads the disk on the FX thread: the first look at a key no off-thread look filled (each named to
+`BlockingSites`), Debug's core dump and C# assembly stats, the stand-in file of a Java script (written before the server is
+told it is open), Settings
+sync's apply (on purpose, so no store is saving meanwhile), the log viewer's follow with no snapshot, and a remote
+terminal never asked yet (left out of the close question).
 
 ### 2. Debounce and coalesce
 

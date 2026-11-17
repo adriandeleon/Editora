@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 import javafx.application.Platform;
@@ -91,10 +90,8 @@ final class HttpResponseActions {
         chooser.setInitialFileName(saveName(ex.url(), ext));
         Path file = buffer.getPath();
         Path dir = file != null ? file.toAbsolutePath().getParent() : ops.projectRoot(); // untitled: the project
-        if (dir != null && Files.isDirectory(dir)) {
-            chooser.setInitialDirectory(dir.toFile());
-        }
-        File chosen = chooser.showSaveDialog(host.window());
+        ChooserStart.set(chooser, dir); // no look at the disk on the FX thread first (PERF-01, Pauta 6.0.1)
+        File chosen = ChooserStart.show(chooser, c -> c.showSaveDialog(host.window()));
         if (chosen == null) {
             return;
         }

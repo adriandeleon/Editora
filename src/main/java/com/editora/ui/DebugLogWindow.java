@@ -1,6 +1,5 @@
 package com.editora.ui;
 
-import java.io.IOException;
 import java.nio.file.Path;
 
 import javafx.geometry.Pos;
@@ -189,12 +188,17 @@ public final class DebugLogWindow {
         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Log/Text", "*.log", "*.txt"));
         java.io.File target = chooser.showSaveDialog(stage);
         if (target != null) {
-            try {
-                // Staged: a failed write must not empty a log the Save dialog agreed to replace.
-                com.editora.io.StagedExport.writeString(target.toPath(), area.getText());
-            } catch (IOException ex) {
-                fileLabel.setText(tr("debuglog.exportFailed", ex.getMessage()));
-            }
+            String text = area.getText();
+            // Staged: a failed write must not empty a log the Save dialog agreed to replace. Off the FX thread
+            // (PERF-01, Pauta 6.0.1).
+            com.editora.perf.OffFx.run(
+                    "debug-log-export",
+                    () -> com.editora.io.StagedExport.writeString(target.toPath(), text),
+                    failure -> {
+                        if (failure != null) {
+                            fileLabel.setText(tr("debuglog.exportFailed", failure.getMessage()));
+                        }
+                    });
         }
     }
 }

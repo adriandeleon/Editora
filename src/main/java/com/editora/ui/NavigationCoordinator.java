@@ -283,10 +283,21 @@ final class NavigationCoordinator {
 
     /** Opens an existing file, or creates a new buffer for a not-yet-existing path (written on save). */
     void findFileChosen(Path target) {
-        if (RemoteReadFailure.connectionClosed(target) || Files.isRegularFile(target)) { // closed: openPath says so
+        if (RemoteReadFailure.connectionClosed(target)) { // closed: openPath says so
             host.fileWorkflows().openPath(target);
             return;
         }
+        // there already? looked at off the FX thread (PERF-01, Pauta 6.0.1); on a host it is a round trip
+        com.editora.perf.OffFx.then("find-file-look", () -> Files.isRegularFile(target), there -> {
+            if (there.or(false)) {
+                host.fileWorkflows().openPath(target);
+            } else {
+                newFileChosen(target);
+            }
+        });
+    }
+
+    private void newFileChosen(Path target) {
         Tab existing = host.tabForPath(target);
         if (existing != null) {
             TabFocus.select(host.editorArea(), existing); // an image or PDF too (thirteenth review AK1)
@@ -492,12 +503,28 @@ final class NavigationCoordinator {
      * away from.
      */
     void previewLocation(NavigationHistory.@Nullable Location loc) {
+        previewWanted = loc;
         if (loc == null) {
             return;
         }
         if (host.tabForPath(loc.path()) == null) {
-            if (!java.nio.file.Files.isReadable(loc.path())) {
-                return; // deleted or unreadable since it was visited
+            // deleted or unreadable since it was visited? answered from what was looked at off the FX thread
+            // (PERF-01, Pauta 6.0.1); a place never looked at is looked at behind, and shown when it lands
+            Path place = loc.path();
+            if (place == null) {
+                return;
+            }
+            if (!READABLE.knows(place)) {
+                com.editora.perf.OffFx.then("recent-locations-look", () -> READABLE.get(place), looked -> {
+                    if (Boolean.TRUE.equals(looked.value()) && loc.equals(previewWanted)) {
+                        previewLocation(loc);
+                    }
+                });
+                previewWanted = loc;
+                return;
+            }
+            if (!Boolean.TRUE.equals(READABLE.get(place))) {
+                return;
             }
             suppressNavRecord = true;
             try {
@@ -579,16 +606,40 @@ final class NavigationCoordinator {
         openRelated(current, names, List.of());
     }
 
+    /** Whether a visited place is readable: looked at off the FX thread, answered from memory as rows move. */
+    private static final com.editora.perf.Looked<Path, Boolean> READABLE =
+            new com.editora.perf.Looked<>("NavigationCoordinator.readable", java.nio.file.Files::isReadable);
+
+    /** The Recent Locations row last highlighted: a look that lands for another one shows nothing. */
+    private NavigationHistory.@Nullable Location previewWanted;
+
     /** As {@link #openRelated(Path, List)}, with {@code linked} — a page's own stylesheets and scripts — first. */
     void openRelated(Path current, List<String> names, List<Path> linked) {
+        Path dir = current.getParent();
+        // Beside the file first: when a counterpart IS a sibling that is nearly always the right one, and it costs a
+        // single exists() rather than a scan — off the FX thread (PERF-01, Pauta 6.0.1).
+        com.editora.perf.OffFx.then(
+                "related-look",
+                () -> {
+                    List<Path> siblings = new ArrayList<>();
+                    for (String name : names) {
+                        Path sibling = dir == null ? null : dir.resolve(name);
+                        if (sibling != null && java.nio.file.Files.isRegularFile(sibling) && !sibling.equals(current)) {
+                            siblings.add(sibling);
+                        }
+                    }
+                    return siblings;
+                },
+                looked -> openRelated(current, names, linked, looked.or(List.of())));
+    }
+
+    private void openRelated(Path current, List<String> names, List<Path> linked, List<Path> siblings) {
         List<Path> found = new ArrayList<>(linked);
         Path dir = current.getParent();
         for (String name : names) {
-            // Beside the file first: when a counterpart IS a sibling that is nearly always the right one,
-            // and it costs a single exists() rather than a scan.
             if (dir != null) {
                 Path sibling = dir.resolve(name);
-                if (java.nio.file.Files.isRegularFile(sibling) && !sibling.equals(current)) {
+                if (siblings.contains(sibling)) {
                     found.add(sibling);
                 }
             }
@@ -622,11 +673,18 @@ final class NavigationCoordinator {
     private void showRelated(Path current, List<Path> found) {
         if (found.isEmpty()) {
             Path test = com.editora.search.RelatedFiles.testFor(current);
-            if (test != null && !java.nio.file.Files.exists(test) && createTestConfirmer.test(test)) {
-                createTest(test);
-            } else {
+            if (test == null) {
                 host.setStatus(tr("status.related.none", current.getFileName()));
+                return;
             }
+            // there already? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+            com.editora.perf.OffFx.then("related-look", () -> java.nio.file.Files.exists(test), there -> {
+                if (!there.or(true) && createTestConfirmer.test(test)) {
+                    createTest(test);
+                } else {
+                    host.setStatus(tr("status.related.none", current.getFileName()));
+                }
+            });
             return;
         }
         if (found.size() == 1) {
@@ -669,18 +727,24 @@ final class NavigationCoordinator {
         if (dir == null) {
             return; // testFor always answers a path inside a src/test/java
         }
-        try {
-            java.nio.file.Files.createDirectories(dir);
-            java.nio.file.Files.writeString(
-                    test,
-                    com.editora.template.NewFileContent.junitTest(
-                            com.editora.template.NewFileContent.packageFor(dir), className),
-                    java.nio.file.StandardOpenOption.CREATE_NEW);
-        } catch (java.io.IOException | RuntimeException e) {
-            host.setStatus(tr("status.related.testNotCreated", name, String.valueOf(e.getMessage())));
-            return;
-        }
-        host.fileWorkflows().openPath(test);
+        // written off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.run(
+                "create-test",
+                () -> {
+                    java.nio.file.Files.createDirectories(dir);
+                    java.nio.file.Files.writeString(
+                            test,
+                            com.editora.template.NewFileContent.junitTest(
+                                    com.editora.template.NewFileContent.packageFor(dir), className),
+                            java.nio.file.StandardOpenOption.CREATE_NEW);
+                },
+                failure -> {
+                    if (failure != null) {
+                        host.setStatus(tr("status.related.testNotCreated", name, String.valueOf(failure.getMessage())));
+                    } else {
+                        host.fileWorkflows().openPath(test);
+                    }
+                });
     }
 
     /**

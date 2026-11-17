@@ -913,47 +913,32 @@ final class HistoryCoordinator {
         recordFor(file, content, reason, "", false, completion);
     }
 
-    /** How long {@link #recordSafetyCopy} lets the FX thread wait for the previous text to reach the disk. */
-    private static final long SAFETY_COPY_TIMEOUT_MILLIS = 15_000;
-
     /**
-     * Stores {@code buffer}'s current text — unsaved edits included — as a labelled (and therefore
-     * retention-protected) revision, and returns only once its content is on disk and the revision is in the
-     * index. This is the recovery copy {@link NoUndoGuard} requires before a bulk edit in a buffer that has
-     * no undo; anything other than {@link NoUndoGuard.Copy#STORED} means there is none and the edit must not
-     * happen. Blocks the FX thread for the blob write (bounded), which is the point: the edit comes after.
+     * Takes {@code buffer}'s current text — unsaved edits included — as a labelled (and therefore retention-protected)
+     * revision: the text is copied here, in memory, before the edit that follows changes it, and its write is queued
+     * on the history worker, in order with every other capture (PERF-01, Pauta 6.0.1: the FX thread no longer waits
+     * for the disk). The quit drains the worker, so the copy reaches the disk before Editora exits. This is the
+     * recovery copy {@link NoUndoGuard} requires before a bulk edit in a buffer that has no undo; anything other than
+     * {@link NoUndoGuard.Copy#STORED} means there is none and the edit must not happen. A write that fails later is
+     * said in the status line.
      */
     NoUndoGuard.Copy recordSafetyCopy(EditorBuffer buffer, String label) {
         if (!isEnabled()) {
             return NoUndoGuard.Copy.HISTORY_OFF;
         }
+        Path file = buffer == null ? null : buffer.getPath();
         if (buffer == null
-                || buffer.getPath() == null
+                || file == null
                 || !host.isLocalBuffer(buffer)
                 || buffer.encryption().isEncrypted()) {
             return NoUndoGuard.Copy.NO_LOCAL_FILE; // an encrypted file's text never goes into Local History
         }
-        String key = historyKey(buffer.getPath());
-        var policy = retentionPolicy();
-        long now = System.currentTimeMillis();
-        boolean[] stored = {false};
-        historyService.snapshotBlocking(
-                buffer.getPath(),
-                buffer.getContent(),
-                HistoryRevision.REASON_LABEL,
-                label,
-                now,
-                SAFETY_COPY_TIMEOUT_MILLIS,
-                outcome -> {
-                    if (outcome.successful() && outcome.revision() != null) {
-                        applyRecorded(key, HistoryMoves.at(key, outcome.revision()), policy, now, null);
-                        stored[0] = true;
-                    }
-                });
-        if (stored[0]) {
-            refresh();
-        }
-        return stored[0] ? NoUndoGuard.Copy.STORED : NoUndoGuard.Copy.FAILED;
+        recordFor(file, buffer.getContent(), HistoryRevision.REASON_LABEL, label, true, stored -> {
+            if (!stored) {
+                onFx(() -> host.setError(tr("status.history.labelFailed", label)));
+            }
+        });
+        return NoUndoGuard.Copy.STORED;
     }
 
     /**
@@ -1450,12 +1435,15 @@ final class HistoryCoordinator {
             host.setStatus(tr("status.history.noFile"));
             return;
         }
-        if (Files.isDirectory(file)) {
-            showFolderHistory(file);
-            return;
-        }
-        ops.openPath(file); // makes it the active buffer, which the history tool window tracks
-        openForActive();
+        // a folder or a file: looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.then("history-look", () -> Files.isDirectory(file), folder -> {
+            if (folder.or(false)) {
+                showFolderHistory(file);
+                return;
+            }
+            ops.openPath(file); // makes it the active buffer, which the history tool window tracks
+            openForActive();
+        });
     }
 
     /** Shows the active file's history in the tool window, leaving a folder listing if one is up. */
@@ -1480,6 +1468,38 @@ final class HistoryCoordinator {
 
     /** Shows the folder-history view: every file under {@code folder} with recorded revisions (incl. deleted). */
     private void showFolderHistory(Path folder) {
+        // Which of its files are gone is looked at off the FX thread first (PERF-01, Pauta 6.0.1).
+        List<Path> files = HistoryQueries.folderRevisions(mergedIndex(), historyKey(folder)).keySet().stream()
+                .map(Path::of)
+                .toList();
+        com.editora.perf.OffFx.then("history-look", () -> lookGone(files), looked -> showFolderHistoryLooked(folder));
+    }
+
+    /** Whether each of {@code files} is gone from the disk, looked at now, off the FX thread, and kept. */
+    private static boolean lookGone(List<Path> files) {
+        for (Path p : files) {
+            GONE.lookAgain(p);
+        }
+        return true;
+    }
+
+    /** Looks at each of {@code shown} again and keeps it; whether any differs from what was shown. Off FX. */
+    private static boolean lookGone(Map<Path, Boolean> shown) {
+        boolean changed = false;
+        for (var e : shown.entrySet()) {
+            changed |= !e.getValue().equals(Boolean.TRUE.equals(GONE.lookAgain(e.getKey())));
+        }
+        return changed;
+    }
+
+    /**
+     * Whether a file with history is gone from the disk: looked at off the FX thread when a folder's history is
+     * shown, answered from memory as it is refreshed on each tab switch (PERF-01, Pauta 6.0.1).
+     */
+    private static final com.editora.perf.Looked<Path, Boolean> GONE =
+            new com.editora.perf.Looked<>("HistoryCoordinator.gone", p -> !Files.exists(p));
+
+    private void showFolderHistoryLooked(Path folder) {
         List<FileHistoryPanel.FileGroup> groups = folderGroups(folder);
         if (groups.isEmpty()) {
             host.setStatus(tr("status.history.folderEmpty", folder.getFileName()));
@@ -1495,11 +1515,23 @@ final class HistoryCoordinator {
     private List<FileHistoryPanel.FileGroup> folderGroups(Path folder) {
         var folderRevs = HistoryQueries.folderRevisions(mergedIndex(), historyKey(folder));
         List<FileHistoryPanel.FileGroup> groups = new ArrayList<>();
+        Map<Path, Boolean> shown = new java.util.HashMap<>();
         for (var e : folderRevs.entrySet()) {
             Path p = Path.of(e.getKey());
             String display = folder.relativize(p).toString();
-            boolean deleted = !Files.exists(p);
+            // what was last looked at (a file recorded since counts as there); looked at again behind, below
+            boolean deleted = GONE.knows(p) && Boolean.TRUE.equals(GONE.get(p));
+            shown.put(p, deleted);
             groups.add(new FileHistoryPanel.FileGroup(e.getKey(), display, deleted, e.getValue()));
+        }
+        if (!shown.isEmpty()) {
+            // Looked at again off the FX thread (PERF-01, Pauta 6.0.1): a file restored or deleted since is shown so
+            // once the look lands.
+            com.editora.perf.OffFx.then("history-look", () -> lookGone(shown), changed -> {
+                if (changed.or(false)) {
+                    Platform.runLater(this::refresh); // after the refresh that asked, which is still showing
+                }
+            });
         }
         return groups;
     }
@@ -1790,26 +1822,28 @@ final class HistoryCoordinator {
             return;
         }
         boolean historyEnabled = isEnabled();
-        try {
-            if (!Files.isRegularFile(file)) {
+        // The file is read, and its charset looked up, off the FX thread (PERF-01, Pauta 6.0.1); the revision is
+        // recorded from here, as before.
+        com.editora.perf.OffFx.then("history-capture", () -> Captured.read(file, false, this::charsetRuleFor), read -> {
+            Captured c = read.value();
+            if (c == null) {
+                completion.accept(new DeleteCapture(!historyEnabled, null));
+                return;
+            }
+            if (!c.regular()) {
                 completion.accept(new DeleteCapture(false, null));
                 return;
             }
-            if (Files.size(file) > EditorBuffer.LARGE_FILE_BYTES) {
+            byte[] bytes = c.bytes();
+            if (bytes == null) { // over the size Local History holds
                 completion.accept(new DeleteCapture(true, null));
                 return;
             }
-            byte[] bytes = Files.readAllBytes(file);
-            String charsetRule = charsetRuleFor(file);
-            if (isBinary(bytes, charsetRule)) {
+            if (isBinary(bytes, c.charsetRule()) || !historyEnabled) {
                 completion.accept(new DeleteCapture(true, bytes));
                 return;
             }
-            if (!historyEnabled) {
-                completion.accept(new DeleteCapture(true, bytes));
-                return;
-            }
-            EditorConfigCharset.Decoded decoded = DiffSideText.decodeRaw(bytes, charsetRule, null);
+            EditorConfigCharset.Decoded decoded = DiffSideText.decodeRaw(bytes, c.charsetRule(), null);
             String content = decoded.text();
             // The body is text; with the file gone, these are all that say which bytes it was.
             Encoding encoding = Encoding.of(bytes, decoded);
@@ -1822,8 +1856,31 @@ final class HistoryCoordinator {
                     encoding,
                     false,
                     durable -> onFx(() -> completion.accept(new DeleteCapture(durable, bytes))));
-        } catch (IOException e) {
-            completion.accept(new DeleteCapture(!historyEnabled, null));
+        });
+    }
+
+    /**
+     * A file as a capture before a delete or an overwrite reads it, off the FX thread: whether it is a regular file,
+     * its bytes (null when it is over {@link EditorBuffer#LARGE_FILE_BYTES}) and its {@code .editorconfig} charset.
+     */
+    record Captured(
+            boolean regular,
+            byte @Nullable [] bytes,
+            @Nullable String charsetRule) {
+        static Captured read(Path file, boolean noFollow, java.util.function.Function<Path, @Nullable String> charset)
+                throws IOException {
+            com.editora.perf.BlockingSites.enter("HistoryCoordinator.capture");
+            boolean regular = noFollow
+                    ? Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                    : Files.isRegularFile(file);
+            if (!regular) {
+                return new Captured(false, null, null);
+            }
+            if (Files.size(file) > EditorBuffer.LARGE_FILE_BYTES) {
+                return new Captured(true, null, null);
+            }
+            byte[] bytes = Files.readAllBytes(file);
+            return new Captured(true, bytes, charset.apply(file));
         }
     }
 
@@ -1856,21 +1913,29 @@ final class HistoryCoordinator {
             completion.accept(new OverwriteCapture(true, false, null)); // history is local-only by contract
             return;
         }
-        try {
-            if (!Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+        // read off the FX thread (PERF-01, Pauta 6.0.1), recorded from here
+        com.editora.perf.OffFx.then("history-capture", () -> Captured.read(file, true, this::charsetRuleFor), read -> {
+            Captured c = read.value();
+            if (c == null || !c.regular()) {
                 completion.accept(new OverwriteCapture(false, false, null));
                 return;
             }
-            if (Files.size(file) > EditorBuffer.LARGE_FILE_BYTES) {
+            byte[] bytes = c.bytes();
+            if (bytes == null) {
                 completion.accept(new OverwriteCapture(true, false, null));
                 return;
             }
-            byte[] bytes = Files.readAllBytes(file);
             if (!isEnabled() || com.editora.diff.BinaryDiff.isProbablyBinary(bytes)) {
                 completion.accept(new OverwriteCapture(true, false, bytes));
                 return;
             }
-            String text = LineEndings.toLf(decodeCaptured(bytes, charsetRuleFor(file)));
+            String text;
+            try {
+                text = LineEndings.toLf(decodeCaptured(bytes, c.charsetRule()));
+            } catch (RuntimeException failure) {
+                completion.accept(new OverwriteCapture(false, false, null));
+                return;
+            }
             recordFor(
                     file,
                     text,
@@ -1878,9 +1943,7 @@ final class HistoryCoordinator {
                     "",
                     false,
                     durable -> onFx(() -> completion.accept(new OverwriteCapture(durable, durable, bytes))));
-        } catch (IOException | RuntimeException failure) {
-            completion.accept(new OverwriteCapture(false, false, null));
-        }
+        });
     }
 
     /**
@@ -1900,21 +1963,25 @@ final class HistoryCoordinator {
             completion.accept(true);
             return;
         }
-        if (!Files.isRegularFile(files.get(index))) {
-            // A symbolic link, or a file that is already gone: no text for Local History to hold.
-            captureNextBeforeDelete(files, index + 1, completion);
-            return;
-        }
-        // One file per FX turn: a folder of them must not hold the UI for the whole batch.
-        captureBeforeDeleteDurably(
-                files.get(index),
-                capture -> Platform.runLater(() -> {
-                    if (capture.durable()) {
-                        captureNextBeforeDelete(files, index + 1, completion);
-                    } else {
-                        completion.accept(false);
-                    }
-                }));
+        Path file = files.get(index);
+        // Looked at off the FX thread (PERF-01, Pauta 6.0.1): a symbolic link, or a file that is already gone, has no
+        // text for Local History to hold.
+        com.editora.perf.OffFx.then("history-capture", () -> Files.isRegularFile(file), regular -> {
+            if (!regular.or(false)) {
+                captureNextBeforeDelete(files, index + 1, completion);
+                return;
+            }
+            // One file per FX turn: a folder of them must not hold the UI for the whole batch.
+            captureBeforeDeleteDurably(
+                    file,
+                    capture -> Platform.runLater(() -> {
+                        if (capture.durable()) {
+                            captureNextBeforeDelete(files, index + 1, completion);
+                        } else {
+                            completion.accept(false);
+                        }
+                    }));
+        });
     }
 
     /** Restores {@code revision}'s content into the active file via an undoable whole-file replace. */
@@ -2041,16 +2108,29 @@ final class HistoryCoordinator {
             host.setStatus(disabledStatus());
             return;
         }
+        // One look at the disk per file, not per row, off the FX thread before the picker shows (PERF-01, Pauta
+        // 6.0.1).
+        List<HistoryRevision> recent = HistoryQueries.recent(mergedIndex(), 200);
+        List<String> paths =
+                recent.stream().map(HistoryRevision::path).distinct().toList();
+        com.editora.perf.OffFx.then(
+                "history-look",
+                () -> {
+                    Map<String, Boolean> gone = new java.util.HashMap<>();
+                    paths.forEach(p -> gone.put(p, isGone(p)));
+                    return gone;
+                },
+                looked -> showRecentChanges(new java.util.HashMap<>(looked.or(Map.of()))));
+    }
+
+    private void showRecentChanges(Map<String, Boolean> gone) {
         Path root = ops.projectRoot();
-        Map<String, Boolean> gone = new java.util.HashMap<>(); // one look at the disk per file, not per row
         Function<HistoryRevision, String> label = r -> recentRowText(
                 HistoryRowText.dateTimeText(r.timestamp(), ZoneId.systemDefault(), FileHistoryPanel.locale()),
                 r.label(),
                 historyReasonLabel(r.reason()));
-        Function<HistoryRevision, String> detail = r -> recentDetail(
-                r.path(),
-                root,
-                gone.computeIfAbsent(r.path(), HistoryCoordinator::isGone) ? tr("history.deleted") : null);
+        Function<HistoryRevision, String> detail =
+                r -> recentDetail(r.path(), root, gone.getOrDefault(r.path(), false) ? tr("history.deleted") : null);
         QuickOpen<HistoryRevision> picker = new QuickOpen<>(
                 tr("history.recent.title"),
                 tr("history.recent.prompt"),
@@ -2112,13 +2192,20 @@ final class HistoryCoordinator {
         } catch (RuntimeException invalidPath) {
             return;
         }
-        if (!Files.exists(file)) {
-            Path parent = file.getParent();
-            if (parent != null) {
-                showFolderHistory(parent);
+        // still there? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.then("history-look", () -> Files.exists(file), there -> {
+            if (!there.or(false)) {
+                Path parent = file.getParent();
+                if (parent != null) {
+                    showFolderHistory(parent);
+                }
+                return;
             }
-            return;
-        }
+            openRecentChange(r, file);
+        });
+    }
+
+    private void openRecentChange(HistoryRevision r, Path file) {
         ops.openPath(file);
         EditorBuffer active = host.activeBuffer();
         if (active == null

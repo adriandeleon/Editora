@@ -45,6 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Save dialog is replaced by a file in a temporary directory.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class ExportCoordinatorOutputsFxTest {
 
     @BeforeAll

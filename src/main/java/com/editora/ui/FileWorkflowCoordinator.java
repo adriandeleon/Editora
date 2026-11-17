@@ -506,12 +506,25 @@ final class FileWorkflowCoordinator {
      * @return false when {@code file} is not a new file in an existing local folder (open it normally)
      */
     boolean openNewFileAt(Path file) {
+        return isNewFileTarget(file) && openNewFileAtLooked(file);
+    }
+
+    /**
+     * Whether {@code file} is a new file in an existing local folder — the disk half of {@link #openNewFileAt}, for
+     * a caller that looks off the FX thread (PERF-01, Pauta 6.0.1).
+     */
+    static boolean isNewFileTarget(Path file) {
+        com.editora.perf.BlockingSites.enter("FileWorkflowCoordinator.isNewFileTarget");
         Path parent = file.getParent();
-        if (!com.editora.vfs.Vfs.isLocal(file)
-                || parent == null
-                || !Files.isDirectory(parent)
-                || !Files.notExists(file)
-                || host.tabForPath(file) != null) {
+        return com.editora.vfs.Vfs.isLocal(file)
+                && parent != null
+                && Files.isDirectory(parent)
+                && Files.notExists(file);
+    }
+
+    /** {@link #openNewFileAt} for a {@code file} {@link #isNewFileTarget} said yes to; false when it is open. */
+    boolean openNewFileAtLooked(Path file) {
+        if (host.tabForPath(file) != null) {
             return false;
         }
         EditorBuffer buffer = new EditorBuffer();
@@ -1023,6 +1036,16 @@ final class FileWorkflowCoordinator {
      *     {@link #heapCap}); false for a read that only compares the file with what a save is about to replace
      */
     private PreparedLoad prepareLoad(Path file, boolean sniffBinary, boolean forDocument) throws IOException {
+        com.editora.perf.BlockingSites.enter("FileWorkflowCoordinator.prepareLoad");
+        if (forDocument) {
+            // What the tab asks when it is shown, looked at here, off the FX thread (PERF-01, Pauta 6.0.1): whether
+            // the file may be written (View mode), its repository, and whether a save needs the administrator.
+            com.editora.vfs.Vfs.isWritableOnDisk(file);
+            GitPathScope.lookAt(file); // the repository its tab's menu and the Git commands ask about
+            if (adminSaveEnabled()) {
+                needsElevation(file);
+            }
+        }
         // One stat call for both size + mtime instead of two separate syscalls per file load.
         long size;
         long mtime;
@@ -1863,6 +1886,11 @@ final class FileWorkflowCoordinator {
         }
     }
 
+    static {
+        // The View mode banner answers from what the file's read looked at (PERF-01, Pauta 6.0.1).
+        EditorBuffer.setWritableCheck(com.editora.vfs.Vfs::isWritableOnDisk);
+    }
+
     /** Whether the elevation tool is present (macOS osascript always; Linux pkexec probed on PATH). */
     boolean adminToolAvailable;
 
@@ -1883,13 +1911,21 @@ final class FileWorkflowCoordinator {
      * replaces it once the user agrees ({@link #mayReplaceReadOnly}), and asking for root there is wrong.
      */
     boolean adminSaveApplicable(@Nullable Path p) {
-        return elevationAvailable()
-                && p != null
-                && com.editora.vfs.Vfs.isLocal(p)
-                && Files.exists(p)
-                && !Files.isWritable(p)
-                && !replaceableWithoutElevation(p);
+        return elevationAvailable() && p != null && com.editora.vfs.Vfs.isLocal(p) && needsElevation(p);
     }
+
+    /**
+     * Whether a plain save of the local file {@code p} would fail for permissions where an elevated one could not:
+     * looked at off the FX thread when the file is read ({@link #prepareLoad}) and after a save, answered from
+     * memory on it (PERF-01, Pauta 6.0.1).
+     */
+    private static boolean needsElevation(Path p) {
+        return Boolean.TRUE.equals(NEEDS_ELEVATION.get(p));
+    }
+
+    private static final com.editora.perf.Looked<Path, Boolean> NEEDS_ELEVATION = new com.editora.perf.Looked<>(
+            "FileWorkflowCoordinator.adminSaveApplicable",
+            p -> Files.exists(p) && !Files.isWritable(p) && !replaceableWithoutElevation(p));
 
     private static boolean replaceableWithoutElevation(Path p) {
         try {
@@ -2114,7 +2150,20 @@ final class FileWorkflowCoordinator {
         if (buffer.isLoading() || loadingBuffers.contains(buffer)) {
             return; // what is on disk is what is being read already
         }
-        if (com.editora.vfs.Vfs.isLocal(file) && !Files.exists(file)) {
+        if (!com.editora.vfs.Vfs.isLocal(file)) {
+            revertLooked(buffer, file, true);
+            return;
+        }
+        // whether the file is still there is looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.then(
+                "revert-look", () -> Files.exists(file), there -> revertLooked(buffer, file, there.or(false)));
+    }
+
+    private void revertLooked(EditorBuffer buffer, Path file, boolean exists) {
+        if (buffer.isDisposed() || !file.equals(buffer.getPath()) || loadingBuffers.contains(buffer)) {
+            return; // closed, renamed or being read meanwhile
+        }
+        if (!exists) {
             host.setStatus(tr("status.revert.missing", buffer.getTitle()));
             return;
         }
@@ -2410,13 +2459,19 @@ final class FileWorkflowCoordinator {
             if (refuseTargetOpenElsewhere(buffer, target)) {
                 return; // before asking to overwrite: the answer could not be honoured
             }
-            Path current = buffer.getPath();
-            boolean overwritingOther = Files.exists(target)
-                    && (current == null || !com.editora.config.PathKeys.sameNormalized(target, current));
-            if (overwritingOther && !confirmOverwrite(target)) {
-                return;
-            }
-            applySaveAsTarget(buffer, target);
+            // whether the typed name is taken is looked at off the FX thread (PERF-01, Pauta 6.0.1)
+            com.editora.perf.OffFx.then("save-as-look", () -> Files.exists(target), taken -> {
+                if (buffer.isDisposed() || refuseTargetOpenElsewhere(buffer, target)) {
+                    return;
+                }
+                Path current = buffer.getPath();
+                boolean overwritingOther = taken.or(false)
+                        && (current == null || !com.editora.config.PathKeys.sameNormalized(target, current));
+                if (overwritingOther && !confirmOverwrite(target)) {
+                    return;
+                }
+                applySaveAsTarget(buffer, target);
+            });
         });
     }
 

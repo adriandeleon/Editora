@@ -212,13 +212,27 @@ public final class PreviewImageLoader {
             if (file.getFileSystem() != java.nio.file.FileSystems.getDefault()) {
                 return "";
             }
-            java.nio.file.attribute.BasicFileAttributes a =
-                    Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class);
-            return a.size() + ":" + a.lastModifiedTime().toMillis();
-        } catch (IOException | RuntimeException e) {
+            String stamp = FILE_STAMPS.get(file);
+            return stamp == null ? "" : stamp;
+        } catch (RuntimeException e) {
             return "";
         }
     }
+
+    /**
+     * {@link #fileStamp} by file: looked at off the FX thread when the preview plans its blocks, answered from memory
+     * when an image node is built on it (PERF-01, Pauta 6.0.1).
+     */
+    private static final com.editora.perf.Looked<Path, String> FILE_STAMPS =
+            new com.editora.perf.Looked<>("PreviewImageLoader.fileStamp", file -> {
+                try {
+                    java.nio.file.attribute.BasicFileAttributes a =
+                            Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class);
+                    return a.size() + ":" + a.lastModifiedTime().toMillis();
+                } catch (IOException | RuntimeException e) {
+                    return "";
+                }
+            });
 
     /** Loads {@code url} on the calling thread and records the outcome in the cache or the failure memory. */
     private static @Nullable Loaded loadAndCache(String url) {

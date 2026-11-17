@@ -321,17 +321,35 @@ public class FileFinder {
      */
     private void chooseSelected() {
         Path target = targetPath();
-        if (target == null) {
+        if (target == null || choosing) {
+            return; // a second Enter while the first one's look is under way does nothing
+        }
+        if (listing.entries().contains(target)) {
+            chosen(target, listing.isDirectory(target)); // listed: known already
             return;
         }
+        // A typed path: whether it is a folder is looked at off the FX thread (PERF-01, Pauta 6.0.1).
+        choosing = true;
+        com.editora.perf.OffFx.then("file-finder-look", () -> Files.isDirectory(target), folder -> {
+            choosing = false;
+            if (target.equals(targetPath())) { // nothing typed meanwhile
+                chosen(target, folder.or(false));
+            }
+        });
+    }
+
+    /** Set while {@link #chooseSelected} looks at a typed path. */
+    private boolean choosing;
+
+    private void chosen(Path target, boolean folder) {
         if (pickDirectory) {
-            if (Files.isDirectory(target)) {
+            if (folder) {
                 hide();
                 onChoose.accept(target);
             }
             return;
         }
-        if (Files.isDirectory(target)) {
+        if (folder) {
             descendInto(target);
         } else {
             hide();

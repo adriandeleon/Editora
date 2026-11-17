@@ -199,10 +199,8 @@ final class BreakpointGroups {
         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(tr("debug.export.filter"), "*.json"));
         chooser.setInitialFileName(fileName(group));
         Path root = ops.projectRoot();
-        if (root != null && Files.isDirectory(root)) {
-            chooser.setInitialDirectory(root.toFile());
-        }
-        java.io.File chosen = chooseSave.apply(chooser);
+        ChooserStart.set(chooser, root); // no look at the disk on the FX thread first (PERF-01, Pauta 6.0.1)
+        java.io.File chosen = ChooserStart.show(chooser, chooseSave);
         if (chosen == null) {
             return;
         }
@@ -295,10 +293,8 @@ final class BreakpointGroups {
         chooser.setTitle(tr("command.debug.importBreakpoints"));
         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(tr("debug.export.filter"), "*.json"));
         Path root = ops.projectRoot();
-        if (root != null && Files.isDirectory(root)) {
-            chooser.setInitialDirectory(root.toFile());
-        }
-        java.io.File chosen = chooseOpen.apply(chooser);
+        ChooserStart.set(chooser, root); // no look at the disk on the FX thread first (PERF-01, Pauta 6.0.1)
+        java.io.File chosen = ChooserStart.show(chooser, chooseOpen);
         if (chosen == null) {
             return;
         }

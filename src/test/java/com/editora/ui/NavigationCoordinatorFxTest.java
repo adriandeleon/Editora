@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * choosing a row does, and what the jump commands say when there is nowhere to go.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class NavigationCoordinatorFxTest {
 
     @BeforeAll

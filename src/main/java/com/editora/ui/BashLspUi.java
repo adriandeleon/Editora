@@ -136,13 +136,29 @@ final class BashLspUi {
                 say.accept(tr("status.lsp.bashCannotRenameCommand", oldName));
                 return;
             }
-            String declaration = declarationLine(b, path, declared);
-            // a name only a function can have, or a declaration not read: the function rule, the looser one
-            boolean function = !VARIABLE_NAME.matcher(oldName).matches()
-                    || declaration == null
-                    || declaresFunction(declaration, oldName);
-            prompt.accept(name -> validName(name, function) ? null : tr("status.lsp.renameInvalidShellName", name));
+            Path file = declared.file();
+            if (file != null && !file.equals(path)) {
+                // another script's line is read off the FX thread (PERF-01, Pauta 6.0.1)
+                com.editora.perf.OffFx.then(
+                        "bash-declaration-read",
+                        () -> java.util.Optional.ofNullable(declarationLineIn(file, declared.line())),
+                        read -> askRename(
+                                oldName,
+                                read.or(java.util.Optional.<String>empty()).orElse(null),
+                                prompt));
+                return;
+            }
+            askRename(oldName, declarationLine(b, path, declared), prompt);
         });
+    }
+
+    private static void askRename(
+            String oldName, @Nullable String declaration, Consumer<Function<String, @Nullable String>> prompt) {
+        // a name only a function can have, or a declaration not read: the function rule, the looser one
+        boolean function = !VARIABLE_NAME.matcher(oldName).matches()
+                || declaration == null
+                || declaresFunction(declaration, oldName);
+        prompt.accept(name -> validName(name, function) ? null : tr("status.lsp.renameInvalidShellName", name));
     }
 
     /** The first target that is a file, or null: a builtin or a PATH command has none. */
@@ -190,12 +206,17 @@ final class BashLspUi {
                     ? a.getParagraph(t.line()).getText()
                     : null;
         }
+        return declarationLineIn(file, t.line());
+    }
+
+    /** Line {@code line} of a small local {@code file}, or null: off the FX thread. */
+    static @Nullable String declarationLineIn(Path file, int line) {
         try {
             if (com.editora.vfs.Vfs.isRemote(file) || java.nio.file.Files.size(file) > 512 * 1024) {
                 return null;
             }
             try (var lines = java.nio.file.Files.lines(file)) {
-                return lines.skip(Math.max(0, t.line())).findFirst().orElse(null);
+                return lines.skip(Math.max(0, line)).findFirst().orElse(null);
             }
         } catch (java.io.IOException | java.io.UncheckedIOException | SecurityException e) {
             return null;

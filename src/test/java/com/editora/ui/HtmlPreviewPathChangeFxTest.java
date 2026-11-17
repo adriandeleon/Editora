@@ -33,6 +33,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * any edited file is, unless it is encrypted. Only the system opener is stood in for (no browser starts).
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class HtmlPreviewPathChangeFxTest {
 
     private static final HttpClient HTTP =

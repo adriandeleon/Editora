@@ -189,11 +189,14 @@ final class BookmarkCoordinator {
         if (file == null) {
             return;
         }
-        if (java.nio.file.Files.isDirectory(file)) {
-            addFolderBookmark(file);
-            return;
-        }
-        addBookmark(file, 0);
+        // a folder or a file: looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.then("bookmark-look", () -> java.nio.file.Files.isDirectory(file), folder -> {
+            if (folder.or(false)) {
+                addFolderBookmark(file);
+            } else {
+                addBookmark(file, 0);
+            }
+        });
     }
 
     private void addFolderBookmark(Path folder) {
@@ -395,11 +398,13 @@ final class BookmarkCoordinator {
             map.put(now.toString(), new ArrayList<>(map.get(oldKey))); // region-relative lines can't be snapshotted
             ops.saveBookmarks();
         }
-        if (oldKey != null
-                && com.editora.vfs.Vfs.isLocal(oldPath)
-                && !java.nio.file.Files.exists(oldPath)
-                && map.remove(oldKey) != null) {
-            ops.saveBookmarks();
+        if (oldKey != null && com.editora.vfs.Vfs.isLocal(oldPath) && map.containsKey(oldKey)) {
+            // the old file's marks go when it is gone (a rename, not a Save As): looked at off the FX thread
+            com.editora.perf.OffFx.then("bookmark-look", () -> !java.nio.file.Files.exists(oldPath), gone -> {
+                if (gone.or(false) && map.remove(oldKey) != null) {
+                    ops.saveBookmarks();
+                }
+            });
         }
         boolean any = !buffer.getBookmarkManager().snapshot().isEmpty();
         if (now != null && !now.equals(oldPath) && (any || map.containsKey(now.toString()))) {

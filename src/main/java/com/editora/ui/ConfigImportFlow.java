@@ -2,7 +2,6 @@ package com.editora.ui;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -201,10 +200,8 @@ final class ConfigImportFlow {
         FileChooser fc = new FileChooser();
         fc.setTitle(tr("dialog.importConfig.title"));
         fc.getExtensionFilters().add(new FileChooser.ExtensionFilter(tr("dialog.importConfig.zipFilter"), "*.zip"));
-        if (start != null && Files.isDirectory(start)) {
-            fc.setInitialDirectory(start.toFile());
-        }
-        File f = fc.showOpenDialog(owner);
+        ChooserStart.set(fc, start); // no look at the disk on the FX thread first (PERF-01, Pauta 6.0.1)
+        File f = ChooserStart.show(fc, c -> c.showOpenDialog(owner));
         return f == null ? null : f.toPath();
     }
 

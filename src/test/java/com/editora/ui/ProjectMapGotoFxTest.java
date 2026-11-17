@@ -52,6 +52,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @ExtendWith(DisposedPanels.class)
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class ProjectMapGotoFxTest {
 
     private static final String SHAPE =

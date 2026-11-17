@@ -142,6 +142,7 @@ public final class PinnedVersions {
      * "is this already here?" check.
      */
     public static @Nullable Freshness installedFreshness(Pin pin, @Nullable Path configDir) {
+        com.editora.perf.BlockingSites.enter("PinnedVersions.installedFreshness");
         if (configDir == null) {
             return null;
         }
@@ -295,6 +296,18 @@ public final class PinnedVersions {
      */
     private static Path canonical(Path p) {
         Path abs = p.toAbsolutePath().normalize();
+        Path known = CANONICAL.get(abs);
+        return known == null ? abs : known;
+    }
+
+    /**
+     * {@link #canonical} by path: looked at off the FX thread (a Doctor run's look, the Settings status line's, an
+     * install's), answered from memory on it (PERF-01, Pauta 6.0.1).
+     */
+    private static final com.editora.perf.Looked<Path, Path> CANONICAL =
+            new com.editora.perf.Looked<>("PinnedVersions.canonical", PinnedVersions::canonicalNow);
+
+    private static Path canonicalNow(Path abs) {
         Path existing = abs;
         while (existing != null && !Files.exists(existing)) {
             existing = existing.getParent();

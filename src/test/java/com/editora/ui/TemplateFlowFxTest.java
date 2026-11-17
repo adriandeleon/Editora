@@ -40,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * project wizard creates. Everything is written under JUnit temp directories.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class TemplateFlowFxTest {
 
     private static FxWindowFixture window;

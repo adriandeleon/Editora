@@ -321,8 +321,14 @@ public final class PluginInstaller {
         }
     }
 
+    /** As {@link #discard}, off the FX thread: the staged folder is deleted on a thread of its own. */
+    public static void discardAsync(Staged staged) {
+        com.editora.perf.OffFx.run("plugin-discard", () -> discard(staged), failure -> {});
+    }
+
     /** Drops a staged install the user declined. */
     public static void discard(Staged staged) {
+        com.editora.perf.BlockingSites.enter("PluginInstaller.discard");
         if (staged != null) {
             deleteQuietly(staged.staging());
         }
@@ -335,6 +341,7 @@ public final class PluginInstaller {
      * between puts the old install back. Either way the staging folder is gone afterwards.
      */
     public Commit commit(Staged staged, boolean deferToRestart) {
+        com.editora.perf.BlockingSites.enter("PluginInstaller.commit");
         Path pluginsDir = manager.pluginsDir();
         try {
             if (deferToRestart) {
@@ -443,6 +450,7 @@ public final class PluginInstaller {
      * update of it is dropped.
      */
     public static boolean markForRemoval(Path pluginsDir, String id) {
+        com.editora.perf.BlockingSites.enter("PluginInstaller.markForRemoval");
         if (!isSafeId(id) || isReservedId(id)) {
             return false;
         }
@@ -598,6 +606,7 @@ public final class PluginInstaller {
      * @return false when the plugin has no removable folder, or part of it could not be deleted
      */
     public static boolean deleteInstalled(Path pluginsDir, PluginDescriptor plugin) {
+        com.editora.perf.BlockingSites.enter("PluginInstaller.deleteInstalled");
         Path dir = removableDir(pluginsDir, plugin);
         if (dir == null) {
             return false;

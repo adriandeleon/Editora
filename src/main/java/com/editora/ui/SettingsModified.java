@@ -242,8 +242,14 @@ final class SettingsModified {
         return out;
     }
 
+    /** Loads the class, and with it {@link #TABLE}: called off the FX thread before the first reset asks. */
+    static void warm() {
+        // nothing more: the class's initialization reads the bundled table
+    }
+
     /** The table's entries (control name → key), for the test that checks them. */
     static Map<String, String> table() {
+        com.editora.perf.BlockingSites.enter("SettingsModified.table");
         Properties p = new Properties();
         try (InputStream in = SettingsModified.class.getResourceAsStream("settings-controls.properties")) {
             if (in != null) {

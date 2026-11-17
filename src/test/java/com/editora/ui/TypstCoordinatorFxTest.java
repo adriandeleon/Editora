@@ -41,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @Tag("fx")
 @DisabledOnOs(OS.WINDOWS)
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class TypstCoordinatorFxTest {
 
     @BeforeAll

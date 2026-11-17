@@ -88,6 +88,7 @@ final class WorkspaceEditFiles {
      * the folders it deleted.
      */
     static java.util.List<Path> removeEmptyFolders(Path folder, Path root) {
+        com.editora.perf.BlockingSites.enter("WorkspaceEditFiles.removeEmptyFolders");
         java.util.List<Path> deleted = new java.util.ArrayList<>();
         @Nullable Path at = folder.toAbsolutePath().normalize();
         Path stop = root.toAbsolutePath().normalize();

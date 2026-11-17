@@ -32,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * a catalog entry with no menu item, or a menu item wired to nothing, fails no unit test.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class NewFileMenuFxTest {
 
     @BeforeAll

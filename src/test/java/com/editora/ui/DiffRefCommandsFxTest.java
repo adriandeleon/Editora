@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * pickers, in a temp repository.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class DiffRefCommandsFxTest {
 
     private static final String FIRST = "one\ntwo\nthree\n";

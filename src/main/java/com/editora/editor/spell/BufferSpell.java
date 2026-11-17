@@ -6,11 +6,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -50,8 +48,6 @@ public final class BufferSpell {
         GAVE_UP
     }
 
-    /** How long the context menu waits for suggestions before opening with a placeholder (ms). */
-    private static final long INLINE_WAIT_MS = 30;
     /** The longest a next/previous search may hold the FX thread. */
     private static final long SEARCH_BUDGET_NANOS = TimeUnit.MILLISECONDS.toNanos(250);
 
@@ -384,9 +380,9 @@ public final class BufferSpell {
      * The spelling items for a right-click at {@code offset}: suggestions (each replaces the word), then
      * "Add to Dictionary" and "Ignore". Empty when the word there is not flagged.
      *
-     * <p>Suggestions are computed off the FX thread. The menu waits {@link #INLINE_WAIT_MS} for them — most
-     * arrive in that time and the menu opens complete — and otherwise opens with a placeholder row that is
-     * replaced in {@code menuItems} (the open menu's own list) when they arrive.
+     * <p>Suggestions are computed off the FX thread, and the menu does not wait for them there (PERF-01, Pauta
+     * 6.0.1): it opens with a placeholder row that is replaced in {@code menuItems} (the open menu's own list) when
+     * they arrive.
      */
     public List<MenuItem> menuItems(int offset, ObservableList<MenuItem> menuItems) {
         Hit hit = hitAt(offset);
@@ -397,15 +393,12 @@ public final class BufferSpell {
         long gen = ++suggestGen;
         SpellChecker c = checker;
         CompletableFuture<List<String>> search = CompletableFuture.supplyAsync(() -> c.suggest(hit.word()), SUGGESTER);
-        List<String> ready = null;
+        // Not waited for on the FX thread (PERF-01, Pauta 6.0.1): what is there already is shown, else the
+        // placeholder row, replaced when the suggestions land.
+        List<String> ready;
         try {
-            ready = search.get(INLINE_WAIT_MS, TimeUnit.MILLISECONDS);
-        } catch (TimeoutException slow) {
-            // falls through to the placeholder
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            ready = List.of();
-        } catch (ExecutionException e) {
+            ready = search.getNow(null);
+        } catch (java.util.concurrent.CompletionException | java.util.concurrent.CancellationException e) {
             ready = List.of();
         }
         if (ready != null) {

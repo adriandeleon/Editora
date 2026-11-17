@@ -7000,10 +7000,9 @@ final class DebugCoordinator {
     private @Nullable Path chooseFile(String title, @Nullable Path folder) {
         javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
         chooser.setTitle(title);
-        if (folder != null && Files.isDirectory(folder)) {
-            chooser.setInitialDirectory(folder.toFile());
-        }
-        java.io.File chosen = chooseFile != null ? chooseFile.apply(chooser) : chooser.showOpenDialog(host.window());
+        ChooserStart.set(chooser, folder); // no look at the disk on the FX thread first (PERF-01, Pauta 6.0.1)
+        java.io.File chosen = ChooserStart.show(
+                chooser, c -> chooseFile != null ? chooseFile.apply(c) : c.showOpenDialog(host.window()));
         return chosen == null ? null : chosen.toPath();
     }
 

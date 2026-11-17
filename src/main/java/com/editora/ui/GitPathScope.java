@@ -39,8 +39,19 @@ public enum GitPathScope {
         if (!Vfs.isLocal(path)) {
             return nearestRemoteRepository(path);
         }
+        return NEAREST.get(path.toAbsolutePath().normalize());
+    }
+
+    /**
+     * {@link #nearestRepository} of a local path: looked at off the FX thread as a file is read ({@link #lookAt}),
+     * answered from memory when a tab's or the Project tree's menu is built (PERF-01, Pauta 6.0.1).
+     */
+    private static final com.editora.perf.Looked<Path, Path> NEAREST =
+            new com.editora.perf.Looked<>("GitPathScope.nearestRepository", GitPathScope::nearestNow);
+
+    private static @Nullable Path nearestNow(Path path) {
         try {
-            for (Path dir = path.toAbsolutePath().normalize(); dir != null; dir = dir.getParent()) {
+            for (Path dir = path; dir != null; dir = dir.getParent()) {
                 if (Files.exists(dir.resolve(".git"))) {
                     return dir;
                 }
@@ -49,6 +60,14 @@ public enum GitPathScope {
             // an unusable path is simply in no repository
         }
         return null;
+    }
+
+    /** Looks at what a Git menu asks about {@code path} now, on this thread (off the FX thread), and keeps it. */
+    static void lookAt(@Nullable Path path) {
+        if (path != null && Vfs.isLocal(path)) {
+            Path repo = nearestRepository(path);
+            com.editora.git.GitService.lookAt(path, repo);
+        }
     }
 
     /** What a remote project's host said about it: the folders holding a {@code .git}, relative to its root. */

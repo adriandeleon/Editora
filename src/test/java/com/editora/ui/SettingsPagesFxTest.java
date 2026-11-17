@@ -49,6 +49,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The Settings pages that are more than a row of switches: their lists, buttons and links. */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class SettingsPagesFxTest {
 
     private SettingsRig rig;

@@ -1793,9 +1793,10 @@ public class MainController implements com.editora.mcp.McpBridge {
                 breadcrumb.setActiveFile(target);
                 statusBar.refresh();
             }
-        } else if (Files.isDirectory(target)) {
+        } else {
             // A moved/renamed *directory*: remap every open buffer whose file lived under `old` to the
-            // corresponding path under `target` (e.g. drag-moving a folder in the Project tree).
+            // corresponding path under `target` (e.g. drag-moving a folder in the Project tree). Nothing lies under
+            // a renamed file, so no look at the disk on the FX thread tells the two apart (PERF-01, Pauta 6.0.1).
             Path oldNorm = old.toAbsolutePath().normalize();
             for (Tab t : editorArea.tabs()) {
                 EditorBuffer b = bufferOf(t);
@@ -4006,31 +4007,47 @@ public class MainController implements com.editora.mcp.McpBridge {
      *  exist yet (so the link works even before any word is added). Backs the Settings → Spell Check link. */
     void openPersonalDictionary() {
         Path file = config.getDictionaryFile();
-        try {
-            if (!Files.exists(file)) {
-                Files.writeString(file, "");
-            }
-        } catch (IOException e) {
-            setStatus(tr("status.dict.openFailed"));
-            return;
-        }
-        fileWorkflows.openPath(file);
+        // made when missing, off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.run(
+                "dictionary-open",
+                () -> {
+                    if (!Files.exists(file)) {
+                        Files.writeString(file, "");
+                    }
+                },
+                failure -> {
+                    if (failure != null) {
+                        setStatus(tr("status.dict.openFailed"));
+                    } else {
+                        fileWorkflows.openPath(file);
+                    }
+                });
     }
 
     /** Opens the bundled technical-terms dictionary in a read-only tab so the user can browse what it covers.
      *  It's a classpath resource (inside the jar), so there's no on-disk path to open. */
     void openTechnicalDictionary() {
-        String text;
-        try (var in = MainController.class.getResourceAsStream("/com/editora/dictionaries/technical.txt")) {
-            if (in == null) {
-                setStatus(tr("status.dict.openFailed"));
-                return;
-            }
-            text = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            setStatus(tr("status.dict.openFailed"));
-            return;
-        }
+        // the bundled list is read off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.then(
+                "dictionary-open",
+                () -> {
+                    try (var in = MainController.class.getResourceAsStream("/com/editora/dictionaries/technical.txt")) {
+                        return in == null
+                                ? null
+                                : new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                    }
+                },
+                read -> {
+                    String text = read.value();
+                    if (text == null) {
+                        setStatus(tr("status.dict.openFailed"));
+                    } else {
+                        openTechnicalDictionary(text);
+                    }
+                });
+    }
+
+    private void openTechnicalDictionary(String text) {
         EditorBuffer buffer = new EditorBuffer();
         buffer.setDisplayName("technical.txt");
         buffer.setContent(text);
@@ -4293,15 +4310,28 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** {@code buffer.reopenClosed}: opens the file whose tab was closed last, its caret where it was. */
     void reopenClosedTab() {
-        for (ClosedTabs.Entry entry = closedTabs.pop(); entry != null; entry = closedTabs.pop()) {
+        ClosedTabs.Entry entry = closedTabs.pop();
+        if (entry != null && com.editora.vfs.Vfs.isLocal(entry.path())) {
+            // deleted since? looked at off the FX thread (PERF-01, Pauta 6.0.1); then the next one back
+            com.editora.perf.OffFx.then("reopen-look", () -> Files.exists(entry.path()), there -> {
+                if (there.or(false)) {
+                    reopenClosedTab(entry);
+                } else {
+                    reopenClosedTab();
+                }
+            });
+            return;
+        }
+        reopenClosedTab(entry);
+    }
+
+    private void reopenClosedTab(ClosedTabs.@Nullable Entry entry) {
+        if (entry != null) {
             Path path = entry.path();
             Tab open = tabForPath(path);
             if (open != null && (hexPaneOf(open) != null) == entry.hex()) {
                 editorArea.select(open); // reopened some other way since
                 return;
-            }
-            if (com.editora.vfs.Vfs.isLocal(path) && !Files.exists(path)) {
-                continue; // deleted since: the next one back
             }
             if (entry.hex()) {
                 fileWorkflows.openHexTab(path, true); // its bytes again, though its name would open it as text
@@ -4567,22 +4597,20 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (target.equals(old)) {
             return;
         }
-        boolean caseOnly = com.editora.io.CaseOnlyRename.isAlias(old, target); // README.md on a case-blind volume
-        if (!caseOnly && Files.exists(target)) {
-            setStatus(tr("status.renameFailedExists", target.getFileName()));
-            return;
-        }
         fileWorkflows.invalidatePendingWrite(old);
-        try {
-            if (caseOnly) {
-                com.editora.io.CaseOnlyRename.move(old, target);
+        // The name is checked and the file moved off the FX thread (PERF-01, Pauta 6.0.1); then every window follows.
+        com.editora.perf.OffFx.then("rename-file", () -> RenamedFileState.move(old, target), moved -> {
+            if (!moved.ok()) {
+                setStatus(tr("status.renameFailed", moved.why()));
+            } else if (!moved.or(false)) {
+                setStatus(tr("status.renameFailedExists", target.getFileName()));
             } else {
-                Files.move(old, target);
+                renamedFileTo(buffer, old, target);
             }
-        } catch (IOException e) {
-            setStatus(tr("status.renameFailed", e.getMessage()));
-            return;
-        }
+        });
+    }
+
+    private void renamedFileTo(EditorBuffer buffer, Path old, Path target) {
         onProjectFileRenamed(old, target); // every window: path, EditorConfig, LSP, tab, path-keyed session state
         previews.ensurePreviewControls(buffer); // a rename to/from .md/.mmd flips previewability
         logViewer.ensureControl(buffer); // a rename to/from .log flips the log control

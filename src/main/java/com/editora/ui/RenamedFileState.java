@@ -22,11 +22,29 @@ import org.jspecify.annotations.Nullable;
  * one call covers a file and a folder. A <b>Save As</b> ({@link #copy}) leaves the original its own entry:
  * that file is still on disk.
  *
- * <p>Pure apart from {@link #formerCanonicalKey}; the callers own persistence.
+ * <p>Pure apart from {@link #formerCanonicalKey} and {@link #move}; the callers own persistence.
  */
 final class RenamedFileState {
 
     private RenamedFileState() {}
+
+    /**
+     * Renames the file {@code old} to {@code target}, off the FX thread: false, with nothing moved, when another file
+     * has that name already (a case-only rename on a case-blind volume is the same file and goes through).
+     */
+    static boolean move(Path old, Path target) throws java.io.IOException {
+        com.editora.perf.BlockingSites.enter("RenamedFileState.move");
+        boolean caseOnly = com.editora.io.CaseOnlyRename.isAlias(old, target); // README.md on a case-blind volume
+        if (!caseOnly && Files.exists(target)) {
+            return false;
+        }
+        if (caseOnly) {
+            com.editora.io.CaseOnlyRename.move(old, target);
+        } else {
+            Files.move(old, target);
+        }
+        return true;
+    }
 
     /**
      * Moves the value stored under {@code oldKey}, and under every key below it ({@code oldKey} followed by
@@ -141,11 +159,19 @@ final class RenamedFileState {
      * is simply its canonical key.)
      */
     static @Nullable String formerCanonicalKey(Path old) {
+        return formerCanonicalKey(old, false);
+    }
+
+    /**
+     * As above; {@code gone} says {@code old} is known to be gone (a rename, after the move), so the disk is not asked
+     * whether it still exists — on the FX thread that is a look not to make (PERF-01, Pauta 6.0.1).
+     */
+    static @Nullable String formerCanonicalKey(Path old, boolean gone) {
         if (old == null) {
             return null;
         }
         try {
-            if (Files.exists(old)) {
+            if (!gone && Files.exists(old)) {
                 return PathKeys.canonicalKey(old);
             }
             Path abs = old.toAbsolutePath().normalize();

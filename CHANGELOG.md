@@ -709,6 +709,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **File commands, installs and plugins work on disk in the background.** Opening, renaming, moving and deleting
+  files in the Project panel and on the Map, New Folder, New ▸ type, Save As's "replace it?" check, Revert, Rename
+  File, Reopen Closed Tab, Go to Related File and Create Test, Find File's Enter on a typed path, a bookmark or a
+  personal note on a file that is not open, Local History's copy before a delete, its folder view and Recent
+  Changes, a pasted or dropped image in Markdown, a merge resolution applied after its file's tab was closed, the
+  Diff commands, Git Clone and Init's folder checks, Export to HTML, CSV and JSON, Save Output, the HTML preview's
+  site folder, a Typst export put in place, the Run Configurations Browse button, the follow-up of New Maven Project
+  and Maven Update Versions on a closed pom, a language server's refactoring and Undo Last Refactoring, plugin
+  installs, updates, removals and the plugin list's Reload, the install commands' "is it installed already?"
+  checks, Settings → Language Servers' status lines and the Doctor's look at its rows all read, write and look at
+  files in the background, then show the result. While one of them is under way, pressing it again starts nothing
+  a second time. A rename or a move in the Project panel moves the file first and its tabs follow once it is
+  there, as before. A dialog's start folder is no longer checked before the dialog opens; a folder that is gone is
+  dropped and the dialog opens where the system puts it. The spelling suggestions of a right-click always arrive
+  in the menu's "Searching…" row.
+
 - **Run, Build, Debug and the other programs Editora starts are started in the background.** Finding the program on
   your PATH, starting it and recording it for clean-up no longer happen on the UI thread, for Run, Build, the
   program a debugger hands back, Run in Terminal, a program in a container or a WSL distribution, and the New Maven

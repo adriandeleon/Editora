@@ -708,23 +708,38 @@ final class WindowSessionCoordinator {
             host.addBuffer(buffer, true);
             host.setStatus(newFile.isBlank() ? tr("status.newBuffer") : tr("status.newFile", newFile));
         }
-        if (targets != null) {
-            for (OpenTarget t : targets) {
-                Path file = t.file().toAbsolutePath().normalize();
-                if (!host.fileWorkflows().openNewFileAt(file)) {
-                    host.fileWorkflows().openPath(file, true);
-                }
+        if (targets == null || targets.isEmpty()) {
+            return;
+        }
+        // Which named files are new (a folder that exists, no file yet) is looked at off the FX thread (PERF-01,
+        // Pauta 6.0.1); then they open in order, as named.
+        List<Path> files =
+                targets.stream().map(t -> t.file().toAbsolutePath().normalize()).toList();
+        com.editora.perf.OffFx.then(
+                "startup-targets-look",
+                () -> files.stream()
+                        .map(FileWorkflowCoordinator::isNewFileTarget)
+                        .toList(),
+                looked -> openStartupTargets(targets, files, looked.or(List.of())));
+    }
+
+    private void openStartupTargets(List<OpenTarget> targets, List<Path> files, List<Boolean> fresh) {
+        for (int i = 0; i < files.size(); i++) {
+            Path file = files.get(i);
+            boolean isNew = i < fresh.size() && Boolean.TRUE.equals(fresh.get(i));
+            if (!isNew || !host.fileWorkflows().openNewFileAtLooked(file)) {
+                host.fileWorkflows().openPath(file, true);
             }
-            if (targets.stream().anyMatch(t -> t.line() > 0)) {
-                // Defer once more so it runs after openPath's own goToStart for any newly-opened file.
-                Platform.runLater(() -> {
-                    for (OpenTarget t : targets) {
-                        if (t.line() > 0) {
-                            gotoInFile(t.file().toAbsolutePath().normalize(), t.line(), t.column());
-                        }
+        }
+        if (targets.stream().anyMatch(t -> t.line() > 0)) {
+            // Defer once more so it runs after openPath's own goToStart for any newly-opened file.
+            Platform.runLater(() -> {
+                for (OpenTarget t : targets) {
+                    if (t.line() > 0) {
+                        gotoInFile(t.file().toAbsolutePath().normalize(), t.line(), t.column());
                     }
-                });
-            }
+                }
+            });
         }
     }
 

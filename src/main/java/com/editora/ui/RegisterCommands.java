@@ -203,10 +203,21 @@ final class RegisterCommands {
             moveTo(active, position.offset());
             return;
         }
-        if (Vfs.isLocal(path) && !java.nio.file.Files.exists(path)) {
-            host.setStatus(tr("status.register.fileGone", String.valueOf(path.getFileName())));
+        if (!Vfs.isLocal(path)) {
+            jumpInto(path, position);
             return;
         }
+        // still there? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.then("register-look", () -> java.nio.file.Files.exists(path), there -> {
+            if (there.or(false)) {
+                jumpInto(path, position);
+            } else {
+                host.setStatus(tr("status.register.fileGone", String.valueOf(path.getFileName())));
+            }
+        });
+    }
+
+    private void jumpInto(Path path, Registers.Position position) {
         host.openThen(path, () -> {
             EditorBuffer opened = host.activeBuffer();
             if (opened != null && path.equals(opened.getPath())) {

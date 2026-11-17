@@ -2089,6 +2089,30 @@ public final class MarkdownRenderer {
         return linkText(img);
     }
 
+    /** A {@code /path} image destination written beside the document in {@code baseDir}. */
+    private record Rooted(Path baseDir, String path) {}
+
+    /**
+     * Where a {@code /path} image is: from the filesystem root when it is there, else the nearest folder above the
+     * document that holds it. Looked at off the FX thread as the preview plans its blocks, answered from memory as an
+     * image node is built (PERF-01, Pauta 6.0.1). Null when nowhere: the path from the document's folder is kept.
+     */
+    private static final com.editora.perf.Looked<Rooted, Path> ROOTED =
+            new com.editora.perf.Looked<>("MarkdownRenderer.resolveUrl", rooted -> {
+                Path target = rooted.baseDir().resolve(rooted.path()).normalize();
+                if (java.nio.file.Files.exists(target)) {
+                    return target;
+                }
+                String rel = rooted.path().replaceFirst("^/+", "");
+                for (Path dir = rooted.baseDir(); dir != null && !rel.isEmpty(); dir = dir.getParent()) {
+                    Path candidate = dir.resolve(rel).normalize();
+                    if (java.nio.file.Files.isRegularFile(candidate)) {
+                        return candidate;
+                    }
+                }
+                return null;
+            });
+
     /**
      * The URL an image destination is loaded from: an {@code http(s)}/{@code file}/{@code data} URL as it is,
      * anything else as a path beside the document. A path is written for the web, so its {@code %20} escapes
@@ -2113,17 +2137,9 @@ public final class MarkdownRenderer {
                 return null;
             }
             Path target = baseDir.resolve(path).normalize();
-            if (path.startsWith("/")
-                    && baseDir.getFileSystem() == java.nio.file.FileSystems.getDefault()
-                    && !java.nio.file.Files.exists(target)) {
-                String rel = path.replaceFirst("^/+", "");
-                for (Path dir = baseDir.toAbsolutePath(); dir != null && !rel.isEmpty(); dir = dir.getParent()) {
-                    Path candidate = dir.resolve(rel).normalize();
-                    if (java.nio.file.Files.isRegularFile(candidate)) {
-                        target = candidate;
-                        break;
-                    }
-                }
+            if (path.startsWith("/") && baseDir.getFileSystem() == java.nio.file.FileSystems.getDefault()) {
+                Path found = ROOTED.get(new Rooted(baseDir.toAbsolutePath(), path));
+                target = found != null ? found : target;
             }
             return target.toUri().toString();
         } catch (RuntimeException e) {

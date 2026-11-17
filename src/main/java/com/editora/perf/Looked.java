@@ -46,6 +46,16 @@ public final class Looked<K, V> {
         return lookNow(key);
     }
 
+    /** Looks at {@code key} now, on this thread, whatever is kept, and keeps the answer: a look off the FX thread. */
+    public @Nullable V lookAgain(K key) {
+        return lookNow(key);
+    }
+
+    /** Whether there is an answer kept for {@code key} (which {@link #get} on the FX thread then answers from). */
+    public boolean knows(K key) {
+        return known.containsKey(key);
+    }
+
     private @Nullable V lookNow(K key) {
         BlockingSites.enter(name);
         V value = look.apply(key);

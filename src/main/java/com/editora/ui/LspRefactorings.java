@@ -445,23 +445,36 @@ final class LspRefactorings {
                 host.setError(tr("status.lsp.refactorBadPackage", name));
                 return;
             }
-            if (!java.nio.file.Files.isDirectory(root)) { // never create a folder tree somewhere else (BN2)
-                host.setError(tr("status.lsp.refactorPackageNotCreated", name, root.toString()));
-                return;
-            }
             Path folder = root.resolve(name.replace('.', java.io.File.separatorChar));
-            try {
-                java.nio.file.Files.createDirectories(folder);
-            } catch (java.io.IOException | RuntimeException e) {
-                host.setError(tr("status.lsp.refactorPackageNotCreated", name, String.valueOf(e.getMessage())));
-                return;
-            }
-            lspManager.notifyWatchedFiles(List.of(new LspManager.WatchedFile(folder, LspManager.WatchedKind.CREATED)));
-            com.google.gson.JsonObject params = JdtlsRefactor.moveParams("moveResource", source, null, null);
-            params.addProperty("destination", folder.toUri().toString());
-            LspRefactoringUndo.AppliedEdit before = undo.lastAppliedEdit();
-            applyJdtlsMove(path, item, params, () -> undo.newPackageFolder(before, folder, root));
+            // made off the FX thread (PERF-01, Pauta 6.0.1); never a folder tree somewhere else (BN2)
+            com.editora.perf.OffFx.then(
+                    "refactor-new-package",
+                    () -> {
+                        if (!java.nio.file.Files.isDirectory(root)) {
+                            return Boolean.FALSE;
+                        }
+                        java.nio.file.Files.createDirectories(folder);
+                        return Boolean.TRUE;
+                    },
+                    made -> {
+                        if (!made.ok()) {
+                            host.setError(tr("status.lsp.refactorPackageNotCreated", name, made.why()));
+                        } else if (!made.or(false)) {
+                            host.setError(tr("status.lsp.refactorPackageNotCreated", name, root.toString()));
+                        } else {
+                            moveIntoNewPackage(path, item, source, root, folder);
+                        }
+                    });
         });
+    }
+
+    private void moveIntoNewPackage(
+            Path path, LspManager.CodeActionItem item, @Nullable String source, Path root, Path folder) {
+        lspManager.notifyWatchedFiles(List.of(new LspManager.WatchedFile(folder, LspManager.WatchedKind.CREATED)));
+        com.google.gson.JsonObject params = JdtlsRefactor.moveParams("moveResource", source, null, null);
+        params.addProperty("destination", folder.toUri().toString());
+        LspRefactoringUndo.AppliedEdit before = undo.lastAppliedEdit();
+        applyJdtlsMove(path, item, params, () -> undo.newPackageFolder(before, folder, root));
     }
 
     /** Moves a static member or a nested type into another type of the same project. */
@@ -517,24 +530,44 @@ final class LspRefactorings {
             String prompt,
             List<JdtlsRefactor.Destination> targets,
             java.util.function.Consumer<JdtlsRefactor.Destination> onChoose) {
-        LspCoordinator.pickOne(
-                host,
-                item.title(),
-                prompt,
-                targets,
-                JdtlsRefactor.Destination::label,
-                d -> d.detail() == null ? "" : destinationDetail(d.detail()),
-                onChoose);
+        // Which rows name a folder that is there is looked at off the FX thread before the picker shows (PERF-01,
+        // Pauta 6.0.1), not once per row as it is drawn.
+        com.editora.perf.OffFx.then("refactor-destinations-look", () -> existingDetails(targets), there -> {
+            java.util.Set<String> exist = there.or(java.util.Set.of());
+            LspCoordinator.pickOne(
+                    host,
+                    item.title(),
+                    prompt,
+                    targets,
+                    JdtlsRefactor.Destination::label,
+                    d -> d.detail() == null ? "" : destinationDetail(d.detail(), exist),
+                    onChoose);
+        });
+    }
+
+    /** The details of {@code targets} that are absolute paths of folders that exist: off the FX thread. */
+    private static java.util.Set<String> existingDetails(List<JdtlsRefactor.Destination> targets) {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        for (JdtlsRefactor.Destination d : targets) {
+            String detail = d.detail();
+            if (detail == null) {
+                continue;
+            }
+            try {
+                Path p = Path.of(detail);
+                if (p.isAbsolute() && java.nio.file.Files.exists(p)) {
+                    out.add(detail);
+                }
+            } catch (java.nio.file.InvalidPathException e) {
+                // not a path: shown as given
+            }
+        }
+        return out;
     }
 
     /** A destination's folder relative to the project when it is a path there (re-review BN8), else as given. */
-    private String destinationDetail(String detail) {
-        try {
-            Path p = Path.of(detail);
-            return p.isAbsolute() && java.nio.file.Files.exists(p) ? projectRelative(p) : detail;
-        } catch (java.nio.file.InvalidPathException e) {
-            return detail;
-        }
+    private String destinationDetail(String detail, java.util.Set<String> existing) {
+        return existing.contains(detail) ? projectRelative(Path.of(detail)) : detail;
     }
 
     /** Extract Interface: which methods, the interface's name, and the package it is created in. */

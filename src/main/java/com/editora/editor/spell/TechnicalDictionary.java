@@ -51,6 +51,7 @@ public final class TechnicalDictionary {
     }
 
     private static Set<String> load() {
+        com.editora.perf.BlockingSites.enter("TechnicalDictionary.load");
         Set<String> set = new HashSet<>();
         try (InputStream in = TechnicalDictionary.class.getResourceAsStream(RESOURCE)) {
             if (in == null) {

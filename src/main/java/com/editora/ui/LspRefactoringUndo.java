@@ -44,6 +44,9 @@ final class LspRefactoringUndo {
     /** Set while Undo Refactoring applies its inverse, which is not itself recorded. */
     private boolean undoingEdit;
 
+    /** Set while Undo Last Refactoring reads the closed files it would change. */
+    private boolean undoLooking;
+
     /** The edit Undo Refactoring would revert (tests). */
     @Nullable
     AppliedEdit lastAppliedEdit() {
@@ -73,36 +76,72 @@ final class LspRefactoringUndo {
                 from,
                 to,
                 ok -> {
-                    if (!ok && retry && !lastRenameRefused && java.nio.file.Files.exists(from)) {
+                    if (!ok && retry && !lastRenameRefused) {
                         // jdtls's edit no longer applied: a file it edits was opened a moment before, and the edit
                         // named a document it had not read yet. Asked once more, it answers for the open one
-                        // (twelfth review BL4).
-                        var later = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(1));
-                        later.setOnFinished(e -> willRenameFile(from, to, previous, proceed, false));
-                        later.play();
+                        // (twelfth review BL4) — when the file is still there, looked at off the FX thread.
+                        com.editora.perf.OffFx.then("rename-look", () -> java.nio.file.Files.exists(from), there -> {
+                            if (there.or(false)) {
+                                var later = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(1));
+                                later.setOnFinished(e -> willRenameFile(from, to, previous, proceed, false));
+                                later.play();
+                            } else {
+                                proceedAndRecord(from, to, previous, proceed, false);
+                            }
+                        });
                         return;
                     }
-                    try {
-                        proceed.accept(ok); // the tree moves the file now, and points its tabs at the new path
-                        AppliedEdit edit = lastApplied;
-                        boolean moved = ok && !java.nio.file.Files.exists(from) && java.nio.file.Files.exists(to);
-                        if (moved && edit != null && edit != previous) {
-                            treeRenamed(edit, from, to);
-                        } else if (moved && moveGroup != null) {
-                            // moved with no edit (not Java, or nothing to change): still part of the drag, so
-                            // undoing the drag as one refactoring takes it back too (fifth review BV1)
-                            moveGroup.add(new AppliedEdit(
-                                    java.util.List.of(),
-                                    java.util.List.of(
-                                            new com.editora.lsp.WorkspaceEditMapper.FileRename(from, to, false)),
-                                    java.util.List.of()));
-                            moveGroupWhole &= !java.nio.file.Files.isDirectory(to);
-                        }
-                    } finally {
-                        renameDone();
-                    }
+                    proceedAndRecord(from, to, previous, proceed, ok);
                 },
                 this::renameWithoutEdits);
+    }
+
+    /**
+     * Lets the tree move the file, and once the move has landed (off the FX thread, PERF-01, Pauta 6.0.1) records
+     * what it did: with the edit made for it, or as part of the drag.
+     */
+    private void proceedAndRecord(
+            Path from,
+            Path to,
+            @Nullable AppliedEdit previous,
+            java.util.function.Consumer<Boolean> proceed,
+            boolean ok) {
+        try {
+            proceed.accept(ok); // the tree moves the file now, and points its tabs at the new path
+        } catch (RuntimeException e) {
+            renameDone();
+            throw e;
+        }
+        java.util.function.Consumer<ProjectPanel.Moved> record = landed -> {
+            try {
+                AppliedEdit edit = lastApplied;
+                boolean moved = ok && landed.moved();
+                if (moved && edit != null && edit != previous) {
+                    treeRenamed(edit, from, to, landed.folder());
+                } else if (moved && moveGroup != null) {
+                    // moved with no edit (not Java, or nothing to change): still part of the drag, so undoing the
+                    // drag as one refactoring takes it back too (fifth review BV1)
+                    moveGroup.add(new AppliedEdit(
+                            java.util.List.of(),
+                            java.util.List.of(new com.editora.lsp.WorkspaceEditMapper.FileRename(from, to, false)),
+                            java.util.List.of()));
+                    moveGroupWhole &= !landed.folder();
+                }
+            } finally {
+                renameDone();
+            }
+        };
+        if (proceed instanceof ProjectPanel.MoveProceed tree) {
+            tree.whenMoved(record);
+        } else if (!ok) {
+            record.accept(ProjectPanel.Moved.NOT);
+        } else {
+            // a caller that moved the file itself: where it is now is looked at off the FX thread
+            com.editora.perf.OffFx.then(
+                    "rename-look",
+                    () -> ProjectPanel.Moved.look(from, to),
+                    looked -> record.accept(looked.or(ProjectPanel.Moved.NOT)));
+        }
     }
 
     /**
@@ -218,6 +257,7 @@ final class LspRefactoringUndo {
         } else if (edited) {
             lastApplied = moveGroupWhole ? merged(group) : null;
             treeMoveEdit = lastApplied;
+            lookAtClosedFiles(lastApplied);
         } else {
             // a drag with no edit is the tree's newest move: an older drag's refactoring no longer ends it, nor does
             // its Undo Move take that refactoring's undo away (seventh review BS2)
@@ -318,7 +358,7 @@ final class LspRefactoringUndo {
                 == javafx.scene.control.ButtonType.OK;
     }
 
-    private void treeRenamed(AppliedEdit edit, Path from, Path to) {
+    private void treeRenamed(AppliedEdit edit, Path from, Path to, boolean folder) {
         Path f = from.toAbsolutePath().normalize();
         Path t = to.toAbsolutePath().normalize();
         java.util.List<EditedFile> files = new java.util.ArrayList<>();
@@ -328,7 +368,7 @@ final class LspRefactoringUndo {
             files.add(new EditedFile(now, e.before(), e.after()));
         }
         java.util.List<AppliedEdit> group = moveGroup;
-        if (java.nio.file.Files.isDirectory(t)) {
+        if (folder) {
             lastApplied = null; // a folder cannot be moved back as one: rename it back, and jdtls edits again
             moveGroupWhole = false;
         } else {
@@ -336,6 +376,7 @@ final class LspRefactoringUndo {
                     new java.util.ArrayList<>(edit.renames());
             renames.add(new com.editora.lsp.WorkspaceEditMapper.FileRename(from, to, false));
             lastApplied = new AppliedEdit(java.util.List.copyOf(files), java.util.List.copyOf(renames), edit.created());
+            lookAtClosedFiles(lastApplied);
         }
         lspManager.notifyWatchedFiles(java.util.List.of(
                 new com.editora.lsp.LspManager.WatchedFile(from, com.editora.lsp.LspManager.WatchedKind.DELETED),
@@ -403,7 +444,8 @@ final class LspRefactoringUndo {
         if (path == null || !holdsAfter(edit, path, buffer.getContent())) {
             return false; // edited since (or never part of it): an ordinary Undo
         }
-        if (edit.files().stream().noneMatch(f -> f.path().equals(path)) || !refactoringIntact(edit)) {
+        if (edit.files().stream().noneMatch(f -> f.path().equals(path))
+                || !refactoringIntact(edit, closedOnDiskFor == edit ? closedOnDisk : Map.of())) {
             return false;
         }
         int files = edit.files().size() + edit.created().size();
@@ -425,25 +467,65 @@ final class LspRefactoringUndo {
                 .anyMatch(f -> f.path().equals(path) && f.after().equals(text));
     }
 
-    /** Whether every file of {@code edit} still holds what it left — in its tab, or on disk. */
-    private boolean refactoringIntact(AppliedEdit edit) {
+    /**
+     * Whether every file of {@code edit} still holds what it left — in its tab, or on disk, where {@code onDisk}
+     * says what each closed file was found to hold (read off the FX thread, {@link #closedFilesIntact}). A closed
+     * file it does not know counts as changed.
+     */
+    private boolean refactoringIntact(AppliedEdit edit, Map<Path, Boolean> onDisk) {
         for (EditedFile f : edit.files()) {
             EditorBuffer open = ops.bufferForPath(f.path());
-            String now;
-            if (open != null) {
-                now = open.getContent();
-            } else {
-                try {
-                    now = java.nio.file.Files.readString(f.path());
-                } catch (java.io.IOException | RuntimeException e) {
-                    return false;
-                }
-            }
-            if (!now.equals(f.after())) {
+            boolean holds = open != null ? open.getContent().equals(f.after()) : onDisk.getOrDefault(f.path(), false);
+            if (!holds) {
                 return false;
             }
         }
         return true;
+    }
+
+    /** The closed files of {@code edit}: what reading them off the FX thread is asked. */
+    private java.util.List<EditedFile> closedFiles(AppliedEdit edit) {
+        return edit.files().stream()
+                .filter(f -> ops.bufferForPath(f.path()) == null)
+                .toList();
+    }
+
+    /** Reads each of {@code files} and says whether it holds what the refactoring left. Off the FX thread. */
+    static Map<Path, Boolean> closedFilesIntact(java.util.List<EditedFile> files) {
+        com.editora.perf.BlockingSites.enter("LspRefactoringUndo.closedFilesIntact");
+        Map<Path, Boolean> out = new java.util.HashMap<>();
+        for (EditedFile f : files) {
+            boolean holds;
+            try {
+                holds = java.nio.file.Files.readString(f.path()).equals(f.after());
+            } catch (java.io.IOException | RuntimeException e) {
+                holds = false;
+            }
+            out.put(f.path(), holds);
+        }
+        return out;
+    }
+
+    /**
+     * What the closed files of the last refactoring held when it was recorded, read off the FX thread then, so the
+     * Undo key's question ({@link #offerRefactoringUndo}) answers from memory. Undo Last Refactoring reads them again.
+     */
+    private Map<Path, Boolean> closedOnDisk = Map.of();
+
+    private @Nullable AppliedEdit closedOnDiskFor;
+
+    /** Reads the closed files of {@code edit}, the last refactoring now, off the FX thread for {@link #closedOnDisk}. */
+    private void lookAtClosedFiles(@Nullable AppliedEdit edit) {
+        if (edit == null) {
+            return;
+        }
+        java.util.List<EditedFile> closed = closedFiles(edit);
+        com.editora.perf.OffFx.then("refactoring-intact-look", () -> closedFilesIntact(closed), read -> {
+            if (lastApplied == edit) {
+                closedOnDiskFor = edit;
+                closedOnDisk = read.or(Map.of());
+            }
+        });
     }
 
     /**
@@ -457,10 +539,26 @@ final class LspRefactoringUndo {
             host.setStatus(tr("status.lsp.noRefactoringToUndo"));
             return;
         }
-        if (!refactoringIntact(edit)) {
-            host.setError(tr("status.lsp.refactoringChangedSince"));
-            return;
+        if (undoingEdit || undoLooking) {
+            return; // the one under way is still checking or applying
         }
+        undoLooking = true;
+        // The closed files are read off the FX thread (PERF-01, Pauta 6.0.1), then checked with the open ones.
+        java.util.List<EditedFile> closed = closedFiles(edit);
+        com.editora.perf.OffFx.then("refactoring-intact-look", () -> closedFilesIntact(closed), read -> {
+            undoLooking = false;
+            if (lastApplied != edit) {
+                return; // another refactoring, or its undo, came in between
+            }
+            if (!refactoringIntact(edit, read.or(Map.of()))) {
+                host.setError(tr("status.lsp.refactoringChangedSince"));
+                return;
+            }
+            undoRefactoring(edit);
+        });
+    }
+
+    private void undoRefactoring(AppliedEdit edit) {
         java.util.List<
                         org.eclipse.lsp4j.jsonrpc.messages.Either<
                                 org.eclipse.lsp4j.TextDocumentEdit, org.eclipse.lsp4j.ResourceOperation>>
@@ -501,12 +599,15 @@ final class LspRefactoringUndo {
                 }
                 Path[] made = newPackageFolders.remove(edit);
                 if (made != null) {
-                    // Move ▸ New package's folder goes with it (BT4), and jdtls hears it is gone: the next Move
-                    // still offered the package (fourth review BF4)
-                    lspManager.notifyWatchedFiles(WorkspaceEditFiles.removeEmptyFolders(made[0], made[1]).stream()
-                            .map(f -> new com.editora.lsp.LspManager.WatchedFile(
-                                    f, com.editora.lsp.LspManager.WatchedKind.DELETED))
-                            .toList());
+                    // Move ▸ New package's folder goes with it (BT4), off the FX thread (PERF-01, Pauta 6.0.1), and
+                    // jdtls hears it is gone: the next Move still offered the package (fourth review BF4)
+                    com.editora.perf.OffFx.then(
+                            "refactoring-undo-folders",
+                            () -> WorkspaceEditFiles.removeEmptyFolders(made[0], made[1]),
+                            removed -> lspManager.notifyWatchedFiles(removed.or(java.util.List.<Path>of()).stream()
+                                    .map(f -> new com.editora.lsp.LspManager.WatchedFile(
+                                            f, com.editora.lsp.LspManager.WatchedKind.DELETED))
+                                    .toList()));
                 }
             }
             edits.reportEdit(ok, tr("status.lsp.refactoringUndone", files), tr("status.lsp.refactoringUndoFailed"));
@@ -554,6 +655,7 @@ final class LspRefactoringUndo {
                     java.util.List.copyOf(files),
                     java.util.List.copyOf(mapped.renames()),
                     java.util.List.copyOf(created));
+            lookAtClosedFiles(lastApplied);
         }
     }
 

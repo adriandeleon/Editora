@@ -437,6 +437,8 @@ public class SettingsWindow {
             Consumer<Path> onOpenFile,
             Runnable onExportConfig,
             Runnable onShowDebugLog) {
+        // The bundled table of what each control sets is read off the FX thread, before a reset asks (PERF-01).
+        Thread.ofVirtual().name("settings-modified-table").start(SettingsModified::warm);
         this.config = config;
         this.toolWindows = toolWindows;
         this.gitService = gitService;
@@ -1723,18 +1725,25 @@ public class SettingsWindow {
                 FocusCommands.press(new Hyperlink(tr("settings.userThemes.open")), "settings.openUserThemesFolder");
         openThemes.setOnAction(e -> {
             Path dir = config.getConfigDir().resolve("themes");
-            try {
-                java.nio.file.Files.createDirectories(dir);
-                java.nio.file.Files.createDirectories(config.getConfigDir().resolve("editor-themes"));
-            } catch (java.io.IOException ex) {
-                return; // a config folder that cannot be written to has no themes to show
-            }
-            com.editora.process.DesktopActions.reveal(dir, true, msg -> {});
+            Path editorThemes = config.getConfigDir().resolve("editor-themes");
+            // made off the FX thread (PERF-01, Pauta 6.0.1); a config folder that cannot be written to has no themes
+            com.editora.perf.OffFx.run(
+                    "themes-folder",
+                    () -> {
+                        java.nio.file.Files.createDirectories(dir);
+                        java.nio.file.Files.createDirectories(editorThemes);
+                    },
+                    failure -> {
+                        if (failure == null) {
+                            com.editora.process.DesktopActions.reveal(dir, true, msg -> {});
+                        }
+                    });
         });
         Hyperlink reloadThemes = new Hyperlink(tr("settings.userThemes.reload"));
         reloadThemes.setOnAction(e -> {
-            UserThemes.load(config.getConfigDir());
-            syncThemes();
+            Path configDir = config.getConfigDir();
+            // read off the FX thread (PERF-01, Pauta 6.0.1), shown when they land
+            com.editora.perf.OffFx.run("themes-reload", () -> UserThemes.load(configDir), failure -> syncThemes());
         });
         controlRow(
                 mainCard,

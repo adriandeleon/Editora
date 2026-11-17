@@ -35,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * folder, a file, a name that does not exist yet and nothing at all — in both the file and the folder picker.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class FileFinderFxTest {
 
     private static final String SEP = File.separator;
@@ -276,6 +277,26 @@ class FileFinderFxTest {
                     List.of(root.resolve("bare-name.txt")),
                     s.chosen,
                     "a bare name belongs to the listed folder, not the working directory");
+        }
+    }
+
+    /**
+     * PERF-01 (Pauta 6.0.1): a typed path is looked at off the FX thread. A second Enter while the look is under way
+     * starts nothing more, and a look that lands after the path was typed over chooses nothing.
+     */
+    @Test
+    void aLateLookChoosesNothingAndASecondEnterWaitsForTheFirst(@TempDir Path root) throws Exception {
+        tree(root);
+        java.util.List<Runnable> held = new java.util.ArrayList<>();
+        com.editora.perf.OffFx.runnerForTest((name, task) -> held.add(task));
+        try (Shown s = new Shown(root, false, 5)) {
+            s.type(root + SEP + "late.txt");
+            s.press(KeyCode.ENTER);
+            s.press(KeyCode.ENTER);
+            assertEquals(1, held.size(), "one look, however often Enter is pressed");
+            s.type(root + SEP + "other.txt"); // typed over before the look lands
+            FxTestSupport.runOnFx(() -> held.get(0).run());
+            assertTrue(s.chosen.isEmpty(), "the path it looked at is no longer the one typed");
         }
     }
 

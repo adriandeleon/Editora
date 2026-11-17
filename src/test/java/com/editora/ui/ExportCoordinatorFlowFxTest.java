@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * queue, cancelling them, what a closing window leaves behind, and opening the result afterwards.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class ExportCoordinatorFlowFxTest {
 
     @BeforeAll

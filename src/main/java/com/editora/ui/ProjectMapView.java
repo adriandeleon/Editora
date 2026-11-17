@@ -906,13 +906,20 @@ final class ProjectMapView extends VBox {
             return;
         }
         String rel = current.relativize(normalized).toString().replace('\\', '/');
-        boolean folder = rel.isEmpty() || java.nio.file.Files.isDirectory(normalized);
-        ProjectMapDependencyCard card = cards.openDependencyCard(current, rel, folder, beside, made -> {
-            made.setOnReveal(this::revealPath);
-            made.setOnRefresh(() -> readDependencies(made));
-        });
-        readDependencies(card);
-        card.focusContent();
+        // a folder? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.then(
+                "map-look", () -> rel.isEmpty() || java.nio.file.Files.isDirectory(normalized), folder -> {
+                    if (disposed || root != current) {
+                        return; // closed, or another folder shown, meanwhile
+                    }
+                    ProjectMapDependencyCard card =
+                            cards.openDependencyCard(current, rel, folder.or(false), beside, made -> {
+                                made.setOnReveal(this::revealPath);
+                                made.setOnRefresh(() -> readDependencies(made));
+                            });
+                    readDependencies(card);
+                    card.focusContent();
+                });
     }
 
     private void readDependencies(ProjectMapDependencyCard card) {
@@ -1718,6 +1725,7 @@ final class ProjectMapView extends VBox {
             com.editora.config.@Nullable ProjectMapState stored,
             Consumer<com.editora.config.ProjectMapState> onChanged) {
         bearingsStored = stored;
+        bearingsLookAt(stored);
         bearingsSink = onChanged == null ? state -> {} : onChanged;
         bearingsDebounce.setOnFinished(event -> {
             bearingsDebounceArmed = false;
@@ -1833,11 +1841,50 @@ final class ProjectMapView extends VBox {
 
     /** Whether {@code path} — a file, a folder, or a declaration below its file — still exists on disk. */
     private static boolean bearingsExists(Path path) {
+        return Boolean.TRUE.equals(BEARINGS_EXIST.get(bearingsFile(path)));
+    }
+
+    private static Path bearingsFile(Path path) {
         Path file = path;
         while (ProjectMapStructure.isSymbolPath(file) && file.getParent() != null) {
             file = file.getParent();
         }
-        return java.nio.file.Files.exists(file);
+        return file;
+    }
+
+    /**
+     * Whether a remembered place is still on disk: looked at off the FX thread as soon as the workspace hands its
+     * state over ({@link #bearingsLookAt}), answered from memory when the folder is first shown (PERF-01, Pauta
+     * 6.0.1).
+     */
+    private static final com.editora.perf.Looked<Path, Boolean> BEARINGS_EXIST =
+            new com.editora.perf.Looked<>("ProjectMapView.bearingsExists", java.nio.file.Files::exists);
+
+    /** Looks at every place {@code stored} names, off the FX thread, for {@link #bearingsExists}. */
+    private static void bearingsLookAt(com.editora.config.@Nullable ProjectMapState stored) {
+        if (stored == null || stored.getRoot() == null || stored.getRoot().isBlank()) {
+            return;
+        }
+        Path base;
+        try {
+            base = Path.of(stored.getRoot());
+        } catch (RuntimeException invalid) {
+            return;
+        }
+        if (!com.editora.vfs.Vfs.isLocal(base)) {
+            return;
+        }
+        List<String> named = new ArrayList<>(stored.getHistory());
+        named.add(stored.getSelected());
+        stored.getCards().forEach(card -> named.add(card.getPath()));
+        Thread.ofVirtual().name("map-bearings-look").start(() -> {
+            for (String relative : named) {
+                Path p = bearingsResolve(base, relative);
+                if (p != null) {
+                    BEARINGS_EXIST.get(bearingsFile(p));
+                }
+            }
+        });
     }
 
     /**
@@ -3463,7 +3510,17 @@ final class ProjectMapView extends VBox {
                 || !normalized.startsWith(currentRoot)) {
             return false;
         }
-        boolean file = !java.nio.file.Files.isDirectory(normalized);
+        // a file or a folder? looked at off the FX thread (PERF-01, Pauta 6.0.1); then shown
+        com.editora.perf.OffFx.then("map-look", () -> !java.nio.file.Files.isDirectory(normalized), isFile -> {
+            if (!disposed && root == currentRoot) {
+                showOnMap(from, normalized, isFile.or(true), line, name);
+            }
+        });
+        return true;
+    }
+
+    private void showOnMap(
+            @Nullable ProjectMapPreview from, Path normalized, boolean file, int line, @Nullable String name) {
         if (from != null && file) {
             // Picked in a card: the history's stops are that card and the card the place opens in, not the row the
             // place is revealed at between them (one Back returns to the card it was typed in).
@@ -3482,7 +3539,6 @@ final class ProjectMapView extends VBox {
             }
             cards.openPlaceCard(from, normalized, line, name == null ? null : followName(name));
         }
-        return true;
     }
 
     /** Where Show References / Callers as Cards find their places (the panel's language servers and file list). */
@@ -3990,12 +4046,9 @@ final class ProjectMapView extends VBox {
         chooser.getExtensionFilters()
                 .add(new javafx.stage.FileChooser.ExtensionFilter(
                         extension.toUpperCase(java.util.Locale.ROOT), "*." + extension));
-        Path current = root;
-        if (current != null && com.editora.vfs.Vfs.isLocal(current) && java.nio.file.Files.isDirectory(current)) {
-            chooser.setInitialDirectory(current.toFile());
-        }
+        ChooserStart.set(chooser, root); // no look at the disk on the FX thread first (PERF-01, Pauta 6.0.1)
         javafx.stage.Window owner = getScene() == null ? null : getScene().getWindow();
-        return chooser.showSaveDialog(owner);
+        return ChooserStart.show(chooser, c -> c.showSaveDialog(owner));
     }
 
     /** ⋯ → Export ▸ PNG… or SVG…, as the menu runs it. */
