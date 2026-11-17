@@ -2326,6 +2326,7 @@ final class DebugCoordinator {
                     return;
                 }
                 removeTemporaryBreakpointHit(reason, frames);
+                dap().stopShown(); // a Run to Cursor ends at a stop the user sees
                 if (shown > 0) {
                     // A JDK or library frame jdtls can show is "library code", not "no source" (review 2, B107).
                     host.setStatus(tr(

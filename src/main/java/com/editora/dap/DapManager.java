@@ -4626,6 +4626,16 @@ public final class DapManager {
         return new DapModels.FileBreakpoints(file, lines);
     }
 
+    /**
+     * The window showed the current stop to the user (not one it resumes by itself: a logpoint, a recording or
+     * filtered breakpoint): a Run to Cursor trip ends there, as in VS Code and IntelliJ. FX thread.
+     */
+    public void stopShown() {
+        if (tempBreakpointFile != null || !forceRunMuted.isEmpty() || forceRunMutedMembers) {
+            clearTempBreakpoint();
+        }
+    }
+
     /** Restores the real breakpoint set after a run-to-cursor temp breakpoint did its job (FX thread). */
     private void clearTempBreakpoint() {
         Path f = tempBreakpointFile;

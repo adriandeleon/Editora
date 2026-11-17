@@ -1036,6 +1036,27 @@ class DapManagerSessionFxTest {
         assertEquals(List.of(2), lines(session.breakpoints.get(4)));
     }
 
+    /** A stop on the way that the window shows the user (a real breakpoint) ends the trip, as in VS Code and IntelliJ. */
+    @Test
+    void runToCursorEndsAtAStopShownOnTheWay() throws Exception {
+        project();
+        breakpoints =
+                List.of(new DapModels.FileBreakpoints(file, List.of(new DapModels.LineBreakpoint(1, null, null))));
+        FakeDebugAdapter.Session session = launch();
+        session.awaitRequests("setBreakpoints", 1);
+        stop(session, 7);
+        onFx(() -> dap.runToCursor(file, 3));
+        session.awaitRequests("setBreakpoints", 2);
+        session.awaitRequests("continue", 1);
+        await("the resume", () -> "RUNNING".equals(lastState()));
+
+        stop(session, 7); // a breakpoint on the way, shown to the user
+        onFx(dap::stopShown);
+        session.awaitRequests("setBreakpoints", 3);
+        assertEquals(
+                List.of(2), lines(session.breakpoints.get(2)), "the user's breakpoints are back, the cursor's gone");
+    }
+
     @Test
     void jumpToLineMovesTheStoppedThreadToTheAdaptersTarget() throws Exception {
         project();
