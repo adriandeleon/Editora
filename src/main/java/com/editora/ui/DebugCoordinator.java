@@ -1025,6 +1025,10 @@ final class DebugCoordinator {
     /** Stops the session being handled: a before-launch build still running is what gets stopped; else the session. */
     private void stopOne() {
         stopChildren(); // a program's subprocesses go with it
+        com.editora.run.RunService testHost = s().testHost;
+        if (testHost != null) {
+            testHost.stop(); // C#'s Debug Test: the dotnet test run the session attached to
+        }
         s().closedBreakpointsRead = null; // a start still reading closed files' breakpoints is not made (review D104)
         if (beforeLaunchActive()) {
             beforeLaunch().stop();
@@ -1165,7 +1169,7 @@ final class DebugCoordinator {
     }
 
     /** Names the session being launched in the panel; survives the end of the session it replaces. */
-    private void nameSession(@Nullable String label) {
+    void nameSession(@Nullable String label) {
         s().sessionLabel = label == null ? "" : label;
         panel().setSessionFile(s().sessionLabel);
         refreshSessionTabs();
@@ -1177,7 +1181,7 @@ final class DebugCoordinator {
     }
 
     /** As {@link #beforeLaunchConsole()}; not {@code fresh}: a later step of the same build, which keeps the output. */
-    private BeforeLaunchStep.Console beforeLaunchConsole(boolean fresh) {
+    BeforeLaunchStep.Console beforeLaunchConsole(boolean fresh) {
         s().announceStart = true; // a step's status would outlive it (review 2, A105)
         return new BeforeLaunchStep.Console() {
             @Override
@@ -2022,7 +2026,7 @@ final class DebugCoordinator {
      * so the initial {@code setBreakpoints} includes closed files. The open-tab set + a copy of the map are
      * snapshotted on the FX thread; the file reads happen on a daemon thread.
      */
-    private void withClosedBreakpoints(Runnable then) {
+    void withClosedBreakpoints(Runnable then) {
         Object token = new Object();
         DebugSession session = s();
         session.closedBreakpointsRead = token; // a newer start, or Stop, drops this one
@@ -5174,7 +5178,7 @@ final class DebugCoordinator {
     }
 
     /** Saves the edited buffers of {@code language} under {@code root}: a build reads them from disk. */
-    private void saveBuffersUnder(@Nullable Path root, String language) {
+    void saveBuffersUnder(@Nullable Path root, String language) {
         host.forEachBuffer(other -> {
             Path p = other.getPath();
             if (other.isDirty()
@@ -5188,7 +5192,7 @@ final class DebugCoordinator {
     }
 
     /** The 0-based document line of {@code b}'s caret. */
-    private static int caretLine(EditorBuffer b) {
+    static int caretLine(EditorBuffer b) {
         return b.getFocusedArea().getCurrentParagraph()
                 + b.getBreakpointManager().regionFirstLine();
     }
@@ -5197,6 +5201,17 @@ final class DebugCoordinator {
      * Debug Test at Caret in a Rust file: the {@code #[test]} function at the caret, its test binary filtered to it
      * ({@link #debugRustFile}). False — nothing done — outside a test, or for any other buffer.
      */
+    boolean debugCsharpTestAtCaret(@Nullable EditorBuffer b) {
+        CsharpTestDebug c = csharpTests;
+        if (c == null) {
+            c = new CsharpTestDebug(this, host, ops);
+            csharpTests = c;
+        }
+        return c.debugAtCaret(b);
+    }
+
+    private @Nullable CsharpTestDebug csharpTests;
+
     boolean debugRustTestAtCaret(@Nullable EditorBuffer b) {
         if (b == null
                 || b.getPath() == null

@@ -45,6 +45,9 @@ final class DebugSession {
 
     com.editora.run.@Nullable RunService beforeLaunchService;
 
+    /** C#'s Debug Test at Caret: the {@code dotnet test} run the session attaches to (stopped with it). */
+    com.editora.run.@Nullable RunService testHost;
+
     /** The text each file of the session was launched from (see {@link LaunchedLines}). */
     final LaunchedLines launchedLines = new LaunchedLines();
 

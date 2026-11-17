@@ -1203,7 +1203,23 @@ Then `dotnet build <target> -getProperty:TargetPath`, which only evaluates, name
 last absolute `.dll` line). netcoredbg's `launch` gets it as `program`, run on `dotnet` in the project's folder
 (`justMyCode`); the program's output comes as output events. An exception user code does not handle stops it
 (`user-unhandled`, on by default as in Visual Studio; `all` stops on every throw). `ProcessRunner`'s PATH includes
-`~/.dotnet`, where Microsoft's install script puts the SDK. Not yet: a test at the caret, and C# in Attach to Process.
+`~/.dotnet`, where Microsoft's install script puts the SDK. Not yet: C# in Attach to Process.
+
+**Debug Test at Caret in C#** ([`ui/CsharpTestDebug`](../../src/main/java/com/editora/ui/CsharpTestDebug.java),
+[`dap/DotnetTests`](../../src/main/java/com/editora/dap/DotnetTests.java)) is Visual Studio's and C# Dev Kit's way:
+the file's project must be a test project (`isTestProject`: `Microsoft.NET.Test.Sdk`, xUnit, NUnit or MSTest in its
+`.csproj`, or `<IsTestProject>`), and the caret in a test method (`testAt`: an xUnit `[Fact]`/`[Theory]`, an NUnit
+`[Test]`/`[TestCase]`, an MSTest `[TestMethod]`, from its attributes to the next method) or in a class with tests.
+After the folder's trust, `dotnet test <project> --filter <filter>` runs in the Debug console with
+`VSTEST_HOST_DEBUG=1` (`filter`: `FullyQualifiedName=` the method, `|FullyQualifiedName~` it followed by `(` for a
+parameterized test's cases; the class's `FullyQualifiedName~Ns.Class.` outside a test). It builds, starts the test
+host, and the host waits for a debugger, printing `Process Id: N, Name: dotnet` (`processId`); netcoredbg then
+attaches to N (`DotnetLaunch.attach`), and the test runs under the debugger. The run is the session's
+(`DebugSession.testHost`): Stop ends it, Restart runs the same test again, and a run that ends before its host
+waited says so (`status.debug.dotnetTestNoHost`: a build error, a filter that matches nothing).
+`CsharpTestDebugWindowFxTest` (a stand-in `dotnet` that prints a process id, netcoredbg relaying to
+`FakeDebugAdapter`) checks the command, the environment, the attach, Stop, and a project with no test SDK;
+`CsharpTestDebugProbeFxTest` stops in an xUnit test on the real SDK and netcoredbg with its locals.
 
 **Ruby.** The `ruby` profile is the debug gem's `rdbg` (Ruby 3.1 and later ship it). It is the program itself: the
 command ends with `-- ruby <file> <args>` (`ScriptLaunch.rubyTail`), rdbg prints `DEBUGGER: Debugger can attach via
