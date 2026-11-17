@@ -1040,11 +1040,18 @@ final class DoctorPane extends Region implements TabContent {
         }
         try {
             Path p = Path.of(candidate);
-            return p.isAbsolute() && Files.exists(p) ? p : null;
+            return p.isAbsolute() && Boolean.TRUE.equals(EXISTS.get(p)) ? p : null;
         } catch (RuntimeException e) {
             return null;
         }
     }
+
+    /**
+     * Whether a row's path exists: looked at by the probe that named it, off the FX thread, and answered from memory
+     * when the row is shown (PERF-01, Pauta 6.0.1).
+     */
+    private static final com.editora.perf.Looked<Path, Boolean> EXISTS =
+            new com.editora.perf.Looked<>("DoctorPane.pathIn", Files::exists);
 
     private static void putOnClipboard(String text) {
         ClipboardContent cc = new ClipboardContent();

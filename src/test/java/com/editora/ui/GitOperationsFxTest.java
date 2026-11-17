@@ -347,8 +347,10 @@ class GitOperationsFxTest {
             // Resolved in the three-way resolver: applying a finished resolution saves and stages the file.
             CountDownLatch staged = watchStatus(fx, tr("status.git.conflictResolved", "story.txt")::equals);
             DiffCoordinator diffs = FxTestSupport.field(fx.controller, "diffCoordinator");
-            FxTestSupport.runOnFx(
-                    () -> assertTrue(diffs.applyMergeResolution(buffer, buffer.getContent(), "resolved by hand\n")));
+            java.util.concurrent.CompletableFuture<Boolean> applied = new java.util.concurrent.CompletableFuture<>();
+            FxTestSupport.runOnFx(() ->
+                    diffs.applyMergeResolution(buffer, buffer.getContent(), "resolved by hand\n", applied::complete));
+            assertTrue(applied.get(10, java.util.concurrent.TimeUnit.SECONDS), "the open document takes it");
             async.await(staged, "the resolution being staged");
             assertEquals("resolved by hand\n", Files.readString(story), "saved");
             assertEquals(

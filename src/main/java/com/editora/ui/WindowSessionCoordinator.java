@@ -708,23 +708,23 @@ final class WindowSessionCoordinator {
             host.addBuffer(buffer, true);
             host.setStatus(newFile.isBlank() ? tr("status.newBuffer") : tr("status.newFile", newFile));
         }
-        if (targets != null) {
-            for (OpenTarget t : targets) {
-                Path file = t.file().toAbsolutePath().normalize();
-                if (!host.fileWorkflows().openNewFileAt(file)) {
-                    host.fileWorkflows().openPath(file, true);
-                }
-            }
-            if (targets.stream().anyMatch(t -> t.line() > 0)) {
-                // Defer once more so it runs after openPath's own goToStart for any newly-opened file.
-                Platform.runLater(() -> {
-                    for (OpenTarget t : targets) {
-                        if (t.line() > 0) {
-                            gotoInFile(t.file().toAbsolutePath().normalize(), t.line(), t.column());
-                        }
+        if (targets == null || targets.isEmpty()) {
+            return;
+        }
+        // Each opens at once, in order, so the first frame shows them; whether one is a new file (a folder that
+        // exists, no file yet) is found out off the FX thread as its read finds it missing (PERF-01, Pauta 6.0.1).
+        for (OpenTarget t : targets) {
+            host.fileWorkflows().openStartupTarget(t.file().toAbsolutePath().normalize());
+        }
+        if (targets.stream().anyMatch(t -> t.line() > 0)) {
+            // Defer once more so it runs after openPath's own goToStart for any newly-opened file.
+            Platform.runLater(() -> {
+                for (OpenTarget t : targets) {
+                    if (t.line() > 0) {
+                        gotoInFile(t.file().toAbsolutePath().normalize(), t.line(), t.column());
                     }
-                });
-            }
+                }
+            });
         }
     }
 

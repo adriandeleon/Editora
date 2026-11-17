@@ -404,10 +404,26 @@ final class InstallPromptCoordinator {
             return false;
         }
         ownWebCopyChecked = true;
-        if (!foreignWebCopy.test(
-                host.lspCoordinator().serverArgv(id), host.config().getConfigDir())) {
-            return false;
-        }
+        // The copy's package.json files are read off the FX thread (PERF-01, Pauta 6.0.1); the offer shows when
+        // they answer, if that tab shows no other banner by then.
+        java.util.List<String> argv = host.lspCoordinator().serverArgv(id);
+        java.nio.file.Path configDir = host.config().getConfigDir();
+        java.lang.ref.WeakReference<EditorBuffer> asked = new java.lang.ref.WeakReference<>(buffer);
+        boolean[] shown = {false};
+        boolean[] returned = {false};
+        com.editora.perf.OffFx.then("html-server-look", () -> foreignWebCopy.test(argv, configDir), foreign -> {
+            EditorBuffer still = asked.get();
+            // answered at once: shown as before; answered later: only over no other banner
+            if (foreign.or(false) && still != null && (!returned[0] || !still.isInstallBarShown())) {
+                showOwnWebCopyOffer(still, id);
+                shown[0] = true;
+            }
+        });
+        returned[0] = true;
+        return shown[0]; // true only when the answer was there at once
+    }
+
+    private void showOwnWebCopyOffer(EditorBuffer buffer, String id) {
         ownWebCopyBuffer = new java.lang.ref.WeakReference<>(buffer);
         buffer.setInstallPrompt(
                 tr("install.banner.htmlNoTsLibs"),
@@ -427,7 +443,6 @@ final class InstallPromptCoordinator {
                     buffer.showInstallBar(false);
                 });
         buffer.showInstallBar(true);
-        return true;
     }
 
     /** Builds + shows the install banner for {@code buffer} with its message and an install trigger that is

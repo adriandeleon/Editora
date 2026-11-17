@@ -323,8 +323,14 @@ class ProjectMapDataReviewFxTest {
         waitFor(() -> child(child(rootItem, docs), untracked) != null, "docs/untracked.txt");
         TimeUnit.MILLISECONDS.sleep(300); // the watch on docs/ is registered
 
-        FxTestSupport.runOnFx(
-                () -> FxTestSupport.call(panel, "move", new Class<?>[] {Path.class, Path.class}, untracked, renamed));
+        // The rename's move is made off the FX thread now (PERF-01, Pauta 6.0.1); the row waits for it below.
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                panel,
+                "move",
+                new Class<?>[] {Path.class, Path.class, ProjectPanel.MoveProceed.class},
+                untracked,
+                renamed,
+                new ProjectPanel.MoveProceed(ok -> {})));
         waitFor(() -> child(child(rootItem, docs), renamed) != null, "the renamed row");
         // Another program writes into the same folder well inside the window after the rename.
         Path external = Files.writeString(docs.resolve("aaa-external.txt"), "x");

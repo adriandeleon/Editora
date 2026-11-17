@@ -372,7 +372,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         setHeading(named ? tr("history.forFile", fileName) : tr("history.noFile"), target);
         allRevisions.clear();
         allRevisions.addAll(list);
-        editorSha = hashOfEditorText();
+        rehashEditorText(); // the "Current" tag moves when the hash lands
         keepingSelection = true;
         try {
             if (!sameFile) {
@@ -642,11 +642,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
             return;
         }
         if (target != null) {
-            String sha = hashOfEditorText();
-            if (!sha.equals(editorSha)) {
-                editorSha = sha;
-                revisions.refresh();
-            }
+            rehashEditorText();
         }
         if (shown != null && shownPath != null && !shownMissing) {
             String now = support.currentText(shownPath);
@@ -657,13 +653,32 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    private String hashOfEditorText() {
+    /**
+     * Hashes the editor's text off the FX thread (PERF-01, Pauta 6.0.1) and, when it lands and is still the latest,
+     * moves the "Current" tag to the row it equals.
+     */
+    private void rehashEditorText() {
+        long mine = ++hashGen;
         if (support == null || target == null || allRevisions.isEmpty()) {
-            return "";
+            editorSha = "";
+            return;
         }
         String text = support.currentText(target);
-        return text == null || text.length() > MAX_HASHED_CHARS ? "" : HistoryBlobStore.sha256(text);
+        if (text == null || text.length() > MAX_HASHED_CHARS) {
+            editorSha = "";
+            return;
+        }
+        com.editora.perf.OffFx.then("history-hash", () -> HistoryBlobStore.sha256(text), hashed -> {
+            String sha = hashed.or("");
+            if (mine == hashGen && !sha.equals(editorSha)) {
+                editorSha = sha;
+                revisions.refresh();
+            }
+        });
     }
+
+    /** Which {@link #rehashEditorText} is the latest: an older hash that lands later is dropped. */
+    private long hashGen;
 
     /** The Restore button: the shown revision, into the file (single-file) or back to its own path (folder). */
     private void restoreShown() {

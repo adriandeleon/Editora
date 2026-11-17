@@ -64,6 +64,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * is never run (the launcher seam records the command line) and Maven Central is a loopback server.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class MavenProjectFlowFxTest {
 
     /** The plans read in place: these tests read what a command did as soon as it returns (PERF-01 moved the reads). */

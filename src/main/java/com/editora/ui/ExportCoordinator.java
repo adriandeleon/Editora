@@ -367,10 +367,17 @@ final class ExportCoordinator {
             host.setStatus(tr("status.export.none"));
             return;
         }
-        if (!java.nio.file.Files.isRegularFile(file)) {
-            host.setStatus(tr("status.export.gone", file.toString()));
-            return;
-        }
+        // still there? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.then("export-look", () -> java.nio.file.Files.isRegularFile(file), there -> {
+            if (!there.or(false)) {
+                host.setStatus(tr("status.export.gone", file.toString()));
+                return;
+            }
+            openExported(file);
+        });
+    }
+
+    private void openExported(Path file) {
         String name = file.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
         if (name.endsWith(".docx") || name.endsWith(".odt") || name.endsWith(".xlsx") || name.endsWith(".ods")) {
             // Not host.openExternalUrl: that is the choke point for links found in documents, which refuses
@@ -1081,7 +1088,8 @@ final class ExportCoordinator {
             }
         };
         if (!com.editora.editor.markdown.MarkdownHtmlExport.readsFilesOrRunsTools(markdown, options)) {
-            htmlExported(f, write.get(), true); // text only: nothing to wait for
+            // text only: nothing to wait for, but still built and written off the FX thread (PERF-01, Pauta 6.0.1)
+            com.editora.perf.OffFx.then("html-export", write::get, done -> htmlExported(f, done.value(), true));
             return;
         }
         // Off the FX thread: embedding reads image files, and a Mermaid block runs the CLI.
@@ -1101,7 +1109,7 @@ final class ExportCoordinator {
                         javafx.application.Platform::runLater);
     }
 
-    private void htmlExported(java.io.File f, Exception failure, boolean modal) {
+    private void htmlExported(java.io.File f, @Nullable Exception failure, boolean modal) {
         if (failure == null) {
             lastExported = f.toPath();
             host.setStatus(tr("status.html.exported", f.toString()));
@@ -1234,14 +1242,19 @@ final class ExportCoordinator {
         if (f == null) {
             return;
         }
-        try {
-            String json =
-                    com.editora.markwhen.MarkwhenJson.toJson(com.editora.markwhen.MarkwhenParser.parse(b.getContent()));
-            com.editora.io.StagedExport.writeString(f.toPath(), json);
-            host.setStatus(tr("status.markwhen.jsonExported", f.getName()));
-        } catch (java.io.IOException e) {
-            host.setStatus(tr("status.markwhen.exportFailed", e.getMessage() == null ? e.toString() : e.getMessage()));
-        }
+        String text = b.getContent();
+        // parsed and written off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.run(
+                "markwhen-export",
+                () -> com.editora.io.StagedExport.writeString(
+                        f.toPath(),
+                        com.editora.markwhen.MarkwhenJson.toJson(com.editora.markwhen.MarkwhenParser.parse(text))),
+                failure -> host.setStatus(
+                        failure == null
+                                ? tr("status.markwhen.jsonExported", f.getName())
+                                : tr(
+                                        "status.markwhen.exportFailed",
+                                        failure.getMessage() == null ? failure.toString() : failure.getMessage())));
     }
 
     /** Reports a PDF export result: status + (on failure) an error dialog. */
@@ -1501,35 +1514,45 @@ final class ExportCoordinator {
     /** Prints a DOT/PlantUML diagram by rendering it to a temporary PNG via its CLI, then paginating the image
      *  (there's no native-vector print path for the diagram tools, unlike Markdown). */
     private void printDiagramViaImage(EditorBuffer b, PrintPreview.Job job) {
-        java.nio.file.Path tmp;
-        try {
-            tmp = java.nio.file.Files.createTempFile("editora-diagram", ".png");
-        } catch (java.io.IOException e) {
-            openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, e.getMessage()));
-            return;
-        }
+        // The temporary file is made, and the rendered image read back, off the FX thread (PERF-01, Pauta 6.0.1).
+        String text = b.getContent();
+        com.editora.diagram.@Nullable DiagramKind kind = b.diagramKind();
+        com.editora.perf.OffFx.then(
+                "print-diagram-temp", () -> java.nio.file.Files.createTempFile("editora-diagram", ".png"), made -> {
+                    java.nio.file.Path tmp = made.value();
+                    if (tmp == null) {
+                        openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, made.why()));
+                        return;
+                    }
+                    printDiagramVia(tmp, kind, text, job);
+                });
+    }
+
+    private void printDiagramVia(
+            java.nio.file.Path tmp, com.editora.diagram.@Nullable DiagramKind kind, String text, PrintPreview.Job job) {
         try {
             diagram.exportToPath(
-                    b.diagramKind(),
-                    b.getContent(),
+                    kind,
+                    text,
                     tmp,
                     false,
-                    r -> { // light: this is for paper
-                        byte[] png = null;
-                        String error = r.message();
-                        try {
-                            png = takeRenderedPng(tmp, r.ok());
-                        } catch (java.io.IOException e) {
-                            error = e.getMessage() == null ? e.toString() : e.getMessage();
-                        }
-                        if (png == null) {
-                            openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, error));
-                            return;
-                        }
-                        printService.prepareImages(java.util.List.of(png), prepared -> openPrintPreview(job, prepared));
-                    });
+                    r -> // light: this is for paper
+                    com.editora.perf.OffFx.then(
+                            "print-diagram-read",
+                            () -> java.util.Optional.ofNullable(takeRenderedPng(tmp, r.ok())),
+                            read -> {
+                                byte[] png = read.or(java.util.Optional.<byte[]>empty())
+                                        .orElse(null);
+                                if (png == null) {
+                                    String error = read.ok() ? r.message() : read.why();
+                                    openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, error));
+                                    return;
+                                }
+                                printService.prepareImages(
+                                        java.util.List.of(png), prepared -> openPrintPreview(job, prepared));
+                            }));
         } catch (RuntimeException | Error e) {
-            deleteQuietly(tmp); // the render never started: its callback will not run
+            Thread.ofVirtual().name("print-diagram-temp").start(() -> deleteQuietly(tmp)); // its callback will not run
             throw e;
         }
     }
@@ -1654,11 +1677,13 @@ final class ExportCoordinator {
         if (f == null) {
             return;
         }
-        try {
-            com.editora.io.StagedExport.writeString(f.toPath(), csv);
-            host.setStatus(tr("status.csv.exported", f.getName()));
-        } catch (java.io.IOException ex) {
-            host.setStatus(tr("status.csv.exportFailed", String.valueOf(ex.getMessage())));
-        }
+        // written off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.run(
+                "csv-export",
+                () -> com.editora.io.StagedExport.writeString(f.toPath(), csv),
+                failure -> host.setStatus(
+                        failure == null
+                                ? tr("status.csv.exported", f.getName())
+                                : tr("status.csv.exportFailed", String.valueOf(failure.getMessage()))));
     }
 }

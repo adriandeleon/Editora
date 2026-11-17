@@ -5135,6 +5135,11 @@ public class EditorBuffer implements TabContent {
         banners.setAdminEditAvailable(available);
     }
 
+    /** Injects how the View mode banner asks whether a local file may be written (see {@code BufferBanners}). */
+    public static void setWritableCheck(java.util.function.Predicate<java.nio.file.Path> check) {
+        BufferBanners.writableCheck = check;
+    }
+
     public void setWritableOnDisk(@Nullable Boolean writable) {
         banners.setWritableOnDisk(writable);
     }

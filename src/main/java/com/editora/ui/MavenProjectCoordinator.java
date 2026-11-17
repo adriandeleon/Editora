@@ -581,6 +581,45 @@ final class MavenProjectCoordinator {
 
     private void applyEdit(Path pomFile, java.util.function.UnaryOperator<String> edit, int count) {
         com.editora.editor.EditorBuffer open = ops.openBuffer(pomFile);
+        if (open == null) {
+            // A closed pom is read, edited and replaced off the FX thread (PERF-01, Pauta 6.0.1).
+            com.editora.perf.OffFx.then(
+                    "maven-update-versions-write",
+                    () -> {
+                        String pom = read(pomFile);
+                        if (pom == null) {
+                            return "noPom";
+                        }
+                        String out = edit.apply(pom);
+                        if (out.equals(pom)) {
+                            return "upToDate";
+                        }
+                        // Only a closed pom is written on disk, where there is no undo history to belong to anyway.
+                        return com.editora.io.AtomicFileWrite.replaceIfUnchanged(
+                                        pomFile,
+                                        pom.getBytes(StandardCharsets.UTF_8),
+                                        out.getBytes(StandardCharsets.UTF_8),
+                                        () -> true)
+                                ? "updated"
+                                : "changedOnDisk";
+                    },
+                    a -> {
+                        String outcome = a.value();
+                        if (outcome == null) {
+                            host.setError(tr("status.mavenProject.pomEditFailed", a.why()));
+                        } else if (outcome.equals("noPom")) {
+                            host.setError(tr("status.mavenVersions.noPom"));
+                        } else if (outcome.equals("upToDate")) {
+                            host.setStatus(tr("status.mavenVersions.upToDate"));
+                        } else if (outcome.equals("changedOnDisk")) {
+                            host.setError(tr("status.mavenVersions.changedOnDisk"));
+                        } else {
+                            ops.openPath(pomFile);
+                            host.setStatus(tr("status.mavenVersions.updated", count));
+                        }
+                    });
+            return;
+        }
         String pom = pomText(pomFile, open);
         if (pom == null) {
             host.setError(tr("status.mavenVersions.noPom"));
@@ -1538,17 +1577,30 @@ final class MavenProjectCoordinator {
      * because a generated project that exists is worth more than one abandoned half-way through a nicety.
      */
     private void afterGenerate(Path projectDir, MavenProjectSpec spec, MavenProjectExtras extras, boolean module) {
-        if (extras.editsPom()) {
-            editPom(projectDir, pom -> {
-                String out = PomEdits.setProjectUrl(pom, extras.url());
-                return PomEdits.setProperty(out, "maven.compiler.release", extras.javaRelease());
-            });
-        }
-        if (!extras.updateVersions()) {
-            onGenerated(projectDir, spec.artifactId(), module);
-            return;
-        }
-        updateGeneratedVersions(projectDir, spec.artifactId(), module);
+        // The pom is edited, and read again for its versions, off the FX thread (PERF-01, Pauta 6.0.1).
+        DebugPlanning.offFx(
+                "maven-generate-follow-up",
+                () -> {
+                    String failed = !extras.editsPom()
+                            ? null
+                            : editPomNow(projectDir, pom -> {
+                                String out = PomEdits.setProjectUrl(pom, extras.url());
+                                return PomEdits.setProperty(out, "maven.compiler.release", extras.javaRelease());
+                            });
+                    String pom = extras.updateVersions() ? read(projectDir.resolve("pom.xml")) : null;
+                    return new String[] {failed, pom};
+                },
+                a -> {
+                    String[] done = a.value() == null ? new String[2] : a.value();
+                    if (done[0] != null) {
+                        host.setError(tr("status.mavenProject.pomEditFailed", done[0]));
+                    }
+                    if (!extras.updateVersions()) {
+                        onGenerated(projectDir, spec.artifactId(), module);
+                        return;
+                    }
+                    updateGeneratedVersions(projectDir, spec.artifactId(), module, done[1]);
+                });
     }
 
     /**
@@ -1564,9 +1616,7 @@ final class MavenProjectCoordinator {
      * <p>Off the FX thread: one HTTPS GET per artifact. Failures are silent per artifact — see
      * {@link CentralVersions#latest} — and the whole step degrades to leaving the versions the archetype chose.
      */
-    private void updateGeneratedVersions(Path projectDir, String artifactId, boolean module) {
-        Path pomFile = projectDir.resolve("pom.xml");
-        String pom = read(pomFile);
+    private void updateGeneratedVersions(Path projectDir, String artifactId, boolean module, @Nullable String pom) {
         Map<String, String> dependencies = pom == null ? Map.of() : PomEdits.dependencyVersions(pom);
         Map<String, String> plugins = pom == null ? Map.of() : PomEdits.pluginVersions(pom);
         if (dependencies.isEmpty() && plugins.isEmpty()) {
@@ -1583,13 +1633,19 @@ final class MavenProjectCoordinator {
                     all, path -> fetchMetadataOrThrow(path, new AtomicBoolean()), lookupPool(), () -> false);
             Map<String, String> dependencyUpgrades = CentralVersions.upgradesOnly(dependencies, latest);
             Map<String, String> pluginUpgrades = CentralVersions.upgradesOnly(plugins, latest);
-            Platform.runLater(() -> {
-                closeQuietly(task);
-                if (!dependencyUpgrades.isEmpty() || !pluginUpgrades.isEmpty()) {
-                    editPom(
+            // written here, off the FX thread (PERF-01, Pauta 6.0.1)
+            String failed = dependencyUpgrades.isEmpty() && pluginUpgrades.isEmpty()
+                    ? null
+                    : editPomNow(
                             projectDir,
                             text -> PomEdits.setPluginVersions(
                                     PomEdits.setDependencyVersions(text, dependencyUpgrades), pluginUpgrades));
+            Platform.runLater(() -> {
+                closeQuietly(task);
+                if (failed != null) {
+                    host.setError(tr("status.mavenProject.pomEditFailed", failed));
+                }
+                if (!dependencyUpgrades.isEmpty() || !pluginUpgrades.isEmpty()) {
                     dependencyUpgrades.forEach((ga, v) ->
                             output.appendOutput(this, tr("status.mavenProject.pluginUpdated", ga, v), false));
                     pluginUpgrades.forEach((ga, v) ->
@@ -1661,21 +1717,26 @@ final class MavenProjectCoordinator {
 
     private volatile java.net.http.@Nullable HttpClient metadataClient;
 
-    /** Reads, transforms and writes the pom, doing nothing at all if any part of that fails. */
-    private void editPom(Path projectDir, java.util.function.UnaryOperator<String> edit) {
+    /**
+     * Reads, transforms and writes the pom, doing nothing at all if any part of that fails: off the FX thread. The
+     * failure's message, or null.
+     */
+    private @Nullable String editPomNow(Path projectDir, java.util.function.UnaryOperator<String> edit) {
+        com.editora.perf.BlockingSites.enter("MavenProjectCoordinator.editPom");
         Path pomFile = projectDir.resolve("pom.xml");
         String pom = read(pomFile);
         if (pom == null) {
-            return;
+            return null;
         }
         String out = edit.apply(pom);
         if (out == null || out.equals(pom)) {
-            return;
+            return null;
         }
         try {
             Files.writeString(pomFile, out, StandardCharsets.UTF_8);
+            return null;
         } catch (Exception e) {
-            host.setError(tr("status.mavenProject.pomEditFailed", String.valueOf(e.getMessage())));
+            return String.valueOf(e.getMessage());
         }
     }
 
@@ -1701,10 +1762,30 @@ final class MavenProjectCoordinator {
         ops.refreshProjectTree();
         // Look at what the archetype actually wrote rather than guessing from the coordinates: quickstart
         // gives <package>.App, a webapp archetype gives no main at all. Null simply means no run
-        // configuration is seeded.
-        com.editora.maven.GeneratedProject.MainClass main = com.editora.maven.GeneratedProject.findMain(projectDir);
+        // configuration is seeded. Read off the FX thread (PERF-01, Pauta 6.0.1).
         Path pom = projectDir.resolve("pom.xml");
-        String goal = com.editora.maven.GeneratedProject.mavenRunGoal(projectDir);
+        DebugPlanning.offFx(
+                "maven-generate-follow-up",
+                () -> new Generated(
+                        com.editora.maven.GeneratedProject.findMain(projectDir),
+                        com.editora.maven.GeneratedProject.mavenRunGoal(projectDir),
+                        Files.isRegularFile(pom)),
+                a -> {
+                    Generated g = a.value() == null ? new Generated(null, null, false) : a.value();
+                    onGenerated(projectDir, name, module, g);
+                });
+    }
+
+    /** What the archetype wrote that opening it asks: its main class, how it is meant to run, its pom. */
+    private record Generated(
+            com.editora.maven.GeneratedProject.@Nullable MainClass main,
+            @Nullable String goal,
+            boolean hasPom) {}
+
+    private void onGenerated(Path projectDir, String name, boolean module, Generated generated) {
+        com.editora.maven.GeneratedProject.MainClass main = generated.main();
+        Path pom = projectDir.resolve("pom.xml");
+        String goal = generated.goal();
         if (goal != null) {
             // A JavaFX archetype's App cannot be launched as a plain main class (no module path), and the
             // run-configuration model has no "Maven goal" type yet — so say how the project is meant to run.
@@ -1713,7 +1794,7 @@ final class MavenProjectCoordinator {
         if (module) {
             if (main != null) {
                 ops.openPath(main.file());
-            } else if (Files.isRegularFile(pom)) {
+            } else if (generated.hasPom()) {
                 ops.openPath(pom);
             }
             host.setStatus(tr("status.mavenProject.moduleAdded", name));
@@ -1726,7 +1807,7 @@ final class MavenProjectCoordinator {
             }
             return; // the new window opens on its own pom and main class
         }
-        if (Files.isRegularFile(pom)) {
+        if (generated.hasPom()) {
             ops.openPath(pom);
         }
     }

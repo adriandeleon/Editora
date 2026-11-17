@@ -56,6 +56,9 @@ public final class FirstWindowPrep {
         step("search history", shared::searchHistory);
         // What the language servers, the debugger and the configured tools find on disk (their caches).
         step("server copies", () -> LspServerCommands.prepareOwnCopies(settings, configDir));
+        step("installed tools", () -> com.editora.install.InstallCatalog.lookAtInstalledTools(configDir));
+        step("emoji table", com.editora.markdown.MarkdownEmoji::warm);
+        step("technical dictionary", com.editora.editor.spell.TechnicalDictionary::words);
         step("java-debug", () -> com.editora.dap.DapManager.prepareLocate(settings.getJavaDebugPluginPath()));
         step("xml schemas", () -> com.editora.lsp.XmlBundledSchemas.ensure(configDir));
         step(

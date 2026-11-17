@@ -123,10 +123,16 @@ final class SettingsPluginsPage {
         Card installed = w.card(p, tr("settings.plugins.installed"));
         Button reload = FocusCommands.press(new Button(tr("settings.plugins.reload")), "plugins.reload");
         reload.setOnAction(e -> {
-            if (pluginManager != null) {
-                pluginManager.discover(); // the list only: what runs is the launch's set until a restart
-                pluginListKey = null;
-                refreshPluginList();
+            com.editora.plugin.PluginManager manager = pluginManager;
+            if (manager != null && !reload.isDisabled()) {
+                // The list only: what runs is the launch's set until a restart. The folder is read off the FX
+                // thread (PERF-01, Pauta 6.0.1); the button waits for it, so a second press reads nothing twice.
+                reload.setDisable(true);
+                com.editora.perf.OffFx.run("plugins-reload", manager::discover, failure -> {
+                    reload.setDisable(false);
+                    pluginListKey = null;
+                    refreshPluginList();
+                });
             }
         });
         Label folderLabel = new Label(tr("settings.plugins.folder"));

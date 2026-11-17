@@ -604,12 +604,13 @@ final class SettingsSyncPage {
             return;
         }
         Path dir = settingsSync.syncDir();
-        try {
-            java.nio.file.Files.createDirectories(dir);
-        } catch (java.io.IOException e) {
-            showSyncNotice(String.valueOf(e.getMessage()));
-            return;
-        }
-        com.editora.process.DesktopActions.reveal(dir, true, this::showSyncNotice);
+        // made off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.run("sync-folder", () -> java.nio.file.Files.createDirectories(dir), failure -> {
+            if (failure != null) {
+                showSyncNotice(String.valueOf(failure.getMessage()));
+            } else {
+                com.editora.process.DesktopActions.reveal(dir, true, this::showSyncNotice);
+            }
+        });
     }
 }

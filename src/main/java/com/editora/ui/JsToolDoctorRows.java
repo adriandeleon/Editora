@@ -21,6 +21,17 @@ final class JsToolDoctorRows {
 
     private JsToolDoctorRows() {}
 
+    /** Whether the project has a {@code package.json}: looked at off the FX thread before a run ({@link #lookAt}). */
+    private static final com.editora.perf.Looked<Path, Boolean> PACKAGE_JSON =
+            new com.editora.perf.Looked<>("JsToolDoctorRows.packageJson", Files::isRegularFile);
+
+    /** Looks at {@code project}'s {@code package.json} now, on this thread (off the FX thread), for {@link #rows}. */
+    static void lookAt(@Nullable Path project) {
+        if (project != null && EslintCoordinator.local(project)) {
+            PACKAGE_JSON.get(project.resolve("package.json"));
+        }
+    }
+
     /**
      * The rows for {@code project} (none without a local project with a {@code package.json}).
      *
@@ -32,7 +43,7 @@ final class JsToolDoctorRows {
             @Nullable Path project, TrustStore trust, boolean eslintOn, String formatter) {
         if (project == null
                 || !EslintCoordinator.local(project)
-                || !Files.isRegularFile(project.resolve("package.json"))) {
+                || !Boolean.TRUE.equals(PACKAGE_JSON.get(project.resolve("package.json")))) {
             return List.of();
         }
         Path probeFile = project.resolve("index.js"); // the root's own configuration and node_modules

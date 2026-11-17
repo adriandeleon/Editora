@@ -864,10 +864,24 @@ final class ProjectMapTrails {
         updateBar();
         MapTrails.Stop target = shown.trail().stops().get(index);
         Path file = ProjectMapView.bearingsResolve(root, target.file());
-        if (file == null || target.file().isEmpty() || !Files.isRegularFile(file)) {
+        if (file == null || target.file().isEmpty()) {
             view.onStatus.accept(tr("project.map.status.trail.stopGone", index + 1, target.file()));
             return;
         }
+        // still there? looked at off the FX thread (PERF-01, Pauta 6.0.1); a later stop replaces this one
+        io(() -> Files.isRegularFile(file), there -> {
+            if (ticket != generation) {
+                return;
+            }
+            if (!Boolean.TRUE.equals(there.value())) {
+                view.onStatus.accept(tr("project.map.status.trail.stopGone", index + 1, target.file()));
+                return;
+            }
+            showStop(ticket, index, root, target, file);
+        });
+    }
+
+    private void showStop(int ticket, int index, Path root, MapTrails.Stop target, Path file) {
         view.revealPath(file);
         Path key = target.declaration().isEmpty()
                 ? file

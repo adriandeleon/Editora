@@ -281,22 +281,37 @@ final class NotesCoordinator {
     }
 
     private void addPersonalNote(Path file, @Nullable NoteDraft requestedDraft, String body) {
-        boolean folder = java.nio.file.Files.isDirectory(file);
         EditorBuffer open = ops.bufferForPath(file);
-        NoteDraft draft = requestedDraft;
-        if (open != null) {
-            if (draft == null) {
-                draft = open.captureLineNoteDraft(0);
-            }
-            FileIdentity identity = open.fileIdentity(); // found by its path, so it has one
-            if (identity != null) {
-                open.getNoteManager()
-                        .add(PersonalNote.create(identity, draft.scope(), draft.anchor(), body, List.of()));
-            }
+        if (open == null) {
+            // a folder or a file, and its identity (a stat and a hash), looked at off the FX thread (PERF-01, Pauta
+            // 6.0.1)
+            com.editora.perf.OffFx.then(
+                    "notes-look",
+                    () -> new Object[] {java.nio.file.Files.isDirectory(file), FileIdentity.of(file)},
+                    looked -> {
+                        Object[] seen = looked.value();
+                        if (seen == null) {
+                            host.setStatus(tr("notes.saveFirst"));
+                            return;
+                        }
+                        addClosedNote(file, requestedDraft, body, (Boolean) seen[0], (FileIdentity) seen[1]);
+                    });
             return;
         }
+        NoteDraft draft = requestedDraft;
+        if (draft == null) {
+            draft = open.captureLineNoteDraft(0);
+        }
+        FileIdentity identity = open.fileIdentity(); // found by its path, so it has one
+        if (identity != null) {
+            open.getNoteManager().add(PersonalNote.create(identity, draft.scope(), draft.anchor(), body, List.of()));
+        }
+    }
+
+    private void addClosedNote(
+            Path file, @Nullable NoteDraft requested, String body, boolean folder, FileIdentity identity) {
+        NoteDraft draft = requested;
         String key = noteStoreKey(file);
-        FileIdentity identity = FileIdentity.of(file);
         if (draft == null) {
             draft = new NoteDraft(folder ? NoteScope.FOLDER : NoteScope.LINE, new TextAnchor(0, 0, 0, 0, "", "", ""));
         }
@@ -498,25 +513,40 @@ final class NotesCoordinator {
         String key = ops.noteKey(buffer);
         var map = ops.notes();
         List<PersonalNote> saved = map.get(key);
-        boolean rekeyed = false;
-        if (saved == null && !map.isEmpty()) {
-            // The file may have been renamed/moved outside Editora — match by content hash and re-key. The hash
-            // reads the whole file (up to 5 MB, on this thread), so it is computed only if some stored note's
-            // file is gone and had this file's size; opening a file with no notes usually never reads it.
-            Path file = buffer.getPath();
-            String matchKey = findNoteKeyByIdentity(map, FileIdentity.unhashed(file), () -> FileIdentity.hashOf(file));
-            if (matchKey != null) {
-                saved = map.remove(matchKey);
-                map.put(key, saved);
-                rekeyed = true;
-            }
-        }
         boolean moved = buffer.applyNotes(saved == null ? List.of() : saved);
         seenInStore.put(buffer, MarkMerge.keys(saved, PersonalNote::id));
-        if (moved || rekeyed) {
+        if (moved) {
             persistNotes(buffer); // self-heal corrected positions / re-key / orphan status
         } else {
             refreshViews();
+        }
+        if (saved == null && !map.isEmpty()) {
+            // The file may have been renamed/moved outside Editora — match by content hash and re-key. The hash
+            // reads the whole file (up to 5 MB), so it is computed only if some stored note's file is gone and had
+            // this file's size; opening a file with no notes usually never reads it. All of it off the FX thread
+            // (PERF-01, Pauta 6.0.1): the notes it finds are applied when it lands.
+            Path file = buffer.getPath();
+            Map<String, List<PersonalNote>> stored = Map.copyOf(map);
+            com.editora.perf.OffFx.then(
+                    "notes-look",
+                    () -> java.util.Optional.ofNullable(findNoteKeyByIdentity(
+                            stored, FileIdentity.unhashed(file), () -> FileIdentity.hashOf(file))),
+                    found -> {
+                        String matchKey =
+                                found.or(java.util.Optional.<String>empty()).orElse(null);
+                        if (matchKey == null
+                                || buffer.isDisposed()
+                                || !file.equals(buffer.getPath())
+                                || map.containsKey(key)
+                                || !map.containsKey(matchKey)) {
+                            return; // nothing found, or the file or the store moved on meanwhile
+                        }
+                        List<PersonalNote> rekeyedNotes = map.remove(matchKey);
+                        map.put(key, rekeyedNotes);
+                        buffer.applyNotes(rekeyedNotes);
+                        seenInStore.put(buffer, MarkMerge.keys(rekeyedNotes, PersonalNote::id));
+                        persistNotes(buffer); // self-heal: the re-key is stored
+                    });
         }
     }
 
@@ -526,12 +556,22 @@ final class NotesCoordinator {
      */
     void pathRenamed(Path old, Path target) {
         String sep = old.getFileSystem().getSeparator();
-        String oldKey = RenamedFileState.formerCanonicalKey(old);
-        if (RenamedFileState.rekey(ops.notes(), oldKey, PathKeys.canonicalKey(target), sep)) {
-            ops.saveNotes();
-            refreshViews();
-            ops.notesStored(ops.notes(), null);
-        }
+        // The keys resolve links (a real path per folder): resolved off the FX thread (PERF-01, Pauta 6.0.1), then
+        // the notes are re-keyed here.
+        com.editora.perf.OffFx.then(
+                "notes-rename-keys",
+                () -> new String[] {
+                    RenamedFileState.formerCanonicalKey(old, true), // after the move: it is gone
+                    PathKeys.canonicalKey(target)
+                },
+                keys -> {
+                    String[] k = keys.value();
+                    if (k != null && RenamedFileState.rekey(ops.notes(), k[0], k[1], sep)) {
+                        ops.saveNotes();
+                        refreshViews();
+                        ops.notesStored(ops.notes(), null);
+                    }
+                });
     }
 
     /**
@@ -543,17 +583,32 @@ final class NotesCoordinator {
             return;
         }
         var map = ops.notes();
-        String oldKey = oldPath == null ? null : RenamedFileState.formerCanonicalKey(oldPath);
         Path now = buffer.getPath();
-        if (oldKey != null && now != null && buffer.isNarrowed() && map.get(oldKey) != null) {
-            map.put(ops.noteKey(buffer), new ArrayList<>(map.get(oldKey)));
-            ops.saveNotes();
-        }
-        if (oldKey != null
-                && com.editora.vfs.Vfs.isLocal(oldPath)
-                && !java.nio.file.Files.exists(oldPath)
-                && map.remove(oldKey) != null) {
-            ops.saveNotes();
+        if (oldPath != null) {
+            // Its old key, and whether the old file is gone (a rename, not a Save As), are looked at off the FX thread
+            // (PERF-01, Pauta 6.0.1); the old file's notes follow when they land.
+            boolean narrowed = buffer.isNarrowed();
+            String newKey = now == null ? null : ops.noteKey(buffer);
+            com.editora.perf.OffFx.then(
+                    "notes-look",
+                    () -> new String[] {
+                        RenamedFileState.formerCanonicalKey(oldPath),
+                        com.editora.vfs.Vfs.isLocal(oldPath) && !java.nio.file.Files.exists(oldPath) ? "gone" : ""
+                    },
+                    looked -> {
+                        String[] seen = looked.value();
+                        if (seen == null || seen[0] == null) {
+                            return;
+                        }
+                        String oldKey = seen[0];
+                        if (newKey != null && narrowed && map.get(oldKey) != null) {
+                            map.put(newKey, new ArrayList<>(map.get(oldKey)));
+                            ops.saveNotes();
+                        }
+                        if ("gone".equals(seen[1]) && map.remove(oldKey) != null) {
+                            ops.saveNotes();
+                        }
+                    });
         }
         boolean any = !buffer.getNoteManager().snapshot().isEmpty();
         if (now != null && !now.equals(oldPath) && (any || map.containsKey(ops.noteKey(buffer)))) {

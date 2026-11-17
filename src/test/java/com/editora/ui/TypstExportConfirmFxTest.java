@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * every one of them as it was.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class TypstExportConfirmFxTest {
 
     @BeforeAll

@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** File: Save All, File: Revert File and Buffer: Reopen Closed Tab through the real window. */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class FileTabCommandsFxTest {
 
     @BeforeAll

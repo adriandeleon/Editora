@@ -254,19 +254,43 @@ final class HtmlPreviewCoordinator {
     /**
      * The site folder to serve for {@code buffer}, or null after saying why not (no file yet, or an unsafe root).
      */
-    private @Nullable Path siteFor(EditorBuffer buffer) {
+    private void siteFor(EditorBuffer buffer, Consumer<Path> then) {
+        siteFor(buffer, then, () -> {});
+    }
+
+    /** As above; {@code refused} runs after the status said why there is no site to serve. */
+    private void siteFor(EditorBuffer buffer, Consumer<Path> then, Runnable refused) {
         Path file = buffer.getPath();
         if (file == null) {
             host.setStatus(tr("status.htmlPreview.unsaved")); // need a file on disk so relative assets resolve
-            return null;
+            refused.run();
+            return;
         }
-        Path root = SiteRoots.siteRoot(file, host.projectScope().root());
-        if (SiteRoots.isUnsafeDocRoot(root)) {
-            // The server exposes the whole folder; a home, Downloads, temp or drive root is not a web root.
-            host.setStatus(tr("status.htmlPreview.unsafeRoot", root));
-            return null;
-        }
-        return root;
+        Path project = host.projectScope().root();
+        // The folders up from the page, the home and temp folders and user-dirs.dirs are looked at off the FX thread
+        // (PERF-01, Pauta 6.0.1).
+        com.editora.perf.OffFx.then(
+                "html-site-root",
+                () -> {
+                    Path root = SiteRoots.siteRoot(file, project);
+                    return new Object[] {root, SiteRoots.isUnsafeDocRoot(root)};
+                },
+                looked -> {
+                    Object[] site = looked.value();
+                    if (site == null) {
+                        host.setError(looked.why());
+                        refused.run();
+                        return;
+                    }
+                    Path root = (Path) site[0];
+                    if (Boolean.TRUE.equals(site[1])) {
+                        // The server exposes the whole folder; a home, Downloads, temp or drive root is not a web root.
+                        host.setStatus(tr("status.htmlPreview.unsafeRoot", root));
+                        refused.run();
+                        return;
+                    }
+                    then.accept(root);
+                });
     }
 
     /**
@@ -278,9 +302,12 @@ final class HtmlPreviewCoordinator {
         if (!previewable(buffer)) {
             return;
         }
-        Path root = siteFor(buffer);
+        siteFor(buffer, root -> previewActive(buffer, browser, root));
+    }
+
+    private void previewActive(EditorBuffer buffer, Browser browser, Path root) {
         Path file = buffer.getPath();
-        if (root == null || file == null) {
+        if (file == null || buffer.isDisposed()) {
             return;
         }
         boolean missing = detected
@@ -330,9 +357,12 @@ final class HtmlPreviewCoordinator {
             onUrl.accept(null);
             return;
         }
-        Path root = siteFor(buffer);
+        siteFor(buffer, root -> serveForDebug(buffer, root, onUrl), () -> onUrl.accept(null)); // said why already
+    }
+
+    private void serveForDebug(EditorBuffer buffer, Path root, Consumer<@Nullable Served> onUrl) {
         Path file = buffer.getPath();
-        if (root == null || file == null) {
+        if (file == null) {
             onUrl.accept(null);
             return;
         }
@@ -387,8 +417,9 @@ final class HtmlPreviewCoordinator {
     void open() {
         ifEnabled(() -> {
             EditorBuffer b = host.activeBuffer();
-            if (previewable(b) && b != null && siteFor(b) != null) {
-                whenDetected(() -> previewActive(b, lastUsedBrowser())); // so a browser that is gone is told
+            if (previewable(b) && b != null) {
+                // so a browser that is gone is told
+                siteFor(b, root -> whenDetected(() -> previewActive(b, lastUsedBrowser(), root)));
             }
         });
     }

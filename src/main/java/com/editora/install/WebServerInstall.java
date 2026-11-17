@@ -184,6 +184,7 @@ public final class WebServerInstall {
      * found. File reads only.
      */
     public static boolean foreignCopyWithoutLibs(List<String> argv, @Nullable Path configDir) {
+        com.editora.perf.BlockingSites.enter("WebServerInstall.foreignCopyWithoutLibs");
         if (argv == null || argv.isEmpty()) {
             return false;
         }

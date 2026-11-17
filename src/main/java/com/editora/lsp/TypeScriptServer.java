@@ -177,9 +177,25 @@ public final class TypeScriptServer {
                 || tsserver.getParent().getParent() == null) {
             return "";
         }
+        String v = SDK_VERSIONS.get(tsserver);
+        return v == null ? "" : v;
+    }
+
+    /**
+     * {@link #sdkVersion} by {@code tsserver.js}: read off the FX thread (Trust Project Settings looks before it
+     * asks), answered from memory on it (PERF-01, Pauta 6.0.1).
+     */
+    private static final com.editora.perf.Looked<Path, String> SDK_VERSIONS =
+            new com.editora.perf.Looked<>("TypeScriptServer.sdkVersion", TypeScriptServer::sdkVersionNow);
+
+    private static String sdkVersionNow(Path tsserver) {
+        Path lib = tsserver.getParent();
+        Path pkg = lib == null ? null : lib.getParent();
+        if (pkg == null) {
+            return "";
+        }
         try {
-            return packageVersion(
-                    Files.readString(tsserver.getParent().getParent().resolve("package.json")));
+            return packageVersion(Files.readString(pkg.resolve("package.json")));
         } catch (java.io.IOException | RuntimeException e) {
             return "";
         }

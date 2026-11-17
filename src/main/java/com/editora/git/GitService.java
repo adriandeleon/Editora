@@ -2382,6 +2382,29 @@ public final class GitService {
             // by the one spelling its connection opened it under.
             return p.toAbsolutePath().normalize();
         }
+        Path real = REAL_PATHS.get(p);
+        return real != null ? real : p.toAbsolutePath().normalize();
+    }
+
+    /**
+     * {@link #realPath} of a local path: looked at off the FX thread (as a file is read, {@link #lookAt}), answered
+     * from memory on it — a context menu and every Git command on a path ask, and each open buffer after a Git change
+     * (PERF-01, Pauta 6.0.1).
+     */
+    private static final com.editora.perf.Looked<Path, Path> REAL_PATHS =
+            new com.editora.perf.Looked<>("GitService.realPath", GitService::realPathNow);
+
+    /** Looks at {@code file}'s and {@code root}'s real paths now, on this thread (off the FX thread), and keeps them. */
+    public static void lookAt(Path file, @Nullable Path root) {
+        if (onThisFileSystem(file)) {
+            REAL_PATHS.get(file);
+            if (root != null) {
+                REAL_PATHS.get(root);
+            }
+        }
+    }
+
+    private static Path realPathNow(Path p) {
         try {
             return p.toRealPath();
         } catch (IOException notThere) {

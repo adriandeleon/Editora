@@ -560,6 +560,10 @@ final class TestNavigationCoordinator {
         if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugGoTestAtCaret(b)) {
             return;
         }
+        // A C# test at the caret: dotnet test runs it, its host waiting, and netcoredbg attaches to it.
+        if (debug && host.debugCoordinator() != null && new CsharpTestDebug(host.debugCoordinator()).debugAtCaret(b)) {
+            return;
+        }
         // A Rust test at the caret is debugged on CodeLLDB: its test binary, filtered to it.
         if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugRustTestAtCaret(b)) {
             return;

@@ -287,6 +287,7 @@ public final class XmlServerInstall {
      * (XML/pom review 4, A35). File lookups only.
      */
     public static boolean runsOnMavenBundle(@Nullable String configured, @Nullable Path configDir) {
+        com.editora.perf.BlockingSites.enter("XmlServerInstall.runsOnMavenBundle");
         return configDir != null && isOwnJavaLemminx(effectiveCommand(configured, configDir), configDir);
     }
 

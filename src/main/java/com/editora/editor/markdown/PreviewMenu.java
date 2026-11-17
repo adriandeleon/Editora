@@ -166,13 +166,27 @@ public final class PreviewMenu {
     }
 
     private void copyAll() {
-        String text = b.isMarkdown() ? MarkdownRenderer.plainText(b.getContent()) : b.getContent();
-        javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
-        cc.putString(text == null ? "" : text);
-        if (b.isMarkdown()) {
-            cc.putHtml(MarkdownClipboardHtml.toHtml(b.getContent(), MathImages.isEnabled(), b.getPath()));
-        }
-        javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+        String content = b.getContent();
+        boolean markdown = b.isMarkdown();
+        boolean math = MathImages.isEnabled();
+        java.nio.file.Path file = b.getPath();
+        // Rendered, and its local images read, off the FX thread (PERF-01, Pauta 6.0.1); the clipboard is filled
+        // when that is done.
+        com.editora.perf.OffFx.then(
+                "preview-copy-html",
+                () -> new String[] {
+                    markdown ? MarkdownRenderer.plainText(content) : content,
+                    markdown ? MarkdownClipboardHtml.toHtml(content, math, file) : null
+                },
+                copied -> {
+                    String[] both = copied.value();
+                    javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
+                    cc.putString(both == null || both[0] == null ? content : both[0]);
+                    if (both != null && both[1] != null) {
+                        cc.putHtml(both[1]);
+                    }
+                    javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+                });
     }
 
     /**

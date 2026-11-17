@@ -71,15 +71,18 @@ final class TypstCoordinator {
     void exportToPath(String source, @Nullable Path file, Path dest, Consumer<ProcessRunner.Result> onResult) {
         service.export(source, dest, fileDirOf(file), rootOf(file), pending -> {
             ProcessRunner.Result result = pending.result();
-            if (result.ok()) {
-                try {
-                    // A PDF is one file — the destination the caller's Save dialog already confirmed.
-                    pending.commit();
-                } catch (java.io.IOException e) {
-                    result = new ProcessRunner.Result(-1, "", String.valueOf(e.getMessage()));
-                }
+            if (!result.ok()) {
+                onResult.accept(result);
+                return;
             }
-            onResult.accept(result);
+            // A PDF is one file — the destination the caller's Save dialog already confirmed. Moved into place off
+            // the FX thread (PERF-01, Pauta 6.0.1).
+            pending.take();
+            com.editora.perf.OffFx.then(
+                    "typst-export-commit",
+                    pending::commit,
+                    committed -> onResult.accept(
+                            committed.ok() ? result : new ProcessRunner.Result(-1, "", committed.why())));
         });
     }
 
@@ -128,7 +131,6 @@ final class TypstCoordinator {
     void finishExport(com.editora.typst.TypstRenderer.PendingExport pending) {
         ProcessRunner.Result r = pending.result();
         if (!r.ok()) {
-            pending.close();
             String msg = r.message();
             host.setStatus(tr("status.typst.exportFailed", msg));
             Alert err = Dialogs.styled(new Alert(Alert.AlertType.ERROR));
@@ -141,23 +143,28 @@ final class TypstCoordinator {
         }
         if (!pending.ok()) {
             // "exited 0, wrote nothing" is the failure it is, not a success over a missing file
-            pending.close();
             host.setStatus(tr("status.typst.exportFailed", tr("status.typst.noOutput")));
             return;
         }
+        // looked at off the FX thread before the result was handed over (PERF-01, Pauta 6.0.1)
         java.util.List<Path> existing = pending.existingTargets();
         if (!existing.isEmpty() && !confirmReplace.test(existing)) {
-            pending.close();
             host.setStatus(tr("status.typst.exportCancelled"));
             return;
         }
-        java.util.List<Path> written;
-        try {
-            written = pending.commit();
-        } catch (java.io.IOException e) {
-            host.setStatus(tr("status.typst.exportFailed", String.valueOf(e.getMessage())));
-            return;
-        }
+        // moved into place off the FX thread (PERF-01, Pauta 6.0.1)
+        pending.take();
+        com.editora.perf.OffFx.then("typst-export-commit", pending::commit, committed -> {
+            java.util.List<Path> written = committed.value();
+            if (written == null) {
+                host.setStatus(tr("status.typst.exportFailed", committed.why()));
+            } else {
+                exported(written);
+            }
+        });
+    }
+
+    private void exported(java.util.List<Path> written) {
         if (written.size() == 1) {
             host.setStatus(tr("status.typst.exported", written.get(0).toString()));
         } else {

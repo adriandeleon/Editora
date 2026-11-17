@@ -948,7 +948,14 @@ final class GitCoordinator {
             return;
         }
         List<String> untracked = discard.untracked();
-        int folders = GitUntrackedDelete.folders(root, untracked);
+        // which rows are folders is looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.then(
+                "git-untracked-look",
+                () -> GitUntrackedDelete.folders(root, untracked),
+                counted -> discardLooked(root, discard, untracked, counted.or(0)));
+    }
+
+    private void discardLooked(Path root, Discard discard, List<String> untracked, int folders) {
         if (folders > 0) {
             // Git shows a wholly untracked folder as one row; ask it what deleting that row removes.
             service.untrackedFiles(root, untracked, files -> {
@@ -1154,7 +1161,16 @@ final class GitCoordinator {
         String successMessage =
                 tr("status.git.discardedAll", all.tracked(), all.untracked().size());
         List<String> untracked = discard.untracked();
-        if (GitUntrackedDelete.folders(root, untracked) > 0) {
+        // which rows are folders is looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        com.editora.perf.OffFx.then(
+                "git-untracked-look",
+                () -> GitUntrackedDelete.folders(root, untracked),
+                counted -> discardAllLooked(root, discard, untracked, successMessage, counted.or(0)));
+    }
+
+    private void discardAllLooked(
+            Path root, Discard discard, List<String> untracked, String successMessage, int folders) {
+        if (folders > 0) {
             // A wholly untracked folder is one row: ask Git which files deleting it removes, to copy them.
             service.untrackedFiles(root, untracked, files -> {
                 if (files == null) {
@@ -1809,20 +1825,33 @@ final class GitCoordinator {
         ifEnabled(() -> {
             // A path the tree offers history for is a file; a folder here would be opened as one. (On a
             // remote host the check would be an SFTP round trip, so it is left to the tree.)
-            if (file == null
-                    || GitPathScope.of(file, repoRoot) != GitPathScope.OTHER
-                    || (com.editora.vfs.Vfs.isLocal(file) && Files.isDirectory(file))) {
+            if (file == null || GitPathScope.of(file, repoRoot) != GitPathScope.OTHER) {
                 action.run();
                 return;
             }
-            ops.openPath(file);
-            // Queued behind the refresh the tab switch started, so normally that has been applied by now.
-            service.status(file, state -> {
-                if (state.isRepo() && !java.util.Objects.equals(state.root(), repoRoot)) {
-                    applyState(state);
-                }
-                action.run();
-            });
+            if (com.editora.vfs.Vfs.isLocal(file)) {
+                // a folder? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+                com.editora.perf.OffFx.then("git-path-look", () -> Files.isDirectory(file), folder -> {
+                    if (folder.or(false)) {
+                        action.run();
+                    } else {
+                        activateRepositoryOf(file, action);
+                    }
+                });
+                return;
+            }
+            activateRepositoryOf(file, action);
+        });
+    }
+
+    private void activateRepositoryOf(Path file, Runnable action) {
+        ops.openPath(file);
+        // Queued behind the refresh the tab switch started, so normally that has been applied by now.
+        service.status(file, state -> {
+            if (state.isRepo() && !java.util.Objects.equals(state.root(), repoRoot)) {
+                applyState(state);
+            }
+            action.run();
         });
     }
 
@@ -2086,7 +2115,11 @@ final class GitCoordinator {
                     }
                     Path dir = com.editora.config.PathKeys.resolveUserInput(
                             text.strip(), suggested, System.getProperty("user.home"));
-                    initIn(dir != null && java.nio.file.Files.isDirectory(dir) ? dir : null, text.strip());
+                    // a folder? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+                    com.editora.perf.OffFx.then(
+                            "git-init-folder",
+                            () -> dir != null && java.nio.file.Files.isDirectory(dir),
+                            folder -> initIn(folder.or(false) ? dir : null, text.strip()));
                 });
     }
 
@@ -2239,12 +2272,23 @@ final class GitCoordinator {
                             submodules.isSelected());
                     if (remoteBase == null) {
                         // Resolved like the folder typed for git.init (~ and relative paths), validated, and
-                        // its missing parent folders created — git creates the target, not what is above it.
-                        startClone(
-                                url,
-                                CloneDestination.prepare(
+                        // its missing parent folders created — git creates the target, not what is above it. Off
+                        // the FX thread (PERF-01, Pauta 6.0.1).
+                        host.setStatus(tr("status.cloning", url));
+                        com.editora.perf.OffFx.then(
+                                "clone-destination",
+                                () -> CloneDestination.prepare(
                                         typed, defaultParent.isBlank() ? null : Path.of(defaultParent), defaultParent),
-                                options);
+                                prepared -> {
+                                    CloneDestination target = prepared.value();
+                                    startClone(
+                                            url,
+                                            target != null
+                                                    ? target
+                                                    : new CloneDestination(
+                                                            null, "status.clone.invalidDest", typed.strip()),
+                                            options);
+                                });
                         return;
                     }
                     // On the host the same checks are SFTP round trips, and ~ is the home folder there.
@@ -2338,15 +2382,12 @@ final class GitCoordinator {
      * files from it (File: Open / Find File).
      */
     private void openClonedEntry(Path dir) {
-        if (com.editora.vfs.Vfs.isRemote(dir)) {
-            // Each look is an SFTP round trip: made off the FX thread.
-            Thread.ofVirtual().name("clone-entry").start(() -> {
-                Path entry = clonedEntry(dir);
-                javafx.application.Platform.runLater(() -> openClonedEntry(dir, entry));
-            });
-            return;
-        }
-        openClonedEntry(dir, clonedEntry(dir));
+        // Each look is a stat (an SFTP round trip on a host): made off the FX thread (PERF-01, Pauta 6.0.1).
+        com.editora.perf.OffFx.then(
+                "clone-entry",
+                () -> java.util.Optional.ofNullable(clonedEntry(dir)),
+                entry -> openClonedEntry(
+                        dir, entry.or(java.util.Optional.<Path>empty()).orElse(null)));
     }
 
     private void openClonedEntry(Path dir, @Nullable Path entry) {

@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * folder stayed watched and a reopened one showed what it held when it was first opened.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class ProjectPanelReopenedFolderFxTest {
 
     @BeforeAll

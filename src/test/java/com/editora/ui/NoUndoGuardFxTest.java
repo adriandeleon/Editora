@@ -85,6 +85,50 @@ class NoUndoGuardFxTest {
         });
     }
 
+    /** As {@link #revisions}, read on the FX thread itself (for a wait). */
+    private List<HistoryRevision> revisionsNow(Path file) {
+        String key = PathKeys.normalizedKey(file);
+        for (Map<String, List<HistoryRevision>> bucket :
+                fx.shared.historyByProject().values()) {
+            if (bucket.containsKey(key)) {
+                return List.copyOf(bucket.get(key));
+            }
+        }
+        return List.of();
+    }
+
+    /**
+     * PERF-01 (Pauta 6.0.1): the safety copy is queued, not waited for. It is on disk once the history worker has
+     * written it, and it is written before a capture of the same file asked for after it.
+     */
+    @Test
+    void theSafetyCopyIsWrittenBeforeALaterCaptureOfTheSameFile(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("big.txt"), SAVED);
+        EditorBuffer b = largeBuffer(file);
+        java.util.concurrent.CompletableFuture<Boolean> later = new java.util.concurrent.CompletableFuture<>();
+        FxTestSupport.runOnFx(() -> {
+            SearchCoordinator.replaceOpenBuffer(b, QUERY, "new", false); // the copy, then the edit
+            fx.controller.historyCoordinator.recordDurably(
+                    file, b.getContent(), HistoryRevision.REASON_SAVE, later::complete);
+        });
+        assertTrue(later.get(20, java.util.concurrent.TimeUnit.SECONDS), "the later capture is durable");
+        assertTrue(fx.shared.flushWrites());
+        List<HistoryRevision> revisions = revisions(file);
+        assertEquals(2, revisions.size(), revisions.toString());
+        HistoryRevision copy = revisions.stream()
+                .filter(r -> HistoryRevision.REASON_LABEL.equals(r.reason()))
+                .findFirst()
+                .orElseThrow();
+        HistoryRevision after = revisions.stream()
+                .filter(r -> HistoryRevision.REASON_SAVE.equals(r.reason()))
+                .findFirst()
+                .orElseThrow();
+        assertTrue(copy.timestamp() <= after.timestamp(), "the copy is the earlier revision");
+        HistoryBlobStore blobs = new HistoryBlobStore(fx.shared.getHistoryBlobsDir());
+        assertEquals(UNSAVED, blobs.get(copy.sha256()), "on disk after the flush: the text before the edit");
+        assertEquals(UNSAVED.replace("old", "new"), blobs.get(after.sha256()));
+    }
+
     private String status() throws Exception {
         FxTestSupport.drainFx(); // the guard posts its message after the writer's own status
         return FxTestSupport.callOnFx(() -> {
@@ -108,12 +152,15 @@ class NoUndoGuardFxTest {
 
         assertTrue(result.changed());
         assertEquals(UNSAVED.replace("old", "new"), FxTestSupport.callOnFx(b::getContent));
+        // The text was taken before the edit; its write is queued on the history worker (PERF-01, Pauta 6.0.1).
+        SettingsRig.awaitFx(
+                "the safety copy recorded", () -> !revisionsNow(file).isEmpty());
         List<HistoryRevision> revisions = revisions(file);
         assertEquals(1, revisions.size(), "one safety copy");
         HistoryRevision copy = revisions.get(0);
         String operation = tr("noUndo.op.replaceInFiles");
         assertEquals(tr("history.label.beforeNoUndoEdit", operation), copy.label(), "named, so retention keeps it");
-        // On disk already — not queued: the edit above happened after this was written.
+        // On disk once recorded: the edit above happened after its text was taken.
         assertEquals(
                 UNSAVED,
                 new HistoryBlobStore(fx.shared.getHistoryBlobsDir()).get(copy.sha256()),
@@ -158,6 +205,8 @@ class NoUndoGuardFxTest {
         EditorBuffer b = largeBuffer(file);
         FxTestSupport.runOnFx(() -> registry.run("edit.sortLinesAsc"));
         assertEquals("keep\nold one\nold two\ntyped and not saved\n", FxTestSupport.callOnFx(b::getContent));
+        SettingsRig.awaitFx(
+                "the safety copy recorded", () -> !revisionsNow(file).isEmpty());
         List<HistoryRevision> revisions = revisions(file);
         assertEquals(1, revisions.size());
         assertEquals(

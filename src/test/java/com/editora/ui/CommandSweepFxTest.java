@@ -94,6 +94,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  */
 @Tag("fx")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class CommandSweepFxTest {
 
     /** The editor states the commands run in, so that a guard is exercised both ways. */

@@ -251,7 +251,40 @@ final class DoctorCoordinator {
      * being checked again, until the new one lands (review C3), and the pane learns when the run is done.
      */
     void runChecks() {
-        List<DoctorService.CheckSpec> specs = buildSpecs();
+        // What the catalog asks of the disk (whether a server's program is Editora's copy, the project's
+        // package.json) is looked at off the FX thread first, so building it answers from memory (PERF-01, Pauta
+        // 6.0.1). A later run replaces one still looking.
+        List<List<String>> argvs = new ArrayList<>();
+        for (String id : LspServerCommands.serverIds()) {
+            argvs.add(ops.lspServerArgv(id));
+        }
+        Path config = host.configDir();
+        Path project = ops.projectRoot();
+        long gen = ++lookGen;
+        com.editora.perf.OffFx.then(
+                "doctor-look",
+                () -> {
+                    for (List<String> argv : argvs) {
+                        if (config != null && !argv.isEmpty()) {
+                            PinnedVersions.anyInside(argv, config);
+                        }
+                    }
+                    JsToolDoctorRows.lookAt(project);
+                    return Boolean.TRUE;
+                },
+                looked -> {
+                    if (gen == lookGen) {
+                        runChecksNow();
+                    }
+                });
+    }
+
+    /** Which {@link #runChecks} is the latest. */
+    private long lookGen;
+
+    private void runChecksNow() {
+        List<DoctorService.CheckSpec> specs =
+                buildSpecs().stream().map(DoctorCoordinator::lookingAtItsPath).toList();
         pane().setMachine(remoteTarget());
         pane().setFontScale(host.settings().getFontZoom());
         pane().beginRun(specs.stream().map(DoctorService.CheckSpec::placeholder).toList());
@@ -265,6 +298,22 @@ final class DoctorCoordinator {
             return;
         }
         service.run(specs, pane()::updateCheck, this::runDone);
+    }
+
+    /**
+     * {@code spec} with its probe also looking at the path its result names, off the FX thread, so the pane's
+     * Reveal and Clear answer from memory when they show it (PERF-01, Pauta 6.0.1).
+     */
+    private static DoctorService.CheckSpec lookingAtItsPath(DoctorService.CheckSpec spec) {
+        java.util.function.Supplier<DoctorCheck> probe = spec.probe();
+        if (probe == null) {
+            return spec;
+        }
+        return new DoctorService.CheckSpec(spec.placeholder(), () -> {
+            DoctorCheck done = probe.get();
+            DoctorPane.pathIn(done.detail());
+            return done;
+        });
     }
 
     private void runDone() {

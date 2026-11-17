@@ -34,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** Text selection in the rendered Markdown preview: the model, the mouse, the keys, copy, and what it must not
  *  disturb (block reuse, Find marks, links, task boxes, the cost of scrolling). */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(com.editora.ui.OffFxInPlace.class)
 class PreviewSelectionFxTest {
 
     private static final String DOC = "# Heading one\n\n"

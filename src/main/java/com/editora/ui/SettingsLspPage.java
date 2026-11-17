@@ -295,14 +295,63 @@ final class SettingsLspPage {
         if (bashToolStatusLabels.isEmpty()) {
             return;
         }
-        // The window's own: a trusted project's tool paths are the ones that run (Bash review A10).
+        // The window's own: a trusted project's tool paths are the ones that run (Bash review A10). Editora's copies
+        // and the paths are looked at off the FX thread (PERF-01, Pauta 6.0.1); a later refresh wins.
+        // Editora's installed copies are answered from memory here (InstallCatalog.installedToolIfPresent).
         com.editora.lsp.BashIdeConfig tools = w.projectLsp != null
                 ? w.projectLsp.bashIdeConfig()
                 : LspCoordinator.userBashIde(config.getSettings(), config.getConfigDir());
-        bashToolStatusLabels.forEach((toolId, status) -> {
-            String found = com.editora.doctor.DoctorProbes.resolvedPath(List.of(tools.toolCommand(toolId)));
-            status.show(!found.isEmpty(), found, lspCheck.isSelected());
-        });
+        List<String> ids = List.copyOf(bashToolStatusLabels.keySet());
+        long gen = ++bashToolGen;
+        com.editora.perf.OffFx.then(
+                "lsp-status-look",
+                () -> {
+                    Map<String, String> found = new java.util.HashMap<>();
+                    for (String id : ids) {
+                        found.put(id, com.editora.doctor.DoctorProbes.lookAt(List.of(tools.toolCommand(id))));
+                    }
+                    return found;
+                },
+                answer -> {
+                    if (gen != bashToolGen) {
+                        return;
+                    }
+                    Map<String, String> found = answer.or(Map.of());
+                    bashToolStatusLabels.forEach((toolId, status) -> {
+                        String path = found.getOrDefault(toolId, "");
+                        status.show(!path.isEmpty(), path, lspCheck.isSelected());
+                    });
+                });
+    }
+
+    /** Which {@link #refreshBashToolStatus} is the latest: an older one's answer is dropped. */
+    private long bashToolGen;
+
+    /** Which {@link #refreshLspStatus} is the latest: an older one's answers are dropped. */
+    private long lspStatusGen;
+
+    /** What a found server's status line says from the disk, read off the FX thread (PERF-01, Pauta 6.0.1). */
+    record StatusLook(
+            boolean mavenIncomplete,
+            @Nullable String outdated,
+            @Nullable String unknown,
+            boolean loadsLemminxMaven,
+            String where,
+            @Nullable String fallback) {
+
+        static StatusLook read(String serverId, List<String> argv, @Nullable Path configDir, boolean found) {
+            boolean incomplete = !found && MAVEN_POM.equals(serverId) && mavenInstallIncomplete(argv);
+            String outdated = found ? outdatedPin(serverId, argv, configDir) : null;
+            String unknown = found ? unknownPin(serverId, argv, configDir) : null;
+            boolean lemminxMaven =
+                    found && "xml".equals(serverId) && com.editora.lsp.LemminxMavenGuard.loadsLemminxMaven(argv, true);
+            String where = found && !MAVEN_POM.equals(serverId) ? com.editora.doctor.DoctorProbes.lookAt(argv) : "";
+            where = com.editora.install.PinnedVersions.withVersion(serverId, argv, configDir, where);
+            String fallback = found && "xml".equals(serverId)
+                    ? com.editora.install.XmlServerInstall.javaFallbackVersion(argv, configDir)
+                    : null;
+            return new StatusLook(incomplete, outdated, unknown, lemminxMaven, where, fallback);
+        }
     }
 
     /** A path-with-Browse row for one of the Bash server's tools; blank = Editora's installed copy, else PATH. */
@@ -654,6 +703,7 @@ final class SettingsLspPage {
         // shut its running server down every time Settings was merely opened.
         java.util.Map<String, String> shown =
                 LspServerCommands.launchCommandsForAllServers(config.getSettings(), config.getConfigDir());
+        long gen = ++lspStatusGen;
         for (LspServerUi srv : lspServerUis()) {
             ToolStatusRow status = lspStatusLabels.get(srv.id());
             if (status == null) {
@@ -666,55 +716,58 @@ final class SettingsLspPage {
                     srv.id(),
                     shown.getOrDefault(srv.id(), ""),
                     found -> { // blank = default
-                        if (!found && MAVEN_POM.equals(srv.id()) && mavenInstallIncomplete(argv)) {
-                            // The folder is there but lacks jars (the upstream bundle without the ones it leaves out,
-                            // or
-                            // a wiped install): not "not found" — "incomplete", with Install… to repair (Maven review
-                            // C3).
-                            status.showProblem(
-                                    tr("settings.lsp.mavenIncomplete", lspToolName(srv.id(), argv)),
-                                    lspCheck.isSelected());
-                            return;
-                        }
-                        String outdated = found ? outdatedPin(srv.id(), argv, config.getConfigDir()) : null;
-                        if (outdated != null) { // "Installed" over what Doctor offers to update (re-review D8)
-                            status.showProblem(
-                                    tr("settings.lsp.pinOutdated", lspToolName(srv.id(), argv), outdated),
-                                    lspCheck.isSelected());
-                            return;
-                        }
-                        String unknown = found ? unknownPin(srv.id(), argv, config.getConfigDir()) : null;
-                        if (unknown != null) { // an install from before the pin: Doctor says Update too (A7)
-                            String name = lspToolName(srv.id(), argv); // a warning there too, so amber here (A26)
-                            status.showWarning(
-                                    tr("settings.lsp.pinUnknownShort", name, unknown),
-                                    tr("settings.lsp.pinUnknown", name, unknown));
-                            return;
-                        }
-                        if (found && xmlRefused(srv.id(), argv)) { // not started at all: not "found" (review 4, A32)
-                            status.showProblem(
-                                    tr("settings.lsp.xmlLoadsMaven", lspToolName(srv.id(), argv)),
-                                    lspCheck.isSelected());
-                            return;
-                        }
-                        String crash = found && w.projectLsp != null ? w.projectLsp.serverCrash(srv.id()) : null;
-                        if (crash != null) { // found, but it exits before it is ready: not "Installed" (XML A4)
-                            String name = lspToolName(srv.id(), argv);
-                            status.showProblem(tr("settings.lsp.crashing", name, crash), lspCheck.isSelected());
-                            return;
-                        }
-                        String where = found && !MAVEN_POM.equals(srv.id()) ? ToolStatusRow.pathOf(argv) : "";
-                        where = com.editora.install.PinnedVersions.withVersion(
-                                srv.id(), argv, config.getConfigDir(), where);
-                        String fallback = found && "xml".equals(srv.id())
-                                ? com.editora.install.XmlServerInstall.javaFallbackVersion(argv, config.getConfigDir())
-                                : null;
-                        if (fallback != null) { // the pom bundle's Java lemminx, not the pinned native build (A32)
-                            where = tr("lsp.xml.javaFallback", fallback) + " — " + where;
-                        }
-                        status.show(found, where, lspCheck.isSelected());
+                        // Receipts, fingerprints and paths off the FX thread (PERF-01, Pauta 6.0.1); a later refresh
+                        // wins.
+                        Path configDir = config.getConfigDir();
+                        com.editora.perf.OffFx.then(
+                                "lsp-status-look", () -> StatusLook.read(srv.id(), argv, configDir, found), answer -> {
+                                    StatusLook look = answer.value();
+                                    if (gen == lspStatusGen && look != null) {
+                                        showServerStatus(srv.id(), argv, status, found, look);
+                                    }
+                                });
                     });
         }
+    }
+
+    /** Shows server {@code serverId}'s status line from what {@link StatusLook} read. */
+    private void showServerStatus(
+            String serverId, List<String> argv, ToolStatusRow status, boolean found, StatusLook look) {
+        if (look.mavenIncomplete()) {
+            // The folder is there but lacks jars (the upstream bundle without the ones it leaves out, or a wiped
+            // install): not "not found" — "incomplete", with Install… to repair (Maven review C3).
+            status.showProblem(tr("settings.lsp.mavenIncomplete", lspToolName(serverId, argv)), lspCheck.isSelected());
+            return;
+        }
+        String outdated = look.outdated();
+        if (outdated != null) { // "Installed" over what Doctor offers to update (re-review D8)
+            status.showProblem(
+                    tr("settings.lsp.pinOutdated", lspToolName(serverId, argv), outdated), lspCheck.isSelected());
+            return;
+        }
+        String unknown = look.unknown();
+        if (unknown != null) { // an install from before the pin: Doctor says Update too (A7)
+            String name = lspToolName(serverId, argv); // a warning there too, so amber here (A26)
+            status.showWarning(
+                    tr("settings.lsp.pinUnknownShort", name, unknown), tr("settings.lsp.pinUnknown", name, unknown));
+            return;
+        }
+        if (found && xmlRefused(serverId, look.loadsLemminxMaven())) { // not started at all (review 4, A32)
+            status.showProblem(tr("settings.lsp.xmlLoadsMaven", lspToolName(serverId, argv)), lspCheck.isSelected());
+            return;
+        }
+        String crash = found && w.projectLsp != null ? w.projectLsp.serverCrash(serverId) : null;
+        if (crash != null) { // found, but it exits before it is ready: not "Installed" (XML A4)
+            String name = lspToolName(serverId, argv);
+            status.showProblem(tr("settings.lsp.crashing", name, crash), lspCheck.isSelected());
+            return;
+        }
+        String where = look.where();
+        String fallback = look.fallback();
+        if (fallback != null) { // the pom bundle's Java lemminx, not the pinned native build (A32)
+            where = tr("lsp.xml.javaFallback", fallback) + " — " + where;
+        }
+        status.show(found, where, lspCheck.isSelected());
     }
 
     /**
@@ -755,13 +808,12 @@ final class SettingsLspPage {
      * Whether Editora will not start the XML command {@code argv} — it loads lemminx-maven — or this window's project
      * command was refused for that (review 4, A32). File lookups only.
      */
-    private boolean xmlRefused(String serverId, List<String> argv) {
+    private boolean xmlRefused(String serverId, boolean loadsLemminxMaven) {
         if (!"xml".equals(serverId)) {
             return false;
         }
         LspCoordinator.ServerTrouble trouble = w.projectLsp == null ? null : w.projectLsp.serverTrouble(serverId);
-        return (trouble != null && trouble.refused())
-                || com.editora.lsp.LemminxMavenGuard.loadsLemminxMaven(argv, true);
+        return (trouble != null && trouble.refused()) || loadsLemminxMaven;
     }
 
     /** Whether the Maven server's {@code java -cp "<dir>/*"} folder exists but lacks required jars. Pure (file lookups). */

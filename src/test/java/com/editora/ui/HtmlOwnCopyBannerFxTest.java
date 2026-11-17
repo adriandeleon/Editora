@@ -27,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * own copy — instead of only in Doctor. Once per window; the user's own command is left alone.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class HtmlOwnCopyBannerFxTest {
 
     @TempDir
