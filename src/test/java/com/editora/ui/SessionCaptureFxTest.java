@@ -32,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * forgotten, and a completion that arrives after the window is gone is dropped.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // Rename File lands off FX (PERF-01)
 class SessionCaptureFxTest {
 
     @BeforeAll

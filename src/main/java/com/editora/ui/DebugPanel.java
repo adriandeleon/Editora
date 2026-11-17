@@ -710,6 +710,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         threads.getStyleClass().add("debug-threads");
         threads.setMaxWidth(Double.MAX_VALUE);
         threads.setPromptText(tr("debugpanel.threads"));
+        threads.setAccessibleText(tr("debugpanel.threads"));
         FocusCommands.bindIf(
                 this,
                 "debug.chooseThread",
@@ -744,6 +745,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
         // Call stack: rich cells — frame name + muted ":line, File" location.
         stack.getStyleClass().add("debug-stack"); // dense, borderless (Structure/Git panel idiom)
+        stack.setAccessibleText(tr("debugpanel.callStack"));
         stack.setCellFactory(v -> new ListCell<>() {
             @Override
             protected void updateItem(DapModels.StackFrameInfo f, boolean empty) {
@@ -757,7 +759,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     // Runtime/library frames folded away (review D105): one muted row, clicked to show them.
                     Text fold = new Text(tr("debugpanel.foldedFrames", f.line()));
                     fold.getStyleClass().addAll("debug-frame-name", "debug-frame-nosource", "debug-frame-fold");
-                    setGraphic(new TextFlow(fold));
+                    setGraphic(CellNames.read(new TextFlow(fold)));
                     return;
                 }
                 Text name = new Text(DebugPanelText.frameName(f.name()));
@@ -765,7 +767,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 TextFlow flow = new TextFlow(name);
                 if (com.editora.dap.DapModels.HINT_LABEL.equals(f.hint())) {
                     name.getStyleClass().addAll("debug-frame-nosource", "debug-frame-fold"); // "await": a label
-                    setGraphic(flow);
+                    setGraphic(CellNames.read(flow));
                     return;
                 }
                 if (!hasSource.test(f)) {
@@ -778,7 +780,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     loc.getStyleClass().add("debug-frame-loc");
                     flow.getChildren().add(loc);
                 }
-                setGraphic(flow);
+                setGraphic(CellNames.read(flow));
             }
         });
         stackHint.getStyleClass().add("debug-empty-hint");
@@ -837,6 +839,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         // Variables: rich cells — name, muted " = ", type-colored value, muted type suffix.
         variables.getStyleClass().add("debug-vars"); // dense, borderless (Structure/Git panel idiom)
         variables.setShowRoot(false);
+        variables.setAccessibleText(tr("debugpanel.variables"));
         variables.setRoot(idleRoot());
         variables.setCellFactory(v -> new TreeCell<>() {
             @Override
@@ -938,6 +941,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         ConsoleNav.installShared(console); // configured-keymap scrolling while the console has focus
         evalInput.getStyleClass().add("debug-eval");
         evalInput.setPromptText(tr("debugpanel.evalPrompt"));
+        evalInput.setAccessibleText(tr("debugpanel.evalPrompt"));
         evalInput.setOnAction(e -> runEval());
         evalCompletion = DebugCompletion.attach(evalInput, new DebugCompletion.Source() {
             @Override
@@ -996,6 +1000,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         VBox.setVgrow(stackArea, Priority.ALWAYS);
         Label varsHeader = sectionLabel("debugpanel.variables");
         varsFilter.setPromptText(tr("debugpanel.filterPrompt"));
+        varsFilter.setAccessibleText(tr("debugpanel.filterPrompt"));
         varsFilter.setPrefColumnCount(12);
         varsFilter.getStyleClass().addAll("debug-eval", "debug-vars-filter");
         varsFilter.textProperty().addListener((o, was, now) -> applyFilter());
@@ -1209,6 +1214,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     /** {@link #renderRow(VarRow, boolean)}, with {@code mark} — the object's Mark Object label — before its value. */
     static TextFlow renderRow(VarRow row, boolean changed, @Nullable String mark) {
+        return CellNames.read(drawRow(row, changed, mark)); // the row reads as what it shows
+    }
+
+    private static TextFlow drawRow(VarRow row, boolean changed, @Nullable String mark) {
         TextFlow flow = new TextFlow();
         if (changed) {
             flow.getStyleClass().add("debug-row-changed");
@@ -1825,7 +1834,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 }
                 Text state = new Text("  " + tr(DebugPanelText.threadStateKey(t)));
                 state.getStyleClass().add(t.paused() ? "debug-thread-paused" : "debug-frame-loc");
-                setGraphic(new TextFlow(name, state));
+                setGraphic(CellNames.read(new TextFlow(name, state)));
             }
         });
         threadList.setOnMouseClicked(e -> {

@@ -95,6 +95,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
     public TodoPanel(Actions actions) {
         this.actions = actions;
         getStyleClass().add("todo-panel");
+        tree.setAccessibleText(tr("toolwindow.todo"));
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         UiZoom.spacing(this, 6);
         UiZoom.padding(this, 6);
@@ -112,6 +113,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         scopeRow.getStyleClass().add("search-scope-row");
 
         Label groupLabel = new Label(tr("todo.groupBy"));
+        groupLabel.setLabelFor(groupBy);
         groupBy.getItems().setAll(TodoGrouping.GroupBy.values());
         groupBy.getSelectionModel().select(TodoGrouping.GroupBy.FILE);
         FocusCommands.bind(this, "todo.groupBy", groupBy::show); // the choices, in the drop-down itself
@@ -145,6 +147,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         // Filter row: narrows the visible TODO rows as you type (keyword / tag / description / file),
         // with a trailing clear ("✕") button. Down/Enter move focus into / open the results.
         filterField.setPromptText(tr("todo.filterPrompt"));
+        filterField.setAccessibleText(tr("todo.filterPrompt"));
         filterField.getStyleClass().add("todo-filter");
         filterField.textProperty().addListener((o, w, n) -> rebuild());
         HBox.setHgrow(filterField, Priority.ALWAYS);
@@ -503,7 +506,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
             Text loc = addRun(flow, "  — " + fileLabel(row.file()) + ":" + m.line(), null, false, false);
             loc.getStyleClass().add("todo-row-location");
             setText(null);
-            setGraphic(flow);
+            setGraphic(CellNames.read(flow));
         }
 
         private static Text addRun(

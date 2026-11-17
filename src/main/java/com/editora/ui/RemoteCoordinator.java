@@ -475,6 +475,7 @@ final class RemoteCoordinator {
         area.setPrefColumnCount(60);
         area.setPrefRowCount(Math.min(16, wrappedLines(body, 64) + 1)); // the advice wraps: count what it wraps to
         area.getStyleClass().add("git-error-text"); // the error-detail style the Git dialog uses
+        area.setAccessibleText(alert.getHeaderText()); // the details of what the header says failed
         alert.getDialogPane().setContent(area);
         UiZoom.minWidth(alert.getDialogPane(), 600);
         alert.setResizable(true);

@@ -109,6 +109,8 @@ final class SearchInFilesPopup {
 
     private VBox build() {
         query.setPromptText(tr("search.queryPrompt"));
+        query.setAccessibleText(tr("search.queryPrompt"));
+        list.setAccessibleText(tr("toolwindow.search"));
         query.textProperty().addListener((o, a, b) -> debounce.playFromStart());
         query.addEventFilter(KeyEvent.KEY_PRESSED, this::onQueryKey);
         // Emacs caret movement + basic editing (registered after onQueryKey so its list navigation wins).
@@ -131,6 +133,7 @@ final class SearchInFilesPopup {
         toggles.getStyleClass().add("fif-toggles");
 
         rootField.setPromptText(tr("search.rootPrompt"));
+        rootField.setAccessibleText(tr("search.rootPrompt"));
         rootField.textProperty().addListener((o, a, b) -> debounce.playFromStart());
         Label rootLabel = new Label(tr("search.rootLabel"));
         rootLabel.getStyleClass().add("fif-root-label");
@@ -139,7 +142,9 @@ final class SearchInFilesPopup {
         rootRow.setAlignment(Pos.CENTER_LEFT);
 
         include.setPromptText(tr("search.includePrompt"));
+        include.setAccessibleText(tr("search.includePrompt"));
         exclude.setPromptText(tr("search.excludePrompt"));
+        exclude.setAccessibleText(tr("search.excludePrompt"));
         include.textProperty().addListener((o, a, b) -> debounce.playFromStart());
         exclude.textProperty().addListener((o, a, b) -> debounce.playFromStart());
         com.editora.command.TextInputKeymap.installShared(rootField);

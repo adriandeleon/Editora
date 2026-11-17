@@ -78,6 +78,7 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
     public ProblemsPanel(Actions actions) {
         this.actions = actions;
         getStyleClass().add("problems-panel");
+        tree.setAccessibleText(tr("toolwindow.problems"));
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         UiZoom.spacing(this, 6);
         UiZoom.padding(this, 6);
@@ -110,6 +111,7 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
         // project is only useful once something has actually built the project, so it stays opt-in.
         scope.getItems().setAll(tr("problems.scope.openFiles"), tr("problems.scope.project"));
         scope.getSelectionModel().select(0);
+        scope.setAccessibleText(tr("problems.scope.name"));
         scope.setOnAction(e -> {
             if (!syncingScope) {
                 actions.setProjectWide(scope.getSelectionModel().getSelectedIndex() == 1);

@@ -181,6 +181,7 @@ final class MarkdownBacklinks {
 
         Panel() {
             getStyleClass().add("backlinks-panel");
+            list.setAccessibleText(tr("toolwindow.backlinks"));
             title.getStyleClass().add("tool-window-subtitle");
             title.setPadding(new javafx.geometry.Insets(4, 8, 4, 8));
             empty.getStyleClass().add("settings-hint");

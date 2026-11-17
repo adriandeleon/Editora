@@ -1067,6 +1067,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Screen readers can name every control and use the status bar.** Filter fields, lists and trees of the tool
+  windows, the palette and pickers, form fields, Settings fields beside a button, and rows built from icons and
+  labels (the call stack, variables, Git log, Switcher and others) had no name, so Narrator and VoiceOver said only
+  "edit" or "list". Each now reads as its caption or what it shows. Every clickable status-bar segment, the echo
+  line included, is a button a screen reader can press, and a new status message is read out. So are the editor's
+  problem counter, a Markdown preview's collapsible section, the AI agent's client, model and mode and the file
+  paths in its replies, the diff viewer's apply arrows, Parallel Stacks frames, and the lightbulb, breakpoint and
+  run marks of the gutter and the Project Map cards. A test runs every
+  command, opens every tool window and Settings page, and fails on any control left without a name.
+
 - **Windows open centred on the editor window.** The detached Agent window opened in the middle of the screen,
   and a few error alerts (a template that failed to save, any dialog asked with no window behind it) did too. They
   now open over the editor window in front, centred on it, as Settings, Run Configurations and the debugger windows

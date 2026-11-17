@@ -73,6 +73,7 @@ final class GitManagerOverlay<T> {
         overlayHost = host;
         Label titleLabel = new Label(title);
         titleLabel.getStyleClass().add("palette-title");
+        list.setAccessibleText(title);
 
         list.getItems().setAll(items);
         Label empty = new Label(emptyText);

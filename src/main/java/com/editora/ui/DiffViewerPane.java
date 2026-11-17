@@ -50,6 +50,7 @@ import com.editora.diff.DiffText;
 import com.editora.diff.PatchWriter;
 import com.editora.editor.ControlNames;
 import com.editora.editor.MenuChords;
+import com.editora.editor.PressableBox;
 import com.editora.editor.TabContent;
 import com.editora.editor.UiZoom;
 import com.editora.editor.highlight.GrammarRegistry;
@@ -2441,31 +2442,25 @@ public final class DiffViewerPane implements TabContent {
 
     /** A fixed-width gutter cell holding {@code icon} (clickable, with {@code tip}) or empty for alignment. */
     private HBox arrowSlot(@Nullable Node icon, String tip, Runnable onClick) {
-        HBox slot = new HBox();
+        if (icon == null) {
+            HBox empty = new HBox();
+            fixSlotWidth(empty);
+            return empty;
+        }
+        PressableBox slot = new PressableBox(onClick); // a click, Enter or Space, or a screen reader's press
+        fixSlotWidth(slot);
+        slot.getStyleClass().add("diff-apply");
+        slot.setAccessibleText(tip);
+        Tooltip.install(slot, ControlNames.tooltip(tip));
+        slot.getChildren().add(icon);
+        return slot;
+    }
+
+    private static void fixSlotWidth(HBox slot) {
         UiZoom.minWidth(slot, 16);
         UiZoom.prefWidth(slot, 16);
         UiZoom.maxWidth(slot, 16);
         slot.setAlignment(Pos.CENTER);
-        if (icon != null) {
-            slot.getStyleClass().add("diff-apply");
-            slot.setAccessibleRole(AccessibleRole.BUTTON);
-            slot.setAccessibleText(tip);
-            slot.setFocusTraversable(true);
-            Tooltip.install(slot, ControlNames.tooltip(tip));
-            slot.setOnMouseClicked(e -> {
-                onClick.run();
-                e.consume();
-            });
-            slot.setOnKeyPressed(e -> {
-                if (e.getCode() == javafx.scene.input.KeyCode.ENTER
-                        || e.getCode() == javafx.scene.input.KeyCode.SPACE) {
-                    onClick.run();
-                    e.consume();
-                }
-            });
-            slot.getChildren().add(icon);
-        }
-        return slot;
     }
 
     /** Whole-hunk apply: replaces the editable side's contiguous change block at {@code start} with the
