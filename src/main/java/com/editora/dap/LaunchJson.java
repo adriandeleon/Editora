@@ -533,9 +533,12 @@ public final class LaunchJson {
                 return argv;
             }
             case "shell" -> {
-                StringBuilder line = new StringBuilder(command);
+                // As VS Code: a command alone is a whole command line; with arguments, the command is quoted when it
+                // has spaces (a path like "C:\Program Files\x"), and so is each argument that needs it.
+                StringBuilder line = new StringBuilder(
+                        args.isEmpty() ? command : windows ? cmdQuote(command) : commandQuote(command));
                 for (String a : args) {
-                    line.append(' ').append(windows ? a : shellQuote(a));
+                    line.append(' ').append(windows ? cmdQuote(a) : shellQuote(a));
                 }
                 return windows ? List.of("cmd", "/c", line.toString()) : List.of("sh", "-c", line.toString());
             }
@@ -543,6 +546,26 @@ public final class LaunchJson {
                 return null;
             }
         }
+    }
+
+    /**
+     * A shell task's command for a POSIX shell: as it is unless it has a space or a quote, so {@code $HOME/bin/x} still
+     * expands, else in single quotes. Pure.
+     */
+    static String commandQuote(String command) {
+        return Pattern.compile("[\\s'\"]").matcher(command).find() ? shellQuote(command) : command;
+    }
+
+    /**
+     * {@code word} for {@code cmd.exe}: as it is when it has no space, quote or character {@code cmd} treats specially,
+     * else in double quotes (a quote inside written {@code \"}). Pure.
+     */
+    public static String cmdQuote(String word) {
+        if (!word.isEmpty()
+                && !Pattern.compile("[\\s\"&|<>^()%!,;=]").matcher(word).find()) {
+            return word;
+        }
+        return "\"" + word.replace("\"", "\\\"") + "\"";
     }
 
     /** {@code word} for a POSIX shell: as it is when plain, else in single quotes. Pure. */

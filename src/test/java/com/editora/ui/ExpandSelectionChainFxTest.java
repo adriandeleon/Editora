@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -117,6 +118,8 @@ class ExpandSelectionChainFxTest {
         Object coordinator = FxTestSupport.field(fx.controller, "lspCoordinator");
         Path file = Files.createTempDirectory("expand-chain").resolve("A.java");
         Files.writeString(file, SRC);
+        // An install another test began holds jdtls stopped in every window of this JVM until it is released.
+        com.editora.lsp.LspManager.releaseAfterInstall(com.editora.lsp.LspServerRegistry.JAVA_SERVER_ID);
         SelectionRangeFake.install(manager, ExpandSelectionChainFxTest::answer);
         fx.shared.getSettings().setLspSupport(true);
         fx.shared.getSettings().setJavaLspEnabled(true);
@@ -128,33 +131,59 @@ class ExpandSelectionChainFxTest {
         EditorBuffer b;
         try {
             b = open(coordinator, file);
+            // The server's start answers later on a slow runner, and the settings just changed may restart it once
+            // more (queued on the FX thread): attached only once what is queued has run, with the buffer synced again
+            // meanwhile, as an edit would.
+            for (int i = 0; i < 20; i++) {
+                com.editora.testkit.Await.holdsWithin(
+                        () -> manager.supportsSelectionRanges(file), Duration.ofSeconds(1));
+                FxTestSupport.drainFx();
+                if (manager.supportsSelectionRanges(file)) {
+                    break;
+                }
+                EditorBuffer opened = b;
+                FxTestSupport.runOnFx(() ->
+                        FxTestSupport.call(coordinator, "syncBuffer", new Class<?>[] {EditorBuffer.class}, opened));
+            }
         } finally {
             com.editora.perf.OffFx.runnerForTest(null);
         }
-        for (int i = 0; i < 100 && !manager.supportsSelectionRanges(file); i++) {
-            Thread.sleep(50);
-            FxTestSupport.drainFx();
-        }
-        assertTrue(manager.supportsSelectionRanges(file), "the fake server is attached");
+        assertTrue(
+                manager.supportsSelectionRanges(file),
+                () -> "the fake server is attached (held for install: "
+                        + com.editora.lsp.LspManager.isHeldForInstall(com.editora.lsp.LspServerRegistry.JAVA_SERVER_ID)
+                        + ", sessions: "
+                        + FxTestSupport.<Map<String, ?>>field(manager, "sessionsByRoot")
+                                .keySet() + ")");
 
         // Ladder 1 in method a(): the first press is local, the second uses the fetched chain.
         FxTestSupport.runOnFx(() -> b.getArea().moveTo(SRC.indexOf("alpha") + 2));
-        FxTestSupport.runOnFx(() -> registry.run("edit.expandSelection"));
-        for (int i = 0; i < 100; i++) { // let the chain for ladder 1 arrive
-            Thread.sleep(20);
-            FxTestSupport.drainFx();
-            List<?> chain = FxTestSupport.callOnFx(() -> (List<?>)
-                    FxTestSupport.call(coordinator, "selectionChain", new Class<?>[] {EditorBuffer.class}, b));
-            if (!chain.isEmpty()) {
-                break;
-            }
-        }
-        FxTestSupport.runOnFx(() -> registry.run("edit.expandSelection"));
+        expand(registry, b);
+        // let the chain for ladder 1 arrive
+        EventuallyFx.holdsWithin(
+                Duration.ofSeconds(10),
+                () -> !FxTestSupport.<List<?>>callOnFx(() -> (List<?>) FxTestSupport.call(
+                                coordinator, "selectionChain", new Class<?>[] {EditorBuffer.class}, b))
+                        .isEmpty());
+        expand(registry, b);
         assertEquals("int alpha = 1;", FxTestSupport.callOnFx(() -> b.getArea().getSelectedText()));
 
         // Ladder 2: move into method b() — no edit in between — and press once.
         FxTestSupport.runOnFx(() -> b.getArea().moveTo(SRC.indexOf("beta") + 2));
-        FxTestSupport.runOnFx(() -> registry.run("edit.expandSelection"));
+        expand(registry, b);
         assertEquals("beta", FxTestSupport.callOnFx(() -> b.getArea().getSelectedText()));
+    }
+
+    /**
+     * Presses Expand Selection and waits for it to land: the next range is looked for off the FX thread and applied
+     * when it comes back (PERF-01), which changes the selection.
+     */
+    private static void expand(CommandRegistry registry, EditorBuffer b) throws Exception {
+        String before = FxTestSupport.callOnFx(() -> b.getArea().getSelectedText());
+        FxTestSupport.runOnFx(() -> registry.run("edit.expandSelection"));
+        EventuallyFx.holdsWithin(
+                Duration.ofSeconds(10),
+                () -> !before.equals(FxTestSupport.callOnFx(() -> b.getArea().getSelectedText())));
+        FxTestSupport.drainFx();
     }
 }

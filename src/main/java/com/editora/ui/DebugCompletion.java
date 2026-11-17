@@ -305,6 +305,7 @@ final class DebugCompletion {
                 return;
             }
             note.hide();
+            shownFor = text;
             popup.setQuery(DebugCompletionText.prefix(text, caret));
             popup.show(node.getScene().getWindow(), caretBounds(), items, 0);
         });
@@ -338,11 +339,20 @@ final class DebugCompletion {
         };
     }
 
+    /** The text the shown list was asked for: the adapter's ranges count in it. */
+    private String shownFor = "";
+
     private void accept(Completion c) {
-        if (c == null || !(c.resolveToken() instanceof DapModels.CompletionTarget t)) {
+        if (c == null || !(c.resolveToken() instanceof DapModels.CompletionTarget asked)) {
             hide();
             return;
         }
+        // Typed on since the list was asked for (its next question waits for a pause): the adapter's range is the old
+        // text's, so the word at the caret is replaced instead.
+        DapModels.CompletionTarget t = field.text().equals(shownFor)
+                ? asked
+                : new DapModels.CompletionTarget(
+                        asked.label(), asked.text(), asked.type(), asked.detail(), asked.sortText(), -1, 0);
         DebugCompletionText.Edit edit =
                 DebugCompletionText.apply(field.text(), field.caret(), t, DebugCompletionText.hasParameters(t.label()));
         hide();

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A launch.json preLaunchTask and a lone C# file ask before running a folder's code.** A configuration's
+  `preLaunchTask` ran its `.vscode/tasks.json` command in an untrusted folder with no question, and debugging a C#
+  file outside any project built it there although the SDK's build imports the folders' `Directory.Build.props` and
+  `.targets`. Both now ask for workspace trust first, as Make, CMake and dotnet projects do; declining runs nothing.
 - **Mill and sbt builds ask before running a folder's code.** A cloned repository's own `./mill` launcher ran on the
   first build with no question, unlike `./mvnw` and `./gradlew`. Mill and sbt builds now ask for workspace trust the
   way Maven and Gradle do, on a repository launcher or your own `mill`/`sbt` alike, since `build.mill`, `build.sc`,
@@ -1170,6 +1174,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Debugger review fixes.** A review of the whole debugger found these, now fixed:
+  - **Several sessions at once.** A compound of saved Java, Go, Rust or Node configurations launched every member
+    into its last session; each now starts its own. A Debug Test attach goes to the session waiting for it, not to
+    the one you clicked meanwhile; Stop in one session no longer drops another run's queued JVMs; turning Debug
+    support off stops every session; a file opened mid-session lines up breakpoints for every session; hot code
+    replace on save reaches every Java session; Thread Dump and Parallel Stacks open frames and take stacks again
+    in the session they came from; and breakpoints edited in closed files (Breakpoints list, Map card, import, Mute)
+    reach each session as its start would send them, triggered ones held back.
+  - **Processes and stuck sessions.** C#'s Debug Test at Caret stops its `dotnet test` run when the attach fails or
+    the session, tab or window closes. A debugger that exits while starting (e.g. GDB older than 14) says so, with
+    what it printed. Stopping while a TypeScript program's build is checked no longer starts it anyway. A
+    `toString()` that timed out no longer blocks Resume and Step for the rest of the session. Stop while connecting
+    ends at once, and a Node child ending no longer stalls the session's end. Go's `editora-dlv-*` binaries no
+    longer pile up in the temp folder, and closed View as Table windows are freed.
+  - **Run to Cursor** reaches its line past logpoints, recording and filtered breakpoints on the way; a stop it shows
+    you ends it, as before.
+  - **Node workers.** After Thread Dump or Parallel Stacks, variables and evaluation no longer answer from another
+    worker; resuming one worker no longer marks the whole session running, and the program's exit code is shown.
+  - **launch.json.** Edited files are saved before a configuration starts, and Restart runs its `preLaunchTask` (or
+    cargo build) again. A shell task whose command or arguments have spaces runs, on Windows too. A
+    `debug-adapters.json` adapter claiming a type Editora handles itself is reported instead of ignored.
+  - **Debug window.** Evaluating or adding a watch while an earlier stop is shown no longer overwrites it; Set Value
+    typed across a step is refused instead of set in the old stop; the latest of two quick evaluations is the one
+    shown; a completion accepted while typing on replaces the word; a value of only line breaks no longer breaks
+    Variables; native frames no longer show ":0".
+  - **Finding the code.** C# Debug Test at Caret finds the test with helper types above it, in nested test classes
+    and with the attribute on the method's line; Go's is not confused by raw strings; a breakpoint below a JavaScript
+    regex containing `/*` or a multi-line template literal is no longer refused; Show Value As reads a Java `char`
+    such as `'7'` by its code; Attach to Process no longer offers a Node `--inspect=0` program on 9229 and lists
+    macOS native and Rust programs with DWARF in a `.dSYM`.
+  - **Smaller ones.** Bash debugging has its card in Settings → Debugging; a conditional breakpoint on a Bash
+    script's first line no longer pauses at start; a remote JavaScript session no longer shows the last local
+    debugger's errors; method breakpoints and field watchpoints are in place before the program starts; reading
+    memory more than 2 GB from an address reads the right place; Set Value keeps the typed value when the debugger
+    leaves it out.
 - **Screen readers can name every control and use the status bar.** Filter fields, lists and trees of the tool
   windows, the palette and pickers, form fields, Settings fields beside a button, and rows built from icons and
   labels (the call stack, variables, Git log, Switcher and others) had no name, so Narrator and VoiceOver said only

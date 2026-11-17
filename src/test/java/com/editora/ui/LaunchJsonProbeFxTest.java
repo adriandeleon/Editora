@@ -166,6 +166,7 @@ class LaunchJsonProbeFxTest {
                 configDir, false, false, false, List.of(new MainController.OpenTarget(file, 0, 0)), true, c -> {});
         try {
             MainController c = fx.controller;
+            fx.shared.getTrustStore().trust(root); // its preLaunchTask runs only in a trusted folder
             DebugCoordinator debug = FxTestSupport.field(c, "debugCoordinator");
             DapManager dap = FxTestSupport.field(c, "dapManager");
             await("C debugging available", () -> call(() -> debug.debugEffectiveFor("cpp")));

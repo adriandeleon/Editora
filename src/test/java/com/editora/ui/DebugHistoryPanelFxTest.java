@@ -307,4 +307,28 @@ class DebugHistoryPanelFxTest {
             assertSame(null, panel.viewing());
         });
     }
+    /**
+     * Values refreshed at the live stop while an earlier one is shown (an evaluation, Show as Hex, Add to Watches) go
+     * to the live tree set aside: the earlier stop stays on screen, and Back to Live shows the refreshed values.
+     */
+    @Test
+    void aLiveRefreshWhileAnEarlierStopIsShownKeepsItAndReachesTheLiveTree() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            DebugPanel panel = new DebugPanel(actions());
+            panel.setState(DapManager.State.STARTING);
+            stopAt(panel, 4, variable("i", "0"));
+            stopAt(panel, 5, variable("i", "1"));
+            panel.historyBack();
+            assertTrue(bannerShown(panel));
+            assertEquals("0", value(panel, "i"), "the earlier stop's value");
+
+            locals = List.of(variable("i", "99")); // the live stop's value, refreshed after an evaluation
+            panel.setScopes(List.of(new DapModels.ScopeInfo("Local", 1, false)));
+            assertTrue(bannerShown(panel), "still the earlier stop");
+            assertEquals("0", value(panel, "i"), "its tree is not replaced");
+
+            panel.leaveHistory();
+            assertEquals("99", value(panel, "i"), "Back to Live shows the values as refreshed");
+        });
+    }
 }

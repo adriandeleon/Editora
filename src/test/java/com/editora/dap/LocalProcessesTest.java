@@ -78,6 +78,9 @@ class LocalProcessesTest {
                 "localhost:9444",
                 of("node", "--inspect-port=9444", "--inspect", "a.js").address());
         assertFalse(of("node", "--inspect-port=9444", "a.js").attachable(), "a port alone does not listen");
+        assertFalse(of("node", "--inspect=0", "a.js").attachable(), "a port chosen when it starts is unknown");
+        assertFalse(of("node", "--inspect-brk=127.0.0.1:0", "a.js").attachable());
+        assertEquals("", of("node", "--inspect=0", "a.js").address());
         assertFalse(of("node", "a.js").attachable());
     }
 

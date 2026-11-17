@@ -26,6 +26,23 @@ class DebugPanelTextTest {
     }
 
     @Test
+    void aFrameWithNoLineShowsNoLineNumber() {
+        java.nio.file.Path file = java.nio.file.Path.of("lib", "libc.so.6");
+        DapModels.StackFrameInfo nativeFrame = new DapModels.StackFrameInfo(1, "read", file, -1, 0);
+        DapModels.StackFrameInfo own =
+                new DapModels.StackFrameInfo(2, "main", java.nio.file.Path.of("Main.java"), 11, 1);
+        assertEquals("", DebugPanelText.lineSuffix(-1));
+        assertEquals(":12", DebugPanelText.lineSuffix(11));
+        assertEquals("libc.so.6", MapCallStack.where(nativeFrame), "not libc.so.6:0");
+        assertEquals("Main.java:12", MapCallStack.where(own));
+        DebugHistory history = new DebugHistory();
+        DebugHistory.Stop stop = history.newStop("breakpoint", java.time.LocalTime.NOON, 1, List.of(nativeFrame), 0);
+        assertEquals(false, DebugPanelText.historyEntry(stop).contains(":0"), DebugPanelText.historyEntry(stop));
+        assertEquals(false, DebugPanelText.historyWhere(stop).contains(":0"), DebugPanelText.historyWhere(stop));
+        assertEquals(false, DebugPanelText.historyBanner(stop).contains(":0)"), DebugPanelText.historyBanner(stop));
+    }
+
+    @Test
     void aTooltipNamesTheKeymapChordAndThePanelLetter() {
         assertEquals(
                 "Step Over  (F10 · in this window: N)",

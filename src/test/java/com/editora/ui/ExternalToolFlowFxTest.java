@@ -337,9 +337,10 @@ class ExternalToolFlowFxTest {
                 tool("Format", "fmt", "", ExternalTool.OutputTarget.REPLACE_BUFFER),
                 new ProcessRunner.Result(0, "new\n", ""),
                 whole);
-        // The whole-document edit is worked out off the FX thread (PERF-01): it lands a moment later.
-        for (int i = 0; i < 500 && !"new\n".equals(FxTestSupport.callOnFx(whole::getContent)); i++) {
-            Thread.sleep(10);
+        // A whole-document rewrite is prepared off the FX thread (PERF-01): it lands a moment later.
+        long until = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        while (!"new\n".equals(FxTestSupport.callOnFx(whole::getContent)) && System.nanoTime() < until) {
+            Thread.sleep(20);
         }
         assertEquals("new\n", FxTestSupport.callOnFx(whole::getContent), "a whole-buffer result keeps its newline");
         assertEquals(tr("status.externalTool.done", "Format"), host.last);

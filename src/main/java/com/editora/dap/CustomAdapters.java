@@ -29,9 +29,32 @@ public final class CustomAdapters {
     /** What a file holds: its adapters, and why each one it could not read was refused. */
     public record Parsed(List<Adapter> adapters, List<String> problems) {}
 
-    /** The types Editora's own adapters are known by: a user's adapter takes none of them. */
-    static final Set<String> BUILT_IN_TYPES =
-            Set.of("lldb", "codelldb", "gdb", "cppdbg", "go", "debugpy", "python", "node", "pwa-node", "java");
+    /**
+     * The types Editora's own adapters are known by: a user's adapter takes none of them. Every type {@link LaunchRoute}
+     * routes, and every {@link DebugLanguages} launch type.
+     */
+    static final Set<String> BUILT_IN_TYPES = Set.of(
+            "lldb",
+            "codelldb",
+            "gdb",
+            "cppdbg",
+            "go",
+            "debugpy",
+            "python",
+            "node",
+            "pwa-node",
+            "chrome",
+            "pwa-chrome",
+            "msedge",
+            "pwa-msedge",
+            "coreclr",
+            "dotnet",
+            "rdbg",
+            "php",
+            "bashdb",
+            "java",
+            "editora-jvm",
+            "scala");
 
     /** {@code text}: {@code {"adapters": [...]}} or a bare array of adapters. */
     public static Parsed parse(String text) {

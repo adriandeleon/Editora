@@ -43,6 +43,8 @@ class NamedControlsSweepFxTest {
     }
 
     @Test
+    // Over 3,000 commands in two windows: 260 to 300 s on a CI runner, past the suite's 5-minute default.
+    @org.junit.jupiter.api.Timeout(value = 15, unit = java.util.concurrent.TimeUnit.MINUTES)
     void everyControlInEveryWindowHasAName(@TempDir Path dir) throws Exception {
         AccessibleNames names = new AccessibleNames();
         int[] settingsPages = {0};

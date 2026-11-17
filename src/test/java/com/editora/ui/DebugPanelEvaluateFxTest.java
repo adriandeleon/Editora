@@ -98,9 +98,16 @@ class DebugPanelEvaluateFxTest {
             cb.accept(new DapModels.EvalResult("w(" + expression + ")", 0, null));
         }
 
+        /** Answers held back instead of given at once, when set: the test answers them in its own order. */
+        List<Consumer<DapModels.EvalResult>> held;
+
         @Override
         public void evaluateCode(String expression, int frameId, Consumer<DapModels.EvalResult> cb) {
             calls.add("code " + expression + " @" + frameId);
+            if (held != null) {
+                held.add(cb);
+                return;
+            }
             cb.accept(results.getOrDefault(expression, new DapModels.EvalResult("v(" + expression + ")", 0, "int")));
         }
 
@@ -285,6 +292,19 @@ class DebugPanelEvaluateFxTest {
                 assertEquals(List.of(DebugPanel.removeAllWatchesQuestion(2)), questions.asked());
             }
             assertEquals(List.of(), panel.getWatches());
+        });
+    }
+    /** The same expression asked twice before the first answer: the second answer is shown, not the first. */
+    @Test
+    void theLatestOfTwoEvaluationsOfOneExpressionIsShown() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            stop();
+            adapter.held = new ArrayList<>();
+            panel.evaluateInVariables("counter++");
+            panel.evaluateInVariables("counter++");
+            adapter.held.get(0).accept(new DapModels.EvalResult("0", 0, "int"));
+            adapter.held.get(1).accept(new DapModels.EvalResult("1", 0, "int"));
+            assertEquals("1", first().value(), "the program holds what the last one left");
         });
     }
 }

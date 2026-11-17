@@ -51,6 +51,30 @@ class CustomAdaptersTest {
     }
 
     @Test
+    void everyTypeEditoraRoutesIsItsOwn() {
+        for (String type : List.of(
+                "coreclr",
+                "dotnet",
+                "chrome",
+                "pwa-chrome",
+                "msedge",
+                "pwa-msedge",
+                "rdbg",
+                "php",
+                "bashdb",
+                "pwa-node",
+                "lldb")) {
+            CustomAdapters.Parsed p =
+                    CustomAdapters.parse("{ \"adapters\": [ { \"type\": \"" + type + "\", \"command\": [\"x\"] } ] }");
+            assertEquals(0, p.adapters().size(), type);
+            assertTrue(p.problems().getFirst().contains("Editora's own"), type + ": " + p.problems());
+        }
+        for (DebugLanguage language : DebugLanguages.all()) {
+            assertTrue(CustomAdapters.BUILT_IN_TYPES.contains(language.launchType()), language.launchType());
+        }
+    }
+
+    @Test
     void anAdapterThatCannotBeUsedIsSaidAndSkipped() {
         CustomAdapters.Parsed p = CustomAdapters.parse("""
                 { "adapters": [
