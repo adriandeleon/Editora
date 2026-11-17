@@ -1776,6 +1776,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** Counts state changes, so a pending stale-stop clear knows it was overtaken. */
     private long runToken;
 
+    /** Counts evaluations asked in the field: only the latest one's answer is shown. */
+    private long evaluations;
+
     /** The program runs on: no stack, the Watches alone, and no thread marked "(paused)". */
     private void clearStaleStop() {
         stack.getItems().clear();
@@ -2191,9 +2194,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** Replaces the variables tree with the Watches node + the selected frame's scopes (each lazily
      *  expandable); watches re-evaluate against the newly selected frame. */
     public void setScopes(List<DapModels.ScopeInfo> scopes) {
-        scopeRows.clear();
-        rememberTreeState();
-        TreeItem<VarRow> old = variables.getRoot();
+        boolean history = viewing != null; // an earlier stop is shown: the live tree is replaced aside, not on screen
+        if (!history) {
+            scopeRows.clear();
+            rememberTreeState();
+        }
+        TreeItem<VarRow> old = history ? liveRoot : variables.getRoot();
         TreeItem<VarRow> root = new TreeItem<>();
         root.getChildren().add(buildWatchesNode());
         int offset = 1;
@@ -2209,6 +2215,16 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             TreeItem<VarRow> item = lazyItem(new VarRow(s.name(), "", "", s.variablesReference(), 0, Kind.SCOPE));
             root.getChildren().add(item);
         }
+        if (history) {
+            liveRoot = root; // what Back to Live shows: this stop's values as they are now
+            for (int i = 0; i < scopes.size(); i++) {
+                Boolean was = scopeExpanded(old, scopes.get(i).name());
+                root.getChildren()
+                        .get(i + offset)
+                        .setExpanded(was != null ? was : !scopes.get(i).expensive());
+            }
+            return;
+        }
         variables.setRoot(root);
         // Expanded only once the scope is in the tree: its children load on expansion and restore the
         // remembered rows by their path from the root.
@@ -2221,7 +2237,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     }
 
     /** Whether the scope called {@code name} was expanded in the tree being replaced, or null if not there. */
-    private static @Nullable Boolean scopeExpanded(TreeItem<VarRow> oldRoot, String name) {
+    private static @Nullable Boolean scopeExpanded(@Nullable TreeItem<VarRow> oldRoot, String name) {
         if (oldRoot != null) {
             for (int i = 0; i < oldRoot.getChildren().size(); i++) {
                 TreeItem<VarRow> scope = oldRoot.getChildren().get(i);
@@ -2379,7 +2395,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     /** Rebuilds just the Watches node in place (after add/edit/remove or a session-restore). */
     private void refreshWatchesNode() {
-        TreeItem<VarRow> root = variables.getRoot();
+        // While an earlier stop is shown, the live tree is set aside: it is the one whose watches change.
+        TreeItem<VarRow> root = viewing != null ? liveRoot : variables.getRoot();
+        if (viewing != null && (root == null || root.getChildren().isEmpty())) {
+            return; // the live tree is built again on the way back
+        }
         if (root == null || root.getChildren().isEmpty()) {
             variables.setRoot(idleRoot());
             return;
@@ -2812,11 +2832,19 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         if (prompt == null || row == null || row.kind() != Kind.VARIABLE || row.parentRef() <= 0) {
             return;
         }
+        long token = runToken;
+        int frameId = selectedFrameId;
         prompt.show(tr("debugpanel.setValueTitle"), row.name(), row.value(), value -> {
             if (value == null) {
                 return;
             }
-            actions.setVariable(row.parentRef(), row.name(), value, expression(item), selectedFrameId, newValue -> {
+            if (token != runToken || frameId != selectedFrameId) {
+                // A step or another frame meanwhile: the row's container is the old stop's, and the adapter may
+                // have given its number to another one since (Delve renumbers at every stop).
+                actions.say(tr("debugpanel.setValueMovedOn", row.name()));
+                return;
+            }
+            actions.setVariable(row.parentRef(), row.name(), value, expression(item), frameId, newValue -> {
                 item.setValue(new VarRow(
                         row.name(),
                         newValue,
@@ -3262,9 +3290,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         result = null;
         showResult(); // "…" while the adapter evaluates
         long token = runToken;
+        long asked = ++evaluations;
         actions.evaluateCode(expression, selectedFrameId, r -> {
-            if (token != runToken || !expression.equals(resultExpression) || result != null) {
-                return; // the program moved on, or another expression was asked meanwhile
+            if (token != runToken || asked != evaluations) {
+                return; // the program moved on, or another evaluation (the same expression again too) was asked since
             }
             result = r == null ? DapModels.EvalResult.failure(tr("debugpanel.noValue")) : r;
             showResult();

@@ -60,6 +60,19 @@ final class BreakpointsPicker {
 
     private final Runnable toggleMute;
     private final java.util.function.BooleanSupplier muted;
+
+    /**
+     * Tells live sessions of a closed file's edited breakpoints as a session start would (re-anchored, triggered ones
+     * held back, lambdas aimed at): the window's. Null: they are sent as stored, to {@link #managers}.
+     */
+    private java.util.function.@Nullable Consumer<Map<String, List<Breakpoint>>> sendClosed;
+
+    /** Sets {@link #sendClosed}. */
+    BreakpointsPicker sendingClosed(java.util.function.Consumer<Map<String, List<Breakpoint>>> send) {
+        this.sendClosed = send;
+        return this;
+    }
+
     private final @Nullable MemberBreakpointCommands members;
 
     BreakpointsPicker(
@@ -472,7 +485,10 @@ final class BreakpointsPicker {
         }
         ops.saveBreakpoints();
         ops.breakpointsStored(map, key);
-        if (!muted.getAsBoolean()) {
+        java.util.function.Consumer<Map<String, List<Breakpoint>>> send = sendClosed;
+        if (send != null) {
+            send.accept(Map.of(key, List.copyOf(list)));
+        } else if (!muted.getAsBoolean()) {
             List<DapModels.LineBreakpoint> lines = new ArrayList<>();
             for (Breakpoint bp : list) {
                 if (bp.enabled()) {
