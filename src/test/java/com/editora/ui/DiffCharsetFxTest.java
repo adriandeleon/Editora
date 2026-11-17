@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -155,17 +156,16 @@ class DiffCharsetFxTest {
 
     /** The diff pane opened since {@code before} panes were open (the fixture's window is shared). */
     private Object awaitNewPane(Object ops, int before) throws Exception {
-        for (int i = 0; i < 120; i++) {
+        Object[] found = new Object[1];
+        EventuallyFx.holdsWithin(Duration.ofSeconds(6), () -> {
             Object pane = FxTestSupport.callOnFx(() -> {
                 List<?> panes = (List<?>) FxTestSupport.call(ops, "openDiffPanes", new Class<?>[] {});
                 return panes.size() > before ? panes.get(panes.size() - 1) : null;
             });
-            if (pane != null && FxTestSupport.field(pane, "leftText") != null) {
-                return pane;
-            }
-            Thread.sleep(50);
-        }
-        return null;
+            found[0] = pane != null && FxTestSupport.field(pane, "leftText") != null ? pane : null;
+            return found[0] != null;
+        });
+        return found[0];
     }
 
     private static void git(Path dir, String... args) throws Exception {

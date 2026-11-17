@@ -74,15 +74,15 @@ class HtmlServerLinksFxTest {
     }
 
     private void await(String what, BooleanSupplier done) throws Exception {
-        long end = System.nanoTime() + 10_000_000_000L;
-        while (System.nanoTime() < end) {
-            fx.settle();
-            if (FxTestSupport.callOnFx(done::getAsBoolean)) {
-                return;
-            }
-            Thread.sleep(50);
+        boolean held = com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.unchecked(() -> {
+                    fx.settle();
+                    return FxTestSupport.callOnFx(done::getAsBoolean);
+                }),
+                java.time.Duration.ofSeconds(10));
+        if (!held) {
+            throw new AssertionError("timed out waiting for " + what + "; statuses " + fx.host.statuses);
         }
-        throw new AssertionError("timed out waiting for " + what + "; statuses " + fx.host.statuses);
     }
 
     private boolean jumpedTo(Path file, int line) {
@@ -176,7 +176,13 @@ class HtmlServerLinksFxTest {
         int pulls = server.diagnosticPulls.size();
         fx.run(() -> fx.coordinator.watchedFilesChanged(
                 List.of(new ProjectPanel.FsChange(root.resolve("css/site.css"), ProjectPanel.FsKind.CHANGED))));
-        Thread.sleep(3 * (long) HtmlLspAids.LINK_RECHECK_DELAY.toMillis());
+        // The links are checked again only when the re-check timer runs out: a content change does not start it.
+        fx.run(() -> {
+            javafx.animation.PauseTransition recheck = FxTestSupport.field(fx.coordinator.html, "linkRecheck");
+            assertTrue(
+                    recheck == null || recheck.getStatus() != javafx.animation.Animation.Status.RUNNING,
+                    "no link re-check is coming");
+        });
         fx.settle();
         assertEquals(pulls, server.diagnosticPulls.size(), "a content change does not re-check the links");
 

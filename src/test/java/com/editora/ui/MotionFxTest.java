@@ -95,16 +95,18 @@ class MotionFxTest {
     @SuppressWarnings({"unchecked", "rawtypes"})
     void aRunningAnimationIsNotKeptAliveByTheRegistry() throws Exception {
         java.lang.ref.WeakReference<Counting>[] ref = new java.lang.ref.WeakReference[1];
+        java.lang.ref.ReferenceQueue<Counting> collected = new java.lang.ref.ReferenceQueue<>();
         FxTestSupport.runOnFx(() -> {
             Motion.setReducedForTest(false);
             Counting animation = new Counting();
             Motion.start(animation);
             animation.stop(); // its owner closed without telling Motion
-            ref[0] = new java.lang.ref.WeakReference<>(animation);
+            ref[0] = new java.lang.ref.WeakReference<>(animation, collected);
         });
+        // Each collection is asked for, then waited for: the reference is queued the moment it is cleared.
         for (int i = 0; i < 50 && ref[0].get() != null; i++) {
             System.gc();
-            Thread.sleep(20);
+            collected.remove(20);
         }
         assertTrue(ref[0].get() == null, "the registry holds its animations weakly");
     }

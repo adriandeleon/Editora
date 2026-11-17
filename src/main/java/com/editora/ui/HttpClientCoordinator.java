@@ -752,6 +752,18 @@ final class HttpClientCoordinator {
         return running.containsKey(buffer);
     }
 
+    /**
+     * TEST SEAM — whether a run of {@code buffer} is neither under way, nor still waiting for its file to be parsed
+     * off the FX thread, nor finished with its results still to land: what a test waits for after Run, which
+     * otherwise could look before the run had begun or before its results were shown.
+     */
+    boolean idleForTest(EditorBuffer buffer) {
+        return !running.containsKey(buffer) && !parsedFiles.busy(buffer) && landing == 0;
+    }
+
+    /** Runs over whose results are still being fingerprinted off the FX thread before they land (FX thread only). */
+    private int landing;
+
     /** {@code buffer}'s in-flight run, or null. Test accessor. */
     HttpClientService.@Nullable Handle handleForTest(EditorBuffer buffer) {
         return running.get(buffer);
@@ -1407,6 +1419,7 @@ final class HttpClientCoordinator {
             Runnable after) {
         buffer.setHttpRunning(-1); // the ■ turns back into ▶
         List<HttpFile.@Nullable Parsed> asked = new ArrayList<>(requests);
+        landing++;
         com.editora.perf.OffFx.then(
                 FINGERPRINT_SITE,
                 () -> {
@@ -1417,6 +1430,7 @@ final class HttpClientCoordinator {
                     return fingerprints;
                 },
                 done -> {
+                    landing--;
                     List<@Nullable String> fingerprints = done.value() == null ? List.of() : done.value();
                     landRun(
                             buffer,

@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.editora.config.Project;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -114,16 +115,17 @@ class WindowProjectReadersFxTest {
 
     private static EditorBuffer awaitActive(MainController window, java.util.function.Predicate<Path> wanted)
             throws Exception {
-        long deadline = System.nanoTime() + 30_000_000_000L;
-        while (System.nanoTime() < deadline) {
-            FxTestSupport.drainFx();
-            EditorBuffer active = FxTestSupport.callOnFx(() -> active(window));
-            if (active != null && active.getPath() != null && wanted.test(active.getPath()) && !active.isLoading()) {
-                return active;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("the expected file never became active in the window");
+        return Await.value(
+                () -> onFx(() -> {
+                    EditorBuffer active = active(window);
+                    return active != null
+                                    && active.getPath() != null
+                                    && wanted.test(active.getPath())
+                                    && !active.isLoading()
+                            ? active
+                            : null;
+                }),
+                "the expected file never became active in the window");
     }
 
     private static EditorBuffer active(MainController window) {
@@ -138,5 +140,14 @@ class WindowProjectReadersFxTest {
             }
         }
         throw new IllegalStateException("no window for " + key);
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

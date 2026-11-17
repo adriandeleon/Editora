@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.function.Consumer;
 
 import javafx.stage.Stage;
@@ -60,14 +61,6 @@ class PreviewAnchorLinkFxTest {
         });
     }
 
-    private static void settle() throws Exception {
-        for (int i = 0; i < 4; i++) {
-            FxTestSupport.drainFx();
-            Thread.sleep(120);
-        }
-        FxTestSupport.drainFx();
-    }
-
     @Test
     void anAnchorLinkClickedInThePreviewScrollsThePreviewAndMovesTheCaret() throws Exception {
         String doc = document();
@@ -83,18 +76,17 @@ class PreviewAnchorLinkFxTest {
             return buffer;
         });
         // Wait for the first render: until then there is nothing to scroll.
-        long deadline = System.nanoTime() + 20_000_000_000L;
-        while (!FxTestSupport.callOnFx(() -> b.scrollPreviewToAnchor("contents"))) {
-            assertTrue(System.nanoTime() < deadline, "the preview never rendered");
-            Thread.sleep(50);
-        }
-        settle();
+        PulseChecks.until(
+                () -> FxTestSupport.callOnFx(() -> b.scrollPreviewToAnchor("contents")),
+                "the preview never rendered",
+                Duration.ofSeconds(20));
+        PulseChecks.holdsWithin(() -> topLine(b) < 3, Duration.ofSeconds(5)); // laid out
         assertTrue(topLine(b) < 3, "starts at the top: " + topLine(b));
 
         // What a click on a rendered link does: the buffer's link handler gets the link's destination.
         Consumer<String> click = FxTestSupport.field(b, "openUrlHandler");
         FxTestSupport.runOnFx(() -> click.accept("#marker-30"));
-        settle();
+        PulseChecks.holdsWithin(() -> Math.abs(topLine(b) - target) <= 1.0, Duration.ofSeconds(5)); // laid out
         assertEquals(target, topLine(b), 1.0, "the preview is at the heading");
         assertEquals(
                 target,
@@ -102,7 +94,16 @@ class PreviewAnchorLinkFxTest {
                 "and so is the caret, for when the editor is shown again");
 
         FxTestSupport.runOnFx(() -> click.accept("#nowhere"));
-        settle();
+        // the refusal is said in the window's message log: what the click ends in
+        PulseChecks.holdsWithin(
+                () -> {
+                    try {
+                        return tr("status.link.noAnchor", "#nowhere").equals(SaveDecisionsFxTest.lastMessage(fx));
+                    } catch (RuntimeException notYet) {
+                        return false; // nothing said yet
+                    }
+                },
+                Duration.ofSeconds(5));
         assertEquals(tr("status.link.noAnchor", "#nowhere"), SaveDecisionsFxTest.lastMessage(fx));
         assertEquals(target, topLine(b), 1.0, "and nothing moved");
         FxTestSupport.runOnFx(b::markClean);

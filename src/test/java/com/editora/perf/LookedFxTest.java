@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.testfx.api.FxToolkit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -34,6 +35,12 @@ class LookedFxTest {
     @AfterEach
     void tearDown() {
         BlockingSites.listenForTest(null);
+        OffFx.runnerForTest(null);
+    }
+
+    /** Runs the work {@link OffFx} is handed in place: called on the FX thread, its answer lands before it returns. */
+    private static void offFxInPlace() {
+        OffFx.runnerForTest((name, task) -> task.run());
     }
 
     private static <T> T onFx(java.util.concurrent.Callable<T> work) throws Exception {
@@ -233,6 +240,169 @@ class LookedFxTest {
                     memo.get("b");
                 })));
         assertEquals(2, looks.get());
+    }
+
+    @Test
+    void whenKnownOffTheFxThreadOrWithAKeptKeyAnswersInPlace() throws Exception {
+        AtomicInteger looks = new AtomicInteger();
+        Looked<String, String> looked = new Looked<>("in-place-look", key -> {
+            looks.incrementAndGet();
+            return key + "!";
+        });
+        Thread self = Thread.currentThread();
+        AtomicReference<String> answer = new AtomicReference<>();
+        AtomicReference<Thread> answeredOn = new AtomicReference<>();
+        looked.whenKnown("a", v -> {
+            answer.set(v);
+            answeredOn.set(Thread.currentThread());
+        });
+        assertEquals("a!", answer.get(), "off the FX thread: looked at and answered before the call returns");
+        assertEquals(self, answeredOn.get(), "on the asker's own thread");
+        assertTrue(looked.knows("a"));
+
+        // A kept key on the FX thread: answered at once, from memory, with no look behind.
+        AtomicReference<String> onFxAnswer = new AtomicReference<>();
+        String atReturn = onFx(() -> {
+            looked.whenKnown("a", onFxAnswer::set);
+            return onFxAnswer.get();
+        });
+        assertEquals("a!", atReturn, "answered before whenKnown returned on the FX thread");
+        assertEquals(1, looks.get(), "from what was kept");
+    }
+
+    @Test
+    void whenKnownHandsTheColdAnswerOnWhenTheLookFails() throws Exception {
+        offFxInPlace();
+        AtomicInteger looks = new AtomicInteger();
+        Looked<String, String> looked = new Looked<>(
+                "failing-known-look",
+                key -> {
+                    looks.incrementAndGet();
+                    throw new IllegalStateException("unreadable");
+                },
+                "cold");
+        AtomicReference<String> answer = new AtomicReference<>();
+        onFx(() -> {
+            looked.whenKnown("x", answer::set);
+            return null;
+        });
+        assertEquals("cold", answer.get(), "a failed look answers what the code did when the fact was unknown");
+        assertEquals(1, looks.get());
+        assertFalse(looked.knows("x"), "nothing kept for a look that failed");
+    }
+
+    @Test
+    void warmLooksBehindOnTheFxThreadAndNotAtAllForAKeptKey() throws Exception {
+        AtomicInteger looks = new AtomicInteger();
+        List<String> onFx = new CopyOnWriteArrayList<>();
+        Looked<String, String> looked = new Looked<>("warm-look", key -> {
+            looks.incrementAndGet();
+            return key.toUpperCase(java.util.Locale.ROOT);
+        });
+        BlockingSites.listenForTest((site, thread) -> {
+            if (Platform.isFxApplicationThread()) {
+                onFx.add(site);
+            }
+        });
+        onFx(() -> {
+            looked.warm("w");
+            return null;
+        });
+        waitUntil(() -> looked.knows("w"));
+        assertEquals(List.of(), onFx, "warmed on the FX thread: looked at behind it");
+        assertEquals("W", onFx(() -> looked.get("w")), "and the FX thread then answers from memory");
+        assertEquals(1, looks.get());
+
+        looked.warm("w");
+        onFx(() -> {
+            looked.warm("w");
+            return null;
+        });
+        assertEquals(1, looks.get(), "a kept key is not looked at again, on either thread");
+    }
+
+    @Test
+    void anAllKnownInsideAnotherAnswersForItsOwnAsksAndHandsTheOuterBack() {
+        AtomicInteger looks = new AtomicInteger();
+        Looked<String, String> memo = new Looked<>("nested-all-known", k -> {
+            looks.incrementAndGet();
+            return k;
+        });
+        memo.get("kept"); // off the FX thread: looked at now
+        boolean[] inner = new boolean[1];
+        boolean outer = Looked.allKnown(() -> {
+            inner[0] = Looked.allKnown(() -> memo.get("gap"));
+            memo.get("kept");
+        });
+        assertFalse(inner[0], "the inner check found its gap");
+        assertTrue(outer, "the outer one's own asks were all kept");
+
+        boolean outerWithGap = Looked.allKnown(() -> {
+            Looked.allKnown(() -> memo.get("kept"));
+            memo.get("other-gap"); // still checked, not looked at: the outer probe is back in place
+        });
+        assertFalse(outerWithGap);
+        assertEquals(1, looks.get(), "no check looked at anything");
+        assertNull(Looked.PROBING.get(), "and nothing is left set on this thread");
+        assertEquals("other-gap", memo.get("other-gap"), "so an ask afterwards looks for real");
+    }
+
+    @Test
+    void aFailedLookBehindIsNotHeardAndIsTriedAgainOnTheNextAsk() throws Exception {
+        offFxInPlace();
+        AtomicInteger looks = new AtomicInteger();
+        List<String> learned = new CopyOnWriteArrayList<>();
+        Looked<String, String> looked = new Looked<String, String>(
+                        "failing-look",
+                        key -> {
+                            looks.incrementAndGet();
+                            throw new IllegalStateException("unreadable");
+                        },
+                        "cold")
+                .onLearned(learned::add);
+        assertEquals("cold", onFx(() -> looked.get("k")), "the cold answer: the look behind failed");
+        assertEquals(1, looks.get());
+        assertEquals(List.of(), learned, "a look that failed teaches the listener nothing");
+        assertFalse(looked.knows("k"));
+        assertEquals("cold", onFx(() -> looked.get("k")));
+        assertEquals(2, looks.get(), "the failed look let go of the key, so the next ask looks again");
+    }
+
+    @Test
+    void aColdProbeCacheWithoutAListenerKeepsWhatItsProbeBehindFound() throws Exception {
+        offFxInPlace();
+        AtomicInteger probes = new AtomicInteger();
+        ProbeCache<String, Boolean> cache = new ProbeCache<>(
+                "quiet-probe",
+                key -> {
+                    probes.incrementAndGet();
+                    return Boolean.FALSE;
+                },
+                Boolean.TRUE);
+        assertEquals(Boolean.FALSE, onFx(() -> cache.get("k")), "probed in place: its answer, not the cold one");
+        assertTrue(cache.knows("k"));
+        assertEquals(Boolean.FALSE, onFx(() -> cache.get("k")));
+        assertEquals(1, probes.get(), "kept: probed once");
+    }
+
+    @Test
+    void aFailedProbeBehindIsNotHeardAndIsTriedAgainOnTheNextAsk() throws Exception {
+        offFxInPlace();
+        AtomicInteger probes = new AtomicInteger();
+        List<String> learned = new CopyOnWriteArrayList<>();
+        ProbeCache<String, Boolean> cache = new ProbeCache<String, Boolean>(
+                        "failing-probe",
+                        key -> {
+                            probes.incrementAndGet();
+                            throw new IllegalStateException("unreadable");
+                        },
+                        Boolean.TRUE)
+                .onLearned(learned::add);
+        assertEquals(Boolean.TRUE, onFx(() -> cache.get("k")), "the cold answer: the probe behind failed");
+        assertEquals(List.of(), learned, "a probe that failed teaches the listener nothing");
+        assertFalse(cache.knows("k"));
+        assertEquals(Boolean.TRUE, onFx(() -> cache.get("k")));
+        assertEquals(2, probes.get(), "the failed probe let go of the key, so the next ask probes again");
     }
 
     private static void waitUntil(java.util.function.BooleanSupplier done) throws Exception {

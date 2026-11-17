@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -103,11 +104,6 @@ class ExternalOpenTargetFxTest {
     }
 
     private static void waitUntil(java.util.concurrent.Callable<Boolean> condition) throws Exception {
-        for (int i = 0; i < 300; i++) {
-            if (condition.call()) {
-                return;
-            }
-            Thread.sleep(20);
-        }
+        EventuallyFx.holdsWithin(Duration.ofSeconds(6), condition::call);
     }
 }

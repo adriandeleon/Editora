@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -14,6 +15,7 @@ import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
 import com.editora.dap.DebugAdapterLocator;
 import com.editora.lsp.LspManager;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -56,7 +58,8 @@ class CompactSourceDebugProbeFxTest {
         assumeTrue(Files.isExecutable(jdtls) && plugin != null);
         Path file = dir.resolve("launcher");
         Files.writeString(
-                file, "#!/usr/bin/env -S java --source 25\nvoid main() throws Exception { Thread.sleep(10000); }\n");
+                file,
+                "#!/usr/bin/env -S java --source 25\nvoid main() throws Exception { Thread.currentThread().join(10000); }\n");
         Path configDir = Files.createDirectory(dir.resolve("config"));
         SharedConfig seed = new SharedConfig(configDir, false);
         seed.load();
@@ -74,26 +77,19 @@ class CompactSourceDebugProbeFxTest {
         try {
             DebugCoordinator debug = FxTestSupport.field(fx.controller, "debugCoordinator");
             DapManager dap = FxTestSupport.field(fx.controller, "dapManager");
-            boolean ready = false;
-            for (int i = 0; i < 350; i++) {
-                ready = FxTestSupport.callOnFx(debug::debugEffective);
-                if (ready) break;
-                Thread.sleep(100);
-            }
-            assertTrue(ready, "Java Debug should become available in the window");
+            EventuallyFx.untilOnFx(
+                    "Java Debug should become available in the window", Duration.ofSeconds(35), debug::debugEffective);
             FxTestSupport.runOnFx(() -> {
                 CommandRegistry commands = FxTestSupport.field(fx.controller, "registry");
                 commands.run("debug.start");
             });
-            for (int i = 0; i < 350; i++) {
-                compilation = FxTestSupport.field(dap, "compilationDirectory");
-                if (compilation != null) break;
-                Thread.sleep(100);
-            }
+            Await.holdsWithin(() -> FxTestSupport.field(dap, "compilationDirectory") != null, Duration.ofSeconds(35));
+            compilation = FxTestSupport.field(dap, "compilationDirectory");
             assertNotNull(compilation, "Debug command should compile the extensionless Java shebang");
             assertTrue(Files.exists(compilation.resolve("launcher.java")));
             FxTestSupport.runOnFx(dap::stop);
-            for (int i = 0; i < 100 && Files.exists(compilation); i++) Thread.sleep(50);
+            Path compiled = compilation;
+            Await.holdsWithin(() -> !Files.exists(compiled), Duration.ofSeconds(5));
             assertFalse(Files.exists(compilation), "stopping Debug should remove source and class files");
         } finally {
             fx.dispose();

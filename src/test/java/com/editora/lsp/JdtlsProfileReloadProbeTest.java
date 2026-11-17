@@ -94,12 +94,10 @@ class JdtlsProfileReloadProbeTest {
         m.configure(true, Map.of("java", jdtls));
         try {
             m.openDocument(app, project, "java", APP);
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(120);
-            String before = "";
-            while (!before.contains("go()\n    {") && System.nanoTime() < deadline) {
-                Thread.sleep(500);
-                before = m.isRunning("java", project) ? format(m, app) : "";
-            }
+            String before = askUntil(
+                    () -> m.isRunning("java", project) ? format(m, app) : "",
+                    f -> f.contains("go()\n    {"),
+                    java.time.Duration.ofSeconds(120));
             System.out.println("PROBE before = " + before.replace("\n", "\\n"));
             assertTrue(before.contains("go()\n    {"), "the profile's next-line brace");
 
@@ -109,35 +107,45 @@ class JdtlsProfileReloadProbeTest {
             Files.writeString(style, profile("end_of_line"));
             m.projectStyleChanged(style); // what saving it in Editora does; the folder watcher then says it changed
             m.notifyWatchedFiles(List.of(new LspManager.WatchedFile(style, LspManager.WatchedKind.CHANGED)));
-            String after = "";
-            for (int attempt = 0; attempt < 20 && !after.contains("go() {"); attempt++) {
-                Thread.sleep(500);
-                after = format(m, app);
-            }
+            String after = askUntil(() -> format(m, app), f -> f.contains("go() {"), java.time.Duration.ofSeconds(10));
             System.out.println("PROBE after = " + after.replace("\n", "\\n"));
             assertTrue(after.contains("go() {"), "the edited profile, no restart");
 
             // back to next-line, then the profile removed: jdtls's defaults come back (fourth review DN4)
             Files.writeString(style, profile("next_line"));
             m.projectStyleChanged(style);
-            String again = "";
-            for (int attempt = 0; attempt < 20 && !again.contains("go()\n    {"); attempt++) {
-                Thread.sleep(500);
-                again = format(m, app);
-            }
+            String again =
+                    askUntil(() -> format(m, app), f -> f.contains("go()\n    {"), java.time.Duration.ofSeconds(10));
             assertTrue(again.contains("go()\n    {"), "next-line again: " + again);
             Files.delete(style);
             m.projectStyleChanged(style);
             m.notifyWatchedFiles(List.of(new LspManager.WatchedFile(style, LspManager.WatchedKind.DELETED)));
-            String removed = "";
-            for (int attempt = 0; attempt < 20 && !removed.contains("go() {"); attempt++) {
-                Thread.sleep(500);
-                removed = format(m, app);
-            }
+            String removed =
+                    askUntil(() -> format(m, app), f -> f.contains("go() {"), java.time.Duration.ofSeconds(10));
             System.out.println("PROBE removed = " + removed.replace("\n", "\\n"));
             assertTrue(removed.contains("go() {"), "the removed profile no longer formats, no restart");
         } finally {
             m.close();
         }
+    }
+
+    /** Asks {@code ask} again until {@code done} holds or {@code within} passes; returns the last answer. */
+    private static String askUntil(
+            java.util.concurrent.Callable<String> ask,
+            java.util.function.Predicate<String> done,
+            java.time.Duration within)
+            throws InterruptedException {
+        String[] last = {""};
+        com.editora.testkit.Await.holdsWithin(
+                () -> {
+                    try {
+                        last[0] = ask.call();
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                    return done.test(last[0]);
+                },
+                within);
+        return last[0];
     }
 }

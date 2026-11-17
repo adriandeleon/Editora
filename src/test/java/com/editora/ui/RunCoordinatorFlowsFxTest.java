@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -647,12 +648,8 @@ class RunCoordinatorFlowsFxTest {
 
     /** Polls outside the log's lock: the chip is read on the FX thread, which takes that lock to log. */
     private void awaitRuntimeChip(String expected) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (!expected.equals(runtimeChip())) {
-            if (System.nanoTime() > deadline) {
-                throw new AssertionError("runtime chip never said '" + expected + "', it says '" + runtimeChip() + "'");
-            }
-            Thread.sleep(20);
+        if (!PulseChecks.holdsWithin(() -> expected.equals(runtimeChip()), Duration.ofSeconds(30))) {
+            throw new AssertionError("runtime chip never said '" + expected + "', it says '" + runtimeChip() + "'");
         }
     }
 
@@ -1627,7 +1624,8 @@ class RunCoordinatorFlowsFxTest {
         ops.refuseTrust = true;
 
         FxTestSupport.runOnFx(() -> run.runConfig(cfg));
-        Thread.sleep(300); // npm picks its Node off the FX thread before it starts: give a launch the time to show
+        // npm picks its Node off the FX thread, then asks to trust the project's npm: declined, nothing is launched
+        PulseChecks.untilOnFx(() -> ops.buildExecutables.size() == 1, "the trust question", Duration.ofSeconds(10));
         FxTestSupport.drainFx();
         assertEquals(List.of("npm@" + project.getFileName()), ops.buildExecutables);
         assertFalse(Files.exists(npmLog), "declining must not run the script");
@@ -1641,7 +1639,7 @@ class RunCoordinatorFlowsFxTest {
         ops.refuseTrust = true; // revoked in Settings → Workspace since
         clearLog();
         FxTestSupport.runOnFx(run::rerunLast);
-        Thread.sleep(300);
+        PulseChecks.untilOnFx(() -> ops.buildExecutables.size() == 3, "the trust question", Duration.ofSeconds(10));
         FxTestSupport.drainFx();
         assertEquals("run hello\n", Files.readString(npmLog), "Rerun asked again, and \"no\" ran nothing");
         assertEquals(3, ops.buildExecutables.size(), ops.buildExecutables.toString());

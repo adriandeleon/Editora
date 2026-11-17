@@ -76,7 +76,14 @@ class AppConfigPrefetchTest {
         }
         CountDownLatch gate = new CountDownLatch(1);
         CompletableFuture<?> future = prefetch(dir, gate);
-        Thread.sleep(200); // the warm-up has had time to run; the load must still be waiting
+        // the warm-up has run: the prefetch thread now waits at the gate, and the load must still be waiting
+        com.editora.testkit.Await.until(
+                () -> Thread.getAllStackTraces().entrySet().stream()
+                        .anyMatch(e -> e.getKey().getName().equals("config-prefetch")
+                                && java.util.Arrays.stream(e.getValue())
+                                        .anyMatch(f -> f.getClassName().endsWith("CountDownLatch")
+                                                && f.getMethodName().equals("await"))),
+                "the prefetch to reach the gate");
         assertFalse(future.isDone(), "the load waits for the single-instance decision");
         try (var files = Files.list(dir)) {
             assertEquals(before, files.sorted().toList(), "nothing created, moved or written before the gate");

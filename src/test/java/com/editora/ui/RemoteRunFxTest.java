@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -17,6 +18,7 @@ import com.editora.config.RunConfiguration;
 import com.editora.process.ExecTargets;
 import com.editora.run.RunConfigWorkingDirectory;
 import com.editora.run.RunService;
+import com.editora.testkit.Await;
 import com.editora.vfs.EmbeddedSftpFixture;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -96,9 +98,7 @@ class RemoteRunFxTest {
         }
 
         void awaitLine(String line) throws InterruptedException {
-            for (int i = 0; i < 400 && !out.contains(line); i++) {
-                Thread.sleep(25);
-            }
+            Await.holdsWithin(() -> out.contains(line), Duration.ofSeconds(10));
             assertTrue(out.contains(line), "never printed '" + line + "': " + out);
         }
     }
@@ -128,9 +128,7 @@ class RemoteRunFxTest {
         FxTestSupport.runOnFx(() ->
                 service.runInDir(remoteDir, List.of("sh", "-c", "sleep 600 & echo child $!; wait"), Map.of(), rec));
         assertTrue(rec.started.await(30, TimeUnit.SECONDS), rec.error.get());
-        for (int i = 0; i < 400 && rec.out.stream().noneMatch(l -> l.startsWith("child ")); i++) {
-            Thread.sleep(25);
-        }
+        Await.holdsWithin(() -> rec.out.stream().anyMatch(l -> l.startsWith("child ")), Duration.ofSeconds(10));
         long child = Long.parseLong(rec.out.stream()
                 .filter(l -> l.startsWith("child "))
                 .findFirst()
@@ -141,11 +139,10 @@ class RemoteRunFxTest {
         FxTestSupport.runOnFx(service::stop);
 
         assertTrue(rec.exited.await(30, TimeUnit.SECONDS), "Stop did not end the program");
-        for (int i = 0;
-                i < 200 && ProcessHandle.of(child).map(ProcessHandle::isAlive).orElse(false);
-                i++) {
-            Thread.sleep(25);
-        }
+        // the child's end, heard from the process itself
+        ProcessHandle.of(child)
+                .ifPresent(h ->
+                        h.onExit().completeOnTimeout(h, 5, TimeUnit.SECONDS).join());
         assertTrue(ProcessHandle.of(child).map(h -> !h.isAlive()).orElse(true), "its child survived Stop");
     }
 

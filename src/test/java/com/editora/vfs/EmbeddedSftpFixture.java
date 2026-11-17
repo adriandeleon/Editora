@@ -75,6 +75,10 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
 
     private final java.util.concurrent.atomic.AtomicInteger logins = new java.util.concurrent.atomic.AtomicInteger();
 
+    /** Keep-alive requests the server has received (each answered by the server's own handler after this count). */
+    private final java.util.concurrent.atomic.AtomicInteger keepAlives =
+            new java.util.concurrent.atomic.AtomicInteger();
+
     private EmbeddedSftpFixture(Path base, boolean realShell) throws Exception {
         serverRoot = Files.createDirectories(base.resolve("remote-root")).toRealPath();
         home = Files.createDirectories(base.resolve("remote-home")).toRealPath();
@@ -111,6 +115,18 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
             server.setFileSystemFactory(new VirtualFileSystemFactory(serverRoot));
         }
         server.setSubsystemFactories(List.of(sftp));
+        List<org.apache.sshd.common.channel.RequestHandler<org.apache.sshd.common.session.ConnectionService>> global =
+                new java.util.ArrayList<>();
+        global.add((service, request, wantReply, buffer) -> {
+            if (request.startsWith("keepalive@")) {
+                keepAlives.incrementAndGet();
+            }
+            return org.apache.sshd.common.channel.RequestHandler.Result.Unsupported; // the next handler answers
+        });
+        if (server.getGlobalRequestHandlers() != null) {
+            global.addAll(server.getGlobalRequestHandlers());
+        }
+        server.setGlobalRequestHandlers(global);
         server.start();
 
         connection = new RemoteConnection(
@@ -149,6 +165,11 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
     /** How many times a client has logged in to this server (password or keyboard-interactive). */
     public int logins() {
         return logins.get();
+    }
+
+    /** How many keep-alive requests the server has received so far. */
+    public int keepAlives() {
+        return keepAlives.get();
     }
 
     public List<String> commands() {

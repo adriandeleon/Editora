@@ -2,11 +2,11 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
 
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
@@ -19,6 +19,7 @@ import com.editora.config.ConfigManager;
 import com.editora.config.HistoryRevision;
 import com.editora.config.PathKeys;
 import com.editora.config.Settings;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -46,13 +47,7 @@ class SettingsDataLossFxTest {
 
     /** Polls {@code probe} on the FX thread until it holds. */
     private static void await(String what, Callable<Boolean> probe) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (!FxTestSupport.callOnFx(probe)) {
-            if (System.nanoTime() > deadline) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(25);
-        }
+        Await.until(() -> onFx(probe), what, Duration.ofSeconds(20));
     }
 
     /** Waits for a dialog titled {@code title}, presses its {@code button} and returns the text it showed. */
@@ -302,6 +297,15 @@ class SettingsDataLossFxTest {
         }
         if (node instanceof javafx.scene.Parent parent) {
             parent.getChildrenUnmodifiable().forEach(child -> collectText(child, out));
+        }
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

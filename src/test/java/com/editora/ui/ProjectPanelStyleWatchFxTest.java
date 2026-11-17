@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -37,12 +38,14 @@ class ProjectPanelStyleWatchFxTest {
             return p;
         });
         try {
-            Thread.sleep(300);
+            // the watch on .settings is registered (off the FX thread) before the outside edit
+            java.util.Map<?, Path> watched = FxTestSupport.field(panel, "watchKeys");
+            PulseChecks.until(
+                    () -> watched.values().stream().anyMatch(dir -> dir.endsWith(".settings")),
+                    "the watch on .settings",
+                    Duration.ofSeconds(10));
             Files.writeString(profile, "<profiles version=\"2\"/>"); // by git, a teammate's script, another editor
-            long end = System.nanoTime() + 15_000_000_000L;
-            while (!changed.contains(profile) && System.nanoTime() < end) {
-                Thread.sleep(50);
-            }
+            PulseChecks.holdsWithin(() -> changed.contains(profile), Duration.ofSeconds(15));
             assertTrue(changed.contains(profile), changed.toString());
         } finally {
             FxTestSupport.runOnFx(panel::dispose);

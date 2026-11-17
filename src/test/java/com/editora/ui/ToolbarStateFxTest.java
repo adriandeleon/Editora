@@ -9,6 +9,7 @@ import javafx.scene.control.Button;
 import javafx.util.Duration;
 
 import com.editora.editor.ControlNames;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -47,11 +48,10 @@ class ToolbarStateFxTest {
     }
 
     private static void awaitTab(Path file) throws Exception {
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
-        while (FxTestSupport.callOnFx(() -> fx.controller.tabForPath(file)) == null) {
-            assertTrue(System.nanoTime() < deadline, file + " opened");
-            Thread.sleep(20);
-        }
+        Await.until(
+                () -> onFx(() -> fx.controller.tabForPath(file)) != null,
+                file + " opened",
+                java.time.Duration.ofSeconds(20));
     }
 
     @Test
@@ -139,5 +139,14 @@ class ToolbarStateFxTest {
                     ControlNames.TOOLTIP_DELAY,
                     TabHeaders.tooltip(Path.of("a.txt")).getShowDelay());
         });
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

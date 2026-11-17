@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +12,7 @@ import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.LspTestHooks;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -310,9 +312,8 @@ class LspCoordinatorSyncFxTest {
         sync(b);
 
         assertTrue(manager.isManaged(f), "the loaded buffer is opened");
-        for (int i = 0; i < 100 && fakes.stream().allMatch(s -> s.opened.isEmpty()); i++) {
-            Thread.sleep(50); // the didOpen queues behind initialize
-        }
+        // the didOpen queues behind initialize
+        Await.holdsWithin(() -> fakes.stream().anyMatch(s -> !s.opened.isEmpty()), Duration.ofSeconds(5));
         var opened = fakes.stream()
                 .flatMap(s -> s.opened.stream())
                 .map(p -> p.getTextDocument().getText())
@@ -643,9 +644,7 @@ class LspCoordinatorSyncFxTest {
         assertFalse(manager.isManaged(b.getPath()));
 
         FxTestSupport.runOnFx(() -> b.getArea().replaceText("#!/bin/bash\necho $1\n"));
-        for (int i = 0; i < 200 && !"shell".equals(FxTestSupport.callOnFx(b::getLanguage)); i++) {
-            Thread.sleep(25); // the shebang is read once the edit settles
-        }
+        OnFx.holdsWithin(() -> "shell".equals(b.getLanguage()), Duration.ofSeconds(5)); // read once the edit settles
 
         assertEquals("shell", FxTestSupport.callOnFx(b::getLanguage));
         assertTrue(manager.isManaged(b.getPath()), "the shebang made it shell, so it is on the Bash server");

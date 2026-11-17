@@ -5,7 +5,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
 import javafx.scene.control.Label;
@@ -90,11 +89,7 @@ class HttpEditorRound3FxTest {
     }
 
     private static void await(String what, BooleanSupplier done) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (!FxTestSupport.callOnFx(done::getAsBoolean)) {
-            assertTrue(System.nanoTime() < deadline, what);
-            Thread.sleep(25);
-        }
+        FxTestSupport.awaitFxCondition(done::getAsBoolean, what, java.time.Duration.ofSeconds(20));
     }
 
     private HttpClientPanel panel(EditorBuffer b) throws Exception {
@@ -210,10 +205,15 @@ class HttpEditorRound3FxTest {
         await("no HTTP marks are left", () -> marks(b).isEmpty());
         List<MarkdownLint.Diagnostic> shown = FxTestSupport.callOnFx(b::markdownLintDiagnostics);
         assertFalse(shown.stream().anyMatch(d -> d.code().startsWith("{{")), shown.toString());
+        int httpChecks = FxTestSupport.callOnFx(
+                () -> FxTestSupport.<Integer>field(FxTestSupport.field(b, "httpVariableMarks"), "generation"));
         FxTestSupport.runOnFx(() -> b.getArea().appendText("more {{text}}\n"));
-        FxTestSupport.drainFx();
-        Thread.sleep(700); // past the settle pause: an HTTP check would land now
-        FxTestSupport.drainFx();
+        FxTestSupport.awaitSettled(b); // past the settle pause: an HTTP check would have been asked for now
+        assertEquals(
+                httpChecks,
+                FxTestSupport.callOnFx(
+                        () -> FxTestSupport.<Integer>field(FxTestSupport.field(b, "httpVariableMarks"), "generation")),
+                "no HTTP check is asked for on the Markdown file");
         assertFalse(FxTestSupport.callOnFx(b::markdownLintDiagnostics).stream()
                 .anyMatch(d -> d.code().startsWith("{{")));
     }
@@ -267,8 +267,7 @@ class HttpEditorRound3FxTest {
         EditorBuffer b = open(file);
         select(b, "dev");
         await("the context is in", () -> marks(b).isEmpty());
-        Thread.sleep(600);
-        FxTestSupport.drainFx();
+        FxTestSupport.awaitSettled(b);
         FxTestSupport.runOnFx(() -> {
             b.getArea().requestFocus();
             b.getArea().moveTo(b.getArea().getLength());

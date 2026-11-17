@@ -7,7 +7,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
@@ -142,7 +141,7 @@ class HttpEnvPillFxTest {
 
     private HttpExchange run(EditorBuffer b, int line) throws Exception {
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, line));
-        await(() -> !coordinator.isRunningForTest(b));
+        await(() -> coordinator.idleForTest(b));
         FxTestSupport.drainFx();
         return FxTestSupport.callOnFx(() -> coordinator.panelForTest(b).getSelectedExchange());
     }
@@ -164,11 +163,7 @@ class HttpEnvPillFxTest {
     }
 
     private static void await(BooleanSupplier done) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (!FxTestSupport.callOnFx(done::getAsBoolean)) {
-            assertTrue(System.nanoTime() < deadline, "timed out");
-            Thread.sleep(20);
-        }
+        FxTestSupport.awaitFxCondition(done::getAsBoolean, "the condition", java.time.Duration.ofSeconds(20));
     }
 
     @Test

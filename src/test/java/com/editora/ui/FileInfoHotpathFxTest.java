@@ -44,12 +44,15 @@ class FileInfoHotpathFxTest {
         String[] result = FxTestSupport.callOnFx(() -> {
             TextField words = FxTestSupport.field(panel, "wordsValue");
             TextField line = FxTestSupport.field(panel, "lineValue");
+            long countsBefore = FxTestSupport.<Long>field(panel, "wordGen");
             // Poison the word field, then move the caret only (no edit). The caret path must not touch it.
             words.setText("SENTINEL");
             buffer.getArea().moveTo(0); // fires caretPositionProperty → refreshCaret
+            // Every word count starts by taking a new generation: none taken means none started to land later.
+            assertEquals(countsBefore, FxTestSupport.<Long>field(panel, "wordGen"), "the caret move started no count");
             return new String[] {words.getText(), line.getText()};
         });
-        Thread.sleep(100); // long enough for a count the caret move wrongly started to have landed
+        FxTestSupport.drainFx();
         assertEquals(
                 "SENTINEL",
                 FxTestSupport.callOnFx(() ->

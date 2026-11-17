@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -681,9 +682,7 @@ class ExportCoordinatorFxTest {
                 exports[0].exportPreviewHtml();
                 assertEquals(List.of(), asked, "not asked before the look has landed");
             });
-            for (int i = 0; i < 500 && asked.isEmpty(); i++) {
-                Thread.sleep(10);
-            }
+            com.editora.testkit.Await.holdsWithin(() -> !asked.isEmpty(), Duration.ofSeconds(5));
             assertEquals(List.of(existing.toFile()), asked);
             assertEquals("kept", Files.readString(existing));
             assertEquals(List.of(), onFx, "nothing looked at on the FX thread");

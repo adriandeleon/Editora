@@ -54,11 +54,17 @@ class GitServiceRequestOrderFxTest {
     }
 
     private static void awaitLine(Path log, String line) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (!Files.exists(log) || !Files.readAllLines(log).contains(line)) {
-            assertTrue(System.nanoTime() < deadline, "never saw '" + line + "' in the command log");
-            Thread.sleep(20);
-        }
+        // the fake git is another process: the log it writes is all there is to hear
+        com.editora.testkit.Await.until(
+                () -> {
+                    try {
+                        return Files.exists(log) && Files.readAllLines(log).contains(line);
+                    } catch (java.io.IOException e) {
+                        throw new java.io.UncheckedIOException(e);
+                    }
+                },
+                "'" + line + "' in the command log",
+                java.time.Duration.ofSeconds(20));
     }
 
     /** A stand-in git that records when {@code slow} starts and ends, taking {@code seconds} over it. */
@@ -192,6 +198,8 @@ class GitServiceRequestOrderFxTest {
         Path folder = Files.createDirectory(dir.resolve("plain"));
         Path file = Files.writeString(folder.resolve("main.txt"), "x\n");
         GitService service = new GitService();
+        java.util.concurrent.atomic.AtomicLong skipped = new java.util.concurrent.atomic.AtomicLong();
+        service.setNanoClockForTest(() -> System.nanoTime() + skipped.get());
         try (AsyncTestScope async = new AsyncTestScope()) {
             async.onClose(service::shutdown);
             assertFalse(call(async, "status", (Consumer<GitService.RepoState> cb) -> service.status(file, cb))
@@ -202,7 +210,8 @@ class GitServiceRequestOrderFxTest {
                     .directory(folder.toFile())
                     .start();
             assertEquals(0, init.waitFor());
-            Thread.sleep(2300); // longer than the service believes a "not a repository" answer
+            // longer than the service believes a "not a repository" answer, on its clock
+            skipped.addAndGet(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(2300));
             assertTrue(
                     call(async, "status", (Consumer<GitService.RepoState> cb) -> service.status(file, cb))
                             .isRepo(),

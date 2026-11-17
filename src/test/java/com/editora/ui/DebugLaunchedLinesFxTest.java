@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -85,11 +86,7 @@ class DebugLaunchedLinesFxTest {
     }
 
     private static void await(String what, Check check) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (!check.holds()) {
-            assertTrue(System.nanoTime() < deadline, what + " never happened");
-            Thread.sleep(10);
-        }
+        EventuallyFx.until(what + " never happened", Duration.ofSeconds(10), check::holds);
         FxTestSupport.drainFx();
     }
 

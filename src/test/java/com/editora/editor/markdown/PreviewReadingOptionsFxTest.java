@@ -17,6 +17,7 @@ import javafx.stage.Stage;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.EditorFx;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -106,13 +107,7 @@ class PreviewReadingOptionsFxTest {
 
     /** Waits (off the FX thread) until {@code done}, checked on it, holds. */
     private static void poll(java.util.concurrent.Callable<Boolean> done) throws Exception {
-        long end = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(15);
-        while (!EditorFx.callFx(done)) {
-            if (System.nanoTime() > end) {
-                throw new IllegalStateException("the awaited state was never reached");
-            }
-            Thread.sleep(20);
-        }
+        Await.until(EditorFx.checkOnFx(done), "the awaited state was never reached", java.time.Duration.ofSeconds(15));
         EditorFx.drain();
     }
 

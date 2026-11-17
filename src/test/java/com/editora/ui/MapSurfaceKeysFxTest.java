@@ -2,10 +2,10 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
 import javafx.event.Event;
@@ -288,13 +288,6 @@ class MapSurfaceKeysFxTest {
     }
 
     private static void waitForFx(BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("timed out");
+        OnFx.until(condition::getAsBoolean, "the condition", Duration.ofSeconds(20));
     }
 }

@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import java.time.Duration;
+
 import javafx.event.ActionEvent;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
@@ -9,6 +11,7 @@ import javafx.scene.control.TextField;
 import javafx.stage.Stage;
 
 import com.editora.i18n.Messages;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -44,10 +47,7 @@ class SettingsGitPageFxTest {
                 path.fireEvent(new ActionEvent());
             });
             String expected = tr("settings.git.notFoundAt", "/nonexistent/editora-test/git");
-            long deadline = System.nanoTime() + 30_000_000_000L;
-            while (!expected.equals(FxTestSupport.callOnFx(status::getText)) && System.nanoTime() < deadline) {
-                Thread.sleep(20);
-            }
+            Await.holdsWithin(() -> expected.equals(onFx(status::getText)), Duration.ofSeconds(30));
             assertEquals(expected, FxTestSupport.callOnFx(status::getText));
             CheckBox git = SettingsRig.control(w, "gitCheck");
             assertFalse(git.isDisabled(), "the switch can still be turned off");
@@ -86,6 +86,15 @@ class SettingsGitPageFxTest {
                 assertFalse(SettingsRig.<TextField>control(w, "gitPathField").isDisabled(), "the path stays editable");
                 git.setSelected(true);
             });
+        }
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

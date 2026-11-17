@@ -73,9 +73,9 @@ class GitRemoteNestedRepositoryFxTest {
             assertEquals(GitPathScope.ACTIVE, GitPathScope.of(remoteInnerFile, remoteOuter));
 
             GitPathScope.learnRemote(remoteOuter, true);
-            for (int i = 0; i < 200 && !GitPathScope.knowsRemote(remoteOuter); i++) {
-                Thread.sleep(50);
-            }
+            // the scan runs on its own virtual thread and leaves only the answer behind
+            com.editora.testkit.Await.holdsWithin(
+                    () -> GitPathScope.knowsRemote(remoteOuter), java.time.Duration.ofSeconds(10));
             assertTrue(GitPathScope.knowsRemote(remoteOuter), "the host answered");
             assertEquals(GitPathScope.OTHER, GitPathScope.of(remoteInnerFile, remoteOuter));
             assertEquals(GitPathScope.ACTIVE, GitPathScope.of(sftp.remotePath("proj/a.txt"), remoteOuter));
@@ -89,11 +89,12 @@ class GitRemoteNestedRepositoryFxTest {
             assertEquals(remoteOuter, FxTestSupport.callOnFx(w.git::repoRoot), "the outer repository is active");
 
             FxTestSupport.runOnFx(() -> w.git.gitStagePath(remoteInnerFile)); // the Project tree's Stage
-            String staged = "";
-            for (int i = 0; i < 200 && staged.isBlank(); i++) {
-                Thread.sleep(50);
-                staged = git(inner, "diff", "--cached", "--name-only");
-            }
+            // the stage runs on the host after a save check and a scope lookup: the index is what tells
+            com.editora.testkit.Await.holdsWithin(
+                    FxTestSupport.unchecked(
+                            () -> !git(inner, "diff", "--cached", "--name-only").isBlank()),
+                    java.time.Duration.ofSeconds(10));
+            String staged = git(inner, "diff", "--cached", "--name-only");
             assertEquals("b.txt", staged.strip(), "staged in the nested repository on the host");
             assertEquals("", git(outer, "diff", "--cached", "--name-only").strip(), "not in the outer one");
         }

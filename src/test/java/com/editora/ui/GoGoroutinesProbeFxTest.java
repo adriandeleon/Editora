@@ -162,12 +162,6 @@ class GoGoroutinesProbeFxTest {
     }
 
     private static void await(String what, int seconds, BooleanSupplier condition) throws InterruptedException {
-        long end = System.nanoTime() + seconds * 1_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(50);
-        }
+        com.editora.testkit.Await.until(condition, what, java.time.Duration.ofSeconds(seconds));
     }
 }

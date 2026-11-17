@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -84,19 +85,10 @@ class DebugSessionFlowFxTest {
     private EditorBuffer open(Path file) throws Exception {
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
                 FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, file));
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (true) {
-            FxTestSupport.drainFx();
-            EditorBuffer b = FxTestSupport.callOnFx(
-                    () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
-            if (b != null
-                    && file.equals(b.getPath())
-                    && !FxTestSupport.callOnFx(b::getContent).isEmpty()) {
-                return b;
-            }
-            assertTrue(System.nanoTime() < deadline, "the file never opened: " + file);
-            Thread.sleep(20);
-        }
+        return EventuallyFx.valueOnFx("the file to open: " + file, Duration.ofSeconds(10), () -> {
+            EditorBuffer b = (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {});
+            return b != null && file.equals(b.getPath()) && !b.getContent().isEmpty() ? b : null;
+        });
     }
 
     /** Puts the window's own manager into a live session with {@code adapter}, as after a launch of {@code file}. */
@@ -116,11 +108,8 @@ class DebugSessionFlowFxTest {
     }
 
     private void awaitState(DapManager.State wanted) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (FxTestSupport.callOnFx(manager::state) != wanted) {
-            assertTrue(System.nanoTime() < deadline, "the session never became " + wanted);
-            Thread.sleep(10);
-        }
+        EventuallyFx.untilOnFx(
+                "the session never became " + wanted, Duration.ofSeconds(10), () -> manager.state() == wanted);
         FxTestSupport.drainFx();
     }
 
@@ -241,20 +230,25 @@ class DebugSessionFlowFxTest {
         assertTrue(FxTestSupport.callOnFx(b::isDirty));
 
         FxTestSupport.runOnFx(() -> registry.run("debug.restart"));
+        // the restart saves the file first, as a start does
+        EventuallyFx.holdsWithin(
+                Duration.ofSeconds(10),
+                () -> Files.readString(app).equals("msg = 'v2'\nprint(msg)\n") && !FxTestSupport.callOnFx(b::isDirty));
         awaitLaunchAttempt();
 
         assertEquals("msg = 'v2'\nprint(msg)\n", Files.readString(app), "the restarted program is the edited one");
         assertFalse(FxTestSupport.callOnFx(b::isDirty));
     }
 
-    /** The launch is handed to DapManager after an off-thread breakpoint scan; wait for that hand-over. */
+    /**
+     * The launch is handed to DapManager after an off-thread breakpoint scan; wait for that hand-over (the start
+     * names its Restart there) and for the attempt to end (the interpreter cannot be spawned).
+     */
     private void awaitLaunchAttempt() throws Exception {
-        Thread.sleep(300);
-        FxTestSupport.drainFx();
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (FxTestSupport.callOnFx(manager::state) == DapManager.State.STARTING && System.nanoTime() < deadline) {
-            Thread.sleep(20);
-        }
+        EventuallyFx.untilOnFx(
+                "the start to reach its launch", Duration.ofSeconds(10), () -> debug.s().relaunch != null);
+        EventuallyFx.holdsWithin(
+                Duration.ofSeconds(10), () -> FxTestSupport.callOnFx(manager::state) != DapManager.State.STARTING);
         FxTestSupport.drainFx();
     }
 

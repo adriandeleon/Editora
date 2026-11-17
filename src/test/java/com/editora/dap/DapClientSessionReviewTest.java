@@ -253,9 +253,20 @@ class DapClientSessionReviewTest {
         }
         DapClient client = new DapClient(new Host());
         int port = closed;
-        CompletableFuture<CompletableFuture<?>> connecting =
-                CompletableFuture.supplyAsync(() -> client.connect(port, "java"));
-        Thread.sleep(150); // a few attempts in
+        CompletableFuture<CompletableFuture<?>> connecting = new CompletableFuture<>();
+        Thread connector = Thread.ofPlatform().name("dap-connect-test").start(() -> {
+            try {
+                connecting.complete(client.connect(port, "java"));
+            } catch (Throwable t) {
+                connecting.completeExceptionally(t);
+            }
+        });
+        // An attempt in: the connect has failed once and waits before the next (QUAL-07: on that, not a fixed time).
+        com.editora.testkit.Await.until(
+                () -> connector.getState() == Thread.State.TIMED_WAITING
+                        && java.util.Arrays.stream(connector.getStackTrace())
+                                .anyMatch(f -> f.getMethodName().equals("openWithRetry")),
+                "the connect to retry");
         client.dispose();
 
         CompletableFuture<?> connected = connecting.get(10, TimeUnit.SECONDS);

@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.editora.build.BuildTool;
 import com.editora.config.Settings;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -83,18 +84,25 @@ class BuildToolReenableFxTest {
 
     /** Polls until the coordinator's cached detection reaches {@code want}, then reports what it settled on. */
     private static boolean awaitDetected(boolean want) throws Exception {
-        boolean detected = false;
-        for (int i = 0; i < 100; i++) {
-            detected = FxTestSupport.callOnFx(() -> {
-                BuildCoordinator c = (BuildCoordinator)
-                        FxTestSupport.invokeWith(fx.controller, "buildCoordinator", BuildTool.class, BuildTool.MAVEN);
-                return c != null && c.isDetected();
-            });
-            if (detected == want) {
-                return detected;
+        java.util.concurrent.Callable<Boolean> detected = () -> FxTestSupport.callOnFx(() -> {
+            BuildCoordinator c = (BuildCoordinator)
+                    FxTestSupport.invokeWith(fx.controller, "buildCoordinator", BuildTool.class, BuildTool.MAVEN);
+            return c != null && c.isDetected();
+        });
+        Await.holdsWithin(holds(() -> detected.call() == want), java.time.Duration.ofSeconds(5));
+        return detected.call();
+    }
+
+    /** {@code condition} for {@link Await}, a checked exception it throws rethrown unchecked. */
+    private static java.util.function.BooleanSupplier holds(java.util.concurrent.Callable<Boolean> condition) {
+        return () -> {
+            try {
+                return condition.call();
+            } catch (RuntimeException | Error e) {
+                throw e;
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
             }
-            Thread.sleep(50);
-        }
-        return detected;
+        };
     }
 }

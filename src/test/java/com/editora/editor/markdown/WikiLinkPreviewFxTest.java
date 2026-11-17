@@ -17,6 +17,7 @@ import javafx.stage.Stage;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.EditorFx;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -177,20 +178,15 @@ class WikiLinkPreviewFxTest {
         Files.writeString(dir.resolve("note.md"), "x");
         Path doc = Files.writeString(dir.resolve("doc.md"), "x");
         open("![[pic.png]]\n\n![[note]]\n", doc);
-        long end = System.nanoTime() + 15_000_000_000L;
-        while (!EditorFx.callFx(() -> pane.preview().column().lookupAll(".md-image").stream()
-                .anyMatch(n -> ((ImageView) n).getImage() != null))) {
-            assertTrue(System.nanoTime() < end, "the embedded picture never loaded");
-            Thread.sleep(20);
-        }
+        Await.until(
+                EditorFx.checkOnFx(() -> pane.preview().column().lookupAll(".md-image").stream()
+                        .anyMatch(n -> ((ImageView) n).getImage() != null)),
+                "the embedded picture never loaded",
+                java.time.Duration.ofSeconds(15));
         // The note's link is styled once the folder's notes are known (a render after the picture's): wait for it.
-        for (int i = 0;
-                i < 500
-                        && !EditorFx.callFx(() -> run("note") != null
-                                && run("note").getStyleClass().contains("md-wikilink"));
-                i++) {
-            Thread.sleep(10);
-        }
+        Await.until(
+                EditorFx.checkOnFx(() -> run("note") != null && run("note").getStyleClass().contains("md-wikilink")),
+                "the note's link was never styled");
         EditorFx.onFx(() -> {
             assertEquals(1, pane.preview().column().lookupAll(".md-image").size());
             Text note = run("note");

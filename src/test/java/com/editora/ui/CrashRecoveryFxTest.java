@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -521,13 +522,7 @@ class CrashRecoveryFxTest {
 
     /** Polls a real condition on the FX thread: the copies are taken by a timer and written off-thread. */
     private static boolean waitFor(Callable<Boolean> onFx) throws Exception {
-        long end = System.currentTimeMillis() + 15_000;
-        while (System.currentTimeMillis() < end) {
-            if (Boolean.TRUE.equals(FxTestSupport.callOnFx(onFx))) {
-                return true;
-            }
-            Thread.sleep(50);
-        }
-        return false;
+        return EventuallyFx.holdsWithin(
+                Duration.ofSeconds(15), () -> Boolean.TRUE.equals(FxTestSupport.callOnFx(onFx)));
     }
 }

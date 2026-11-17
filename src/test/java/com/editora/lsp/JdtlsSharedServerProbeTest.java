@@ -33,11 +33,10 @@ class JdtlsSharedServerProbeTest {
     }
 
     private static void await(java.util.function.BooleanSupplier condition, String what) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(120);
-        while (!condition.getAsBoolean()) {
-            assertTrue(System.nanoTime() < deadline, "timed out waiting for " + what);
-            Thread.sleep(100);
-        }
+        assertTrue(
+                com.editora.testkit.Await.holdsWithin(
+                        () -> condition.getAsBoolean(), java.time.Duration.ofSeconds(120)),
+                "timed out waiting for " + what);
     }
 
     private static String readQuietly(Path file) {

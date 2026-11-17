@@ -12,6 +12,7 @@ import javafx.scene.control.TabPane;
 
 import com.editora.build.BuildTool;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -149,12 +150,20 @@ class BuildDetectionFxTest {
     }
 
     private static boolean await(java.util.function.BooleanSupplier condition) throws Exception {
-        for (int i = 0; i < 200; i++) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return true;
+        return Await.holdsWithin(
+                holds(() -> FxTestSupport.callOnFx(condition::getAsBoolean)), java.time.Duration.ofSeconds(5));
+    }
+
+    /** {@code condition} for {@link Await}, a checked exception it throws rethrown unchecked. */
+    private static java.util.function.BooleanSupplier holds(java.util.concurrent.Callable<Boolean> condition) {
+        return () -> {
+            try {
+                return condition.call();
+            } catch (RuntimeException | Error e) {
+                throw e;
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
             }
-            Thread.sleep(25);
-        }
-        return false;
+        };
     }
 }

@@ -2,12 +2,14 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -90,9 +92,7 @@ class ViewerTabDisposalFxTest {
         FxTestSupport.runOnFx(() -> {});
 
         // The executor is shut down asynchronously; give the thread a moment to actually exit.
-        for (int i = 0; i < 50 && threadNamesContaining("pdf-render").size() > before; i++) {
-            Thread.sleep(20);
-        }
+        Await.holdsWithin(() -> threadNamesContaining("pdf-render").size() <= before, Duration.ofSeconds(5));
         assertEquals(
                 before,
                 threadNamesContaining("pdf-render").size(),

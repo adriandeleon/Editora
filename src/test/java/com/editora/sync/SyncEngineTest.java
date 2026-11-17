@@ -500,16 +500,15 @@ class SyncEngineTest {
                 new SyncEngine(git, "ssh://example.invalid/sync.git", "main", new FileSyncTarget(b.config), "b");
         java.util.concurrent.CompletableFuture<SyncReport> run =
                 java.util.concurrent.CompletableFuture.supplyAsync(() -> engine.run(ALL, false));
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (!Files.exists(started)) { // waits for the fetch to be under way
+        // Waits for the fetch to be under way: the stand-in ssh is another process, which says so in a file.
+        com.editora.testkit.Await.holdsWithin(
+                () -> Files.exists(started) || run.isDone(), java.time.Duration.ofSeconds(20));
+        if (!Files.exists(started)) {
             if (run.isDone()) {
                 fail("the run ended before its fetch began: " + run.get().detail());
             }
-            if (System.nanoTime() > deadline) {
-                engine.cancel();
-                fail("the fetch never began");
-            }
-            Thread.sleep(10); // unlike parkNanos, ends the loop when the @Timeout interrupts this thread
+            engine.cancel();
+            fail("the fetch never began");
         }
         assertTrue(engine.cancel());
         SyncReport report = run.get(25, TimeUnit.SECONDS);

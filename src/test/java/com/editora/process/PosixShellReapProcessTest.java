@@ -85,8 +85,10 @@ class PosixShellReapProcessTest {
         assertEquals(0, reaped.exit(), reaped.out());
         assertTrue(p.waitFor(10, TimeUnit.SECONDS), "the program ended");
         for (ProcessHandle child : group) {
-            for (int i = 0; i < 100 && child.isAlive(); i++) {
-                Thread.sleep(50);
+            try {
+                child.onExit().get(5, TimeUnit.SECONDS);
+            } catch (java.util.concurrent.TimeoutException stillRunning) {
+                // asserted below
             }
             assertFalse(child.isAlive(), "and the rest of its group with it");
         }

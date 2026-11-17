@@ -3,13 +3,13 @@ package com.editora.ui;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
@@ -1087,14 +1087,7 @@ class ProjectMapCardsFxTest {
     }
 
     private static void waitFor(BooleanSupplier condition, String message) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return;
-            }
-            TimeUnit.MILLISECONDS.sleep(20);
-        }
-        assertTrue(FxTestSupport.callOnFx(condition::getAsBoolean), message);
+        PulseChecks.untilOnFx(condition, message, Duration.ofSeconds(10));
     }
 
     private static void openPreview(MapFixture map, Path file) {

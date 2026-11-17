@@ -19,7 +19,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -55,7 +54,7 @@ class MinimapGitMarksFxTest {
                 buffer.setChangeBars(Map.of(100, "git-added", 101, "git-added", 102, "git-added"), Map.of());
                 buffer.gitGutter().setHunks(List.of(new GitHunk(100, 3, List.of(), List.of("a", "b", "c"), false)));
             });
-            drain();
+            drain(buffer, minimap);
 
             // Painted: the left edge of the column, at the rows of lines 100-102, is the "added" colour: the theme's
             // green through the minimap's palette (here, with no stylesheet, the neutral it falls back to).
@@ -82,16 +81,16 @@ class MinimapGitMarksFxTest {
             };
             FxTestSupport.runOnFx(
                     () -> FxTestSupport.call(minimap, "setGitMarks", new Class<?>[] {Supplier.class}, counting));
-            drain();
+            drain(buffer, minimap);
             assertEquals(1, reads.get(), "read for the repaint that followed the change");
             for (int i = 0; i < 10; i++) {
                 FxTestSupport.runOnFx(() -> buffer.getArea().scrollYBy(120));
-                drain();
+                drain(buffer, minimap);
             }
             assertEquals(1, reads.get(), "scrolling repaints from the array it already has");
 
             FxTestSupport.runOnFx(() -> buffer.getArea().insertText(0, "typed\n"));
-            drain();
+            drain(buffer, minimap);
             assertEquals(2, reads.get(), "a line typed above moves the marks: read again, once");
             assertEquals(
                     101,
@@ -102,21 +101,31 @@ class MinimapGitMarksFxTest {
         }
     }
 
-    private static void drain() throws Exception {
-        for (int i = 0; i < 4; i++) {
-            FxTestSupport.drainFx();
-            Thread.sleep(30);
-        }
+    /**
+     * Lets the minimap's repaint for what just changed run: the edit's settled work has run, no render is held back
+     * or queued, and the pulses that paint have passed.
+     */
+    private static void drain(EditorBuffer buffer, Object minimap) throws Exception {
+        FxTestSupport.drainFx();
+        OnFx.untilEditsSettled(buffer);
+        OnFx.until(
+                () -> FxTestSupport.<javafx.animation.PauseTransition>field(minimap, "pacedRender")
+                                        .getStatus()
+                                != javafx.animation.Animation.Status.RUNNING
+                        && FxTestSupport.<javafx.animation.PauseTransition>field(minimap, "resizeRender")
+                                        .getStatus()
+                                != javafx.animation.Animation.Status.RUNNING
+                        && !FxTestSupport.<Boolean>field(minimap, "renderPending")
+                        && !FxTestSupport.<Boolean>field(minimap, "redrawPending"),
+                "the minimap's render to run");
+        OnFx.pulses(2);
         FxTestSupport.drainFx();
     }
 
     private static void waitForRender(Object minimap) throws Exception {
-        for (int i = 0; i < 250; i++) {
-            if (FxTestSupport.callOnFx(() -> FxTestSupport.field(minimap, "contentImage")) != null) {
-                return;
-            }
-            Thread.sleep(20);
-        }
-        assertNotNull(null, "the minimap never rendered");
+        OnFx.until(
+                () -> FxTestSupport.field(minimap, "contentImage") != null,
+                "the minimap to render",
+                java.time.Duration.ofSeconds(5));
     }
 }

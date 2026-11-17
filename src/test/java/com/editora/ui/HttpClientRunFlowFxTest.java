@@ -122,11 +122,9 @@ class HttpClientRunFlowFxTest {
     }
 
     private void awaitHits(int n) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
-        while (hits.size() < n) {
-            assertTrue(System.nanoTime() < deadline, "the server got " + hits);
-            Thread.sleep(20);
-        }
+        boolean held = com.editora.testkit.Await.holdsWithin(
+                () -> hits.size() >= n, java.time.Duration.ofSeconds(WAIT_SECONDS));
+        assertTrue(held, "the server got " + hits);
     }
 
     private String url(String path) {
@@ -221,7 +219,7 @@ class HttpClientRunFlowFxTest {
         assertEquals(List.of(List.of("$processEnv.PATH")), ops.askedReads);
         assertEquals(List.of(List.of("127.0.0.1:" + port)), ops.askedHosts);
         assertFalse(coordinator.isRunningForTest(b), "the run is over");
-        Thread.sleep(200);
+        // The run is over: whatever it sent was answered, and the server records a request before answering it.
         assertEquals(List.of(), hits, "nothing was sent");
 
         // Run All asks once too; the request that reads no secret still goes out.
@@ -231,7 +229,9 @@ class HttpClientRunFlowFxTest {
         });
         host.awaitStatus(s -> s.equals(tr("status.http.someNotSent", 1, 2)));
         assertEquals(2, ops.askedReads.size());
-        Thread.sleep(200);
+        FxTestSupport.awaitFxCondition(
+                () -> coordinator.idleForTest(b), "the run to end", java.time.Duration.ofSeconds(WAIT_SECONDS));
+        // The run is over: whatever it sent was answered, and the server records a request before answering it.
         assertEquals(List.of("json null"), hits, "only the request without a secret was sent");
 
         // A request that reads no secret is never asked about.

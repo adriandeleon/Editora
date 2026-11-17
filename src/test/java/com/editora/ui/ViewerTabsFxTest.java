@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -14,6 +15,7 @@ import javafx.scene.layout.HBox;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.git.GitFileStatus;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -191,11 +193,10 @@ class ViewerTabsFxTest {
         Path image = png("status.png");
         Path text = Files.writeString(dir.resolve("status.txt"), "text\n");
         FxTestSupport.runOnFx(() -> fx.controller.fileWorkflows.openPath(text));
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
-        while (FxTestSupport.callOnFx(() -> fx.controller.tabForPath(text)) == null) {
-            assertTrue(System.nanoTime() < deadline, "the text file opened");
-            Thread.sleep(20);
-        }
+        Await.until(
+                () -> onFx(() -> fx.controller.tabForPath(text)) != null,
+                "the text file opened",
+                Duration.ofSeconds(20));
         FxTestSupport.runOnFx(() -> {
             MainController c = fx.controller;
             Tab imageTab = c.fileWorkflows.openImageTab(image, true);
@@ -249,5 +250,14 @@ class ViewerTabsFxTest {
                 c.closeTab(tab);
             }
         });
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

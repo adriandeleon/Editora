@@ -138,10 +138,8 @@ class PythonLspFxTest {
         int before = fake.configurations.size();
         interpreter = "/other/env/bin/python";
         manager.refreshPythonInterpreters();
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (fake.configurations.size() == before && System.nanoTime() < deadline) {
-            Thread.onSpinWait();
-        }
+        com.editora.testkit.Await.holdsWithin(
+                () -> fake.configurations.size() != before, java.time.Duration.ofSeconds(10));
         assertTrue(fake.configurations.size() > before, "nothing was pushed");
         var settings = (Map<String, Object>) fake.configurations.getLast().getSettings();
         var python = (Map<String, Object>) settings.get("python");
@@ -279,14 +277,11 @@ class PythonLspFxTest {
         Files.createDirectories(root.resolve(".venv"));
         Path module = Files.writeString(root.resolve("newmod.py"), "def nm() -> int:\n    return 2\n");
         String uri = module.toUri().toString();
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-        boolean seen = false;
-        while (!seen && System.nanoTime() < deadline) {
-            Thread.sleep(50);
-            seen = onFx(() -> List.copyOf(fake.watchedFiles)).stream()
-                    .flatMap(p -> p.getChanges().stream())
-                    .anyMatch(e -> e.getUri().equals(uri) && e.getType() == org.eclipse.lsp4j.FileChangeType.Created);
-        }
+        boolean seen = com.editora.testkit.Await.holdsWithin(
+                () -> watched(fake).stream()
+                        .anyMatch(
+                                e -> e.getUri().equals(uri) && e.getType() == org.eclipse.lsp4j.FileChangeType.Created),
+                java.time.Duration.ofSeconds(15));
         assertTrue(seen, "a Created event for the new module: " + fake.watchedFiles);
         assertTrue(manager.watchedRoots().contains(root.toAbsolutePath().normalize()));
         manager.close();
@@ -314,13 +309,22 @@ class PythonLspFxTest {
         assertFalse(RootWatcher.skipped(Files.createDirectories(root.resolve("pkg"))));
     }
 
+    /** The watched-file events the fake has heard, read on the FX thread. */
+    private static List<org.eclipse.lsp4j.FileEvent> watched(FakeLanguageServer fake) {
+        try {
+            return onFx(() -> List.copyOf(fake.watchedFiles)).stream()
+                    .flatMap(p -> p.getChanges().stream())
+                    .toList();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     /** Waits for a configuration push after the first {@code before}; returns its {@code python} object. */
     @SuppressWarnings("unchecked")
     private static Map<String, Object> nextPush(FakeLanguageServer fake, int before) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-        while (fake.configurations.size() <= before && System.nanoTime() < deadline) {
-            Thread.sleep(20);
-        }
+        com.editora.testkit.Await.holdsWithin(
+                () -> fake.configurations.size() > before, java.time.Duration.ofSeconds(15));
         assertTrue(fake.configurations.size() > before, "nothing was pushed");
         var settings = (Map<String, Object>) fake.configurations.getLast().getSettings();
         return (Map<String, Object>) settings.get("python");
@@ -359,15 +363,11 @@ class PythonLspFxTest {
         assertEquals(1, manager.pythonLibraryWatchesForTest(sessions.get(0)));
         Path pkg = Files.createDirectories(sitePackages.resolve("requests"));
         String uri = pkg.toUri().toString().replaceAll("/$", "");
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-        boolean seen = false;
-        while (!seen && System.nanoTime() < deadline) {
-            Thread.sleep(50);
-            seen = onFx(() -> List.copyOf(fake.watchedFiles)).stream()
-                    .flatMap(p -> p.getChanges().stream())
-                    .anyMatch(e -> e.getUri().replaceAll("/$", "").equals(uri)
-                            && e.getType() == org.eclipse.lsp4j.FileChangeType.Created);
-        }
+        boolean seen = com.editora.testkit.Await.holdsWithin(
+                () -> watched(fake).stream()
+                        .anyMatch(e -> e.getUri().replaceAll("/$", "").equals(uri)
+                                && e.getType() == org.eclipse.lsp4j.FileChangeType.Created),
+                java.time.Duration.ofSeconds(15));
         assertTrue(seen, "a Created event for the installed package: " + fake.fileEvents());
         manager.close();
         assertEquals(0, manager.pythonLibraryWatchesForTest(sessions.get(0)), "closed with the window");

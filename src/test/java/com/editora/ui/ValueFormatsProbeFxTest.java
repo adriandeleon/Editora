@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BooleanSupplier;
@@ -17,6 +18,7 @@ import com.editora.dap.DapManager;
 import com.editora.dap.DebugAdapterLocator;
 import com.editora.dap.DebugLanguages;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -284,8 +286,13 @@ class ValueFormatsProbeFxTest {
             List<String> failures = new ArrayList<>();
             for (Step step : steps) {
                 if (step.hexOn()) {
+                    Object before = FxTestSupport.callOnFx(() -> tree(debug).getRoot());
                     FxTestSupport.runOnFx(() -> debug.panel().toggleHexValues());
-                    Thread.sleep(1500); // the values fetched again
+                    // the values fetched again: the scopes come back as a new tree
+                    await(
+                            "the values fetched again",
+                            60,
+                            () -> call(() -> tree(debug).getRoot() != before));
                 }
                 await(step.name(), 60, () -> call(() -> variable(debug, step.name()) != null));
                 if (step.element() != null) {
@@ -364,12 +371,6 @@ class ValueFormatsProbeFxTest {
     }
 
     private static void await(String what, int seconds, BooleanSupplier condition) throws InterruptedException {
-        long end = System.nanoTime() + seconds * 1_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(50);
-        }
+        Await.until(condition, what, Duration.ofSeconds(seconds));
     }
 }

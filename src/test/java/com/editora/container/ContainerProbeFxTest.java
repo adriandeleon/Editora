@@ -15,6 +15,7 @@ import com.editora.process.ProcessRegistry;
 import com.editora.process.ProcessRunner;
 import com.editora.process.RemoteProcess;
 import com.editora.run.RunService;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -190,7 +191,8 @@ class ContainerProbeFxTest {
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
             while (System.nanoTime() < deadline && !seen.toString().contains("40 120")) {
                 type(shell, "stty size\n");
-                Thread.sleep(500);
+                // each try waits up to half a second for the new size, then asks again
+                Await.holdsWithin(() -> seen.toString().contains("40 120"), java.time.Duration.ofMillis(500));
             }
             awaitOutput(seen, "40 120");
 
@@ -209,20 +211,14 @@ class ContainerProbeFxTest {
     }
 
     private static void awaitOutput(StringBuffer seen, String needle) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (System.nanoTime() < deadline && !seen.toString().contains(needle)) {
-            Thread.sleep(50);
-        }
+        Await.holdsWithin(() -> seen.toString().contains(needle), java.time.Duration.ofSeconds(30));
         assertTrue(
                 seen.toString().contains(needle), () -> "\"" + needle + "\" in the terminal's output: [" + seen + "]");
     }
 
     private static void awaitTrue(String what, java.util.function.BooleanSupplier condition)
             throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (System.nanoTime() < deadline && !condition.getAsBoolean()) {
-            Thread.sleep(100);
-        }
+        Await.holdsWithin(condition, java.time.Duration.ofSeconds(30));
         assertTrue(condition.getAsBoolean(), "timed out: " + what);
     }
 
@@ -291,7 +287,7 @@ class ContainerProbeFxTest {
         assertFalse(clients.isEmpty(), "the exec client is a child of this process");
         clients.forEach(ProcessHandle::destroyForcibly);
         assertTrue(p.waitFor(20, TimeUnit.SECONDS), "the client ended");
-        Thread.sleep(500);
+        // Still there after the client ended; the reap with the wrong start time below asks the engine again.
         assertTrue(processes().stream().anyMatch(a -> a.startsWith("sleep 30")), "left running: " + processes());
 
         List<String> other = new java.util.ArrayList<>(fields);
@@ -300,24 +296,16 @@ class ContainerProbeFxTest {
         assertTrue(processes().stream().anyMatch(a -> a.startsWith("sleep 30")));
 
         assertTrue(ContainerExecTarget.reapOrphan(fields));
+        Await.holdsWithin(
+                () -> processes().stream().noneMatch(a -> a.startsWith("sleep 30")), java.time.Duration.ofSeconds(10));
         List<String> left = processes();
-        for (int i = 0; i < 50 && left.stream().anyMatch(a -> a.startsWith("sleep 30")); i++) {
-            Thread.sleep(200);
-            left = processes();
-        }
         assertFalse(left.stream().anyMatch(a -> a.startsWith("sleep 30")), "stopped with its group: " + left);
         assertFalse(ContainerExecTarget.reapOrphan(fields), "gone: nothing left to stop");
     }
 
     private static void await(String what, int seconds, java.util.function.BooleanSupplier done)
             throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
-        while (!done.getAsBoolean()) {
-            if (System.nanoTime() > deadline) {
-                throw new AssertionError("timed out: " + what);
-            }
-            Thread.sleep(200);
-        }
+        Await.until(done, "timed out: " + what, java.time.Duration.ofSeconds(seconds));
     }
 
     /** Debugs {@code file} to a breakpoint on {@code line}, then lets it finish; what happened, for the report. */
@@ -389,7 +377,8 @@ class ContainerProbeFxTest {
         assertTrue(javac.ok(), "javac in the container: " + javac.message());
 
         List<String> ready = new CopyOnWriteArrayList<>();
-        com.editora.lsp.LspManager lsp = new com.editora.lsp.LspManager((f, d) -> {}, (t, m) -> {
+        java.util.Set<Path> built = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        com.editora.lsp.LspManager lsp = new com.editora.lsp.LspManager((f, d) -> built.add(f), (t, m) -> {
             if ("ServiceReady".equals(t)) {
                 ready.add(t);
             }
@@ -401,7 +390,7 @@ class ContainerProbeFxTest {
         try {
             onFx(() -> lsp.openDocument(main, folder, "java", text));
             await("jdtls ready in the container", 300, () -> !ready.isEmpty());
-            Thread.sleep(3000);
+            await("jdtls built Main.java (its diagnostics)", 120, () -> built.contains(main));
             report.add(debugToBreakpoint(dap, main, folder, 3, javaDebug));
 
             // The plugin went into Editora's folder in the container, and so did jdtls's index.
@@ -415,23 +404,24 @@ class ContainerProbeFxTest {
                     + "    System.out.println(\"sum \" + (x + 1));\n  }\n}\n";
             Path looseFile = Files.writeString(loose.resolve("Loose.java"), looseText);
             onFx(() -> lsp.openDocument(looseFile, loose, "java", looseText));
-            Thread.sleep(3000);
+            await("jdtls built Loose.java (its diagnostics)", 120, () -> built.contains(looseFile));
             report.add(debugToBreakpoint(dap, looseFile, null, 2, javaDebug));
             // The loose file's classes were compiled into the container's cache: gone with the session.
             onFx(dap::shutdown);
-            String count = "?";
-            for (int k = 0; k < 100 && !count.equals("0"); k++) {
-                Thread.sleep(200);
-                count = engine(
-                                "exec",
-                                name,
-                                "sh",
-                                "-c",
-                                "ls -A \"$0\"/debug-classes 2>/dev/null | wc -l",
-                                home + "/.cache/editora")
-                        .out()
-                        .strip();
-            }
+            String[] counted = {"?"};
+            Await.holdsWithin(
+                    () -> (counted[0] = engine(
+                                            "exec",
+                                            name,
+                                            "sh",
+                                            "-c",
+                                            "ls -A \"$0\"/debug-classes 2>/dev/null | wc -l",
+                                            home + "/.cache/editora")
+                                    .out()
+                                    .strip())
+                            .equals("0"),
+                    java.time.Duration.ofSeconds(20));
+            String count = counted[0];
             assertEquals("0", count, "the debug classes are removed in the container");
             System.out.println("CONTAINER JAVA DEBUG: " + String.join(" | ", report));
         } finally {
@@ -459,17 +449,14 @@ class ContainerProbeFxTest {
                         ExecSpec.Locale.PARSE_STABLE)
                 .withLongLived(true));
         assertTrue(p instanceof RemoteProcess);
-        for (int i = 0; i < 100 && !processes().contains("sleep 301"); i++) {
-            Thread.sleep(100);
-        }
+        Await.holdsWithin(() -> processes().contains("sleep 301"), java.time.Duration.ofSeconds(10));
         assertTrue(processes().contains("sleep 300"), processes().toString());
 
         ProcessRegistry.killTree(p);
 
         assertTrue(p.waitFor(20, TimeUnit.SECONDS), "the program did not end");
-        for (int i = 0; i < 100 && processes().stream().anyMatch(l -> l.startsWith("sleep 30")); i++) {
-            Thread.sleep(100);
-        }
+        Await.holdsWithin(
+                () -> processes().stream().noneMatch(l -> l.startsWith("sleep 30")), java.time.Duration.ofSeconds(10));
         assertFalse(processes().stream().anyMatch(l -> l.startsWith("sleep 30")), "left running: " + processes());
     }
 
@@ -502,9 +489,7 @@ class ContainerProbeFxTest {
         };
         onFx(() -> run.runInDir(
                 folder, List.of("sh", "-c", "read name; echo \"hello $name\"; exit 3"), Map.of(), listener));
-        for (int i = 0; i < 100 && run.pid() <= 0; i++) {
-            Thread.sleep(50);
-        }
+        Await.holdsWithin(() -> run.pid() > 0, java.time.Duration.ofSeconds(5));
         onFx(() -> run.sendInput("Ñandú"));
 
         assertTrue(done.await(60, TimeUnit.SECONDS));

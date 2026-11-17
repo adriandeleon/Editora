@@ -71,16 +71,15 @@ class NarrowCarryFxTest {
             buffer.setContent(DOC);
             return buffer;
         });
-        settle();
+        settle(b);
         return b;
     }
 
     /** Lets the debounced highlight and fold passes land. */
-    private static void settle() throws Exception {
-        for (int i = 0; i < 6; i++) {
-            Thread.sleep(120);
-            FxTestSupport.drainFx();
-        }
+    private static void settle(EditorBuffer b) throws Exception {
+        FxTestSupport.drainFx();
+        OnFx.untilHighlightAndFoldsSettled(b);
+        FxTestSupport.drainFx();
     }
 
     private static Whole whole(EditorBuffer b) {
@@ -129,7 +128,7 @@ class NarrowCarryFxTest {
         EditorBuffer b = javaBuffer();
         Whole before = FxTestSupport.callOnFx(() -> whole(b));
         FxTestSupport.runOnFx(() -> assertTrue(narrowToGreet(b)));
-        settle(); // the region's own highlight and fold passes run
+        settle(b); // the region's own highlight and fold passes run
         FxTestSupport.runOnFx(() -> {
             b.widen();
             Whole after = whole(b);
@@ -148,7 +147,7 @@ class NarrowCarryFxTest {
                 .orElseThrow());
         FxTestSupport.runOnFx(() -> assertTrue(narrowToGreet(b)));
         FxTestSupport.runOnFx(() -> b.getArea().insertText(b.getArea().getLength(), "\n    // two\n    // more"));
-        settle();
+        settle(b);
         List<Region> carried = FxTestSupport.callOnFx(() -> {
             b.widen();
             return b.getFoldManager().regions();
@@ -157,7 +156,7 @@ class NarrowCarryFxTest {
                 carried.contains(new Region(increment.startLine() + 2, increment.endLine() + 2)),
                 "increment moved down two lines: " + carried);
         assertTrue(carried.stream().anyMatch(r -> r.startLine() == 3), "the class still folds: " + carried);
-        settle(); // the fold scan of the widened text has the last word, and agrees
+        settle(b); // the fold scan of the widened text has the last word, and agrees
         assertEquals(carried, FxTestSupport.callOnFx(() -> b.getFoldManager().regions()));
         assertNotEquals(DOC, FxTestSupport.callOnFx(b::getContent));
     }

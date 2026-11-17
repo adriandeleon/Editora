@@ -1,10 +1,12 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeyDispatcher;
 import com.editora.terminal.RunningProgram;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -79,21 +81,26 @@ class TerminalToolWindowFxTest {
             try {
                 java.nio.file.Files.writeString(source, "one\ntwo\nthree words here\n");
                 FxTestSupport.runOnFx(() -> terminals.panel().linkActions().openFile(source, 3, 7));
-                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-                int[] at = null;
-                while (System.nanoTime() < deadline) {
-                    at = FxTestSupport.callOnFx(() -> {
-                        com.editora.editor.EditorBuffer b = fx.controller.activeBuffer();
-                        return b == null || !source.equals(b.getPath())
-                                ? null
-                                : new int[] {
-                                    b.getArea().getCurrentParagraph(),
-                                    b.getArea().getCaretColumn()
-                                };
-                    });
-                    if (at != null && at[0] == 2) break;
-                    Thread.sleep(20);
-                }
+                int[][] seen = new int[1][];
+                Await.holdsWithin(
+                        () -> {
+                            try {
+                                seen[0] = FxTestSupport.callOnFx(() -> {
+                                    com.editora.editor.EditorBuffer b = fx.controller.activeBuffer();
+                                    return b == null || !source.equals(b.getPath())
+                                            ? null
+                                            : new int[] {
+                                                b.getArea().getCurrentParagraph(),
+                                                b.getArea().getCaretColumn()
+                                            };
+                                });
+                            } catch (Exception e) {
+                                throw new IllegalStateException(e);
+                            }
+                            return seen[0] != null && seen[0][0] == 2;
+                        },
+                        Duration.ofSeconds(10));
+                int[] at = seen[0];
                 assertTrue(at != null, "the file opened");
                 assertEquals(2, at[0], "line 3");
                 assertEquals(6, at[1], "column 7");
@@ -257,11 +264,15 @@ class TerminalToolWindowFxTest {
     }
 
     private static void await(java.util.concurrent.Callable<Boolean> condition, String what) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (System.nanoTime() < deadline) {
-            if (Boolean.TRUE.equals(condition.call())) return;
-            Thread.sleep(20);
-        }
-        throw new AssertionError("timed out waiting for " + what);
+        Await.until(
+                () -> {
+                    try {
+                        return Boolean.TRUE.equals(condition.call());
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                },
+                what,
+                Duration.ofSeconds(10));
     }
 }

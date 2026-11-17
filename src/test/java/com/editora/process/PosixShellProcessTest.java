@@ -127,14 +127,16 @@ class PosixShellProcessTest {
     }
 
     private static boolean goneWithin(long pid, long millis) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(millis);
-        while (System.nanoTime() < deadline) {
-            if (ProcessHandle.of(pid).map(h -> !h.isAlive()).orElse(true)) {
-                return true;
-            }
-            Thread.sleep(50);
+        java.util.Optional<ProcessHandle> handle = ProcessHandle.of(pid);
+        if (handle.isEmpty()) {
+            return true;
         }
-        return false;
+        try {
+            handle.get().onExit().get(millis, TimeUnit.MILLISECONDS);
+            return true;
+        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+            return !handle.get().isAlive();
+        }
     }
 
     private static final List<String> TREE = List.of("sh", "-c", "sleep 600 & exec sleep 600");

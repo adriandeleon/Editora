@@ -18,6 +18,7 @@ import com.editora.dap.DebugLanguages;
 import com.editora.dap.LocalProcesses;
 import com.editora.dap.NativeBuild;
 import com.editora.process.ProcessRunner;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -321,7 +322,7 @@ class NativeDebugProbeFxTest {
                         dir.resolve("loop.c"),
                         "#include <unistd.h>\nint tick(int n) {\n    return n + 1;\n}\n"
                                 + "int main(void) {\n    int n = 0;\n    for (;;) {\n        n = tick(n);\n"
-                                + "        usleep(50000);\n    }\n}\n")
+                                + "        usleep(50000);\n        write(1, \".\", 1);\n    }\n}\n")
                 .toRealPath();
         Path exe = dir.resolve("loop");
         ProcessRunner.Result cc = ProcessRunner.run(
@@ -348,7 +349,18 @@ class NativeDebugProbeFxTest {
             assertEquals(2, stop.frames().getFirst().line(), "stopped in tick");
             FxTestSupport.runOnFx(manager::stop);
             assertTrue(session.ended.await(60, TimeUnit.SECONDS), "Stop ends the session: " + session.states);
-            Thread.sleep(500);
+            // A tick the program says after the session ended: it was let go, not killed or left stopped.
+            java.io.InputStream ticks = program.getInputStream();
+            ticks.skip(ticks.available());
+            java.util.concurrent.CompletableFuture<Integer> tick = new java.util.concurrent.CompletableFuture<>();
+            Thread.ofVirtual().start(() -> {
+                try {
+                    tick.complete(ticks.read());
+                } catch (java.io.IOException e) {
+                    tick.completeExceptionally(e);
+                }
+            });
+            assertEquals('.', (int) tick.get(30, TimeUnit.SECONDS), "Stop detaches: the program runs on");
             assertTrue(program.isAlive(), "Stop detaches: the program runs on");
         } finally {
             FxTestSupport.runOnFx(manager::shutdown);
@@ -407,12 +419,6 @@ class NativeDebugProbeFxTest {
     }
 
     private static void await(String what, BooleanSupplier condition) throws InterruptedException {
-        long end = System.nanoTime() + 300_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(50);
-        }
+        Await.until(condition, what, Duration.ofSeconds(300));
     }
 }

@@ -86,17 +86,21 @@ class JsColumnBreakpointsProbeFxTest {
             assertTrue(call(() -> b.getBreakpointManager().get(LINE).lambdasOnly()));
 
             FxTestSupport.runOnFx(() -> ((CommandRegistry) FxTestSupport.field(c, "registry")).run("debug.start"));
+            // what the gutter last showed for the line, for a failure's message: looked at after each pulse
             Thread watch = Thread.ofVirtual().start(() -> {
-                for (int i = 0; i < 400; i++) {
-                    Object live = call(() -> b.getBreakpointManager().live(LINE));
-                    if (live != null) {
-                        lastLive = live;
-                    }
-                    try {
-                        Thread.sleep(25);
-                    } catch (InterruptedException e) {
-                        return;
-                    }
+                try {
+                    com.editora.testkit.Await.holdsWithin(
+                            () -> {
+                                Object live =
+                                        call(() -> b.getBreakpointManager().live(LINE));
+                                if (live != null) {
+                                    lastLive = live;
+                                }
+                                return false;
+                            },
+                            java.time.Duration.ofSeconds(10));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                 }
             });
             // Inside the arrow, once per item: not when the line itself runs.
@@ -108,15 +112,28 @@ class JsColumnBreakpointsProbeFxTest {
                     FxTestSupport.runOnFx(() -> b.getBreakpointManager().setLambdas(LINE, List.of(), false));
                     // js-debug answers setBreakpoints in its own time, and the gutter looks the same before and
                     // after (verified): a resume sent first could still stop in the arrow, in the next round.
-                    Thread.sleep(1000);
+                    FxTestSupport.drainFx();
+                    await(
+                            "js-debug to answer the new breakpoints",
+                            20,
+                            () -> call(dap::unansweredBreakpointsForTest) == 0);
                 }
                 resume(dap, debug);
             }
             awaitStop(dap, debug);
             awaitRow(debug, "round", "1");
             resume(dap, debug);
-            // The second round's arrows run without stopping, on to the timer.
-            Thread.sleep(1500);
+            // The second round's arrows run without stopping, on to the timer: the sum after the loop is printed.
+            await(
+                    "the loop to finish",
+                    30,
+                    () -> call(() -> {
+                        Object panel = debug.panel();
+                        return panel != null
+                                && FxTestSupport.<org.fxmisc.richtext.CodeArea>field(panel, "console")
+                                        .getText()
+                                        .contains("sum 120");
+                    }));
             assertEquals(DapManager.State.RUNNING, call(dap::state), "a line breakpoint never stops in the arrow");
 
             FxTestSupport.runOnFx(dap::stop);
@@ -139,13 +156,7 @@ class JsColumnBreakpointsProbeFxTest {
     }
 
     private static void await(String what, int seconds, BooleanSupplier condition) throws InterruptedException {
-        long end = System.nanoTime() + seconds * 1_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(50);
-        }
+        com.editora.testkit.Await.until(condition, what, java.time.Duration.ofSeconds(seconds));
     }
 
     /** A stop on {@link #LINE}; which one (in the arrow, or on the line) its variables tell. */

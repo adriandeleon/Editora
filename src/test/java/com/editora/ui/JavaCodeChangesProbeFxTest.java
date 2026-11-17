@@ -36,7 +36,7 @@ class JavaCodeChangesProbeFxTest {
                 public static void main(String[] args) throws Exception {
                     for (int i = 0; i < 2000; i++) {
                         System.out.println(greet(i));
-                        Thread.sleep(100);
+                        synchronized (Main.class) { Main.class.wait(100); }
                         if (i == 30) calc();
                     }
                 }
@@ -106,7 +106,19 @@ class JavaCodeChangesProbeFxTest {
         if (breakOnCalc) {
             FxTestSupport.runOnFx(() -> c.activeBuffer().toggleBreakpoint(CALC_LINE));
         }
-        Thread.sleep(Long.getLong("importWait", 15000)); // let jdtls import the folder
+        // jdtls has imported the folder: it said ServiceReady and no progress of its is still open
+        LspCoordinator lsp = FxTestSupport.field(c, "lspCoordinator");
+        await(
+                w,
+                "jdtls to import the folder",
+                600,
+                () -> FxTestSupport.callOnFx(() -> {
+                    java.util.Map<String, Object> states =
+                            FxTestSupport.field(FxTestSupport.field(lsp, "statusNarrator"), "states");
+                    return states.values().stream()
+                            .anyMatch(s -> FxTestSupport.<Boolean>field(s, "serviceReady")
+                                    && FxTestSupport.<Integer>field(s, "outstanding") == 0);
+                }));
         FxTestSupport.runOnFx(() -> registry.run("debug.start"));
         await(w, "the program's output", 900, () -> console(w).contains("hello-v1 2"));
         return w;
@@ -117,13 +129,10 @@ class JavaCodeChangesProbeFxTest {
     }
 
     private static void await(Window w, String what, int tenths, Check check) throws Exception {
-        for (int i = 0; i < tenths; i++) {
-            if (check.holds()) {
-                return;
-            }
-            Thread.sleep(100);
+        if (!com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.unchecked(check::holds), java.time.Duration.ofMillis(100L * tenths))) {
+            throw new AssertionError(what + " never happened; console:\n" + console(w));
         }
-        throw new AssertionError(what + " never happened; console:\n" + console(w));
     }
 
     private static String console(Window w) throws Exception {
@@ -143,14 +152,12 @@ class JavaCodeChangesProbeFxTest {
      */
     private static void stop(Window w, Path dir) throws Exception {
         FxTestSupport.runOnFx(w.dap()::stop);
-        for (int i = 0; i < 100 && FxTestSupport.callOnFx(w.dap()::isActive); i++) {
-            Thread.sleep(100);
-        }
+        com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.fxCondition(() -> !w.dap().isActive()), java.time.Duration.ofSeconds(10));
         w.fx().dispose();
         String path = dir.toString();
-        for (int i = 0; i < 300 && usingFolder(path); i++) {
-            Thread.sleep(100);
-        }
+        // the process table is all there is to look at: no event says a process left the folder
+        com.editora.testkit.Await.holdsWithin(() -> !usingFolder(path), java.time.Duration.ofSeconds(30));
     }
 
     /** Whether a process this test started still names {@code path} on its command line. */
@@ -167,17 +174,21 @@ class JavaCodeChangesProbeFxTest {
      * thread has stopped once more.
      */
     private static DapModels.StackFrameInfo topFrame(Window w) throws Exception {
-        for (int attempt = 0; attempt < 300; attempt++) {
-            await(w, "a stop", 300, () -> FxTestSupport.callOnFx(w.dap()::state) == DapManager.State.SUSPENDED);
-            CompletableFuture<List<DapModels.StackFrameInfo>> frames = new CompletableFuture<>();
-            FxTestSupport.runOnFx(() -> w.dap().stackTrace(w.dap().currentThreadId(), frames::complete));
-            List<DapModels.StackFrameInfo> list = frames.get(20, TimeUnit.SECONDS);
-            if (list != null && !list.isEmpty()) {
-                return list.get(0);
-            }
-            Thread.sleep(100);
+        DapModels.StackFrameInfo[] top = {null};
+        boolean found = com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.unchecked(() -> {
+                    await(w, "a stop", 300, () -> FxTestSupport.callOnFx(w.dap()::state) == DapManager.State.SUSPENDED);
+                    CompletableFuture<List<DapModels.StackFrameInfo>> frames = new CompletableFuture<>();
+                    FxTestSupport.runOnFx(() -> w.dap().stackTrace(w.dap().currentThreadId(), frames::complete));
+                    List<DapModels.StackFrameInfo> list = frames.get(20, TimeUnit.SECONDS);
+                    top[0] = list == null || list.isEmpty() ? null : list.get(0);
+                    return top[0] != null;
+                }),
+                java.time.Duration.ofSeconds(30));
+        if (!found) {
+            throw new AssertionError("the stopped thread never had a frame; console:\n" + console(w));
         }
-        throw new AssertionError("the stopped thread never had a frame; console:\n" + console(w));
+        return top[0];
     }
 
     @Test
@@ -219,8 +230,8 @@ class JavaCodeChangesProbeFxTest {
                 String text = b.getArea().getText();
                 int at = text.indexOf("hello-v1");
                 b.getArea().replaceText(at, at + "hello-v1".length(), "hello-v2"); // the breakpoint's own line
-                int sleep = b.getArea().getText().indexOf("Thread.sleep(100)");
-                b.getArea().replaceText(sleep, sleep + "Thread.sleep(100)".length(), "Thread.sleep(101)"); // main
+                int pause = b.getArea().getText().indexOf("Main.class.wait(100)");
+                b.getArea().replaceText(pause, pause + "Main.class.wait(100)".length(), "Main.class.wait(101)"); // main
                 w.registry().run("file.save");
             });
             await(w, "the change to be reported", 300, () -> console(w).contains(tr("debug.hcr.applied", "Main")));

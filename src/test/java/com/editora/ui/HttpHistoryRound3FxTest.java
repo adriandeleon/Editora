@@ -163,11 +163,7 @@ class HttpHistoryRound3FxTest {
     }
 
     private static void await(java.util.concurrent.Callable<Boolean> check) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
-        while (!FxTestSupport.callOnFx(check)) {
-            assertTrue(System.nanoTime() < deadline, "timed out");
-            Thread.sleep(10);
-        }
+        FxTestSupport.awaitFxCondition(check, "the condition", java.time.Duration.ofSeconds(WAIT_SECONDS));
     }
 
     private void run(HttpClientCoordinator c, EditorBuffer b, int line) throws Exception {
@@ -178,11 +174,9 @@ class HttpHistoryRound3FxTest {
     }
 
     private void awaitHit(String prefix) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
-        while (hits.stream().noneMatch(h -> h.startsWith(prefix))) {
-            assertTrue(System.nanoTime() < deadline, "the server never got " + prefix + ": " + hits);
-            Thread.sleep(10);
-        }
+        boolean held = com.editora.testkit.Await.holdsWithin(
+                () -> hits.stream().anyMatch(h -> h.startsWith(prefix)), java.time.Duration.ofSeconds(WAIT_SECONDS));
+        assertTrue(held, "the server never got " + prefix + ": " + hits);
     }
 
     private List<String> savedPaths(Path file) {
@@ -286,11 +280,9 @@ class HttpHistoryRound3FxTest {
         host.statuses.clear();
         FxTestSupport.runOnFx(() -> c.runRequest(b, 1));
         String wanted = tr("status.http.cancelledTooLate");
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
-        while (!host.all.contains(wanted)) {
-            assertTrue(System.nanoTime() < deadline, host.all.toString());
-            Thread.sleep(10);
-        }
+        boolean held = com.editora.testkit.Await.holdsWithin(
+                () -> host.all.contains(wanted), java.time.Duration.ofSeconds(WAIT_SECONDS));
+        assertTrue(held, host.all.toString());
         assertEquals("ORIGINAL", Files.readString(work.resolve("keep.json")));
     }
 

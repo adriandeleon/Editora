@@ -96,6 +96,58 @@ public final class EditorFx {
         return result.get();
     }
 
+    /**
+     * {@code condition} as a {@link java.util.function.BooleanSupplier} for {@link com.editora.testkit.Await}, a
+     * checked exception it throws rethrown unchecked. Read on the waiting thread.
+     */
+    public static java.util.function.BooleanSupplier check(Callable<Boolean> condition) {
+        return () -> {
+            try {
+                return condition.call();
+            } catch (RuntimeException | Error e) {
+                throw e;
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        };
+    }
+
+    /** As {@link #check}, with {@code condition} read on the FX thread. */
+    public static java.util.function.BooleanSupplier checkOnFx(Callable<Boolean> condition) {
+        return check(() -> callFx(condition));
+    }
+
+    /**
+     * Waits until every "editing settled" milestone of {@code buffer}'s last edit has run (the typing pause: the
+     * completion pass, the dirty check, the LSP change, the lints): its one settled-edit timer has nothing armed.
+     * Then drains the FX queue.
+     */
+    public static void awaitEditsSettled(EditorBuffer buffer) throws Exception {
+        com.editora.testkit.Await.until(
+                checkOnFx(() -> EditorFx.<Long>field(field(buffer, "settledEdits"), "armedMillis") == -1L),
+                "every settled-edit milestone has run");
+        drain();
+    }
+
+    /** Waits for {@code count} FX pulses: layout and CSS run in a pulse. */
+    public static void awaitPulses(int count) throws Exception {
+        CountDownLatch pulses = new CountDownLatch(count);
+        javafx.animation.AnimationTimer counter = new javafx.animation.AnimationTimer() {
+            @Override
+            public void handle(long now) {
+                pulses.countDown();
+            }
+        };
+        onFx(counter::start);
+        try {
+            if (!pulses.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("no FX pulses");
+            }
+        } finally {
+            onFx(counter::stop);
+        }
+    }
+
     /** Waits until every FX task queued before this call (and the tasks those queued, two deep) has run. */
     public static void drain() throws Exception {
         for (int i = 0; i < 3; i++) {

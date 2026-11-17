@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 
 import javafx.scene.control.Tab;
@@ -49,9 +50,7 @@ class RemoteSessionTabsFxTest {
 
             Tab tab = awaitTab(async, fx, sftp.remotePath("app/A.java"));
             EditorBuffer buffer = (EditorBuffer) tab.getUserData();
-            for (int i = 0; i < 200 && FxTestSupport.callOnFx(buffer::isLoading); i++) {
-                Thread.sleep(25);
-            }
+            PulseChecks.holdsOnFxWithin(() -> !buffer.isLoading(), Duration.ofSeconds(5));
             async.awaitFx();
             assertEquals(
                     "class A {}\n",
@@ -59,9 +58,7 @@ class RemoteSessionTabsFxTest {
             assertEquals(6, (int) FxTestSupport.callOnFx(() -> buffer.getArea().getCaretPosition()), "its caret");
             java.util.Set<Tab> pinned = FxTestSupport.field(fx.controller, "pinned");
             assertTrue(FxTestSupport.callOnFx(() -> pinned.contains(tab)), "and its pin");
-            for (int i = 0; i < 200 && FxTestSupport.callOnFx(waiting::size) != 0; i++) {
-                Thread.sleep(25);
-            }
+            PulseChecks.holdsOnFxWithin(waiting::isEmpty, Duration.ofSeconds(5));
             assertEquals(
                     List.of(),
                     FxTestSupport.callOnFx(() -> waiting.stream()
@@ -70,9 +67,9 @@ class RemoteSessionTabsFxTest {
                     "nothing waits any more: one tab is back, and the file that was deleted is known to be gone");
             int tabs = FxTestSupport.callOnFx(() -> editorTabs(fx));
 
+            // Nothing waits (above), so the call starts no scan: it is over when it returns.
             FxTestSupport.runOnFx(sessions::reopenUnreachable);
             async.awaitFx();
-            Thread.sleep(300);
             assertEquals(tabs, (int) FxTestSupport.callOnFx(() -> editorTabs(fx)), "nothing is opened twice");
         }
     }
@@ -93,14 +90,13 @@ class RemoteSessionTabsFxTest {
     }
 
     private static Tab awaitTab(AsyncTestScope async, FxWindowFixture fx, Path file) throws Exception {
-        for (int i = 0; i < 200; i++) {
-            Tab tab = FxTestSupport.callOnFx(
-                    () -> (Tab) FxTestSupport.call(fx.controller, "tabForPath", new Class<?>[] {Path.class}, file));
-            if (tab != null) {
-                return tab;
-            }
-            Thread.sleep(25);
-        }
-        throw new AssertionError("no tab for " + file);
+        Tab[] tab = new Tab[1];
+        PulseChecks.until(
+                () -> (tab[0] = FxTestSupport.callOnFx(() -> (Tab)
+                                FxTestSupport.call(fx.controller, "tabForPath", new Class<?>[] {Path.class}, file)))
+                        != null,
+                "no tab for " + file,
+                Duration.ofSeconds(5));
+        return tab[0];
     }
 }

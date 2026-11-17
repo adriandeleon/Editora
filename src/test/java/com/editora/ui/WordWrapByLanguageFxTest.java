@@ -2,12 +2,14 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 
 import javafx.scene.control.CheckBox;
 
 import com.editora.command.CommandRegistry;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -51,19 +53,18 @@ class WordWrapByLanguageFxTest {
     private static EditorBuffer open(String name, String text) throws Exception {
         Path file = Files.writeString(work.toAbsolutePath().normalize().resolve(name), text);
         FxTestSupport.runOnFx(() -> workflows.openPath(file));
-        long deadline = System.nanoTime() + 15_000_000_000L;
-        while (true) {
-            EditorBuffer b = FxTestSupport.callOnFx(() -> {
-                EditorBuffer a = (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
-                return a != null && file.equals(a.getPath()) && !a.isLoading() ? a : null;
-            });
-            if (b != null) {
-                FxTestSupport.drainFx();
-                return b;
-            }
-            assertTrue(System.nanoTime() < deadline, "did not open " + file);
-            Thread.sleep(10);
-        }
+        EditorBuffer[] b = new EditorBuffer[1];
+        Await.until(
+                () -> (b[0] = onFx(() -> {
+                            EditorBuffer a =
+                                    (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
+                            return a != null && file.equals(a.getPath()) && !a.isLoading() ? a : null;
+                        }))
+                        != null,
+                "did not open " + file,
+                Duration.ofSeconds(15));
+        FxTestSupport.drainFx();
+        return b[0];
     }
 
     private static boolean wraps(EditorBuffer b) throws Exception {
@@ -97,9 +98,9 @@ class WordWrapByLanguageFxTest {
 
         // In front: the Markdown file. Now it is the prose preference.
         FxTestSupport.runOnFx(() -> fx.controller.openAndNavigate(md.getPath(), 0));
-        FxTestSupport.drainFx();
-        Thread.sleep(200);
-        FxTestSupport.drainFx();
+        Await.until(
+                () -> onFx(() -> FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {}) == md),
+                "the Markdown file in front");
         FxTestSupport.runOnFx(() -> registry.run("view.toggleWordWrap"));
         assertFalse(s.isWordWrapProse());
         assertFalse(s.isWordWrap());
@@ -155,5 +156,14 @@ class WordWrapByLanguageFxTest {
         assertEquals(s.isWordWrapProse(), FxTestSupport.callOnFx(prose::isSelected));
         FxTestSupport.runOnFx(
                 () -> FxTestSupport.<javafx.stage.Stage>field(window, "stage").hide());
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -23,6 +24,7 @@ import com.editora.lsp.LspManager;
 import com.editora.lsp.LspTestHooks;
 import com.editora.run.BuildBeforeLaunch;
 import com.editora.run.StackTraceLinks;
+import com.editora.testkit.Await;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -540,12 +542,8 @@ class DebugCoordinatorCommandsFxTest {
 
     /** Waits until {@code list} has {@code size} entries, and returns its last. */
     private static <T> T awaitNth(List<T> list, int size) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (list.size() < size) {
-            if (System.nanoTime() > deadline) {
-                throw new AssertionError("only " + list.size() + " of " + size + ": " + list);
-            }
-            Thread.sleep(20);
+        if (!Await.holdsWithin(() -> list.size() >= size, Duration.ofSeconds(10))) {
+            throw new AssertionError("only " + list.size() + " of " + size + ": " + list);
         }
         return list.get(size - 1);
     }
@@ -844,11 +842,7 @@ class DebugCoordinatorCommandsFxTest {
         session("launch");
         List<DebugSession> both = FxTestSupport.callOnFx(() -> debug.sessions().all());
         assertEquals(2, both.size());
-        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (!FxTestSupport.callOnFx(() -> both.stream().allMatch(x -> x.dap.isActive()))
-                && System.nanoTime() < until) {
-            Thread.sleep(20);
-        }
+        OnFx.holdsWithin(() -> both.stream().allMatch(x -> x.dap.isActive()), java.time.Duration.ofSeconds(10));
         assertTrue(
                 FxTestSupport.callOnFx(() -> both.stream().allMatch(x -> x.dap.isActive())),
                 "both sessions run a program of their own");
@@ -2152,13 +2146,13 @@ class DebugCoordinatorCommandsFxTest {
         mainClasses("demo.Args");
         FakeDebugAdapter.Session session = launch();
         session.frames = List.of(
-                FakeDebugAdapter.Session.frame(1, "Thread.sleep", null, 1),
+                FakeDebugAdapter.Session.frame(1, "Unsafe.park", null, 1),
                 FakeDebugAdapter.Session.frame(2, "Object.wait", "/jdk/src/java.base/Object.java", 300),
                 FakeDebugAdapter.Session.frame(3, "Args.main", file.toString(), 4));
 
         session.stop(7, "pause");
         awaitState("debug.state.suspended");
-        awaitStatus(tr("status.debug.stoppedWithoutSource", "Thread.sleep"));
+        awaitStatus(tr("status.debug.stoppedWithoutSource", "Unsafe.park"));
         javafx.scene.control.ListView<com.editora.dap.DapModels.StackFrameInfo> stack =
                 FxTestSupport.field(debug.panel(), "stack");
         assertEquals(2, FxTestSupport.callOnFx(() -> stack.getSelectionModel().getSelectedIndex()));
@@ -2260,10 +2254,8 @@ class DebugCoordinatorCommandsFxTest {
             debug.bufferPathChanged(b, renamed); // the same path again: nothing to carry over
         });
         // Whether the old file is gone is asked off the FX thread (PERF-01): the breakpoints follow when it answers.
-        long deadline = System.nanoTime() + 10_000_000_000L;
-        while (FxTestSupport.callOnFx(() -> store.get(renamed.toString())) == null && System.nanoTime() < deadline) {
-            Thread.sleep(10);
-        }
+        EventuallyFx.holdsWithin(
+                Duration.ofSeconds(10), () -> FxTestSupport.callOnFx(() -> store.get(renamed.toString())) != null);
 
         assertNull(store.get(file.toString()), "nothing is left under the old name");
         assertEquals(
@@ -2293,10 +2285,8 @@ class DebugCoordinatorCommandsFxTest {
             debug.bufferPathChanged(b, file);
         });
         // Whether the original is still there is asked off the FX thread (PERF-01): wait for the copy's entry.
-        long deadline = System.nanoTime() + 10_000_000_000L;
-        while (FxTestSupport.callOnFx(() -> store.get(copy.toString())) == null && System.nanoTime() < deadline) {
-            Thread.sleep(10);
-        }
+        EventuallyFx.holdsWithin(
+                Duration.ofSeconds(10), () -> FxTestSupport.callOnFx(() -> store.get(copy.toString())) != null);
 
         assertEquals(
                 List.of(2),

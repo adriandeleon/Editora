@@ -21,6 +21,7 @@ import javafx.stage.Stage;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.EditorFx;
 import com.editora.editor.markdown.PreviewSelection.Pos;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -517,12 +518,11 @@ class PreviewSelectionFxTest {
                 md.append("Paragraph number ").append(i).append(" of the document.\n\n");
             }
             open(md.toString());
-            long end = System.nanoTime() + 30_000_000_000L;
             int want = sizes[k];
-            while (EditorFx.callFx(() -> pane.preview().blockCount()) < want) {
-                assertTrue(System.nanoTime() < end, "the document never finished building");
-                Thread.sleep(20);
-            }
+            // The column holds only the blocks on screen (PERF-08): count the document's blocks, not its children.
+            Await.until(
+                    EditorFx.checkOnFx(() -> pane.preview().blockCount() >= want),
+                    "the document never finished building");
             EditorFx.onFx(() -> assertTrue(sel().selectAll()));
             settle();
             int at = k;

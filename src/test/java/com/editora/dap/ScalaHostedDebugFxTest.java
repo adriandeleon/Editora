@@ -126,11 +126,9 @@ class ScalaHostedDebugFxTest {
     }
 
     private void awaitError() throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (errors.isEmpty()) {
-            assertTrue(System.nanoTime() < deadline, "no error was reported");
-            Thread.sleep(20);
-        }
+        assertTrue(
+                com.editora.testkit.Await.holdsWithin(() -> !errors.isEmpty(), java.time.Duration.ofSeconds(20)),
+                "no error was reported");
     }
 
     @Test
@@ -227,7 +225,11 @@ class ScalaHostedDebugFxTest {
         Path bin = Files.createDirectories(dir.resolve("bin"));
         Path argvFile = dir.resolve("argv.txt");
         Path cli = bin.resolve("scala-cli");
-        Files.writeString(cli, "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + argvFile + "'\n");
+        // written whole, then renamed: the file appears with every line in it
+        Files.writeString(
+                cli,
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + argvFile + ".part' && mv '" + argvFile + ".part' '" + argvFile
+                        + "'\n");
         cli.toFile().setExecutable(true);
         dap.setJvmToolLocatorForTest(tool -> "scala-cli".equals(tool) ? cli.toString() : null);
         Path script = dir.resolve("scripts/hello.sc");
@@ -238,12 +240,9 @@ class ScalaHostedDebugFxTest {
             dap.setVmArgs(List.of("-Xmx1g"));
             dap.startLaunch(script, "scala", null);
         });
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (!Files.exists(argvFile) || Files.size(argvFile) == 0) {
-            assertTrue(System.nanoTime() < deadline, "the stand-in scala-cli never ran; errors=" + errors);
-            Thread.sleep(20);
-        }
-        Thread.sleep(100); // printf has finished writing the lines
+        assertTrue(
+                com.editora.testkit.Await.holdsWithin(() -> Files.exists(argvFile), java.time.Duration.ofSeconds(20)),
+                "the stand-in scala-cli never ran; errors=" + errors);
         List<String> argv = Files.readAllLines(argvFile);
         assertEquals("run", argv.get(0));
         assertEquals("--java-opt", argv.get(1));

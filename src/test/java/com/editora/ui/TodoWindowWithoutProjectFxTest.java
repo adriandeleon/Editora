@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Set;
 import java.util.concurrent.Callable;
 
@@ -11,6 +10,7 @@ import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -59,11 +59,7 @@ class TodoWindowWithoutProjectFxTest {
     }
 
     private static void await(String what, Callable<Boolean> condition) throws Exception {
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(30));
-        while (!FxTestSupport.callOnFx(condition)) {
-            assertTrue(Instant.now().isBefore(deadline), what);
-            Thread.sleep(20);
-        }
+        Await.until(() -> onFx(condition), what, Duration.ofSeconds(30));
     }
 
     @Test
@@ -99,5 +95,14 @@ class TodoWindowWithoutProjectFxTest {
         await("offered again", () -> !unavailable.contains(todo));
         FxTestSupport.drainFx();
         assertTrue(FxTestSupport.callOnFx(() -> !toolWindows.isOpen(todo)), "a window the user closed stays closed");
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

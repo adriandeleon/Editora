@@ -2,16 +2,18 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 
+import javafx.animation.Animation;
+import javafx.animation.PauseTransition;
 import javafx.scene.Scene;
 import javafx.scene.control.Label;
 import javafx.scene.input.MouseButton;
@@ -29,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -232,12 +235,18 @@ class ProjectMapStructureReview3Test {
 
             text.set(text.get() + "\ntype Added struct {\n}\n");
             version.incrementAndGet();
+            Map<Path, PauseTransition> debounced = FxTestSupport.field(structure, "debounced");
+            PauseTransition[] wait = new PauseTransition[1];
             FxTestSupport.runOnFx(() -> {
                 structure.refresh(Set.of());
                 assertTrue(structure.isDebouncing(file), "an edit to a big buffer waits");
+                wait[0] = debounced.get(file);
             });
-            TimeUnit.MILLISECONDS.sleep(ProjectMapStructure.DEBOUNCE_MILLIS / 3);
-            FxTestSupport.runOnFx(() -> structure.refresh(Set.of())); // the next poll, same text: the wait runs on
+            FxTestSupport.runOnFx(() -> {
+                structure.refresh(Set.of()); // the next poll, same text: the wait runs on
+                assertSame(wait[0], debounced.get(file), "the same wait, not one begun again");
+                assertEquals(Animation.Status.RUNNING, wait[0].getStatus());
+            });
             assertFalse(labels(structure, file).contains("Added"), "not yet: the text may still change");
             waitFor(() -> labels(structure, file).contains("Added"), "then it is outlined");
             FxTestSupport.runOnFx(() -> assertFalse(structure.isDebouncing(file)));
@@ -374,14 +383,7 @@ class ProjectMapStructureReview3Test {
     }
 
     private static void waitFor(BooleanSupplier condition, String message) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return;
-            }
-            TimeUnit.MILLISECONDS.sleep(20);
-        }
-        throw new AssertionError("timed out: " + message);
+        PulseChecks.untilOnFx(condition, "timed out: " + message, Duration.ofSeconds(20));
     }
 
     private static Object boxFor(Region surface, Path path) {

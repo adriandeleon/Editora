@@ -51,13 +51,12 @@ class JUnitEditorDebugFxTest {
             return b;
         });
         // The load's scan for test methods runs off the FX thread; the menu offers Debug once it has landed.
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
-        while (FxTestSupport.callOnFx(
-                () -> ((java.util.Map<?, ?>) FxTestSupport.field(FxTestSupport.field(buffer, "runGutter"), "testLines"))
-                        .isEmpty())) {
-            assertTrue(System.nanoTime() < deadline, "the load's test scan never landed");
-            Thread.sleep(10);
-        }
+        FxTestSupport.awaitFxCondition(
+                () -> !((java.util.Map<?, ?>)
+                                FxTestSupport.field(FxTestSupport.field(buffer, "runGutter"), "testLines"))
+                        .isEmpty(),
+                "the load's test scan to land",
+                java.time.Duration.ofSeconds(20));
         FxTestSupport.runOnFx(() -> {
             CodeArea area = FxTestSupport.field(buffer, "area");
             area.moveTo(2, 8);

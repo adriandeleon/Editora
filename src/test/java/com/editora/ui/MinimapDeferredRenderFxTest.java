@@ -6,6 +6,7 @@ import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -79,13 +80,7 @@ class MinimapDeferredRenderFxTest {
 
     /** Polls for the cached snapshot to appear, for up to ~5 s. */
     private static WritableImage waitForCachedImage(EditorBuffer buffer) throws Exception {
-        for (int i = 0; i < 250; i++) {
-            WritableImage image = cachedImage(buffer);
-            if (image != null) {
-                return image;
-            }
-            Thread.sleep(20);
-        }
-        return null;
+        Await.holdsWithin(OnFx.checked(() -> cachedImage(buffer) != null), java.time.Duration.ofSeconds(5));
+        return cachedImage(buffer);
     }
 }

@@ -140,16 +140,23 @@ class LemminxMavenProbeTest {
             assertTrue(s.start());
             s.didOpen(uri, "xml", POM);
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(90);
-            while (!s.isInitialized() && System.nanoTime() < deadline) Thread.sleep(100);
+            com.editora.testkit.Await.holdsWithin(s::isInitialized, java.time.Duration.ofSeconds(90));
             assertTrue(s.isInitialized(), "handshake");
             // The Maven extension answers null until its own init (Plexus, the local-repo index) is done, which
             // lands after the handshake (review C18): poll, as the jdtls probe polls its inlay hints.
             long started = System.nanoTime();
-            Hover onArtifact = null;
-            while (onArtifact == null && System.nanoTime() < deadline) {
-                onArtifact = s.hover(uri, new Position(8, 20)).get(90, TimeUnit.SECONDS);
-                if (onArtifact == null) Thread.sleep(1_000);
-            }
+            Hover[] answered = new Hover[1];
+            com.editora.testkit.Await.holdsWithin(
+                    () -> {
+                        try {
+                            answered[0] = s.hover(uri, new Position(8, 20)).get(90, TimeUnit.SECONDS);
+                        } catch (Exception e) {
+                            throw new IllegalStateException(e);
+                        }
+                        return answered[0] != null;
+                    },
+                    java.time.Duration.ofNanos(Math.max(0, deadline - System.nanoTime())));
+            Hover onArtifact = answered[0];
             record("hover.artifactId.waitedMillis", (System.nanoTime() - started) / 1_000_000);
             record("hover.artifactId", onArtifact == null ? "null" : onArtifact.getContents());
             assertTrue(onArtifact != null && onArtifact.getContents() != null, "hover on the artifactId must answer");

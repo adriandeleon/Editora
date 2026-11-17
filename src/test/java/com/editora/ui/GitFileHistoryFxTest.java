@@ -159,18 +159,19 @@ class GitFileHistoryFxTest {
         /** The content of the selected tab once it is a {@code type}, or null. */
         Object awaitTab(Class<?> type) throws Exception {
             EditorArea area = FxTestSupport.field(controller, "editorArea");
-            for (int i = 0; i < 120; i++) {
-                Object data = FxTestSupport.callOnFx(() -> {
-                    Tab selected = area.selectedTab();
-                    return selected == null ? null : selected.getUserData();
-                });
-                if (type.isInstance(data)) {
-                    settle();
-                    return data;
-                }
-                Thread.sleep(50);
+            Object[] found = {null};
+            com.editora.testkit.Await.holdsWithin(
+                    FxTestSupport.fxCondition(() -> {
+                        Tab selected = area.selectedTab();
+                        Object data = selected == null ? null : selected.getUserData();
+                        found[0] = type.isInstance(data) ? data : null;
+                        return found[0] != null;
+                    }),
+                    java.time.Duration.ofSeconds(6));
+            if (found[0] != null) {
+                settle();
             }
-            return null;
+            return found[0];
         }
     }
 
@@ -411,14 +412,8 @@ class GitFileHistoryFxTest {
                 return null;
             });
             // The cells are made by a layout pass; under a loaded machine the first look can come before it.
-            ContextMenu found = rowMenu.call();
-            for (int i = 0; found == null && i < 50; i++) {
-                Thread.sleep(100);
-                FxTestSupport.drainFx();
-                found = rowMenu.call();
-            }
-            ContextMenu menu = found;
-            assertNotNull(menu, "the selected row has a cell");
+            ContextMenu menu = FxTestSupport.awaitValue(
+                    rowMenu, "the selected row to have a cell", java.time.Duration.ofSeconds(5));
             List<String> labels =
                     menu.getItems().stream().map(MenuItem::getText).toList();
             assertEquals(
@@ -556,9 +551,10 @@ class GitFileHistoryFxTest {
 
             window.onFx(() -> window.windows.gitFileHistoryForPath(repo.root));
             // A folder is told apart off the FX thread (PERF-01): the answer lands a moment later.
-            for (int i = 0; i < 300 && !tr("status.git.history.noFile").equals(window.echo()); i++) {
-                Thread.sleep(10);
-            }
+            com.editora.testkit.Await.holdsWithin(
+                    FxTestSupport.unchecked(
+                            () -> tr("status.git.history.noFile").equals(window.echo())),
+                    java.time.Duration.ofSeconds(3));
             assertEquals(tr("status.git.history.noFile"), window.echo(), "a folder");
 
             window.onFx(() -> window.run("file.new"));

@@ -6,7 +6,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
@@ -117,26 +116,16 @@ class HttpScriptTrustWindowFxTest {
     }
 
     private static void awaitIdle(HttpClientCoordinator http, EditorBuffer b) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
-        do {
-            assertTrue(System.nanoTime() < deadline, "the run never ended");
-            FxTestSupport.drainFx();
-            Thread.sleep(30);
-        } while (FxTestSupport.callOnFx(() -> http.isRunningForTest(b)));
+        FxTestSupport.drainFx();
+        FxTestSupport.awaitFxCondition(() -> http.idleForTest(b), "the run to end", java.time.Duration.ofSeconds(60));
         FxTestSupport.drainFx();
     }
 
     private static DialogPane awaitDialog() throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (true) {
-            assertTrue(System.nanoTime() < deadline, "the trust prompt never came up");
-            FxTestSupport.drainFx();
-            DialogPane pane = FxTestSupport.callOnFx(HttpScriptTrustWindowFxTest::showingDialog);
-            if (pane != null) {
-                return pane;
-            }
-            Thread.sleep(20);
-        }
+        return FxTestSupport.awaitFxValue(
+                HttpScriptTrustWindowFxTest::showingDialog,
+                "the trust prompt to come up",
+                java.time.Duration.ofSeconds(30));
     }
 
     private static DialogPane showingDialog() {

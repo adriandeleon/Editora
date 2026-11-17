@@ -175,9 +175,7 @@ class LspWireUriFxTest {
         manager.reloadProjectConfiguration(file);
         manager.pullDiagnostics(file);
         manager.notifyWatchedFiles(List.of(new LspManager.WatchedFile(other, LspManager.WatchedKind.CHANGED)));
-        for (int i = 0; i < 500 && pending.get() > 0; i++) {
-            Thread.sleep(20);
-        }
+        com.editora.testkit.Await.holdsWithin(() -> pending.get() <= 0, java.time.Duration.ofSeconds(10));
         assertEquals(0, pending.get(), "a request never answered");
         manager.closeDocument(file);
         drainFx();
@@ -272,9 +270,7 @@ class LspWireUriFxTest {
                 List.of(new org.eclipse.lsp4j.Diagnostic(new Range(new Position(0, 0), new Position(0, 1)), "oops")));
 
         session.get().publishDiagnostics(params);
-        for (int i = 0; i < 100 && diagnosed.isEmpty(); i++) {
-            Thread.sleep(20);
-        }
+        com.editora.testkit.Await.holdsWithin(() -> !diagnosed.isEmpty(), java.time.Duration.ofSeconds(10));
 
         assertEquals(List.of(file), diagnosed);
     }

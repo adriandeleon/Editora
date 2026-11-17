@@ -174,13 +174,7 @@ class JavaLooseLaunchFxTest {
     }
 
     private static void awaitTrue(java.util.function.BooleanSupplier condition, String what) throws Exception {
-        long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting until " + what);
-            }
-            Thread.sleep(20);
-        }
+        com.editora.testkit.Await.until(condition, "until " + what, java.time.Duration.ofSeconds(30));
     }
 
     /** The session's class folder holds the class file of {@code fqn}. */
@@ -404,20 +398,32 @@ class JavaLooseLaunchFxTest {
         Path tmp = Path.of(System.getProperty("java.io.tmpdir"));
         lsp.openDocument(second, folder, "java", Files.readString(second));
 
-        // The first launch compiles (no main class from jdtls: the compile path). The FX thread is then held
-        // until it has kept its folder, so the second launch starts before the first one reaches its adapter.
-        onFx(() -> dap.startLaunch(first, "java", noPicker, javaExec(), null));
-        awaitTrue(() -> names().contains("vscode.java.resolveMainClass"), "the first launch asked jdtls");
-        onFx(() -> {
-            long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
-            while (FxlessAccess.compilationDirectory(dap) == null && System.nanoTime() < end) {
-                Thread.onSpinWait();
+        // The first launch compiles (no main class from jdtls: the compile path). It is then held where it has kept
+        // its folder, so the second launch starts before the first one reaches its adapter.
+        CountDownLatch compiled = new CountDownLatch(1);
+        CountDownLatch secondStarted = new CountDownLatch(1);
+        dap.compiledForTest = () -> {
+            compiled.countDown();
+            try {
+                secondStarted.await(60, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
-            Path kept = FxlessAccess.compilationDirectory(dap);
-            assertTrue(kept != null && Files.isRegularFile(kept.resolve("FirstOne.class")), "first compiled");
-            firstDir[0] = kept;
-            dap.startLaunch(second, "java", noPicker, javaExec(), null);
-        });
+        };
+        try {
+            onFx(() -> dap.startLaunch(first, "java", noPicker, javaExec(), null));
+            awaitTrue(() -> names().contains("vscode.java.resolveMainClass"), "the first launch asked jdtls");
+            assertTrue(compiled.await(60, TimeUnit.SECONDS), "the first launch compiled");
+            onFx(() -> {
+                Path kept = FxlessAccess.compilationDirectory(dap);
+                assertTrue(kept != null && Files.isRegularFile(kept.resolve("FirstOne.class")), "first compiled");
+                firstDir[0] = kept;
+                dap.startLaunch(second, "java", noPicker, javaExec(), null);
+            });
+        } finally {
+            dap.compiledForTest = null;
+            secondStarted.countDown();
+        }
 
         assertEquals("SecondOne", launch().get("mainClass"));
         awaitTrue(() -> !Files.exists(firstDir[0]), "the first launch's classes are removed: " + firstDir[0]);

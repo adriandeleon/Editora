@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -9,6 +10,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.lsp.FakeLanguageServer;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.LspTestHooks;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -61,10 +63,7 @@ class XmlReloadRevalidatesFxTest {
         FxTestSupport.runOnFx(() -> coordinator.reloadedFromDisk(buffer));
 
         FakeLanguageServer fake = fakes.get(0);
-        long until = System.currentTimeMillis() + 5000;
-        while (fake.saved.isEmpty() && System.currentTimeMillis() < until) {
-            Thread.sleep(20);
-        }
+        Await.holdsWithin(() -> !fake.saved.isEmpty(), Duration.ofSeconds(5));
         assertEquals(1, fake.saved.size(), "the reloaded schema is saved");
         assertTrue(
                 fake.changed.stream()

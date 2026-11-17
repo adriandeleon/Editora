@@ -76,14 +76,16 @@ class MergeViewerPagingFxTest {
             });
             // The Result is put together off the FX thread (PERF-01): wait for the one for both choices.
             TextArea result = FxTestSupport.callOnFx(() -> FxTestSupport.field(pane, "resultArea"));
-            for (int i = 0;
-                    i < 500
-                            && !FxTestSupport.callOnFx(
+            com.editora.testkit.Await.until(
+                    () -> {
+                        try {
+                            return FxTestSupport.callOnFx(
                                     () -> result.getText().contains("theirs " + MergeViewerPane.PAGE_SIZE + "\n"));
-                    i++) {
-                Thread.sleep(10);
-                FxTestSupport.drainFx();
-            }
+                        } catch (Exception e) {
+                            throw new IllegalStateException(e);
+                        }
+                    },
+                    "the Result for both choices");
             FxTestSupport.runOnFx(() -> {
                 assertTrue(result.getText().startsWith("same 0\nours 0\nsame 1\n<<<<<<< HEAD"), "the result: ours");
                 assertTrue(

@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
@@ -156,14 +157,9 @@ class DebugExpressionFieldFxTest {
             field.setLanguageFile("Main.java");
             field.setText("return new int[] {1};");
         });
-        long deadline = System.nanoTime() + 10_000_000_000L;
-        boolean styled = false;
-        while (!styled && System.nanoTime() < deadline) {
-            Thread.sleep(50);
-            styled = FxTestSupport.callOnFx(() -> {
-                return field.area().getStyleOfChar(1).contains("keyword");
-            });
-        }
-        assertTrue(styled, "`return` styled as a keyword once the grammar has loaded");
+        EventuallyFx.untilOnFx(
+                "`return` styled as a keyword once the grammar has loaded",
+                Duration.ofSeconds(10),
+                () -> field.area().getStyleOfChar(1).contains("keyword"));
     }
 }

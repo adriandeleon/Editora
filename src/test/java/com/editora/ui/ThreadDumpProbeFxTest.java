@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 
@@ -12,6 +13,7 @@ import com.editora.dap.DapModels;
 import com.editora.dap.DebugAdapterLocator;
 import com.editora.dap.DebugLanguages;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -79,9 +81,9 @@ class ThreadDumpProbeFxTest {
                             t.setDaemon(true);
                             t.start();
                         }
-                        Thread.sleep(300);
+                        synchronized (gate) { gate.wait(300); }
                         int x = 1;
-                        for (int i = 0; i < 1200; i++) Thread.sleep(50);
+                        for (int i = 0; i < 1200; i++) synchronized (gate) { gate.wait(50); }
                         gate.countDown();
                     }
                 }
@@ -184,7 +186,7 @@ class ThreadDumpProbeFxTest {
             FxTestSupport.runOnFx(() -> b.toggleBreakpoint(line));
             FxTestSupport.runOnFx(dap::resume);
             await("running", 30, () -> call(dap::state) == DapManager.State.RUNNING);
-            Thread.sleep(300);
+            roundTrip(dap); // the resume went through
             run(c, "debug.threadDump");
             ThreadDump running = awaitDump(debug, atStop);
             String runningText = call(() -> running.text(true));
@@ -197,13 +199,24 @@ class ThreadDumpProbeFxTest {
                             .anyMatch(g -> g.threads().containsAll(pool))),
                     "the workers merged: " + runningText);
             await("running again", 30, () -> call(dap::state) == DapManager.State.RUNNING);
-            Thread.sleep(500);
+            roundTrip(dap); // a stop the dump's pause left behind would have been told before this answer
             assertEquals(DapManager.State.RUNNING, call(dap::state), "it stays running");
             FxTestSupport.runOnFx(dap::stop);
             await("stopped", 30, () -> !call(dap::isActive));
         } finally {
             fx.dispose();
         }
+    }
+
+    /**
+     * A round trip to the adapter: the answer to a threads request comes after every event it sent before it, so
+     * once it is back (and the FX thread has run what those queued) the adapter's earlier news has landed.
+     */
+    private static void roundTrip(DapManager dap) throws Exception {
+        java.util.concurrent.CountDownLatch answered = new java.util.concurrent.CountDownLatch(1);
+        FxTestSupport.runOnFx(() -> dap.threads(threads -> answered.countDown()));
+        assertTrue(answered.await(30, java.util.concurrent.TimeUnit.SECONDS), "the adapter answered a threads request");
+        FxTestSupport.drainFx();
     }
 
     private static List<DapModels.ThreadStack> workers(ThreadDump dump, String worker) {
@@ -256,12 +269,6 @@ class ThreadDumpProbeFxTest {
     }
 
     private static void await(String what, int seconds, BooleanSupplier condition) throws InterruptedException {
-        long end = System.nanoTime() + seconds * 1_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(50);
-        }
+        Await.until(condition, what, Duration.ofSeconds(seconds));
     }
 }

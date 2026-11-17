@@ -297,11 +297,7 @@ class LoginPromptFxTest {
     void timeSpentAnsweringDoesNotCountAgainstTheLoginDeadline() throws Exception {
         startTwoFactorServer();
         Recorder login = new Recorder(c -> {
-            try {
-                Thread.sleep(2500); // reading the code off a phone
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+            PromptClock.passForTest(Duration.ofMillis(2500)); // reading the code off a phone
             return answers("secret", "123456");
         });
 

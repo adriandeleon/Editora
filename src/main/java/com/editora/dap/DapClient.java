@@ -157,6 +157,10 @@ public final class DapClient implements IDebugProtocolClient {
     private final @Nullable DapClient root;
     /** Root only: the live child sessions, in the order the adapter asked for them. */
     private final List<DapClient> children = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** TEST SEAM — {@code setBreakpoints} requests this session sent that the adapter has not answered yet. */
+    private final java.util.concurrent.atomic.AtomicInteger unansweredBreakpoints =
+            new java.util.concurrent.atomic.AtomicInteger();
     /** Root only: the child inspection/control requests are addressed to — the one that last stopped. */
     private volatile @Nullable DapClient focus;
     /** The port and adapter id of a socket transport, so a child can join the same adapter. */
@@ -1587,9 +1591,25 @@ public final class DapClient implements IDebugProtocolClient {
         a.setBreakpoints(sourceBreakpoints(fb.breakpoints()));
         a.setSourceModified(false);
         List<DapModels.LineBreakpoint> sent = List.copyOf(fb.breakpoints());
+        unansweredBreakpoints.incrementAndGet();
         return timed(server.setBreakpoints(a))
-                .whenComplete((r, e) -> reportBreakpoints(fb.file(), sent, r, e))
+                .whenComplete((r, e) -> {
+                    unansweredBreakpoints.decrementAndGet();
+                    reportBreakpoints(fb.file(), sent, r, e);
+                })
                 .thenApply(r -> null);
+    }
+
+    /**
+     * TEST SEAM — {@code setBreakpoints} requests not answered yet, in this session and its child sessions: what a
+     * test waits on before resuming, so the program runs with the breakpoints it was just given (QUAL-07).
+     */
+    public int unansweredBreakpointsForTest() {
+        int n = unansweredBreakpoints.get();
+        for (DapClient child : children) {
+            n += child.unansweredBreakpointsForTest();
+        }
+        return n;
     }
 
     /**

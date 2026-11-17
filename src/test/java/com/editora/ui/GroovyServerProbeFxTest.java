@@ -4,15 +4,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 import com.editora.text.LspDiagnostic;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * MANUAL PROBE (not part of the suite): the real Groovy server (gvy's {@code gls} jar) in a real window, started
@@ -45,20 +42,16 @@ class GroovyServerProbeFxTest {
             FxTestSupport.runOnFx(() -> c.openAndNavigate(script, 1));
             LspCoordinator lsp = FxTestSupport.field(c, "lspCoordinator");
             FxTestSupport.runOnFx(() -> FxTestSupport.call(lsp, "applySupport", new Class<?>[] {}));
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(90);
-            while (true) {
-                FxTestSupport.drainFx();
-                Map<Path, List<LspDiagnostic>> problems =
-                        FxTestSupport.callOnFx(() -> FxTestSupport.field(lsp, "problems"));
-                List<LspDiagnostic> here =
-                        problems.values().stream().flatMap(List::stream).toList();
-                if (!here.isEmpty()) {
-                    System.out.println("gls problems: " + here);
-                    return;
-                }
-                assertTrue(System.nanoTime() < deadline, "no diagnostics from gls");
-                Thread.sleep(200);
-            }
+            List<LspDiagnostic> here = FxTestSupport.awaitFxValue(
+                    () -> {
+                        Map<Path, List<LspDiagnostic>> problems = FxTestSupport.field(lsp, "problems");
+                        List<LspDiagnostic> all =
+                                problems.values().stream().flatMap(List::stream).toList();
+                        return all.isEmpty() ? null : all;
+                    },
+                    "diagnostics from gls",
+                    java.time.Duration.ofSeconds(90));
+            System.out.println("gls problems: " + here);
         }
     }
 }

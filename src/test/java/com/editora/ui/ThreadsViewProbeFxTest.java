@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 
@@ -11,12 +12,13 @@ import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
 import com.editora.dap.DebugAdapterLocator;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -36,7 +38,7 @@ class ThreadsViewProbeFxTest {
                     Thread worker = new Thread(() -> {
                         for (int n = 0; n < 5000; n++) {
                             System.out.println("tick " + n);
-                            try { Thread.sleep(20); } catch (InterruptedException e) { return; }
+                            try { Object o = new Object(); synchronized (o) { o.wait(20); } } catch (InterruptedException e) { return; }
                         }
                     }, "worker");
                     worker.setDaemon(true);
@@ -44,7 +46,7 @@ class ThreadsViewProbeFxTest {
                     int total = 0;
                     for (int i = 0; i < 1000; i++) {
                         total += i;
-                        Thread.sleep(50);
+                        synchronized (Main.class) { Main.class.wait(50); }
                     }
                     System.out.println("done " + total);
                 }
@@ -112,10 +114,13 @@ class ThreadsViewProbeFxTest {
                 DapModels.ThreadStatus main = row(debug, "main");
                 return worker != null && worker.paused() && worker.shown() && main != null && main.paused();
             });
-            Thread.sleep(500); // output already on its way
+            roundTrip(dap); // output already on its way: the adapter sent it before this answer
             int atPause = ticks(debug);
-            Thread.sleep(1000);
-            assertEquals(atPause, ticks(debug), "the worker prints nothing while suspended");
+            // No event says a suspended thread did not run: watch the console for a second (about fifty ticks of
+            // a running worker), re-reading it on every pulse, for a tick that should not come.
+            assertFalse(
+                    Await.holdsWithin(() -> ticks(debug) != atPause, Duration.ofSeconds(1)),
+                    "the worker prints nothing while suspended");
 
             // Resume Thread on the worker: it runs again, and main's stop is back on screen.
             FxTestSupport.runOnFx(() -> dap.resumeThread(workerId));
@@ -160,13 +165,7 @@ class ThreadsViewProbeFxTest {
     }
 
     private static void await(String what, int seconds, BooleanSupplier condition) throws InterruptedException {
-        long end = System.nanoTime() + seconds * 1_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(50);
-        }
+        Await.until(condition, what, Duration.ofSeconds(seconds));
     }
 
     private static void awaitStop(DapManager dap, int line, DebugCoordinator debug) throws InterruptedException {
@@ -176,6 +175,17 @@ class ThreadsViewProbeFxTest {
                 () -> call(() -> dap.state() == DapManager.State.SUSPENDED
                         && !debug.panel().callStack().isEmpty()
                         && debug.panel().callStack().get(0).line() == line));
+    }
+
+    /**
+     * A round trip to the adapter: the answer to a threads request comes after every event it sent before it, so
+     * once it is back (and the FX thread has run what those queued) the adapter's earlier news has landed.
+     */
+    private static void roundTrip(DapManager dap) throws Exception {
+        java.util.concurrent.CountDownLatch answered = new java.util.concurrent.CountDownLatch(1);
+        FxTestSupport.runOnFx(() -> dap.threads(threads -> answered.countDown()));
+        assertTrue(answered.await(30, java.util.concurrent.TimeUnit.SECONDS), "the adapter answered a threads request");
+        FxTestSupport.drainFx();
     }
 
     private static int ticks(DebugCoordinator debug) {

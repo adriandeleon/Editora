@@ -242,12 +242,8 @@ class RemoteFileSystemsHostKeyFxTest {
         java.time.Duration authTimeout = java.time.Duration.ofMillis(2500);
         fs = new RemoteFileSystems(
                 (host, port, keyType, fingerprint) -> {
-                    try {
-                        // The human is reading the fingerprint: longer than the whole auth timeout.
-                        Thread.sleep(authTimeout.toMillis() + 1000);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    }
+                    // The human is reading the fingerprint: longer than the whole auth timeout.
+                    PromptClock.passForTest(authTimeout.plusMillis(1000));
                     return true;
                 },
                 dir.resolve("known_hosts"),

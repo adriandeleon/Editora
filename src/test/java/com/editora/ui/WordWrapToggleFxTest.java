@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.function.BooleanSupplier;
 
 import javafx.geometry.Orientation;
@@ -11,6 +12,7 @@ import javafx.scene.control.ScrollBar;
 
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -92,13 +94,15 @@ class WordWrapToggleFxTest {
     }
 
     private static boolean waitUntil(BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + 10_000_000_000L;
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return true;
-            }
-            Thread.sleep(50);
+        return Await.holdsWithin(() -> onFx(condition::getAsBoolean), Duration.ofSeconds(10));
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
-        return false;
     }
 }

@@ -221,9 +221,8 @@ class FoldingGapsFxTest {
                 }
                 return (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {});
             });
-            for (int i = 0; i < 300 && !SRC.equals(FxTestSupport.callOnFx(b::getContent)); i++) {
-                Thread.sleep(20);
-            }
+            com.editora.testkit.Await.holdsWithin(
+                    FxTestSupport.fxCondition(() -> SRC.equals(b.getContent())), java.time.Duration.ofSeconds(6));
             assertEquals(SRC, FxTestSupport.callOnFx(b::getContent), "the async open should complete before selection");
             FxTestSupport.runOnFx(() -> area(b).selectRange(9, 0, 11, 10));
             run("view.createFoldFromSelection");

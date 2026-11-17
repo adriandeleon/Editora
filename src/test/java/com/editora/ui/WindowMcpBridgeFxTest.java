@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -15,6 +16,7 @@ import com.editora.config.ConfigManager;
 import com.editora.config.Project;
 import com.editora.editor.EditorBuffer;
 import com.editora.mcp.McpBridge;
+import com.editora.testkit.Await;
 import com.editora.text.LspDiagnostic;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -468,11 +470,10 @@ class WindowMcpBridgeFxTest {
             // Looked at off the FX thread as the file was read (writable then); asked again behind once that look
             // is old, or when admin save is turned on (PERF-01): wait for the FX thread's answer to follow the disk.
             FxTestSupport.runOnFx(window.workflows::pushAdminEditAvailable);
-            long until = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(15);
-            while (!FxTestSupport.callOnFx(() -> window.workflows.adminSaveApplicable(file))) {
-                assertTrue(System.nanoTime() < until, "precondition");
-                Thread.sleep(20);
-            }
+            Await.until(
+                    () -> onFx(() -> window.workflows.adminSaveApplicable(file)),
+                    "precondition",
+                    Duration.ofSeconds(15));
 
             String refused = window.mcp.saveBuffer(file.toString());
 
@@ -776,5 +777,14 @@ class WindowMcpBridgeFxTest {
             throw new AssertionError("git " + String.join(" ", args) + " failed: " + err + out);
         }
         return out;
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

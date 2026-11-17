@@ -16,6 +16,7 @@ import com.editora.dap.DapModels;
 import com.editora.dap.DebugLanguages;
 import com.editora.dap.NativeBuild;
 import com.editora.process.ProcessRunner;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -236,12 +237,6 @@ class DisassemblyMemoryProbeFxTest {
     }
 
     private static void await(String what, BooleanSupplier condition) throws InterruptedException {
-        long end = System.nanoTime() + 180_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(50);
-        }
+        Await.until(condition, what, Duration.ofSeconds(180));
     }
 }

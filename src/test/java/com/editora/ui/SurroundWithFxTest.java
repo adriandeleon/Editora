@@ -2,11 +2,13 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 
 import javafx.scene.control.Label;
 
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -30,13 +32,12 @@ class SurroundWithFxTest {
         try (FxWindowFixture fx = FxWindowFixture.create()) {
             MainController c = fx.controller;
             FxTestSupport.runOnFx(() -> c.openAndNavigate(file, 2));
-            EditorBuffer b = null;
-            for (int i = 0; i < 500 && (b == null || b.isLoading() || !file.equals(b.getPath())); i++) {
-                Thread.sleep(10);
-                FxTestSupport.drainFx();
-                b = FxTestSupport.callOnFx(c::activeBuffer);
-            }
-            EditorBuffer buffer = b;
+            EditorBuffer[] b = new EditorBuffer[1];
+            Await.holdsWithin(
+                    () -> onFx(() ->
+                            (b[0] = c.activeBuffer()) != null && !b[0].isLoading() && file.equals(b[0].getPath())),
+                    Duration.ofSeconds(5));
+            EditorBuffer buffer = b[0];
             String text = FxTestSupport.callOnFx(buffer::getContent);
             int aStart = text.indexOf("int a");
             int bStart = text.indexOf("int b");
@@ -67,6 +68,15 @@ class SurroundWithFxTest {
             assertEquals(
                     tr("nav.snippets.title"), FxTestSupport.callOnFx(title::getText), "Insert Snippet keeps its own");
             FxTestSupport.runOnFx(palette::hide);
+        }
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

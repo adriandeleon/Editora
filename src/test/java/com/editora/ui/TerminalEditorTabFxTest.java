@@ -1,6 +1,7 @@
 package com.editora.ui;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -25,6 +26,7 @@ import com.editora.command.KeyDispatcher;
 import com.editora.i18n.Messages;
 import com.editora.terminal.FakeConnector;
 import com.editora.terminal.TerminalView;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -262,8 +264,12 @@ class TerminalEditorTabFxTest {
         assertFalse(fx(() -> tab.getStyleClass().contains(TerminalPanel.BELL)), "and so is the terminal's own tab");
 
         // A bell while it is in view marks nothing.
-        shells.getFirst().emit("\u0007");
-        Thread.sleep(200);
+        // Bracketed paste switched on after it is a mark the emulator passes after the bell: once it shows, the
+        // bell's FX turn is queued, and the drain runs it.
+        TerminalView view = fx(panel::viewsForTest).getFirst();
+        shells.getFirst().emit("\u0007\u001b[?2004h");
+        await(() -> call(() -> view.getDisplay().isBracketedPaste()), "the bell, and the mark after it, read");
+        FxTestSupport.drainFx();
         assertFalse(fx(() -> terminalTab.getStyleClass().contains(TerminalPanel.BELL)));
     }
 
@@ -485,11 +491,6 @@ class TerminalEditorTabFxTest {
     }
 
     private static void await(BooleanSupplier condition, String what) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (System.nanoTime() < deadline) {
-            if (condition.getAsBoolean()) return;
-            Thread.sleep(20);
-        }
-        throw new AssertionError("timed out waiting for " + what);
+        Await.until(condition, what, Duration.ofSeconds(10));
     }
 }

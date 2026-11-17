@@ -57,6 +57,12 @@ public final class AiClient {
                 return t;
             });
 
+    /**
+     * TEST SEAM — run after each idle check of a stream the watchdog let go on: a test paces a slow stream by the
+     * checks themselves instead of by the clock (QUAL-07, Pauta 6.0.1). Null in the app.
+     */
+    static volatile @Nullable Runnable idleCheckedForTest;
+
     private final ObjectMapper mapper = new ObjectMapper();
     /** Built by the first request, not with the client: see {@link com.editora.io.LazyHttpClient}. */
     private final com.editora.io.LazyHttpClient http = new com.editora.io.LazyHttpClient(
@@ -148,6 +154,11 @@ public final class AiClient {
                                 body.close(); // unblocks the reader's blocked readLine()
                             } catch (IOException ignored) {
                                 // best effort — the read still errors out
+                            }
+                        } else {
+                            Runnable checked = idleCheckedForTest;
+                            if (checked != null) {
+                                checked.run();
                             }
                         }
                     },

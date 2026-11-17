@@ -1,6 +1,7 @@
 package com.editora.ui;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 
 import javafx.scene.Scene;
@@ -277,12 +278,8 @@ class RowCommandsWindowFxTest {
         Path right = java.nio.file.Files.writeString(dir.resolve("right.txt"), "same\nnew\n");
         fx = FxWindowFixture.createDiff(dir.resolve("config"), left, right, c -> {});
         // The diff is computed off the FX thread: wait for its tab to be the selected one.
-        for (int i = 0; i < 500; i++) {
-            if (FxTestSupport.callOnFx(() -> new DiffOpsHost(fx.controller).activeDiffPane() != null)) {
-                break;
-            }
-            Thread.sleep(20);
-        }
+        PulseChecks.holdsOnFxWithin(
+                () -> new DiffOpsHost(fx.controller).activeDiffPane() != null, Duration.ofSeconds(10));
         FxTestSupport.runOnFx(() -> {
             assertTrue(new DiffOpsHost(fx.controller).activeDiffPane() != null, "the diff is open");
             for (String id : List.of("diff.stageLine", "diff.revertLine", "diff.openLineInEditor")) {

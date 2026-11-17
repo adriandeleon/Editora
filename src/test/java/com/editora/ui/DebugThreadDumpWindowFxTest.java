@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 
@@ -17,6 +18,7 @@ import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
 import com.editora.dap.FakeDebugAdapter;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -107,13 +109,7 @@ class DebugThreadDumpWindowFxTest {
     }
 
     private static void await(String what, BooleanSupplier condition) throws InterruptedException {
-        long end = System.nanoTime() + 20_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(25);
-        }
+        Await.until(condition, what, Duration.ofSeconds(20));
     }
 
     private void run(String command) throws Exception {
@@ -276,8 +272,9 @@ class DebugThreadDumpWindowFxTest {
     @Test
     void withoutASessionItSaysSo() throws Exception {
         run("debug.threadDump");
-        // ifDebug may refuse first (debugging off); with it on, the coordinator answers.
-        Thread.sleep(200);
+        // ifDebug may refuse first (debugging off); with it on, the coordinator answers — in the command's own FX
+        // turn, so what it did shows once what that turn queued has run.
+        FxTestSupport.drainFx();
         DebugThreadDumpWindow w = call(debug::threadDumpWindowIfOpen);
         assertTrue(w == null || !call(w::isShowing), "no window without a session");
     }

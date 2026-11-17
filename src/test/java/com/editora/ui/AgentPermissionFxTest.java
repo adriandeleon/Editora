@@ -19,6 +19,7 @@ import javafx.stage.Window;
 import com.editora.agent.AcpJson;
 import com.editora.config.AgentSessionHistory;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -108,26 +109,21 @@ class AgentPermissionFxTest {
     }
 
     private static DialogPane awaitDialog() throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (System.nanoTime() < deadline) {
-            DialogPane pane = FxTestSupport.callOnFx(() -> {
-                for (Window w : Window.getWindows()) {
-                    if (w.isShowing()
-                            && w.getScene() != null
-                            && w.getScene().getRoot() instanceof DialogPane dp
-                            && w.getScene().getFocusOwner() instanceof Button) {
-                        return dp;
+        DialogPane pane = Await.value(
+                () -> onFx(() -> {
+                    for (Window w : Window.getWindows()) {
+                        if (w.isShowing()
+                                && w.getScene() != null
+                                && w.getScene().getRoot() instanceof DialogPane dp
+                                && w.getScene().getFocusOwner() instanceof Button) {
+                            return dp;
+                        }
                     }
-                }
-                return null;
-            });
-            if (pane != null) {
-                FxTestSupport.drainFx(); // the focus request made as the dialog was shown has been applied
-                return pane;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("the permission dialog did not appear");
+                    return null;
+                }),
+                "the permission dialog did not appear");
+        FxTestSupport.drainFx(); // the focus request made as the dialog was shown has been applied
+        return pane;
     }
 
     private static String focusedButton(DialogPane pane) throws Exception {
@@ -201,6 +197,15 @@ class AgentPermissionFxTest {
         @Override
         public ObservableList<AgentSessionHistory.Entry> sessionHistory() {
             return FXCollections.observableArrayList();
+        }
+    }
+
+    /** {@code task}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> task) {
+        try {
+            return FxTestSupport.callOnFx(task);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

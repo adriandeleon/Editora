@@ -1103,10 +1103,8 @@ class LspCoordinatorCodeActionsFxTest {
         fx.run(() -> fx.lastPrompt().onAccept().accept("public String hello(int n)"));
 
         // B.java has no tab: its text is read off the FX thread before the edit is planned and previewed.
-        for (int i = 0; i < 100 && !FxTestSupport.callOnFx(fx.host.overlay::isShowing); i++) {
-            Thread.sleep(20);
-            fx.settle();
-        }
+        OnFx.holdsWithin(fx.host.overlay::isShowing, java.time.Duration.ofSeconds(10));
+        fx.settle();
         assertEquals(SOURCE, content(), "nothing is applied before the preview is answered");
         List<String> rows = tickedLabels();
         assertEquals(2, rows.size(), "both files are listed: " + rows);

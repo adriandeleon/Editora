@@ -160,10 +160,12 @@ class StatusBarCaretAndSizeFxTest {
         before.run();
         FxTestSupport.drainFx();
         assertEquals(StatusBar.formatSize(6), FxTestSupport.callOnFx(size::getText), "a stale count is dropped");
-        Thread.sleep(400); // past the edits' own 200 ms size pulse, whose counts are not what this checks
-        held.clear();
 
         FxTestSupport.runOnFx(() -> {
+            // The edits' own 200 ms size pulse is not what this checks: a count it handed over already is
+            // dropped here, and attaching another buffer ends its subscription, in the same FX turn, so none
+            // comes after.
+            held.clear();
             active[0] = a;
             sb.attach(a);
             assertEquals(1, held.size(), "a large one is handed to the counter");

@@ -79,10 +79,8 @@ class LibrarySourcesFxTest {
         attachedPath[0] = sources.toString(); // jdtls's download finished
         fx.server().rawResponse = "package p;\n\n/** The real thing. */\npublic class C {\n    int real;\n}\n";
         LspTestHooks.sourceInvalidated(fx.manager, a.getPath(), JAR);
-        for (int i = 0; i < 100 && FxTestSupport.callOnFx(library::fileNoticeText) != null; i++) {
-            Thread.sleep(10);
-            fx.settle();
-        }
+        OnFx.until(() -> library.fileNoticeText() == null, "the sources to be read again");
+        fx.settle();
         assertEquals(
                 fx.server().rawResponse,
                 FxTestSupport.callOnFx(() -> library.getArea().getText()));

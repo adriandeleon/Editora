@@ -286,27 +286,24 @@ class HtmlPreviewCoordinatorFxTest {
                 c.wireBuffer(sheet);
                 c.open();
             });
-            String url = null;
-            for (int i = 0; i < 100 && url == null; i++) {
-                Thread.sleep(50);
-                String st = FxTestSupport.callOnFx(() -> host.lastStatus);
-                if (st != null && st.startsWith("HTML preview at ")) {
-                    url = st.substring("HTML preview at ".length());
-                }
-            }
-            assertTrue(url != null, "served: " + host.lastStatus);
+            String url = FxTestSupport.awaitFxValue(
+                    () -> {
+                        String st = host.lastStatus;
+                        return st != null && st.startsWith("HTML preview at ")
+                                ? st.substring("HTML preview at ".length())
+                                : null;
+                    },
+                    "the site to be served",
+                    java.time.Duration.ofSeconds(5));
             FxTestSupport.runOnFx(() -> sheet.getArea().replaceText("body{color:red}")); // typed, not saved
             java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
             String poll = url.replace("/index.html", "/__editora_livereload?v=1");
-            String answer = "";
-            for (int i = 0; i < 60 && !answer.endsWith("css"); i++) {
-                Thread.sleep(50); // the settled-edit pulse fires 250 ms after the last keystroke
-                answer = client.send(
-                                java.net.http.HttpRequest.newBuilder(java.net.URI.create(poll))
-                                        .build(),
-                                java.net.http.HttpResponse.BodyHandlers.ofString())
-                        .body();
-            }
+            FxTestSupport.awaitSettled(sheet); // the settled-edit pulse fires 250 ms after the last keystroke
+            String answer = client.send(
+                            java.net.http.HttpRequest.newBuilder(java.net.URI.create(poll))
+                                    .build(),
+                            java.net.http.HttpResponse.BodyHandlers.ofString())
+                    .body();
             assertEquals("2 css", answer, "the open page swaps its stylesheet");
             String served = client.send(
                             java.net.http.HttpRequest.newBuilder(
@@ -360,15 +357,16 @@ class HtmlPreviewCoordinatorFxTest {
     /** Opens the host's active buffer through {@code htmlPreview.open} and returns the served URL. */
     private static String openAndWait(HtmlPreviewCoordinator c, FakeHost host) throws Exception {
         FxTestSupport.runOnFx(c::open);
-        for (int i = 0; i < 200; i++) {
-            Thread.sleep(50);
-            String st = FxTestSupport.callOnFx(() -> host.lastStatus);
-            int at = st == null ? -1 : st.indexOf("http://127.0.0.1:");
-            if (at >= 0 && !st.startsWith("Opening")) {
-                return st.substring(at).split(" ")[0];
-            }
-        }
-        throw new AssertionError("not served: " + host.lastStatus);
+        return FxTestSupport.awaitFxValue(
+                () -> {
+                    String st = host.lastStatus;
+                    int at = st == null ? -1 : st.indexOf("http://127.0.0.1:");
+                    return at >= 0 && !st.startsWith("Opening")
+                            ? st.substring(at).split(" ")[0]
+                            : null;
+                },
+                "the site to be served",
+                java.time.Duration.ofSeconds(10));
     }
 
     private static java.net.http.HttpResponse<String> fetch(String url) throws Exception {
@@ -411,7 +409,7 @@ class HtmlPreviewCoordinatorFxTest {
                 c.onBufferEdited(sb);
                 c.onBufferSaved(sb);
             });
-            Thread.sleep(600); // past the settled-edit pulse
+            FxTestSupport.awaitSettled(sb); // past the settled-edit pulse
             String served = fetch(url.replace("index.html", "diary.txt")).body();
             assertEquals("ciphertext", served, "the decrypted text is not served");
 
@@ -454,19 +452,18 @@ class HtmlPreviewCoordinatorFxTest {
                 c.onBufferEdited(opened); // the settled pulse after a load
                 c.onBufferEdited(large);
             });
-            Thread.sleep(600); // and any real pulse
+            FxTestSupport.awaitSettled(opened); // and any real pulse
+            FxTestSupport.awaitSettled(large);
             assertEquals(204, fetch(poll).statusCode(), "opened, not edited: nothing to reload");
 
             FxTestSupport.runOnFx(() -> large.getArea().replaceText("typed in a large file"));
-            Thread.sleep(600);
+            FxTestSupport.awaitSettled(large);
             FxTestSupport.runOnFx(() -> c.onBufferEdited(large));
             assertEquals("on disk", fetch(url.replace("index.html", "big.log")).body(), "served from disk");
             assertEquals(204, fetch(poll).statusCode(), "and nothing was snapshotted to reload for");
 
             FxTestSupport.runOnFx(() -> opened.getArea().replaceText("<p>about us</p>"));
-            for (int i = 0; i < 60 && fetch(poll).statusCode() == 204; i++) {
-                Thread.sleep(50); // the settled-edit pulse fires 250 ms after the keystroke
-            }
+            FxTestSupport.awaitSettled(opened); // the settled-edit pulse fires 250 ms after the keystroke
             assertEquals("2", fetch(poll).body(), "one edit, one reload");
             assertTrue(fetch(url.replace("index.html", "about.html")).body().startsWith("<p>about us</p>"));
         } finally {

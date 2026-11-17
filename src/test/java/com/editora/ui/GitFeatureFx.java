@@ -14,8 +14,6 @@ import javafx.scene.input.KeyEvent;
 
 import com.editora.editor.EditorBuffer;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-
 /** Shared plumbing of the stash / blame / patch feature tests: a window with Git on, in a real repository. */
 final class GitFeatureFx {
 
@@ -117,11 +115,24 @@ final class GitFeatureFx {
     }
 
     static void await(String what, Callable<Boolean> condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (!FxTestSupport.callOnFx(condition)) {
-            assertFalse(System.nanoTime() > deadline, "timed out waiting for " + what);
-            Thread.sleep(25);
+        FxTestSupport.awaitFxCondition(condition, what, java.time.Duration.ofSeconds(20));
+    }
+
+    /**
+     * Waits until every {@code gh} call already started or queued has finished and been answered: each of the
+     * service's single-thread lanes runs a no-op behind what it holds, then the FX queue drains, three times over
+     * (an answer may start the next call). After it, a count of {@code gh} calls only grows by something new.
+     */
+    static void settleGitHub(GitHubCoordinator github) throws Exception {
+        com.editora.github.GitHubService service = github.service();
+        for (int round = 0; round < 3; round++) {
+            FxTestSupport.drainFx();
+            for (String lane : new String[] {"exec", "reads", "probes", "lookups"}) {
+                java.util.concurrent.ThreadPoolExecutor executor = FxTestSupport.field(service, lane);
+                executor.submit(() -> {}).get(20, TimeUnit.SECONDS);
+            }
         }
+        FxTestSupport.drainFx();
     }
 
     /** Presses {@code code} in {@code target}, as the keyboard would. Call on the FX thread. */

@@ -55,11 +55,9 @@ class GitHistorySearchCancelFxTest {
             AtomicReference<GitLog.Page> answered = new AtomicReference<>();
             GitLog.Request search = new GitLog.Request(false, null, GitLogQuery.parse("content:needle"), 0, 50);
             service.logPage(dir, search, answered::set);
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-            while (!Files.exists(started)) {
-                assertTrue(System.nanoTime() < deadline, "the search never started");
-                Thread.sleep(20);
-            }
+            // the fake git is another process: the file it writes is all there is to hear
+            com.editora.testkit.Await.until(
+                    () -> Files.exists(started), "the search to start", java.time.Duration.ofSeconds(20));
 
             long before = System.nanoTime();
             assertTrue(service.cancelHistoryRead(), "the running search is stopped");

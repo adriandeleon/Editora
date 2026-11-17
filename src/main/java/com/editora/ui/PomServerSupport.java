@@ -263,7 +263,7 @@ final class PomServerSupport {
         lastCheck.put(root, now);
         long started = maven.startedMillis(file);
         Map<Path, Long> lastRestart = restartedFor.get(root);
-        Thread.ofVirtual().name("pom-wellformed").start(() -> {
+        com.editora.perf.OffFx.start("pom-wellformed", () -> {
             MalformedPoms.Scan scan = failed ? MalformedPoms.scan(root) : null;
             List<Path> back = out.stream()
                     .filter(p -> java.nio.file.Files.isRegularFile(p) && MalformedPoms.check(p, null) == null)
@@ -384,7 +384,7 @@ final class PomServerSupport {
         offByRoot.forEach((root, pom) -> {
             long started = maven.startedMillis(pom);
             Map<Path, Long> lastRestart = restartedFor.get(root);
-            Thread.ofVirtual().name("pom-wellformed").start(() -> {
+            com.editora.perf.OffFx.start("pom-wellformed", () -> {
                 MalformedPoms.Scan scan = MalformedPoms.scan(root);
                 if (scan.malformed().isEmpty() && restartable(scan, started, lastRestart)) {
                     Platform.runLater(() -> {
@@ -396,17 +396,15 @@ final class PomServerSupport {
                 }
             });
         });
-        leftOutByRoot.forEach((root, pom) -> Thread.ofVirtual()
-                .name("pom-wellformed")
-                .start(() -> {
-                    if (java.nio.file.Files.isRegularFile(pom) && MalformedPoms.check(pom, null) == null) {
-                        Platform.runLater(() -> {
-                            if (holds(maven.leftOut(pom), pom)) { // not restarted meanwhile
-                                restart(root, tr("status.maven.pomBack", displayPath(root, pom)));
-                            }
-                        });
+        leftOutByRoot.forEach((root, pom) -> com.editora.perf.OffFx.start("pom-wellformed", () -> {
+            if (java.nio.file.Files.isRegularFile(pom) && MalformedPoms.check(pom, null) == null) {
+                Platform.runLater(() -> {
+                    if (holds(maven.leftOut(pom), pom)) { // not restarted meanwhile
+                        restart(root, tr("status.maven.pomBack", displayPath(root, pom)));
                     }
-                }));
+                });
+            }
+        }));
     }
 
     /**

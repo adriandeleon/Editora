@@ -6,8 +6,6 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 
-import javafx.scene.control.Tab;
-
 import com.editora.editor.EditorBuffer;
 import com.editora.process.ExecTargets;
 import com.editora.process.ProcessRunner;
@@ -62,6 +60,21 @@ class GitRemoteWindowFxTest {
         return repo;
     }
 
+    /**
+     * The repository root the window settles on, refreshing again every five seconds (a newer request drops the
+     * answer of the one before), for up to twenty; null when none came.
+     */
+    private static Path awaitRepoRoot(GitCoordinator git) throws Exception {
+        for (int round = 0; round < 4; round++) {
+            FxTestSupport.runOnFx(git::refresh);
+            if (com.editora.testkit.Await.holdsWithin(
+                    FxTestSupport.fxCondition(() -> git.repoRoot() != null), Duration.ofSeconds(5))) {
+                break;
+            }
+        }
+        return FxTestSupport.callOnFx(git::repoRoot);
+    }
+
     private static EditorBuffer open(AsyncTestScope async, FxWindowFixture fx, Path file) throws Exception {
         FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
         EditorArea area = FxTestSupport.field(fx.controller, "editorArea");
@@ -88,26 +101,15 @@ class GitRemoteWindowFxTest {
             open(async, fx, file);
             GitCoordinator git = fx.controller.git;
 
-            Path root = null;
-            for (int i = 0; i < 400 && root == null; i++) {
-                if (i % 100 == 0) {
-                    FxTestSupport.runOnFx(git::refresh); // a newer request drops the answer of the one before
-                }
-                Thread.sleep(50);
-                root = FxTestSupport.callOnFx(git::repoRoot);
-            }
+            Path root = awaitRepoRoot(git);
 
             assertEquals(sftp.remotePath("app"), root, "the active repository is the one on the host");
             assertEquals("main", FxTestSupport.callOnFx(() -> git.status().branch()));
             EditorArea area = FxTestSupport.field(fx.controller, "editorArea");
-            boolean marked = false;
-            for (int i = 0; i < 200 && !marked; i++) {
-                Thread.sleep(25);
-                marked = FxTestSupport.callOnFx(() -> {
-                    Tab tab = area.selectedTab();
-                    return tab.getStyleClass().contains("git-status-modified");
-                });
-            }
+            boolean marked = com.editora.testkit.Await.holdsWithin(
+                    FxTestSupport.fxCondition(
+                            () -> area.selectedTab().getStyleClass().contains("git-status-modified")),
+                    Duration.ofSeconds(5));
             assertTrue(marked, "the modified remote file's tab is not coloured");
         }
     }
@@ -122,8 +124,8 @@ class GitRemoteWindowFxTest {
             GitCoordinator git = fx.controller.git;
             int before = sftp.commands().size();
 
-            FxTestSupport.runOnFx(git::refresh);
-            Thread.sleep(500);
+            FxTestSupport.runOnFx(git::refresh); // decided on the FX thread: the setting is off
+            async.awaitWorker(FxTestSupport.field(git.service(), "exec")); // and anything it queued all the same
             async.awaitFx();
 
             assertNull(FxTestSupport.callOnFx(git::repoRoot));
@@ -161,14 +163,7 @@ class GitRemoteWindowFxTest {
             open(async, fx, sftp.remotePath("app/a.txt"));
             GitFeatureFx w = GitFeatureFx.attach(fx);
             Path remoteRoot = sftp.remotePath("app");
-            Path root = null;
-            for (int i = 0; i < 400 && root == null; i++) {
-                if (i % 100 == 0) {
-                    FxTestSupport.runOnFx(w.git::refresh); // a newer request drops the answer of the one before
-                }
-                Thread.sleep(50);
-                root = FxTestSupport.callOnFx(w.git::repoRoot);
-            }
+            Path root = awaitRepoRoot(w.git);
             assertEquals(remoteRoot, root, "the remote repository");
             GitAutoFetch autoFetch = w.git.autoFetch();
             FxTestSupport.runOnFx(() -> {
@@ -178,13 +173,28 @@ class GitRemoteWindowFxTest {
                 autoFetch.setPeriodForTest(javafx.util.Duration.millis(200));
             });
 
-            String fetched = "";
-            for (int i = 0; i < 300 && !second.equals(fetched); i++) {
-                Thread.sleep(100);
-                fetched = ProcessRunner.run(repo, Duration.ofSeconds(30), List.of("git", "rev-parse", "origin/main"))
-                        .out()
-                        .strip();
-            }
+            // origin/main is read again each time a fetch has run and the network lane is free again
+            String[] fetchedNow = {""};
+            int[] checkedAfter = {0};
+            com.editora.testkit.Await.holdsWithin(
+                    FxTestSupport.unchecked(() -> {
+                        boolean[] idle = {false};
+                        int ran = FxTestSupport.callOnFx(() -> {
+                            idle[0] = !w.git.service().networkBusy();
+                            return autoFetch.runsForTest();
+                        });
+                        if (ran == checkedAfter[0] || !idle[0]) {
+                            return false;
+                        }
+                        checkedAfter[0] = ran;
+                        fetchedNow[0] = ProcessRunner.run(
+                                        repo, Duration.ofSeconds(30), List.of("git", "rev-parse", "origin/main"))
+                                .out()
+                                .strip();
+                        return second.equals(fetchedNow[0]);
+                    }),
+                    Duration.ofSeconds(30));
+            String fetched = fetchedNow[0];
             FxTestSupport.runOnFx(autoFetch::stop);
             assertEquals(second, fetched, "origin/main fetched on the host");
             assertTrue(FxTestSupport.callOnFx(autoFetch::runsForTest) > 0);

@@ -13,7 +13,15 @@ import java.util.concurrent.CountDownLatch;
 final class FakeRemoteProcess extends RemoteProcess {
 
     final List<Boolean> signals = new CopyOnWriteArrayList<>();
-    final ByteArrayOutputStream stdin = new ByteArrayOutputStream();
+    /** Counted down when the program's stdin is closed: everything written to it has arrived. */
+    final CountDownLatch stdinClosed = new CountDownLatch(1);
+
+    final ByteArrayOutputStream stdin = new ByteArrayOutputStream() {
+        @Override
+        public void close() {
+            stdinClosed.countDown();
+        }
+    };
     private final CountDownLatch exited = new CountDownLatch(1);
     private final InputStream out;
     private final InputStream err;

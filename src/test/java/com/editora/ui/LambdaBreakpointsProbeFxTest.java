@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 
@@ -13,6 +14,7 @@ import com.editora.config.SharedConfig;
 import com.editora.dap.DapManager;
 import com.editora.dap.DebugAdapterLocator;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -41,9 +43,10 @@ class LambdaBreakpointsProbeFxTest {
                     int[] sum = {0};
                     for (int round = 0; round < 2; round++) {
                         items.forEach(x -> sum[0] += x * 10);
-                        Thread.sleep(200);
+                        new java.util.concurrent.CountDownLatch(1).await(200, java.util.concurrent.TimeUnit.MILLISECONDS);
                     }
-                    Thread.sleep(20000);
+                    java.nio.file.Files.writeString(java.nio.file.Path.of("REACHED"), "past both rounds");
+                    new java.util.concurrent.CountDownLatch(1).await(20, java.util.concurrent.TimeUnit.SECONDS);
                 }
             }
             """;
@@ -63,7 +66,8 @@ class LambdaBreakpointsProbeFxTest {
                 .orElse(null);
         assumeTrue(Files.isExecutable(jdtls) && plugin != null);
         Path file = Files.createDirectory(dir.resolve("loose")).resolve("Main.java");
-        Files.writeString(file, SOURCE);
+        Path reached = dir.resolve("reached"); // the program writes it once both rounds have run
+        Files.writeString(file, SOURCE.replace("REACHED", reached.toString().replace("\\", "\\\\")));
         Path configDir = Files.createDirectory(dir.resolve("config"));
         SharedConfig seed = new SharedConfig(configDir, false);
         seed.load();
@@ -110,8 +114,8 @@ class LambdaBreakpointsProbeFxTest {
             awaitStop(dap, debug, false);
             awaitRow(debug, "round", "1");
             resume(dap, debug);
-            // The second round's lambdas run without stopping, on to the long sleep.
-            Thread.sleep(1500);
+            // The second round's lambdas run without stopping, on to the long wait: the program says it got there.
+            await("the program past both rounds", 20, () -> Files.exists(reached));
             assertEquals(DapManager.State.RUNNING, call(dap::state), "a line breakpoint never stops in the lambda");
 
             FxTestSupport.runOnFx(dap::stop);
@@ -134,13 +138,7 @@ class LambdaBreakpointsProbeFxTest {
     }
 
     private static void await(String what, int seconds, BooleanSupplier condition) throws InterruptedException {
-        long end = System.nanoTime() + seconds * 1_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(50);
-        }
+        Await.until(condition, what, Duration.ofSeconds(seconds));
     }
 
     /** A stop on {@link #LINE}, in the lambda's body ({@code inLambda}) or in {@code main} running the line. */

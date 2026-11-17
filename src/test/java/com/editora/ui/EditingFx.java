@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.function.BooleanSupplier;
 
 import javafx.event.Event;
@@ -54,24 +55,29 @@ final class EditingFx {
         fx.dispose();
     }
 
-    /** Lets queued FX work and a few layout pulses run. */
+    /** Lets queued FX work and {@code n} layout pulses run. */
     void pulses(int n) throws Exception {
-        for (int i = 0; i < n; i++) {
-            FxTestSupport.drainFx();
-            Thread.sleep(10);
+        java.util.concurrent.CountDownLatch frames = new java.util.concurrent.CountDownLatch(n);
+        javafx.animation.AnimationTimer counter = new javafx.animation.AnimationTimer() {
+            @Override
+            public void handle(long now) {
+                frames.countDown();
+            }
+        };
+        FxTestSupport.runOnFx(counter::start);
+        try {
+            if (!frames.await(10, java.util.concurrent.TimeUnit.SECONDS)) {
+                throw new AssertionError(n + " pulses did not run");
+            }
+        } finally {
+            FxTestSupport.runOnFx(counter::stop);
         }
         FxTestSupport.drainFx();
     }
 
-    /** Polls {@code condition} on the FX thread until it holds (or ~5 s pass); returns whether it held. */
+    /** Checks {@code condition} on the FX thread after each pulse until it holds (or 5 s pass); says whether it held. */
     boolean await(BooleanSupplier condition) throws Exception {
-        for (int i = 0; i < 250; i++) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return true;
-            }
-            Thread.sleep(20);
-        }
-        return false;
+        return EventuallyFx.holdsWithin(Duration.ofSeconds(5), () -> FxTestSupport.callOnFx(condition::getAsBoolean));
     }
 
     EditorBuffer active() throws Exception {

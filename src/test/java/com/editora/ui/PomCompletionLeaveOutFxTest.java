@@ -13,8 +13,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.perf.OffFx;
 import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -139,12 +142,27 @@ class PomCompletionLeaveOutFxTest {
 
     private static final List<String> MARKUP = List.of("<!--", "<![CDATA[");
 
-    /** Lets the search threads and the FX queue settle. */
-    private static void settle() throws Exception {
-        for (int i = 0; i < 20; i++) {
-            Thread.sleep(25);
-            FxTestSupport.runOnFx(() -> {});
+    /** The search threads the support started ({@code OffFx.start}), so {@link #settle} can wait for them. */
+    private final List<Thread> searches = new CopyOnWriteArrayList<>();
+
+    @BeforeEach
+    void trackSearches() {
+        OffFx.runnerForTest(
+                (name, task) -> searches.add(Thread.ofVirtual().name(name).start(task)));
+    }
+
+    @AfterEach
+    void stopTrackingSearches() {
+        OffFx.runnerForTest(null);
+    }
+
+    /** Waits for the search threads to end and for what they handed the FX thread (an act, then its status). */
+    private void settle() throws Exception {
+        for (Thread search : searches) {
+            assertTrue(search.join(java.time.Duration.ofSeconds(10)), "the search " + search.getName() + " ended");
         }
+        FxTestSupport.drainFx();
+        FxTestSupport.drainFx();
     }
 
     @Test

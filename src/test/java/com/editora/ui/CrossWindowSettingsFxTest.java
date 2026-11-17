@@ -71,14 +71,13 @@ class CrossWindowSettingsFxTest {
     }
 
     private void deliverPendingReapply() throws Exception {
-        // The save requested by the command runs on a later pulse, and that save is where the other windows
-        // learn of the change. One drain is not guaranteed to span that pulse on a slow machine, so give it a
-        // few frames: flushing with nothing pending is a no-op.
-        for (int i = 0; i < 10; i++) {
-            FxTestSupport.drainFx();
-            FxTestSupport.runOnFx(fx.windowManager::flushPendingSettingsBroadcast);
-            Thread.sleep(20);
-        }
+        // The save requested by the command runs in a later FX turn and is written on the writer thread, and
+        // that write is where the other windows learn of the change: the writer tells the FX thread, which
+        // marks the re-apply pending. Wait for each hop, then deliver it (a no-op when nothing is pending).
+        FxTestSupport.drainFx();
+        assertTrue(fx.shared.awaitWrites(), "the settings save was written");
+        FxTestSupport.drainFx();
+        FxTestSupport.runOnFx(fx.windowManager::flushPendingSettingsBroadcast);
     }
 
     private static boolean lineNumbers(EditorBuffer buffer) throws Exception {

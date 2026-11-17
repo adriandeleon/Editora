@@ -2,13 +2,15 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.i18n.Messages;
 import com.editora.lsp.LspManager;
 import com.editora.process.ExecTargets;
+import com.editora.testkit.Await;
 import com.editora.vfs.EmbeddedSftpFixture;
 import com.editora.vfs.Vfs;
 import org.junit.jupiter.api.AfterEach;
@@ -97,7 +99,32 @@ class RemoteLspLifecycleFxTest {
         FxTestSupport.runOnFx(() -> {
             coordinator = new LspCoordinator(host, manager, ops);
             coordinator.applySupport();
+            // counts the waits after a remote server's death, so a test can tell when the decision it waits for
+            // (restart, or go quiet) has been made
+            java.util.function.Consumer<Runnable> settles = coordinator.afterRemoteCrashSettles;
+            coordinator.afterRemoteCrashSettles = task -> {
+                settlesBegun.incrementAndGet();
+                settles.accept(() -> {
+                    try {
+                        task.run();
+                    } finally {
+                        settlesDone.incrementAndGet();
+                    }
+                });
+            };
         });
+    }
+
+    private final AtomicInteger settlesBegun = new AtomicInteger();
+    private final AtomicInteger settlesDone = new AtomicInteger();
+
+    /** Waits until a remote server's death has settled and what follows it was decided on the FX thread. */
+    private void awaitCrashSettled(int atLeast) throws Exception {
+        Await.until(
+                () -> settlesDone.get() >= atLeast && settlesDone.get() == settlesBegun.get(),
+                "the server's death settled",
+                Duration.ofSeconds(30));
+        FxTestSupport.drainFx();
     }
 
     @AfterEach
@@ -123,11 +150,7 @@ class RemoteLspLifecycleFxTest {
     }
 
     private static void await(String what, BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (!condition.getAsBoolean()) {
-            assertTrue(System.nanoTime() < deadline, "timed out waiting until " + what);
-            Thread.sleep(50);
-        }
+        Await.until(condition, "timed out waiting until " + what, Duration.ofSeconds(30));
     }
 
     private boolean managed(EditorBuffer buffer) {
@@ -199,8 +222,8 @@ class RemoteLspLifecycleFxTest {
                 return false;
             }
         });
-        Thread.sleep(1500); // past the settle delay: a restart, if one were coming, would have been tried
-        FxTestSupport.drainFx();
+        awaitCrashSettled(1); // a restart, if one were coming, would have been begun by now (it opens a session)
+        assertFalse(managed(main), "no session was opened again");
         assertEquals(1, launches(), "nothing is started against a dead connection");
         String crashed = tr("status.lsp.crashed", pythonLabel());
         String looping = tr("status.lsp.crashLoopError", pythonLabel());
@@ -233,8 +256,8 @@ class RemoteLspLifecycleFxTest {
             }
         });
         assertFalse(managed(main));
-        Thread.sleep(1500); // past the settle delay: a restart, if one were coming, would have been tried
-        FxTestSupport.drainFx();
+        awaitCrashSettled(0); // a start that failed is no death: nothing waits to settle, nothing restarts
+        assertFalse(managed(main), "no session was opened again");
         assertEquals(1, launches(), "nothing is started against a dead connection");
 
         sftp.reconnect();

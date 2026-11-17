@@ -113,11 +113,9 @@ class JvmAttachFxTest {
     }
 
     private void awaitError() throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT);
-        while (errors.isEmpty()) {
-            assertTrue(System.nanoTime() < deadline, "no error was reported; states " + states);
-            Thread.sleep(20);
-        }
+        assertTrue(
+                com.editora.testkit.Await.holdsWithin(() -> !errors.isEmpty(), java.time.Duration.ofSeconds(WAIT)),
+                "no error was reported; states " + states);
     }
 
     /** {@code Hello.java} of a Maven project, compiled with debug info, started suspended; returns its JDWP port. */
@@ -199,17 +197,16 @@ class JvmAttachFxTest {
                 package p;
                 public class Hello {
                     public static void main(String[] args) throws Exception {
-                        Thread.sleep(60_000);
+                        synchronized (Hello.class) { Hello.class.wait(60_000); } // a minute, idle
                     }
                 }
                 """);
         int port = startSuspended(source);
         onFx(() -> dap.startJvmAttach(source, "kotlin", "localhost", port));
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT);
-        while (!states.contains(DapManager.State.RUNNING)) {
-            assertTrue(System.nanoTime() < deadline, "the first attach never ran; states " + states + ", " + errors);
-            Thread.sleep(20);
-        }
+        assertTrue(
+                com.editora.testkit.Await.holdsWithin(
+                        () -> states.contains(DapManager.State.RUNNING), java.time.Duration.ofSeconds(WAIT)),
+                "the first attach never ran; states " + states + ", " + errors);
         Object first = client();
         assertNotNull(first, "the first session is connected");
 

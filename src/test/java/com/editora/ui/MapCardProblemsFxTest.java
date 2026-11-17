@@ -2,11 +2,11 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
@@ -21,6 +21,7 @@ import com.editora.lsp.FakeLanguageServer;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.LspTestHooks;
 import com.editora.search.ProjectFileList;
+import com.editora.testkit.Await;
 import com.editora.text.LspDiagnostic;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
@@ -172,8 +173,9 @@ class MapCardProblemsFxTest {
             waitFor(() -> fake.closed.stream()
                     .anyMatch(p -> appUri.equals(p.getTextDocument().getUri())));
             assertEquals(List.of(), FxTestSupport.callOnFx(() -> manager.diagnosticsOf(app)), "forgotten");
+            // heard on this thread and handed to the FX thread, as a publish from the server's reader is
             LspTestHooks.publishDiagnostics(manager, open, publish(appUri, "again"));
-            Thread.sleep(100);
+            FxTestSupport.drainFx();
             FxTestSupport.drainFx();
             assertEquals(2, told.size(), "no longer told");
             FxTestSupport.runOnFx(watch); // a second stop does nothing
@@ -380,8 +382,9 @@ class MapCardProblemsFxTest {
             card.editor().fireEvent(mouse(MouseEvent.MOUSE_MOVED, inB.getX(), inB.getY()));
             assertTrue(card.mouseHoverText() != null);
         });
-        Thread.sleep(450);
+        // Still resting on the name: nothing was set to hide the popup (moving off it starts that).
         FxTestSupport.drainFx();
+        assertTrue(FxTestSupport.callOnFx(() -> FxTestSupport.field(card, "mouseSpan") != null), "still resting on it");
         assertTrue(FxTestSupport.callOnFx(() -> card.mouseHoverText() != null), "a move within the name keeps it");
         // Moving off the name: it goes in a moment (unless the pointer is over it).
         FxTestSupport.runOnFx(() -> card.editor().fireEvent(mouse(MouseEvent.MOUSE_MOVED, 2, 2)));
@@ -455,7 +458,7 @@ class MapCardProblemsFxTest {
         });
         ProjectMapPreview card = made[0];
         waitForFx(() -> coloured[0]);
-        Thread.sleep(200);
+        waitForFx(() -> FxTestSupport.<Boolean>field(made[1], "missing")); // the missing file's read has answered
         FxTestSupport.runOnFx(() -> {
             assertFalse(made[1].watchesProblems(), "a missing file is not lent");
             int onB = text.indexOf("b;");
@@ -565,24 +568,11 @@ class MapCardProblemsFxTest {
     }
 
     private static void waitForFx(BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("timed out");
+        OnFx.until(condition::getAsBoolean, "the condition", Duration.ofSeconds(15));
     }
 
     private static void waitFor(BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > deadline) {
-                throw new AssertionError("timed out");
-            }
-            FxTestSupport.drainFx();
-            Thread.sleep(10);
-        }
+        FxTestSupport.drainFx();
+        Await.until(condition, "the condition", Duration.ofSeconds(15));
     }
 }

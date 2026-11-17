@@ -7,7 +7,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import com.editora.config.Settings;
@@ -98,11 +97,8 @@ class HttpClientChainingFxTest {
     /** Runs the request at {@code line} as the gutter ▶ does and waits for it to finish. */
     private HttpExchange runLine(EditorBuffer b, int line) throws Exception {
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, line));
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (FxTestSupport.callOnFx(() -> coordinator.isRunningForTest(b))) {
-            assertTrue(System.nanoTime() < deadline, "the run should finish");
-            Thread.sleep(10);
-        }
+        FxTestSupport.awaitFxCondition(
+                () -> coordinator.idleForTest(b), "the run to finish", java.time.Duration.ofSeconds(30));
         FxTestSupport.drainFx();
         return FxTestSupport.callOnFx(() -> coordinator.panelForTest(b).getSelectedExchange());
     }

@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.List;
 
 import javafx.scene.control.ComboBox;
@@ -605,7 +606,7 @@ class RunConfigToolbarFxTest {
         java.nio.file.Files.writeString(
                 sleeper,
                 "public class Sleeper { public static void main(String[] a) throws Exception {"
-                        + " Thread.sleep(300_000); } }\n");
+                        + " new java.util.concurrent.CountDownLatch(1).await(); } }\n");
         List<String> command = List.of(javaExecutable(), sleeper.toString());
         try {
             FxTestSupport.runOnFx(() -> {
@@ -650,14 +651,7 @@ class RunConfigToolbarFxTest {
 
     /** Polls the FX thread (which also drains the exit callback) until Stop goes back to disabled. */
     private boolean awaitStopDisabled(javafx.scene.control.Button stop) throws Exception {
-        long deadline = System.nanoTime() + java.time.Duration.ofSeconds(20).toNanos();
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(stop::isDisable)) {
-                return true;
-            }
-            Thread.sleep(25);
-        }
-        return false;
+        return PulseChecks.holdsOnFxWithin(stop::isDisable, Duration.ofSeconds(20));
     }
 
     /** This JVM's own launcher — an absolute path, so it needs no PATH lookup and carries any .exe suffix. */

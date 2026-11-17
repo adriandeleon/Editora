@@ -2,8 +2,8 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
 import javafx.scene.control.TextField;
@@ -149,13 +149,6 @@ class ProjectMapSymbolIndexFxTest {
     }
 
     private static void waitFor(BooleanSupplier condition, String message) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return;
-            }
-            TimeUnit.MILLISECONDS.sleep(20);
-        }
-        assertNotNull(null, "timed out: " + message);
+        PulseChecks.untilOnFx(condition, "timed out: " + message, Duration.ofSeconds(15));
     }
 }

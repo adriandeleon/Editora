@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -16,6 +17,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.editora.testkit.Await;
 import com.editora.ui.ProjectMapModel.Entry;
 import com.editora.ui.ProjectMapModel.Labels;
 import com.editora.ui.ProjectMapModel.PlaceholderKind;
@@ -110,7 +112,8 @@ class ProjectMapDataReview3Test {
             listings.invalidate(List.of(folder));
             Future<Snapshot> after =
                     loads.submit(() -> ProjectMapModel.load(new Request(root, expanded, false), listings));
-            Thread.sleep(50); // let the second load reach the running listing (it may not; it must not list beside it)
+            // the second load reaches the running listing and waits on it beside the first (it must not list beside it)
+            Await.until(() -> waitersOnARunningListing(listings) >= 2, "the second load joins the running listing");
             releaseFirst.countDown();
             assertNotNull(before.get(10, TimeUnit.SECONDS));
             Snapshot fresh = after.get(10, TimeUnit.SECONDS);
@@ -122,6 +125,23 @@ class ProjectMapDataReview3Test {
             assertEquals(2, listingsOfFolder.get(), "listed again once the earlier listing had ended");
         } finally {
             loads.shutdownNow();
+        }
+    }
+
+    /** The most loads waiting at once on one running listing ({@code ListingService}'s in-flight futures). */
+    private static int waitersOnARunningListing(ListingService listings) {
+        try {
+            java.lang.reflect.Field inFlight = ListingService.class.getDeclaredField("inFlight");
+            inFlight.setAccessible(true);
+            int most = 0;
+            for (Object running : ((Map<?, ?>) inFlight.get(listings)).values()) {
+                java.lang.reflect.Field future = running.getClass().getDeclaredField("future");
+                future.setAccessible(true);
+                most = Math.max(most, ((CompletableFuture<?>) future.get(running)).getNumberOfDependents());
+            }
+            return most;
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
         }
     }
 

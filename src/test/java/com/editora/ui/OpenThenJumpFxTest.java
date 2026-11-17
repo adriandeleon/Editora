@@ -37,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * in a JVM can be slow enough for a small cached read to win the race, which would hide the failure.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // a jump's file checks answer before the call returns
 class OpenThenJumpFxTest {
 
     private static final int LINES = 200;
@@ -320,28 +321,26 @@ class OpenThenJumpFxTest {
 
     /** Blocks until {@code file} has a tab whose asynchronous load has landed and the FX queue is quiet. */
     private static void awaitLoaded(Path file) throws Exception {
-        long deadline = System.nanoTime() + 15_000_000_000L;
-        while (true) {
-            boolean done = FxTestSupport.callOnFx(() -> {
-                EditorBuffer b = bufferFor(file);
-                return b != null && workflows.loadingBuffers.isEmpty() && !b.isLoading();
-            });
-            if (done) {
-                break;
-            }
-            assertTrue(System.nanoTime() < deadline, "load never finished: " + file);
-            Thread.sleep(5);
-        }
+        OnFx.until(
+                () -> {
+                    EditorBuffer b = bufferFor(file);
+                    return b != null && workflows.loadingBuffers.isEmpty() && !b.isLoading();
+                },
+                "the load of " + file,
+                java.time.Duration.ofSeconds(15));
         assertNotNull(FxTestSupport.callOnFx(() -> bufferFor(file)));
         settle();
     }
 
-    /** Lets everything queued behind a load (runLater chains, short timers) run. */
+    /** Lets everything queued behind a load (runLater chains, what a load opened) run. */
     private static void settle() throws Exception {
         for (int i = 0; i < 6; i++) {
             FxTestSupport.drainFx();
         }
-        Thread.sleep(150);
+        OnFx.until(
+                () -> workflows == null
+                        || (workflows.loadingBuffers.isEmpty() && (active() == null || !active().isLoading())),
+                "the open files to load");
         for (int i = 0; i < 6; i++) {
             FxTestSupport.drainFx();
         }

@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -17,6 +18,7 @@ import javafx.stage.Stage;
 
 import com.editora.i18n.Messages;
 import com.editora.process.ExecTargets;
+import com.editora.testkit.Await;
 import com.editora.vfs.EmbeddedSftpFixture;
 import com.editora.vfs.Vfs;
 import org.junit.jupiter.api.AfterEach;
@@ -164,11 +166,6 @@ class RemoteTerminalPanelFxTest {
     }
 
     private static void await(BooleanSupplier condition, String what) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (System.nanoTime() < deadline) {
-            if (condition.getAsBoolean()) return;
-            Thread.sleep(50);
-        }
-        throw new AssertionError("timed out waiting for " + what);
+        Await.until(condition, what, Duration.ofSeconds(20));
     }
 }

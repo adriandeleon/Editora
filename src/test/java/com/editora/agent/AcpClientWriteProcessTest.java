@@ -10,7 +10,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
@@ -35,7 +34,9 @@ class AcpClientWriteProcessTest {
     public static final class Peer {
         public static void main(String[] args) throws Exception {
             if ("deaf".equals(args[0])) {
-                Thread.sleep(Long.MAX_VALUE);
+                synchronized (Peer.class) {
+                    Peer.class.wait(); // never reads: stays until it is killed
+                }
                 return;
             }
             try (BufferedReader in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
@@ -117,16 +118,22 @@ class AcpClientWriteProcessTest {
             }
             client.cancel("session");
 
-            List<String> received = List.of();
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-            while (System.nanoTime() < deadline) {
-                received = Files.exists(log) ? Files.readAllLines(log) : List.of();
-                if (received.size() > prompts) {
-                    break;
-                }
-                // The other process writes the file: there is nothing in this JVM to wait on but the clock.
-                TimeUnit.MILLISECONDS.sleep(20);
-            }
+            List<String> read = new java.util.ArrayList<>();
+            // The other process writes the file: nothing in this JVM announces a line.
+            com.editora.testkit.Await.holdsWithin(
+                    () -> {
+                        try {
+                            read.clear();
+                            if (Files.exists(log)) {
+                                read.addAll(Files.readAllLines(log));
+                            }
+                            return read.size() > prompts;
+                        } catch (java.io.IOException e) {
+                            return false; // look again
+                        }
+                    },
+                    java.time.Duration.ofSeconds(30));
+            List<String> received = List.copyOf(read);
 
             assertEquals(prompts + 1, received.size(), "every message arrives");
             for (int i = 0; i < prompts; i++) {

@@ -128,7 +128,7 @@ class InPlaceWorkOffFxThreadFxTest {
 
         // A typed edit, settled (the baseline lets its text go), then undone back to the saved text.
         FxTestSupport.runOnFx(() -> area.insertText(2, "x"));
-        Thread.sleep(400); // past the 150 ms settled-edit milestone
+        FxTestSupport.awaitSettled(buffer); // past the 150 ms settled-edit milestone
         FxTestSupport.runOnFx(() -> area.deleteText(2, 3));
         SettingsRig.awaitFx("clean again once the hash lands", () -> !buffer.isDirty());
 

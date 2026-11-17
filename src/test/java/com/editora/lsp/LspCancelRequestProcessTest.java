@@ -119,15 +119,16 @@ class LspCancelRequestProcessTest {
     }
 
     private static boolean logged(Path log, String event) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (System.nanoTime() < deadline) {
-            if (Files.exists(log) && Files.readAllLines(log).contains(event)) {
-                return true;
-            }
-            // Another process writes the file: there is nothing in this JVM to wait on but the clock.
-            TimeUnit.MILLISECONDS.sleep(20);
-        }
-        return false;
+        // Another process writes the file: nothing in this JVM announces a line.
+        return com.editora.testkit.Await.holdsWithin(
+                () -> {
+                    try {
+                        return Files.exists(log) && Files.readAllLines(log).contains(event);
+                    } catch (java.io.IOException e) {
+                        return false; // half-written: look again
+                    }
+                },
+                java.time.Duration.ofSeconds(30));
     }
 
     @Test

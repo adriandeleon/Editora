@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 
@@ -15,6 +16,7 @@ import com.editora.config.SharedConfig;
 import com.editora.dap.DapManager;
 import com.editora.dap.DebugAdapterLocator;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -43,11 +45,11 @@ class MemberBreakpointsProbeFxTest {
                     count += n;
                 }
                 public static void main(String[] args) throws Exception {
-                    Thread.sleep(500);
+                    new java.util.concurrent.CountDownLatch(1).await(500, java.util.concurrent.TimeUnit.MILLISECONDS);
                     for (int i = 1; i <= 3; i++) {
                         bump(i);
                     }
-                    Thread.sleep(20000);
+                    new java.util.concurrent.CountDownLatch(1).await(20, java.util.concurrent.TimeUnit.SECONDS);
                 }
             }
             """;
@@ -164,13 +166,7 @@ class MemberBreakpointsProbeFxTest {
     }
 
     private static void await(String what, int seconds, BooleanSupplier condition) throws InterruptedException {
-        long end = System.nanoTime() + seconds * 1_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(50);
-        }
+        Await.until(condition, what, Duration.ofSeconds(seconds));
     }
 
     /** A member mark of {@code kind} ({@code method} / {@code field}) on (view) {@code line}. */

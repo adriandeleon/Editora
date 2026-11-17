@@ -486,7 +486,8 @@ class GitCommitOptionsFxTest {
             });
 
             // Not a trusted folder, and no fetch, pull or push by hand yet: the timer ticks and does nothing.
-            Thread.sleep(700);
+            int ticked = FxTestSupport.callOnFx(autoFetch::ticksForTest);
+            FxTestSupport.awaitFxCondition(() -> autoFetch.ticksForTest() >= ticked + 3, "three ticks of the timer");
             assertEquals(0, FxTestSupport.callOnFx(autoFetch::runsForTest), "no fetch in an unvouched repository");
             assertEquals(local, repo.git("rev-parse", "origin/main").text().strip());
 
@@ -501,7 +502,8 @@ class GitCommitOptionsFxTest {
                 autoFetch.apply();
             });
             int runs = FxTestSupport.callOnFx(autoFetch::runsForTest);
-            Thread.sleep(500);
+            assertFalse(FxTestSupport.callOnFx(autoFetch::tickingForTest), "switched off: the timer is stopped");
+            async.awaitFx();
             assertEquals(runs, FxTestSupport.callOnFx(autoFetch::runsForTest), "switched off: no further fetch");
         }
     }

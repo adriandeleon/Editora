@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,6 +16,7 @@ import com.editora.config.ConfigManager;
 import com.editora.config.Project;
 import com.editora.config.SharedConfig;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -117,9 +119,12 @@ class WindowManagerLaunchFxTest {
          */
         void awaitFirstWindow() throws Exception {
             for (int i = 0; i < 400 && keys().isEmpty(); i++) {
-                if (FxTestSupport.callOnFx(scheduled::isEmpty)) {
-                    Thread.sleep(25);
-                } else {
+                // a session read off the FX thread queues its window's turn when it lands
+                Await.holdsWithin(
+                        () -> onFx(() -> !scheduled.isEmpty()
+                                || !FxTestSupport.<List<?>>field(wm, "windows").isEmpty()),
+                        Duration.ofSeconds(10));
+                if (!FxTestSupport.callOnFx(scheduled::isEmpty)) {
                     step();
                 }
             }
@@ -886,5 +891,14 @@ class WindowManagerLaunchFxTest {
             assertEquals(2, FxTestSupport.<List<?>>field(app.wm, "windows").size(), "nothing was disposed");
             assertEquals("not saved\n", dirty.getContent());
         });
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }
