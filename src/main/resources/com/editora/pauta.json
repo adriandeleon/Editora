@@ -89,22 +89,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1559"
     },
     {
-      "rule": "ACC-01",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-01",
-      "kind": "pending",
-      "reason": "Not every control has a name for screen readers, and no test sweeps every window for them.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1561"
-    },
-    {
-      "rule": "ACC-02",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-02",
-      "kind": "pending",
-      "reason": "Clickable items in the status bar cannot be activated by a screen reader, and messages there are not announced.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1561"
-    },
-    {
       "rule": "ACC-07",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-07",

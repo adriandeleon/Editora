@@ -301,6 +301,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         // trailing clear ("✕") button; Enter (or the search button) runs the text over the whole history.
         // Typing here can't clash with the list's bare n/p nav — that handler is on the commit ListView.
         filterField.setPromptText(tr("gitlog.filterPrompt"));
+        filterField.setAccessibleText(tr("gitlog.filterPrompt"));
         filterField.getStyleClass().add("git-log-filter");
         filterField.textProperty().addListener((o, w, n) -> applyCommitFilter(n));
         filterField.setOnAction(e -> searchHistory());
@@ -325,6 +326,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         filterRow.setAlignment(Pos.CENTER_LEFT);
 
         commits.getStyleClass().add("git-tree");
+        commits.setAccessibleText(tr("toolwindow.gitLog"));
         commits.setItems(filteredCommits);
         commits.setPlaceholder(placeholder);
         commits.setCellFactory(v -> new CommitCell());
@@ -369,6 +371,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         VBox commitsBox = new VBox(commits, footer);
 
         files.getStyleClass().add("git-tree");
+        files.setAccessibleText(tr("project.map.changes.filesAccessible"));
         files.setCellFactory(v -> new FileCell());
         RowContextMenu.install(files); // the file rows' menu from the Menu key / Shift+F10, as for the commits
         installListNav(files);
@@ -1368,7 +1371,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             author.setText(c.author());
             date.setText(relativeDate(c, System.currentTimeMillis() / 1000));
             fitToWidth(c);
-            setGraphic(row);
+            setGraphic(CellNames.read(row));
             tooltip.setText(commitTooltip(c));
             setTooltip(tooltip);
             if (loadsAhead(index, filteredCommits.size(), hasMore, filtering(), loadAheadRows)) {

@@ -150,7 +150,9 @@ final class SearchEverywherePopup {
         status = new Label();
         desc = new Label();
         input.setPromptText(tr("searchEverywhere.prompt"));
+        input.setAccessibleText(tr("searchEverywhere.prompt"));
         input.getStyleClass().add("palette-input");
+        list.setAccessibleText(tr("command.search.everywhere"));
         input.textProperty().addListener((o, a, b) -> debounce.playFromStart());
         input.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
         com.editora.command.TextInputKeymap.installShared(input);
@@ -464,7 +466,7 @@ final class SearchEverywherePopup {
                     setTooltip(tip);
                 }
             }
-            setGraphic(box);
+            setGraphic(CellNames.read(box));
         }
     }
 }

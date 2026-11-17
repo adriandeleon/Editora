@@ -162,6 +162,8 @@ public final class BranchPopup {
         list = new ListView<>();
         hint = new Label();
         search.setPromptText(tr("branchpopup.searchPrompt"));
+        search.setAccessibleText(tr("branchpopup.searchPrompt"));
+        list.setAccessibleText(tr("branchpopup.searchPrompt"));
         list.setItems(items);
         UiZoom.prefHeight(list, LIST_HEIGHT);
         list.setFocusTraversable(false);
@@ -651,7 +653,7 @@ public final class BranchPopup {
             if (item instanceof Header h) {
                 getStyleClass().add("branch-popup-header");
                 setText(null);
-                setGraphic(header(h));
+                setGraphic(CellNames.read(header(h)));
                 setDisable(!toggleable(h)); // during a search: a plain, non-selectable section label
                 if (toggleable(h)) {
                     setTooltip(ControlNames.tooltip(
@@ -664,11 +666,11 @@ public final class BranchPopup {
                 Label accel = new Label(a.accel() == null ? "" : a.accel());
                 accel.getStyleClass().add("menu-item-chord");
                 setText(null);
-                setGraphic(row(iconColumn(a.commandId()), label, accel));
+                setGraphic(CellNames.read(row(iconColumn(a.commandId()), label, accel)));
             } else if (item instanceof BranchRow br) {
                 setDisable(false);
                 setText(null);
-                setGraphic(branchRow(br));
+                setGraphic(CellNames.read(branchRow(br)));
             }
         }
 

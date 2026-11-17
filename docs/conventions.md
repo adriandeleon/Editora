@@ -123,6 +123,20 @@ A control that works with the mouse but cannot be reached, seen or named from th
   highlight, so `PickerKeys.navigate` (and a filter that changes the row in front) calls
   `PickerKeys.announce(list)`, which tells a screen reader the list's item changed. A row drawn from nodes
   sets its accessible text, and a row that cannot run says so there with the reason.
+- **Every control has a name.** A field, list, tree or box with no text of its own gets one: a `Label` whose
+  `labelFor` is the control (`ControlNames.label(text, control)`; a Settings row title and an `OverlayInput`
+  form's captions, through `FormLabels.link`, do it themselves), or `setAccessibleText` with the string the UI
+  already shows (a filter's prompt, the tool window's title). A list or tree row drawn from nodes is set with
+  `setGraphic(CellNames.read(row))`, so it reads as the words it shows. `NamedControlsSweepFxTest` runs every
+  command (as `CommandSweepFxTest` does), opens every tool window and Settings page and reads the menu bar,
+  and fails on a control, a filled row or a menu row with no name (ACC-01, Pauta 6.0.1).
+- **A label or pane that acts as a button is a `PressableLabel`, `PressableBox` or `PressablePane`**
+  (`editor/Pressable`): the `BUTTON` role, a screen reader's `FIRE`, Enter or Space, and a primary click all run
+  its action; pass `tabStop` false for a gutter mark a command reaches from the keyboard. A status-bar segment
+  is a `StatusSegment` (one of these); the echo line is one too, and a new message is announced to the screen
+  reader (`StatusSegment.announce`). `ClickHandlersGuardTest` lists every other click handler in the source in
+  `click-handlers.tsv` with why it needs no path of its own (a `Control`, the command that does the same, or no
+  action at all): a new one fails until it is a pressable or has its line (ACC-02).
 - **Two commands move between the regions of the window**, `window.other` and `window.otherReverse` (the
   editor, then each open tool window), and every keymap binds both (`KeymapsTest`).
 - **Colour**: text people must read uses `-color-fg-muted` or stronger (`-color-fg-subtle` is ~3:1 —

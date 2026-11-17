@@ -180,6 +180,7 @@ final class SettingsSnippetPages {
     /** Master-detail editor: the templates (bundled + user) on the left, a form for the selected one. */
     private javafx.scene.Node templatesEditor() {
         ListView<com.editora.template.Template> list = new ListView<>(templateItems);
+        list.setAccessibleText(tr("settings.cat.templates"));
         UiZoom.prefSize(list, 250, 420); // "Java Compact Source" + the bundled tag
         VBox.setVgrow(list, Priority.ALWAYS); // grow the list to fill the page height
         list.setCellFactory(lv -> new ListCell<>() {
@@ -216,7 +217,7 @@ final class SettingsSnippetPages {
                     cell.getChildren().add(tag);
                 }
                 setText(null);
-                setGraphic(cell);
+                setGraphic(CellNames.read(cell));
             }
         });
 
@@ -624,6 +625,7 @@ final class SettingsSnippetPages {
         // A Label's computed min width is just an ellipsis, so a tight GridPane collapses it to "…".
         // Pin its min to its preferred (text) width so the field-row labels stay readable.
         l.setMinWidth(Region.USE_PREF_SIZE);
+        l.setLabelFor(field);
         form.add(l, 0, rowIndex);
         form.add(field, 1, rowIndex);
         if (field instanceof javafx.scene.layout.Region r) {

@@ -72,6 +72,8 @@ final class WorkspaceSymbolPopup {
 
     private VBox build() {
         query.setPromptText(tr("lsp.workspaceSymbols.prompt"));
+        query.setAccessibleText(tr("lsp.workspaceSymbols.prompt"));
+        list.setAccessibleText(tr("lsp.workspaceSymbols.prompt"));
         query.textProperty().addListener((o, a, b) -> debounce.playFromStart());
         query.addEventFilter(KeyEvent.KEY_PRESSED, this::onQueryKey);
         // Emacs caret movement + basic editing (registered after onQueryKey so its list navigation wins).

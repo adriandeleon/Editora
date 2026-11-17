@@ -57,6 +57,11 @@ final class ExternalToolsEditor {
     private final Hooks hooks;
     private final ObservableList<ExternalTool> items = FXCollections.observableArrayList();
     private final ListView<ExternalTool> list = new ListView<>(items);
+
+    {
+        list.setAccessibleText(tr("settings.cat.externalTools"));
+    }
+
     private final VBox node;
     private boolean loading;
 
@@ -294,6 +299,7 @@ final class ExternalToolsEditor {
     private static void formRow(GridPane form, int row, String labelText, Node field) {
         Label l = new Label(labelText);
         l.setMinWidth(Region.USE_PREF_SIZE); // a GridPane would squeeze it to "…"
+        l.setLabelFor(SettingsWindow.labelTarget(field)); // the field, not the box it shares with Browse…
         form.add(l, 0, row);
         form.add(field, 1, row);
         if (field instanceof Region r && !(field instanceof SettingSwitch)) {

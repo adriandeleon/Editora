@@ -344,8 +344,23 @@ class CommandSweepFxTest {
                 .toList();
     }
 
+    /**
+     * What another test looks at while a sweep runs: each window a command shows, before the sweep dismisses
+     * it, and the whole screen after each command, before the window is put back. Called on the FX thread.
+     */
+    interface Observer {
+        /** {@code window} has just shown while {@code command} runs (a modal one blocks it). */
+        void shown(String command, Window window);
+
+        /** {@code command} has returned; what it opened is still showing. */
+        void ran(String command);
+
+        /** Every command has run; the window is still up, back in its starting state. */
+        default void finished(MainController controller) {}
+    }
+
     /** One state's run over the whole registry. */
-    private static final class Sweep {
+    static final class Sweep {
 
         private final State state;
         private final Path dir;
@@ -372,9 +387,21 @@ class CommandSweepFxTest {
 
         private final ConcurrentLinkedQueue<Throwable> offThread = new ConcurrentLinkedQueue<>();
 
+        private final Observer observer;
+
         Sweep(State state, Path dir) {
+            this(state, dir, null);
+        }
+
+        Sweep(State state, Path dir, Observer observer) {
             this.state = state;
             this.dir = dir;
+            this.observer = observer;
+        }
+
+        /** The window the commands run in (on the FX thread, once the sweep has set it up). */
+        MainController controller() {
+            return controller;
         }
 
         /**
@@ -404,6 +431,9 @@ class CommandSweepFxTest {
                         // in; once the command has returned, `running` is null and the window is left alone.
                         Platform.runLater(() -> {
                             if (running != null && added.isShowing()) {
+                                if (observer != null) {
+                                    observer.shown(running, added);
+                                }
                                 dismiss(added);
                             }
                         });
@@ -428,6 +458,9 @@ class CommandSweepFxTest {
                     marks.add(Map.entry(Instant.now(), id));
                     for (int round = isToggle(id) ? 2 : 1; round > 0; round--) {
                         runOne(async, id);
+                        if (observer != null) {
+                            FxTestSupport.runOnFx(() -> observer.ran(id));
+                        }
                     }
                     try {
                         FxTestSupport.runOnFx(() -> editedBehindThePreview(id));
@@ -439,6 +472,11 @@ class CommandSweepFxTest {
                     }
                 }
                 settle(async);
+                if (observer != null) {
+                    FxTestSupport.runOnFx(() -> observer.finished(controller));
+                    async.awaitFx();
+                    FxTestSupport.runOnFx(this::restore);
+                }
             } finally {
                 Thread.setDefaultUncaughtExceptionHandler(previous);
             }
@@ -793,7 +831,7 @@ class CommandSweepFxTest {
      * <p>Programs: Flight Recorder reports every process the JVM starts, with its command line and working
      * directory, however the application starts it.
      */
-    private static final class Outside extends ProxySelector implements AutoCloseable {
+    static final class Outside extends ProxySelector implements AutoCloseable {
 
         private record Seen(Instant when, String what) {}
 
