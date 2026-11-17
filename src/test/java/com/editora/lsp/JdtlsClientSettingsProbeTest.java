@@ -238,10 +238,7 @@ class JdtlsClientSettingsProbeTest {
             s.didOpen(app, "java", APP);
             s.didOpen(broken, "java", BROKEN);
             s.didOpen(ambiguous, "java", AMBIGUOUS);
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(90);
-            while (!s.isInitialized() && System.nanoTime() < deadline) {
-                Thread.sleep(100);
-            }
+            com.editora.testkit.Await.holdsWithin(() -> s.isInitialized(), java.time.Duration.ofSeconds(90));
             assertTrue(s.isInitialized(), "real handshake");
             assertTrue(imported.await(120, TimeUnit.SECONDS), "the project imported");
             // C3: Eclipse's project files stay in the -data workspace, out of the user's folder.
@@ -312,24 +309,28 @@ class JdtlsClientSettingsProbeTest {
             assertTrue(symbolUris(arrayList).stream().anyMatch(u -> u.startsWith("jdt://")), "B3: library types");
 
             // B8, D9: a quick fix's new method follows the answered indentation.
-            Diagnostic undefined = null;
-            deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-            while (undefined == null && System.nanoTime() < deadline) {
-                for (var p : diagnostics) {
-                    if (p.getUri().endsWith("Broken.java")) {
-                        for (Diagnostic d : p.getDiagnostics()) {
-                            if (String.valueOf(
-                                            d.getMessage().isLeft()
-                                                    ? d.getMessage().getLeft()
-                                                    : d.getMessage().getRight().getValue())
-                                    .contains("missing()")) {
-                                undefined = d;
+            Diagnostic[] found = new Diagnostic[1];
+            com.editora.testkit.Await.holdsWithin(
+                    () -> {
+                        for (var p : List.copyOf(diagnostics)) {
+                            if (p.getUri().endsWith("Broken.java")) {
+                                for (Diagnostic d : p.getDiagnostics()) {
+                                    if (String.valueOf(
+                                                    d.getMessage().isLeft()
+                                                            ? d.getMessage().getLeft()
+                                                            : d.getMessage()
+                                                                    .getRight()
+                                                                    .getValue())
+                                            .contains("missing()")) {
+                                        found[0] = d;
+                                    }
+                                }
                             }
                         }
-                    }
-                }
-                Thread.sleep(100);
-            }
+                        return found[0] != null;
+                    },
+                    java.time.Duration.ofSeconds(30));
+            Diagnostic undefined = found[0];
             assertNotNull(undefined, "Broken.java's missing() is reported");
             var fixes = actions(get(s.codeAction(broken, undefined.getRange(), List.of(undefined))));
             CodeAction create = fixes.stream()
@@ -459,21 +460,22 @@ class JdtlsClientSettingsProbeTest {
             assertTrue(organized.contains("import java."), "A3: the chosen imports are written: " + organized);
 
             // D6 (fourth review): "Add all missing imports" is jdtls's Organize Imports client command, which asks.
-            org.eclipse.lsp4j.Diagnostic unresolved = null;
-            for (int attempt = 0; attempt < 40 && unresolved == null; attempt++) {
-                for (PublishDiagnosticsParams p : List.copyOf(diagnostics)) {
-                    if (p.getUri().equals(ambiguous)) {
-                        for (var d : p.getDiagnostics()) {
-                            if (String.valueOf(d.getMessage()).contains("Date")) {
-                                unresolved = d;
+            org.eclipse.lsp4j.Diagnostic[] dated = new org.eclipse.lsp4j.Diagnostic[1];
+            com.editora.testkit.Await.holdsWithin(
+                    () -> {
+                        for (PublishDiagnosticsParams p : List.copyOf(diagnostics)) {
+                            if (p.getUri().equals(ambiguous)) {
+                                for (var d : p.getDiagnostics()) {
+                                    if (String.valueOf(d.getMessage()).contains("Date")) {
+                                        dated[0] = d;
+                                    }
+                                }
                             }
                         }
-                    }
-                }
-                if (unresolved == null) {
-                    Thread.sleep(250);
-                }
-            }
+                        return dated[0] != null;
+                    },
+                    java.time.Duration.ofSeconds(10));
+            org.eclipse.lsp4j.Diagnostic unresolved = dated[0];
             assertNotNull(unresolved, "D6: Date is reported unresolved");
             var importFixes = get(s.codeAction(ambiguous, unresolved.getRange(), List.of(unresolved)));
             org.eclipse.lsp4j.CodeAction addAll = importFixes.stream()
@@ -502,9 +504,21 @@ class JdtlsClientSettingsProbeTest {
             Files.writeString(src.resolve("sub/Marker.java"), "package demo.sub;\n\nclass Marker {}\n");
             s.didChangeWatchedFiles(List.of(new org.eclipse.lsp4j.FileEvent(
                     src.resolve("sub/Marker.java").toUri().toString(), org.eclipse.lsp4j.FileChangeType.Created)));
-            Thread.sleep(2000);
-            var movedHelper = get(s.willRenameFiles(
-                    helper, src.resolve("sub/Helper.java").toUri().toString()));
+            // jdtls learns of the new package on its own thread: asked again until it answers with it
+            Object[] movedAnswer = new Object[1];
+            com.editora.testkit.Await.holdsWithin(
+                    () -> {
+                        try {
+                            movedAnswer[0] = get(s.willRenameFiles(
+                                    helper,
+                                    src.resolve("sub/Helper.java").toUri().toString()));
+                        } catch (Exception e) {
+                            throw new IllegalStateException(e);
+                        }
+                        return String.valueOf(movedAnswer[0]).contains("demo.sub");
+                    },
+                    java.time.Duration.ofSeconds(30));
+            var movedHelper = movedAnswer[0];
             record("BT1 willRenameFiles move", movedHelper);
             assertTrue(String.valueOf(movedHelper).contains("demo.sub"), "BT1: a moved file's package line follows it");
 
@@ -607,20 +621,17 @@ class JdtlsClientSettingsProbeTest {
     /** Waits until the latest diagnostics for a file named {@code name} are non-empty ({@code errors}) or empty. */
     private static boolean waitDiagnostics(List<PublishDiagnosticsParams> all, String name, boolean errors)
             throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (System.nanoTime() < deadline) {
-            PublishDiagnosticsParams latest = null;
-            for (var p : all) {
-                if (p.getUri().endsWith(name)) {
-                    latest = p;
-                }
-            }
-            if (latest != null && latest.getDiagnostics().isEmpty() != errors) {
-                return true;
-            }
-            Thread.sleep(100);
-        }
-        return false;
+        return com.editora.testkit.Await.holdsWithin(
+                () -> {
+                    PublishDiagnosticsParams latest = null;
+                    for (var p : List.copyOf(all)) {
+                        if (p.getUri().endsWith(name)) {
+                            latest = p;
+                        }
+                    }
+                    return latest != null && latest.getDiagnostics().isEmpty() != errors;
+                },
+                java.time.Duration.ofSeconds(30));
     }
 
     private static final java.util.regex.Pattern CORE_BUNDLE =

@@ -22,6 +22,12 @@ public final class BusyExecutable {
 
     private BusyExecutable() {}
 
+    /**
+     * TEST SEAM — run after each attempt that found the executable busy, before the wait: a test releases the
+     * file there, so the retry is what starts it.
+     */
+    static volatile @org.jspecify.annotations.Nullable Runnable onBusyForTest;
+
     /** {@code pb.start()}, retried while the executable is busy; any other failure is thrown at once. */
     public static Process start(ProcessBuilder pb) throws IOException {
         com.editora.perf.BlockingSites.enter("process start");
@@ -36,6 +42,10 @@ public final class BusyExecutable {
             } catch (IOException e) {
                 if (attempt >= attempts || !isBusy(e)) {
                     throw e;
+                }
+                Runnable hook = onBusyForTest;
+                if (hook != null) {
+                    hook.run();
                 }
                 try {
                     Thread.sleep(wait);

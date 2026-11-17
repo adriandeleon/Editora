@@ -14,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 
 import com.editora.process.ExecTargets;
 import com.editora.process.ProcessRunner;
+import com.editora.testkit.Await;
 import com.editora.wsl.WslExecTarget;
 import com.editora.wsl.WslTargets;
 import org.junit.jupiter.api.AfterEach;
@@ -79,14 +80,7 @@ class WslWatchProbeTest {
     }
 
     private boolean saw(Path path, long millis) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(millis);
-        while (System.nanoTime() < deadline) {
-            if (seen.stream().anyMatch(c -> c.path().equals(path))) {
-                return true;
-            }
-            Thread.sleep(100);
-        }
-        return false;
+        return Await.holdsWithin(() -> seen.stream().anyMatch(c -> c.path().equals(path)), Duration.ofMillis(millis));
     }
 
     @Test
@@ -128,7 +122,16 @@ class WslWatchProbeTest {
         RemoteWatcher.pollForTest = poll;
         watcher = RemoteWatcher.start(folder, seen::addAll);
         assertNotNull(watcher, "the watch started in the distribution");
-        Thread.sleep(2500); // inotifywait sets up its watches; a poll takes its first stamp
+        // Ready once it reports a change (inotifywait has set up its watches; a poll has taken its first stamp):
+        // touch a marker inside until one is reported.
+        Path ready = folder.resolve("ready.txt");
+        assertTrue(
+                Await.holdsWithin(
+                        () -> wsl("cd \"$HOME/editora watch\" && date > ready.txt")
+                                        .ok()
+                                && seen.stream().anyMatch(c -> c.path().equals(ready)),
+                        Duration.ofSeconds(30)),
+                "the watch reported a change: " + seen);
 
         assertTrue(wsl("cd \"$HOME/editora watch\" && mkdir -p src && echo in > src/Inside.java")
                 .ok());

@@ -188,15 +188,13 @@ class RemoteDebugFxTest {
     }
 
     private List<DapModels.StackFrameInfo> awaitStop() throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (stops.isEmpty()) {
-            assertTrue(errors.isEmpty(), errors.toString());
-            assertTrue(
-                    System.nanoTime() < deadline,
-                    "never stopped at the breakpoint; host ran " + sftp.commands() + "; adapter was told "
-                            + (Files.exists(log) ? Files.readString(log) : "nothing"));
-            Thread.sleep(50);
-        }
+        boolean ended = com.editora.testkit.Await.holdsWithin(
+                () -> !stops.isEmpty() || !errors.isEmpty(), java.time.Duration.ofSeconds(30));
+        assertTrue(errors.isEmpty(), errors.toString());
+        assertTrue(
+                ended,
+                "never stopped at the breakpoint; host ran " + sftp.commands() + "; adapter was told "
+                        + (Files.exists(log) ? Files.readString(log) : "nothing"));
         return stops.get(0);
     }
 
@@ -312,10 +310,7 @@ class RemoteDebugFxTest {
 
         debug(sftp.remotePath("my app/main.py"), "python");
 
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (errors.isEmpty() && System.nanoTime() < deadline) {
-            Thread.sleep(50);
-        }
+        com.editora.testkit.Await.holdsWithin(() -> !errors.isEmpty(), java.time.Duration.ofSeconds(30));
         assertTrue(errors.stream().anyMatch(e -> e.contains("debugpy is not installed")), errors.toString());
     }
 }

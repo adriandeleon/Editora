@@ -65,7 +65,7 @@ class TypeScriptStartFxTest {
             StartRefusal why = refused.get(30, TimeUnit.SECONDS);
             assertEquals(StartRefusal.Kind.SERVER_REFUSED, why.kind());
             assertEquals(RefusingLanguageServerMain.REASON, why.detail());
-            Thread.sleep(500);
+            // The refusal is posted instead of a crash notice, from the same drop of the session: none can follow.
             drainFx();
             assertEquals(0, crashes.get(), "a refusal is not a crash, so nothing restarts it");
         } finally {

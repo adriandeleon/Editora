@@ -16,6 +16,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.stage.Stage;
 
+import com.editora.testkit.Await;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeEach;
@@ -163,10 +164,13 @@ class MinimapDragFxTest {
             }
         });
         // Let the flow measure itself so totalHeightEstimate is populated.
-        for (int i = 0; i < 30; i++) {
-            onFx(() -> {});
-            Thread.sleep(20);
-        }
+        Await.until(
+                com.editora.editor.EditorFx.checkOnFx(() -> {
+                    Double h = areaRef.get().totalHeightEstimateProperty().getValue();
+                    return h != null && h > 0;
+                }),
+                "the flow measured itself");
+        onFx(() -> {});
         area = areaRef.get();
         minimap = minimapRef.get();
         canvas = canvasRef.get();

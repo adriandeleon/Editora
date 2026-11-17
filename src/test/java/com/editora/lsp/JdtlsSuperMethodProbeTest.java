@@ -98,8 +98,7 @@ class JdtlsSuperMethodProbeTest {
         try {
             assertTrue(s.start());
             s.didOpen(uri, "java", SOURCE);
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(70);
-            while (!s.isInitialized() && System.nanoTime() < deadline) Thread.sleep(100);
+            com.editora.testkit.Await.holdsWithin(s::isInitialized, java.time.Duration.ofSeconds(70));
             assertTrue(s.isInitialized(), "real handshake");
             var symbols = get(s.documentSymbol(uri));
             record("documentSymbols", symbols);

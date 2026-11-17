@@ -2,9 +2,9 @@ package com.editora.ui;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javafx.scene.Node;
@@ -104,13 +104,7 @@ class ReportProblemWindowFxTest {
     }
 
     private static void awaitText(TextArea area, String expected) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (System.nanoTime() < deadline) {
-            if (expected.equals(FxTestSupport.callOnFx(area::getText))) {
-                return;
-            }
-            Thread.sleep(20);
-        }
+        PulseChecks.holdsOnFxWithin(() -> expected.equals(area.getText()), Duration.ofSeconds(10));
         assertEquals(expected, FxTestSupport.callOnFx(area::getText));
     }
 

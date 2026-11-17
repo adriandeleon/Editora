@@ -352,12 +352,32 @@ class JavaTypingSoakProbeTest {
                     "method must not duplicate parentheses");
         }
         key("ESCAPE");
-        Thread.sleep(180);
+        awaitPulses(11); // a user's pause before the next scenario (about 180 ms of frames)
+    }
+
+    /**
+     * Waits {@code count} FX pulses: the pace of a human typist is measured in frames, so the keys land between the
+     * pulses the editor paints on, as a real typist's do.
+     */
+    private static void awaitPulses(int count) throws Exception {
+        java.util.concurrent.CountDownLatch pulses = new java.util.concurrent.CountDownLatch(count);
+        javafx.animation.AnimationTimer counter = new javafx.animation.AnimationTimer() {
+            @Override
+            public void handle(long now) {
+                pulses.countDown();
+            }
+        };
+        FxTestSupport.runOnFx(counter::start);
+        try {
+            assertTrue(pulses.await(10, TimeUnit.SECONDS), "pulses ran");
+        } finally {
+            FxTestSupport.runOnFx(counter::stop);
+        }
     }
 
     private void type(String text, boolean paced) throws Exception {
         for (int i = 0; i < text.length(); i++) {
-            if (paced && i > 0) Thread.sleep(35 + ((i - 1) % 4) * 15L);
+            if (paced && i > 0) awaitPulses(2 + (i - 1) % 4); // 35–80 ms between keys, a frame or so apart
             String character = text.substring(i, i + 1);
             long queued = System.nanoTime();
             FxTestSupport.runOnFx(() -> {
@@ -413,11 +433,8 @@ class JavaTypingSoakProbeTest {
     }
 
     private void await(BooleanSupplier condition, int seconds, String description) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) return;
-            Thread.sleep(10);
-        }
+        if (com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.fxCondition(condition::getAsBoolean), java.time.Duration.ofSeconds(seconds))) return;
         throw new AssertionError("timeout: " + description + " visible="
                 + FxTestSupport.callOnFx(
                         () -> items().stream().map(Completion::label).toList()));

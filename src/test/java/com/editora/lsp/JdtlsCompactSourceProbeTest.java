@@ -74,16 +74,19 @@ class JdtlsCompactSourceProbeTest {
             // Completion is the readiness signal for the imported project.
             String completing = "void main() { Lis }\n";
             session.didChange(uri, completing);
-            boolean offeredList = false;
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
-            while (!offeredList && System.nanoTime() < deadline) {
-                var raw = session.completion(uri, new Position(0, "void main() { Lis".length()))
-                        .get(30, TimeUnit.SECONDS);
-                offeredList = CompletionMapper.itemsOf(raw).stream()
-                        .map(CompletionItem::getLabel)
-                        .anyMatch(label -> label.startsWith("List"));
-                if (!offeredList) Thread.sleep(150);
-            }
+            boolean offeredList = com.editora.testkit.Await.holdsWithin(
+                    () -> {
+                        try {
+                            var raw = session.completion(uri, new Position(0, "void main() { Lis".length()))
+                                    .get(30, TimeUnit.SECONDS);
+                            return CompletionMapper.itemsOf(raw).stream()
+                                    .map(CompletionItem::getLabel)
+                                    .anyMatch(label -> label.startsWith("List"));
+                        } catch (Exception e) {
+                            throw new IllegalStateException(e);
+                        }
+                    },
+                    java.time.Duration.ofSeconds(60));
             assertTrue(offeredList, "compact source should complete automatically imported List");
 
             reports.clear();
@@ -110,8 +113,14 @@ class JdtlsCompactSourceProbeTest {
 
     private static boolean waitForReport(
             List<PublishDiagnosticsParams> reports, String uri, String source, boolean expectMissing) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (System.nanoTime() < deadline) {
+        return com.editora.testkit.Await.holdsWithin(
+                () -> ready(reports, uri, source, expectMissing), java.time.Duration.ofSeconds(30));
+    }
+
+    /** Whether the last report for {@code uri} is the compiled answer expected for {@code source}. */
+    private static boolean ready(
+            List<PublishDiagnosticsParams> reports, String uri, String source, boolean expectMissing) {
+        {
             List<PublishDiagnosticsParams> matching = reports.stream()
                     .filter(report -> uri.equals(report.getUri()))
                     .toList();
@@ -131,7 +140,6 @@ class JdtlsCompactSourceProbeTest {
                     return true;
                 }
             }
-            Thread.sleep(100);
         }
         return false;
     }

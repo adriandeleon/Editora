@@ -36,6 +36,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AiClientIdleTimeoutTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
+
+    /** Released when the test ends: a server holding its connection open waits for it, not for the clock. */
+    private final CountDownLatch released = new CountDownLatch(1);
+
+    @org.junit.jupiter.api.AfterEach
+    void release() {
+        released.countDown();
+        AiClient.idleCheckedForTest = null;
+    }
+
     private final ObjectNode body = mapper.createObjectNode();
 
     /** Runs a server that writes {@code 200} headers then does {@code afterHeaders} with the client socket. */
@@ -76,7 +86,7 @@ class AiClientIdleTimeoutTest {
 
         // The endpoint sends the headers, then holds the connection open writing no body at all.
         try (ServerSocket server = startServer((s, out) -> {
-            Thread.sleep(30_000); // hold open; the client's idle watchdog must give up long before this
+            released.await(); // hold open until the test ends; the client's idle watchdog must give up first
         })) {
             String endpoint = "http://127.0.0.1:" + server.getLocalPort() + "/v1/chat/completions";
             Thread caller = new Thread(() -> {
@@ -109,16 +119,22 @@ class AiClientIdleTimeoutTest {
         AtomicReference<String> stop = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
 
-        // Three data chunks, each ~1s apart (< the 3s idle deadline), then [DONE]. Total span > one idle
-        // period, so this only passes if each received line resets the watchdog's clock.
+        // Four data chunks, then [DONE], each after two more of the watchdog's checks (750 ms apart for a 3 s
+        // deadline: a gap of 0.75 to 1.5 s, under the deadline). Total span (five gaps, at least 3.75 s) > one idle
+        // period, so this only passes if each received line resets the watchdog's clock. The gaps are counted in
+        // the watchdog's own checks, not slept.
+        java.util.concurrent.Semaphore checks = new java.util.concurrent.Semaphore(0);
+        AiClient.idleCheckedForTest = checks::release;
         try (ServerSocket server = startServer((s, out) -> {
-            for (int i = 0; i < 3; i++) {
-                Thread.sleep(1_000);
+            for (int i = 0; i < 4; i++) {
+                checks.drainPermits();
+                checks.acquire(2);
                 out.write(
                         "data: {\"choices\":[{\"delta\":{\"content\":\"tok\"}}]}\n\n".getBytes(StandardCharsets.UTF_8));
                 out.flush();
             }
-            Thread.sleep(1_000);
+            checks.drainPermits();
+            checks.acquire(2);
             out.write("data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8));
             out.flush();
         })) {
@@ -203,7 +219,7 @@ class AiClientIdleTimeoutTest {
         Thread t = new Thread(() -> {
             try (Socket s = server.accept()) {
                 drainRequest(s.getInputStream());
-                Thread.sleep(30_000);
+                released.await(); // never answers; the test ends it
             } catch (IOException | InterruptedException ignored) {
                 // The client cancels the exchange after the header deadline.
             }

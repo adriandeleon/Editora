@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicReference;
 
+import com.editora.testkit.Await;
 import com.jediterm.core.util.TermSize;
 import com.jediterm.terminal.CursorShape;
 import com.jediterm.terminal.RequestOrigin;
@@ -70,7 +71,8 @@ class ProcessCwdPtyTest {
             session.sendString("cd /\r");
             // The cd has to have run, or the check below proves nothing on a slow shell.
             assertTrue(await(() -> "/".equals(ProcessCwd.of(session.pid()).orElse(null))), "the shell ran the cd");
-            Thread.sleep(2 * 750); // two of the watcher's polls: a running one would have reported "/"
+            // two of the watcher's polls: a running one would have reported "/"
+            CwdWatcher.afterTwoTicksForTest().get(10, java.util.concurrent.TimeUnit.SECONDS);
             assertEquals(afterClose, reported.get(), "a closed watcher went on polling");
         } finally {
             session.close();
@@ -88,12 +90,7 @@ class ProcessCwdPtyTest {
     }
 
     private static boolean await(java.util.function.BooleanSupplier condition) throws InterruptedException {
-        Instant deadline = Instant.now().plus(TIMEOUT);
-        while (Instant.now().isBefore(deadline)) {
-            if (condition.getAsBoolean()) return true;
-            Thread.sleep(50);
-        }
-        return false;
+        return Await.holdsWithin(condition, TIMEOUT);
     }
 
     private static boolean awaitDirectory(TerminalSession session, AtomicReference<String> reported, Path target)
@@ -101,26 +98,24 @@ class ProcessCwdPtyTest {
         Instant deadline = Instant.now().plus(TIMEOUT);
         while (Instant.now().isBefore(deadline)) {
             session.sendString("cd '" + target.toString().replace("'", "'\"'\"'") + "'\r");
-            Thread.sleep(1000);
-            if (target.toString().equals(reported.get())) return true;
+            // each try waits up to a second for the watcher to report it, then types the cd again
+            if (Await.holdsWithin(() -> target.toString().equals(reported.get()), Duration.ofSeconds(1))) return true;
         }
         return false;
     }
 
     private static boolean awaitReady(TerminalSession session) throws InterruptedException {
         TerminalTextBuffer buffer = session.getTextBuffer();
-        Instant deadline = Instant.now().plus(TIMEOUT);
-        while (Instant.now().isBefore(deadline)) {
+        java.util.function.BooleanSupplier printed = () -> {
             buffer.lock();
             try {
-                if (!buffer.getScreenLines().isBlank()) return true;
+                return !buffer.getScreenLines().isBlank();
             } finally {
                 buffer.unlock();
             }
-            if (!session.isRunning()) return false;
-            Thread.sleep(50);
-        }
-        return false;
+        };
+        Await.holdsWithin(() -> printed.getAsBoolean() || !session.isRunning(), TIMEOUT);
+        return printed.getAsBoolean();
     }
 
     /** Everything the emulator calls into, doing nothing. */

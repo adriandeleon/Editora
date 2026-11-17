@@ -379,22 +379,17 @@ class DiffViewerUnifiedAndNavigationFxTest {
             FxTestSupport.runOnFx(
                     () -> pane.setGitHunkActions(EnumSet.of(DiffViewerPane.GitHunkAction.STAGE), requests::add));
             // The sides are built again: wait until the new right side shows its lines.
-            CodeArea rebuilt = null;
-            for (int i = 0; i < 200; i++) {
-                FxTestSupport.drainFx();
-                CodeArea now = FxTestSupport.field(pane, "rightArea");
-                boolean laidOut = FxTestSupport.callOnFx(() -> {
-                    stage.getScene().getRoot().applyCss();
-                    stage.getScene().getRoot().layout();
-                    return now.getScene() != null
-                            && now.getParagraphBoundsOnScreen(1).isPresent();
-                });
-                if (laidOut) {
-                    rebuilt = now;
-                    break;
-                }
-                Thread.sleep(10);
-            }
+            CodeArea rebuilt = EventuallyFx.holdsWithin(java.time.Duration.ofSeconds(4), () -> {
+                        CodeArea now = FxTestSupport.field(pane, "rightArea");
+                        return FxTestSupport.callOnFx(() -> {
+                            stage.getScene().getRoot().applyCss();
+                            stage.getScene().getRoot().layout();
+                            return now.getScene() != null
+                                    && now.getParagraphBoundsOnScreen(1).isPresent();
+                        });
+                    })
+                    ? FxTestSupport.field(pane, "rightArea")
+                    : null;
             assertNotNull(rebuilt, "the rebuilt side is laid out");
             CodeArea side = rebuilt;
             FxTestSupport.runOnFx(side::requestFocus);

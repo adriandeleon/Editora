@@ -2,7 +2,6 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
 import com.editora.command.CommandRegistry;
@@ -36,12 +35,7 @@ class GroovyRunDebugWindowFxTest {
     Path dir;
 
     private static void await(String what, BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
-        while (!FxTestSupport.callOnFx(condition::getAsBoolean)) {
-            assertTrue(System.nanoTime() < deadline, what + " never happened");
-            FxTestSupport.drainFx();
-            Thread.sleep(20);
-        }
+        FxTestSupport.awaitFxCondition(condition::getAsBoolean, what, java.time.Duration.ofSeconds(60));
     }
 
     private static EditorBuffer open(MainController c, Path file) throws Exception {

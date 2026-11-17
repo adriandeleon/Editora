@@ -58,9 +58,7 @@ class StartupAheadTest {
         listen();
         XmlBundledSchemas.ensureInBackground(config);
         assertEquals(List.of(), heard, "nothing on the calling thread");
-        for (int i = 0; i < 400 && !Files.isRegularFile(catalog); i++) {
-            Thread.sleep(25);
-        }
+        com.editora.testkit.Await.holdsWithin(() -> Files.isRegularFile(catalog), java.time.Duration.ofSeconds(10));
         assertTrue(Files.isRegularFile(catalog), "written by the background run");
     }
 

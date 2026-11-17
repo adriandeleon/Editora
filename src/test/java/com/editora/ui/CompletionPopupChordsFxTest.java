@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -53,8 +54,11 @@ class CompletionPopupChordsFxTest {
         Files.writeString(file, DOC);
         fx = FxWindowFixture.create();
         FxTestSupport.runOnFx(() -> fx.controller.openAndNavigate(file, 1));
-        settle(800);
-        buf = (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
+        buf = EventuallyFx.valueOnFx("the file to open", Duration.ofSeconds(10), () -> {
+            EditorBuffer b = (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
+            return b != null && file.equals(b.getPath()) && DOC.equals(b.getContent()) ? b : null;
+        });
+        settle();
         CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
         Consumer<String> prev = FxTestSupport.field(registry, "executionListener");
         FxTestSupport.runOnFx(() -> registry.setExecutionListener(id -> {
@@ -68,8 +72,8 @@ class CompletionPopupChordsFxTest {
         if (fx != null) fx.dispose();
     }
 
-    private static void settle(int ms) throws Exception {
-        Thread.sleep(ms);
+    /** Lets what a key or an edit queued on the FX thread run: a deferred refresh hops once more. */
+    private static void settle() throws Exception {
         FxTestSupport.drainFx();
         FxTestSupport.drainFx();
     }
@@ -88,7 +92,7 @@ class CompletionPopupChordsFxTest {
 
     private void fire(KeyCode code, boolean ctrl, boolean alt, String ch) throws Exception {
         FxTestSupport.runOnFx(() -> fireNow(code, ctrl, alt, ch));
-        settle(60);
+        settle();
     }
 
     private void type(String s) throws Exception {
@@ -106,9 +110,11 @@ class CompletionPopupChordsFxTest {
             a.moveTo(a.getLength());
             a.requestFocus();
         });
-        settle(150);
+        settle();
         type(prefix);
-        settle(600); // the local list opens on the 280 ms typing pause
+        // the local list opens on the 280 ms typing pause
+        EventuallyFx.holdsWithin(Duration.ofSeconds(5), this::popup);
+        settle();
         ran.clear();
         assertTrue(popup(), "the snippet popup opened for '" + prefix + "'");
     }
@@ -182,8 +188,9 @@ class CompletionPopupChordsFxTest {
             a.requestFocus();
             buf.showCodeActions(List.of(new CodeAction("Fix A", "quickfix", false, "A")), x -> {});
         });
-        settle(100);
+        settle();
         ran.clear();
+        EventuallyFx.holdsWithin(Duration.ofSeconds(5), () -> FxTestSupport.callOnFx(buf::codeActionsShowing));
         assertTrue(FxTestSupport.callOnFx(buf::codeActionsShowing));
         fire(KeyCode.F, false, true, "f");
         assertEquals(List.of("nav.wordForward"), ran);
@@ -196,7 +203,7 @@ class CompletionPopupChordsFxTest {
     @Test
     void theLocalListFollowsTheTypedWord() throws Exception {
         openPopup("total = ", "fo");
-        type("otprint"); // 60 ms per key: the 280 ms pause never fires
+        type("otprint"); // one key after another, with no 280 ms pause between them
         assertFalse(popup(), "nothing starts with 'footprint', so the list closed without waiting for a pause");
         fire(KeyCode.ENTER, false, false, null);
         assertTrue(
@@ -213,7 +220,7 @@ class CompletionPopupChordsFxTest {
             a.insertText(a.getCaretPosition(), "otprint");
             fireNow(KeyCode.ENTER, false, false, null);
         });
-        settle(100);
+        settle();
         assertFalse(text().contains("for value"), "the stale 'for' row was not expanded: " + text());
         assertTrue(text().startsWith(DOC + "total = footprint\n"), text());
         assertFalse(popup());

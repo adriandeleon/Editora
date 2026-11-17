@@ -2,7 +2,6 @@ package com.editora.editor.debug;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 import javafx.geometry.Bounds;
 import javafx.geometry.Point2D;
@@ -13,6 +12,7 @@ import javafx.util.Duration;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.EditorFx;
+import com.editora.testkit.Await;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Tag;
@@ -99,11 +99,13 @@ class DebugHoverFxTest {
             holder[0].getArea().fireEvent(moveTo(holder[0], SOURCE.indexOf("depth") + 1)); // rests here
             assertEquals(List.of(), asked, "nothing evaluated while the mouse is moving");
         });
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (asked.isEmpty() && System.nanoTime() < deadline) {
-            Thread.sleep(20);
-        }
-        Thread.sleep(300); // and nothing else arrives after the one it rested on
+        Await.holdsWithin(() -> !asked.isEmpty(), java.time.Duration.ofSeconds(5));
+        // and nothing else arrives after the one it rested on: the one rest timer has run out, no other is armed
+        assertEquals(
+                javafx.animation.Animation.Status.STOPPED,
+                EditorFx.callFx(() -> EditorFx.<javafx.animation.PauseTransition>field(
+                                EditorFx.field(holder[0], "debugHover"), "pending")
+                        .getStatus()));
         assertEquals(List.of("other.depth"), asked);
         EditorFx.onFx(() -> {
             stage[0].close();

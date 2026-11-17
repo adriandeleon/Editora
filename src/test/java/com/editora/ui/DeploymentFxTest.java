@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -24,6 +25,7 @@ import com.editora.process.ExecTargets;
 import com.editora.run.JavaLaunchInfo;
 import com.editora.run.JavaMainClass;
 import com.editora.run.StackTraceLinks;
+import com.editora.testkit.Await;
 import com.editora.vfs.EmbeddedSftpFixture;
 import com.editora.vfs.RemoteConnection;
 import org.fxmisc.richtext.CodeArea;
@@ -457,9 +459,7 @@ class DeploymentFxTest {
     }
 
     private static void await(String what, BooleanSupplier done) throws Exception {
-        for (int i = 0; i < 1200 && !done.getAsBoolean(); i++) {
-            Thread.sleep(25);
-        }
+        Await.holdsWithin(done, Duration.ofSeconds(30));
         assertTrue(done.getAsBoolean(), what);
     }
 

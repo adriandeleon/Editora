@@ -675,13 +675,7 @@ class GitOperationsFxTest {
     }
 
     private static void awaitThat(Callable<Boolean> condition, String description) throws Exception {
-        for (int i = 0; i < 300; i++) {
-            if (FxTestSupport.callOnFx(condition)) {
-                return;
-            }
-            Thread.sleep(50);
-        }
-        throw new AssertionError("Timed out waiting for " + description);
+        FxTestSupport.awaitFxCondition(condition, description, java.time.Duration.ofSeconds(15));
     }
 
     private static void awaitBufferContains(EditorBuffer buffer, String expected) throws Exception {

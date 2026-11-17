@@ -48,9 +48,12 @@ class LanguageServerSessionTimeoutTest {
     private static void timeOut(LanguageServerSession s) throws InterruptedException {
         CompletableFuture<Object> request = new CompletableFuture<>();
         LanguageServerSession.bounded(request, java.time.Duration.ofMillis(20), s);
-        long until = System.currentTimeMillis() + 5_000;
-        while (!request.isDone() && System.currentTimeMillis() < until) {
-            Thread.sleep(5);
+        try {
+            request.get(5, java.util.concurrent.TimeUnit.SECONDS); // ends when the bound cancels it
+        } catch (java.util.concurrent.CancellationException
+                | java.util.concurrent.ExecutionException
+                | java.util.concurrent.TimeoutException ended) {
+            // the assertion below says which
         }
         assertTrue(request.isCancelled());
     }

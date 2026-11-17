@@ -4,9 +4,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
 
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
@@ -174,23 +174,15 @@ class DiffEditableResultIntegrationFxTest {
 
     private DiffViewerPane awaitGitFolderPane() throws Exception {
         TabPane tabs = FxTestSupport.field(fx.controller, "tabPane");
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(10));
-        while (Instant.now().isBefore(deadline)) {
-            DiffViewerPane pane = FxTestSupport.callOnFx(() -> {
-                for (int i = tabs.getTabs().size() - 1; i >= 0; i--) {
-                    Tab tab = tabs.getTabs().get(i);
-                    if (tab.getUserData() instanceof DirectoryReviewPane review && review.activePane() != null) {
-                        return review.activePane();
-                    }
+        return EventuallyFx.valueOnFx("the Git folder diff to load", Duration.ofSeconds(10), () -> {
+            for (int i = tabs.getTabs().size() - 1; i >= 0; i--) {
+                Tab tab = tabs.getTabs().get(i);
+                if (tab.getUserData() instanceof DirectoryReviewPane review && review.activePane() != null) {
+                    return review.activePane();
                 }
-                return null;
-            });
-            if (pane != null) {
-                return pane;
             }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("Git folder diff did not load");
+            return null;
+        });
     }
 
     private void applyState(Object git, GitService.RepoState state) throws Exception {
@@ -208,39 +200,26 @@ class DiffEditableResultIntegrationFxTest {
     }
 
     private static EditorBuffer awaitBuffer(Object ops, Path file) throws Exception {
-        for (int i = 0; i < 200; i++) {
-            EditorBuffer buffer = FxTestSupport.callOnFx(
-                    () -> (EditorBuffer) FxTestSupport.call(ops, "openBufferFor", new Class<?>[] {Path.class}, file));
-            if (buffer != null) {
-                return buffer;
-            }
-            Thread.sleep(20);
-        }
-        return null;
+        Callable<EditorBuffer> open =
+                () -> (EditorBuffer) FxTestSupport.call(ops, "openBufferFor", new Class<?>[] {Path.class}, file);
+        EventuallyFx.holdsWithin(Duration.ofSeconds(4), () -> FxTestSupport.callOnFx(open) != null);
+        return FxTestSupport.callOnFx(open);
     }
 
     private static void awaitApplySettled(DiffViewerPane pane) throws Exception {
-        for (int i = 0; i < 200; i++) {
-            if (!FxTestSupport.callOnFx(() -> FxTestSupport.<Boolean>field(pane, "applyPending"))) {
-                return;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("diff apply did not complete");
+        EventuallyFx.untilOnFx(
+                "diff apply did not complete",
+                Duration.ofSeconds(4),
+                () -> !FxTestSupport.<Boolean>field(pane, "applyPending"));
     }
 
     private static DiffViewerPane awaitPaneAfter(Object ops, int previousPanes) throws Exception {
-        for (int i = 0; i < 100; i++) {
-            DiffViewerPane pane = FxTestSupport.callOnFx(() -> {
-                List<?> panes = (List<?>) FxTestSupport.call(ops, "openDiffPanes", new Class<?>[] {});
-                return panes.size() <= previousPanes ? null : (DiffViewerPane) panes.get(panes.size() - 1);
-            });
-            if (pane != null) {
-                return pane;
-            }
-            Thread.sleep(50);
-        }
-        return null;
+        Callable<DiffViewerPane> newest = () -> {
+            List<?> panes = (List<?>) FxTestSupport.call(ops, "openDiffPanes", new Class<?>[] {});
+            return panes.size() <= previousPanes ? null : (DiffViewerPane) panes.get(panes.size() - 1);
+        };
+        EventuallyFx.holdsWithin(Duration.ofSeconds(5), () -> FxTestSupport.callOnFx(newest) != null);
+        return FxTestSupport.callOnFx(newest);
     }
 
     private static void git(Path dir, String... args) throws Exception {

@@ -1,6 +1,7 @@
 package com.editora.ui;
 
 import java.nio.file.Path;
+import java.time.Duration;
 
 import javafx.scene.control.Tab;
 
@@ -50,9 +51,7 @@ class PdfViewerReloadFxTest {
     }
 
     private static void awaitPages(PdfViewerPane pane, int pages) throws Exception {
-        for (int i = 0; i < 200 && FxTestSupport.callOnFx(pane::pageCount) != pages; i++) {
-            Thread.sleep(50);
-        }
+        PulseChecks.holdsOnFxWithin(() -> pane.pageCount() == pages, Duration.ofSeconds(10));
         assertEquals(pages, FxTestSupport.callOnFx(pane::pageCount));
     }
 

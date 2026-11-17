@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -11,6 +12,7 @@ import javafx.scene.control.TabPane;
 import com.editora.config.ConfigManager;
 import com.editora.config.WorkspaceState;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -349,12 +351,15 @@ class SessionRestorePlaceholderFxTest {
 
     /** Polls {@code condition} on the FX thread until it holds, or ~10 s elapse. */
     private static boolean waitUntil(java.util.function.BooleanSupplier condition) throws Exception {
-        for (int i = 0; i < 500; i++) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return true;
-            }
-            Thread.sleep(20);
+        return Await.holdsWithin(() -> onFx(condition::getAsBoolean), Duration.ofSeconds(10));
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
-        return false;
     }
 }

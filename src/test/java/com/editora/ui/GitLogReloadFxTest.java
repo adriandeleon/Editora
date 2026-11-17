@@ -69,9 +69,15 @@ class GitLogReloadFxTest {
     }
 
     private static void awaitSubjects(FxWindowFixture fx, List<String> expected) throws Exception {
-        for (int i = 0; i < 200 && !expected.equals(subjects(fx)); i++) {
-            Thread.sleep(50);
-        }
+        com.editora.testkit.Await.holdsWithin(
+                () -> {
+                    try {
+                        return expected.equals(subjects(fx));
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                },
+                java.time.Duration.ofSeconds(10));
         assertEquals(expected, subjects(fx));
     }
 

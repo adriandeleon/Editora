@@ -178,10 +178,16 @@ class HttpEngineRound2IntegrationTest {
             HttpClientService.Handle h =
                     svc.run(request(text), Map.of(), dir, new CapturedResponses(), SecretGate.UNCHECKED, f::complete);
             assertTrue(uploadStarted.await(10, TimeUnit.SECONDS));
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-            while (openHandles(file) == 0 && System.nanoTime() < deadline) {
-                Thread.sleep(20); // the client opens the file when it starts sending the body
-            }
+            // the client opens the file when it starts sending the body; only the process's open files show it
+            com.editora.testkit.Await.holdsWithin(
+                    () -> {
+                        try {
+                            return openHandles(file) != 0;
+                        } catch (Exception e) {
+                            throw new IllegalStateException(e);
+                        }
+                    },
+                    java.time.Duration.ofSeconds(10));
             assertEquals(1, openHandles(file), "the upload is reading the file");
             h.cancel();
             assertEquals(
@@ -201,10 +207,9 @@ class HttpEngineRound2IntegrationTest {
         CompletableFuture<HttpExchange> f = new CompletableFuture<>();
         HttpClientService.Handle again =
                 svc.run(request(login), Map.of(), dir, session, SecretGate.UNCHECKED, f::complete);
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (received.stream().filter(s -> s.startsWith("/login")).count() < 2 && System.nanoTime() < deadline) {
-            Thread.sleep(10);
-        }
+        com.editora.testkit.Await.holdsWithin(
+                () -> !(received.stream().filter(s -> s.startsWith("/login")).count() < 2),
+                java.time.Duration.ofSeconds(10));
         again.cancel();
         assertEquals(
                 HttpClientService.CANCELLED,
@@ -243,7 +248,10 @@ class HttpEngineRound2IntegrationTest {
                     OutputStream out = s.getOutputStream();
                     out.write(reply.getBytes(StandardCharsets.US_ASCII));
                     out.flush();
-                    Thread.sleep(200);
+                    s.setSoTimeout(10_000);
+                    while (in.read() >= 0) {
+                        // the connection stays up until the client, having read the reply, hangs up
+                    }
                 }
             } catch (Exception closed) {
                 return;

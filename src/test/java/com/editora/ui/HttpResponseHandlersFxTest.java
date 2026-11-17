@@ -151,12 +151,11 @@ class HttpResponseHandlersFxTest {
             host.active = b;
             coordinator.runFile();
         });
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
-        do {
-            assertTrue(System.nanoTime() < deadline, "the run never ended; the server got " + hits);
-            Thread.sleep(30);
-            FxTestSupport.drainFx();
-        } while (FxTestSupport.callOnFx(() -> coordinator.isRunningForTest(b)));
+        FxTestSupport.drainFx();
+        boolean ended = com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.fxCondition(() -> coordinator.idleForTest(b)),
+                java.time.Duration.ofSeconds(WAIT_SECONDS));
+        assertTrue(ended, "the run never ended; the server got " + hits);
         FxTestSupport.drainFx();
     }
 
@@ -227,13 +226,11 @@ class HttpResponseHandlersFxTest {
                 FxTestSupport.drainFx();
                 FxTestSupport.runOnFx(() -> p.showEntries(List.of(HttpHistoryEntry.of(ex))));
                 String want = width > 500 ? tr("httppanel.tab.tests") + " 2/2" : "2/2";
-                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
-                while (!want.equals(FxTestSupport.callOnFx(() -> p.tabTextForTest(HttpResponseTab.TESTS)))) {
-                    assertTrue(
-                            System.nanoTime() < deadline,
-                            width + " px: " + FxTestSupport.callOnFx(() -> p.tabTextForTest(HttpResponseTab.TESTS)));
-                    Thread.sleep(20);
-                }
+                boolean shown = com.editora.testkit.Await.holdsWithin(
+                        FxTestSupport.fxCondition(() -> want.equals(p.tabTextForTest(HttpResponseTab.TESTS))),
+                        java.time.Duration.ofSeconds(WAIT_SECONDS));
+                assertTrue(
+                        shown, width + " px: " + FxTestSupport.callOnFx(() -> p.tabTextForTest(HttpResponseTab.TESTS)));
                 assertEquals(
                         HttpTabStrip.CountStyle.PASSED,
                         FxTestSupport.callOnFx(() -> p.tabsForTest().countStyleForTest(HttpResponseTab.TESTS)),
@@ -317,7 +314,7 @@ class HttpResponseHandlersFxTest {
                         + "> {% fetch('" + url("/hit") + "'); client.global.set('token', 'from-handler'); %}\n\n"
                         + "### me\nGET " + url("/me") + "\nAuthorization: Bearer {{token}}\n");
         runAllAndWait(b);
-        Thread.sleep(300);
+        // The run is over: whatever it sent was answered, and the server records a request before answering it.
         assertEquals(List.of("login", "me Bearer tok-4567"), hits, "the handler never ran; @capture did");
         assertEquals(1, ops.scriptAsks.get());
         HttpClientPanel p = panel(b);
@@ -402,7 +399,7 @@ class HttpResponseHandlersFxTest {
                 dir.resolve("api.http"),
                 "< {% request.variables.set('t', 'tok-1') %}\nGET " + url("/me") + "\nAuthorization: Bearer {{t}}\n");
         runAllAndWait(b);
-        Thread.sleep(200);
+        // The run is over: whatever it sent was answered, and the server records a request before answering it.
         assertEquals(List.of(), hits, "nothing was sent");
         HttpClientPanel p = panel(b);
         assertEquals(
@@ -466,11 +463,8 @@ class HttpResponseHandlersFxTest {
                 "an older Node is debugged without its permission model, and says which Node");
         assertTrue(FxTestSupport.callOnFx(() -> coordinator.isRunningForTest(b)), "waiting for its debugger");
         FxTestSupport.runOnFx(() -> coordinator.cancelRun(b)); // nobody attaches here: Cancel ends it
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
-        while (FxTestSupport.callOnFx(() -> coordinator.isRunningForTest(b))) {
-            assertTrue(System.nanoTime() < deadline, "the run never ended");
-            Thread.sleep(30);
-        }
+        FxTestSupport.awaitFxCondition(
+                () -> coordinator.idleForTest(b), "the run to end", java.time.Duration.ofSeconds(WAIT_SECONDS));
         assertEquals(List.of("login"), hits, "the request itself went out");
     }
 

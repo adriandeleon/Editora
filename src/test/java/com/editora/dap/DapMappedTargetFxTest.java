@@ -131,12 +131,11 @@ class DapMappedTargetFxTest {
 
         onFx(() -> dap.startLaunch(file, "python", null));
 
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (stops.isEmpty()) {
-            assertTrue(errors.isEmpty(), errors.toString());
-            assertTrue(System.nanoTime() < deadline, "never stopped; started " + target.started());
-            Thread.sleep(50);
-        }
+        assertTrue(
+                com.editora.testkit.Await.holdsWithin(
+                        () -> !stops.isEmpty() || !errors.isEmpty(), java.time.Duration.ofSeconds(30)),
+                "never stopped; started " + target.started());
+        assertTrue(errors.isEmpty(), errors.toString());
         assertEquals(file, stops.get(0).get(0).file(), "the frame comes back as this machine's file");
         String there = alias.resolve("main.py").toString();
         assertEquals(there, logged("launch").get("program").getAsString());

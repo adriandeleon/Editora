@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -76,13 +77,8 @@ class DebugExceptionCardFxTest {
 
     /** Waits for the card to be showing ({@code on}) or not: it is placed once the editor has drawn the line. */
     private static void awaitShowing(DebugExceptionCard card, boolean on) throws Exception {
-        long end = System.nanoTime() + 3_000_000_000L;
-        while (FxTestSupport.callOnFx(card::isShowing) != on) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("the card never became " + (on ? "shown" : "hidden"));
-            }
-            Thread.sleep(20);
-        }
+        EventuallyFx.untilOnFx(
+                "the card to become " + (on ? "shown" : "hidden"), Duration.ofSeconds(3), () -> card.isShowing() == on);
     }
 
     private static String text() {

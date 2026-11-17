@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -105,13 +106,14 @@ class ExportCoordinatorPrintFxTest {
     }
 
     private void awaitPreviews(int count) throws Exception {
-        for (int i = 0; i < 200; i++) {
-            if (FxTestSupport.callOnFx(() -> previews().size()) == count && !preparing()) {
-                break;
-            }
-            Thread.sleep(50);
-        }
-        Thread.sleep(150); // a second, wrongly-opened preview would arrive right behind the first
+        EventuallyFx.holdsWithin(
+                Duration.ofSeconds(10),
+                () -> FxTestSupport.callOnFx(() -> previews().size()) == count && !preparing());
+        // A second, wrongly-opened preview would arrive right behind the first: its preparation queued on the print
+        // worker behind the first, and its answer posted to the FX thread. Let both run.
+        java.util.concurrent.ExecutorService printWorker =
+                FxTestSupport.field(FxTestSupport.<Object>field(exports, "printService"), "exec");
+        printWorker.submit(() -> {}).get(10, java.util.concurrent.TimeUnit.SECONDS);
         FxTestSupport.drainFx();
         assertEquals(count, FxTestSupport.callOnFx(() -> previews().size()), "open Print Preview windows");
     }

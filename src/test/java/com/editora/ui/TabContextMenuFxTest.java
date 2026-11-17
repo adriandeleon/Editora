@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -11,6 +12,7 @@ import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.Tab;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -227,23 +229,18 @@ class TabContextMenuFxTest {
                 assertEquals(tr("menu.revealInFileManager"), labels.get(at + 1), "beside Reveal in File Manager");
                 menu.getItems().get(at).fire();
             });
-            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
-            boolean shown = false;
-            while (!shown && System.nanoTime() < deadline) {
-                shown = FxTestSupport.callOnFx(() -> {
-                    ProjectPanel panel = fx.controller.projectPanel();
-                    ProjectMapView map = FxTestSupport.field(panel, "mapView");
-                    javafx.scene.layout.Region surface = FxTestSupport.field(map, "surface");
-                    Object selected = FxTestSupport.call(surface, "selectedPath", new Class<?>[0]);
-                    // Same file, not same spelling: macOS's temp folder is /var, a link to /private/var.
-                    return panel.isMapShowing()
-                            && selected instanceof Path at
-                            && java.nio.file.Files.isSameFile(at, file);
-                });
-                if (!shown) {
-                    Thread.sleep(25);
-                }
-            }
+            boolean shown = Await.holdsWithin(
+                    () -> onFx(() -> {
+                        ProjectPanel panel = fx.controller.projectPanel();
+                        ProjectMapView map = FxTestSupport.field(panel, "mapView");
+                        javafx.scene.layout.Region surface = FxTestSupport.field(map, "surface");
+                        Object selected = FxTestSupport.call(surface, "selectedPath", new Class<?>[0]);
+                        // Same file, not same spelling: macOS's temp folder is /var, a link to /private/var.
+                        return panel.isMapShowing()
+                                && selected instanceof Path at
+                                && java.nio.file.Files.isSameFile(at, file);
+                    }),
+                    Duration.ofSeconds(20));
             assertTrue(shown, "the Map window opened with the tab's file selected");
             FxTestSupport.runOnFx(() -> fx.controller.projectPanel().mapWindow().closeByUser());
         } finally {
@@ -396,5 +393,14 @@ class TabContextMenuFxTest {
                 .filter(MenuItem::isVisible)
                 .map(item -> item instanceof SeparatorMenuItem ? "-" : item.getText())
                 .toList();
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

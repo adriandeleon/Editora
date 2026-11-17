@@ -17,6 +17,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.testfx.api.FxToolkit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -97,19 +98,23 @@ class BashWatchFxTest {
             manager.notifyWatchedFiles(List.of(new LspManager.WatchedFile(main, LspManager.WatchedKind.CHANGED)));
             return null;
         });
-        Thread.sleep(BashReanalysis.DEBOUNCE_MS + 400);
+        // notifyWatchedFiles hands the change to the reanalysis on the FX thread: no pass waiting means none will run
+        assertFalse(onFx(() -> manager.bashReanalysis.pendingForTest()), "nothing queued for an open script");
         assertEquals(1, onFx(() -> fake.opened.size()));
         assertTrue(onFx(() -> fake.closed.isEmpty()));
     }
 
     private static void waitFor(java.util.concurrent.Callable<Boolean> condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-        while (!condition.call()) {
-            if (System.nanoTime() > deadline) {
-                throw new AssertionError("timed out");
-            }
-            Thread.sleep(50);
-        }
+        com.editora.testkit.Await.until(
+                () -> {
+                    try {
+                        return condition.call();
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                },
+                "the condition",
+                java.time.Duration.ofSeconds(15));
     }
 
     private static <T> T onFx(java.util.concurrent.Callable<T> task) throws Exception {

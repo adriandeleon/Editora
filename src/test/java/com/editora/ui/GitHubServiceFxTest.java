@@ -436,10 +436,15 @@ class GitHubServiceFxTest {
     }
 
     private static void await(String what, Callable<Boolean> condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (!condition.call()) {
-            assertFalse(System.nanoTime() > deadline, "timed out waiting for " + what);
-            Thread.sleep(25);
-        }
+        com.editora.testkit.Await.until(
+                () -> {
+                    try {
+                        return condition.call();
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                },
+                what,
+                java.time.Duration.ofSeconds(20));
     }
 }

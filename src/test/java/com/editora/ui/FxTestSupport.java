@@ -104,6 +104,86 @@ final class FxTestSupport {
         return result.get();
     }
 
+    /**
+     * Waits until {@code condition}, read on the FX thread, holds: re-checked after each FX pulse by {@link
+     * com.editora.testkit.Await} (QUAL-07, Pauta 6.0.1), failing with {@code what} after {@code timeout}.
+     */
+    static void awaitFxCondition(Callable<Boolean> condition, String what, java.time.Duration timeout)
+            throws InterruptedException {
+        com.editora.testkit.Await.until(fxCondition(condition), what, timeout);
+    }
+
+    /** As {@link #awaitFxCondition(Callable, String, java.time.Duration)} with the default timeout. */
+    static void awaitFxCondition(Callable<Boolean> condition, String what) throws InterruptedException {
+        com.editora.testkit.Await.until(fxCondition(condition), what);
+    }
+
+    /** Waits until {@code value}, read on the FX thread, is not null, and returns it. */
+    static <T> T awaitFxValue(Callable<T> value, String what, java.time.Duration timeout) throws InterruptedException {
+        AtomicReference<T> found = new AtomicReference<>();
+        com.editora.testkit.Await.until(
+                fxCondition(() -> {
+                    T t = value.call();
+                    found.set(t);
+                    return t != null;
+                }),
+                what,
+                timeout);
+        return found.get();
+    }
+
+    /**
+     * Waits until {@code value}, read on the calling thread (it may itself call {@link #callOnFx}), is not null, and
+     * returns it, re-checked by {@link com.editora.testkit.Await}.
+     */
+    static <T> T awaitValue(Callable<T> value, String what, java.time.Duration timeout) throws InterruptedException {
+        AtomicReference<T> found = new AtomicReference<>();
+        com.editora.testkit.Await.until(
+                unchecked(() -> {
+                    T t = value.call();
+                    found.set(t);
+                    return t != null;
+                }),
+                what,
+                timeout);
+        return found.get();
+    }
+
+    /** {@code condition}, read on the calling thread, as a {@link java.util.function.BooleanSupplier}. */
+    static java.util.function.BooleanSupplier unchecked(Callable<Boolean> condition) {
+        return () -> {
+            try {
+                return Boolean.TRUE.equals(condition.call());
+            } catch (RuntimeException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        };
+    }
+
+    /**
+     * Waits until every settled-edit milestone of {@code buffer}'s last edit has fired (its lint, highlighting,
+     * preview reload, …), then drains the FX queue: what a test once slept past the slowest milestone for.
+     */
+    static void awaitSettled(com.editora.editor.EditorBuffer buffer) throws Exception {
+        awaitFxCondition(() -> !buffer.settledEditsPendingForTest(), "the settled-edit pulse");
+        drainFx();
+    }
+
+    /** {@code condition} as a {@link java.util.function.BooleanSupplier} read on the FX thread. */
+    static java.util.function.BooleanSupplier fxCondition(Callable<Boolean> condition) {
+        return () -> {
+            try {
+                return Boolean.TRUE.equals(callOnFx(condition));
+            } catch (RuntimeException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        };
+    }
+
     /** Calls a private one-argument method, searching the class hierarchy like {@link #invoke}. */
     static Object invokeWith(Object target, String method, Class<?> paramType, Object arg) {
         for (Class<?> c = target.getClass(); c != null; c = c.getSuperclass()) {

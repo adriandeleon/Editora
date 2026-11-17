@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -56,14 +57,7 @@ class EditorConfigOffFxTest {
     }
 
     private void waitUntil(java.util.concurrent.Callable<Boolean> condition, String what) throws Exception {
-        long end = System.nanoTime() + 5_000_000_000L;
-        while (!condition.call()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out: " + what);
-            }
-            Thread.sleep(20);
-            FxTestSupport.drainFx();
-        }
+        EventuallyFx.until("timed out: " + what, Duration.ofSeconds(5), condition::call);
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -318,10 +319,10 @@ class DiffApplyGuardsFxTest {
                     blocks.get(0),
                     false));
             // The closed file is opened into a background buffer on the file-load worker first.
-            for (int attempt = 0; attempt < 200 && blockStarts(pane).size() != 1; attempt++) {
-                Thread.sleep(25);
+            EventuallyFx.holdsWithin(Duration.ofSeconds(10), () -> {
                 settle(async, fx);
-            }
+                return blockStarts(pane).size() == 1;
+            });
 
             assertEquals(1, blockStarts(pane).size(), "the reverted hunk is gone from the diff");
             assertFalse(FxTestSupport.callOnFx(save::isDisabled), "Save follows an accepted revert");
@@ -331,10 +332,10 @@ class DiffApplyGuardsFxTest {
             FxTestSupport.runOnFx(save::fire);
             // The save is written off the FX thread (PERF-01): wait for it to land on disk.
             String saved = "a\nb\nc\nd\ne\nf\ng\nh\ni\nJ\n";
-            for (int attempt = 0; attempt < 200 && !saved.equals(Files.readString(file)); attempt++) {
-                Thread.sleep(25);
+            EventuallyFx.holdsWithin(Duration.ofSeconds(10), () -> {
                 settle(async, fx);
-            }
+                return saved.equals(Files.readString(file));
+            });
             assertEquals(saved, Files.readString(file));
         }
     }
@@ -416,13 +417,10 @@ class DiffApplyGuardsFxTest {
             FxTestSupport.runOnFx(() -> FxTestSupport.<org.fxmisc.richtext.CodeArea>field(pane, "resultArea")
                     .replaceText(draft));
             // The draft re-diff is debounced by a 250 ms timer; wait until the pane shows the draft.
-            for (int attempt = 0;
-                    attempt < 200
-                            && !draft.equals(FxTestSupport.callOnFx(() -> FxTestSupport.field(pane, "rightText")));
-                    attempt++) {
-                Thread.sleep(25);
+            EventuallyFx.holdsWithin(Duration.ofSeconds(10), () -> {
                 settle(async, fx);
-            }
+                return draft.equals(FxTestSupport.callOnFx(() -> FxTestSupport.field(pane, "rightText")));
+            });
             assertEquals(draft, FxTestSupport.<String>callOnFx(() -> FxTestSupport.field(pane, "rightText")));
 
             // Typed back to the baseline and closed before the correcting re-diff's timer fires.
@@ -442,16 +440,18 @@ class DiffApplyGuardsFxTest {
     /** A8-6: a focused editable RichTextFX area pins its window unless its owner disposes it. */
     @Test
     void aWindowClosedWithTheResultEditorFocusedIsReleased(@TempDir Path dir) throws Exception {
-        java.lang.ref.WeakReference<MainController> closed = openResultEditorAndClose(dir);
+        java.lang.ref.ReferenceQueue<MainController> collected = new java.lang.ref.ReferenceQueue<>();
+        java.lang.ref.WeakReference<MainController> closed = openResultEditorAndClose(dir, collected);
         for (int attempt = 0; attempt < 60 && closed.get() != null; attempt++) {
             FxTestSupport.runOnFx(() -> {}); // drain the FX queue: a pending event can hold the last edge
             System.gc();
-            Thread.sleep(100);
+            collected.remove(100); // the window is enqueued here the moment it is collected
         }
         assertNull(closed.get(), "the closed window is still reachable (Result editor caret blink timer?)");
     }
 
-    private static java.lang.ref.WeakReference<MainController> openResultEditorAndClose(Path dir) throws Exception {
+    private static java.lang.ref.WeakReference<MainController> openResultEditorAndClose(
+            Path dir, java.lang.ref.ReferenceQueue<MainController> collected) throws Exception {
         GitTestRepo repo = GitTestRepo.init(dir);
         Path file = repo.write("sample.txt", "a\nb\nc\n");
         repo.commitAll("init");
@@ -464,28 +464,25 @@ class DiffApplyGuardsFxTest {
             DiffViewerPane pane = onlyPane(diff);
             FxTestSupport.runOnFx(pane::toggleResultEditing);
             settle(async, fx);
-            boolean focused = false;
-            for (int attempt = 0; attempt < 50 && !focused; attempt++) {
-                // Focus is granted asynchronously, and a window left by an earlier test may still hold it.
-                focused = FxTestSupport.callOnFx(() -> {
-                    javafx.stage.Stage stage = FxTestSupport.field(fx.controller, "stage");
-                    stage.toFront();
-                    stage.requestFocus();
-                    org.fxmisc.richtext.CodeArea result = FxTestSupport.field(pane, "resultArea");
-                    result.requestFocus();
-                    return result.isFocused();
-                });
-                FxTestSupport.drainFx();
-                if (!focused) {
-                    Thread.sleep(20);
-                }
-            }
+            // Focus is granted asynchronously, and a window left by an earlier test may still hold it: ask again
+            // each pulse.
+            boolean focused = EventuallyFx.holdsWithin(
+                    Duration.ofSeconds(2),
+                    () -> FxTestSupport.callOnFx(() -> {
+                        javafx.stage.Stage stage = FxTestSupport.field(fx.controller, "stage");
+                        stage.toFront();
+                        stage.requestFocus();
+                        org.fxmisc.richtext.CodeArea result = FxTestSupport.field(pane, "resultArea");
+                        result.requestFocus();
+                        return result.isFocused();
+                    }));
+            FxTestSupport.drainFx();
             // Without focus there is no blink timer and so nothing to release: when another test class's
             // window keeps the focus for the whole wait, the scenario cannot be set up — skip, do not fail.
             org.junit.jupiter.api.Assumptions.assumeTrue(
                     focused, "the Result editor took focus, so its caret blink timer is running");
             FxTestSupport.drainFx();
-            return new java.lang.ref.WeakReference<>(fx.controller);
+            return new java.lang.ref.WeakReference<>(fx.controller, collected);
         }
     }
 
@@ -545,12 +542,10 @@ class DiffApplyGuardsFxTest {
                                 null));
                 right.estimatedScrollYProperty().setValue(2000.0);
             });
-            double leftY = 0;
-            for (int attempt = 0; attempt < 100 && leftY <= 0; attempt++) {
-                Thread.sleep(20);
-                FxTestSupport.drainFx();
-                leftY = FxTestSupport.callOnFx(left::getEstimatedScrollY);
-            }
+            EventuallyFx.holdsWithin(
+                    Duration.ofSeconds(2), () -> FxTestSupport.callOnFx(left::getEstimatedScrollY) > 0);
+            FxTestSupport.drainFx();
+            double leftY = FxTestSupport.callOnFx(left::getEstimatedScrollY);
             double rightY = FxTestSupport.callOnFx(right::getEstimatedScrollY);
             FxTestSupport.runOnFx(() -> {
                 javafx.scene.control.ToggleButton context = FxTestSupport.field(pane, "contextButton");
@@ -653,14 +648,13 @@ class DiffApplyGuardsFxTest {
             assertEquals(0, blockStarts(pane).size());
 
             FxTestSupport.runOnFx(() -> buffer.getArea().appendText("typed since\n"));
-            long deadline = System.nanoTime() + 10_000_000_000L;
-            while (blockStarts(FxTestSupport.callOnFx(
-                                    () -> FxTestSupport.<DiffViewerPane>field(history.panel(), "pane")))
-                            .isEmpty()
-                    && System.nanoTime() < deadline) {
-                Thread.sleep(25); // the panel waits for the typing to pause before it re-reads the file
+            // the panel waits for the typing to pause before it re-reads the file
+            EventuallyFx.holdsWithin(Duration.ofSeconds(10), () -> {
                 settle(async, fx);
-            }
+                return !blockStarts(FxTestSupport.callOnFx(
+                                () -> FxTestSupport.<DiffViewerPane>field(history.panel(), "pane")))
+                        .isEmpty();
+            });
             assertEquals(
                     1,
                     blockStarts(FxTestSupport.callOnFx(

@@ -76,10 +76,8 @@ class HtmlServerFormatNodeProbeFxTest {
             manager.setOnStartFailed((serverId, sessionRoot) -> failed.complete("start failed: " + serverId));
             manager.setOnSessionCrashed((serverId, sessionRoot) -> failed.complete("crashed: " + serverId));
             Platform.runLater(() -> manager.openDocument(file, root, "html", MESSY));
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
-            while (!manager.supportsFormatting(file) && !failed.isDone() && System.nanoTime() < deadline) {
-                Thread.sleep(100);
-            }
+            com.editora.testkit.Await.holdsWithin(
+                    () -> manager.supportsFormatting(file) || failed.isDone(), java.time.Duration.ofSeconds(60));
             assertTrue(manager.supportsFormatting(file), "the HTML server did not come up: " + failed + "\n" + status);
 
             // No .editorconfig: the text's own final newline is kept.

@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 
 import javafx.geometry.Bounds;
@@ -15,6 +16,7 @@ import javafx.scene.layout.Region;
 import javafx.stage.Stage;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -61,18 +63,13 @@ class ToolWindowStripeAlignmentFxTest {
         // Text opens deliberately install an empty shell first. Measure only after the initial document has
         // landed and RichTextFX has built the first paragraph; otherwise this test compares two different
         // layout pulses and intermittently reads the shell's pre-content geometry.
-        boolean loaded = false;
-        for (int i = 0; i < 300; i++) {
-            loaded = FxTestSupport.callOnFx(() -> {
-                EditorBuffer buffer =
-                        (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
-                return buffer != null && !buffer.getContent().isEmpty();
-            });
-            if (loaded) {
-                break;
-            }
-            Thread.sleep(20);
-        }
+        boolean loaded = Await.holdsWithin(
+                () -> onFx(() -> {
+                    EditorBuffer buffer =
+                            (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
+                    return buffer != null && !buffer.getContent().isEmpty();
+                }),
+                Duration.ofSeconds(6));
         assertTrue(loaded, "the sample document should finish loading before geometry is measured");
         FxTestSupport.runOnFx(() -> {
             Scene scene = FxTestSupport.<Stage>field(fx.controller, "stage").getScene();
@@ -285,5 +282,14 @@ class ToolWindowStripeAlignmentFxTest {
             }
         }
         return null;
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

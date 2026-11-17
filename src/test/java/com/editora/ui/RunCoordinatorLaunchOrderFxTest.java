@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
@@ -22,7 +23,6 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
@@ -154,13 +154,7 @@ class RunCoordinatorLaunchOrderFxTest {
 
     private static void runAndWait(RunCoordinator coordinator, Runnable launch) throws Exception {
         FxTestSupport.runOnFx(launch);
-        long deadline = System.currentTimeMillis() + 30_000;
-        while (FxTestSupport.callOnFx(coordinator::isRunning)) {
-            if (System.currentTimeMillis() > deadline) {
-                fail("the run did not finish");
-            }
-            Thread.sleep(25);
-        }
+        PulseChecks.untilOnFx(() -> !coordinator.isRunning(), "the run did not finish", Duration.ofSeconds(30));
         FxTestSupport.runOnFx(() -> {});
     }
 

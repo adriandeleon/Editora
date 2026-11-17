@@ -40,6 +40,17 @@ class JdtlsPasteProbeTest {
     }
 
     static final class ProbeClient implements LanguageClient {
+
+        /** Counted down when jdtls says the project is imported ({@code language/status} ServiceReady). */
+        final java.util.concurrent.CountDownLatch ready = new java.util.concurrent.CountDownLatch(1);
+
+        @org.eclipse.lsp4j.jsonrpc.services.JsonNotification("language/status")
+        public void languageStatus(java.util.Map<String, Object> status) {
+            if ("ServiceReady".equals(status.get("type"))) {
+                ready.countDown();
+            }
+        }
+
         @Override
         public void telemetryEvent(Object o) {}
 
@@ -72,8 +83,7 @@ class JdtlsPasteProbeTest {
         server.getTextDocumentService()
                 .didChange(new DidChangeTextDocumentParams(
                         new VersionedTextDocumentIdentifier(uri, 3),
-                        List.of(new TextDocumentContentChangeEvent(text))));
-        Thread.sleep(3_000);
+                        List.of(new TextDocumentContentChangeEvent(text)))); // handled before what is sent after it
 
         // Turn on both features' preferences the way vscode-java does, then re-ask.
         java.util.Map<String, Object> javaCfg = new java.util.HashMap<>();
@@ -86,7 +96,6 @@ class JdtlsPasteProbeTest {
                         false));
         server.getWorkspaceService()
                 .didChangeConfiguration(new DidChangeConfigurationParams(java.util.Map.of("java", javaCfg)));
-        Thread.sleep(3_000);
 
         com.google.gson.JsonObject pos = new com.google.gson.JsonObject();
         pos.addProperty("line", 5);
@@ -182,9 +191,10 @@ class JdtlsPasteProbeTest {
         ProcessBuilder pb = new ProcessBuilder(jdtls, "-data", data.toString());
         pb.redirectError(ProcessBuilder.Redirect.DISCARD);
         Process proc = pb.start();
+        ProbeClient client = new ProbeClient();
         try {
             Launcher<LanguageServer> launcher =
-                    LSPLauncher.createClientLauncher(new ProbeClient(), proc.getInputStream(), proc.getOutputStream());
+                    LSPLauncher.createClientLauncher(client, proc.getInputStream(), proc.getOutputStream());
             LanguageServer server = launcher.getRemoteProxy();
             launcher.startListening();
 
@@ -210,8 +220,9 @@ class JdtlsPasteProbeTest {
 
             server.getTextDocumentService()
                     .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(uri, "java", 1, original)));
-            System.out.println("=== waiting 30s for the (invisible) project to settle ===");
-            Thread.sleep(30_000);
+            System.out.println("=== waiting for the (invisible) project to settle ===");
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    client.ready.await(180, TimeUnit.SECONDS), "jdtls never said the project was imported");
 
             // Simulate the paste: insert a line that needs java.util imports into main()'s body.
             String pasted = "        List<String> xs = new ArrayList<>();\n";
@@ -220,8 +231,7 @@ class JdtlsPasteProbeTest {
                     "    public static void main(String[] args) {\n" + pasted);
             var change = new DidChangeTextDocumentParams(
                     new VersionedTextDocumentIdentifier(uri, 2), List.of(new TextDocumentContentChangeEvent(after)));
-            server.getTextDocumentService().didChange(change);
-            Thread.sleep(2_000);
+            server.getTextDocumentService().didChange(change); // handled before the command sent after it
 
             // The pasted text spans line 4 col 0 .. line 5 col 0 (it ends in \n).
             com.google.gson.JsonObject range = new com.google.gson.JsonObject();

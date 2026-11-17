@@ -95,11 +95,11 @@ class RunServiceStartFxTest {
             held.add(start);
         }
 
-        /** Runs the next held start on a thread of its own, as the real {@code run-start} does. */
-        void release() throws InterruptedException {
+        /** Runs the next held start on a thread of its own, as the real {@code run-start} does, and returns it. */
+        Thread release() throws InterruptedException {
             Runnable start = held.poll(10, TimeUnit.SECONDS);
             assertTrue(start != null, "a start was asked for");
-            Thread.ofVirtual().name("run-start").start(start);
+            return Thread.ofVirtual().name("run-start").start(start);
         }
     }
 
@@ -214,14 +214,11 @@ class RunServiceStartFxTest {
             service.runInDir(dir, echo("late"), listener);
             service.shutdown();
         });
-        starts.release();
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (service.isRunning() && System.nanoTime() < deadline) {
-            Thread.sleep(10);
-        }
+        Thread start = starts.release();
+        // The start ends the program it made and returns: nothing reads it, so no event can follow the thread's end
+        // but one it queued on the FX thread before it.
+        assertTrue(start.join(java.time.Duration.ofSeconds(20)), "the start returned");
         assertFalse(service.isRunning(), "the start settled");
-        drainFx();
-        Thread.sleep(200);
         drainFx();
         assertEquals(List.of(), listener.events(), "nothing reaches a closed window");
     }

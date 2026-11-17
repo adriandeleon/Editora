@@ -117,10 +117,7 @@ class StructurePanelNarrowFxTest {
 
     /** Lets the deferred work land: the fold scan, and the whole-file outline a narrowed buffer computes off-thread. */
     private static void settle() throws Exception {
-        for (int i = 0; i < 4; i++) {
-            Thread.sleep(120);
-            FxTestSupport.drainFx();
-        }
+        FxPulses.await(2); // the layout and focus a step changed land on the next pulse
     }
 
     @SuppressWarnings("unchecked")

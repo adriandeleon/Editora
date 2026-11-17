@@ -285,24 +285,18 @@ class MenuBarFxTest {
 
     /** The root of the showing menu popup, once it has been laid out. */
     private static Parent awaitPopup() throws Exception {
-        long deadline = System.nanoTime() + 5_000_000_000L;
-        while (System.nanoTime() < deadline) {
-            Parent root = FxTestSupport.callOnFx(() -> {
-                for (Window w : Window.getWindows()) {
-                    if (w instanceof ContextMenu && w.isShowing() && w.getScene() != null) {
-                        Parent r = w.getScene().getRoot();
-                        return r.lookup(".menu-submenu") == null ? null : r;
-                    }
+        java.util.concurrent.Callable<Parent> showing = () -> {
+            for (Window w : Window.getWindows()) {
+                if (w instanceof ContextMenu && w.isShowing() && w.getScene() != null) {
+                    Parent r = w.getScene().getRoot();
+                    return r.lookup(".menu-submenu") == null ? null : r;
                 }
-                return null;
-            });
-            if (root != null) {
-                FxTestSupport.drainFx();
-                return root;
             }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("the menu popup never showed");
+            return null;
+        };
+        OnFx.until(() -> showing.call() != null, "the menu popup to show", java.time.Duration.ofSeconds(5));
+        FxTestSupport.drainFx();
+        return FxTestSupport.callOnFx(showing);
     }
 
     /** Flips a setting on the controller's own config and re-applies the chrome, as a settings apply does. */

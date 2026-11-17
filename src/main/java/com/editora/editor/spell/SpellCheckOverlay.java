@@ -40,6 +40,10 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
     private final java.util.function.Supplier<String> textSnapshot;
     /** Generation of the latest code-line scan; an older scan's result is dropped (FX thread). */
     private long codeLinesGen;
+    /** The last {@link #codeLinesGen} whose scan came back (FX thread only). */
+    private long codeLinesLanded;
+    /** An edit since the debounced code-lines scan last ran (FX thread only). */
+    private boolean codeLinesOwed;
 
     private final Canvas canvas = new Canvas(1, 1);
     private @Nullable SpellChecker checker;
@@ -138,6 +142,14 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
     /** Words positioned by asking the text layout (a geometry-cache miss) — the test seam for that cache. */
     private int wordsMeasured;
 
+    /**
+     * TEST SEAM — whether this overlay, while active, still owes the text its code-lines scan: an edit the debounced
+     * scan has not run for yet, or a scan that has not come back.
+     */
+    public boolean settlingForTest() {
+        return active && (codeLinesOwed || codeLinesLanded != codeLinesGen);
+    }
+
     int wordsMeasuredForTest() {
         return wordsMeasured;
     }
@@ -186,10 +198,14 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
         getChildren().add(canvas);
         OverlayPalette.track(area, getChildren(), palette -> colors = palette);
         area.viewportDirtyEvents().subscribe(ignore -> scheduleRedraw());
-        area.multiPlainChanges().subscribe(ignore -> scheduleRedraw());
+        area.multiPlainChanges().subscribe(ignore -> {
+            codeLinesOwed = true; // until the settle below has scanned this text
+            scheduleRedraw();
+        });
         // Recompute fenced-code line ranges off the debounced edit pulse (O(lines), not per keystroke);
         // only while active, so an inactive overlay (e.g. a large file with spell check off) does no work.
         area.multiPlainChanges().successionEnds(Duration.ofMillis(300)).subscribe(ignore -> {
+            codeLinesOwed = false;
             if (active) {
                 recomputeCodeLines();
             }
@@ -230,6 +246,7 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
         }
         long gen = ++codeLinesGen;
         if (!mode.marksCodeLines()) {
+            codeLinesLanded = gen;
             applyCodeLines(SpellMode.Skips.NONE); // no scan to run: the answer is known without the text
             return;
         }
@@ -238,6 +255,7 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
         Thread.ofVirtual().name("editora-spell-code-lines").start(() -> {
             SpellMode.Skips found = scanned.skips(text);
             javafx.application.Platform.runLater(() -> {
+                codeLinesLanded = Math.max(codeLinesLanded, gen);
                 if (gen == codeLinesGen) {
                     applyCodeLines(found);
                 }

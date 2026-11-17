@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.concurrent.Callable;
 
 import com.editora.command.CommandRegistry;
@@ -24,14 +25,7 @@ class LongLineWrapSuppressionFxTest {
     Path dir;
 
     private static boolean waitUntil(Callable<Boolean> condition) throws Exception {
-        long deadline = System.nanoTime() + 20_000_000_000L;
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition)) {
-                return true;
-            }
-            Thread.sleep(25);
-        }
-        return false;
+        return OnFx.holdsWithin(condition, Duration.ofSeconds(20));
     }
 
     @Test

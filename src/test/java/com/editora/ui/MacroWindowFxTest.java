@@ -176,12 +176,8 @@ class MacroWindowFxTest {
     }
 
     private void await(BooleanSupplier done, long millis) throws Exception {
-        long deadline = System.currentTimeMillis() + millis;
-        while (!FxTestSupport.callOnFx(done::getAsBoolean)) {
-            if (System.currentTimeMillis() > deadline) {
-                throw new AssertionError("timed out waiting; status=" + FxTestSupport.callOnFx(this::status));
-            }
-            Thread.sleep(5);
+        if (!OnFx.holdsWithin(done::getAsBoolean, java.time.Duration.ofMillis(millis))) {
+            throw new AssertionError("timed out waiting; status=" + FxTestSupport.callOnFx(this::status));
         }
     }
 

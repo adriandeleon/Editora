@@ -1125,15 +1125,12 @@ class GitBranchManagementFxTest {
     }
 
     private static <T> T awaitValue(AsyncTestScope async, java.util.concurrent.Callable<T> probe) throws Exception {
-        for (int i = 0; i < 400; i++) {
-            T value = FxTestSupport.callOnFx(probe);
-            if (value != null) {
-                return value;
-            }
-            Thread.sleep(25);
+        try {
+            return FxTestSupport.awaitFxValue(probe, "a value", java.time.Duration.ofSeconds(10));
+        } catch (AssertionError timedOut) {
+            async.assertNoAsynchronousFailures();
+            throw timedOut;
         }
-        async.assertNoAsynchronousFailures();
-        throw new AssertionError("timed out waiting for a value");
     }
 
     private static EditorBuffer open(MainController controller, Path file) throws Exception {
@@ -1149,12 +1146,9 @@ class GitBranchManagementFxTest {
     }
 
     private static void awaitBufferContent(EditorBuffer buffer, String expected) throws Exception {
-        for (int i = 0; i < 200; i++) {
-            if (expected.equals(FxTestSupport.callOnFx(buffer::getContent))) {
-                return;
-            }
-            Thread.sleep(50);
-        }
+        com.editora.testkit.Await.holdsWithin(
+                FxTestSupport.fxCondition(() -> expected.equals(buffer.getContent())),
+                java.time.Duration.ofSeconds(10));
         assertEquals(expected, FxTestSupport.callOnFx(buffer::getContent));
     }
 
@@ -1180,15 +1174,18 @@ class GitBranchManagementFxTest {
     private static CompletableFuture<Seen> answer(AsyncTestScope async, Predicate<ButtonType> choice) {
         CompletableFuture<Seen> answered = new CompletableFuture<>();
         async.start("dialog-answer", () -> {
-            for (int i = 0; i < 1200 && !answered.isDone(); i++) {
-                FxTestSupport.runOnFx(() -> {
-                    Seen seen = pressDialog(choice);
-                    if (seen != null) {
-                        answered.complete(seen);
-                    }
-                });
-                Thread.sleep(25);
-            }
+            // the dialog shows in a nested event loop, which still pulses: looked for after each pulse
+            com.editora.testkit.Await.holdsWithin(
+                    FxTestSupport.unchecked(() -> {
+                        FxTestSupport.runOnFx(() -> {
+                            Seen seen = pressDialog(choice);
+                            if (seen != null) {
+                                answered.complete(seen);
+                            }
+                        });
+                        return answered.isDone();
+                    }),
+                    java.time.Duration.ofSeconds(30));
         });
         return answered;
     }

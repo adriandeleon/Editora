@@ -741,9 +741,10 @@ class OverlayScrollPerfFxTest {
         return (AtomicInteger) f.get(null);
     }
 
+    /** Lets the layout and the repaints it queues run: overlays paint in the pulses after a change. */
     private static void settle() throws Exception {
         FxTestSupport.drainFx();
-        Thread.sleep(150);
+        OnFx.pulses(3);
         FxTestSupport.drainFx();
         FxTestSupport.drainFx();
     }

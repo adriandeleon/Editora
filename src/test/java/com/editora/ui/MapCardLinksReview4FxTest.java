@@ -2,12 +2,12 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
@@ -27,6 +27,7 @@ import com.editora.lsp.FakeLanguageServer;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.LspTestHooks;
 import com.editora.search.ProjectFileList;
+import com.editora.testkit.Await;
 import com.editora.ui.ProjectMapView.FlowDirection;
 import org.eclipse.lsp4j.ServerCapabilities;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
@@ -479,7 +480,11 @@ class MapCardLinksReview4FxTest {
             waitFor(() ->
                     count(fake.opened.stream().map(p -> p.getTextDocument().getUri()), appUri) == 1);
             FxTestSupport.runOnFx(() -> loans[0].run());
-            Thread.sleep(100);
+            // A message sent after the first loan ended reaches the server after any didClose that loan sent.
+            String openUri = LspTestHooks.uri(open);
+            FxTestSupport.runOnFx(() -> manager.changeDocument(open, "class Open {}\n// after the first loan\n"));
+            waitFor(() -> fake.changed.stream()
+                    .anyMatch(c -> openUri.equals(c.getTextDocument().getUri())));
             assertEquals(
                     0,
                     count(fake.closed.stream().map(p -> p.getTextDocument().getUri()), appUri),
@@ -570,24 +575,11 @@ class MapCardLinksReview4FxTest {
     }
 
     private static void waitFor(BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > deadline) {
-                throw new AssertionError("timed out");
-            }
-            FxTestSupport.drainFx();
-            Thread.sleep(10);
-        }
+        FxTestSupport.drainFx();
+        Await.until(condition, "the condition", Duration.ofSeconds(15));
     }
 
     private static void waitForFx(BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("timed out");
+        OnFx.until(condition::getAsBoolean, "the condition", Duration.ofSeconds(15));
     }
 }

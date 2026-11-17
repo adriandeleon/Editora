@@ -78,14 +78,18 @@ class McpBridgeWritesFxTest {
         // Text the client was shown, outside the region, is found.
         assertNull(mcp.editBuffer(path, "foo = 4", "foo = 40", false));
         // an edit outside the region rewrites the whole document off the FX thread (PERF-01): it lands a moment later
-        waitFor(() -> "foo = 1\nfoo = 2\nfoo = 3\nfoo = 40\n".equals(b.getContent()));
+        OnFx.holdsWithin(
+                () -> "foo = 1\nfoo = 2\nfoo = 3\nfoo = 40\n".equals(b.getContent()), java.time.Duration.ofSeconds(10));
         assertEquals("foo = 1\nfoo = 2\nfoo = 3\nfoo = 40\n", content(b));
 
         // replace_all reaches every occurrence, not only the ones in the region.
         EditorBuffer all = open("narrow-all.txt", doc);
         narrowToLine(all, doc, 1);
         assertNull(mcp.editBuffer(all.getPath().toString(), "=", ":=", true));
-        waitFor(() -> "foo := 1\nfoo := 2\nfoo := 3\nfoo := 4\n".equals(all.getContent()));
+        // an edit outside the region rewrites the whole document off the FX thread (PERF-01): it lands a moment later
+        OnFx.holdsWithin(
+                () -> "foo := 1\nfoo := 2\nfoo := 3\nfoo := 4\n".equals(all.getContent()),
+                java.time.Duration.ofSeconds(10));
         assertEquals("foo := 1\nfoo := 2\nfoo := 3\nfoo := 4\n", content(all));
         discard(b, all);
     }
@@ -272,6 +276,7 @@ class McpBridgeWritesFxTest {
                     return true;
                 }),
                 "the file opened");
+        OnFx.untilEditsSettled(opened[0]); // what the load's own insertion set off has run
         FxTestSupport.drainFx();
         return opened[0];
     }
@@ -317,13 +322,6 @@ class McpBridgeWritesFxTest {
     }
 
     private static boolean waitFor(Callable<Boolean> onFx) throws Exception {
-        long end = System.currentTimeMillis() + 20_000;
-        while (System.currentTimeMillis() < end) {
-            if (Boolean.TRUE.equals(FxTestSupport.callOnFx(onFx))) {
-                return true;
-            }
-            Thread.sleep(50);
-        }
-        return false;
+        return OnFx.holdsWithin(() -> Boolean.TRUE.equals(onFx.call()), java.time.Duration.ofSeconds(20));
     }
 }

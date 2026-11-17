@@ -265,13 +265,6 @@ class FileTabCommandsFxTest {
 
     /** Polls a condition on the FX thread: saves and reloads finish on a worker and come back later. */
     private static boolean waitFor(Callable<Boolean> onFx) throws Exception {
-        long end = System.currentTimeMillis() + 15_000;
-        while (System.currentTimeMillis() < end) {
-            if (Boolean.TRUE.equals(FxTestSupport.callOnFx(onFx))) {
-                return true;
-            }
-            Thread.sleep(25);
-        }
-        return false;
+        return com.editora.testkit.Await.holdsWithin(FxTestSupport.fxCondition(onFx), java.time.Duration.ofSeconds(15));
     }
 }

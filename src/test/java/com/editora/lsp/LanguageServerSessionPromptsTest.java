@@ -340,14 +340,17 @@ class LanguageServerSessionPromptsTest {
                 new ExecuteCommandParams(LanguageServerSession.CHOOSE_IMPORTS, chooseImportsArguments()));
         CompletableFuture<Object> request = new CompletableFuture<>();
         LanguageServerSession.bounded(request, java.time.Duration.ofMillis(40), s);
-        Thread.sleep(250);
+        com.editora.testkit.Await.until(() -> s.timeoutsHeldForTest() > 0, "the request's time to run out once");
         assertFalse(request.isDone(), "the user is still choosing");
 
         ui.answer.complete(null);
         assertTrue(reply.isDone());
-        long until = System.currentTimeMillis() + 5_000;
-        while (!request.isDone() && System.currentTimeMillis() < until) {
-            Thread.sleep(10);
+        try {
+            request.get(5, java.util.concurrent.TimeUnit.SECONDS); // ends when the bound cancels it
+        } catch (java.util.concurrent.CancellationException
+                | java.util.concurrent.ExecutionException
+                | java.util.concurrent.TimeoutException ended) {
+            // the assertion below says which
         }
         assertTrue(request.isCancelled(), "answered: the request's own time runs out again");
 

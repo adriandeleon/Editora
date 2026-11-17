@@ -2,9 +2,9 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import com.editora.dap.DapManager;
@@ -52,12 +52,18 @@ class DebugSessionStartFxTest {
         FxTestSupport.call(debug, "withClosedBreakpoints", new Class<?>[] {Runnable.class}, then);
     }
 
-    /** Waits long enough for the closed-file read (none here) to post its result. */
+    /**
+     * Waits for the closed-file reads (none here) to end — each runs on a "debug-breakpoints" thread — and for the
+     * result each posts to the FX thread to run.
+     */
     private static void settle() throws Exception {
-        for (int i = 0; i < 10; i++) {
-            Thread.sleep(30);
-            FxTestSupport.drainFx();
+        for (Thread t : Thread.getAllStackTraces().keySet()) {
+            if (t.getName().equals("debug-breakpoints")) {
+                t.join(10_000);
+                assertFalse(t.isAlive(), "the closed-file read ended");
+            }
         }
+        FxTestSupport.drainFx();
     }
 
     @Test
@@ -123,11 +129,7 @@ class DebugSessionStartFxTest {
             assertNotNull(picker);
             picker.hide(); // what Esc does
         });
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (answers.isEmpty() && System.nanoTime() < deadline) {
-            FxTestSupport.drainFx();
-            Thread.sleep(20);
-        }
+        EventuallyFx.holdsWithin(Duration.ofSeconds(5), () -> FxTestSupport.callOnFx(() -> !answers.isEmpty()));
         assertEquals(java.util.Arrays.asList((Object) null), answers);
         assertFalse(FxTestSupport.callOnFx(() -> debug.openMainClassPicker() != null));
     }

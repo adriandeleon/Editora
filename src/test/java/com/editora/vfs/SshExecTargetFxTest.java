@@ -17,6 +17,7 @@ import com.editora.process.PosixShell;
 import com.editora.process.ProcessRegistry;
 import com.editora.process.ProcessRunner;
 import com.editora.process.RemoteProcess;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -268,11 +269,9 @@ class SshExecTargetFxTest {
 
         assertTrue(r.timedOut());
         // The kill is its own command on a second channel, sent without waiting for it.
-        boolean killed = false;
-        for (int i = 0; i < 100 && !killed; i++) {
-            killed = fixture.commands().stream().anyMatch(line -> line.contains("kill -s TERM -- -"));
-            Thread.sleep(50);
-        }
+        boolean killed = Await.holdsWithin(
+                () -> fixture.commands().stream().anyMatch(line -> line.contains("kill -s TERM -- -")),
+                Duration.ofSeconds(5));
         assertTrue(killed, "no group kill was sent: " + fixture.commands());
     }
 
@@ -329,9 +328,7 @@ class SshExecTargetFxTest {
     }
 
     private static void awaitHeard(List<String> heard, String event) throws InterruptedException {
-        for (int i = 0; i < 200 && !heard.contains(event); i++) {
-            Thread.sleep(25);
-        }
+        Await.holdsWithin(() -> heard.contains(event), Duration.ofSeconds(5));
         assertTrue(heard.contains(event), "never heard '" + event + "', only " + heard);
     }
 
@@ -348,7 +345,9 @@ class SshExecTargetFxTest {
                 session.addPasswordIdentity("password");
                 session.auth().verify(TIMEOUT);
 
-                Thread.sleep(1200); // a dozen keep-alives, each answered or the session would be closed
+                // a dozen keep-alives, each answered or the session would be closed
+                int before = fixture.keepAlives();
+                Await.until(() -> fixture.keepAlives() >= before + 12, "a dozen keep-alives");
 
                 assertTrue(session.isOpen());
                 assertEquals("alive\n", session.executeRemoteCommand("echo alive"));
@@ -409,12 +408,15 @@ class SshExecTargetFxTest {
     }
 
     private static boolean gone(long pid) throws InterruptedException {
-        for (int i = 0; i < 100; i++) {
-            if (ProcessHandle.of(pid).map(h -> !h.isAlive()).orElse(true)) {
-                return true;
-            }
-            Thread.sleep(50);
+        java.util.Optional<ProcessHandle> handle = ProcessHandle.of(pid);
+        if (handle.isEmpty()) {
+            return true;
         }
-        return false;
+        try {
+            handle.get().onExit().get(5, java.util.concurrent.TimeUnit.SECONDS);
+            return true;
+        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+            return !handle.get().isAlive();
+        }
     }
 }

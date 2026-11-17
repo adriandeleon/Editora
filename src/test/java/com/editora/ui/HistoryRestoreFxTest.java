@@ -84,11 +84,13 @@ class HistoryRestoreFxTest {
             assertEquals(HistoryCoordinator.RestoreResult.RESTORED, async.await(result));
 
             String key = PathKeys.normalizedKey(file);
-            List<HistoryRevision> recorded = List.of();
-            for (int attempt = 0; attempt < 200 && recorded.isEmpty(); attempt++) {
-                Thread.sleep(20); // the record is written on the history worker, then indexed on FX
-                recorded = FxTestSupport.callOnFx(() -> List.copyOf(harness.ops.history.getOrDefault(key, List.of())));
-            }
+            // the record is written on the history worker, then indexed on FX
+            com.editora.testkit.Await.holdsWithin(
+                    FxTestSupport.fxCondition(() ->
+                            !harness.ops.history.getOrDefault(key, List.of()).isEmpty()),
+                    java.time.Duration.ofSeconds(4));
+            List<HistoryRevision> recorded =
+                    FxTestSupport.callOnFx(() -> List.copyOf(harness.ops.history.getOrDefault(key, List.of())));
             assertEquals(1, recorded.size(), "the replaced content was recorded");
             assertEquals(
                     HistoryBlobStore.sha256("edited outside the editor\nline two\n"),

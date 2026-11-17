@@ -107,18 +107,24 @@ class LspMappedTargetProcessTest {
     }
 
     private static List<String> lines(Path log, String prefix) throws Exception {
-        for (int i = 0; i < 200; i++) {
-            if (Files.exists(log)) {
-                List<String> found = Files.readAllLines(log).stream()
-                        .filter(l -> l.startsWith(prefix))
-                        .toList();
-                if (!found.isEmpty()) {
-                    return found;
-                }
-            }
-            Thread.sleep(50);
-        }
-        return List.of();
+        // Another process writes the file: nothing in this JVM announces a line.
+        List<String> found = new java.util.ArrayList<>();
+        com.editora.testkit.Await.holdsWithin(
+                () -> {
+                    try {
+                        if (Files.exists(log)) {
+                            found.clear();
+                            Files.readAllLines(log).stream()
+                                    .filter(l -> l.startsWith(prefix))
+                                    .forEach(found::add);
+                        }
+                        return !found.isEmpty();
+                    } catch (java.io.IOException e) {
+                        return false; // half-written: look again
+                    }
+                },
+                java.time.Duration.ofSeconds(10));
+        return List.copyOf(found);
     }
 
     @Test

@@ -143,11 +143,7 @@ class HttpPanelStatesFxTest {
     }
 
     private static void await(BooleanSupplier condition, String what) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
-        while (!FxTestSupport.callOnFx(condition::getAsBoolean)) {
-            assertTrue(System.nanoTime() < deadline, what);
-            Thread.sleep(20);
-        }
+        FxTestSupport.awaitFxCondition(condition::getAsBoolean, what, java.time.Duration.ofSeconds(WAIT_SECONDS));
     }
 
     /** "Sending {@code label}…", the running status up to its clock. */

@@ -85,20 +85,25 @@ class HiddenTabTimerTest {
     void aPendingWaitDoesNotKeepADroppedTimerOrItsBufferReachable() throws Exception {
         Seams seams = new Seams();
         AtomicInteger ran = new AtomicInteger();
-        java.lang.ref.WeakReference<HiddenTabTimer> dropped = startAndDrop(seams, ran);
+        java.lang.ref.ReferenceQueue<HiddenTabTimer> collected = new java.lang.ref.ReferenceQueue<>();
+        java.lang.ref.WeakReference<HiddenTabTimer> dropped = startAndDrop(seams, ran, collected);
+        // each round asks for a collection and waits for the reference to be enqueued, waking as soon as it is
         for (int i = 0; i < 20 && dropped.get() != null; i++) {
             System.gc();
-            Thread.sleep(10);
+            if (collected.remove(10) != null) {
+                break;
+            }
         }
         assertTrue(dropped.get() == null, "the waiting task holds the timer (and so the buffer) only weakly");
         seams.elapse();
         assertEquals(0, ran.get(), "a wait whose owner is gone runs nothing");
     }
 
-    private static java.lang.ref.WeakReference<HiddenTabTimer> startAndDrop(Seams seams, AtomicInteger ran) {
+    private static java.lang.ref.WeakReference<HiddenTabTimer> startAndDrop(
+            Seams seams, AtomicInteger ran, java.lang.ref.ReferenceQueue<HiddenTabTimer> collected) {
         HiddenTabTimer timer = seams.timer(Duration.ofSeconds(1), ran::incrementAndGet);
         timer.start();
-        return new java.lang.ref.WeakReference<>(timer);
+        return new java.lang.ref.WeakReference<>(timer, collected);
     }
 
     @Test
@@ -107,6 +112,7 @@ class HiddenTabTimerTest {
         // no thread of ours): a cancelled timer must leave nothing behind for a later start to trip over.
         AtomicInteger ran = new AtomicInteger();
         List<Runnable> fx = new ArrayList<>();
+        java.util.concurrent.CountDownLatch posted1 = new java.util.concurrent.CountDownLatch(1);
         HiddenTabTimer timer = new HiddenTabTimer(
                 Duration.ofMillis(1),
                 ran::incrementAndGet,
@@ -116,17 +122,10 @@ class HiddenTabTimerTest {
                     synchronized (fx) {
                         fx.add(r);
                     }
+                    posted1.countDown();
                 });
         timer.start();
-        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-        while (System.nanoTime() < deadline) {
-            synchronized (fx) {
-                if (!fx.isEmpty()) {
-                    break;
-                }
-            }
-            Thread.sleep(2);
-        }
+        posted1.await(5, java.util.concurrent.TimeUnit.SECONDS);
         List<Runnable> posted;
         synchronized (fx) {
             posted = new ArrayList<>(fx);

@@ -70,10 +70,13 @@ class JumpRevealColumnFxTest {
                 area.moveTo(1, area.getParagraphLength(1)); // the far end of the long line
                 area.requestFollowCaret();
             });
+            FxTestSupport.awaitFxCondition(() -> area.getEstimatedScrollX() > 0, "the view to follow the caret right");
             settle();
             double scrolled = FxTestSupport.callOnFx(() -> area.getEstimatedScrollX());
             assertTrue(scrolled > 0, "the view scrolled right to the end of the long line: " + scrolled);
             FxTestSupport.runOnFx(() -> sessions.gotoInFile(file, target[0], target[1]));
+            FxTestSupport.awaitFxCondition(
+                    () -> area.getEstimatedScrollX() < 0.5, "the view to scroll back", java.time.Duration.ofSeconds(5));
             settle();
             assertEquals(
                     0.0,
@@ -92,19 +95,35 @@ class JumpRevealColumnFxTest {
             area.moveTo(4, 0);
             area.requestFollowCaret();
         });
+        FxTestSupport.awaitFxCondition(() -> area.getEstimatedScrollX() < 0.5, "the view at column 1");
         settle();
         int far = FxTestSupport.callOnFx(() -> area.getParagraphLength(1)) - 5;
         FxTestSupport.runOnFx(() -> sessions.gotoInFile(file, 2, far));
+        FxTestSupport.awaitFxCondition(
+                () -> area.getEstimatedScrollX() > 0,
+                "the view to scroll to the caret",
+                java.time.Duration.ofSeconds(5));
         settle();
         assertTrue(
                 FxTestSupport.callOnFx(() -> area.getEstimatedScrollX()) > 0,
                 "a column past the viewport's width is scrolled to");
     }
 
+    /** Three FX pulses: the layout passes the area scrolls in run on them. */
     private static void settle() throws Exception {
-        for (int i = 0; i < 6; i++) {
-            FxTestSupport.drainFx();
-            Thread.sleep(30);
+        java.util.concurrent.CountDownLatch pulses = new java.util.concurrent.CountDownLatch(3);
+        javafx.animation.AnimationTimer counter = new javafx.animation.AnimationTimer() {
+            @Override
+            public void handle(long now) {
+                pulses.countDown();
+            }
+        };
+        FxTestSupport.runOnFx(counter::start);
+        try {
+            assertTrue(pulses.await(10, java.util.concurrent.TimeUnit.SECONDS), "pulses ran");
+        } finally {
+            FxTestSupport.runOnFx(counter::stop);
         }
+        FxTestSupport.drainFx();
     }
 }

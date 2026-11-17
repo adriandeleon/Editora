@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -115,17 +116,18 @@ class RemoteLanguageServerFxTest {
         FxTestSupport.runOnFx(() -> manager.openDocument(file, remoteApp, "python", "print('hi')\n"));
 
         AtomicReference<String> hover = new AtomicReference<>();
-        for (int i = 0; i < 100 && hover.get() == null; i++) {
-            CountDownLatch done = new CountDownLatch(1);
-            FxTestSupport.runOnFx(() -> manager.hover(file, 0, 1, text -> {
-                hover.set(text == null || text.isBlank() ? null : text);
-                done.countDown();
-            }));
-            assertTrue(done.await(20, TimeUnit.SECONDS));
-            if (hover.get() == null) {
-                Thread.sleep(100); // initialize still on its way
-            }
-        }
+        // asked again after each answer of nothing (initialize still on its way), until one says something
+        PulseChecks.holdsWithin(
+                () -> {
+                    CountDownLatch done = new CountDownLatch(1);
+                    FxTestSupport.runOnFx(() -> manager.hover(file, 0, 1, text -> {
+                        hover.set(text == null || text.isBlank() ? null : text);
+                        done.countDown();
+                    }));
+                    assertTrue(done.await(20, TimeUnit.SECONDS));
+                    return hover.get() != null;
+                },
+                Duration.ofSeconds(20));
 
         String expectedUri = "file://" + sftp.serverPath("my app").toString().replace(" ", "%20") + "/main.py";
         assertEquals("hover for " + expectedUri, hover.get());

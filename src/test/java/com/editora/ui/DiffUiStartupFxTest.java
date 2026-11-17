@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -137,53 +136,29 @@ class DiffUiStartupFxTest {
 
     private static DiffViewerPane awaitDiffPane(MainController controller) throws Exception {
         TabPane tabs = FxTestSupport.field(controller, "tabPane");
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(10));
-        while (Instant.now().isBefore(deadline)) {
-            DiffViewerPane pane = FxTestSupport.callOnFx(() -> {
-                for (Tab tab : tabs.getTabs()) {
-                    if (tab.getUserData() instanceof DiffViewerPane diff) {
-                        return diff;
-                    }
+        return EventuallyFx.valueOnFx("standalone diff did not open", Duration.ofSeconds(10), () -> {
+            for (Tab tab : tabs.getTabs()) {
+                if (tab.getUserData() instanceof DiffViewerPane diff) {
+                    return diff;
                 }
-                return null;
-            });
-            if (pane != null) {
-                return pane;
             }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("standalone diff did not open");
+            return null;
+        });
     }
 
     private static DirectoryReviewPane awaitDirectoryReview(MainController controller) throws Exception {
         TabPane tabs = FxTestSupport.field(controller, "tabPane");
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(10));
-        while (Instant.now().isBefore(deadline)) {
-            DirectoryReviewPane pane = FxTestSupport.callOnFx(() -> {
-                for (Tab tab : tabs.getTabs()) {
-                    if (tab.getUserData() instanceof DirectoryReviewPane review) {
-                        return review;
-                    }
+        return EventuallyFx.valueOnFx("directory review did not open", Duration.ofSeconds(10), () -> {
+            for (Tab tab : tabs.getTabs()) {
+                if (tab.getUserData() instanceof DirectoryReviewPane review) {
+                    return review;
                 }
-                return null;
-            });
-            if (pane != null) {
-                return pane;
             }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("directory review did not open");
+            return null;
+        });
     }
 
     private static DiffViewerPane awaitActiveDirectoryDiff(DirectoryReviewPane review) throws Exception {
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(10));
-        while (Instant.now().isBefore(deadline)) {
-            DiffViewerPane pane = FxTestSupport.callOnFx(review::activePane);
-            if (pane != null) {
-                return pane;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("directory file diff did not load");
+        return EventuallyFx.valueOnFx("directory file diff did not load", Duration.ofSeconds(10), review::activePane);
     }
 }

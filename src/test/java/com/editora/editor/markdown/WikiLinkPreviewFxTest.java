@@ -17,6 +17,7 @@ import javafx.stage.Stage;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.EditorFx;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -177,12 +178,11 @@ class WikiLinkPreviewFxTest {
         Files.writeString(dir.resolve("note.md"), "x");
         Path doc = Files.writeString(dir.resolve("doc.md"), "x");
         open("![[pic.png]]\n\n![[note]]\n", doc);
-        long end = System.nanoTime() + 15_000_000_000L;
-        while (!EditorFx.callFx(() -> pane.preview().column().lookupAll(".md-image").stream()
-                .anyMatch(n -> ((ImageView) n).getImage() != null))) {
-            assertTrue(System.nanoTime() < end, "the embedded picture never loaded");
-            Thread.sleep(20);
-        }
+        Await.until(
+                EditorFx.checkOnFx(() -> pane.preview().column().lookupAll(".md-image").stream()
+                        .anyMatch(n -> ((ImageView) n).getImage() != null)),
+                "the embedded picture never loaded",
+                java.time.Duration.ofSeconds(15));
         EditorFx.onFx(() -> {
             assertEquals(1, pane.preview().column().lookupAll(".md-image").size());
             Text note = run("note");

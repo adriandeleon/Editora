@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.List;
 
 import javafx.scene.input.KeyCode;
@@ -10,6 +11,7 @@ import com.editora.config.ConfigManager;
 import com.editora.search.SearchEverywhere;
 import com.editora.search.SearchEverywhere.Item;
 import com.editora.search.SearchEverywhere.Kind;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -63,12 +65,8 @@ class SearchEverywhereFxTest {
     private static void awaitFx(
             String what, java.util.function.BooleanSupplier condition, java.util.function.Supplier<String> detail)
             throws Exception {
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
-        while (!FxTestSupport.callOnFx(condition::getAsBoolean)) {
-            if (System.nanoTime() >= deadline) {
-                fail("timed out waiting for " + what + " (" + FxTestSupport.callOnFx(detail::get) + ")");
-            }
-            Thread.sleep(20);
+        if (!Await.holdsWithin(() -> onFx(condition::getAsBoolean), Duration.ofSeconds(10))) {
+            fail("timed out waiting for " + what + " (" + FxTestSupport.callOnFx(detail::get) + ")");
         }
     }
 
@@ -223,18 +221,21 @@ class SearchEverywhereFxTest {
     /** The first KEY_PRESSED of {@code code} at or after {@code from}, waited for up to {@code seconds}; or null. */
     private static javafx.scene.input.KeyEvent awaitPress(
             List<javafx.scene.input.KeyEvent> seen, int from, KeyCode code, int seconds) throws Exception {
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(seconds);
-        while (System.nanoTime() < deadline) {
-            FxTestSupport.drainFx();
-            for (int i = from; i < seen.size(); i++) {
-                javafx.scene.input.KeyEvent e = seen.get(i);
-                if (e.getEventType() == javafx.scene.input.KeyEvent.KEY_PRESSED && e.getCode() == code) {
-                    return e;
-                }
-            }
-            Thread.sleep(20);
-        }
-        return null;
+        FxTestSupport.drainFx();
+        javafx.scene.input.KeyEvent[] found = new javafx.scene.input.KeyEvent[1];
+        Await.holdsWithin(
+                () -> {
+                    for (int i = from; i < seen.size(); i++) {
+                        javafx.scene.input.KeyEvent e = seen.get(i);
+                        if (e.getEventType() == javafx.scene.input.KeyEvent.KEY_PRESSED && e.getCode() == code) {
+                            found[0] = e;
+                            return true;
+                        }
+                    }
+                    return false;
+                },
+                Duration.ofSeconds(seconds));
+        return found[0];
     }
 
     /** The recorded key events, short: {@code PRESSED U [meta]}, {@code TYPED 'u'}, for a failure message. */
@@ -656,6 +657,15 @@ class SearchEverywhereFxTest {
                     "the library class joins the symbols, after a better project match (E8)");
         } finally {
             hide();
+        }
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

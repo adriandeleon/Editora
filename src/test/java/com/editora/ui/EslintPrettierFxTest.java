@@ -2,10 +2,10 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
-import java.util.concurrent.TimeUnit;
 
 import com.editora.text.LspDiagnostic;
 import org.junit.jupiter.api.Tag;
@@ -90,14 +90,12 @@ class EslintPrettierFxTest {
     }
 
     private static <T> T waitFor(Callable<T> read, java.util.function.Predicate<T> done) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        T now = FxTestSupport.callOnFx(read);
-        while (!done.test(now) && System.nanoTime() < deadline) {
-            Thread.sleep(25);
-            FxTestSupport.drainFx();
-            now = FxTestSupport.callOnFx(read);
-        }
-        return now;
+        List<T> now = new java.util.ArrayList<>(java.util.Collections.singletonList(FxTestSupport.callOnFx(read)));
+        EventuallyFx.holdsWithin(Duration.ofSeconds(20), () -> {
+            now.set(0, FxTestSupport.callOnFx(read));
+            return done.test(now.get(0));
+        });
+        return now.get(0);
     }
 
     private static List<LspDiagnostic> problemsOf(MainController c, Path file) throws Exception {
@@ -173,9 +171,13 @@ class EslintPrettierFxTest {
             assertTrue(problemsOf(c, app).isEmpty());
 
             com.editora.command.CommandRegistry registry = FxTestSupport.field(c, "registry");
+            MessageLog said = FxTestSupport.field(FxTestSupport.field(c, "statusBar"), "messageLog");
+            MessageLog.Entry before = FxTestSupport.callOnFx(
+                    () -> said.isEmpty() ? null : said.entries().getFirst());
             FxTestSupport.runOnFx(() -> registry.run("lsp.formatDocument"));
-            FxTestSupport.drainFx();
-            Thread.sleep(300);
+            // Every way a format ends says so in the status bar (formatted, unchanged, failed, or the server's
+            // own answer): wait for that word, then look at the text.
+            waitFor(() -> said.isEmpty() ? null : said.entries().getFirst(), last -> last != before);
             FxTestSupport.drainFx();
             assertEquals("var x=1\n", text(c), "auto: no Prettier from an untrusted folder");
 

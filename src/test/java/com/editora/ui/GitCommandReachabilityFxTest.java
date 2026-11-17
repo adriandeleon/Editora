@@ -70,14 +70,16 @@ class GitCommandReachabilityFxTest {
             assertEquals("/scratch.log\n", java.nio.file.Files.readString(repo.root.resolve(".gitignore")));
 
             FxTestSupport.runOnFx(() -> registry.run("git.stageAll"));
-            List<String> staged = List.of();
-            for (int i = 0; i < 200 && staged.size() < 2; i++) {
-                Thread.sleep(50);
-                staged = repo.git("diff", "--cached", "--name-only")
-                        .text()
-                        .lines()
-                        .toList();
-            }
+            // the stage runs after a save check off the FX thread: the index is what tells
+            com.editora.testkit.Await.holdsWithin(
+                    FxTestSupport.unchecked(() -> repo.git("diff", "--cached", "--name-only")
+                                    .text()
+                                    .lines()
+                                    .count()
+                            >= 2),
+                    java.time.Duration.ofSeconds(10));
+            List<String> staged =
+                    repo.git("diff", "--cached", "--name-only").text().lines().toList();
             assertEquals(
                     List.of(".gitignore", "work.txt"),
                     staged,

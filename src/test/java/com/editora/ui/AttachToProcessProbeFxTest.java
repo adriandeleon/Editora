@@ -12,6 +12,7 @@ import com.editora.dap.DapManager;
 import com.editora.dap.DebugAdapterLocator;
 import com.editora.dap.LocalProcesses;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -38,7 +39,7 @@ class AttachToProcessProbeFxTest {
                     int count = 0;
                     while (true) {
                         count++;
-                        Thread.sleep(100);
+                        synchronized (Main.class) { Main.class.wait(100); } // the program's own pace
                     }
                 }
             }
@@ -157,7 +158,11 @@ class AttachToProcessProbeFxTest {
             awaitStop(dap, line, debug);
             FxTestSupport.runOnFx(dap::stop);
             await("detached", 20, () -> !call(dap::isActive));
-            Thread.sleep(500);
+            try {
+                program.onExit().get(500, TimeUnit.MILLISECONDS); // it would end now if Stop had ended it
+            } catch (java.util.concurrent.TimeoutException runsOn) {
+                // what a detach leaves: the program running
+            }
             assertTrue(program.isAlive(), "Stop detaches: the program runs on");
         } finally {
             fx.dispose();
@@ -242,13 +247,7 @@ class AttachToProcessProbeFxTest {
     }
 
     private static void await(String what, int seconds, BooleanSupplier condition) throws InterruptedException {
-        long end = System.nanoTime() + seconds * 1_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(100);
-        }
+        Await.until(condition, what, java.time.Duration.ofSeconds(seconds));
     }
 
     private static void awaitStop(DapManager dap, int line, DebugCoordinator debug) throws InterruptedException {

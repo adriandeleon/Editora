@@ -6,12 +6,12 @@ import java.util.concurrent.ThreadPoolExecutor;
 import javafx.stage.Stage;
 
 import com.editora.editor.http.HttpLineResult;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * A request line scan of the text before an edit must not land after it: its request lines are the old ones, so a
@@ -74,12 +74,10 @@ class HttpResultsStaleRunScanFxTest {
             }
 
             // The edit's own settled pass scans the new text; once it has landed the results are where it moved them.
-            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
-            while (!EditorFx.callFx(
-                    () -> b.runGutter.runScanGen > gen && !EditorFx.<Boolean>field(b.runGutter, "runScanInFlight"))) {
-                assertTrue(System.nanoTime() < deadline, "the edit's scan never landed");
-                Thread.sleep(10);
-            }
+            Await.until(
+                    EditorFx.checkOnFx(() ->
+                            b.runGutter.runScanGen > gen && !EditorFx.<Boolean>field(b.runGutter, "runScanInFlight")),
+                    "the edit's scan never landed");
             EditorFx.drain();
             assertEquals(List.of(2, 5), EditorFx.callFx(() -> lines(b)), "the old text's scan dropped nothing");
         } finally {

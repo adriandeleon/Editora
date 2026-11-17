@@ -83,6 +83,14 @@ final class BashReanalysis {
         }
     }
 
+    /**
+     * TEST SEAM — whether a pass is waiting: with none, nothing will be re-read, so a test sees "not reopened"
+     * without waiting out the debounce (QUAL-07, Pauta 6.0.1).
+     */
+    synchronized boolean pendingForTest() {
+        return scheduled || !pending.isEmpty();
+    }
+
     /** Reads the waiting files (off the FX thread) and hands their text to their sessions on it. */
     private void pass() {
         Map<LanguageServerSession, Map<String, Path>> batch;

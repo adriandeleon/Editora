@@ -2,13 +2,13 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 
@@ -962,13 +962,6 @@ class ProjectMapTrailsCoverageFxTest {
     }
 
     private static void waitForFx(BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("timed out waiting for the map");
+        PulseChecks.untilOnFx(condition, "timed out waiting for the map", Duration.ofSeconds(15));
     }
 }

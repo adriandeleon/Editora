@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -19,6 +20,7 @@ import javafx.scene.control.TreeView;
 import com.editora.command.CommandRegistry;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import com.editora.todo.TodoComment;
 import com.editora.todo.TodoGrouping;
 import com.editora.todo.TodoMatch;
@@ -317,25 +319,22 @@ class TodoCoordinatorFxTest {
     // --- the no-project window: the active tab only ----------------------------------------------------
 
     private static void awaitMarks(EditorBuffer b, int count) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
-        while (FxTestSupport.callOnFx(() -> b.todoMarks().size()) != count) {
-            assertTrue(System.nanoTime() < deadline, "the buffer's TODO scan found " + count);
-            Thread.sleep(10);
-        }
+        Await.until(
+                () -> onFx(() -> b.todoMarks().size()) == count,
+                "the buffer's TODO scan found " + count,
+                Duration.ofSeconds(60));
     }
 
     /** Waits for the panel to show a scan result satisfying {@code wanted}. */
     private TodoService.Outcome awaitPanel(Predicate<TodoService.Outcome> wanted) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
-        while (true) {
-            TodoService.Outcome o =
-                    FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator.panel(), "lastOutcome"));
-            if (o != null && wanted.test(o)) {
-                return o;
-            }
-            assertTrue(System.nanoTime() < deadline, "the panel showed the wanted scan; last " + o);
-            Thread.sleep(10);
-        }
+        TodoService.Outcome[] o = new TodoService.Outcome[1];
+        boolean shown = Await.holdsWithin(
+                () -> (o[0] = onFx(() -> FxTestSupport.<TodoService.Outcome>field(coordinator.panel(), "lastOutcome")))
+                                != null
+                        && wanted.test(o[0]),
+                Duration.ofSeconds(60));
+        assertTrue(shown, "the panel showed the wanted scan; last " + o[0]);
+        return o[0];
     }
 
     @Test
@@ -586,5 +585,14 @@ class TodoCoordinatorFxTest {
         Path a = dir.resolve("a.txt");
         fx(() -> coordinator.setActiveFile(a));
         assertEquals(a, FxTestSupport.<Path>field(coordinator.panel(), "activeFile"));
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

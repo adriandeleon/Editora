@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
@@ -58,17 +59,14 @@ class PyrightProbeFxTest {
 
     private static List<LspDiagnostic> waitForDiagnostics(MainController c, Predicate<List<LspDiagnostic>> done)
             throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
-        List<LspDiagnostic> now = List.of();
-        while (System.nanoTime() < deadline) {
-            FxTestSupport.drainFx();
-            now = diagnostics(FxTestSupport.callOnFx(c::activeBuffer));
-            if (done.test(now)) {
-                return now;
-            }
-            Thread.sleep(200);
-        }
-        return now;
+        List<List<LspDiagnostic>> now = new java.util.ArrayList<>(List.of(List.of()));
+        PulseChecks.holdsWithin(
+                () -> {
+                    now.set(0, diagnostics(FxTestSupport.callOnFx(c::activeBuffer)));
+                    return done.test(now.get(0));
+                },
+                Duration.ofSeconds(WAIT_SECONDS));
+        return now.get(0);
     }
 
     private static String text(MainController c) throws Exception {
@@ -141,12 +139,15 @@ class PyrightProbeFxTest {
             CommandRegistry registry = FxTestSupport.field(c, "registry");
             FxTestSupport.runOnFx(() -> registry.run("lsp.organizeImports"));
             String sorted = "import abc\nimport json\nimport sys\n\nprint(sys, json, abc, undefined_name)\n";
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
-            while (text(c).equals(unsorted) && System.nanoTime() < deadline) {
-                FxTestSupport.drainFx();
-                Thread.sleep(100);
-            }
-            Thread.sleep(1000); // a second application, had there been one, has landed by now
+            // The organize's answer is heard after any edit the server sent before it: a second application, had
+            // there been one, has landed by the time its status is said.
+            StatusBar bar = FxTestSupport.field(c, "statusBar");
+            PulseChecks.untilOnFx(
+                    () -> FxTestSupport.<MessageLog>field(bar, "messageLog").entries().stream()
+                            .anyMatch(e -> com.editora.i18n.Messages.tr("status.lsp.importsOrganized")
+                                    .equals(e.text())),
+                    "the organize's answer",
+                    Duration.ofSeconds(WAIT_SECONDS));
             FxTestSupport.drainFx();
             assertEquals(sorted, text(c), "organized once");
             FxTestSupport.runOnFx(() -> c.activeBuffer().getArea().undo());

@@ -202,6 +202,12 @@ final class TestRunCoordinator implements TestRunHook {
 
     long attachDeadlineMs = JdwpAttachRetry.DEADLINE_MS;
 
+    /**
+     * TEST SEAM — hears, on the FX thread, each probe of the chosen port the live run handled and what it decided, so
+     * a test can wait for the poller to have seen a change instead of waiting a while. Null in the app.
+     */
+    java.util.function.@Nullable BiConsumer<JdwpAttachRetry.Probe, JdwpAttachRetry.Decision> attachProbeHeardForTest;
+
     private @Nullable Timeline elapsedTimer;
     private boolean refreshPending;
 
@@ -1019,6 +1025,10 @@ final class TestRunCoordinator implements TestRunHook {
         }
         JdwpAttachRetry.Decision decision = JdwpAttachRetry.decide(
                 probe, attachAsked, ops.debugSessionActive(), everAttached, System.currentTimeMillis(), attachDeadline);
+        var heard = attachProbeHeardForTest;
+        if (heard != null) {
+            heard.accept(probe, decision);
+        }
         switch (decision) {
             case ATTACH -> {
                 attachAsked = true;

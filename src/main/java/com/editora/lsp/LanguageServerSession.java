@@ -352,6 +352,9 @@ final class LanguageServerSession implements LanguageClient {
                 }
                 long hold = owner == null ? 0 : owner.holdMillis(timeout);
                 if (hold > 0) {
+                    if (owner != null) {
+                        owner.timeoutsHeld.incrementAndGet();
+                    }
                     timer.set(REQUEST_TIMER.schedule(this, hold, java.util.concurrent.TimeUnit.MILLISECONDS));
                     if (request.isDone()) {
                         timer.get().cancel(false);
@@ -375,6 +378,18 @@ final class LanguageServerSession implements LanguageClient {
             }
         });
         return request;
+    }
+
+    /** How often a request's time ran out while a question was open and was held for it. */
+    private final java.util.concurrent.atomic.AtomicInteger timeoutsHeld =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    /**
+     * TEST SEAM — how often a request's time ran out and was held for an open question: a test sees the hold happen
+     * instead of waiting past the timeout (QUAL-07, Pauta 6.0.1).
+     */
+    int timeoutsHeldForTest() {
+        return timeoutsHeld.get();
     }
 
     /** Requests in a row that ran out of time; an answer resets it. */

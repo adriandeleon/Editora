@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit;
 import javafx.application.Platform;
 
 import com.editora.perf.BlockingSites;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -79,11 +80,7 @@ class ProcessWorkOffFxThreadFxTest {
     }
 
     private static void await(String what, java.util.function.BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-        while (!condition.getAsBoolean()) {
-            assertTrue(System.nanoTime() < deadline, "timed out waiting for " + what);
-            Thread.sleep(10);
-        }
+        Await.until(condition, what);
     }
 
     @Test
@@ -163,10 +160,12 @@ class ProcessWorkOffFxThreadFxTest {
         return List.of(java, "-cp", System.getProperty("java.class.path"), Sleeper.class.getName());
     }
 
-    /** A program that waits to be ended. */
+    /** A program that waits to be ended: it reads its stdin, which ends when the test's JVM does. */
     public static final class Sleeper {
         public static void main(String[] args) throws Exception {
-            Thread.sleep(60_000);
+            while (System.in.read() >= 0) {
+                // nothing comes; the read returns -1 once this test's JVM, which holds the pipe, is gone
+            }
         }
     }
 }

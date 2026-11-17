@@ -212,8 +212,8 @@ class ResponseHandlersIntegrationTest {
     void anUntrustedFolderRunsNoHandlerAndSaysWhy() throws Exception {
         assumeTrue(nodeAvailable(), "node is not installed");
         String text = "GET " + base() + "/login\n\n> {% fetch('" + base() + "/hit?from=untrusted'); %}\n";
+        // The run is over when it answers: a handler that ran would have made its fetch before its script exited.
         HttpExchange ex = one(text, scripts(false, Duration.ofSeconds(20)));
-        Thread.sleep(300);
         assertEquals(List.of("login"), seen, "the handler never ran");
         assertTrue(
                 ex.result().warnings().stream().anyMatch(w -> w.contains("not trusted to run scripts")),

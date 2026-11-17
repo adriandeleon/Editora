@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.util.Collection;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -138,11 +139,8 @@ class BracketColorsFxTest {
      * which the bare timeout could not distinguish — and only one of those is this change's fault.
      */
     private static void awaitColored(EditorBuffer b, int probe) throws Exception {
-        for (int i = 0; i < 600; i++) {
-            if (depthAt(b, probe) >= 0) {
-                return;
-            }
-            Thread.sleep(50);
+        if (Await.holdsWithin(holds(() -> depthAt(b, probe) >= 0), java.time.Duration.ofSeconds(30))) {
+            return;
         }
         String diagnosis = FxTestSupport.callOnFx(() -> {
             CodeArea area = FxTestSupport.field(b, "area");
@@ -271,9 +269,7 @@ class BracketColorsFxTest {
         awaitColored(b, classBrace);
 
         FxTestSupport.runOnFx(() -> b.setBracketColorsEnabled(false));
-        for (int i = 0; i < 600 && depthAt(b, classBrace) >= 0; i++) {
-            Thread.sleep(50);
-        }
+        Await.holdsWithin(holds(() -> depthAt(b, classBrace) < 0), java.time.Duration.ofSeconds(30));
         assertEquals(-1, depthAt(b, classBrace), "disabling re-highlights the buffer without depth classes");
     }
 
@@ -293,9 +289,7 @@ class BracketColorsFxTest {
         });
 
         int outerParen = SRC.indexOf("(1 + (2))") + 1; // shifted by the inserted char
-        for (int i = 0; i < 600 && depthAt(b, outerParen) != 3; i++) {
-            Thread.sleep(50);
-        }
+        Await.holdsWithin(holds(() -> depthAt(b, outerParen) == 3), java.time.Duration.ofSeconds(30));
         assertEquals(3, depthAt(b, outerParen), "the added level pushed everything below it one deeper");
     }
     /**
@@ -331,5 +325,18 @@ class BracketColorsFxTest {
             assertEquals(-1, depthAt(b, paren), pattern + " is not a bracket");
             assertTrue(!styleAt(b, paren).contains("bracket-unmatched"), pattern + " is not an unmatched bracket");
         }
+    }
+
+    /** {@code condition} for {@link Await}, a checked exception it throws rethrown unchecked. */
+    private static java.util.function.BooleanSupplier holds(java.util.concurrent.Callable<Boolean> condition) {
+        return () -> {
+            try {
+                return condition.call();
+            } catch (RuntimeException | Error e) {
+                throw e;
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        };
     }
 }

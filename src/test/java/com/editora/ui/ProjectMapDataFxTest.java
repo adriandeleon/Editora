@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -11,7 +12,6 @@ import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
@@ -788,13 +788,7 @@ class ProjectMapDataFxTest {
     }
 
     private static void waitForFx(BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8);
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return;
-            }
-            TimeUnit.MILLISECONDS.sleep(20);
-        }
+        PulseChecks.holdsOnFxWithin(condition, Duration.ofSeconds(8));
         assertTrue(FxTestSupport.callOnFx(condition::getAsBoolean), "timed out waiting for the FX state");
     }
 }

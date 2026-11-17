@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -13,6 +14,7 @@ import javafx.stage.Window;
 
 import com.editora.command.Command;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -110,9 +112,7 @@ class PrintEntryPointsFxTest {
     }
 
     private static void awaitFile(Path file) throws Exception {
-        for (int i = 0; i < 300 && !Files.exists(file); i++) {
-            Thread.sleep(50);
-        }
+        Await.holdsWithin(() -> Files.exists(file), Duration.ofSeconds(15));
         FxTestSupport.drainFx();
         assertTrue(Files.exists(file), "the export should have written " + file);
     }
@@ -145,11 +145,12 @@ class PrintEntryPointsFxTest {
             exports.printReporter = r -> {};
         });
         run(controller, id);
-        boolean opened = false;
-        for (int i = 0; i < (expected ? 200 : 10) && !opened; i++) {
-            Thread.sleep(50);
-            opened = FxTestSupport.callOnFx(() -> !previews().isEmpty());
-        }
+        FxTestSupport.drainFx();
+        // A refusal is decided in the command itself (no printer job is asked for, which the count below checks); a
+        // preview opens once the pages are prepared off the FX thread.
+        boolean opened = expected
+                ? PulseChecks.holdsOnFxWithin(() -> !previews().isEmpty(), Duration.ofSeconds(10))
+                : FxTestSupport.callOnFx(() -> !previews().isEmpty());
         FxTestSupport.runOnFx(() -> previews().forEach(Stage::close));
         FxTestSupport.drainFx();
         assertEquals(opened ? 1 : 0, jobs[0], "a printer job is made exactly when there is something to print");
@@ -171,9 +172,8 @@ class PrintEntryPointsFxTest {
             try {
                 if (c.viewer() == HexViewerPane.class) {
                     run(fx.controller, "view.openAsHex");
-                    for (int i = 0; i < 100 && !(tabContent(fx.controller) instanceof HexViewerPane); i++) {
-                        Thread.sleep(50);
-                    }
+                    PulseChecks.holdsWithin(
+                            () -> tabContent(fx.controller) instanceof HexViewerPane, Duration.ofSeconds(5));
                 }
                 assertInstanceOf(c.viewer(), tabContent(fx.controller), "the test must be looking at a viewer tab");
                 Map<String, Boolean> v = verdicts(
@@ -331,9 +331,7 @@ class PrintEntryPointsFxTest {
                 panel.setRoot(project);
                 panel.openMapWindow(false); // its own window: the Project tool window need not be open
             });
-            for (int i = 0; i < 200 && !FxTestSupport.callOnFx(panel::isMapOutputAvailable); i++) {
-                Thread.sleep(50);
-            }
+            PulseChecks.holdsOnFxWithin(panel::isMapOutputAvailable, Duration.ofSeconds(10));
             assertTrue(FxTestSupport.callOnFx(panel::isMapOutputAvailable), "the map is on screen with a column");
             Map<String, Boolean> map = verdicts(fx.controller, "projectMap.print", "projectMap.exportPdf");
             assertTrue(map.get("projectMap.print"), "the map is showing");
@@ -351,9 +349,7 @@ class PrintEntryPointsFxTest {
             });
             FxTestSupport.drainFx();
             run(fx.controller, "projectMap.exportPdf");
-            for (int i = 0; i < 300 && !Files.exists(out); i++) {
-                Thread.sleep(50);
-            }
+            Await.holdsWithin(() -> Files.exists(out), Duration.ofSeconds(15));
             FxTestSupport.drainFx();
             StatusBar bar = FxTestSupport.field(fx.controller, "statusBar");
             List<String> said =
@@ -382,10 +378,17 @@ class PrintEntryPointsFxTest {
                         () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[0]));
                 assertTrue(verdicts(fx.controller, "preview.print").get("preview.print"), "editor mode: lit");
                 FxTestSupport.runOnFx(() -> b.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.PREVIEW));
-                for (int i = 0; i < 100 && FxTestSupport.callOnFx(b::previewShowsError) == c.exportable(); i++) {
-                    Thread.sleep(50); // the tree (or the error) is rendered off-thread
-                }
-                Thread.sleep(300);
+                // the tree (or the error) is rendered off-thread: wait for it on screen
+                PulseChecks.untilOnFx(
+                        () -> {
+                            javafx.scene.layout.StackPane holder = FxTestSupport.field(
+                                    FxTestSupport.field(b, "previewPanes"), "structuredContentHolder");
+                            return holder != null
+                                    && !holder.getChildren().isEmpty()
+                                    && b.previewShowsError() != c.exportable();
+                        },
+                        "the preview of " + c.name(),
+                        Duration.ofSeconds(10));
                 FxTestSupport.drainFx();
                 Map<String, Boolean> v = verdicts(fx.controller, "preview.print", "preview.exportPdf", "preview.copy");
                 assertEquals(c.exportable(), v.get("preview.print"), c.name());

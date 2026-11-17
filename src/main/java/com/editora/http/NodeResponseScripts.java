@@ -118,6 +118,12 @@ public final class NodeResponseScripts implements ResponseScripts {
     /** How long a debugged script waits for its debugger to attach. */
     static final Duration ATTACH_DEADLINE = Duration.ofSeconds(30);
 
+    /**
+     * TEST SEAM — run once when a debugged script is still running past the timeout an undebugged one would have been
+     * stopped at: a test sees the timeout pass instead of sleeping past it (QUAL-07, Pauta 6.0.1). Null in the app.
+     */
+    static volatile @Nullable Runnable debuggedPastTimeoutForTest;
+
     private static final java.util.regex.Pattern INSPECTOR_LISTENING =
             java.util.regex.Pattern.compile("Debugger listening on ws://127\\.0\\.0\\.1:(\\d+)/");
 
@@ -772,6 +778,7 @@ public final class NodeResponseScripts implements ResponseScripts {
         boolean timedOut = false;
         boolean wasCancelled = false;
         boolean debuggerMissing = false;
+        boolean pastTimeoutTold = false;
         try {
             while (!p.waitFor(50, TimeUnit.MILLISECONDS)) {
                 if (cancelled.getAsBoolean()) {
@@ -782,6 +789,11 @@ public final class NodeResponseScripts implements ResponseScripts {
                     if (watch.gaveUp(startedAt)) {
                         debuggerMissing = true;
                         break;
+                    }
+                    Runnable past = debuggedPastTimeoutForTest;
+                    if (!pastTimeoutTold && past != null && System.nanoTime() > deadline) {
+                        pastTimeoutTold = true;
+                        past.run();
                     }
                 } else if (System.nanoTime() > deadline) {
                     timedOut = true;

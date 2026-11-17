@@ -2,7 +2,9 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -36,12 +38,8 @@ class XmlFormatDocumentFxTest {
             String expected =
                     "<note>\n    <to>Tove</to>\n    <from>\n        <name>Jani</name>\n    </from>\n</note>\n";
             // It formats off the FX thread (XML review 2 C10), then applies the result there.
-            long until = System.nanoTime() + 10_000_000_000L;
-            while (System.nanoTime() < until
-                    && !expected.equals(FxTestSupport.callOnFx(
-                            () -> c.activeBuffer().getArea().getText()))) {
-                Thread.sleep(20);
-            }
+            Await.holdsWithin(
+                    () -> expected.equals(onFx(() -> c.activeBuffer().getArea().getText())), Duration.ofSeconds(10));
             assertEquals(
                     expected,
                     FxTestSupport.callOnFx(() -> c.activeBuffer().getArea().getText()));
@@ -54,6 +52,15 @@ class XmlFormatDocumentFxTest {
                     "<note>\n    <to>Tove</to>\n<from><name>Jani</name></from></note>\n",
                     FxTestSupport.callOnFx(() -> c.activeBuffer().getArea().getText()),
                     "one undo step takes it back");
+        }
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

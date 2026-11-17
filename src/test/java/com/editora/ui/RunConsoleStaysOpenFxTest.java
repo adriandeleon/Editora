@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -69,7 +70,15 @@ class RunConsoleStaysOpenFxTest {
             FxTestSupport.invoke(FxTestSupport.field(fx.controller, "runConfigurations"), "refreshRunConfigs");
             fx.controller.openAndNavigate(work.resolve("README.md"), 0); // the active tab is not runnable
         });
-        settle(800);
+        // the README's text is read off the FX thread
+        PulseChecks.untilOnFx(
+                () -> fx.controller.activeBuffer() != null
+                        && work.resolve("README.md")
+                                .equals(fx.controller.activeBuffer().getPath())
+                        && !fx.controller.activeBuffer().isLoading(),
+                "the README open",
+                Duration.ofSeconds(10));
+        settle();
     }
 
     @AfterAll
@@ -87,20 +96,15 @@ class RunConsoleStaysOpenFxTest {
 
         // The older gate: a tab switch re-evaluates availability with no process alive.
         FxTestSupport.runOnFx(() -> registry.run("file.new"));
-        settle(300);
+        settle();
         assertConsoleShowing("result: 42");
     }
 
     @Test
     void theRunStripeButtonBadgesASpinnerWhileTheProgramRuns() throws Exception {
         FxTestSupport.runOnFx(() -> registry.run(RunConfiguration.commandIdFor("Slow"))); // sleeps 0.5 s
-        long deadline = System.nanoTime() + 20_000_000_000L;
-        boolean sawBusy = false;
-        while (!sawBusy && System.nanoTime() < deadline) {
-            Thread.sleep(20);
-            sawBusy = FxTestSupport.callOnFx(
-                    () -> runWindow.busyProperty().get() && stripeBadge().isVisible());
-        }
+        boolean sawBusy = PulseChecks.holdsOnFxWithin(
+                () -> runWindow.busyProperty().get() && stripeBadge().isVisible(), Duration.ofSeconds(20));
         assertTrue(sawBusy, "the Run stripe button badges a spinner while the program runs");
         awaitExit("Slow");
         assertFalse(FxTestSupport.callOnFx(() -> runWindow.busyProperty().get()), "not busy after the exit");
@@ -151,22 +155,18 @@ class RunConsoleStaysOpenFxTest {
     }
 
     private static void awaitExit(String name) throws Exception {
-        long deadline = System.nanoTime() + 20_000_000_000L;
-        while (true) {
-            Thread.sleep(40);
-            boolean done = FxTestSupport.callOnFx(() -> {
-                Button stop = FxTestSupport.field(run.panel(), "stopButton");
-                return stop.isDisable() && !run.isRunning();
-            });
-            String text = FxTestSupport.callOnFx(
-                    () -> FxTestSupport.<org.fxmisc.richtext.CodeArea>field(run.panel(), "output")
-                            .getText());
-            if (done && !text.isEmpty()) {
-                break;
-            }
-            assertTrue(System.nanoTime() < deadline, "run never finished: " + name);
-        }
-        settle(500);
+        PulseChecks.untilOnFx(
+                () -> {
+                    Button stop = FxTestSupport.field(run.panel(), "stopButton");
+                    return stop.isDisable()
+                            && !run.isRunning()
+                            && !FxTestSupport.<org.fxmisc.richtext.CodeArea>field(run.panel(), "output")
+                                    .getText()
+                                    .isEmpty();
+                },
+                "run never finished: " + name,
+                Duration.ofSeconds(20));
+        settle();
     }
 
     private static RunConfiguration config(String name, Path target, String beforeLaunch) {
@@ -180,9 +180,12 @@ class RunConsoleStaysOpenFxTest {
         return p;
     }
 
-    private static void settle(long ms) throws Exception {
-        Thread.sleep(ms);
-        FxTestSupport.drainFx();
+    /**
+     * Lets what the FX thread does after a step (the exit's last callbacks, a tab switch's re-check of what is
+     * available, the layout of the stripe) run: a few pulses, then the queue.
+     */
+    private static void settle() throws Exception {
+        PulseChecks.pulses(3);
         FxTestSupport.drainFx();
     }
 }

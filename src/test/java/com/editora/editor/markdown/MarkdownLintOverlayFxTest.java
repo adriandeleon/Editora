@@ -20,6 +20,7 @@ import com.editora.editor.EditorFx;
 import com.editora.editor.OverlayPalette;
 import com.editora.i18n.Messages;
 import com.editora.markdown.MarkdownLint;
+import com.editora.testkit.Await;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -55,16 +56,16 @@ class MarkdownLintOverlayFxTest {
     /** The y-bands (runs of pixel rows) the overlay paints on, each as {@code {top, bottom, minX, maxX}}. */
     private static List<int[]> bands(EditorBuffer buffer) throws Exception {
         // The overlay repaints on a later pulse than the layout that sizes it: read until two looks agree.
-        List<int[]> last = List.of();
-        for (int attempt = 0; attempt < 60; attempt++) {
-            List<int[]> now = paintedBands(buffer);
-            if (!now.isEmpty() && now.size() == last.size()) {
-                return now;
-            }
-            last = now;
-            Thread.sleep(50);
-        }
-        return last;
+        List<List<int[]>> last = new java.util.ArrayList<>(List.of(List.of()));
+        Await.holdsWithin(
+                EditorFx.check(() -> {
+                    List<int[]> now = paintedBands(buffer);
+                    boolean agree = !now.isEmpty() && now.size() == last.get(0).size();
+                    last.set(0, now);
+                    return agree;
+                }),
+                java.time.Duration.ofSeconds(3));
+        return last.get(0);
     }
 
     private static List<int[]> paintedBands(EditorBuffer buffer) throws Exception {
@@ -119,12 +120,11 @@ class MarkdownLintOverlayFxTest {
      * the old gutter and was never asked to paint again stays wrong however long one waits — which is the failure.
      */
     private static double[] settled(EditorBuffer buffer) throws Exception {
-        double[] now = squiggleAndText(buffer);
-        for (int attempt = 0; attempt < 60 && !(Math.abs(now[0] - now[1]) <= 2); attempt++) {
-            Thread.sleep(50);
-            now = squiggleAndText(buffer);
-        }
-        return now;
+        double[][] now = {squiggleAndText(buffer)};
+        Await.holdsWithin(
+                EditorFx.check(() -> Math.abs((now[0] = squiggleAndText(buffer))[0] - now[0][1]) <= 2),
+                java.time.Duration.ofSeconds(3));
+        return now[0];
     }
 
     @Test
@@ -205,24 +205,25 @@ class MarkdownLintOverlayFxTest {
         // The gutter is sized on a later pulse than the first paint, and the text moves right when it is: a
         // squiggle read off that first paint sits where the text used to start. Look again until the overlay
         // has repainted for the settled layout (it never would if it failed to repaint, and the test fails).
-        List<int[]> bands = List.of();
-        double[] lineBox = new double[3];
-        for (int attempt = 0; attempt < 60; attempt++) {
-            bands = bands(buffer[0]);
-            lineBox = EditorFx.callFx(() -> {
-                CodeArea area = buffer[0].getArea();
-                Node overlay = EditorFx.field(buffer[0], "mdLintOverlay");
-                var box =
-                        overlay.screenToLocal(area.getParagraphBoundsOnScreen(2).orElseThrow());
-                var text = overlay.screenToLocal(
-                        area.getCharacterBoundsOnScreen(0, 1).orElseThrow());
-                return new double[] {box.getMinY(), box.getMaxY(), text.getMinX()};
-            });
-            if (bands.size() == 1 && Math.abs(bands.get(0)[2] - lineBox[2]) <= 2) {
-                break;
-            }
-            Thread.sleep(50);
-        }
+        List<List<int[]>> seen = new java.util.ArrayList<>(List.of(List.of()));
+        double[][] seenBox = {new double[3]};
+        Await.holdsWithin(
+                EditorFx.check(() -> {
+                    seen.set(0, bands(buffer[0]));
+                    seenBox[0] = EditorFx.callFx(() -> {
+                        CodeArea area = buffer[0].getArea();
+                        Node overlay = EditorFx.field(buffer[0], "mdLintOverlay");
+                        var box = overlay.screenToLocal(
+                                area.getParagraphBoundsOnScreen(2).orElseThrow());
+                        var text = overlay.screenToLocal(
+                                area.getCharacterBoundsOnScreen(0, 1).orElseThrow());
+                        return new double[] {box.getMinY(), box.getMaxY(), text.getMinX()};
+                    });
+                    return seen.get(0).size() == 1 && Math.abs(seen.get(0).get(0)[2] - seenBox[0][2]) <= 2;
+                }),
+                Await.DEFAULT_TIMEOUT);
+        List<int[]> bands = seen.get(0);
+        double[] lineBox = seenBox[0];
         assertEquals(1, bands.size(), "one short squiggle on the blank line");
         int[] band = bands.get(0);
         assertTrue(band[3] - band[2] >= 8 && band[3] - band[2] <= 24, "about two characters wide");

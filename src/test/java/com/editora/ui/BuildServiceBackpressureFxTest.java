@@ -109,6 +109,7 @@ class BuildServiceBackpressureFxTest {
     @Test
     void theTrailingOutputIsDeliveredBeforeTheExitIsReported() throws Exception {
         BuildService service = new BuildService();
+        CountDownLatch starts = watchStarts(service);
         Recorder recorder = new Recorder();
         CountDownLatch releaseFx = new CountDownLatch(1);
         try {
@@ -116,7 +117,7 @@ class BuildServiceBackpressureFxTest {
                 service.run(Path.of("."), javaCommand("tail"), recorder);
                 awaitQuietly(releaseFx);
             });
-            Process process = awaitProcess(service); // started off the FX thread, which is busy
+            Process process = awaitProcess(service, starts); // started off the FX thread, which is busy
             assertTrue(process.waitFor(30, TimeUnit.SECONDS), "the tool has exited while the UI was busy");
             releaseFx.countDown();
             assertTrue(recorder.exited.await(30, TimeUnit.SECONDS));
@@ -143,6 +144,7 @@ class BuildServiceBackpressureFxTest {
     @Test
     void aFloodIsBackpressuredNotDroppedAndTheExitStaysOrdered() throws Exception {
         BuildService service = new BuildService();
+        CountDownLatch starts = watchStarts(service);
         Recorder recorder = new Recorder();
         CountDownLatch releaseFx = new CountDownLatch(1);
         try {
@@ -150,7 +152,7 @@ class BuildServiceBackpressureFxTest {
                 service.run(Path.of("."), javaCommand(), recorder);
                 awaitQuietly(releaseFx);
             });
-            Process process = awaitProcess(service); // started off the FX thread, which is busy
+            Process process = awaitProcess(service, starts); // started off the FX thread, which is busy
             // 2 MB of output against a 256 KB queue and a 64 KB pipe: with backpressure the child cannot
             // finish while the UI is blocked. Unbounded, it finished at once and the lines piled up.
             assertFalse(
@@ -196,6 +198,7 @@ class BuildServiceBackpressureFxTest {
     @Test
     void shutdownDiscardsQueuedOutputAndReleasesABlockedReader() throws Exception {
         BuildService service = new BuildService();
+        CountDownLatch starts = watchStarts(service);
         Recorder recorder = new Recorder();
         CountDownLatch releaseFx = new CountDownLatch(1);
         try {
@@ -203,7 +206,7 @@ class BuildServiceBackpressureFxTest {
                 service.run(Path.of("."), javaCommand(), recorder);
                 awaitQuietly(releaseFx);
             });
-            Process process = awaitProcess(service); // started off the FX thread, which is busy
+            Process process = awaitProcess(service, starts); // started off the FX thread, which is busy
 
             service.shutdown(); // off the FX thread, as a window close racing a flood would be
             assertTrue(process.waitFor(30, TimeUnit.SECONDS), "shutdown kills the build");
@@ -230,16 +233,34 @@ class BuildServiceBackpressureFxTest {
      * The build's process, once the {@code build-start} thread has published it: the start is off the FX thread
      * (PERF-01), so it is there while the FX thread is still busy, and {@code onStart} follows on that thread.
      */
-    private static Process awaitProcess(BuildService service) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (System.nanoTime() < deadline) {
-            Process process = FxTestSupport.field(service, "current");
-            if (process != null) {
-                return process;
-            }
-            Thread.sleep(10);
+    private static Process awaitProcess(BuildService service, CountDownLatch starts) throws InterruptedException {
+        assertTrue(starts.await(10, TimeUnit.SECONDS), "build process never started");
+        Process process = FxTestSupport.field(service, "current");
+        if (process == null) {
+            throw new AssertionError("build process never started");
         }
-        throw new AssertionError("build process never started");
+        return process;
+    }
+
+    /** Counted down once the {@code build-start} thread has started the build and published its process. */
+    private static CountDownLatch watchStarts(BuildService service) {
+        CountDownLatch started = new CountDownLatch(1);
+        java.util.concurrent.Executor original = FxTestSupport.field(service, "starter");
+        java.util.concurrent.Executor watched = start -> original.execute(() -> {
+            try {
+                start.run();
+            } finally {
+                started.countDown();
+            }
+        });
+        try {
+            java.lang.reflect.Field f = BuildService.class.getDeclaredField("starter");
+            f.setAccessible(true);
+            f.set(service, watched);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+        return started;
     }
 
     private static boolean isWindows() {

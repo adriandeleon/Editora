@@ -13,6 +13,7 @@ import javafx.scene.control.Tab;
 import com.editora.command.CommandRegistry;
 import com.editora.config.ConfigManager;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -21,7 +22,6 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** With "save as administrator" on, a file the user could replace themselves must not be sent to root. */
 @Tag("fx")
@@ -91,11 +91,19 @@ class AdminSaveOwnFileFxTest {
             Files.setPosixFilePermissions(lockedDir, PosixFilePermissions.fromString("r-xr-xr-x"));
             async.onClose(() -> Files.setPosixFilePermissions(lockedDir, PosixFilePermissions.fromString("rwxr-xr-x")));
             // A file never read: looked at off the FX thread behind the first ask (PERF-01), then answered.
-            long until = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
-            while (!FxTestSupport.callOnFx(() -> workflows.adminSaveApplicable(foreign))) {
-                assertTrue(System.nanoTime() < until, "the look behind never answered");
-                Thread.sleep(20);
-            }
+            Await.until(
+                    () -> onFx(() -> workflows.adminSaveApplicable(foreign)),
+                    "the look behind never answered",
+                    java.time.Duration.ofSeconds(10));
+        }
+    }
+
+    /** {@code task}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> task) {
+        try {
+            return FxTestSupport.callOnFx(task);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

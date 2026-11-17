@@ -80,9 +80,8 @@ class JavaScriptShadowFxTest {
         Files.writeString(script, SCRIPT);
         manager.openDocument(script, root, "java", SCRIPT);
         // The stand-in is written off the FX thread and the document opened after it (PERF-01, Pauta 6.0.1).
-        for (int i = 0; i < 500 && (fakes.isEmpty() || fake().opened.isEmpty()); i++) {
-            Thread.sleep(10);
-        }
+        com.editora.testkit.Await.holdsWithin(
+                () -> !(fakes.isEmpty() || fake().opened.isEmpty()), java.time.Duration.ofSeconds(10));
     }
 
     @AfterEach
@@ -141,9 +140,7 @@ class JavaScriptShadowFxTest {
         manager.codeActions(script, 2, 0, 2, 1, a -> pending.decrementAndGet());
         manager.isTestFile(script, b -> pending.decrementAndGet());
         pending.addAndGet(5);
-        for (int i = 0; i < 500 && pending.get() > 0; i++) {
-            Thread.sleep(20);
-        }
+        com.editora.testkit.Await.holdsWithin(() -> pending.get() <= 0, java.time.Duration.ofSeconds(10));
         assertEquals(0, pending.get(), "a request never answered");
         manager.closeDocument(script);
         drainFx();
@@ -172,9 +169,7 @@ class JavaScriptShadowFxTest {
 
         manager.changeDocument(script, edited);
         drainFx();
-        for (int i = 0; i < 100 && fake().changed.isEmpty(); i++) {
-            Thread.sleep(20);
-        }
+        com.editora.testkit.Await.holdsWithin(() -> !fake().changed.isEmpty(), java.time.Duration.ofSeconds(10));
 
         var change = fake().changed.get(0).getContentChanges().get(0);
         assertNull(change.getRange(), "a full sync, though the server takes increments");
@@ -190,9 +185,7 @@ class JavaScriptShadowFxTest {
         session.get()
                 .publishDiagnostics(new org.eclipse.lsp4j.PublishDiagnosticsParams(
                         standInUri(), List.of(new org.eclipse.lsp4j.Diagnostic(at, "oops"))));
-        for (int i = 0; i < 100 && diagnosed.isEmpty(); i++) {
-            Thread.sleep(20);
-        }
+        com.editora.testkit.Await.holdsWithin(() -> !diagnosed.isEmpty(), java.time.Duration.ofSeconds(10));
 
         assertEquals(
                 List.of(script),
@@ -239,9 +232,8 @@ class JavaScriptShadowFxTest {
 
         manager.closeDocument(script);
         // deleted off the FX thread, in order after its write (PERF-01, Pauta 6.0.1)
-        for (int i = 0; i < 500 && Files.exists(standIn.getParent()); i++) {
-            Thread.sleep(10);
-        }
+        com.editora.testkit.Await.holdsWithin(
+                () -> !Files.exists(standIn.getParent()), java.time.Duration.ofSeconds(10));
 
         assertFalse(Files.exists(standIn));
         assertFalse(Files.exists(standIn.getParent()));
@@ -254,9 +246,7 @@ class JavaScriptShadowFxTest {
 
         manager.openDocument(other, root, "java", SCRIPT);
         drainFx();
-        for (int i = 0; i < 100 && fake().opened.size() < 2; i++) {
-            Thread.sleep(20);
-        }
+        com.editora.testkit.Await.holdsWithin(() -> fake().opened.size() >= 2, java.time.Duration.ofSeconds(10));
 
         assertNotEquals(
                 fake().opened.get(0).getTextDocument().getUri(),
@@ -269,9 +259,7 @@ class JavaScriptShadowFxTest {
         Files.writeString(app, "class App {}\n");
 
         manager.openDocument(app, root, "java", "class App {}\n");
-        for (int i = 0; i < 100 && fake().opened.size() < 2; i++) {
-            Thread.sleep(20);
-        }
+        com.editora.testkit.Await.holdsWithin(() -> fake().opened.size() >= 2, java.time.Duration.ofSeconds(10));
 
         assertEquals(
                 DocumentUris.of(app), fake().opened.get(1).getTextDocument().getUri());

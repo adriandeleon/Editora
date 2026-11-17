@@ -11,6 +11,7 @@ import com.editora.editops.LineEndings;
 import com.editora.editops.TextFingerprint;
 import com.editora.perf.BlockingSites;
 import com.editora.perf.OffFx;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,11 +76,13 @@ class EditorBufferBaselineFxTest {
                 assertTrue(buffer.isDirty(), "unknown until the hash lands: the cheap check's dirty, never clean");
             });
             waitFor(() -> !buffer.isDirty());
+            long hashesBefore = hashes(offFx);
             runOnFx(() -> {
                 buffer.getArea().replaceText(0, 1, "Z"); // same length, different text
                 assertTrue(buffer.isDirty());
             });
-            Thread.sleep(300);
+            // the hash of the changed text has been made and has landed
+            waitFor(() -> hashes(offFx) > hashesBefore && EditorFx.<Long>field(buffer, "hashingVersion") == -1L);
             runOnFx(() -> assertTrue(buffer.isDirty(), "a different text of the same length stays modified"));
             assertEquals(java.util.List.of(), onFx, "nothing hashed on the FX thread");
             assertTrue(offFx.contains(EditorBuffer.DIRTY_HASH_SITE), "hashed off it: " + offFx);
@@ -89,16 +92,18 @@ class EditorBufferBaselineFxTest {
     }
 
     private static void waitFor(java.util.function.BooleanSupplier onFxCondition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (System.nanoTime() < deadline) {
-            boolean[] met = {false};
-            runOnFx(() -> met[0] = onFxCondition.getAsBoolean());
-            if (met[0]) {
-                return;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("timed out");
+        Await.until(
+                EditorFx.check(() -> {
+                    boolean[] met = {false};
+                    runOnFx(() -> met[0] = onFxCondition.getAsBoolean());
+                    return met[0];
+                }),
+                "the condition on the FX thread",
+                java.time.Duration.ofSeconds(20));
+    }
+
+    private static long hashes(java.util.List<String> sites) {
+        return sites.stream().filter(EditorBuffer.DIRTY_HASH_SITE::equals).count();
     }
 
     @Test

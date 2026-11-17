@@ -57,11 +57,9 @@ class LspBashToolsFxTest {
 
         fx.run(() -> fx.coordinator.formatDocument());
         // Whether shfmt is there is looked at off the FX thread before the command says anything: never a guess.
-        long until = System.nanoTime() + 10_000_000_000L;
-        while (tr("status.lsp.formatting").equals(fx.host.lastStatus()) && System.nanoTime() < until) {
-            Thread.sleep(20);
-            fx.settle();
-        }
+        OnFx.holdsWithin(
+                () -> !tr("status.lsp.formatting").equals(fx.host.lastStatus()), java.time.Duration.ofSeconds(10));
+        fx.settle();
 
         assertEquals(tr("status.lsp.bashNoShfmt"), fx.host.lastStatus());
     }

@@ -283,10 +283,7 @@ class XmlServerFxTest {
         note.commands = List.of(new org.eclipse.lsp4j.Command(
                 "Bind…", XmlServer.BINDING_WIZARD, List.of(file.toUri().toString())));
         s.xmlActionableNotification(note);
-        long until = System.currentTimeMillis() + 10_000;
-        while (asked.size() < 3 && System.currentTimeMillis() < until) {
-            Thread.sleep(20);
-        }
+        com.editora.testkit.Await.holdsWithin(() -> asked.size() >= 3, java.time.Duration.ofSeconds(10));
 
         assertEquals(
                 List.of("xml:" + XmlServer.OPEN_URI + ":1", "choose:Bind…", "xml:" + XmlServer.BINDING_WIZARD + ":1"),
@@ -371,11 +368,8 @@ class XmlServerFxTest {
                 new LspManager.WatchedFile(xsd, LspManager.WatchedKind.CHANGED),
                 new LspManager.WatchedFile(other, LspManager.WatchedKind.CHANGED)));
 
-        long until = System.currentTimeMillis() + 5000;
-        while (fake.saved.isEmpty() && System.currentTimeMillis() < until) {
-            Thread.sleep(20);
-        }
-        Thread.sleep(100);
+        // The session is ready and its fake in-process: each notification reached it before notifyWatchedFiles
+        // returned, so what it holds now is all it will get.
         assertEquals(1, fake.saved.size(), "the open schema only: not a document that is no grammar");
         assertEquals(
                 xsd.toUri(),

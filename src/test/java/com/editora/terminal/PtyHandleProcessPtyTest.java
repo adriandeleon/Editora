@@ -7,6 +7,7 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinWorkerThread;
 import java.util.concurrent.TimeUnit;
 
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
@@ -32,8 +33,13 @@ class PtyHandleProcessPtyTest {
         try {
             CompletableFuture<Process> registry = program.onExit();
             CompletableFuture<Process> stop = program.onExit();
-            // The JDK's version takes up its worker at once; give it time to show.
-            Thread.sleep(300);
+            // The JDK's version takes up its worker at once: wait until the pool has taken everything submitted to
+            // it and each of its workers is idle or already inside pty4j, so a waiting worker would show now.
+            ForkJoinPool common = ForkJoinPool.commonPool();
+            Await.until(
+                    () -> common.getQueuedSubmissionCount() == 0 && common.getQueuedTaskCount() == 0,
+                    "the common pool took what was submitted");
+            Await.holdsWithin(PtyHandleProcessPtyTest::everyCommonPoolWorkerIsIdleOrInAPty, Await.DEFAULT_TIMEOUT);
 
             assertFalse(aCommonPoolThreadWaitsOnAPty(), "a common-pool thread waits for the pty process");
 
@@ -44,6 +50,15 @@ class PtyHandleProcessPtyTest {
             ProcessHandle.of(program.pid()).ifPresent(ProcessHandle::destroyForcibly);
             connector.close();
         }
+    }
+
+    private static boolean everyCommonPoolWorkerIsIdleOrInAPty() {
+        ForkJoinPool common = ForkJoinPool.commonPool();
+        return Thread.getAllStackTraces().entrySet().stream()
+                .filter(e -> e.getKey() instanceof ForkJoinWorkerThread w && w.getPool() == common)
+                .allMatch(e -> e.getKey().getState() != Thread.State.RUNNABLE
+                        || List.of(e.getValue()).stream()
+                                .anyMatch(f -> f.getClassName().startsWith("com.pty4j.")));
     }
 
     private static boolean aCommonPoolThreadWaitsOnAPty() {

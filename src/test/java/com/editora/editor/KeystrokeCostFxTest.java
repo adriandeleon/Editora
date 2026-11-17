@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import javafx.application.Platform;
 
 import com.editora.editops.IndentWindow;
+import com.editora.testkit.Await;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -275,12 +276,13 @@ class KeystrokeCostFxTest {
                 invoke(ref.get().runGutter, "recomputeRun"); // load / Save As / a toggle: off the FX thread too
                 assertTrue(ref.get().isRunnable(), "nothing scanned in place: the old answer until the scan lands");
             });
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
             boolean[] still = {true};
-            while (still[0] && System.nanoTime() < deadline) {
-                Thread.sleep(10);
-                runOnFx(() -> still[0] = ref.get().isRunnable());
-            }
+            Await.holdsWithin(
+                    EditorFx.check(() -> {
+                        runOnFx(() -> still[0] = ref.get().isRunnable());
+                        return !still[0];
+                    }),
+                    java.time.Duration.ofSeconds(20));
             assertFalse(still[0], "the scan's answer lands");
         } finally {
             runOnFx(() -> ref.get().dispose());

@@ -1,14 +1,15 @@
 package com.editora.ui;
 
+import java.time.Duration;
 import java.util.Collection;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The Markdown decoration in a real buffer: it follows an edit to the line that makes a line a heading. */
 @Tag("fx")
@@ -25,10 +26,9 @@ class MarkdownSourceStylesFxTest {
 
     /** Waits until the character at {@code offset} has (or has lost) {@code style}: highlighting is asynchronous. */
     private static void await(EditorBuffer b, int offset, String style, boolean present, String what) throws Exception {
-        long deadline = System.nanoTime() + 30_000_000_000L;
-        while (styleAt(b, offset).contains(style) != present) {
-            assertTrue(System.nanoTime() < deadline, what + ": style at " + offset + " is " + styleAt(b, offset));
-            Thread.sleep(25);
+        if (!Await.holdsWithin(
+                OnFx.checked(() -> styleAt(b, offset).contains(style) == present), Duration.ofSeconds(30))) {
+            throw new AssertionError(what + ": style at " + offset + " is " + styleAt(b, offset));
         }
     }
 

@@ -7,6 +7,7 @@ import java.util.function.UnaryOperator;
 
 import com.editora.config.Project;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -55,17 +56,12 @@ class SnippetWindowProjectRootFxTest {
     }
 
     private static EditorBuffer awaitBuffer(MainController window, Path file) throws Exception {
-        long deadline = System.nanoTime() + 30_000_000_000L;
-        while (System.nanoTime() < deadline) {
-            FxTestSupport.drainFx();
-            EditorBuffer active = FxTestSupport.callOnFx(
-                    () -> (EditorBuffer) FxTestSupport.call(window, "activeBuffer", new Class<?>[] {}));
-            if (active != null && file.equals(active.getPath()) && !active.isLoading()) {
-                return active;
-            }
-            Thread.sleep(20);
-        }
-        throw new AssertionError("did not open " + file);
+        return Await.value(
+                () -> onFx(() -> {
+                    EditorBuffer active = (EditorBuffer) FxTestSupport.call(window, "activeBuffer", new Class<?>[] {});
+                    return active != null && file.equals(active.getPath()) && !active.isLoading() ? active : null;
+                }),
+                "did not open " + file);
     }
 
     private static MainController controllerFor(FxWindowFixture fx, String key) {
@@ -76,5 +72,14 @@ class SnippetWindowProjectRootFxTest {
             }
         }
         throw new IllegalStateException("no window for " + key);
+    }
+
+    /** {@code probe}'s answer, read on the FX thread, for a condition {@link Await} checks. */
+    private static <T> T onFx(java.util.concurrent.Callable<T> probe) {
+        try {
+            return FxTestSupport.callOnFx(probe);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

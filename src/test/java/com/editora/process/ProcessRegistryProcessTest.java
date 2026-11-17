@@ -34,8 +34,7 @@ class ProcessRegistryProcessTest {
             ProcessRegistry.track(parent);
             ProcessRegistry.killTree(parent);
             parent.waitFor(3, TimeUnit.SECONDS);
-            Thread.sleep(50);
-            System.exit(0);
+            System.exit(0); // within the grace period: the shutdown hook owns the captured child
         }
     }
 
@@ -61,10 +60,7 @@ class ProcessRegistryProcessTest {
             ProcessRegistry.track(parent);
             ProcessRegistry.killTree(parent);
             assertTrue(parent.waitFor(3, TimeUnit.SECONDS), "the wrapper should accept TERM");
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-            while (child.isAlive() && System.nanoTime() < deadline) {
-                Thread.sleep(25);
-            }
+            exitWithin(child, 5);
             assertFalse(child.isAlive(), "the retained descendant must receive the forced phase");
         } finally {
             child.destroyForcibly();
@@ -87,10 +83,7 @@ class ProcessRegistryProcessTest {
                 child = ProcessHandle.of(Long.parseLong(reader.readLine())).orElseThrow();
             }
             assertTrue(helper.waitFor(8, TimeUnit.SECONDS));
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-            while (child.isAlive() && System.nanoTime() < deadline) {
-                Thread.sleep(25);
-            }
+            exitWithin(child, 5);
             assertFalse(child.isAlive(), "the forked JVM shutdown hook must force-kill the captured child");
         } finally {
             if (child != null) {
@@ -132,6 +125,15 @@ class ProcessRegistryProcessTest {
             assertTrue(ProcessRegistry.awaitExpectedExits(0), "a killed process must not hold the shutdown hook");
         } finally {
             reader.destroyForcibly();
+        }
+    }
+
+    /** Waits for {@code process} to exit, up to {@code seconds}; the caller asserts it is gone. */
+    private static void exitWithin(ProcessHandle process, long seconds) throws Exception {
+        try {
+            process.onExit().get(seconds, TimeUnit.SECONDS);
+        } catch (java.util.concurrent.TimeoutException stillRunning) {
+            // the assertion that follows says so
         }
     }
 }

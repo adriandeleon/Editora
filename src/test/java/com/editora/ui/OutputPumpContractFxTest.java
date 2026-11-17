@@ -112,7 +112,7 @@ class OutputPumpContractFxTest {
             });
             Process process = awaitCurrent(service); // started off the FX thread, which is busy
             assertTrue(process.waitFor(30, TimeUnit.SECONDS));
-            Thread.sleep(300); // the waiter has joined the readers and queued the exit behind the busy UI
+            awaitWaiters(); // the waiter has joined the readers and queued the exit behind the busy UI
 
             assertTrue(service.isRunning(), "not over until the exit has been reported");
             service.run(Path.of("."), sh("echo other"), second);
@@ -148,7 +148,7 @@ class OutputPumpContractFxTest {
             });
             Process process = awaitCurrent(service); // started off the FX thread, which is busy
             assertTrue(process.waitFor(30, TimeUnit.SECONDS));
-            Thread.sleep(300);
+            awaitWaiters(); // every batch and the exit are queued behind the busy UI
             releaseFx.countDown();
 
             assertTrue(recorder.exited.await(30, TimeUnit.SECONDS), "the exit still arrives");
@@ -172,16 +172,22 @@ class OutputPumpContractFxTest {
         }
     }
 
+    /**
+     * The {@code build-wait} threads have ended: each has joined its readers and handed the exit to the FX thread,
+     * the last thing it does.
+     */
+    private static void awaitWaiters() throws InterruptedException {
+        for (Thread thread : Thread.getAllStackTraces().keySet()) {
+            if ("build-wait".equals(thread.getName())) {
+                thread.join(TimeUnit.SECONDS.toMillis(30));
+                assertFalse(thread.isAlive(), "the build's waiter ended");
+            }
+        }
+    }
+
     /** The build's process once the {@code build-start} thread has published it (PERF-01: not on the FX thread). */
     private static Process awaitCurrent(BuildService service) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (System.nanoTime() < deadline) {
-            Process process = FxTestSupport.field(service, "current");
-            if (process != null) {
-                return process;
-            }
-            Thread.sleep(10);
-        }
-        throw new AssertionError("the build never started");
+        return com.editora.testkit.Await.value(
+                () -> FxTestSupport.<Process>field(service, "current"), "the build to start");
     }
 }

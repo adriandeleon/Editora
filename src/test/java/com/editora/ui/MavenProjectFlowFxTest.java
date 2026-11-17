@@ -423,9 +423,7 @@ class MavenProjectFlowFxTest {
             Files.writeString(dir.resolve("taken").resolve("demo-app").resolve("README"), "x");
             FxTestSupport.runOnFx(() -> location.setText(dir.resolve("taken").toString() + "/"));
             // The folder is looked at off the FX thread (PERF-01): the form refuses it when the answer lands.
-            for (int i = 0; i < 400 && !FxTestSupport.callOnFx(create::isDisabled); i++) {
-                Thread.sleep(10);
-            }
+            OnFx.holdsWithin(create::isDisabled, java.time.Duration.ofSeconds(10));
             assertTrue(FxTestSupport.callOnFx(create::isDisabled));
             assertEquals(tr("dialog.mavenProject.exists", dir.resolve("taken").resolve("demo-app")), rig.hint(card));
             FxTestSupport.runOnFx(create::fire);
@@ -524,9 +522,7 @@ class MavenProjectFlowFxTest {
                 com.editora.perf.OffFx.runnerForTest((n, task) -> task.run()); // in place again, as the class runs
             }
             held.forEach(Runnable::run); // the looks land
-            for (int i = 0; i < 400 && FxTestSupport.callOnFx(create::isDisabled); i++) {
-                Thread.sleep(10);
-            }
+            OnFx.holdsWithin(() -> !create.isDisabled(), java.time.Duration.ofSeconds(10));
             assertFalse(FxTestSupport.callOnFx(create::isDisabled));
             assertEquals(tr("dialog.mavenProject.willCreate", projectDir), rig.hint(card));
 

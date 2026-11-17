@@ -18,6 +18,7 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 
+import com.editora.testkit.Await;
 import com.jediterm.core.util.TermSize;
 import com.jediterm.terminal.TerminalColor;
 import org.junit.jupiter.api.AfterEach;
@@ -118,7 +119,7 @@ class TerminalViewFxTest {
         // A splitter drag: every column change used to reflow the whole scrollback, under the lock painting needs.
         open();
         await(() -> connector.resizes.get() >= 0, "the start");
-        Thread.sleep(300);
+        awaitSizeSettled();
         int before = connector.resizes.get();
         fx(() -> {
             for (int size = 14; size <= 18; size++) {
@@ -128,7 +129,7 @@ class TerminalViewFxTest {
             return null;
         });
         await(() -> connector.resizes.get() > before, "the resize once the size held still");
-        Thread.sleep((long) TerminalView.RESIZE_SETTLE.toMillis() + 300);
+        awaitSizeSettled(); // held still past RESIZE_SETTLE, and the shell told
         assertEquals(before + 1, connector.resizes.get(), "one resize for the whole run of changes");
     }
 
@@ -241,7 +242,7 @@ class TerminalViewFxTest {
     @Test
     void theFirstLineIntoHistoryDoesNotResizeTheShell() throws Exception {
         open();
-        Thread.sleep(300);
+        awaitSizeSettled();
         int before = connector.resizes.get();
         StringBuilder lines = new StringBuilder();
         for (int i = 0; i < 80; i++) lines.append("line ").append(i).append("\r\n");
@@ -252,7 +253,7 @@ class TerminalViewFxTest {
             view.flushResize();
             return null;
         });
-        Thread.sleep(200);
+        awaitSizeSettled();
         assertEquals(before, connector.resizes.get(), "the scrollbar appearing kept the column count");
     }
 
@@ -386,7 +387,7 @@ class TerminalViewFxTest {
             return view.scrollOrigin();
         });
         assertTrue(origin < 0, "Shift+PageUp scrolled back: " + origin);
-        Thread.sleep(200);
+        awaitShellQueue(); // anything the key sent has reached the shell
         assertEquals("", connector.written(), "and sent nothing to the shell");
         assertEquals(
                 0,
@@ -809,7 +810,7 @@ class TerminalViewFxTest {
         // Two keystrokes whose echo takes 150 ms: the manager measures the link as slow.
         for (String key : java.util.List.of("a", "b")) {
             type(key);
-            Thread.sleep(150);
+            echoTakes(150);
             connector.emit(key);
             String typed = "$ " + (key.equals("a") ? "a" : "ab");
             await(() -> screen().startsWith(typed), "the echo of " + key);
@@ -851,10 +852,90 @@ class TerminalViewFxTest {
         await(() -> screen().startsWith("$ "), "the prompt");
         for (String key : java.util.List.of("a", "b", "c")) {
             type(key);
-            Thread.sleep(150);
+            echoTakes(150);
             assertEquals(null, fx(this::predictedText));
             connector.emit(key);
         }
+    }
+
+    /**
+     * The link's round trip: the echo comes {@code millis} after the keystroke. The type-ahead manager (JediTerm's)
+     * measures that latency on {@code System.nanoTime}, so the time itself is what the test feeds it: the one wait
+     * here on a clock, for {@code millis} to have passed since the keystroke was sent.
+     */
+    private void echoTakes(long millis) throws Exception {
+        awaitShellQueue(); // the keystroke has been sent
+        long sent = System.nanoTime();
+        Await.until(() -> System.nanoTime() - sent >= millis * 1_000_000, "the link's round trip");
+    }
+
+    /** Waits until everything posted to the session's emulator thread so far has run (a key sent, a resize asked). */
+    private void awaitShellQueue() throws Exception {
+        java.util.concurrent.ScheduledExecutorService emulator =
+                reflected(reflected(view.getSession(), "starter"), "mySingleThreadScheduledExecutor");
+        emulator.submit(() -> {}).get(10, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Waits until the view's size has held still past {@link TerminalView#RESIZE_SETTLE} and the resize it asked for
+     * has reached the shell (JediTerm sends it to the tty a moment later, on its emulator thread).
+     */
+    private void awaitSizeSettled() throws Exception {
+        awaitPulses(2); // a layout pass sizes the view
+        await(
+                () -> Boolean.TRUE.equals(call(
+                        () -> TerminalViewFxTest.<javafx.animation.PauseTransition>reflected(view, "resizeDebounce")
+                                        .getStatus()
+                                == javafx.animation.Animation.Status.STOPPED)),
+                "the size held still");
+        awaitShellQueue();
+        java.util.concurrent.ScheduledFuture<?> pending =
+                reflected(reflected(view.getSession(), "starter"), "myScheduledTtyConnectorResizeFuture");
+        if (pending != null) {
+            try {
+                pending.get(10, TimeUnit.SECONDS);
+            } catch (java.util.concurrent.CancellationException superseded) {
+                // a later size replaced it, and the barrier above saw that one scheduled
+            }
+        }
+    }
+
+    private static void awaitPulses(int count) throws Exception {
+        CountDownLatch pulses = new CountDownLatch(count);
+        javafx.animation.AnimationTimer counter = new javafx.animation.AnimationTimer() {
+            @Override
+            public void handle(long now) {
+                pulses.countDown();
+            }
+        };
+        fx(() -> {
+            counter.start();
+            return null;
+        });
+        try {
+            assertTrue(pulses.await(10, TimeUnit.SECONDS), "pulses ran");
+        } finally {
+            fx(() -> {
+                counter.stop();
+                return null;
+            });
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> T reflected(Object target, String name) {
+        for (Class<?> c = target.getClass(); c != null; c = c.getSuperclass()) {
+            try {
+                java.lang.reflect.Field f = c.getDeclaredField(name);
+                f.setAccessible(true);
+                return (T) f.get(target);
+            } catch (NoSuchFieldException next) {
+                // up the hierarchy
+            } catch (IllegalAccessException e) {
+                throw new IllegalStateException(e);
+            }
+        }
+        throw new IllegalStateException("no field " + name);
     }
 
     private void type(String text) throws Exception {
@@ -939,11 +1020,6 @@ class TerminalViewFxTest {
     }
 
     private static void await(BooleanSupplier condition, String what) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (System.nanoTime() < deadline) {
-            if (condition.getAsBoolean()) return;
-            Thread.sleep(20);
-        }
-        throw new AssertionError("timed out waiting for " + what);
+        Await.until(condition, what, java.time.Duration.ofSeconds(10));
     }
 }

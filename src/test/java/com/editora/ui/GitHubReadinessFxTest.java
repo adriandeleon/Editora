@@ -5,7 +5,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Set;
 import java.util.concurrent.Callable;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import javafx.scene.Node;
@@ -182,8 +181,7 @@ class GitHubReadinessFxTest {
             github.refreshAvailability(); // what a tab switch does
             assertFalse(unavailable.contains(githubWindow), "the tool window is not withdrawn meanwhile");
         });
-        FxTestSupport.drainFx();
-        Thread.sleep(200);
+        GitFeatureFx.settleGitHub(github); // anything the save started has reached gh by now
 
         assertEquals(probes, logged("--version"), "no gh process per settings save");
     }
@@ -303,8 +301,7 @@ class GitHubReadinessFxTest {
             await(
                     "the old gh to be probed",
                     () -> !github.service().availability().supportsChecks());
-            FxTestSupport.drainFx();
-            Thread.sleep(300); // anything the refresh itself started has reached gh by now
+            GitFeatureFx.settleGitHub(github); // anything the refresh itself started has reached gh by now
             long viewsBefore = logged("pr view");
             long checksBefore = logged("pr checks");
 
@@ -314,7 +311,7 @@ class GitHubReadinessFxTest {
                     "the reason",
                     () -> tr("status.github.checksCannotUseGh", "2.40.1", "2.50")
                             .equals(echo.getText()));
-            Thread.sleep(300);
+            GitFeatureFx.settleGitHub(github);
             assertEquals(viewsBefore, logged("pr view"), "no lookup of the branch's pull request");
             assertEquals(checksBefore, logged("pr checks"), "and no gh pr checks --json it would reject");
         } finally {
@@ -348,18 +345,19 @@ class GitHubReadinessFxTest {
 
     /** Polls {@code condition} on the FX thread until it holds. */
     private static void await(String what, Callable<Boolean> condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (!FxTestSupport.callOnFx(condition)) {
-            assertFalse(System.nanoTime() > deadline, "timed out waiting for " + what);
-            Thread.sleep(25);
-        }
+        FxTestSupport.awaitFxCondition(condition, what, java.time.Duration.ofSeconds(20));
     }
 
     private static void awaitOffFx(String what, Callable<Boolean> condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
-        while (!condition.call()) {
-            assertFalse(System.nanoTime() > deadline, "timed out waiting for " + what);
-            Thread.sleep(25);
-        }
+        com.editora.testkit.Await.until(
+                () -> {
+                    try {
+                        return condition.call();
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                },
+                what,
+                java.time.Duration.ofSeconds(20));
     }
 }

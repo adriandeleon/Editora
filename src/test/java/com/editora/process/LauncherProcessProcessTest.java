@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
@@ -136,10 +137,13 @@ class LauncherProcessProcessTest {
     @DisabledOnOs(OS.WINDOWS)
     void atShutdownTheLastSignalIsSentBeforeReturning() throws Exception {
         java.util.concurrent.atomic.AtomicBoolean asked = new java.util.concurrent.atomic.AtomicBoolean();
+        java.util.concurrent.CountDownLatch asking = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch answer = new java.util.concurrent.CountDownLatch(1);
         LauncherProcess p = LauncherProcess.start(
                 "test:here", launch(List.of("sleep", "300"), null), Duration.ofSeconds(10), (pid, force) -> {
+                    asking.countDown();
                     try {
-                        Thread.sleep(300); // a docker exec takes a moment
+                        answer.await(); // a docker exec takes a moment: until the test lets it answer
                     } catch (InterruptedException e) {
                         return false;
                     }
@@ -147,9 +151,27 @@ class LauncherProcessProcessTest {
                     return kill(pid, force);
                 });
 
+        // The target answers only once the caller is waiting for it (or has returned without waiting, which fails).
+        Thread caller = Thread.currentThread();
+        java.util.concurrent.atomic.AtomicBoolean returned = new java.util.concurrent.atomic.AtomicBoolean();
+        Thread answerer = Thread.ofVirtual().start(() -> {
+            try {
+                asking.await();
+                Await.until(
+                        () -> returned.get() || caller.getState() == Thread.State.TIMED_WAITING,
+                        "the caller waits for the target");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                answer.countDown();
+            }
+        });
         p.signalTreeNow(true, 5000);
+        boolean askedWhenReturned = asked.get();
+        returned.set(true);
+        answerer.join();
 
-        assertTrue(asked.get(), "returned only once the target had been asked");
+        assertTrue(askedWhenReturned, "returned only once the target had been asked");
         assertTrue(p.waitFor(10, TimeUnit.SECONDS));
         p.signalTreeNow(true, 5000); // over: nothing to ask
     }

@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -200,9 +201,7 @@ class RasterPrintFxTest {
                         "the command returns before the tree is snapshotted: the FX thread is not held for it");
             });
             String expected = tr("status.pdf.exportedTruncated", 4000, 4101);
-            for (int i = 0; i < 1200 && !FxTestSupport.callOnFx(() -> host.statuses.contains(expected)); i++) {
-                Thread.sleep(50);
-            }
+            PulseChecks.holdsOnFxWithin(() -> host.statuses.contains(expected), Duration.ofSeconds(60));
             List<String> statuses = FxTestSupport.callOnFx(() -> List.copyOf(host.statuses));
             assertEquals(expected, statuses.get(statuses.size() - 1), statuses.toString());
             assertTrue(statuses.contains(tr("status.preview.snapshotting", 50)), "progress while snapshotting");

@@ -2,11 +2,11 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
@@ -35,7 +35,6 @@ import org.junit.jupiter.api.io.TempDir;
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -176,8 +175,9 @@ class MapUsageCountsFxTest {
             shown.clear();
             counts.outlineChanged(file, outline); // not shown: forgotten, not asked
         });
-        TimeUnit.MILLISECONDS.sleep((long) MapUsageCounts.QUIET.toMillis() + 200);
         FxTestSupport.runOnFx(() -> {
+            // not shown: no ask is timed, so none can come later
+            assertTrue(FxTestSupport.<Map<?, ?>>field(counts, "waiting").isEmpty(), "nothing is waiting to be asked");
             assertEquals(2, asked.size());
             shown.add(file);
             counts.outlineChanged(file, outline);
@@ -341,13 +341,6 @@ class MapUsageCountsFxTest {
     }
 
     private static void waitFor(BooleanSupplier condition, String message) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-        while (System.nanoTime() < deadline) {
-            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
-                return;
-            }
-            TimeUnit.MILLISECONDS.sleep(20);
-        }
-        assertNotNull(null, "timed out: " + message);
+        OnFx.until(condition::getAsBoolean, message, Duration.ofSeconds(15));
     }
 }

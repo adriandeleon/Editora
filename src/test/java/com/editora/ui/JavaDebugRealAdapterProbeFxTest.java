@@ -76,11 +76,8 @@ class JavaDebugRealAdapterProbeFxTest {
     }
 
     private static void await(String what, long seconds, BooleanSupplier condition) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
-        while (!condition.getAsBoolean()) {
-            assertTrue(System.nanoTime() < deadline, what);
-            Thread.sleep(50); // polling a process table / the file system: there is nothing to wait on
-        }
+        // a process table / the file system / a session's state: nothing announces the change
+        com.editora.testkit.Await.until(condition, what, java.time.Duration.ofSeconds(seconds));
     }
 
     /** A DapManager on a real jdtls, without a window, recording what reaches its listener. */
@@ -229,14 +226,16 @@ class JavaDebugRealAdapterProbeFxTest {
                     List.of(new DapModels.FileBreakpoints(
                             file, List.of(new DapModels.LineBreakpoint(breakpointLine, null, null)))));
             // The Maven import runs after the server is ready: wait until jdtls lists the project's main class.
-            List<DapManager.MainClassOption> options = List.of();
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(LONG);
-            while (options.isEmpty() && System.nanoTime() < deadline) {
-                CompletableFuture<List<DapManager.MainClassOption>> found = new CompletableFuture<>();
-                FxTestSupport.runOnFx(() -> h.dap.resolveMainClasses(file, found::complete));
-                options = found.get(LONG, TimeUnit.SECONDS);
-                if (options.isEmpty()) Thread.sleep(500);
-            }
+            List<List<DapManager.MainClassOption>> listed = new java.util.ArrayList<>(List.of(List.of()));
+            com.editora.testkit.Await.holdsWithin(
+                    FxTestSupport.unchecked(() -> {
+                        CompletableFuture<List<DapManager.MainClassOption>> found = new CompletableFuture<>();
+                        FxTestSupport.runOnFx(() -> h.dap.resolveMainClasses(file, found::complete));
+                        listed.set(0, found.get(LONG, TimeUnit.SECONDS));
+                        return !listed.get(0).isEmpty();
+                    }),
+                    java.time.Duration.ofSeconds(LONG));
+            List<DapManager.MainClassOption> options = listed.get(0);
             assertFalse(options.isEmpty(), "jdtls never listed the Maven project's main class");
             DapManager.MainClassOption main = options.stream()
                     .filter(o -> "demo.ProbeApp".equals(o.className()))
@@ -272,7 +271,12 @@ class JavaDebugRealAdapterProbeFxTest {
                     .orElseThrow();
             assertEquals(DapModels.ValueNote.NOT_LOADED, loops.note(), "past the budget: " + loops);
             assertTrue(tookMs < 10_000, "Variables waited " + tookMs + " ms");
-            Thread.sleep(2_000); // the toString() is now older than the budget
+            // the toString() is now older than the budget, by the session's own reckoning
+            com.editora.testkit.Await.until(
+                    () -> FxTestSupport.call(FxTestSupport.field(h.dap, "lazyValues"), "stuck", new Class<?>[] {})
+                            != null,
+                    "the toString() to outlast the budget",
+                    java.time.Duration.ofSeconds(10));
             FxTestSupport.runOnFx(h.dap::stepOver);
             await(
                     "a step behind a running toString() says so",
@@ -404,7 +408,7 @@ class JavaDebugRealAdapterProbeFxTest {
         Files.writeString(file, """
                 void main() throws Exception {
                     while (true) {
-                        Thread.sleep(200);
+                        synchronized (Thread.class) { Thread.class.wait(200); }
                     }
                 }
                 """);

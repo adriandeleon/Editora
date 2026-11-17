@@ -69,10 +69,7 @@ class SplitViewFxTest {
     }
 
     private static void settle() throws Exception {
-        FxTestSupport.drainFx();
-        Thread.sleep(150);
-        FxTestSupport.drainFx();
-        FxTestSupport.drainFx();
+        FxPulses.await(2); // the layout and focus a step changed land on the next pulse
     }
 
     /** Opens {@code content} as a real file (bookmarks need a path) and waits for it to be the active buffer. */

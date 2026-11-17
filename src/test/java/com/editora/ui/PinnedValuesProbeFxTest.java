@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BooleanSupplier;
@@ -11,6 +12,7 @@ import com.editora.config.SharedConfig;
 import com.editora.dap.DapManager;
 import com.editora.dap.DebugAdapterLocator;
 import com.editora.editor.EditorBuffer;
+import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -36,15 +38,15 @@ class PinnedValuesProbeFxTest {
                     int total = 0;
                     for (int i = 0; i < 5; i++) {
                         total += i;
-                        Thread.sleep(100);
+                        Thread.currentThread().join(100);
                     }
-                    Thread.sleep(20000);
+                    Thread.currentThread().join(20000);
                 }
             }
             """;
 
     private static final int PIN_LINE = 4; // total += i;
-    private static final int STOP_LINE = 5; // Thread.sleep(100);
+    private static final int STOP_LINE = 5; // the pause in the loop
 
     @BeforeAll
     static void boot() throws Exception {
@@ -146,12 +148,6 @@ class PinnedValuesProbeFxTest {
     }
 
     private static void await(String what, int seconds, BooleanSupplier condition) throws InterruptedException {
-        long end = System.nanoTime() + seconds * 1_000_000_000L;
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > end) {
-                throw new AssertionError("timed out waiting for " + what);
-            }
-            Thread.sleep(50);
-        }
+        Await.until(condition, what, Duration.ofSeconds(seconds));
     }
 }
