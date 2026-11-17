@@ -419,7 +419,10 @@ public enum ConfigSchema {
                     // debugGoGoroutineFilter ("") — which goroutines Delve lists and how it names them. Additive.
                     Map.entry(174, (Migration) ConfigMigrations::identity),
                     // v175→176: + debugPythonTemplates ("auto") — breakpoints in Django and Jinja templates. Additive.
-                    Map.entry(175, (Migration) ConfigMigrations::identity)),
+                    Map.entry(175, (Migration) ConfigMigrations::identity),
+                    // v176→177: + bashDebugEnabled (on), bashDebugPath ("") — Bash debugging on vscode-bash-debug.
+                    // Additive: absent is the default.
+                    Map.entry(176, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

@@ -334,8 +334,31 @@ public final class DebugLanguages {
             "debug.error.phpUnavailable",
             new ExternalAdapter(List.of("phpDebug.js"), ExternalAdapter.Transport.STDIO, null));
 
+    /**
+     * Bash, on vscode-bash-debug ({@code bashDebug.js}, run on Node.js over its standard streams), which runs the
+     * script under the bashdb it ships ({@link ScriptLaunch#bashLaunch}). A shell file that is a Bash script ({@link
+     * ScriptLaunch#isBashScript}); no exception filters (Bash has no exceptions).
+     */
+    public static final DebugLanguage BASH = new DebugLanguage(
+            "bash",
+            "Bash",
+            Set.of("shell", "bash"),
+            Kind.EXTERNAL,
+            "bashdb",
+            "bashdb",
+            "",
+            List.of(),
+            null,
+            Availability.LOCATED,
+            List.of(),
+            null,
+            null,
+            false,
+            "debug.error.bashUnavailable",
+            new ExternalAdapter(List.of("bashDebug.js"), ExternalAdapter.Transport.STDIO, null));
+
     private static final List<DebugLanguage> ALL =
-            List.of(JAVA, PYTHON, JAVASCRIPT, GROOVY, KOTLIN, CLOJURE, SCALA, GO, RUST, CPP, CSHARP, RUBY, PHP);
+            List.of(JAVA, PYTHON, JAVASCRIPT, GROOVY, KOTLIN, CLOJURE, SCALA, GO, RUST, CPP, CSHARP, RUBY, PHP, BASH);
 
     /**
      * GDB's own DAP mode ({@code gdb -i dap}, GDB 14 and later), over its standard streams: C and C++'s other debugger

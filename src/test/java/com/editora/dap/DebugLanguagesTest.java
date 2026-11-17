@@ -33,7 +33,8 @@ class DebugLanguagesTest {
                         "cpp",
                         "csharp",
                         "ruby",
-                        "php"),
+                        "php",
+                        "bash"),
                 List.copyOf(DebugLanguages.ids()));
         assertEquals(DebugLanguages.ids(), DapServerRegistry.languageIdsForDebug());
         for (String ts : List.of("typescript", "javascriptreact", "typescriptreact", "javascript")) {
@@ -45,6 +46,7 @@ class DebugLanguagesTest {
         assertSame(DebugLanguages.CSHARP, DebugLanguages.forLanguage("csharp"));
         assertSame(DebugLanguages.RUBY, DebugLanguages.forLanguage("ruby"));
         assertSame(DebugLanguages.PHP, DebugLanguages.forLanguage("php"));
+        assertSame(DebugLanguages.BASH, DebugLanguages.forLanguage("shell"), "a shell file: Bash's");
         assertNull(DebugLanguages.forLanguage("zig"));
         assertNull(DebugLanguages.forLanguage(null));
         assertNull(DebugLanguages.byId(null));
@@ -58,11 +60,12 @@ class DebugLanguagesTest {
                                     DebugLanguages.CPP,
                                     DebugLanguages.CSHARP,
                                     DebugLanguages.RUBY,
-                                    DebugLanguages.PHP)
+                                    DebugLanguages.PHP,
+                                    DebugLanguages.BASH)
                             .contains(l),
                     l.external() != null,
                     l.id()
-                            + ": Go's, Rust's, C/C++'s, C#'s, Ruby's and PHP's adapters are started by the generic path");
+                            + ": Go's, Rust's, C/C++'s, C#'s, Ruby's, PHP's and Bash's adapters are started by the generic path");
         }
     }
 

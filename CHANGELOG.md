@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Debug Bash scripts.** Press Debug on a Bash script to stop at its breakpoints, step through it and read its
+  variables in a watch or by hovering (`total`, or `$total` as the script writes it). Install Bash Debug from
+  Settings → Debugging → Bash; it brings its own bashdb and runs on Node.js. Scripts of other shells (zsh, fish) still
+  point at Run with Trace.
 - **Breakpoints in Django and Jinja templates.** A breakpoint on a line of a Django or Jinja template stops there,
   with the template's variables (the context, a loop's item and `forloop`) in the Debug window. Editora turns it on for
   a project that uses Django (a `manage.py`, or Django in its requirements) or Jinja (Jinja2 or Flask in its

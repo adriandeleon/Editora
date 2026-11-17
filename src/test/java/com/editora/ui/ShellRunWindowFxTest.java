@@ -177,15 +177,16 @@ class ShellRunWindowFxTest {
     @Test
     void debuggingAShellScriptPointsAtRunWithTrace() throws Exception {
         // It said "Debugging is unavailable for this file (check Settings → Debugging)" — no setting helps.
-        Path script = dir.resolve("deploy.sh");
-        Files.writeString(script, "#!/bin/sh\necho hi\n");
+        // A Bash script is debugged on vscode-bash-debug (BashDebugWindowFxTest); another shell's is not.
+        Path script = dir.resolve("deploy.zsh");
+        Files.writeString(script, "#!/usr/bin/env zsh\necho hi\n");
         try (FxWindowFixture fx = debugWindow()) {
             MainController c = fx.controller;
             open(c, script);
             CommandRegistry registry = FxTestSupport.field(c, "registry");
             FxTestSupport.runOnFx(() -> registry.run("debug.start"));
             FxTestSupport.drainFx();
-            assertEquals(tr("status.debug.shellNotDebuggable"), echo(c));
+            assertEquals(tr("status.debug.shellNotBash"), echo(c));
 
             FxTestSupport.runOnFx(() -> c.debugCoordinator.debugConfig(
                     new com.editora.config.RunConfiguration("D", "shell", "deploy.sh", "", "", "", "", "", "", "")));

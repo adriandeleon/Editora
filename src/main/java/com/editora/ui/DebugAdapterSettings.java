@@ -174,7 +174,18 @@ final class DebugAdapterSettings {
                     "php-debug",
                     InstallCatalog.PHP_DEBUG_STEP,
                     "status.debug.phpOff",
-                    (s, scope) -> tr("status.debug.phpDebugMissing")));
+                    (s, scope) -> tr("status.debug.phpDebugMissing")),
+            new Binding(
+                    DebugLanguages.BASH,
+                    Settings::isBashDebugEnabled,
+                    Settings::setBashDebugEnabled,
+                    Settings::getBashDebugPath,
+                    Settings::setBashDebugPath,
+                    "settings.debug.bashPath",
+                    "bash-debug",
+                    InstallCatalog.BASH_DEBUG_STEP,
+                    "status.debug.bashOff",
+                    (s, scope) -> tr("status.debug.bashDebugMissing")));
 
     /** Every adapter with settings of its own, in the order the pickers list them. */
     static List<Binding> all() {

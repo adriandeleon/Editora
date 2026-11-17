@@ -399,10 +399,12 @@ jobs:
       # Ruby's debug gem (rdbg) for RubyDebugProbeFxTest, installed as Editora's Install runs it; PHP with Xdebug and
       # the pinned vscode-php-debug for PhpDebugProbeFxTest, where Editora's installer puts it (it runs on the
       # runner's Node.js).
-      - name: Install rdbg, Xdebug and PHP Debug
+      - name: Install rdbg, Xdebug, PHP Debug and Bash Debug
         env:
           PHP_DEBUG_VERSION: 1.40.2
           PHP_DEBUG_SHA256: 17631993fe800083a2fc89a6782c8bf58a79603ad201ddff60d9b59ba2345d5f
+          BASH_DEBUG_VERSION: 0.3.9
+          BASH_DEBUG_SHA256: 7fc154642bf3fcfa27a903fd44235bc902d93e737939c7b411ece6fe10f5f458
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends ruby ruby-dev php-cli php-xdebug
@@ -417,6 +419,12 @@ jobs:
           mkdir -p "$dest"
           unzip -q /tmp/php-debug.vsix -d "$dest"
           test -f "$dest/extension/out/phpDebug.js"
+          curl -fsSL -o /tmp/bash-debug.vsix "https://open-vsx.org/api/rogalmic/bash-debug/${BASH_DEBUG_VERSION}/file/rogalmic.bash-debug-${BASH_DEBUG_VERSION}.vsix"
+          echo "${BASH_DEBUG_SHA256}  /tmp/bash-debug.vsix" | sha256sum -c -
+          dest="$HOME/.editora/plugins/dap/bash"
+          mkdir -p "$dest"
+          unzip -q /tmp/bash-debug.vsix -d "$dest"
+          test -f "$dest/extension/out/bashDebug.js"
 
       # JavaDebugRealAdapterProbeFxTest: a Maven project launch, a program Editora starts itself (runInTerminal),
       # and Stop / window close leaving no debuggee or compile folder — against the real java-debug.
@@ -447,6 +455,8 @@ jobs:
       # exception user code does not handle stops; and in a window F5 builds a project and a lone file-based app.
       # RubyDebugProbeFxTest: under rdbg, a script stops in a block, steps and ends; and in a window F5 does the same.
       # PhpDebugProbeFxTest: on Xdebug through vscode-php-debug, a script stops, steps and ends; and in a window F5.
+      # BashDebugProbeFxTest: on vscode-bash-debug's bashdb, F5 on a Bash script stops in its loop past bashdb's
+      # first-line stop, reads its variables by name, steps and runs to the end.
       # DebugHistoryProbeFxTest: a loop stops three times on debugpy and java-debug; each stop keeps its values, Back
       # and Forward show them, Show Value History follows i, and after Stop they can still be read; a recording
       # breakpoint runs the loop to its end with its five stops kept (its js-debug tests run in the Node job).
@@ -497,7 +507,7 @@ jobs:
       # PythonTemplatesProbeFxTest: on debugpy, a breakpoint on a Jinja template's line (Jinja2 in the requirements) and
       # on a Django template's (a manage.py) stops on it with the template's variables, Template breakpoints Automatic.
       - name: Test compact Java language service and debugging
-        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,RubyDebugProbeFxTest,PhpDebugProbeFxTest,DebugHistoryProbeFxTest#python*+java+javaRecording,SeveralSessionsProbeFxTest,TriggeredBreakpointsProbeFxTest#python+java,LoadedSourcesProbeFxTest#c*+python*,MarkObjectProbeFxTest,DebugSmallWinsProbeFxTest,ThreadDumpProbeFxTest,TypeRenderersProbeFxTest,BreakpointFiltersProbeFxTest,CoreDumpProbeFxTest,DebugTableProbeFxTest,ParallelStacksProbeFxTest,StepBackProbeFxTest,ExceptionBreakpointsProbeFxTest,PythonDataProbeFxTest,StepFiltersProbeFxTest#python+java+go,EvaluationTimeLimitProbeFxTest,WatchSetValueProbeFxTest#python+java+go,ValueFormatsProbeFxTest#java+python+go+gdb+codelldb,GoGoroutinesProbeFxTest,PythonTemplatesProbeFxTest -Dgroups=probe -Dlsp.probe=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,RubyDebugProbeFxTest,PhpDebugProbeFxTest,BashDebugProbeFxTest,DebugHistoryProbeFxTest#python*+java+javaRecording,SeveralSessionsProbeFxTest,TriggeredBreakpointsProbeFxTest#python+java,LoadedSourcesProbeFxTest#c*+python*,MarkObjectProbeFxTest,DebugSmallWinsProbeFxTest,ThreadDumpProbeFxTest,TypeRenderersProbeFxTest,BreakpointFiltersProbeFxTest,CoreDumpProbeFxTest,DebugTableProbeFxTest,ParallelStacksProbeFxTest,StepBackProbeFxTest,ExceptionBreakpointsProbeFxTest,PythonDataProbeFxTest,StepFiltersProbeFxTest#python+java+go,EvaluationTimeLimitProbeFxTest,WatchSetValueProbeFxTest#python+java+go,ValueFormatsProbeFxTest#java+python+go+gdb+codelldb,GoGoroutinesProbeFxTest,PythonTemplatesProbeFxTest -Dgroups=probe -Dlsp.probe=true test
 
   # The Node.js tool chain Editora drives but never ships: typescript-language-server with TypeScript, and
   # vscode-js-debug. Both are user-installed, so the default lanes skip their probes — and a TypeScript release
