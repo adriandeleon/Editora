@@ -17,14 +17,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1554"
     },
     {
-      "rule": "PLAT-01",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/platform/#plat-01",
-      "kind": "pending",
-      "reason": "Building Editora from source on a JDK newer than 25 stops at the format check unless that check is skipped.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1555"
-    },
-    {
       "rule": "PLAT-14",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/platform/#plat-14",

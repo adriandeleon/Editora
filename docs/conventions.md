@@ -289,10 +289,10 @@ All Java is auto-formatted with [Palantir Java Format](https://github.com/palant
 - **Format on JDK 25.** Spotless runs Palantir inside Maven's own JVM, and Palantir reads a javac
   internal (`JCCompilationUnit.endPositions`) that JDK 27 removed
   ([JDK-8372948](https://bugs.openjdk.org/browse/JDK-8372948)); on JDK 27 every file fails with a
-  `NoSuchFieldError`. The repo's `.sdkmanrc` pins JDK 25 (`sdk env`), and on JDK 26+ the
-  `formatter-needs-jdk25` profile fails `verify` early with that explanation unless
-  `-Dspotless.check.skip=true` is passed (as CI's JDK 27 lane did; that lane is disabled for now). `mvn spotless:apply` is a direct
-  goal that bypasses that check, so run it on JDK 25 yourself. Drop the pin and profile once a Palantir
+  `NoSuchFieldError`. The repo's `.sdkmanrc` pins JDK 25 (`sdk env`). A newer JDK still builds the app
+  (Pauta PLAT-01): on JDK 26+ the `formatter-needs-jdk25` profile turns the format check off, so `verify`
+  passes without it, and CI's format check runs on JDK 25. `mvn spotless:apply` is a direct goal that the
+  profile does not reach, so run it on JDK 25 yourself. Drop the pin and profile once a Palantir
   release fixes both [#1785](https://github.com/palantir/palantir-java-format/issues/1785) (this field,
   fix in PR [#1786](https://github.com/palantir/palantir-java-format/pull/1786)) and
   [#1799](https://github.com/palantir/palantir-java-format/issues/1799) (JDK 27 also breaks formatting
