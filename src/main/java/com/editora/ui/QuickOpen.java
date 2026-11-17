@@ -283,7 +283,9 @@ public class QuickOpen<T> {
         emptyLabel = new Label();
         header = new Label();
         input.setPromptText(prompt);
+        input.setAccessibleText(prompt);
         list.setItems(items);
+        list.setAccessibleText(prompt);
         emptyLabel.getStyleClass().add("palette-hint");
         emptyLabel.setWrapText(true);
         if (emptyText != null) {
@@ -591,7 +593,7 @@ public class QuickOpen<T> {
             }
             String d = detail == null ? null : detail.apply(item);
             sub.setText(d == null ? "" : d);
-            setGraphic(box);
+            setGraphic(CellNames.read(box));
         }
     }
 }

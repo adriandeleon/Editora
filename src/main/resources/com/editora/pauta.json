@@ -17,36 +17,12 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1554"
     },
     {
-      "rule": "PLAT-01",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/platform/#plat-01",
-      "kind": "pending",
-      "reason": "Building Editora from source on a JDK newer than 25 stops at the format check unless that check is skipped.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1555"
-    },
-    {
       "rule": "PLAT-14",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/platform/#plat-14",
       "kind": "pending",
       "reason": "The snippets file is edited as text, to keep your comments, rather than read into typed data.",
       "link": "https://github.com/adriandeleon/Editora/issues/1555"
-    },
-    {
-      "rule": "REPO-02",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/repository/#repo-02",
-      "kind": "pending",
-      "reason": "Some older changelog entries do not open with a one-line summary, and a few sections use headings of their own.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1556"
-    },
-    {
-      "rule": "DOCS-02",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/documentation/#docs-02",
-      "kind": "pending",
-      "reason": "The plugin authors' guide in the repository also explains installing and troubleshooting plugins, which belongs in the user guide on the website.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1557"
     },
     {
       "rule": "DOCS-04",
@@ -62,14 +38,6 @@
       "url": "https://pauta-project.dev/6.0.1/documentation/#docs-05",
       "kind": "pending",
       "reason": "The notes on a GitHub release are a list of commits rather than notes written for users.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1557"
-    },
-    {
-      "rule": "DOCS-14",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/documentation/#docs-14",
-      "kind": "pending",
-      "reason": "One developer guide in the repository is a dated review report rather than a lasting explanation.",
       "link": "https://github.com/adriandeleon/Editora/issues/1557"
     },
     {
@@ -121,22 +89,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1559"
     },
     {
-      "rule": "ACC-01",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-01",
-      "kind": "pending",
-      "reason": "Not every control has a name for screen readers, and no test sweeps every window for them.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1561"
-    },
-    {
-      "rule": "ACC-02",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-02",
-      "kind": "pending",
-      "reason": "Clickable items in the status bar cannot be activated by a screen reader, and messages there are not announced.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1561"
-    },
-    {
       "rule": "ACC-07",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-07",
@@ -161,14 +113,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1562"
     },
     {
-      "rule": "WIN-12",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/window-shell/#win-12",
-      "kind": "pending",
-      "reason": "The Print Preview window does not follow the interface zoom: its pages are drawn at the size they print at, and its bar with them.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1562"
-    },
-    {
       "rule": "WIN-13",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/window-shell/#win-13",
@@ -185,51 +129,11 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1562"
     },
     {
-      "rule": "ICON-07",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-07",
-      "kind": "pending",
-      "reason": "Some parts of the interface take their warning, error and success colors directly from the theme instead of the shared state colors.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1563"
-    },
-    {
-      "rule": "ICON-08",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-08",
-      "kind": "pending",
-      "reason": "Some interface colors are fixed values that do not follow the theme.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1563"
-    },
-    {
-      "rule": "ICON-09",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-09",
-      "kind": "pending",
-      "reason": "A few hints are drawn in the faintest text color, which can be hard to read.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1563"
-    },
-    {
-      "rule": "ICON-14",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-14",
-      "kind": "pending",
-      "reason": "Some of the checks that keep text readable run as slower interface tests.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1563"
-    },
-    {
       "rule": "ICON-16",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-16",
       "kind": "pending",
       "reason": "There is no theme that follows the system's light or dark setting.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1563"
-    },
-    {
-      "rule": "ICON-18",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-18",
-      "kind": "pending",
-      "reason": "Amber, red and green are used for a few things besides warnings, errors and success, such as bookmarks and Stop buttons.",
       "link": "https://github.com/adriandeleon/Editora/issues/1563"
     },
     {
@@ -261,7 +165,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/settings/#set-06",
       "kind": "pending",
-      "reason": "A few settings, terminal notifications among them, have no command in the Command Palette.",
+      "reason": "Every setting has a command in the Command Palette except the terminal's multi-line paste confirmation, which should be turned off only in the config file, and so should lose its Settings row rather than gain a command.",
       "link": "https://github.com/adriandeleon/Editora/issues/1568"
     },
     {

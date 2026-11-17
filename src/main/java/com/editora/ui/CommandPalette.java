@@ -185,7 +185,9 @@ public class CommandPalette {
         list = new ListView<>();
         desc = new Label();
         input.setPromptText(tr("palette.prompt"));
+        input.setAccessibleText(tr("palette.prompt"));
         list.setItems(items);
+        list.setAccessibleText(tr("command.palette.show"));
         // A whole number of rows: a fixed 280px cut the eighth row in half.
         UiZoom.follow(list, () -> {
             list.setFixedCellSize(UiZoom.px(ROW_HEIGHT));

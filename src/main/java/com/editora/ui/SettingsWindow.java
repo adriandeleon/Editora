@@ -805,6 +805,7 @@ public class SettingsWindow {
 
         sidebar = new ListView<>();
         sidebar.getStyleClass().add("settings-sidebar");
+        sidebar.setAccessibleText(tr("settings.window.title"));
         sidebar.getItems().setAll(sidebarItems());
         UiZoom.minWidth(UiZoom.prefWidth(sidebar, 216), 216);
         sidebar.setCellFactory(v -> new CategoryCell());
@@ -3413,7 +3414,7 @@ public class SettingsWindow {
     /** A simple "label: control" row (no Browse button), used for the AI provider combo + endpoint URL. */
     HBox labeledRow(String label, javafx.scene.control.Control control) {
         HBox.setHgrow(control, Priority.ALWAYS);
-        HBox box = UiZoom.spacing(new HBox(new Label(label), control), 6);
+        HBox box = UiZoom.spacing(new HBox(ControlNames.label(label, control), control), 6);
         box.setAlignment(Pos.CENTER_LEFT);
         return box;
     }
@@ -3686,6 +3687,7 @@ public class SettingsWindow {
         cardRow(trust, Category.ADVANCED, trustNote, "workspace trust build wrapper mvnw gradlew security");
         UiZoom.prefHeight(trustedFoldersList, 120);
         trustedFoldersList.setPlaceholder(new Label(tr("settings.trustedFolders.empty")));
+        trustedFoldersList.setAccessibleText(tr("settings.section.trustedFolders"));
         fillTrustedFolders(); // the store as it is now: nothing filled this list while the window was unbuilt
         Button revoke = new Button(tr("settings.trustedFolders.revoke"));
         Button revokeAll =
@@ -3981,7 +3983,7 @@ public class SettingsWindow {
         }
         if (control != null) {
             List<SettingSwitch> switches = switchesIn(control);
-            t.setLabelFor(switches.isEmpty() ? control : switches.get(0));
+            t.setLabelFor(switches.isEmpty() ? labelTarget(control) : switches.get(0));
             for (SettingSwitch sw : switches) {
                 sw.setAccessibleText(title);
                 sw.setAccessibleHelp(description);
@@ -3990,6 +3992,16 @@ public class SettingsWindow {
         SettingRowPane row = new SettingRowPane(main, control);
         row.getStyleClass().add("settings-row");
         return row;
+    }
+
+    /**
+     * What a row's title names for a screen reader: the control itself, or, when the row holds a box (a field
+     * and its Browse button, a list and its buttons), the first control in it that has no text of its own. A
+     * label pointing at the box named nothing a person can reach (ACC-01, Pauta 6.0.1).
+     */
+    static Node labelTarget(Node control) {
+        Node found = FormLabels.firstUnnamed(control);
+        return found != null ? found : control;
     }
 
     /** The on/off switches a row's control holds: the control itself, or switches nested in its box. */
@@ -4021,7 +4033,7 @@ public class SettingsWindow {
         // its full text (maxWidth = pref) instead of ellipsizing — e.g. "Max size / project (MB)" or any
         // longer translation. (Previously a fixed prefWidth(130) clamped + truncated the longer ones.)
         UiZoom.minWidth(l, 130).setMaxWidth(Region.USE_PREF_SIZE);
-        l.setLabelFor(control);
+        l.setLabelFor(labelTarget(control));
         HBox h = UiZoom.spacing(new HBox(l, control), 10);
         h.setAlignment(Pos.CENTER_LEFT);
         return h;

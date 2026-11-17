@@ -48,7 +48,9 @@ final class ProblemCounter extends HBox {
     private final Label warnings = new Label();
     private final Label notes = new Label();
     private final Node ok = glyph(CHECK_PATH, "problem-counter-ok");
-    private final HBox counts = UiZoom.spacing(new HBox(), 6);
+    /** The counts open the Problems window: a button to the keyboard and to a screen reader (ACC-02). */
+    private final PressableBox counts = UiZoom.spacing(new PressableBox(() -> {}), 6);
+
     private final Button previous = arrow(UP_PATH, "problem-counter-previous");
     private final Button next = arrow(DOWN_PATH, "problem-counter-next");
     private final Node pendingGlyph = glyph(PENDING_PATH, "problem-counter-pending");
@@ -78,11 +80,9 @@ final class ProblemCounter extends HBox {
         counts.getStyleClass().add("problem-counter-counts");
         counts.setAlignment(Pos.CENTER);
         counts.setCursor(Cursor.HAND);
-        counts.setOnMouseClicked(e -> {
-            open.run();
-            e.consume();
-        });
+        counts.setAction(open);
         LazyTooltip.install(counts, this::summary);
+        counts.setAccessibleText(summary());
         previous.setOnAction(e -> onPrevious.run());
         next.setOnAction(e -> onNext.run());
         nameArrows(); // a screen reader named two bare buttons
@@ -188,6 +188,7 @@ final class ProblemCounter extends HBox {
         errors.setText(Integer.toString(e));
         warnings.setText(Integer.toString(w));
         notes.setText(Integer.toString(n));
+        counts.setAccessibleText(summary()); // what a screen reader says the button is
         if (e + w + n == 0) {
             counts.getChildren().setAll(ok);
         } else {

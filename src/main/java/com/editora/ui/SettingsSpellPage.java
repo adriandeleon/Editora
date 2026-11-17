@@ -173,6 +173,7 @@ final class SettingsSpellPage {
     private javafx.scene.Node dictionaryEditor() {
         ListView<String> words = new ListView<>();
         dictionaryList = words;
+        words.setAccessibleText(tr("settings.dict.title"));
         UiZoom.prefSize(dictionaryList, 300, 380);
         dictionaryList.setPlaceholder(new Label(tr("settings.dict.empty")));
         refreshDictionaryList();

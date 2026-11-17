@@ -22,6 +22,7 @@ import javafx.stage.DirectoryChooser;
 
 import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.UiZoom;
 import com.editora.git.GitChangeBars;
@@ -2061,6 +2062,7 @@ final class GitCoordinator {
         area.setPrefColumnCount(52);
         area.setPrefRowCount(Math.min(14, (int) body.lines().count() + 1));
         area.getStyleClass().add("git-error-text");
+        area.setAccessibleText(alert.getHeaderText()); // the details of what the header says failed
         alert.getDialogPane().setContent(area);
         Dialogs.showAndWait(alert);
     }
@@ -2252,14 +2254,14 @@ final class GitCoordinator {
 
         GridPane grid = new GridPane();
         UiZoom.gaps(grid, 8, 8);
-        grid.add(new Label(tr("dialog.clone.url")), 0, 0);
+        grid.add(ControlNames.label(tr("dialog.clone.url"), urlField), 0, 0);
         grid.add(urlField, 1, 0, 2, 1);
-        grid.add(new Label(tr("dialog.clone.directory")), 0, 1);
+        grid.add(ControlNames.label(tr("dialog.clone.directory"), dirField), 0, 1);
         grid.add(dirField, 1, 1);
         grid.add(browse, 2, 1);
-        grid.add(new Label(tr("dialog.clone.branch")), 0, 2);
+        grid.add(ControlNames.label(tr("dialog.clone.branch"), branchField), 0, 2);
         grid.add(branchField, 1, 2, 2, 1);
-        grid.add(new Label(tr("dialog.clone.depth")), 0, 3);
+        grid.add(ControlNames.label(tr("dialog.clone.depth"), depthField), 0, 3);
         grid.add(depthField, 1, 3);
         grid.add(submodules, 1, 4, 2, 1);
         if (remoteBase != null) {

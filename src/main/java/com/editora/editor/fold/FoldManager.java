@@ -218,7 +218,7 @@ public final class FoldManager {
     /** Paragraph whose preview is currently showing, or -1 when hidden. */
     private int previewPar = -1;
     /** Current preview foreground, also exposed as a looked-up color to plain styled-text runs. */
-    private Color previewForeground = Color.web("#24292f");
+    private Color previewForeground = Color.gray(0.2); // until the editor theme sets it: a neutral ink
 
     /**
      * A split shows the document in two views, each with its own caret. The "at caret" commands then mean the
@@ -2042,19 +2042,16 @@ public final class FoldManager {
                 : bulbClass.apply(idx);
         if (bulb != null) {
             Node marker = bulbMarker(bulb);
-            StackPane slot = new StackPane(marker);
+            final int bulbIdx = idx;
+            // A button to a screen reader too (it was announced as nothing, EV4); from the keyboard, the code
+            // actions command opens the same list.
+            com.editora.editor.PressablePane slot =
+                    new com.editora.editor.PressablePane(() -> onBulb.accept(bulbIdx), false);
+            slot.getChildren().add(marker);
             slot.setCursor(Cursor.HAND);
             LazyTooltip.install(slot, bulbTooltip::get, null);
-            slot.setAccessibleRole(javafx.scene.AccessibleRole.BUTTON); // it was announced as nothing (EV4)
             slot.setAccessibleText(bulbTooltip.get());
             ownPointer(slot);
-            final int bulbIdx = idx;
-            slot.setOnMouseClicked(e -> {
-                if (e.getButton() == MouseButton.PRIMARY) {
-                    onBulb.accept(bulbIdx);
-                    e.consume();
-                }
-            });
             bookmarkSlot = slot;
         } else if (isBookmarked.test(idx)) {
             bookmarkSlot = new StackPane(bookmarkMarker());

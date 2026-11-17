@@ -174,7 +174,9 @@ final class SearchEverywherePopup {
         status = new Label();
         desc = new Label();
         input.setPromptText(tr("searchEverywhere.prompt"));
+        input.setAccessibleText(tr("searchEverywhere.prompt"));
         input.getStyleClass().add("palette-input");
+        list.setAccessibleText(tr("command.search.everywhere"));
         input.textProperty().addListener((o, a, b) -> {
             acceptWhenLanded = false; // typed on after Enter: the Enter was for the query before
             debounce.playFromStart();
@@ -541,7 +543,7 @@ final class SearchEverywherePopup {
                     setTooltip(tip);
                 }
             }
-            setGraphic(box);
+            setGraphic(CellNames.read(box));
         }
     }
 }

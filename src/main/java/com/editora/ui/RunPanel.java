@@ -143,6 +143,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         // stdin: one line per Enter, echoed into the console (the program won't echo it back).
         input.getStyleClass().add("run-input");
         input.setPromptText(tr("run.stdinPrompt"));
+        input.setAccessibleText(tr("run.stdinPrompt"));
         input.setDisable(true);
         input.setOnAction(e -> {
             String line = input.getText();

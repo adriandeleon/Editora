@@ -98,6 +98,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
         UiZoom.spacing(this, 4);
 
         filterField.setPromptText(tr("notes.filterPrompt"));
+        filterField.setAccessibleText(tr("notes.filterPrompt"));
         filterField.getStyleClass().add("notes-filter");
         filterField.textProperty().addListener((o, w, n) -> {
             activateWhenFiltered = false; // typed on after Enter: the Enter was for the text before
@@ -148,6 +149,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
 
         tree.setShowRoot(false);
         tree.getStyleClass().add("notes-tree");
+        tree.setAccessibleText(tr("toolwindow.notes"));
         tree.setCellFactory(t -> new NoteCell());
         RowContextMenu.install(tree); // Menu key / Shift+F10 open the selected row's menu (cells are not focusable)
         // Delete removes the selected entry here, whatever a keymap may bind the key to globally.

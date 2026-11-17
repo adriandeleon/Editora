@@ -135,6 +135,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         // Filter/search row, mirroring the Bookmarks / Personal Notes tool windows (same style classes, same
         // Down/Enter hand-off into the results via FilterFieldNav).
         filterField.setPromptText(tr("buildtree.filterPrompt"));
+        filterField.setAccessibleText(tr("buildtree.filterPrompt"));
         filterField.getStyleClass().add("bookmarks-filter");
         filterField.textProperty().addListener((o, w, n) -> {
             runWhenFiltered = false; // typed on after Enter: the Enter was for the text before

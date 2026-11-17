@@ -962,7 +962,9 @@ public final class MarkdownRenderer {
         }
         Label arrow = new Label();
         arrow.getStyleClass().add("md-details-arrow");
-        HBox header = new HBox(arrow, title);
+        // A popup's keys belong to the editor (renderPopup): there the summary is no Tab stop.
+        com.editora.editor.PressableBox header = new com.editora.editor.PressableBox(() -> {}, !ctx.popup());
+        header.getChildren().addAll(arrow, title);
         header.getStyleClass().add("md-details-summary");
         HBox.setHgrow(title, Priority.ALWAYS);
         VBox body = new VBox();
@@ -989,19 +991,7 @@ public final class MarkdownRenderer {
             apply.run();
         };
         header.setCursor(javafx.scene.Cursor.HAND);
-        header.setFocusTraversable(!ctx.popup()); // a popup's keys belong to the editor (renderPopup)
-        header.setAccessibleRole(javafx.scene.AccessibleRole.BUTTON);
-        header.setOnMouseClicked(e -> {
-            if (followsLink(e.getButton(), e.isStillSincePress())) {
-                toggle.run();
-            }
-        });
-        header.setOnKeyPressed(e -> {
-            if (e.getCode() == javafx.scene.input.KeyCode.ENTER || e.getCode() == javafx.scene.input.KeyCode.SPACE) {
-                toggle.run();
-                e.consume();
-            }
-        });
+        header.setAction(toggle); // a click, Enter or Space, or a screen reader's press (ACC-02)
         return box;
     }
 

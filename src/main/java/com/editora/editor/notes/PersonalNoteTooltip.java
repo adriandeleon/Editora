@@ -19,11 +19,15 @@ public final class PersonalNoteTooltip {
         Tooltip tooltip = text == null ? ControlNames.tooltip() : ControlNames.tooltip(text);
         tooltip.getStyleClass().add("personal-note-tooltip");
         // Tooltip owns a separate popup scene and may replace it when first shown, so an author stylesheet
-        // attached here would be lost. Keep the shell color inline; rich Markdown graphics carry app.css.
+        // attached here would be lost. Keep the shell inline, in the theme's own roles (the user-agent theme
+        // reaches the popup): the overlay ground and ink, ruled in the accent wash a note wears everywhere,
+        // never a fixed paper colour (ICON-08, ICON-18). Rich Markdown graphics carry app.css.
         UiZoom.follow(
                 tooltip,
-                () -> tooltip.setStyle(UiZoom.scaledStyle("-fx-background-color: #fff9c4; -fx-text-fill: #3d3520; "
-                        + "-fx-border-color: #eadf9b; -fx-border-width: 1px; -fx-border-radius: 7px;")));
+                () -> tooltip.setStyle(
+                        UiZoom.scaledStyle(
+                                "-fx-background-color: -color-bg-overlay; -fx-text-fill: -color-fg-default; "
+                                        + "-fx-border-color: -color-accent-muted; -fx-border-width: 1px; -fx-border-radius: 7px;")));
         return tooltip;
     }
 }

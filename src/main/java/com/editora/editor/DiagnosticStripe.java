@@ -37,9 +37,11 @@ final class DiagnosticStripe extends Region implements SecondaryPane.Followed {
     /** Vertical tolerance (px) added around a mark so thin ticks are still easy to hover/click. */
     private static final double HIT_PAD = 3;
 
-    private static final Color ERROR = Color.web("#e5484d");
-    private static final Color WARNING = Color.web("#e2a03f");
-    private static final Color INFO = Color.web("#4c8eda");
+    /**
+     * Errors red and warnings amber (those are their states), the rest the accent: the theme's, through
+     * {@link OverlayPalette}, re-read on a theme change.
+     */
+    private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
 
     private final CodeArea area;
     private final Canvas canvas = new Canvas(1, 1);
@@ -69,6 +71,10 @@ final class DiagnosticStripe extends Region implements SecondaryPane.Followed {
         UiZoom.prefWidth(this, WIDTH);
         UiZoom.maxWidth(this, WIDTH);
         getChildren().add(canvas);
+        OverlayPalette.track(area, getChildren(), palette -> {
+            colors = palette;
+            scheduleRedraw();
+        });
         // Redraw on content edits (paragraph count shifts the line→y mapping). We deliberately do NOT
         // listen to totalHeightEstimateProperty: adding a listener makes RichTextFX compute that estimate
         // eagerly on every viewport/layout change, churning the FX thread and starving repaints. We read
@@ -324,11 +330,11 @@ final class DiagnosticStripe extends Region implements SecondaryPane.Followed {
         shownText = null;
     }
 
-    private static Color color(LspDiagnostic.Severity severity) {
+    private Color color(LspDiagnostic.Severity severity) {
         return switch (severity) {
-            case ERROR -> ERROR;
-            case WARNING -> WARNING;
-            default -> INFO;
+            case ERROR -> colors.error();
+            case WARNING -> colors.warning();
+            default -> colors.info();
         };
     }
 }

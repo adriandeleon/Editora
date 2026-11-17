@@ -315,6 +315,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         // Filter/search row, mirroring the Bookmarks / Personal Notes tool windows (same style classes, the
         // same Down/Enter + C-n/C-p hand-off into the results via FilterFieldNav).
         filterField.setPromptText(tr("gitpanel.filterPrompt"));
+        filterField.setAccessibleText(tr("gitpanel.filterPrompt"));
         filterField.getStyleClass().add("bookmarks-filter");
         // Where the list's own key is written down: on the field focus lands on, and for a screen reader on
         // the list itself. (Rows keep their tooltip for the path.)
@@ -340,6 +341,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
 
         tree.setShowRoot(false);
         tree.getStyleClass().add("git-tree");
+        tree.setAccessibleText(tr("toolwindow.commit"));
         tree.setCellFactory(t -> new GitCell());
         tree.addEventFilter(KeyEvent.KEY_PRESSED, this::onTreeKey);
         // Multi-select: Shift+Up/Down extends from the keyboard, Shift/Ctrl+click from the mouse, and the
@@ -401,6 +403,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         show(amendBox, false);
 
         message.setPromptText(tr("gitpanel.commitPrompt"));
+        message.setAccessibleText(tr("gitpanel.commitPrompt"));
         message.getStyleClass().add("git-commit-message");
         message.setWrapText(true);
         message.setPrefRowCount(3);

@@ -484,7 +484,11 @@ class BuildOutputPanelFxTest {
             }
         });
         assertTrue(fills[0].getGreen() > fills[0].getRed() * 1.5, "additions render green: " + fills[0]);
-        assertTrue(fills[1].getRed() > fills[1].getGreen() * 1.5, "deletions render red: " + fills[1]);
+        // Deletions are not "broken": they take a neutral ink, never red (ICON-18).
+        assertTrue(
+                Math.abs(fills[1].getRed() - fills[1].getGreen()) < 0.15
+                        && Math.abs(fills[1].getGreen() - fills[1].getBlue()) < 0.2,
+                "deletions render neutral: " + fills[1]);
     }
 
     /** Reads the RichTextFX console text out of a {@link BuildToolPanel} via its private {@code output} field. */

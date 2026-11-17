@@ -63,7 +63,7 @@ public final class MarkdownLintOverlay extends Region implements SecondaryPane.F
         area.multiPlainChanges().subscribe(ignore -> scheduleRedraw());
         area.estimatedScrollXProperty().addListener((o, a, b) -> scheduleRedraw());
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
-        OverlayPalette.track(area, palette -> {
+        OverlayPalette.track(area, getChildren(), palette -> {
             colors = palette; // resolved on a theme change, not per paint
             scheduleRedraw();
         });

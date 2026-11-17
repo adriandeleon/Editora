@@ -97,7 +97,10 @@ class PersonalNoteHoverFxTest {
             assertNotNull(tooltip.getGraphic(), "the note body is rendered into the tooltip");
             assertTrue(tooltip.getStyleClass().contains("personal-note-tooltip"));
             assertTrue(tooltip.getGraphic().getStyleClass().contains("personal-note-tooltip-content"));
-            assertTrue(tooltip.getStyle().contains("#fff9c4"), "the popup shell must retain its pale-yellow color");
+            assertTrue(
+                    tooltip.getStyle().contains("-color-bg-overlay")
+                            && tooltip.getStyle().contains("-color-accent-muted"),
+                    "the popup shell takes the theme's overlay ground and the note's accent rule");
             tooltip.hide();
             bufferRef.get().dispose();
             ((Stage) bufferRef.get().getNode().getScene().getWindow()).close();

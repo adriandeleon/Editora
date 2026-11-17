@@ -289,7 +289,10 @@ class ProjectPanelGitFolderMenuFxTest {
 
         assertEquals("Keep generated docs here", tooltip.getText());
         assertTrue(tooltip.getStyleClass().contains("personal-note-tooltip"));
-        assertTrue(tooltip.getStyle().contains("#fff9c4"), "folder notes must use the editor preview's yellow");
+        assertTrue(
+                tooltip.getStyle().contains("-color-bg-overlay")
+                        && tooltip.getStyle().contains("-color-accent-muted"),
+                "folder notes use the same shell as the editor's note preview");
     }
 
     @Test

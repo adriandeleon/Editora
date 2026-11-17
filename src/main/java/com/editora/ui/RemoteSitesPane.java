@@ -25,6 +25,7 @@ import javafx.stage.FileChooser;
 import javafx.util.StringConverter;
 
 import com.editora.config.ConfigManager;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.vfs.RemoteConnection;
 import com.editora.vfs.SftpUri;
@@ -58,6 +59,11 @@ final class RemoteSitesPane {
     private final ObservableList<RemoteConnection> items = FXCollections.observableArrayList();
 
     private final ListView<RemoteConnection> list = new ListView<>(items);
+
+    {
+        list.setAccessibleText(tr("settings.cat.remote"));
+    }
+
     private final Node node;
 
     private boolean loading;
@@ -175,7 +181,7 @@ final class RemoteSitesPane {
             TextField field = new TextField();
             field.setPromptText(tr("settings.remote.tool.prompt"));
             toolFields.put(tool.id(), field);
-            Label name = new Label(tr(tool.labelKey()));
+            Label name = ControlNames.label(tr(tool.labelKey()), field);
             UiZoom.follow(name, () -> VBox.setMargin(name, UiZoom.insets(4, 0, 0, 0)));
             toolsGrid.getChildren().addAll(name, field);
         }
@@ -184,7 +190,7 @@ final class RemoteSitesPane {
         servers.setPrefRowCount(3);
         servers.setPrefColumnCount(20);
         servers.setWrapText(false);
-        Label serversName = new Label(tr("settings.remote.tool.servers"));
+        Label serversName = ControlNames.label(tr("settings.remote.tool.servers"), servers);
         UiZoom.follow(serversName, () -> VBox.setMargin(serversName, UiZoom.insets(4, 0, 0, 0)));
         toolsGrid.getChildren().addAll(serversName, servers);
         Label hostTitle = new Label(tr("settings.remote.host.title"));
@@ -506,6 +512,7 @@ final class RemoteSitesPane {
         Label l = new Label(labelText);
         // A Label's computed min width is just an ellipsis, so a tight GridPane collapses it to "…".
         l.setMinWidth(Region.USE_PREF_SIZE);
+        l.setLabelFor(SettingsWindow.labelTarget(field)); // the field, not the row it shares with Browse…
         form.add(l, 0, rowIndex);
         form.add(field, 1, rowIndex);
         if (field instanceof Region r) {

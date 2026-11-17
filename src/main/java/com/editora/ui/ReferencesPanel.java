@@ -106,6 +106,7 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
     public ReferencesPanel(Actions actions) {
         this.actions = actions;
         getStyleClass().add("references-panel");
+        tree.setAccessibleText(tr("toolwindow.references"));
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         UiZoom.spacing(this, 6);
         UiZoom.padding(this, 6);

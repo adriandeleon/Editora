@@ -132,7 +132,7 @@ public final class TodoStripe extends Region implements SecondaryPane.Followed {
         try {
             return Color.web(web);
         } catch (RuntimeException e) {
-            return Color.web("#E5C07B");
+            return TodoColors.solid(null); // not a colour: TodoColors' neutral fallback
         }
     }
 

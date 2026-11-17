@@ -9,6 +9,43 @@
      - It must NOT use a descendant combinator: a combinator forces JavaFX to walk ancestors and
        defeats the per-node CSS style cache, which makes RichTextFX restyle every visible text segment
        on each scroll pulse — catastrophic scroll lag. The compound form matches by style class alone. */
+/* The palette this sheet's rules name (ICON-08, Pauta 6.0.1): the default editor theme's syntax colours (Primer
+   Light; -primer-ink, -primer-link and -primer-ground are app.css's), the Primer Dark set a Markdown preview forced
+   dark gives its code, the eight rainbow hues (CSV columns, bracket depth) and the two ANSI hues no theme role
+   has. A syntax palette is the editor theme's own and has no AtlantaFX role, so these are literals, declared once
+   here. ANSI red, green and yellow are the program's own colours, not states: -ansi-red, -ansi-green and
+   -ansi-yellow are tokens of their own on the theme's roles (app.css). */
+.root {
+    -primer-keyword: #cf222e;
+    -primer-string: #0a3069;
+    -primer-escape: #1a7f37;
+    -primer-comment: #6e7781;
+    -primer-number: #0550ae;
+    -primer-type: #953800;
+    -primer-function: #8250df;
+    -primer-tag: #116329;
+    -primer-dark-keyword: #ff7b72;
+    -primer-dark-string: #a5d6ff;
+    -primer-dark-escape: #7ee787;
+    -primer-dark-comment: #8b949e;
+    -primer-dark-number: #79c0ff;
+    -primer-dark-type: #ffa657;
+    -primer-dark-function: #d2a8ff;
+    -primer-dark-ink: #c9d1d9;
+    -primer-dark-link: #58a6ff;
+    -rainbow-0: #2563eb;
+    -rainbow-1: #dc2626;
+    -rainbow-2: #16a34a;
+    -rainbow-3: #9333ea;
+    -rainbow-4: #ea580c;
+    -rainbow-5: #0891b2;
+    -rainbow-6: #ca8a04;
+    -rainbow-7: #db2777;
+    -ansi-magenta: #b05cc8;
+    -ansi-cyan: #2b9fb0;
+    -brace-match-wash: rgba(128, 128, 128, 0.4);
+}
+
 /* Fallback fill for untokenized runs in a Markdown-preview code block (punctuation/whitespace the
    grammar leaves unstyled). Scoped to the preview TextFlow only (never the RichTextFX CodeArea, so the
    per-node-cache/scroll concern above doesn't apply — these nodes are built once per render). Same
@@ -16,49 +53,49 @@
    plain `.text` runs match only this and take the preview's foreground (`-color-fg-default`, which the
    md-light/md-dark preview themes redefine). */
 .md-code-block .text { -fx-fill: -color-fg-default; }
-.text.keyword    { -fx-fill: #cf222e; -fx-font-weight: bold; }
-.text.string     { -fx-fill: #0a3069; }
-.text.regexp     { -fx-fill: #0a3069; -fx-font-style: italic; }
-.text.escape     { -fx-fill: #1a7f37; }
-.text.comment    { -fx-fill: #6e7781; -fx-font-style: italic; }
-.text.number     { -fx-fill: #0550ae; }
-.text.constant   { -fx-fill: #0550ae; }
-.text.annotation { -fx-fill: #953800; }
-.text.type       { -fx-fill: #953800; }
-.text.function   { -fx-fill: #8250df; }
-.text.variable   { -fx-fill: #24292f; }
-.text.operator   { -fx-fill: #cf222e; }
-.text.property   { -fx-fill: #0550ae; }
-.text.punct      { -fx-fill: #24292f; }
-.text.tag        { -fx-fill: #116329; }
-.text.attribute  { -fx-fill: #0550ae; }
-.text.invalid    { -fx-fill: #ffffff; -rtfx-background-color: #cf222e; }
+.text.keyword    { -fx-fill: -primer-keyword; -fx-font-weight: bold; }
+.text.string     { -fx-fill: -primer-string; }
+.text.regexp     { -fx-fill: -primer-string; -fx-font-style: italic; }
+.text.escape     { -fx-fill: -primer-escape; }
+.text.comment    { -fx-fill: -primer-comment; -fx-font-style: italic; }
+.text.number     { -fx-fill: -primer-number; }
+.text.constant   { -fx-fill: -primer-number; }
+.text.annotation { -fx-fill: -primer-type; }
+.text.type       { -fx-fill: -primer-type; }
+.text.function   { -fx-fill: -primer-function; }
+.text.variable   { -fx-fill: -primer-ink; }
+.text.operator   { -fx-fill: -primer-keyword; }
+.text.property   { -fx-fill: -primer-number; }
+.text.punct      { -fx-fill: -primer-ink; }
+.text.tag        { -fx-fill: -primer-tag; }
+.text.attribute  { -fx-fill: -primer-number; }
+.text.invalid    { -fx-fill: -primer-ground; -rtfx-background-color: -primer-keyword; }
 
 /* Markup (Markdown) */
-.text.heading    { -fx-fill: #0550ae; -fx-font-weight: bold; }
-.text.code       { -fx-fill: #0a3069; }
-.text.link       { -fx-fill: #0969da; -fx-underline: true; }
-.text.bold       { -fx-fill: #24292f; -fx-font-weight: bold; }
-.text.italic     { -fx-fill: #24292f; -fx-font-style: italic; }
-.text.strikethrough { -fx-fill: #6e7781; -fx-strikethrough: true; }
-.text.quote      { -fx-fill: #6e7781; }
-.text.md-marker  { -fx-fill: #cf222e; }
+.text.heading    { -fx-fill: -primer-number; -fx-font-weight: bold; }
+.text.code       { -fx-fill: -primer-string; }
+.text.link       { -fx-fill: -primer-link; -fx-underline: true; }
+.text.bold       { -fx-fill: -primer-ink; -fx-font-weight: bold; }
+.text.italic     { -fx-fill: -primer-ink; -fx-font-style: italic; }
+.text.strikethrough { -fx-fill: -primer-comment; -fx-strikethrough: true; }
+.text.quote      { -fx-fill: -primer-comment; }
+.text.md-marker  { -fx-fill: -primer-keyword; }
 
 /* Log-viewer levels (source.log grammar). These use AtlantaFX semantic looked-up colors so they
    track the active theme with no per-editor-theme override (the brace-match / overlay convention).
    Compound `.text.<class>` like the token rules above. */
-.text.log-error     { -fx-fill: -color-danger-fg; -fx-font-weight: bold; }
-.text.log-warn      { -fx-fill: -color-warning-fg; -fx-font-weight: bold; }
-.text.log-info      { -fx-fill: -color-success-fg; }
+.text.log-error     { -fx-fill: -state-red; -fx-font-weight: bold; }
+.text.log-warn      { -fx-fill: -state-amber; -fx-font-weight: bold; }
+.text.log-info      { -fx-fill: -color-fg-default; }
 .text.log-debug     { -fx-fill: -color-fg-muted; }
-.text.log-trace     { -fx-fill: -color-fg-subtle; }
+.text.log-trace     { -fx-fill: -color-fg-muted; -fx-font-style: italic; }
 .text.log-timestamp { -fx-fill: -color-accent-fg; }
 
 /* Maven console build-result lines (com.editora.build.OutputStyle) — not grammar-driven, applied
    directly to the com.editora.ui.BuildToolPanel console via setStyleSpans. Same semantic colors as
    log-error/log-info above, bolded to stand out as the build's final verdict. */
-.text.maven-build-success { -fx-fill: -color-success-fg; -fx-font-weight: bold; }
-.text.maven-build-failure { -fx-fill: -color-danger-fg; -fx-font-weight: bold; }
+.text.maven-build-success { -fx-fill: -state-green; -fx-font-weight: bold; }
+.text.maven-build-failure { -fx-fill: -state-red; -fx-font-weight: bold; }
 
 /* The same levels and verdicts inside a console that carries `.editor-area` (the Output tabs, the Run and
    External Tools consoles). The compound selectors above have specificity 0,2,0 — the same as every editor
@@ -74,14 +111,14 @@
 .editor-area:ui-colours { -fx-background-color: -color-bg-default; }
 .editor-area:ui-colours .text { -fx-fill: -color-fg-default; }
 .editor-area:ui-colours .text.console-url { -fx-fill: -color-accent-fg; }
-.editor-area .text.log-error     { -fx-fill: -color-danger-fg; -fx-font-weight: bold; }
-.editor-area .text.log-warn      { -fx-fill: -color-warning-fg; -fx-font-weight: bold; }
-.editor-area .text.log-info      { -fx-fill: -color-success-fg; }
+.editor-area .text.log-error     { -fx-fill: -state-red; -fx-font-weight: bold; }
+.editor-area .text.log-warn      { -fx-fill: -state-amber; -fx-font-weight: bold; }
+.editor-area .text.log-info      { -fx-fill: -color-fg-default; }
 .editor-area .text.log-debug     { -fx-fill: -color-fg-muted; }
-.editor-area .text.log-trace     { -fx-fill: -color-fg-subtle; }
+.editor-area .text.log-trace     { -fx-fill: -color-fg-muted; -fx-font-style: italic; }
 .editor-area .text.log-timestamp { -fx-fill: -color-accent-fg; }
-.editor-area .text.maven-build-success { -fx-fill: -color-success-fg; -fx-font-weight: bold; }
-.editor-area .text.maven-build-failure { -fx-fill: -color-danger-fg; -fx-font-weight: bold; }
+.editor-area .text.maven-build-success { -fx-fill: -state-green; -fx-font-weight: bold; }
+.editor-area .text.maven-build-failure { -fx-fill: -state-red; -fx-font-weight: bold; }
 
 /* Run console (com.editora.ui.RunPanel): stderr lines are tinted so error output — e.g. a Python
    traceback — stands out from normal stdout. Applied via setStyleSpans, not a grammar. */
@@ -89,7 +126,7 @@
    `.editor-area .text { -fx-fill }` has the same 0,2,0 specificity as a bare `.text.run-stderr` and loads
    later — so the theme won and stderr was drawn in the default ink. */
 .text.run-stderr,
-.editor-area .text.run-stderr { -fx-fill: -color-danger-fg; }
+.editor-area .text.run-stderr { -fx-fill: -state-red; }
 /* A source location in the Debug console (a stack-trace frame): one click opens it (review C21). */
 .text.console-link,
 .editor-area .text.console-link { -fx-underline: true; -fx-cursor: hand; }
@@ -103,12 +140,12 @@
 .text.run-command,
 .editor-area .text.run-command { -fx-fill: -color-fg-muted; }
 .text.ansi-black,   .editor-area .text.ansi-black   { -fx-fill: -color-fg-muted; }
-.text.ansi-red,     .editor-area .text.ansi-red     { -fx-fill: -color-danger-fg; }
-.text.ansi-green,   .editor-area .text.ansi-green   { -fx-fill: -color-success-fg; }
-.text.ansi-yellow,  .editor-area .text.ansi-yellow  { -fx-fill: -color-warning-fg; }
+.text.ansi-red,     .editor-area .text.ansi-red     { -fx-fill: -ansi-red; }
+.text.ansi-green,   .editor-area .text.ansi-green   { -fx-fill: -ansi-green; }
+.text.ansi-yellow,  .editor-area .text.ansi-yellow  { -fx-fill: -ansi-yellow; }
 .text.ansi-blue,    .editor-area .text.ansi-blue    { -fx-fill: -color-accent-fg; }
-.text.ansi-magenta, .editor-area .text.ansi-magenta { -fx-fill: #b05cc8; }
-.text.ansi-cyan,    .editor-area .text.ansi-cyan    { -fx-fill: #2b9fb0; }
+.text.ansi-magenta, .editor-area .text.ansi-magenta { -fx-fill: -ansi-magenta; }
+.text.ansi-cyan,    .editor-area .text.ansi-cyan    { -fx-fill: -ansi-cyan; }
 .text.ansi-white,   .editor-area .text.ansi-white   { -fx-fill: -color-fg-default; }
 .text.ansi-bold,    .editor-area .text.ansi-bold    { -fx-font-weight: bold; }
 .text.ansi-dim,     .editor-area .text.ansi-dim     { -fx-opacity: 0.65; }
@@ -123,24 +160,24 @@
 
 /* Git status entries in the Output transcript.  These parallel the file-tree's semantic status hues. */
 .text.git-output-modified { -fx-fill: -color-accent-fg; }
-.text.git-output-added    { -fx-fill: -color-success-fg; }
-.text.git-output-deleted  { -fx-fill: -color-danger-fg; }
+.text.git-output-added    { -fx-fill: -state-green; }
+.text.git-output-deleted  { -fx-fill: -color-fg-muted; }
 .text.git-output-renamed  { -fx-fill: -state-violet; }
 .text.git-output-stat     { -fx-fill: -color-accent-fg; }
 .text.git-output-count    { -fx-fill: -color-accent-fg; -fx-font-weight: bold; }
 .text.git-output-summary  { -fx-fill: -color-accent-fg; -fx-font-weight: bold; }
 .text.git-output-mode     { -fx-font-weight: bold; }
 .text.git-output-neutral  { -fx-fill: -color-fg-muted; }
-.text.git-output-forced   { -fx-fill: -color-warning-fg; }
+.text.git-output-forced   { -fx-fill: -state-amber; }
 
 /* CSV/TSV field separators (source.csv grammar): a muted tint so column boundaries stand out. */
 .text.csv-delimiter { -fx-fill: -color-fg-subtle; }
 
 /* Unified diff / patch files (source.diff grammar). Semantic looked-up colors (the log-* convention)
    so they track the active theme with no per-editor-theme override. */
-.text.diff-inserted { -fx-fill: -color-success-fg; }
-.text.diff-deleted  { -fx-fill: -color-danger-fg; }
-.text.diff-changed  { -fx-fill: -color-warning-fg; }
+.text.diff-inserted { -fx-fill: -state-green; }
+.text.diff-deleted  { -fx-fill: -color-fg-muted; }
+.text.diff-changed  { -fx-fill: -color-accent-fg; }
 .text.diff-range    { -fx-fill: -color-accent-fg; -fx-font-weight: bold; }
 .text.diff-header   { -fx-fill: -color-fg-muted; -fx-font-weight: bold; }
 
@@ -149,18 +186,18 @@
    ancestor lookup on RichTextFX text nodes. Keep links last so their accent remains visible. */
 .text.git-output-text.cmd-echo           { -fx-fill: -color-accent-fg; -fx-font-weight: bold; }
 .text.git-output-text.cmd-footer         { -fx-fill: -color-fg-muted; }
-.text.git-output-text.log-error          { -fx-fill: -color-danger-fg; }
+.text.git-output-text.log-error          { -fx-fill: -state-red; }
 .text.git-output-text.git-output-modified { -fx-fill: -color-accent-fg; }
-.text.git-output-text.git-output-added   { -fx-fill: -color-success-fg; }
-.text.git-output-text.git-output-deleted { -fx-fill: -color-danger-fg; }
+.text.git-output-text.git-output-added   { -fx-fill: -state-green; }
+.text.git-output-text.git-output-deleted { -fx-fill: -color-fg-muted; }
 .text.git-output-text.git-output-renamed { -fx-fill: -state-violet; }
 .text.git-output-text.git-output-stat    { -fx-fill: -color-accent-fg; }
 .text.git-output-text.git-output-count   { -fx-fill: -color-accent-fg; -fx-font-weight: bold; }
 .text.git-output-text.git-output-summary { -fx-fill: -color-accent-fg; -fx-font-weight: bold; }
 .text.git-output-text.git-output-neutral { -fx-fill: -color-fg-muted; }
-.text.git-output-text.git-output-forced  { -fx-fill: -color-warning-fg; }
-.text.git-output-text.diff-inserted      { -fx-fill: -color-success-fg; }
-.text.git-output-text.diff-deleted       { -fx-fill: -color-danger-fg; }
+.text.git-output-text.git-output-forced  { -fx-fill: -state-amber; }
+.text.git-output-text.diff-inserted      { -fx-fill: -state-green; }
+.text.git-output-text.diff-deleted       { -fx-fill: -color-fg-muted; }
 .text.git-output-text.diff-range         { -fx-fill: -color-accent-fg; -fx-font-weight: bold; }
 .text.git-output-text.diff-header        { -fx-fill: -color-fg-muted; -fx-font-weight: bold; }
 .text.git-output-text.console-url        { -fx-fill: -color-accent-fg; -fx-underline: true; }
@@ -170,14 +207,14 @@
 /* Rainbow CSV: per-column colors (cycled every 8) when rainbow highlighting is on — computed in Java
    (CsvRainbow), not the grammar. Eight well-separated hues chosen to read on both light and dark editor
    themes; the compound `.text.<class>` form (0,2,0) wins over the base fill like the token rules above. */
-.text.csv-col-0 { -fx-fill: #2563eb; }
-.text.csv-col-1 { -fx-fill: #dc2626; }
-.text.csv-col-2 { -fx-fill: #16a34a; }
-.text.csv-col-3 { -fx-fill: #9333ea; }
-.text.csv-col-4 { -fx-fill: #ea580c; }
-.text.csv-col-5 { -fx-fill: #0891b2; }
-.text.csv-col-6 { -fx-fill: #ca8a04; }
-.text.csv-col-7 { -fx-fill: #db2777; }
+.text.csv-col-0 { -fx-fill: -rainbow-0; }
+.text.csv-col-1 { -fx-fill: -rainbow-1; }
+.text.csv-col-2 { -fx-fill: -rainbow-2; }
+.text.csv-col-3 { -fx-fill: -rainbow-3; }
+.text.csv-col-4 { -fx-fill: -rainbow-4; }
+.text.csv-col-5 { -fx-fill: -rainbow-5; }
+.text.csv-col-6 { -fx-fill: -rainbow-6; }
+.text.csv-col-7 { -fx-fill: -rainbow-7; }
 
 /* LSP semantic tokens (Primer Light defaults). These OVERLAY the lexical TextMate classes — a
    semantically classified span carries only its `sem-*` class(es), so there's no conflict with the
@@ -185,20 +222,20 @@
    `sem-constant`/`sem-deprecated` are listed LAST so, when appended to a base class (e.g.
    `sem-variable sem-constant`), they win the fill on source order. Each editor theme overrides these
    (see editor-themes/*.css) just like the lexical classes; these base values suit Primer Light. */
-.text.sem-parameter { -fx-fill: #24292f; -fx-font-style: italic; }
-.text.sem-variable  { -fx-fill: #24292f; }
-.text.sem-property  { -fx-fill: #0550ae; }
-.text.sem-function  { -fx-fill: #8250df; }
-.text.sem-type      { -fx-fill: #953800; }
-.text.sem-macro     { -fx-fill: #953800; }
-.text.sem-constant  { -fx-fill: #0550ae; } /* a static final (readonly) variable or property */
+.text.sem-parameter { -fx-fill: -primer-ink; -fx-font-style: italic; }
+.text.sem-variable  { -fx-fill: -primer-ink; }
+.text.sem-property  { -fx-fill: -primer-number; }
+.text.sem-function  { -fx-fill: -primer-function; }
+.text.sem-type      { -fx-fill: -primer-type; }
+.text.sem-macro     { -fx-fill: -primer-type; }
+.text.sem-constant  { -fx-fill: -primer-number; } /* a static final (readonly) variable or property */
 .text.sem-static { -fx-font-style: italic; } /* a static member: its own colour, in italics (Java review A14) */
-.text.sem-deprecated { -fx-fill: #6e7781; -fx-strikethrough: true; } /* TextMate can never do this */
+.text.sem-deprecated { -fx-fill: -primer-comment; -fx-strikethrough: true; } /* TextMate can never do this */
 
 /* Matching-bracket highlight (combined with the bracket's token class, so it keeps its color). A
    semi-transparent box reads on both light and dark editor themes, so no per-theme override is needed.
    Compound `.text.<class>` like the token rules (no descendant combinator → keeps the style cache). */
-.text.brace-match { -rtfx-background-color: rgba(128,128,128,0.4); }
+.text.brace-match { -rtfx-background-color: -brace-match-wash; }
 
 /* Bracket-pair colorization: each () [] {} tinted by nesting depth (BracketColors, computed in Java —
    TextMate cannot count nesting). Six slots, matching VS Code's editorBracketHighlight.foreground1..6;
@@ -212,14 +249,14 @@
 
    A colored bracket carries ONLY this class (BracketColors overlays by replacement, not union), so the
    fill is decided here rather than by whatever an editor theme says about punctuation. */
-.text.bracket-depth-0 { -fx-fill: #ca8a04; }
-.text.bracket-depth-1 { -fx-fill: #9333ea; }
-.text.bracket-depth-2 { -fx-fill: #2563eb; }
-.text.bracket-depth-3 { -fx-fill: #ca8a04; }
-.text.bracket-depth-4 { -fx-fill: #9333ea; }
-.text.bracket-depth-5 { -fx-fill: #2563eb; }
+.text.bracket-depth-0 { -fx-fill: -rainbow-6; }
+.text.bracket-depth-1 { -fx-fill: -rainbow-3; }
+.text.bracket-depth-2 { -fx-fill: -rainbow-0; }
+.text.bracket-depth-3 { -fx-fill: -rainbow-6; }
+.text.bracket-depth-4 { -fx-fill: -rainbow-3; }
+.text.bracket-depth-5 { -fx-fill: -rainbow-0; }
 /* A closer with nothing open (VS Code's unexpectedBracket). Semantic — red reads the same in every theme. */
-.text.bracket-unmatched { -fx-fill: -color-danger-fg; }
+.text.bracket-unmatched { -fx-fill: -state-red; }
 
 /* ---------------------------------------------------------------------------------------------------
    Markdown-preview code-block token colors follow the preview's INDEPENDENT light/dark theme.
@@ -237,52 +274,52 @@
    Only present when the user picked an explicit preview theme; in "follow app" mode no md-* class is
    added and the code tracks the editor theme (already consistent). Plain runs use `-color-fg-default`,
    which md-light/md-dark already redefine, and log tokens use `-color-*` vars, so both adapt for free. */
-.md-light .md-code-block .text.keyword    { -fx-fill: #cf222e; }
-.md-light .md-code-block .text.string     { -fx-fill: #0a3069; }
-.md-light .md-code-block .text.regexp     { -fx-fill: #0a3069; }
-.md-light .md-code-block .text.escape     { -fx-fill: #1a7f37; }
-.md-light .md-code-block .text.comment    { -fx-fill: #6e7781; }
-.md-light .md-code-block .text.number     { -fx-fill: #0550ae; }
-.md-light .md-code-block .text.constant   { -fx-fill: #0550ae; }
-.md-light .md-code-block .text.annotation { -fx-fill: #953800; }
-.md-light .md-code-block .text.type       { -fx-fill: #953800; }
-.md-light .md-code-block .text.function   { -fx-fill: #8250df; }
-.md-light .md-code-block .text.variable   { -fx-fill: #24292f; }
-.md-light .md-code-block .text.operator   { -fx-fill: #cf222e; }
-.md-light .md-code-block .text.property   { -fx-fill: #0550ae; }
-.md-light .md-code-block .text.punct      { -fx-fill: #24292f; }
-.md-light .md-code-block .text.tag        { -fx-fill: #116329; }
-.md-light .md-code-block .text.attribute  { -fx-fill: #0550ae; }
-.md-light .md-code-block .text.heading    { -fx-fill: #0550ae; }
-.md-light .md-code-block .text.code       { -fx-fill: #0a3069; }
-.md-light .md-code-block .text.link       { -fx-fill: #0969da; }
-.md-light .md-code-block .text.bold       { -fx-fill: #24292f; }
-.md-light .md-code-block .text.italic     { -fx-fill: #24292f; }
-.md-light .md-code-block .text.strikethrough { -fx-fill: #6e7781; }
-.md-light .md-code-block .text.quote      { -fx-fill: #6e7781; }
-.md-light .md-code-block .text.md-marker  { -fx-fill: #cf222e; }
+.md-light .md-code-block .text.keyword    { -fx-fill: -primer-keyword; }
+.md-light .md-code-block .text.string     { -fx-fill: -primer-string; }
+.md-light .md-code-block .text.regexp     { -fx-fill: -primer-string; }
+.md-light .md-code-block .text.escape     { -fx-fill: -primer-escape; }
+.md-light .md-code-block .text.comment    { -fx-fill: -primer-comment; }
+.md-light .md-code-block .text.number     { -fx-fill: -primer-number; }
+.md-light .md-code-block .text.constant   { -fx-fill: -primer-number; }
+.md-light .md-code-block .text.annotation { -fx-fill: -primer-type; }
+.md-light .md-code-block .text.type       { -fx-fill: -primer-type; }
+.md-light .md-code-block .text.function   { -fx-fill: -primer-function; }
+.md-light .md-code-block .text.variable   { -fx-fill: -primer-ink; }
+.md-light .md-code-block .text.operator   { -fx-fill: -primer-keyword; }
+.md-light .md-code-block .text.property   { -fx-fill: -primer-number; }
+.md-light .md-code-block .text.punct      { -fx-fill: -primer-ink; }
+.md-light .md-code-block .text.tag        { -fx-fill: -primer-tag; }
+.md-light .md-code-block .text.attribute  { -fx-fill: -primer-number; }
+.md-light .md-code-block .text.heading    { -fx-fill: -primer-number; }
+.md-light .md-code-block .text.code       { -fx-fill: -primer-string; }
+.md-light .md-code-block .text.link       { -fx-fill: -primer-link; }
+.md-light .md-code-block .text.bold       { -fx-fill: -primer-ink; }
+.md-light .md-code-block .text.italic     { -fx-fill: -primer-ink; }
+.md-light .md-code-block .text.strikethrough { -fx-fill: -primer-comment; }
+.md-light .md-code-block .text.quote      { -fx-fill: -primer-comment; }
+.md-light .md-code-block .text.md-marker  { -fx-fill: -primer-keyword; }
 
-.md-dark .md-code-block .text.keyword    { -fx-fill: #ff7b72; }
-.md-dark .md-code-block .text.string     { -fx-fill: #a5d6ff; }
-.md-dark .md-code-block .text.regexp     { -fx-fill: #a5d6ff; }
-.md-dark .md-code-block .text.escape     { -fx-fill: #7ee787; }
-.md-dark .md-code-block .text.comment    { -fx-fill: #8b949e; }
-.md-dark .md-code-block .text.number     { -fx-fill: #79c0ff; }
-.md-dark .md-code-block .text.constant   { -fx-fill: #79c0ff; }
-.md-dark .md-code-block .text.annotation { -fx-fill: #ffa657; }
-.md-dark .md-code-block .text.type       { -fx-fill: #ffa657; }
-.md-dark .md-code-block .text.function   { -fx-fill: #d2a8ff; }
-.md-dark .md-code-block .text.variable   { -fx-fill: #c9d1d9; }
-.md-dark .md-code-block .text.operator   { -fx-fill: #ff7b72; }
-.md-dark .md-code-block .text.property   { -fx-fill: #79c0ff; }
-.md-dark .md-code-block .text.punct      { -fx-fill: #c9d1d9; }
-.md-dark .md-code-block .text.tag        { -fx-fill: #7ee787; }
-.md-dark .md-code-block .text.attribute  { -fx-fill: #79c0ff; }
-.md-dark .md-code-block .text.heading    { -fx-fill: #79c0ff; }
-.md-dark .md-code-block .text.code       { -fx-fill: #a5d6ff; }
-.md-dark .md-code-block .text.link       { -fx-fill: #58a6ff; }
-.md-dark .md-code-block .text.bold       { -fx-fill: #c9d1d9; }
-.md-dark .md-code-block .text.italic     { -fx-fill: #c9d1d9; }
-.md-dark .md-code-block .text.strikethrough { -fx-fill: #8b949e; }
-.md-dark .md-code-block .text.quote      { -fx-fill: #8b949e; }
-.md-dark .md-code-block .text.md-marker  { -fx-fill: #ff7b72; }
+.md-dark .md-code-block .text.keyword    { -fx-fill: -primer-dark-keyword; }
+.md-dark .md-code-block .text.string     { -fx-fill: -primer-dark-string; }
+.md-dark .md-code-block .text.regexp     { -fx-fill: -primer-dark-string; }
+.md-dark .md-code-block .text.escape     { -fx-fill: -primer-dark-escape; }
+.md-dark .md-code-block .text.comment    { -fx-fill: -primer-dark-comment; }
+.md-dark .md-code-block .text.number     { -fx-fill: -primer-dark-number; }
+.md-dark .md-code-block .text.constant   { -fx-fill: -primer-dark-number; }
+.md-dark .md-code-block .text.annotation { -fx-fill: -primer-dark-type; }
+.md-dark .md-code-block .text.type       { -fx-fill: -primer-dark-type; }
+.md-dark .md-code-block .text.function   { -fx-fill: -primer-dark-function; }
+.md-dark .md-code-block .text.variable   { -fx-fill: -primer-dark-ink; }
+.md-dark .md-code-block .text.operator   { -fx-fill: -primer-dark-keyword; }
+.md-dark .md-code-block .text.property   { -fx-fill: -primer-dark-number; }
+.md-dark .md-code-block .text.punct      { -fx-fill: -primer-dark-ink; }
+.md-dark .md-code-block .text.tag        { -fx-fill: -primer-dark-escape; }
+.md-dark .md-code-block .text.attribute  { -fx-fill: -primer-dark-number; }
+.md-dark .md-code-block .text.heading    { -fx-fill: -primer-dark-number; }
+.md-dark .md-code-block .text.code       { -fx-fill: -primer-dark-string; }
+.md-dark .md-code-block .text.link       { -fx-fill: -primer-dark-link; }
+.md-dark .md-code-block .text.bold       { -fx-fill: -primer-dark-ink; }
+.md-dark .md-code-block .text.italic     { -fx-fill: -primer-dark-ink; }
+.md-dark .md-code-block .text.strikethrough { -fx-fill: -primer-dark-comment; }
+.md-dark .md-code-block .text.quote      { -fx-fill: -primer-dark-comment; }
+.md-dark .md-code-block .text.md-marker  { -fx-fill: -primer-dark-keyword; }
