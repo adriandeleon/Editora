@@ -28,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@org.junit.jupiter.api.extension.ExtendWith(OffFxTracked.class)
 class ExpandSelectionChainFxTest {
 
     private static final String SRC =
@@ -123,17 +124,13 @@ class ExpandSelectionChainFxTest {
         fx.shared.getSettings().setJavaLspEnabled(true);
         manager.configure(true, Map.of("java", "jdtls"));
         // The server's root is looked for off the FX thread (PERF-01, Pauta 6.0.1), and the buffer opens on the server
-        // when it lands; LspRootMemoFxTest and ChecksOffFxThreadFxTest cover that. Here the look runs in place, so the
-        // buffer opens on the fake within the sync: this test is about the ladder, not about when a root lands.
-        com.editora.perf.OffFx.runnerForTest((name, task) -> task.run());
-        EditorBuffer b;
-        try {
-            b = open(coordinator, file);
-        } finally {
-            com.editora.perf.OffFx.runnerForTest(null);
-        }
+        // when it lands; LspRootMemoFxTest and ChecksOffFxThreadFxTest cover that. Here the test waits until every
+        // look the open and the window set off has landed, so the buffer sits on the fake for good: this test is
+        // about the ladder, not about when a root lands.
+        EditorBuffer b = open(coordinator, file);
+        OffFxTracked.awaitIdle();
         com.editora.testkit.Await.holdsWithin(() -> manager.supportsSelectionRanges(file), Duration.ofSeconds(5));
-        FxTestSupport.drainFx();
+        OffFxTracked.awaitIdle();
         assertTrue(manager.supportsSelectionRanges(file), "the fake server is attached");
 
         // Ladder 1 in method a(): the first press is local, the second uses the fetched chain.

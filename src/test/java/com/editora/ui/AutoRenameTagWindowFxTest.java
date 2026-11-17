@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
  */
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@org.junit.jupiter.api.extension.ExtendWith(OffFxTracked.class)
 class AutoRenameTagWindowFxTest {
 
     private FxWindowFixture fx;
@@ -46,6 +47,7 @@ class AutoRenameTagWindowFxTest {
         try {
             FxTestSupport.runOnFx(() -> FxTestSupport.call(
                     FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, file));
+            OffFxTracked.awaitIdle(); // the open's disk work, off the FX thread (PERF-01)
             EditorBuffer buffer = FxTestSupport.callOnFx(
                     () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
             assertNotNull(buffer, "the html file opened into a buffer");
@@ -66,6 +68,8 @@ class AutoRenameTagWindowFxTest {
                                 false,
                                 false));
             });
+            // The paired tag is found by a lex off the FX thread and renamed when it lands (PERF-01, Pauta 6.0.1).
+            OffFxTracked.awaitIdle();
             assertEquals("<divx>text</divx>", FxTestSupport.callOnFx(buffer::getContent));
         } finally {
             Files.deleteIfExists(file);
