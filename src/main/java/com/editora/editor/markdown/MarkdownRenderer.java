@@ -488,6 +488,9 @@ public final class MarkdownRenderer {
         }
 
         Node blockMath(String latex) {
+            if (textOnly) {
+                return new javafx.scene.layout.Region();
+            }
             Boolean d = glyphsDark();
             return d == null
                     ? MathImages.blockNode(latex, DISPLAY_MATH_SIZE)
@@ -495,6 +498,9 @@ public final class MarkdownRenderer {
         }
 
         Node inlineMath(String latex) {
+            if (textOnly) {
+                return new javafx.scene.layout.Region();
+            }
             Boolean d = glyphsDark();
             return d == null
                     ? MathImages.inlineNode(latex, INLINE_MATH_SIZE)
@@ -543,6 +549,25 @@ public final class MarkdownRenderer {
             }
         }
         return n; // never closed: nothing to fold
+    }
+
+    /** While true (FX thread only), no picture, formula or diagram is made: {@link #renderTextOnly}. */
+    private static boolean textOnly;
+
+    /**
+     * As {@link #renderGroup}, for the text alone: pictures, formulas and diagrams are empty regions, so
+     * nothing is loaded, rasterized or handed to a tool. Find in the preview reads a block that is not on
+     * screen this way (PERF-08, Pauta 6.0.1). FX thread.
+     */
+    static @Nullable Node renderTextOnly(
+            org.commonmark.node.Node first, org.commonmark.node.Node last, RenderContext ctx) {
+        boolean was = textOnly;
+        textOnly = true;
+        try {
+            return renderGroup(first, last, ctx);
+        } finally {
+            textOnly = was;
+        }
     }
 
     /** Renders the unit {@code first}…{@code last} (see {@link #groupEnd}); null when it shows nothing. */
@@ -613,6 +638,9 @@ public final class MarkdownRenderer {
             if (isMermaidInfo(f.getInfo())
                     && MermaidImages.isEnabled()
                     && (ctx.live() == null || ctx.live().diagrams())) {
+                if (textOnly) {
+                    return new javafx.scene.layout.Region();
+                }
                 if (ctx.assets() != null) { // print: already rendered (light), so its size is final now
                     return new ShrinkToFit(MermaidImages.printNode(
                             ctx.assets().diagram(stripTrailingNewline(f.getLiteral())),
@@ -2031,6 +2059,9 @@ public final class MarkdownRenderer {
                 && ctx.live().loadsRemote(url);
         if (!ctx.images().allows(url) && !granted) {
             return inlineCode(imagePlaceholder(alt, dest)); // shown, never fetched
+        }
+        if (textOnly) {
+            return new javafx.scene.layout.Region();
         }
         ImageView view = new ImageView();
         view.getStyleClass().add("md-image");

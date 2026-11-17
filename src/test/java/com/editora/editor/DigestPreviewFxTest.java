@@ -228,7 +228,7 @@ class DigestPreviewFxTest {
             StructuredParser.Parsed parsed =
                     StructuredParser.parse(FULL_API, StructuredParser.Format.forLanguage("json"));
             assertTrue(parsed.isOpenApi(), String.valueOf(parsed.error()));
-            String text = EditorFx.textOf(OpenApiDoc.build(parsed.openApi()));
+            String text = EditorFx.shownText(OpenApiDoc.build(parsed.openApi()));
             assertShows(text, "Orders API  2.1");
             assertShows(text, "Everything about orders.");
             assertShows(text, tr("openapi.servers"));
@@ -254,7 +254,7 @@ class DigestPreviewFxTest {
             StructuredParser.Parsed parsed = StructuredParser.parse(
                     "{\"openapi\": \"3.1.0\", \"paths\": {}}", StructuredParser.Format.forLanguage("json"));
             assertTrue(parsed.isOpenApi());
-            String text = EditorFx.textOf(OpenApiDoc.build(parsed.openApi()));
+            String text = EditorFx.shownText(OpenApiDoc.build(parsed.openApi()));
             assertEquals(tr("openapi.untitled"), text.lines().findFirst().orElseThrow());
             assertFalse(text.contains(tr("openapi.servers")));
             assertFalse(text.contains(tr("openapi.schemas")));
@@ -289,7 +289,7 @@ class DigestPreviewFxTest {
                         uses: ./.github/workflows/other.yml
                     """);
             assertTrue(workflow.ok(), String.valueOf(workflow.error()));
-            String text = EditorFx.textOf(GithubActionsPreview.build(workflow));
+            String text = EditorFx.shownText(GithubActionsPreview.build(workflow));
             assertShows(text, "Release");
             assertShows(text, tr("ghactions.triggeredBy", "push, workflow dispatch"));
             assertShows(text, tr("ghactions.jobs", 3));
@@ -309,15 +309,15 @@ class DigestPreviewFxTest {
         EditorFx.onFx(() -> {
             Workflow broken = Workflow.parse("name: [unclosed\njobs: {");
             assertFalse(broken.ok());
-            Node node = GithubActionsPreview.build(broken);
-            assertNotNull(EditorFx.styled(node, "ghactions-error"));
-            String text = EditorFx.textOf(node);
+            // The live preview is a virtualized list, with no nodes out of a window: its rows are the export's.
+            assertNotNull(EditorFx.styled(GithubActionsPreview.content(broken, -1), "ghactions-error"));
+            String text = EditorFx.shownText(GithubActionsPreview.build(broken));
             assertShows(text, tr("ghactions.untitled"));
             assertShows(text, tr("ghactions.invalid", broken.error()));
 
             Workflow bare = Workflow.parse("jobs:\n  lint:\n    steps: []\n");
             assertTrue(bare.ok(), String.valueOf(bare.error()));
-            String bareText = EditorFx.textOf(GithubActionsPreview.build(bare));
+            String bareText = EditorFx.shownText(GithubActionsPreview.build(bare));
             assertShows(bareText, tr("ghactions.untitled"));
             assertShows(bareText, tr("ghactions.triggeredBy", tr("ghactions.noTriggers")));
             assertShows(bareText, "lint");

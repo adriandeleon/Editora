@@ -511,9 +511,7 @@ class PreviewSelectionFxTest {
             open(md.toString());
             long end = System.nanoTime() + 30_000_000_000L;
             int want = sizes[k];
-            while (EditorFx.callFx(() ->
-                            pane.preview().column().getChildrenUnmodifiable().size())
-                    < want) {
+            while (EditorFx.callFx(() -> pane.preview().blockCount()) < want) {
                 assertTrue(System.nanoTime() < end, "the document never finished building");
                 Thread.sleep(20);
             }
@@ -522,7 +520,7 @@ class PreviewSelectionFxTest {
             int at = k;
             EditorFx.onFx(() -> {
                 shapes[at] = sel().paintedShapes();
-                blocks[at] = pane.preview().column().getChildrenUnmodifiable().size();
+                blocks[at] = pane.preview().blockCount();
                 assertEquals(blocks[at], sel().parts().size(), "all of it is selected");
                 // Scrolled to the middle, the highlight is drawn there, and is no larger.
                 pane.preview().setScrollY(pane.preview().yOfLine(want));

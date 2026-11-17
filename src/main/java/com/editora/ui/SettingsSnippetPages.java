@@ -117,7 +117,7 @@ final class SettingsSnippetPages {
                 new SnippetsEditor.Hooks(
                         w.keymapsPage::macroWarn,
                         this::confirmSnippetSave,
-                        SettingsSnippetPages::highlightSnippetBody,
+                        SettingsSnippetPages::snippetBodyStyles,
                         SettingsSnippetPages::installEmacsKeys,
                         name -> w.askBeforeLoss(SettingsWindow.deleteEntryQuestion(name))));
         reloadSnippets = snippetsEditor::reload;
@@ -236,9 +236,11 @@ final class SettingsSnippetPages {
         // Modest preferred height so the page fits the window; GridPane Vgrow lets it expand when there's room.
         UiZoom.prefHeight(body, 180);
         installEmacsKeys(body); // basic Emacs caret movement in the settings scene
-        body.plainTextChanges().subscribe(c -> highlightSnippetBody(body, language.getText()));
+        // Coloured once typing pauses, off the FX thread: a template body is a file (PERF-08, Pauta 6.0.1).
+        SnippetBodyHighlighter colours =
+                new SnippetBodyHighlighter(body, language::getText, SettingsSnippetPages::snippetBodyStyles);
         // Re-highlight when the template's language changes (even without a body edit).
-        language.textProperty().addListener((o, a, b) -> highlightSnippetBody(body, language.getText()));
+        language.textProperty().addListener((o, a, b) -> colours.languageChanged());
 
         javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
         UiZoom.gaps(form, 8, 6);
@@ -394,7 +396,7 @@ final class SettingsSnippetPages {
                 commit.run();
             }
         });
-        PauseCommit.watch( // live, but never a half-typed id (it is the file name)
+        Runnable typed = PauseCommit.watch( // live, but never a half-typed id (it is the file name)
                 () -> {
                     if (!id.isFocused()) {
                         commit.run();
@@ -403,8 +405,8 @@ final class SettingsSnippetPages {
                 name.textProperty(),
                 description.textProperty(),
                 language.textProperty(),
-                fileName.textProperty(),
-                body.textProperty());
+                fileName.textProperty());
+        body.plainTextChanges().subscribe(c -> typed.run()); // not textProperty(): it builds the body per key
 
         list.getSelectionModel().selectedIndexProperty().addListener((o, was, now) -> {
             int i = now == null ? -1 : now.intValue();
@@ -638,6 +640,27 @@ final class SettingsSnippetPages {
     /** Re-highlights a snippet/template body {@link CodeArea} for {@code languageName} (plain for global/unknown). */
     static void highlightSnippetBody(CodeArea area, String languageName) {
         String text = area.getText();
+        org.fxmisc.richtext.model.StyleSpans<java.util.Collection<String>> styles;
+        try {
+            styles = snippetBodyStyles(text, languageName);
+        } catch (RuntimeException ignored) {
+            return; // Tokenizer hiccup: keep the last styling rather than crash the editor.
+        }
+        if (styles == null) {
+            if (!text.isEmpty()) {
+                area.clearStyle(0, text.length());
+            }
+            return;
+        }
+        area.setStyleSpans(0, styles);
+    }
+
+    /**
+     * The colours of a snippet/template body for {@code languageName}, or null when it is shown plain (global, or a
+     * language with no grammar). Thread-safe: the body editors work it out off the FX thread.
+     */
+    static org.fxmisc.richtext.model.@Nullable StyleSpans<java.util.Collection<String>> snippetBodyStyles(
+            String text, @Nullable String languageName) {
         IGrammar g = null;
         if (languageName != null && !languageName.isBlank() && !"global".equals(languageName)) {
             try {
@@ -646,17 +669,7 @@ final class SettingsSnippetPages {
                 // No grammar for this language: leave the body unstyled.
             }
         }
-        if (g == null) {
-            if (!text.isEmpty()) {
-                area.clearStyle(0, text.length());
-            }
-            return;
-        }
-        try {
-            area.setStyleSpans(0, TextMateHighlighter.compute(text, g));
-        } catch (RuntimeException ignored) {
-            // Tokenizer hiccup: keep the last styling rather than crash the editor.
-        }
+        return g == null ? null : TextMateHighlighter.compute(text, g);
     }
 
     /** Installs basic Emacs caret movement on a settings-scene {@link CodeArea} (no global KeyDispatcher there).
@@ -676,7 +689,6 @@ final class SettingsSnippetPages {
             }
             int caret = area.getCaretPosition();
             int len = area.getLength();
-            String text = area.getText();
             if (ctrl) {
                 switch (e.getCode()) {
                     case A -> consume(e, () -> area.moveTo(area.getCurrentParagraph(), 0));
@@ -710,8 +722,9 @@ final class SettingsSnippetPages {
                 }
             } else {
                 switch (e.getCode()) {
-                    case F -> consume(e, () -> area.moveTo(nextWordBoundary(text, caret)));
-                    case B -> consume(e, () -> area.moveTo(prevWordBoundary(text, caret)));
+                    // The text is read for a word move only, not on every Ctrl key (PERF-08, Pauta 6.0.1).
+                    case F -> consume(e, () -> area.moveTo(nextWordBoundary(area.getText(), caret)));
+                    case B -> consume(e, () -> area.moveTo(prevWordBoundary(area.getText(), caret)));
                     default -> {}
                 }
             }

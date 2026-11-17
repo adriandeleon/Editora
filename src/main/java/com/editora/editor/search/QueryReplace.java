@@ -8,6 +8,7 @@ import java.util.regex.Pattern;
 
 import com.editora.editops.PreserveCase;
 import com.editora.text.SearchMatcher;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The pure kernel of Emacs {@code query-replace} ({@code M-%}) / {@code query-replace-regexp}
@@ -56,6 +57,172 @@ public final class QueryReplace {
         }
         int start = Math.max(0, from);
         return spec.regex() ? nextRegex(text, start, spec) : nextLiteral(text, start, spec);
+    }
+
+    /**
+     * A document read in pieces, so a session reads only as far as its next match (PERF-08, Pauta 6.0.1): an
+     * answer in an interactive session must not copy the whole document each time.
+     */
+    public interface Source {
+        int length();
+
+        /** The text of {@code [start, end)}. */
+        String text(int start, int end);
+
+        static Source of(
+                java.util.function.IntSupplier length, java.util.function.BiFunction<Integer, Integer, String> text) {
+            return new Source() {
+                @Override
+                public int length() {
+                    return length.getAsInt();
+                }
+
+                @Override
+                public String text(int start, int end) {
+                    return text.apply(start, end);
+                }
+            };
+        }
+    }
+
+    /** The first stretch a literal search reads past the offset; doubled until the match is certain. */
+    static final int FIRST_WINDOW = 16 * 1024;
+
+    /** How much text before the search offset a regex sees, for a lookbehind or a word boundary. */
+    static final int REGEX_CONTEXT = 1024;
+
+    /** The pieces a regex reads the document in. */
+    static final int PAGE = 16 * 1024;
+
+    /**
+     * {@link #next(String, int, Spec)} on a document read in pieces, only as far as the answer needs. A literal is
+     * searched a stretch at a time from {@code from} on, until the first match starting at or after it ends inside
+     * the stretch (or the document ends): the leftmost match at or after {@code from}. A regex runs over the
+     * document as it would over the whole text, its characters read a page at a time as the engine asks for them;
+     * it sees {@link #REGEX_CONTEXT} characters before {@code from}.
+     */
+    public static Optional<Match> nextIn(Source doc, int from, Spec spec) {
+        int length = doc.length();
+        if (spec == null || spec.query() == null || spec.query().isEmpty() || from > length) {
+            return Optional.empty();
+        }
+        int start = Math.max(0, from);
+        if (spec.regex()) {
+            int base = Math.max(0, start - REGEX_CONTEXT);
+            Optional<Match> m = regexIn(new Paged(doc, base, length), start - base, spec);
+            return m.map(found -> new Match(found.start() + base, found.end() + base, found.replacement()));
+        }
+        int base = Math.max(0, start - 1); // the character before: a whole word's boundary
+        for (long window = FIRST_WINDOW; ; window *= 2) {
+            int end = (int) Math.min(length, start + window);
+            boolean whole = end == length;
+            String text = doc.text(base, end);
+            int[] m = literalIn(text, start - base, spec, whole);
+            if (m == null) {
+                continue; // the text past the window could change the answer
+            }
+            return m.length == 0 ? Optional.empty() : Optional.of(literalShifted(text, m, spec, base));
+        }
+    }
+
+    private static Match literalShifted(String text, int[] m, Spec spec, int base) {
+        Match found = literalMatch(text, m, spec);
+        return new Match(found.start() + base, found.end() + base, found.replacement());
+    }
+
+    /** The first match at or after {@code at}; an empty array for none; null when the window cannot tell. */
+    private static int @Nullable [] literalIn(String text, int at, Spec spec, boolean whole) {
+        for (int[] m : SearchMatcher.matches(text, spec.query(), spec.caseSensitive(), false, spec.wholeWord())) {
+            if (m[0] < at) {
+                continue;
+            }
+            // Its word boundary, or a longer folded match, may lie past the window.
+            return !whole && m[1] >= text.length() ? null : m;
+        }
+        return whole ? new int[0] : null;
+    }
+
+    private static Optional<Match> regexIn(Paged text, int at, Spec spec) {
+        Pattern p = SearchMatcher.compileDocumentRegex(spec.query(), spec.caseSensitive(), spec.wholeWord());
+        if (p == null) {
+            return Optional.empty();
+        }
+        Matcher m = p.matcher(SearchMatcher.budgetedSequence(text));
+        try {
+            if (!m.find(at)) {
+                return Optional.empty();
+            }
+            // appendReplacement writes the text since the view's start, then the expansion: at most the context and
+            // the stretch up to the match, never the document.
+            StringBuffer scratch = new StringBuffer();
+            int gap = m.start();
+            m.appendReplacement(scratch, spec.replacement());
+            String expanded = scratch.substring(gap);
+            String repl = spec.preserveCase() ? PreserveCase.apply(m.group(), expanded) : expanded;
+            return Optional.of(new Match(m.start(), m.end(), repl));
+        } catch (SearchMatcher.MatchBudgetExceededException | StackOverflowError abandoned) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * The document from {@code base} on as a {@link CharSequence} the regex engine reads a page at a time. Two pages
+     * are kept, so a lookbehind or a backtrack across a page boundary does not read them again and again.
+     */
+    private static final class Paged implements CharSequence {
+        private final Source doc;
+        private final int base;
+        private final int end;
+        private String page = "";
+        private int pageStart = -1;
+        private String other = "";
+        private int otherStart = -1;
+
+        Paged(Source doc, int base, int end) {
+            this.doc = doc;
+            this.base = base;
+            this.end = end;
+        }
+
+        @Override
+        public int length() {
+            return end - base;
+        }
+
+        @Override
+        public char charAt(int index) {
+            int at = base + index;
+            if (pageStart < 0 || at < pageStart || at >= pageStart + page.length()) {
+                if (otherStart >= 0 && at >= otherStart && at < otherStart + other.length()) {
+                    String p = page;
+                    int ps = pageStart;
+                    page = other;
+                    pageStart = otherStart;
+                    other = p;
+                    otherStart = ps;
+                } else {
+                    other = page;
+                    otherStart = pageStart;
+                    pageStart = at - at % PAGE;
+                    page = doc.text(pageStart, Math.min(end, pageStart + PAGE));
+                }
+            }
+            return page.charAt(at - pageStart);
+        }
+
+        @Override
+        public CharSequence subSequence(int start, int stop) {
+            StringBuilder sb = new StringBuilder(stop - start);
+            for (int i = start; i < stop; i++) {
+                sb.append(charAt(i));
+            }
+            return sb.toString();
+        }
+
+        @Override
+        public String toString() {
+            return subSequence(0, length()).toString();
+        }
     }
 
     private static boolean unusable(String text, int from, Spec spec) {

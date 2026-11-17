@@ -31,6 +31,9 @@ import static com.editora.i18n.Messages.tr;
  */
 final class SettingsPluginsPage {
 
+    /** The page lists this many installed plugins at most, and says how many there are past them (PERF-08). */
+    static final int MAX_ROWS = 100;
+
     private final SettingsWindow w;
     private final ConfigManager config;
 
@@ -275,8 +278,12 @@ final class SettingsPluginsPage {
             pluginListBox.getChildren().add(empty);
             return;
         }
-        for (com.editora.plugin.PluginDescriptor d : ds) {
+        for (com.editora.plugin.PluginDescriptor d : ListCap.head(ds, MAX_ROWS)) {
             pluginListBox.getChildren().add(pluginRow(pluginManager, d, store));
+        }
+        Label more = ListCap.label(ds.size(), MAX_ROWS, "settings-hint");
+        if (more != null) {
+            pluginListBox.getChildren().add(more);
         }
     }
 

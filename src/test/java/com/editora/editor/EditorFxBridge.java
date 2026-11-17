@@ -7,11 +7,14 @@ public final class EditorFxBridge {
 
     private EditorFxBridge() {}
 
-    /** Every text run of {@code buffer}'s rendered preview, joined without separators inside a block. */
+    /** Every text run of {@code buffer}'s rendered preview, joined without separators inside a block: of the
+     *  whole document, the blocks not on screen built to be read (the column holds only the visible ones). */
     public static String previewText(EditorBuffer buffer) {
         MarkdownPreview preview = EditorFx.field(EditorFx.field(buffer, "previewPanes"), "markdownPreview");
         StringBuilder sb = new StringBuilder();
-        collect(preview.column(), sb);
+        for (javafx.scene.Node block : com.editora.editor.markdown.PreviewBlocks.all(preview)) {
+            collect(block, sb);
+        }
         return sb.toString();
     }
 

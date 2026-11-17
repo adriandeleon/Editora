@@ -2,13 +2,14 @@ package com.editora.editor.structured;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.StringJoiner;
+import java.util.function.Supplier;
 
 import javafx.scene.Node;
 import javafx.scene.control.Label;
-import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.VBox;
 
 import com.editora.i18n.Messages;
@@ -21,6 +22,9 @@ import com.editora.systemd.SystemdUnit;
  * {@code [Section]} with its directives — each shown as a plain-English gloss above the raw {@code Key=value},
  * and an {@code OnCalendar=} line additionally gets its upcoming trigger times. Self-scrolling; hosts as the
  * Split/Preview side like {@link StructuredTree}. Kept in {@code editor} (no {@code ui} dependency).
+ *
+ * <p>The live preview is a virtualized list of those rows ({@link PreviewList}, PERF-08, Pauta 6.0.1); {@link
+ * #content} builds them all, for an export or a print.
  */
 public final class SystemdPreview {
 
@@ -31,36 +35,36 @@ public final class SystemdPreview {
     private SystemdPreview() {}
 
     public static Node build(SystemdUnit unit, LocalDateTime now) {
-        ScrollPane sp = new ScrollPane(content(unit, now, -1));
-        sp.setFitToWidth(true);
-        sp.getStyleClass().add("systemd-preview-scroll");
-        return sp;
+        return PreviewList.of(rows(unit, now), "systemd-preview-list");
     }
 
     public static VBox content(SystemdUnit unit, LocalDateTime now, double width) {
-        VBox root = new VBox();
-        root.getStyleClass().add("systemd-preview");
-        if (width > 0) {
-            root.setPrefWidth(width);
-        }
+        return PreviewList.column(rows(unit, now), width, "systemd-preview");
+    }
 
+    /** The header, then each section's heading followed by its directives. */
+    private static List<Supplier<Node>> rows(SystemdUnit unit, LocalDateTime now) {
+        List<Supplier<Node>> rows = new ArrayList<>();
         String kind = SystemdDescribe.kind(unit);
         String desc = unit.first("Unit", "Description");
         String headerText = capitalize(kind) + (desc != null && !desc.isBlank() ? " — " + desc : "");
-        Label header = new Label(headerText);
-        header.getStyleClass().add("systemd-header");
-        header.setWrapText(true);
-        root.getChildren().add(header);
-
+        rows.add(() -> {
+            Label header = new Label(headerText);
+            header.getStyleClass().add("systemd-header");
+            header.setWrapText(true);
+            return header;
+        });
         for (SystemdUnit.Section section : unit.sections()) {
-            Label sh = new Label("[" + section.name() + "]");
-            sh.getStyleClass().add("systemd-section");
-            root.getChildren().add(sh);
+            rows.add(() -> {
+                Label sh = new Label("[" + section.name() + "]");
+                sh.getStyleClass().add("systemd-section");
+                return sh;
+            });
             for (SystemdUnit.Directive d : section.directives()) {
-                root.getChildren().add(directiveNode(d, now));
+                rows.add(() -> directiveNode(d, now));
             }
         }
-        return root;
+        return rows;
     }
 
     private static Node directiveNode(SystemdUnit.Directive d, LocalDateTime now) {

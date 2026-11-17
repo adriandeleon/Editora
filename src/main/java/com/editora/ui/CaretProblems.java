@@ -87,6 +87,9 @@ final class CaretProblems {
         return severity + ": " + message + code;
     }
 
+    /** The card lists this many problems at most, and says how many there are past them (PERF-08, Pauta 6.0.1). */
+    static final int MAX_SHOWN = 20;
+
     /** The card's problem section: one wrapped label per problem, or null for none. Plain text, never markup. */
     static @Nullable Node node(List<LspDiagnostic> problems) {
         if (problems.isEmpty()) {
@@ -94,13 +97,17 @@ final class CaretProblems {
         }
         VBox box = UiZoom.spacing(new VBox(), 6);
         box.getStyleClass().add("lsp-hover-problems");
-        for (LspDiagnostic d : problems) {
+        for (LspDiagnostic d : ListCap.head(problems, MAX_SHOWN)) {
             Label label = new Label(text(d));
             label.setWrapText(true);
             label.setMinHeight(javafx.scene.layout.Region.USE_PREF_SIZE);
             label.getStyleClass()
                     .addAll("lsp-hover-problem", d.severity().name().toLowerCase(java.util.Locale.ROOT));
             box.getChildren().add(label);
+        }
+        Label more = ListCap.label(problems.size(), MAX_SHOWN, "lsp-hover-problem");
+        if (more != null) {
+            box.getChildren().add(more);
         }
         return box;
     }

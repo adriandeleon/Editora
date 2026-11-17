@@ -33,8 +33,15 @@ import com.editora.editor.UiZoom;
 
 import static com.editora.i18n.Messages.tr;
 
-/** An editable Personal Notes card attached to one Project Canvas file or folder row. */
+/**
+ * An editable Personal Notes card attached to one Project Canvas file or folder row. A note is a text area, so the card
+ * holds the first {@link #MAX_NOTES} notes and says how many there are past them (PERF-08, Pauta 6.0.1); the Notes
+ * panel lists them all.
+ */
 final class ProjectMapNotePreview extends StackPane {
+
+    /** The most notes the card holds an editor for. */
+    static final int MAX_NOTES = 25;
 
     static final double DEFAULT_WIDTH = 420;
     static final double DEFAULT_HEIGHT = 300;
@@ -68,6 +75,8 @@ final class ProjectMapNotePreview extends StackPane {
     private final Region resizeGrip = new Region();
     private final BiConsumer<PersonalNote, String> onSave;
     private final List<Row> rows = new ArrayList<>();
+    /** How many notes the file or folder has, the ones past {@link #MAX_NOTES} too. */
+    private int noteCount;
 
     private Runnable onClose = () -> setVisible(false);
     private Runnable onActivate = () -> {};
@@ -200,8 +209,9 @@ final class ProjectMapNotePreview extends StackPane {
      * or removed, so typing is never interrupted by a refresh.
      */
     void refreshNotes(List<PersonalNote> values) {
-        List<PersonalNote> current = values == null ? List.of() : values;
-        boolean sameNotes = current.size() == rows.size();
+        List<PersonalNote> all = values == null ? List.of() : values;
+        List<PersonalNote> current = ListCap.head(all, MAX_NOTES);
+        boolean sameNotes = current.size() == rows.size() && all.size() == noteCount;
         for (int i = 0; sameNotes && i < rows.size(); i++) {
             sameNotes = rows.get(i).note.id().equals(current.get(i).id());
         }
@@ -212,7 +222,7 @@ final class ProjectMapNotePreview extends StackPane {
                     edits.put(row.note.id(), row.editor.getText());
                 }
             }
-            rebuild(current, edits);
+            rebuild(all, edits);
             return;
         }
         for (int i = 0; i < rows.size(); i++) {
@@ -232,7 +242,8 @@ final class ProjectMapNotePreview extends StackPane {
     private void rebuild(List<PersonalNote> values, Map<UUID, String> edits) {
         rows.clear();
         notes.getChildren().clear();
-        for (PersonalNote note : values) {
+        noteCount = values.size();
+        for (PersonalNote note : ListCap.head(values, MAX_NOTES)) {
             TextArea editor = new TextArea(note.body());
             editor.setWrapText(true);
             editor.setUserData(note);
@@ -263,6 +274,12 @@ final class ProjectMapNotePreview extends StackPane {
             });
             rows.add(row);
             notes.getChildren().add(editor);
+        }
+        if (values.size() > MAX_NOTES) {
+            Label more = new Label(tr("project.map.notes.capped", MAX_NOTES, values.size()));
+            more.getStyleClass().addAll("project-map-note-preview-empty", "list-capped");
+            more.setWrapText(true);
+            notes.getChildren().add(more);
         }
         if (rows.isEmpty()) {
             Label empty = new Label(tr("project.map.notes.empty"));

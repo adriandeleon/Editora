@@ -49,6 +49,11 @@ import org.jspecify.annotations.Nullable;
  * and a filter field at the top narrows the rows. {@link #content} renders the same sections without those
  * controls for the PDF/print export.
  *
+ * <p>A parent pom can manage hundreds of dependencies, and the grid that aligns them is not virtualized: the
+ * interactive preview builds a row's nodes only when the row is shown, and shows at most {@link #MAX_ROWS} rows at
+ * once (PERF-08, Pauta 6.0.1). Past that a line says how many are shown of how many match, and the filter, which
+ * reads every row's text, finds the others. The export builds every row.
+ *
  * <p>Self-scrolling; hosts as the Split/Preview side like {@link StructuredTree}. Kept in {@code editor}
  * (no {@code ui} dependency), mirroring {@link DockerfilePreview}.
  */
@@ -56,6 +61,9 @@ public final class PomPreview {
 
     /** Floor for the version column, so a short version can't leave its row's tags crowding it. */
     private static final double MIN_VERSION_COLUMN_WIDTH = 110;
+
+    /** The interactive preview shows at most this many rows at once (PERF-08); the filter reaches the others. */
+    public static final int MAX_ROWS = 500;
 
     /** A Properties section longer than this starts collapsed: on a real pom it filled the first screen. */
     public static final int PROPERTIES_COLLAPSED_PAST = 12;
@@ -88,8 +96,31 @@ public final class PomPreview {
         return new Renderer(null, false).render(s, width);
     }
 
-    /** One rendered row of a section: its grid nodes and the text the filter matches against. */
-    private record Row(List<Node> nodes, String searchText) {}
+    /** Builds a row's nodes into the grid at the grid row it is given, and answers them. */
+    private interface RowMaker {
+        List<Node> make(int gridRow);
+    }
+
+    /**
+     * One row of a section: the text the filter matches against, its place in the grid and in the document, and its
+     * nodes once built ({@code null} until the row is first shown, and again once it is dropped).
+     */
+    private static final class Row {
+        final RowMaker maker;
+        final String searchText;
+        final int gridRow;
+        final int order;
+
+        @Nullable
+        List<Node> nodes;
+
+        Row(RowMaker maker, String searchText, int gridRow, int order) {
+            this.maker = maker;
+            this.searchText = searchText;
+            this.gridRow = gridRow;
+            this.order = order;
+        }
+    }
 
     /** A section: its title node and rows; collapsed hides the rows (unless a filter is active). */
     private static final class Section {
@@ -114,10 +145,23 @@ public final class PomPreview {
         private @Nullable Section current; // the section rows go into: set by addSection before any row
         private @Nullable Section profileSection; // set while a profile's sub-sections are added
         private String filter = "";
+        /** The next free row of the grid: rows are reserved in document order, built when shown. */
+        private int nextGridRow;
+        /** How many rows the sections hold, all of them. */
+        private int rowCount;
+
+        private final GridPane g = grid();
+        private final Label capped = styledLabel("", "pom-capped");
 
         Renderer(@Nullable IntConsumer onNavigate, boolean interactive) {
             this.onNavigate = onNavigate;
             this.interactive = interactive;
+            show(capped, false);
+        }
+
+        /** How many rows are shown at once: {@link #MAX_ROWS} on screen, every one in the export. */
+        private int cap() {
+            return interactive ? MAX_ROWS : Integer.MAX_VALUE;
         }
 
         VBox render(PomSummary s, double width) {
@@ -136,8 +180,8 @@ public final class PomPreview {
                 root.getChildren().add(filterField());
             }
             root.getChildren().add(header(s));
+            root.getChildren().add(capped);
 
-            GridPane g = grid();
             addModules(g, s, false);
             addDependencies(g, Messages.tr("pom.dependencies", s.dependencies().size()), s.dependencies(), s, false);
             addDependencies(
@@ -162,7 +206,7 @@ public final class PomPreview {
             for (PomSummary.Profile profile : s.profiles()) {
                 addProfile(g, profile, s);
             }
-            if (g.getRowCount() > 0) {
+            if (nextGridRow > 0) {
                 root.getChildren().add(g);
             }
             if (s.isEmpty()) {
@@ -256,7 +300,8 @@ public final class PomPreview {
             addSection(g, Messages.tr("pom.modules", modules.size()), indented, false);
             for (int i = 0; i < modules.size(); i++) {
                 int line = i < s.moduleLines().size() ? s.moduleLines().get(i) : 0;
-                addRow(g, link(mono(modules.get(i), "pom-name"), line), null, null, indented, modules.get(i));
+                String module = modules.get(i);
+                addRow(g, () -> link(mono(module, "pom-name"), line), null, null, indented, module);
             }
         }
 
@@ -267,15 +312,20 @@ public final class PomPreview {
             }
             addSection(g, Messages.tr("pom.properties", properties.size()), indented, collapsed);
             for (PomSummary.Property p : properties) {
-                int row = g.getRowCount();
-                Node name = indent(link(mono(p.name(), "pom-name"), p.line()), indented);
-                g.add(name, 0, row);
-                Label value = mono(p.value(), "pom-value");
-                // A property value can be far longer than any version (a path, a timestamp format), so let it
-                // run into the tag column instead of widening the version column for every dependency below it.
-                GridPane.setColumnSpan(value, 2);
-                g.add(value, 1, row);
-                current().rows.add(new Row(List.of(name, value), p.name() + " " + p.value()));
+                addRow(
+                        row -> {
+                            Node name = indent(link(mono(p.name(), "pom-name"), p.line()), indented);
+                            g.add(name, 0, row);
+                            Label value = mono(p.value(), "pom-value");
+                            // A property value can be far longer than any version (a path, a timestamp format), so
+                            // let it run into the tag column instead of widening the version column for every
+                            // dependency below it.
+                            GridPane.setColumnSpan(value, 2);
+                            g.add(value, 1, row);
+                            return List.of(name, value);
+                        },
+                        1,
+                        p.name() + " " + p.value());
             }
         }
 
@@ -289,9 +339,11 @@ public final class PomPreview {
                 List<String> tags = dependencyTags(d, s);
                 addRow(
                         g,
-                        link(artifactName(d.groupId(), d.artifactId()), d.line()),
-                        link(versionCell(d.version(), d.effectiveVersion(), d.managed(), d.managedBy(), s), d.line()),
-                        tagFlow(tags),
+                        () -> link(artifactName(d.groupId(), d.artifactId()), d.line()),
+                        () -> link(
+                                versionCell(d.version(), d.effectiveVersion(), d.managed(), d.managedBy(), s),
+                                d.line()),
+                        () -> tagFlow(tags),
                         indented,
                         d.groupId() + ":" + d.artifactId() + " " + d.effectiveVersion() + " " + d.version() + " "
                                 + String.join(" ", tags));
@@ -308,17 +360,31 @@ public final class PomPreview {
                 List<String> tags = new ArrayList<>();
                 appendTag(tags, versionSource(p.version(), p.effectiveVersion(), p.managed(), p.managedBy()));
                 String goals = p.goals().isEmpty() ? "" : String.join(", ", p.goals());
-                Row row = addRow(
+                RowMaker cells = cells(
                         g,
-                        link(artifactName(p.groupId(), p.artifactId()), p.line()),
-                        link(versionCell(p.version(), p.effectiveVersion(), p.managed(), p.managedBy(), s), p.line()),
-                        tagFlow(tags),
-                        indented,
-                        p.groupId() + ":" + p.artifactId() + " " + p.effectiveVersion() + " " + p.version() + " "
-                                + String.join(" ", tags) + " " + goals);
-                if (!goals.isEmpty()) {
-                    Node line = addFullWidth(g, styledLabel(Messages.tr("pom.goals", goals), "pom-goals"), indented);
-                    row.nodes().add(line); // shown and hidden with its plugin's row
+                        () -> link(artifactName(p.groupId(), p.artifactId()), p.line()),
+                        () -> link(
+                                versionCell(p.version(), p.effectiveVersion(), p.managed(), p.managedBy(), s),
+                                p.line()),
+                        () -> tagFlow(tags),
+                        indented);
+                String searchText = p.groupId() + ":" + p.artifactId() + " " + p.effectiveVersion() + " " + p.version()
+                        + " " + String.join(" ", tags) + " " + goals;
+                if (goals.isEmpty()) {
+                    addRow(cells, 1, searchText);
+                } else {
+                    // The goal list is a line of its own under the plugin, shown and hidden with its row.
+                    addRow(
+                            row -> {
+                                List<Node> nodes = new ArrayList<>(cells.make(row));
+                                Label line = styledLabel(Messages.tr("pom.goals", goals), "pom-goals");
+                                GridPane.setColumnSpan(line, 3);
+                                g.add(indent(line, indented), 0, row + 1);
+                                nodes.add(line);
+                                return nodes;
+                            },
+                            2,
+                            searchText);
                 }
             }
         }
@@ -332,13 +398,15 @@ public final class PomPreview {
                 List<String> tags = new ArrayList<>();
                 appendTag(tags, r.plugin() ? Messages.tr("pom.pluginRepository") : "");
                 appendTag(tags, r.central() ? "" : Messages.tr("pom.notCentral"));
-                Label url = mono(r.url(), "pom-value");
-                url.setWrapText(false);
                 addRow(
                         g,
-                        link(mono(r.id().isEmpty() ? Messages.tr("pom.untitled") : r.id(), "pom-name"), r.line()),
-                        url,
-                        tagFlow(tags),
+                        () -> link(mono(r.id().isEmpty() ? Messages.tr("pom.untitled") : r.id(), "pom-name"), r.line()),
+                        () -> {
+                            Label url = mono(r.url(), "pom-value");
+                            url.setWrapText(false);
+                            return url;
+                        },
+                        () -> tagFlow(tags),
                         false,
                         r.id() + " " + r.url() + " " + String.join(" ", tags));
             }
@@ -518,28 +586,48 @@ public final class PomPreview {
             return g;
         }
 
-        private Row addRow(
+        /** A row of name, version and tags, which holds one grid row. */
+        private void addRow(
                 GridPane g,
-                Node name,
-                @Nullable Node version,
-                @Nullable Node tags,
+                java.util.function.Supplier<Node> name,
+                java.util.function.@Nullable Supplier<@Nullable Node> version,
+                java.util.function.@Nullable Supplier<@Nullable Node> tags,
                 boolean indented,
                 String searchText) {
-            int row = g.getRowCount();
-            List<Node> nodes = new ArrayList<>();
-            g.add(indent(name, indented), 0, row);
-            nodes.add(name);
-            if (version != null) {
-                g.add(version, 1, row);
-                nodes.add(version);
-            }
-            if (tags != null) {
-                g.add(tags, 2, row);
-                nodes.add(tags);
-            }
-            Row r = new Row(nodes, searchText.toLowerCase(Locale.ROOT));
+            addRow(cells(g, name, version, tags, indented), 1, searchText);
+        }
+
+        /** Builds a row's name, version and tag cells into the grid row it is given. */
+        private static RowMaker cells(
+                GridPane g,
+                java.util.function.Supplier<Node> name,
+                java.util.function.@Nullable Supplier<@Nullable Node> version,
+                java.util.function.@Nullable Supplier<@Nullable Node> tags,
+                boolean indented) {
+            return row -> {
+                List<Node> nodes = new ArrayList<>(3);
+                Node n = name.get();
+                g.add(indent(n, indented), 0, row);
+                nodes.add(n);
+                Node v = version == null ? null : version.get();
+                if (v != null) {
+                    g.add(v, 1, row);
+                    nodes.add(v);
+                }
+                Node t = tags == null ? null : tags.get();
+                if (t != null) {
+                    g.add(t, 2, row);
+                    nodes.add(t);
+                }
+                return nodes;
+            };
+        }
+
+        /** Adds a row to the current section, reserving {@code gridRows} rows of the grid for it; built when shown. */
+        private void addRow(RowMaker maker, int gridRows, String searchText) {
+            Row r = new Row(maker, searchText.toLowerCase(Locale.ROOT), nextGridRow, rowCount++);
+            nextGridRow += gridRows;
             current().rows.add(r);
-            return r;
         }
 
         private Section current() {
@@ -569,9 +657,9 @@ public final class PomPreview {
         }
 
         /** Adds a node spanning all three columns — section titles, profile titles, a plugin's goal list. */
-        private static Node addFullWidth(GridPane g, Node node, boolean indented) {
+        private Node addFullWidth(GridPane g, Node node, boolean indented) {
             GridPane.setColumnSpan(node, 3);
-            g.add(indent(node, indented), 0, g.getRowCount());
+            g.add(indent(node, indented), 0, nextGridRow++);
             return node;
         }
 
@@ -579,22 +667,33 @@ public final class PomPreview {
         private void applyVisibility() {
             boolean filtering = !filter.isEmpty();
             java.util.Set<Section> withMatches = new java.util.HashSet<>();
+            int shown = 0;
+            int wanted = 0;
             for (Section s : sections) {
                 // A collapsed profile heading hides its sub-sections too; a filter overrides every collapse.
                 boolean open = filtering || !s.collapsed && (s.parent == null || !s.parent.collapsed);
                 for (Row r : s.rows) {
-                    boolean visible = !filtering || r.searchText().contains(filter);
+                    boolean visible = !filtering || r.searchText.contains(filter);
                     if (visible) {
                         withMatches.add(s);
                         if (s.parent != null) {
                             withMatches.add(s.parent);
                         }
                     }
-                    for (Node n : r.nodes()) {
-                        show(n, visible && open);
+                    boolean on = visible && open;
+                    if (on) {
+                        wanted++;
+                        on = shown < cap();
                     }
+                    if (on) {
+                        shown++;
+                    }
+                    place(r, on);
                 }
             }
+            String cappedText = wanted > shown ? Messages.tr("pom.capped", shown, wanted) : "";
+            capped.setText(cappedText);
+            show(capped, !cappedText.isEmpty());
             for (Section s : sections) {
                 boolean open = filtering || !s.collapsed && (s.parent == null || !s.parent.collapsed);
                 boolean headingShown = s.parent == null || filtering || !s.parent.collapsed;
@@ -607,6 +706,30 @@ public final class PomPreview {
                     String bare = text.startsWith("▸ ") || text.startsWith("▾ ") ? text.substring(2) : text;
                     s.titleLabel.setText((s.collapsed && !filtering ? "▸ " : "▾ ") + bare);
                 }
+            }
+        }
+
+        /**
+         * Shows or hides a row, building it when it is first shown. The first {@link #MAX_ROWS} rows of the document
+         * keep their nodes when hidden (a section folds and opens again at once); a row past them that the filter
+         * hides again is dropped, so the grid never holds many more nodes than it shows.
+         */
+        private void place(Row r, boolean on) {
+            List<Node> nodes = r.nodes;
+            if (nodes == null && (on || r.order < cap())) {
+                nodes = r.maker.make(r.gridRow);
+                r.nodes = nodes;
+            }
+            if (nodes == null) {
+                return;
+            }
+            if (!on && r.order >= cap()) {
+                g.getChildren().removeAll(nodes);
+                r.nodes = null;
+                return;
+            }
+            for (Node n : nodes) {
+                show(n, on);
             }
         }
 

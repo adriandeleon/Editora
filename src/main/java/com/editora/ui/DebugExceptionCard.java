@@ -205,6 +205,9 @@ final class DebugExceptionCard {
         }
     }
 
+    /** The card shows this many "Caused by" lines at most, and says how many it has past them (PERF-08). */
+    static final int MAX_CAUSES = 20;
+
     /** The "Caused by" lines of {@code info}, outermost first. Pure. */
     static List<String> causeLines(DapModels.ExceptionInfo info) {
         List<String> out = new ArrayList<>();
@@ -239,11 +242,16 @@ final class DebugExceptionCard {
         message.setText(m);
         visible(message, !m.isEmpty());
         causes.getChildren().clear();
-        for (String c : causeLines(info)) {
+        List<String> causeLines = causeLines(info);
+        for (String c : ListCap.head(causeLines, MAX_CAUSES)) {
             Label l = new Label(c);
             l.getStyleClass().add("debug-exception-cause");
             l.setWrapText(true);
             causes.getChildren().add(l);
+        }
+        Label moreCauses = ListCap.label(causeLines.size(), MAX_CAUSES, "debug-exception-cause");
+        if (moreCauses != null) {
+            causes.getChildren().add(moreCauses); // Copy still has every cause
         }
         visible(causes, !causes.getChildren().isEmpty());
         trace.setText(info.stackTrace());

@@ -1465,7 +1465,7 @@ final class ProjectMapPreview extends StackPane {
         javafx.scene.layout.VBox content = UiZoom.spacing(new javafx.scene.layout.VBox(), 6);
         content.getStyleClass().add("project-map-hover");
         StringBuilder sizing = new StringBuilder();
-        for (LspDiagnostic d : here) {
+        for (LspDiagnostic d : ListCap.head(here, CaretProblems.MAX_SHOWN)) {
             Label problem = new Label(problemText(d));
             problem.setWrapText(true);
             problem.getStyleClass().add("project-map-hover-problem");
@@ -1475,6 +1475,11 @@ final class ProjectMapPreview extends StackPane {
             problem.setAccessibleText(severityWord(d.severity()) + ": " + problemText(d));
             content.getChildren().add(problem);
             sizing.append(problemText(d)).append('\n');
+        }
+        Label moreProblems = ListCap.label(here.size(), CaretProblems.MAX_SHOWN, "project-map-hover-problem");
+        if (moreProblems != null) {
+            content.getChildren().add(moreProblems);
+            sizing.append(moreProblems.getText()).append('\n');
         }
         if (docs != null) {
             if (!here.isEmpty()) {

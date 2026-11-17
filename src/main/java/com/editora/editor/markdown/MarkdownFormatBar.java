@@ -199,8 +199,28 @@ public final class MarkdownFormatBar {
 
     /** Makes the controls say what the selection already is: lit marker buttons, the line's heading level. */
     private void sync() {
-        toggles.forEach((b, marker) ->
-                b.pseudoClassStateChanged(SELECTED, buffer.markdown().isMarked(marker)));
+        // The lines of the selection and one either side, read once: the buttons and the Style value used to
+        // copy the whole document once each, on every Shift+arrow and scroll pulse (PERF-08, Pauta 6.0.1).
+        org.fxmisc.richtext.CodeArea a = buffer.getFocusedArea() != null ? buffer.getFocusedArea() : buffer.getArea();
+        var sel = a.getSelection();
+        int first = Math.max(
+                0,
+                a.offsetToPosition(sel.getStart(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                                .getMajor()
+                        - 1);
+        int last = Math.min(
+                a.getParagraphs().size() - 1,
+                a.offsetToPosition(sel.getEnd(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                                .getMajor()
+                        + 1);
+        int base = a.getAbsolutePosition(first, 0);
+        String around = a.getText(first, 0, last, a.getParagraphLength(last));
+        boolean typst = buffer.isTypst();
+        toggles.forEach((b, marker) -> b.pseudoClassStateChanged(
+                SELECTED,
+                !typst
+                        && com.editora.markdown.MarkdownInline.isMarked(
+                                around, sel.getStart() - base, sel.getEnd() - base, marker)));
         for (Node n : node.getChildren()) {
             if (n instanceof Button b && b.getProperties().get(HINT) instanceof String key) {
                 // one string again, so a screen reader hears the chord the tooltip shows
@@ -210,7 +230,10 @@ public final class MarkdownFormatBar {
         }
         syncing = true;
         try {
-            heading.setValue(buffer.markdown().headingLevel());
+            heading.setValue(
+                    typst
+                            ? buffer.markdown().headingLevel()
+                            : com.editora.markdown.MarkdownHeading.levelAt(around, a.getCaretPosition() - base));
         } finally {
             syncing = false;
         }

@@ -405,6 +405,12 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
         });
     }
 
+    /** How many lines a selection from paragraph {@code first} to column {@code endColumn} of paragraph
+     *  {@code last} counts, as {@code String.lines()} counts its text. Pure. */
+    static int selectedLines(int first, int last, int endColumn) {
+        return Math.max(1, endColumn == 0 ? last - first : last - first + 1);
+    }
+
     /** Line/char totals, selection, and caret location — all cheap (no whole-document {@code getText()}: char count
      *  comes from {@code getLength()} and line count from the paragraph list). Safe to run on every caret move. */
     private void refreshPositionAndTotals(EditorBuffer buffer) {
@@ -415,11 +421,13 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
         int selectedChars = area.getSelection().getLength();
         int selectedLines;
         if (selectedChars > 0) {
-            String selText = area.getSelectedText();
-            selectedLines = (int) selText.lines().count();
-            if (selText.endsWith("\n")) {
-                selectedLines = Math.max(1, selectedLines);
-            }
+            // From the paragraphs the ends are in, not a copy of the selection (a Select All then made every
+            // Shift+arrow copy the document: PERF-08, Pauta 6.0.1). As String.lines(): a selection that ends
+            // just after a line break does not count the line it ends on.
+            var sel = area.getSelection();
+            var from = area.offsetToPosition(sel.getStart(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+            var to = area.offsetToPosition(sel.getEnd(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+            selectedLines = selectedLines(from.getMajor(), to.getMajor(), to.getMinor());
         } else {
             selectedLines = 0;
         }

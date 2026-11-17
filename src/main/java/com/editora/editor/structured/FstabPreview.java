@@ -1,10 +1,11 @@
 package com.editora.editor.structured;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 
 import javafx.scene.Node;
 import javafx.scene.control.Label;
-import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.VBox;
 
 import com.editora.fstab.FstabDescribe;
@@ -17,36 +18,37 @@ import com.editora.i18n.Messages;
  * the fsck/dump note. A malformed line renders as a red error row. Self-scrolling (wrapped in a
  * {@code ScrollPane}) so it hosts directly as the Split/Preview side, like {@link StructuredTree}. Kept in
  * {@code editor} (no {@code ui} dependency).
+ *
+ * <p>The live preview is a virtualized list of those rows ({@link PreviewList}, PERF-08, Pauta 6.0.1); {@link
+ * #content} builds them all, for an export or a print.
  */
 public final class FstabPreview {
 
     private FstabPreview() {}
 
-    /** The live self-scrolling preview node for the tool host. */
+    /** The live self-scrolling preview node for the tool host: the rows {@link #content} shows, in a list. */
     public static Node build(List<FstabEntry> entries) {
-        ScrollPane sp = new ScrollPane(content(entries, -1));
-        sp.setFitToWidth(true);
-        sp.getStyleClass().add("fstab-preview-scroll");
-        return sp;
+        return PreviewList.of(rows(entries), "fstab-preview-list");
     }
 
     /** The bare content VBox (used for the light snapshot export); {@code width > 0} pins a layout width. */
     public static VBox content(List<FstabEntry> entries, double width) {
-        VBox root = new VBox();
-        root.getStyleClass().add("fstab-preview");
-        if (width > 0) {
-            root.setPrefWidth(width);
-        }
+        return PreviewList.column(rows(entries), width, "fstab-preview");
+    }
 
-        Label header = new Label(Messages.tr("fstab.summary", entries.size()));
-        header.getStyleClass().add("fstab-header");
-        header.setWrapText(true);
-        root.getChildren().add(header);
-
+    /** The header, then one row per line of the file. */
+    private static List<Supplier<Node>> rows(List<FstabEntry> entries) {
+        List<Supplier<Node>> rows = new ArrayList<>();
+        rows.add(() -> {
+            Label header = new Label(Messages.tr("fstab.summary", entries.size()));
+            header.getStyleClass().add("fstab-header");
+            header.setWrapText(true);
+            return header;
+        });
         for (FstabEntry e : entries) {
-            root.getChildren().add(entryNode(e));
+            rows.add(() -> entryNode(e));
         }
-        return root;
+        return rows;
     }
 
     private static Node entryNode(FstabEntry e) {

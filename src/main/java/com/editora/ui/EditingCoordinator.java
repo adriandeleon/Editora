@@ -1631,7 +1631,9 @@ final class EditingCoordinator {
 
         /** Finds the next match from {@link #from}, highlights it and prompts. False when none remain. */
         private boolean showNext() {
-            var m = com.editora.editor.search.QueryReplace.next(area.getText(), from, spec);
+            // Read as far as the next match only, not the whole document per answer (PERF-08, Pauta 6.0.1).
+            var m = com.editora.editor.search.QueryReplace.nextIn(
+                    com.editora.editor.search.QueryReplace.Source.of(area::getLength, area::getText), from, spec);
             if (m.isEmpty()) {
                 current = null;
                 return false;

@@ -2,10 +2,11 @@ package com.editora.ui;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -33,6 +34,7 @@ import com.editora.snippet.SnippetManager.Entry;
 import com.editora.snippet.SnippetManager.Problem;
 import com.editora.snippet.SnippetManager.Source;
 import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.model.StyleSpans;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -53,7 +55,7 @@ final class SnippetsEditor {
     record Hooks(
             Consumer<String> warn,
             Predicate<String> confirm,
-            BiConsumer<CodeArea, String> highlight,
+            BiFunction<String, String, @Nullable StyleSpans<Collection<String>>> bodyStyles,
             Consumer<CodeArea> editorKeys,
             Predicate<String> confirmDelete) {}
 
@@ -179,7 +181,8 @@ final class SnippetsEditor {
         body.setWrapText(false); // a body is code: a wrapped line reads as two
         UiZoom.prefHeight(body, 180);
         hooks.editorKeys().accept(body);
-        body.plainTextChanges().subscribe(c -> hooks.highlight().accept(body, language));
+        // Coloured once typing pauses, off the FX thread (PERF-08, Pauta 6.0.1).
+        new SnippetBodyHighlighter(body, () -> language, hooks.bodyStyles());
 
         GridPane form = new GridPane();
         UiZoom.gaps(form, 8, 6);
@@ -345,15 +348,15 @@ final class SnippetsEditor {
         });
         // Live: the other fields apply once typing pauses. A name is applied on Enter or leaving it, never
         // half typed — each pause would rename the snippet on disk.
-        PauseCommit.watch(
+        Runnable typed = PauseCommit.watch(
                 () -> {
                     if (!name.isFocused()) {
                         commit.run();
                     }
                 },
                 prefix.textProperty(),
-                description.textProperty(),
-                body.textProperty());
+                description.textProperty());
+        body.plainTextChanges().subscribe(c -> typed.run()); // not textProperty(): it builds the body per key
 
         // Load the form when a different row is selected.
         list.getSelectionModel().selectedItemProperty().addListener((o, was, s) -> {

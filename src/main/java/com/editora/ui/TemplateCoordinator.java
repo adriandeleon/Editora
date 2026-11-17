@@ -477,11 +477,20 @@ final class TemplateCoordinator {
         return row;
     }
 
-    /** One labelled field per prompted variable, pre-filled with its default, added to {@code body}. */
+    /**
+     * The wizard asks for this many of a template's variables at most; the others keep their defaults, and the form
+     * says so (PERF-08, Pauta 6.0.1).
+     */
+    static final int MAX_VARIABLE_FIELDS = 50;
+
+    /**
+     * One labelled field per prompted variable, pre-filled with its default, added to {@code body}; past {@link
+     * #MAX_VARIABLE_FIELDS}, a line that says the others keep their defaults.
+     */
     private LinkedHashMap<String, TextField> variableFields(
             Template t, List<TemplateEngine.TemplateVar> vars, VBox body) {
         LinkedHashMap<String, TextField> fields = new LinkedHashMap<>();
-        for (TemplateEngine.TemplateVar v : vars) {
+        for (TemplateEngine.TemplateVar v : ListCap.head(vars, MAX_VARIABLE_FIELDS)) {
             TextField field = new TextField(v.defaultValue());
             field.setPrefColumnCount(28);
             com.editora.command.TextInputKeymap.install(field, host.keymap());
@@ -489,6 +498,12 @@ final class TemplateCoordinator {
             Label label = new Label(variableLabel(t, v.name()));
             label.setLabelFor(field);
             body.getChildren().addAll(label, field);
+        }
+        if (vars.size() > MAX_VARIABLE_FIELDS) {
+            Label more = new Label(tr("template.wizard.capped", MAX_VARIABLE_FIELDS, vars.size()));
+            more.getStyleClass().addAll("settings-hint", "list-capped");
+            more.setWrapText(true);
+            body.getChildren().add(more);
         }
         return fields;
     }

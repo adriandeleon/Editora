@@ -243,6 +243,9 @@ public final class DiffViewerPane implements TabContent {
 
     private boolean updatingResult;
     private @Nullable String resultBaselineText;
+    /** Where the Result may differ from {@link #resultBaselineText}: a keystroke compares that span only. */
+    private final EditedSpan resultEdits = new EditedSpan();
+
     private boolean syncing; // re-entrancy guard for scroll sync
     /** The side-by-side pane the user is scrolling; only it drives the other (see {@link #syncScroll}). */
     private @Nullable CodeArea scrollLeader;
@@ -1390,11 +1393,15 @@ public final class DiffViewerPane implements TabContent {
         resultArea.setAccessibleText(tr("diff.resultDescription"));
         resultArea.setWrapText(wrapLines);
         resultArea.setStyle(fontStyle);
-        resultArea.textProperty().addListener((o, oldText, newText) -> {
+        // The edit stream, not textProperty(): a listener on that builds the whole document per keystroke, and
+        // the dirty flag compares only the span the edits touched (PERF-08, Pauta 6.0.1).
+        CodeArea edited = resultArea;
+        edited.plainTextChanges().subscribe(change -> {
             if (updatingResult) {
                 return;
             }
-            resultDirty = !java.util.Objects.equals(resultBaselineText, newText);
+            resultEdits.edited(change.getPosition(), change.getInserted().length(), edited.getLength());
+            resultDirty = !resultEdits.equalsBaseline(resultBaselineText, edited.getLength(), edited::getText);
             updateResultControls();
             resultDiffDelay.playFromStart();
         });
@@ -1433,6 +1440,7 @@ public final class DiffViewerPane implements TabContent {
         }
         if (baseline) {
             resultBaselineText = resultArea.getText();
+            resultEdits.reset();
             resultDirty = false;
         }
         updateResultControls();

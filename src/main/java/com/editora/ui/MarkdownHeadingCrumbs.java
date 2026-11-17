@@ -21,8 +21,9 @@ import org.reactfx.Subscription;
  *
  * <p>Nothing here runs on a keystroke. A caret-line change or an edit only restarts a short pause; the
  * headings are re-read when it ends, and only if the text changed since they were last read — moving the
- * caret through an unchanged document walks a list already in hand. Lines are the editor's own, so a
- * narrowed buffer shows the path within what is on screen.
+ * caret through an unchanged document walks a list already in hand. The re-read takes the buffer's shared text
+ * and scans it off the FX thread (PERF-08, Pauta 6.0.1); an answer for text edited since is dropped. Lines are
+ * the editor's own, so a narrowed buffer shows the path within what is on screen.
  */
 final class MarkdownHeadingCrumbs extends HBox {
 
@@ -38,6 +39,11 @@ final class MarkdownHeadingCrumbs extends HBox {
     private @Nullable Subscription edits;
     private List<MarkdownOutline.Heading> headings = List.of();
     private boolean stale = true;
+    /** Bumped at each edit and attach: a scan of an older text that lands later is dropped. */
+    private long editCount;
+    /** A scan is running for {@link #editCount}: a pause before it lands starts no second one. */
+    private boolean scanning;
+
     private @Nullable List<MarkdownOutline.Heading> shown;
 
     MarkdownHeadingCrumbs() {
@@ -62,8 +68,12 @@ final class MarkdownHeadingCrumbs extends HBox {
             return;
         }
         buffer.getArea().currentParagraphProperty().addListener(caretMoved);
+        editCount++;
+        scanning = false;
         edits = buffer.getArea().plainTextChanges().subscribe(change -> {
             stale = true;
+            editCount++;
+            scanning = false;
             pause.playFromStart();
         });
         refresh();
@@ -86,11 +96,39 @@ final class MarkdownHeadingCrumbs extends HBox {
             return;
         }
         var area = buffer.getArea();
-        if (stale) {
-            headings = area.getLength() > MAX_CHARS ? List.of() : MarkdownOutline.headings(area.getText());
+        if (stale && area.getLength() > MAX_CHARS) {
+            headings = List.of();
             stale = false;
         }
-        show(MarkdownOutline.pathAt(headings, area.getCurrentParagraph()));
+        if (!stale) {
+            show(MarkdownOutline.pathAt(headings, area.getCurrentParagraph()));
+            return;
+        }
+        if (scanning) {
+            return; // the scan of this text shows the path when it lands
+        }
+        scanning = true;
+        EditorBuffer scanned = buffer;
+        long asked = editCount;
+        String text = scanned.text(); // the buffer's shared snapshot, not a copy of its own
+        com.editora.perf.OffFx.then("markdown-heading-crumbs", () -> MarkdownOutline.headings(text), found -> {
+            List<MarkdownOutline.Heading> list = found.value();
+            if (asked != editCount || buffer != scanned) {
+                return; // edited since (its pause asks again), or another buffer is followed
+            }
+            scanning = false;
+            if (list == null) {
+                return;
+            }
+            headings = list;
+            stale = false;
+            show(MarkdownOutline.pathAt(headings, scanned.getArea().getCurrentParagraph()));
+        });
+    }
+
+    /** Whether a scan of the text is running (tests wait for it). */
+    boolean scanning() {
+        return scanning;
     }
 
     /** The titles on show, outermost first. */

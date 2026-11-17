@@ -251,7 +251,9 @@ final class MapSurface extends Region {
 
     private final Tooltip nodeTooltip = ControlNames.tooltip();
     private final Text textMeasurer = new Text();
-    private final List<NodeBox> boxes = new ArrayList<>();
+    /** The row boxes of the last projection, made as they are read: a paint reads the rows on screen only. */
+    private final MapProjectedRows boxes = new MapProjectedRows();
+
     private final List<ColumnBox> columnBoxes = new ArrayList<>();
     private final Map<IconKey, Image> iconImages = new HashMap<>();
     private final Map<ProjectMapModel.ColumnId, ColumnControls> columnControls = new HashMap<>();
@@ -2442,10 +2444,7 @@ final class MapSurface extends Region {
                     column.width() * zoom,
                     column.height() * zoom));
         }
-        for (NodeBox row : world.rows()) {
-            boxes.add(new NodeBox(
-                    row.entry(), screenX(row.x()), screenY(row.y()), row.width() * zoom, row.height() * zoom));
-        }
+        boxes.project(world.rows(), zoom, offsetX, offsetY); // each box is made when it is first read
         projected = world;
         if (world != cachedFirstColumnsFor) {
             Set<ProjectMapModel.ColumnId> unanchored = new HashSet<>();
@@ -2798,19 +2797,29 @@ final class MapSurface extends Region {
         drawColumns(g);
         g.setStroke(color(accentProbe, Color.web("#58a6ff")));
         // Rows were added column by column, so the two lists are walked together: a column's rows
-        // share one parent row and, in a vertical flow, one card edge to route to.
+        // share one parent row and, in a vertical flow, one card edge to route to. Only the rows that can be on
+        // screen are read (PERF-08, Pauta 6.0.1): a pan does not walk a 5,000-row folder.
+        boolean alongX = isVerticalFlow();
+        double overscan = CONNECTOR_VIEWPORT_OVERSCAN;
         int next = 0;
         for (int index = 0; index < columnBoxes.size(); index++) {
             ColumnBox childColumn = columnBoxes.get(index);
             int rows = childColumn.column().entries().size();
+            int first = next;
+            next += rows;
             int anchorRow = world.anchorRows().get(index);
-            NodeBox parent = rows == 0 || anchorRow < 0 ? null : boxes.get(anchorRow);
-            ColumnBox parentColumn = parent == null
-                    ? null
-                    : columnBoxes.get(world.anchorColumns().get(index));
-            for (int row = 0; row < rows; row++) {
-                NodeBox child = boxes.get(next++);
-                if (parent == null || parentColumn == null || !connectorInViewport(child, width, height)) {
+            if (rows == 0 || anchorRow < 0) {
+                continue;
+            }
+            int[] range = boxes.visibleRange(first, rows, alongX, -overscan, (alongX ? width : height) + overscan);
+            if (range[0] >= range[1]) {
+                continue;
+            }
+            NodeBox parent = boxes.get(anchorRow);
+            ColumnBox parentColumn = columnBoxes.get(world.anchorColumns().get(index));
+            for (int row = range[0]; row < range[1]; row++) {
+                NodeBox child = boxes.get(row);
+                if (!connectorInViewport(child, width, height)) {
                     continue;
                 }
                 boolean selectedPath = isOnSelectedPath(child.entry().path());
@@ -2822,12 +2831,21 @@ final class MapSurface extends Region {
             }
         }
         boolean blocks = layoutBlockMode();
-        for (NodeBox box : boxes) {
-            if (inViewport(box, width, height)) {
-                if (blocks) {
-                    layoutDrawBlockRow(g, box);
-                } else {
-                    drawNode(g, box);
+        int first = 0;
+        for (ColumnBox column : columnBoxes) {
+            int rows = column.column().entries().size();
+            int[] range = columnOnScreen(column, width, height)
+                    ? boxes.visibleRange(first, rows, alongX, 0, alongX ? width : height)
+                    : new int[] {first, first};
+            first += rows;
+            for (int row = range[0]; row < range[1]; row++) {
+                NodeBox box = boxes.get(row);
+                if (inViewport(box, width, height)) {
+                    if (blocks) {
+                        layoutDrawBlockRow(g, box);
+                    } else {
+                        drawNode(g, box);
+                    }
                 }
             }
         }
@@ -6052,11 +6070,28 @@ final class MapSurface extends Region {
         return high > max ? max - high : 0;
     }
 
+    /**
+     * The row under {@code (x, y)}, the last drawn one where rows overlap. Only the rows of the columns under the
+     * point that can reach it are read (PERF-08, Pauta 6.0.1): a resting pointer is hit-tested at every paint.
+     */
     private @Nullable NodeBox hit(double x, double y) {
-        for (int i = boxes.size() - 1; i >= 0; i--) {
-            NodeBox box = boxes.get(i);
-            if (x >= box.x() && x <= box.x() + box.width() && y >= box.y() && y <= box.y() + box.height()) {
-                return box;
+        boolean alongX = isVerticalFlow();
+        int end = boxes.size();
+        for (int c = columnBoxes.size() - 1; c >= 0; c--) {
+            ColumnBox column = columnBoxes.get(c);
+            int first = end - column.column().entries().size();
+            int count = end - first;
+            end = first;
+            if (count <= 0 || first < 0) {
+                continue;
+            }
+            double along = alongX ? x : y;
+            int[] range = boxes.visibleRange(first, count, alongX, along, along);
+            for (int i = range[1] - 1; i >= range[0]; i--) {
+                NodeBox box = boxes.get(i);
+                if (x >= box.x() && x <= box.x() + box.width() && y >= box.y() && y <= box.y() + box.height()) {
+                    return box;
+                }
             }
         }
         return null;
@@ -6272,13 +6307,19 @@ final class MapSurface extends Region {
                     }
                 }
                 int position = 0;
+                // Only the rows that can be on screen are projected; the others are counted for the position.
+                int[] range =
+                        boxes.visibleRange(first, next - first, isVerticalFlow(), 0, isVerticalFlow() ? width : height);
                 for (int index = first; index < next; index++) {
-                    NodeBox box = boxes.get(index);
-                    ProjectMapModel.Entry entry = box.entry();
+                    ProjectMapModel.Entry entry = rows.get(index - first);
                     if (entry.isPlaceholder()) {
                         continue;
                     }
                     position++;
+                    if (index < range[0] || index >= range[1]) {
+                        continue;
+                    }
+                    NodeBox box = boxes.get(index);
                     if (!inViewport(box, width, height)) {
                         continue;
                     }
@@ -6540,6 +6581,14 @@ final class MapSurface extends Region {
         WorldLayout world = projected;
         Integer index = path == null || world == null ? null : world.firstRows().get(path);
         return index == null || index >= boxes.size() ? null : boxes.get(index);
+    }
+
+    /** Whether any of {@code column}'s card is on the screen; its rows lie inside it. */
+    private static boolean columnOnScreen(ColumnBox column, double width, double height) {
+        return column.x() <= width
+                && column.y() <= height
+                && column.x() + column.width() >= 0
+                && column.y() + column.height() >= 0;
     }
 
     private boolean inViewport(NodeBox box, double width, double height) {

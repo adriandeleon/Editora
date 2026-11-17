@@ -165,10 +165,12 @@ public final class PreviewSelection {
         return isActive();
     }
 
+    /** The first (or last) place with text in the document; builds the blocks it reads past, from that end. */
     private @Nullable Pos edge(boolean start) {
-        ObservableList<Node> blocks = column.getChildren();
-        for (int k = 0; k < blocks.size(); k++) {
-            List<Region> leaves = leaves(blocks.get(start ? k : blocks.size() - 1 - k));
+        int count = preview.blockCount();
+        for (int k = 0; k < count; k++) {
+            Node block = preview.blockNode(start ? k : count - 1 - k);
+            List<Region> leaves = block == null ? List.of() : leaves(block);
             if (!leaves.isEmpty()) {
                 Region leaf = start ? leaves.get(0) : leaves.get(leaves.size() - 1);
                 return new Pos(leaf, start ? 0 : length(leaf));
@@ -195,6 +197,9 @@ public final class PreviewSelection {
     }
 
     private void changed() {
+        // The blocks the two ends are in stay in the scene, wherever the column is scrolled (PERF-08: it holds
+        // only the blocks in view otherwise).
+        preview.pinBlocks(anchor == null ? null : anchor.leaf(), focus == null ? null : focus.leaf());
         if (pane != null) {
             // While something is selected, the editing and caret chords belong to the preview (Copy, Select
             // All, Shift-arrows) instead of the editor command they are bound to.
@@ -251,18 +256,14 @@ public final class PreviewSelection {
         }
     }
 
-    /** The top-level block {@code node} is in, or null when it is not in the document (any more). */
-    private Node blockOf(Node node) {
-        Node n = node;
-        while (n != null && n.getParent() != column) {
-            n = n.getParent();
-        }
-        return n;
+    /** The top-level block {@code node} is in, or null when it is not in a block. */
+    private @Nullable Node blockOf(Node node) {
+        return preview.blockRootOf(node);
     }
 
+    /** The index in the document of the block {@code node} is in; -1 when it is not of the current render. */
     private int blockIndex(Node node) {
-        Node block = blockOf(node);
-        return block == null ? -1 : column.getChildren().indexOf(block);
+        return preview.blockIndexOf(node);
     }
 
     /** Negative, zero or positive as {@code a} is before, at or after {@code b} in reading order. */
@@ -275,7 +276,8 @@ public final class PreviewSelection {
         if (ba != bb) {
             return Integer.compare(ba, bb);
         }
-        List<Region> leaves = leaves(blockOf(a.leaf()));
+        Node block = blockOf(a.leaf());
+        List<Region> leaves = block == null ? List.of() : leaves(block);
         return Integer.compare(leaves.indexOf(a.leaf()), leaves.indexOf(b.leaf()));
     }
 
@@ -361,7 +363,10 @@ public final class PreviewSelection {
 
     // --- pointing ---------------------------------------------------------------------------------------
 
-    /** The index of the block at document offset {@code y} (column coordinates), the nearest when in a gap. */
+    /**
+     * The index among the column's children (the blocks in the scene) of the one at offset {@code y} (column
+     * coordinates), the nearest when in a gap. Pointing only ever reaches what is on screen.
+     */
     private int blockAt(double y) {
         ObservableList<Node> blocks = column.getChildren();
         int lo = 0;
@@ -598,9 +603,10 @@ public final class PreviewSelection {
         if (at >= 0 && at < leaves.size()) {
             return leaves.get(at);
         }
-        ObservableList<Node> blocks = column.getChildren();
-        for (int i = blocks.indexOf(block) + (forward ? 1 : -1); i >= 0 && i < blocks.size(); i += forward ? 1 : -1) {
-            List<Region> other = leaves(blocks.get(i));
+        int count = preview.blockCount();
+        for (int i = blockIndex(block) + (forward ? 1 : -1); i >= 0 && i < count; i += forward ? 1 : -1) {
+            Node next = preview.blockNode(i);
+            List<Region> other = next == null ? List.of() : leaves(next);
             if (!other.isEmpty()) {
                 return forward ? other.get(0) : other.get(other.size() - 1);
             }
@@ -664,10 +670,11 @@ public final class PreviewSelection {
     record Part(Region leaf, int from, int to, int block) {}
 
     /**
-     * The selected parts of the blocks {@code firstBlock}…{@code lastBlock} (indices in the column; clipped to
-     * the selection), in reading order.
+     * The selected parts of the blocks {@code firstBlock}…{@code lastBlock} (indices in the document; clipped to
+     * the selection), in reading order. With {@code build}, a block of the selection that is not built is
+     * built to be read (Copy); without, it is left out (the highlight is drawn for what is built).
      */
-    List<Part> parts(int firstBlock, int lastBlock) {
+    List<Part> parts(int firstBlock, int lastBlock, boolean build) {
         List<Part> out = new ArrayList<>();
         Pos anchorAt = anchor;
         Pos focusAt = focus;
@@ -682,9 +689,12 @@ public final class PreviewSelection {
         if (sb < 0 || eb < 0) {
             return out;
         }
-        ObservableList<Node> blocks = column.getChildren();
         for (int i = Math.max(sb, firstBlock); i <= Math.min(eb, lastBlock); i++) {
-            List<Region> leaves = leaves(blocks.get(i));
+            Node block = build ? preview.blockNode(i) : preview.builtNode(i);
+            if (block == null) {
+                continue;
+            }
+            List<Region> leaves = leaves(block);
             int from = i == sb ? leaves.indexOf(start.leaf()) : 0;
             int to = i == eb ? leaves.indexOf(end.leaf()) : leaves.size() - 1;
             for (int k = Math.max(0, from); k <= to && k < leaves.size(); k++) {
@@ -701,26 +711,37 @@ public final class PreviewSelection {
 
     /** Every selected part. */
     List<Part> parts() {
-        return parts(0, Integer.MAX_VALUE - 1);
+        return parts(0, Integer.MAX_VALUE - 1, true);
     }
 
-    /** The first and last block of the selection (indices in the column) when it is exactly whole blocks,
-     *  else null. */
+    /**
+     * The first and last block of the selection (indices in the document) when it is exactly whole blocks,
+     * else null. Reads only the two ends: the blocks between need not be built.
+     */
     int @Nullable [] wholeBlocks() {
-        List<Part> parts = parts();
-        if (parts.isEmpty()) {
+        Pos anchorAt = anchor;
+        Pos focusAt = focus;
+        if (anchorAt == null || focusAt == null || !isActive()) {
             return null;
         }
-        Part first = parts.get(0);
-        Part last = parts.get(parts.size() - 1);
-        ObservableList<Node> blocks = column.getChildren();
-        List<Region> head = leaves(blocks.get(first.block()));
-        List<Region> tail = leaves(blocks.get(last.block()));
-        boolean whole = first.from() == 0
-                && head.get(0) == first.leaf()
-                && last.to() == length(last.leaf())
-                && tail.get(tail.size() - 1) == last.leaf();
-        return whole ? new int[] {first.block(), last.block()} : null;
+        boolean forward = compare(anchorAt, focusAt) <= 0;
+        Pos start = forward ? anchorAt : focusAt;
+        Pos end = forward ? focusAt : anchorAt;
+        Node head = blockOf(start.leaf());
+        Node tail = blockOf(end.leaf());
+        int first = blockIndex(start.leaf());
+        int last = blockIndex(end.leaf());
+        if (head == null || tail == null || first < 0 || last < 0) {
+            return null;
+        }
+        List<Region> headLeaves = leaves(head);
+        List<Region> tailLeaves = leaves(tail);
+        boolean whole = start.offset() == 0
+                && !headLeaves.isEmpty()
+                && headLeaves.get(0) == start.leaf()
+                && end.offset() == length(end.leaf())
+                && tailLeaves.get(tailLeaves.size() - 1) == end.leaf();
+        return whole ? new int[] {first, last} : null;
     }
 
     // --- painting ---------------------------------------------------------------------------------------
@@ -750,9 +771,9 @@ public final class PreviewSelection {
             top = origin.getY() - OVERSCAN;
             bottom = origin.getY() + pane.getHeight() + OVERSCAN;
         }
-        int first = Math.max(0, blockAt(top));
-        int last = Math.max(first, blockAt(bottom));
-        for (Part part : parts(first, last)) {
+        int first = Math.max(0, preview.blockAtY(top));
+        int last = Math.max(first, preview.blockAtY(bottom));
+        for (Part part : parts(first, last, false)) {
             Shape shape = shapeOf(part);
             if (shape != null) {
                 shape.setFill(swatch.getFill());

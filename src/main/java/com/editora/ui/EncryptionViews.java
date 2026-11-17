@@ -31,6 +31,9 @@ import static com.editora.i18n.Messages.tr;
  */
 final class EncryptionViews {
 
+    /** The info card lists this many recipients at most, and says how many there are past them (PERF-08). */
+    static final int MAX_RECIPIENTS = 50;
+
     private EncryptionViews() {}
 
     // ---- words -------------------------------------------------------------------------------------------------
@@ -433,7 +436,7 @@ final class EncryptionViews {
         if (state.mode() == EncryptionState.Mode.PASSPHRASE) {
             people.getChildren().add(infoRow(tr("encryption.info.anyoneWithPassphrase")));
         } else {
-            for (EncryptionState.Recipient r : state.recipients()) {
+            for (EncryptionState.Recipient r : ListCap.head(state.recipients(), MAX_RECIPIENTS)) {
                 HBox row = infoRow(r.label());
                 if (r.you()) {
                     row.getChildren().add(pill(tr("encryption.pill.you"), "encryption-pill-you"));
@@ -448,6 +451,10 @@ final class EncryptionViews {
                                             : pill(tr("encryption.pill.notVerified"), "encryption-pill-amber"));
                 }
                 people.getChildren().add(row);
+            }
+            Label more = ListCap.label(state.recipients().size(), MAX_RECIPIENTS, "encryption-info-more");
+            if (more != null) {
+                people.getChildren().add(more);
             }
         }
         card.getChildren().add(people);

@@ -1055,6 +1055,23 @@
     -fx-border-width: 0;
 }
 .crontab-preview { -fx-background-color: -color-bg-default; -fx-padding: 10; -fx-spacing: 2; }
+/* The live structured previews (fstab, systemd, ssh config, Dockerfile, GitHub Actions, OpenAPI docs): their rows in
+   a virtualized list that looks as the column of .xxx-preview does (PreviewList). A read-out: a row is not selected,
+   hovered or focused. The cell's bottom padding is the column's spacing. */
+.structured-preview-list { -fx-background-color: -color-bg-default; -fx-border-width: 0; -fx-padding: 10; }
+.structured-preview-list .list-cell,
+.structured-preview-list .list-cell:hover,
+.structured-preview-list .list-cell:selected,
+.structured-preview-list .list-cell:focused {
+    -fx-padding: 0 0 2 0;
+    -fx-background-color: transparent;
+    -fx-border-width: 0;
+}
+.structured-preview-list.openapi-doc-list { -fx-padding: 16; }
+.structured-preview-list.openapi-doc-list .list-cell,
+.structured-preview-list.openapi-doc-list .list-cell:hover,
+.structured-preview-list.openapi-doc-list .list-cell:selected,
+.structured-preview-list.openapi-doc-list .list-cell:focused { -fx-padding: 0 0 6 0; }
 .crontab-header { -fx-text-fill: -color-fg-muted; -fx-padding: 0 0 8 0; }
 .crontab-assign { -fx-text-fill: -color-fg-muted; -fx-font-family: monospace; }
 .crontab-job { -fx-padding: 8 0 8 0; -fx-spacing: 2; -fx-border-color: transparent transparent -color-border-muted transparent; -fx-border-width: 0 0 0.5 0; }
@@ -5064,6 +5081,13 @@
 .http-panel .http-empty-row { -fx-padding: 4 8 4 8; -fx-background-radius: 5; -fx-cursor: hand; }
 .http-panel .http-empty-row:hover { -fx-background-color: -color-neutral-muted; }
 .http-panel .http-empty-row:caret { -fx-background-color: -state-sel; }
+/* The request rows are a virtualized list (PERF-08): it draws no box of its own, and its cells look as the row buttons
+   did. The row the keyboard is on is marked while the list has the keyboard. */
+.http-panel .http-empty-rows { -fx-background-color: transparent; -fx-border-width: 0; -fx-padding: 0; }
+.http-panel .http-empty-rows .list-cell.http-empty-row { -fx-background-color: transparent; -fx-text-fill: -color-fg-default; }
+.http-panel .http-empty-rows .list-cell.http-empty-row:hover { -fx-background-color: -color-neutral-muted; }
+.http-panel .http-empty-rows .list-cell.http-empty-row:caret { -fx-background-color: -state-sel; }
+.http-panel .http-empty-rows:focused .list-cell.http-empty-row:selected { -fx-background-color: -color-accent-subtle; }
 .http-panel .http-empty-method {
     -fx-font-family: "JetBrains Mono", "monospace";
     -fx-font-weight: bold;
@@ -5636,6 +5660,8 @@
 .merge-theirs { -fx-control-inner-background: rgba(68, 147, 248, 0.10); }
 .merge-base { -fx-control-inner-background: rgba(139, 148, 158, 0.12); }
 .merge-chosen { -fx-text-fill: -color-success-fg; -fx-font-size: 11px; }
+/* A file of more conflicts than a page holds: which are shown, and the way to the others. */
+.merge-page { -fx-text-fill: -color-fg-muted; }
 .merge-result-box { -fx-background-color: -color-bg-default; }
 /* References preview runs: same scheme as the Structure signature runs above. */
 .references-panel .reference-code {

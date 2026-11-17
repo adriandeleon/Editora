@@ -47,6 +47,12 @@ public final class MarkwhenTimeline {
     private static final double INDENT = 14;
     private static final int MAX_EVENTS = 500;
 
+    /**
+     * The most rows the timeline draws, a group's heading row and an event's alike (PERF-08, Pauta 6.0.1): a file of
+     * headings over few events is as many rows as a file of events.
+     */
+    static final int MAX_ROWS = 1000;
+
     /** One rendered line: an event (a bar/point) or a {@code #}-header group (a label + optional band). */
     private record Row(MwNode node, int depth) {}
 
@@ -63,6 +69,9 @@ public final class MarkwhenTimeline {
         }
         if (count[0] > MAX_EVENTS) {
             return placeholder(model.title(), Messages.tr("markwhen.timeline.tooLarge", count[0]));
+        }
+        if (rows.size() > MAX_ROWS) {
+            return placeholder(model.title(), Messages.tr("markwhen.timeline.tooManyRows", rows.size(), MAX_ROWS));
         }
 
         long min = domain[0];

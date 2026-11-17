@@ -997,10 +997,31 @@ public final class StatusBar extends HBox {
      * A108). Called on attach/refresh and once per typing burst; a file without a tab costs one scan for one.
      */
     private void refreshIndent(EditorBuffer buffer) {
-        int bad = buffer.isPython()
-                ? com.editora.editops.PythonScan.inconsistentTabLine(
-                        buffer.getArea().getText())
-                : -1;
+        long gen = ++indentGen;
+        if (!buffer.isPython()) {
+            showIndent(buffer, -1);
+            return;
+        }
+        // The buffer's shared text; scanned here when small, else off the FX thread (PERF-08, Pauta 6.0.1).
+        String text = buffer.text();
+        if (text.length() <= INLINE_SIZE_CHARS) {
+            showIndent(buffer, com.editora.editops.PythonScan.inconsistentTabLine(text));
+            return;
+        }
+        sizeCounter.execute(() -> {
+            int bad = com.editora.editops.PythonScan.inconsistentTabLine(text);
+            Platform.runLater(() -> {
+                if (gen == indentGen && activeBuffer.get() == buffer) {
+                    showIndent(buffer, bad);
+                }
+            });
+        });
+    }
+
+    /** Which {@link #refreshIndent} is the latest: an older scan that lands later is dropped. */
+    private long indentGen;
+
+    private void showIndent(EditorBuffer buffer, int bad) {
         indent.setText(tr(bad < 0 ? "statusbar.tabSizeShort" : "statusbar.tabSizeMixed", buffer.getTabSize()));
         indent.getTooltip()
                 .setText(bad < 0 ? tr("statusbar.tip.setTabSize") : tr("statusbar.tip.indentMixed", bad + 1));

@@ -54,4 +54,34 @@ class StatusBarPythonIndentFxTest {
             assertFalse(indent.getStyleClass().contains("status-encoding-assumed"));
         });
     }
+
+    @Test
+    void aLargePythonFileIsScannedOffTheFxThread() throws Exception {
+        String big = "def f():\n" + "    x = 1\n".repeat(40_000) + "\treturn 1\n";
+        java.util.List<Runnable> held = new java.util.ArrayList<>();
+        Object[] made = FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setLanguageOverride("python");
+            b.setContent(big);
+            b.getNode();
+            StatusBar sb = new StatusBar(() -> b, new CommandRegistry(), Settings::new);
+            sb.sizeCounter = held::add; // held back: what runs off the FX thread waits here
+            sb.attach(b);
+            return new Object[] {sb, b};
+        });
+        StatusBar sb = (StatusBar) made[0];
+        Label indent = FxTestSupport.callOnFx(() -> FxTestSupport.field(sb, "indent"));
+        FxTestSupport.runOnFx(() -> {
+            assertTrue(big.length() > StatusBar.INLINE_SIZE_CHARS);
+            assertFalse(indent.getText().contains("mixed"), "not scanned on the FX thread");
+            assertFalse(held.isEmpty());
+        });
+        java.util.List<Runnable> tasks = FxTestSupport.callOnFx(() -> java.util.List.copyOf(held));
+        tasks.forEach(Runnable::run);
+        FxTestSupport.drainFx();
+        FxTestSupport.runOnFx(() -> {
+            assertTrue(indent.getText().endsWith("mixed indent"), indent.getText());
+            assertTrue(indent.getTooltip().getText().startsWith("Line 40002 mixes tabs and spaces"));
+        });
+    }
 }
