@@ -161,14 +161,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1562"
     },
     {
-      "rule": "WIN-12",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/window-shell/#win-12",
-      "kind": "pending",
-      "reason": "The Print Preview window does not follow the interface zoom: its pages are drawn at the size they print at, and its bar with them.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1562"
-    },
-    {
       "rule": "WIN-13",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/window-shell/#win-13",
@@ -221,7 +213,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/settings/#set-06",
       "kind": "pending",
-      "reason": "A few settings, terminal notifications among them, have no command in the Command Palette.",
+      "reason": "Every setting has a command in the Command Palette except the terminal's multi-line paste confirmation, which should be turned off only in the config file, and so should lose its Settings row rather than gain a command.",
       "link": "https://github.com/adriandeleon/Editora/issues/1568"
     },
     {

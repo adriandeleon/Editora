@@ -6007,7 +6007,8 @@
 /* PDF viewer — mirrors the image viewer, plus page navigation. */
 .pdf-viewer { -fx-background-color: -color-bg-default; }
 /* Print preview: the sheet is paper, white in every theme (the printer's, not the window's ground), lifted by a shadow. */
-.print-preview-sheet { -fx-background-color: -paper; -fx-effect: dropshadow(gaussian, -shadow-strong, 12, 0, 0, 3); }
+.print-preview-sheet { -fx-background-color: -paper; }
+.print-preview-paper { -fx-effect: dropshadow(gaussian, -shadow-strong, 12, 0, 0, 3); }
 .pdf-viewer-bar {
     -fx-background-color: -color-bg-subtle;
     -fx-border-color: transparent transparent -color-border-default transparent;
