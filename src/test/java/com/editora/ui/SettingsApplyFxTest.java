@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -252,17 +253,24 @@ class SettingsApplyFxTest {
             String shown = adapter.getValue().getText();
             adapter.getValue().setText(shown + "x");
             adapter.getValue().setText(shown); // typed and deleted again
-            Path file = fx.configDir.resolve("settings.json");
-            try {
-                Files.deleteIfExists(file);
-            } catch (java.io.IOException e) {
-                throw new java.io.UncheckedIOException(e);
-            }
-            adapter.getValue().fireEvent(new ActionEvent());
-            assertFalse(Files.exists(file), "an unchanged command is not saved and re-applied");
-            flip(control("minimapCheck"));
-            assertTrue(Files.exists(file), "(a real change is written at once)");
         });
+        // Saves are queued for the config writer (PERF-01): wait for them off the FX thread before each look.
+        Path file = fx.configDir.resolve("settings.json");
+        settle(fx);
+        String saved = Files.exists(file) ? Files.readString(file) : "";
+        FxTestSupport.runOnFx(() -> {
+            Map<String, TextField> debug = control("debugCommandFields");
+            debug.entrySet().iterator().next().getValue().fireEvent(new ActionEvent());
+        });
+        settle(fx);
+        // A session save may rewrite the file at any time; an unchanged command must not change it.
+        assertEquals(
+                saved,
+                Files.exists(file) ? Files.readString(file) : "",
+                "an unchanged command is not saved and re-applied");
+        FxTestSupport.runOnFx(() -> flip(control("minimapCheck")));
+        settle(fx);
+        assertNotEquals(saved, Files.readString(file), "(a real change is written)");
     }
 
     /** S3-11: with Settings open in two windows, one window's stale controls used to revert the other's change. */
@@ -341,5 +349,16 @@ class SettingsApplyFxTest {
             assertFalse(toolWindows.isVisible(structure), "re-reading the row changes nothing");
             assertEquals(moved, toolWindows.currentSide(structure));
         });
+    }
+    /**
+     * Lets the background looks the window started land, and the saves they and the FX thread queued reach the
+     * disk (PERF-01 moved both off the FX thread), so a file check sees only what the step under test did.
+     */
+    private static void settle(FxWindowFixture fx) throws Exception {
+        for (int i = 0; i < 3; i++) {
+            Thread.sleep(50);
+            FxTestSupport.drainFx();
+            fx.shared.awaitWrites();
+        }
     }
 }

@@ -2041,10 +2041,15 @@ final class DiffCoordinator {
             }
             onSnapshot.accept(result);
             byte[] bytes = result.found() ? result.bytes() : new byte[0];
-            onText.accept(
-                    BinaryDiff.isProbablyBinary(bytes)
-                            ? DiffContent.presentation(BinaryDiff.describe(bytes))
-                            : DiffContent.decoded(DiffSideText.decodeRaw(bytes, ecCharset, openCharset(file))));
+            String opened = openCharset(file);
+            // Sniffed, hashed (a binary blob's digest) or decoded off the FX thread (PERF-01, Pauta 6.0.1).
+            submitFileRead(() -> {
+                com.editora.perf.BlockingSites.enter("DiffCoordinator.blobSide");
+                DiffContent side = BinaryDiff.isProbablyBinary(bytes)
+                        ? DiffContent.presentation(BinaryDiff.describe(bytes))
+                        : DiffContent.decoded(DiffSideText.decodeRaw(bytes, ecCharset, opened));
+                javafx.application.Platform.runLater(() -> onText.accept(side));
+            });
         });
     }
 
@@ -2167,19 +2172,24 @@ final class DiffCoordinator {
                                                 host.setStatus(tr("status.git.blobTooLarge"));
                                                 return;
                                             }
-                                            if (!base.found()
-                                                    || !ours.found()
-                                                    || !theirs.found()
-                                                    || BinaryDiff.isProbablyBinary(base.bytes())
-                                                    || BinaryDiff.isProbablyBinary(ours.bytes())
-                                                    || BinaryDiff.isProbablyBinary(theirs.bytes())) {
+                                            if (!base.found() || !ours.found() || !theirs.found()) {
                                                 openMarkerMergeOrReport(b, text, format, hasMarkers);
                                                 return;
                                             }
-                                            String baseText = decodeMergeBlob(base.bytes(), charset, openCharset);
-                                            String oursText = decodeMergeBlob(ours.bytes(), charset, openCharset);
-                                            String theirsText = decodeMergeBlob(theirs.bytes(), charset, openCharset);
+                                            // The binary checks and the decoding of the three versions run off the
+                                            // FX thread with the merge (PERF-01, Pauta 6.0.1).
                                             submitFileRead(() -> {
+                                                if (BinaryDiff.isProbablyBinary(base.bytes())
+                                                        || BinaryDiff.isProbablyBinary(ours.bytes())
+                                                        || BinaryDiff.isProbablyBinary(theirs.bytes())) {
+                                                    javafx.application.Platform.runLater(
+                                                            () -> openMarkerMergeOrReport(b, text, format, hasMarkers));
+                                                    return;
+                                                }
+                                                String baseText = decodeMergeBlob(base.bytes(), charset, openCharset);
+                                                String oursText = decodeMergeBlob(ours.bytes(), charset, openCharset);
+                                                String theirsText =
+                                                        decodeMergeBlob(theirs.bytes(), charset, openCharset);
                                                 ThreeWayMerge.Result result =
                                                         ThreeWayMerge.merge(baseText, oursText, theirsText);
                                                 javafx.application.Platform.runLater(() -> {

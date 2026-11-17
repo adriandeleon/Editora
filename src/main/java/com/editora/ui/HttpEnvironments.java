@@ -45,12 +45,58 @@ final class HttpEnvironments {
 
         /** The variables of {@code environment}, merged as JetBrains does (see {@link HttpEnv#merged}). */
         Map<String, String> variables(String environment) {
-            return HttpEnv.merged(orBlank(publicJson), orBlank(privateJson), environment);
+            if (environment == null || environment.isEmpty()) {
+                return Map.of();
+            }
+            Parsed p = parsed();
+            Map<String, String> known = p.variables().get(environment);
+            return new java.util.LinkedHashMap<>(known != null ? known : p.sharedOnly()); // a copy: callers add to it
         }
 
         /** The environment names of both files, public first, then private-only ones. */
         List<String> names() {
-            return HttpEnv.environmentNames(orBlank(publicJson), orBlank(privateJson));
+            return new java.util.ArrayList<>(parsed().names());
+        }
+
+        /**
+         * Parses both files now and keeps what they hold: called where they are read, off the FX thread, so the FX
+         * thread's {@link #variables}, {@link #names} and {@link #problems} parse nothing (PERF-01, Pauta 6.0.1).
+         */
+        EnvFiles prepare() {
+            parsed();
+            return this;
+        }
+
+        private Parsed parsed() {
+            String key = orBlank(publicJson) + '\u0001' + orBlank(privateJson);
+            Parsed kept = PARSED.get(key);
+            if (kept != null) {
+                return kept;
+            }
+            com.editora.perf.BlockingSites.enter("HttpEnvironments.parse");
+            String pub = orBlank(publicJson);
+            String priv = orBlank(privateJson);
+            List<String> names = HttpEnv.environmentNames(pub, priv);
+            Map<String, Map<String, String>> variables = new java.util.LinkedHashMap<>();
+            for (String name : names) {
+                variables.put(name, HttpEnv.merged(pub, priv, name));
+            }
+            List<String> problems = new java.util.ArrayList<>();
+            String pubProblem = publicJson == null ? null : HttpEnv.problem(publicJson);
+            if (pubProblem != null) {
+                problems.add(tr("http.env.unreadable", HttpEnv.PUBLIC_FILE, pubProblem));
+            }
+            String privProblem = privateJson == null ? null : HttpEnv.problem(privateJson);
+            if (privProblem != null) {
+                problems.add(tr("http.env.unreadable", HttpEnv.PRIVATE_FILE, privProblem));
+            }
+            Parsed made = new Parsed(
+                    List.copyOf(names), variables, HttpEnv.merged(pub, priv, "\u0000"), List.copyOf(problems));
+            if (PARSED.size() >= 32) {
+                PARSED.clear();
+            }
+            PARSED.put(key, made);
+            return made;
         }
 
         /** An absent file as HttpEnv reads it: a blank one contributes nothing, the same as none. */
@@ -64,18 +110,19 @@ final class HttpEnvironments {
          * instead of every variable in it being reported as undefined. Empty when both files are usable.
          */
         List<String> problems() {
-            List<String> out = new java.util.ArrayList<>();
-            String pub = publicJson == null ? null : HttpEnv.problem(publicJson);
-            if (pub != null) {
-                out.add(tr("http.env.unreadable", HttpEnv.PUBLIC_FILE, pub));
-            }
-            String priv = privateJson == null ? null : HttpEnv.problem(privateJson);
-            if (priv != null) {
-                out.add(tr("http.env.unreadable", HttpEnv.PRIVATE_FILE, priv));
-            }
-            return out;
+            return new java.util.ArrayList<>(parsed().problems());
         }
     }
+
+    /** What a pair of env files holds, parsed once ({@link EnvFiles#prepare}). */
+    private record Parsed(
+            List<String> names,
+            Map<String, Map<String, String>> variables,
+            Map<String, String> sharedOnly,
+            List<String> problems) {}
+
+    /** Parsed env file pairs by their text: a few, the folders of a session. */
+    private static final Map<String, Parsed> PARSED = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** Reads both env files of {@code dir} (none when {@code dir} is null). */
     static EnvFiles read(@Nullable Path dir) {
@@ -83,7 +130,10 @@ final class HttpEnvironments {
             return new EnvFiles(null, null, null);
         }
         return new EnvFiles(
-                dir, readOrNull(dir.resolve(HttpEnv.PUBLIC_FILE)), readOrNull(dir.resolve(HttpEnv.PRIVATE_FILE)));
+                        dir,
+                        readOrNull(dir.resolve(HttpEnv.PUBLIC_FILE)),
+                        readOrNull(dir.resolve(HttpEnv.PRIVATE_FILE)))
+                .prepare(); // parsed here, where they are read, off the FX thread
     }
 
     /**

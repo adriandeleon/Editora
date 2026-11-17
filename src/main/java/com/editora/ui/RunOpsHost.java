@@ -175,11 +175,11 @@ final class RunOpsHost implements RunCoordinator.Ops {
 
     /**
      * Whether a folder holds a pom ({@code [0]}) and Gradle build files ({@code [1]}), as last looked. A launch's
-     * plan looks off the FX thread, which refreshes the answer; the FX thread then answers from it (PERF-01, Pauta
-     * 6.0.1), and looks itself only for a folder no plan has looked at.
+     * plan looks off the FX thread; an FX command that needs a folder no look has filled waits for one first
+     * ({@code Looked.allKnown}), so the FX thread answers from memory (PERF-01, Pauta 6.0.1).
      */
-    private static final java.util.Map<java.nio.file.Path, boolean[]> BUILD_FILES =
-            new java.util.concurrent.ConcurrentHashMap<>();
+    private static final com.editora.perf.Looked<java.nio.file.Path, boolean[]> BUILD_FILES =
+            new com.editora.perf.Looked<>("RunOpsHost.buildFiles", RunOpsHost::buildFilesNow);
 
     /** Whether {@code root} holds a pom, as last looked ({@link #buildFiles}). */
     static boolean isMavenProject(java.nio.file.Path root) {
@@ -188,10 +188,10 @@ final class RunOpsHost implements RunCoordinator.Ops {
 
     static boolean[] buildFiles(java.nio.file.Path root) {
         boolean[] known = BUILD_FILES.get(root);
-        if (known != null && javafx.application.Platform.isFxApplicationThread()) {
-            return known;
-        }
-        com.editora.perf.BlockingSites.enter("RunOpsHost.buildFiles");
+        return known != null ? known : new boolean[2];
+    }
+
+    private static boolean[] buildFilesNow(java.nio.file.Path root) {
         boolean gradle = false;
         for (String m : List.of("build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts")) {
             if (java.nio.file.Files.isRegularFile(root.resolve(m))) {
@@ -199,12 +199,7 @@ final class RunOpsHost implements RunCoordinator.Ops {
                 break;
             }
         }
-        boolean[] now = {java.nio.file.Files.isRegularFile(root.resolve("pom.xml")), gradle};
-        if (BUILD_FILES.size() > 256) {
-            BUILD_FILES.clear(); // a bound: the folders of a session, not of all time
-        }
-        BUILD_FILES.put(root, now);
-        return now;
+        return new boolean[] {java.nio.file.Files.isRegularFile(root.resolve("pom.xml")), gradle};
     }
 
     @Override
@@ -221,6 +216,9 @@ final class RunOpsHost implements RunCoordinator.Ops {
             java.util.function.Consumer<List<String>> cb) {
         Thread.ofVirtual().name("editora-maven-cp").start(() -> {
             List<String> result = com.editora.maven.MavenClasspathResolver.resolve(root, jdkHome, executable, scope);
+            // what the launch asks next on the FX thread, looked at here (PERF-01, Pauta 6.0.1)
+            com.editora.run.JdkToolchain.isGone(jdkHome);
+            com.editora.run.JdkToolchain.inheritedJavaExecutable(System.getenv());
             Platform.runLater(() -> cb.accept(result));
         });
     }
@@ -230,6 +228,20 @@ final class RunOpsHost implements RunCoordinator.Ops {
         for (BuildCoordinator c : mc.buildCoordinators) {
             if (c.tool() == tool) {
                 c.warmTrustedExecutable(root, mc.projectRoot());
+            }
+        }
+    }
+
+    @Override
+    public void buildExecutableFacts(BuildTool tool, java.nio.file.Path root) {
+        buildExecutableFacts(mc, tool, root);
+    }
+
+    /** {@link BuildCoordinator#trustFacts} of {@code tool}'s coordinator: what its trusted executable asks. */
+    static void buildExecutableFacts(MainController mc, BuildTool tool, java.nio.file.Path root) {
+        for (BuildCoordinator c : mc.buildCoordinators) {
+            if (c.tool() == tool) {
+                c.trustFacts(root);
             }
         }
     }

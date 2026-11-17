@@ -206,9 +206,21 @@ final class SettingsWebPage {
         // Blank: the shared Node.js setting, as the run uses it (review E6).
         String shown = com.editora.http.HttpNodeChoice.displayed(
                 config.getSettings().getHttpNodePath(), config.getSettings().getNodePath());
-        String found = ToolStatusRow.pathOf(com.editora.run.ProgramArgs.commandLine(shown));
-        httpNodeStatus.show(!found.isEmpty(), found, httpCheck.isSelected() && httpScriptsCheck.isSelected());
+        java.util.List<String> argv = com.editora.run.ProgramArgs.commandLine(shown);
+        boolean on = httpCheck.isSelected() && httpScriptsCheck.isSelected();
+        long mine = ++nodeLooks;
+        // Whether it is there is looked at off the FX thread (PERF-01, Pauta 6.0.1); the row says so when it lands.
+        com.editora.perf.OffFx.then(
+                "SettingsWebPage.httpNode", () -> com.editora.doctor.DoctorProbes.lookAt(argv), a -> {
+                    if (mine == nodeLooks) {
+                        String found = a.or("");
+                        httpNodeStatus.show(!found.isEmpty(), found, on);
+                    }
+                });
     }
+
+    /** The latest look at the HTTP scripts' node: an older one that lands later is dropped. */
+    private long nodeLooks;
 
     void load(Settings settings) {
         httpCheck.setSelected(settings.isHttpClientSupport());

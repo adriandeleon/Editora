@@ -248,6 +248,8 @@ class HttpInlineResultsFxTest {
             host.settings.setHttpInlineResults(true);
             coordinator.applySupport();
         });
+        // The results are worked out off the FX thread (PERF-01): they come back a moment later.
+        await(b::httpResults, r -> r.size() == 2, "on again: from the same History");
         assertEquals(2, shown(b).size(), "on again: from the same History");
 
         // Reopened: the saved history puts them back.

@@ -2135,10 +2135,10 @@ public final class TerminalView extends Region {
         return exists(resolved) ? resolved : null;
     }
 
-    /** What remote paths are known to be there, as answered off the FX thread; a few hundred at most. */
-    private final java.util.Map<java.nio.file.Path, Boolean> remoteExists = new java.util.LinkedHashMap<>();
+    /** What paths are known to be there, as answered off the FX thread; a few hundred at most. */
+    private final java.util.Map<java.nio.file.Path, Checked> pathChecks = new java.util.LinkedHashMap<>();
 
-    private final java.util.Set<java.nio.file.Path> remoteAsking = new java.util.HashSet<>();
+    private final java.util.Set<java.nio.file.Path> pathAsking = new java.util.HashSet<>();
 
     /**
      * Whether {@code path} is there. On this machine it is asked at once (a local stat is cheap); a remote shell's
@@ -2148,11 +2148,17 @@ public final class TerminalView extends Region {
      */
     private boolean exists(java.nio.file.@Nullable Path path) {
         if (path == null) return false;
-        if (shellPaths == null || com.editora.vfs.Vfs.isLocal(path)) return java.nio.file.Files.exists(path);
-        Boolean known = remoteExists.get(path);
-        if (known != null) return known;
-        if (remoteAsking.add(path)) {
+        // Local or remote, the stat runs off the FX thread (PERF-01, Pauta 6.0.1): a hover answers what was last
+        // looked at and asks again behind an answer older than two seconds; the hover is redone when an answer
+        // lands that makes the word a link.
+        Checked known = pathChecks.get(path);
+        if (known == null) {
+            unknownPathSeen = true; // a click waits for this answer rather than act on a guess
+        }
+        boolean fresh = known != null && System.nanoTime() - known.at() < CHECK_FRESH_NANOS;
+        if (!fresh && pathAsking.add(path)) {
             Thread.ofVirtual().name("terminal-link-check").start(() -> {
+                com.editora.perf.BlockingSites.enter("TerminalView.exists");
                 boolean there;
                 try {
                     there = java.nio.file.Files.exists(path);
@@ -2161,18 +2167,41 @@ public final class TerminalView extends Region {
                 }
                 boolean answer = there;
                 Platform.runLater(() -> {
-                    remoteAsking.remove(path);
-                    if (remoteExists.size() > 500) remoteExists.clear();
-                    remoteExists.put(path, answer);
-                    if (answer && lastMouseX >= 0) {
+                    pathAsking.remove(path);
+                    if (pathChecks.size() > 500) pathChecks.clear();
+                    Checked before = pathChecks.put(path, new Checked(answer, System.nanoTime()));
+                    boolean changed = before == null ? answer : before.there() != answer;
+                    if (!pendingClicks.isEmpty() && pathAsking.isEmpty()) {
+                        // The clicks that waited for these answers, in order: acted on now.
+                        List<double[]> clicks = new ArrayList<>(pendingClicks);
+                        pendingClicks.clear();
+                        for (double[] click : clicks) {
+                            unknownPathSeen = false;
+                            Hover target = linkAt(click[0], click[1]);
+                            if (target != null && !unknownPathSeen) {
+                                openLink(target);
+                            }
+                        }
+                    }
+                    if (changed && lastMouseX >= 0) {
                         hover = null; // asked again now that the answer is in
                         updateHover(lastMouseX, lastMouseY, hoverModifierDown);
                     }
                 });
             });
         }
-        return false;
+        return known != null && known.there();
     }
+
+    private static final long CHECK_FRESH_NANOS = 2_000_000_000L;
+
+    /** Set when a link look met a path not looked at yet: a click then waits for the answer ({@link #pendingClick}). */
+    private boolean unknownPathSeen;
+
+    /** Link clicks made while a path under them was being looked at: redone, in order, when the answers land. */
+    private final List<double[]> pendingClicks = new ArrayList<>();
+
+    private record Checked(boolean there, long at) {}
 
     /** Whether the link modifier was down at the last hover update, to redo it when a remote answer arrives. */
     private boolean hoverModifierDown;
@@ -2557,7 +2586,15 @@ public final class TerminalView extends Region {
         // one is the terminal's". Only when something is actually under the pointer, so the
         // modifier is not taken away from the program the rest of the time.
         if (e.getButton() == MouseButton.PRIMARY && LinkGesture.opensLink(MAC, e.isMetaDown(), e.isControlDown())) {
+            unknownPathSeen = false;
             Hover target = linkAt(e.getX(), e.getY());
+            if (unknownPathSeen) {
+                // A path under the pointer is being looked at off the FX thread (PERF-01, Pauta 6.0.1): the click
+                // is acted on when the answer lands, never on a guess.
+                pendingClicks.add(new double[] {e.getX(), e.getY()});
+                e.consume();
+                return;
+            }
             if (target != null) {
                 openLink(target);
                 e.consume();

@@ -136,6 +136,7 @@ public class WindowManager {
             HostServices hostServices,
             com.editora.plugin.@Nullable PluginManager discoveredPlugins) {
         this.shared = shared;
+        warmBundledLater();
         RestartPending.captureStart(shared.getSettings()); // what this run uses of the restart-only settings
         this.keymap = keymap;
         this.hostServices = hostServices;
@@ -914,6 +915,37 @@ public class WindowManager {
         List<java.util.function.BiConsumer<@Nullable Holder, Boolean>> joined = opening.remove(key);
         Holder holder = findHolder(key);
         boolean built = false;
+        if (holder == null && failure != null && config == null && !fallbackRead.contains(key)) {
+            // The read threw (rare). The window reads its session as it was built before, reporting what is wrong,
+            // but that read goes off the FX thread too (PERF-01, Pauta 6.0.1): read it again the reporting way on
+            // the session reader, then land here with what it read (or build from the in-place fallback if even
+            // that cannot be read).
+            java.util.logging.Logger.getLogger(WindowManager.class.getName())
+                    .log(
+                            java.util.logging.Level.WARNING,
+                            "Could not read the session of window '" + key + "'",
+                            failure);
+            fallbackRead.add(key);
+            opening.put(key, joined != null ? joined : new ArrayList<>()); // a second ask still joins this one
+            Path file = stateFile;
+            java.util.concurrent.CompletableFuture.supplyAsync(
+                            () -> {
+                                com.editora.perf.BlockingSites.enter("WindowManager.fallbackSessionRead");
+                                ConfigManager c =
+                                        file == null ? new ConfigManager(shared) : new ConfigManager(shared, file);
+                                c.setWorkspaceStateFile(c.getWorkspaceStateFile());
+                                return c;
+                            },
+                            sessionReads)
+                    .whenComplete((read, again) -> javafx.application.Platform.runLater(() -> {
+                        try {
+                            landOpen(key, project, stateFile, targets, read, again, then);
+                        } finally {
+                            fallbackRead.remove(key);
+                        }
+                    }));
+            return;
+        }
         if (holder == null) {
             if (failure != null) {
                 // Rare (the read reports what it cannot read itself): the window then reads its session as it is
@@ -943,6 +975,68 @@ public class WindowManager {
             }
         }
     }
+
+    /**
+     * The bytes of {@code main.fxml}, read once with the first window (the rule allows reading what the first
+     * window is built from) and kept: every later window parses the kept copy instead of reading the bundled
+     * resource again on the FX thread (PERF-01, Pauta 6.0.1).
+     */
+    private static byte @Nullable [] mainFxmlBytes;
+
+    private static byte[] mainFxml() throws java.io.IOException {
+        byte[] kept = mainFxmlBytes;
+        if (kept != null) {
+            return kept;
+        }
+        com.editora.perf.BlockingSites.enter("WindowManager.mainFxml");
+        try (java.io.InputStream in = WindowManager.class.getResourceAsStream("main.fxml")) {
+            if (in == null) {
+                throw new java.io.IOException("main.fxml is missing");
+            }
+            kept = in.readAllBytes();
+        }
+        mainFxmlBytes = kept;
+        return kept;
+    }
+
+    private static final java.util.concurrent.atomic.AtomicBoolean BUNDLED_WARMED =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /**
+     * Reads, once and on a thread of its own, the bundled resources a later window or dialog would otherwise read
+     * on the FX thread (PERF-01, Pauta 6.0.1): {@code main.fxml} for the windows after the first and the Settings
+     * window's table of controls, New Maven Project's archetype catalog.
+     */
+    private static void warmBundledLater() {
+        if (!BUNDLED_WARMED.compareAndSet(false, true)) {
+            return;
+        }
+        Thread.ofVirtual().name("bundled-warm").start(() -> {
+            try {
+                mainFxml();
+            } catch (java.io.IOException | RuntimeException e) {
+                // the first window reads it itself and reports the problem
+            }
+            try {
+                SettingsModified.warm();
+            } catch (RuntimeException | LinkageError e) {
+                // the Settings window reads it itself
+            }
+            try {
+                com.editora.maven.ArchetypeCatalog.curated(); // New Maven Project's bundled catalog, parsed once
+            } catch (RuntimeException e) {
+                // the form reads it itself
+            }
+        });
+    }
+
+    /** TEST SEAM — whether {@code main.fxml} has been read and kept. */
+    static boolean mainFxmlKeptForTest() {
+        return mainFxmlBytes != null;
+    }
+
+    /** Window keys whose session is being read again the reporting way after the first read threw. */
+    private final java.util.Set<String> fallbackRead = new java.util.HashSet<>();
 
     /** Whether a command's window is waiting for its session to be read (a test waits for none to be). */
     boolean openingWindows() {
@@ -1872,6 +1966,12 @@ public class WindowManager {
      * prefix in any dispatcher self-cancels on the next key, so no explicit reset is needed.
      */
     public void reloadSharedKeymap() {
+        // Every bundled keymap is parsed off the FX thread first (PERF-01, Pauta 6.0.1): at once after the launch's
+        // warm-up, else when it lands.
+        com.editora.command.KeymapManager.whenParsed(this::reloadSharedKeymapParsed);
+    }
+
+    private void reloadSharedKeymapParsed() {
         Settings settings = shared.getSettings();
         List<java.util.Map<String, String>> pluginKeymaps = KeymapLayers.pluginKeymaps(
                 settings, pluginManager, com.editora.command.KeymapManager.resolveName(settings.getKeymap()));
@@ -1967,7 +2067,7 @@ public class WindowManager {
             // classloader, which is non-null at launch but can become null later — so building a window at
             // runtime (every project window past the first) would fail with a null-classloader NPE.
             loader.setClassLoader(WindowManager.class.getClassLoader());
-            BorderPane root = loader.load();
+            BorderPane root = loader.load(new java.io.ByteArrayInputStream(mainFxml()));
             MainController controller = loader.getController();
             com.editora.perf.Startup.mark(com.editora.perf.Startup.FXML_LOADED);
             controller.setPluginManager(pluginManager); // before init: applyPlugins() runs inside init

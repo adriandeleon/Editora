@@ -5,7 +5,6 @@ import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.IntPredicate;
 import java.util.function.Supplier;
@@ -50,7 +49,7 @@ final class RecoveryCoordinator {
 
     /** What recovery remembers about one open buffer. */
     private static final class Tracked {
-        final String id = UUID.randomUUID().toString();
+        final String id = com.editora.recovery.RecoveryStore.newBufferId(); // no /dev/urandom read on FX
 
         @Nullable
         ChangeListener<Boolean> dirtyListener;

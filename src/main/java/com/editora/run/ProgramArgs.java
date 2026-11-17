@@ -175,12 +175,9 @@ public final class ProgramArgs {
         }
         String raw = text.strip();
         if (raw.indexOf(' ') >= 0 && raw.indexOf('"') < 0 && raw.indexOf('\'') < 0) {
-            try {
-                if (java.nio.file.Files.isRegularFile(java.nio.file.Path.of(raw))) {
-                    return new ArrayList<>(List.of(raw));
-                }
-            } catch (RuntimeException e) {
-                // not a path on this file system: tokenize it
+            // Kept from the look the settings' arrival made off the FX thread (ConfiguredCommand.prepareAllIn).
+            if (com.editora.process.ConfiguredCommand.isFileKept(raw)) {
+                return new ArrayList<>(List.of(raw));
             }
         }
         return tokenize(raw);

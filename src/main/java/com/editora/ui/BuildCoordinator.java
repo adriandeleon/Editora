@@ -192,6 +192,24 @@ final class BuildCoordinator {
     }
 
     /**
+     * What {@link #trustedExecutable} asks of the disk for {@code root}: the wrapper, the trust question's summary
+     * and the executable. Run off the FX thread it looks (and keeps the answers); inside {@code Looked.allKnown} on
+     * the FX thread it only checks that each is kept. No other effect.
+     */
+    void trustFacts(Path root) {
+        Path wrapper = tool.repoWrapper(root, wrapperBoundary(root), isWindows());
+        if (BuildTrust.gates(tool)) {
+            BuildTrust.describe(tool, root, wrapper, host.projectScope().projectBuildCommand(tool));
+        }
+        executable(root);
+    }
+
+    /** Whether {@link #trustedExecutable} for {@code root} would answer from memory (nothing to look at first). */
+    boolean trustedExecutableKnown(Path root) {
+        return com.editora.perf.Looked.allKnown(() -> trustFacts(root));
+    }
+
+    /**
      * The IntelliJ-style tasks-tree tool window content, built on first use and brought up to the state
      * detection and a running build have reached meanwhile. Every window used to build one per build tool at
      * open — five trees, most for tools the project does not use and whose stripe is never even shown.
@@ -238,7 +256,7 @@ final class BuildCoordinator {
             tree.setNotice(null, null, null);
         }
         tree.setProjects(projectRoots);
-        tree.setHeader(markerRoot, ops.projectRoot(), trustState(markerRoot));
+        setHeaderWhenKnown(markerRoot);
     }
 
     /** The toggle set of {@code root} (created on first use); a throwaway set for no root. */
@@ -282,15 +300,42 @@ final class BuildCoordinator {
                 : BuildActionsTree.TrustState.UNTRUSTED;
     }
 
-    /** The tree header's Revoke: drops the detected root's trust and restates the header. */
-    private void revokeTrust() {
-        if (markerRoot == null) {
+    /**
+     * Sets the tree's header for {@code root} once its wrapper is known: at once from memory, else after a look off
+     * the FX thread (PERF-01, Pauta 6.0.1). The header keeps what it showed until then.
+     */
+    private void setHeaderWhenKnown(@Nullable Path root) {
+        if (tree == null) {
             return;
         }
-        ops.revokeTrust(trustRoot(markerRoot));
-        if (tree != null) {
-            tree.setHeader(markerRoot, ops.projectRoot(), trustState(markerRoot));
+        if (root == null || !BuildTrust.gates(tool) || com.editora.perf.Looked.allKnown(() -> trustRoot(root))) {
+            tree.setHeader(root, ops.projectRoot(), trustState(root));
+            return;
         }
+        com.editora.perf.OffFx.then("BuildCoordinator.trustRoot", () -> trustRoot(root), looked -> {
+            if (tree != null && java.util.Objects.equals(root, markerRoot)) {
+                tree.setHeader(root, ops.projectRoot(), trustState(root));
+            }
+        });
+    }
+
+    /** The tree header's Revoke: drops the detected root's trust and restates the header. */
+    private void revokeTrust() {
+        Path root = markerRoot;
+        if (root == null) {
+            return;
+        }
+        if (!com.editora.perf.Looked.allKnown(() -> trustRoot(root))) {
+            // The folder whose trust it is depends on the wrapper: looked at off the FX thread first (PERF-01).
+            com.editora.perf.OffFx.then("BuildCoordinator.trustRoot", () -> trustRoot(root), looked -> {
+                if (java.util.Objects.equals(root, markerRoot)) {
+                    revokeTrust();
+                }
+            });
+            return;
+        }
+        ops.revokeTrust(trustRoot(root));
+        setHeaderWhenKnown(root);
     }
 
     /** A row of the tree's "Projects" section was chosen: detect that root instead of the active file's. */
@@ -311,10 +356,19 @@ final class BuildCoordinator {
      */
     @Nullable
     String executableSummary() {
-        if (markerRoot == null) {
+        Path root = markerRoot;
+        if (root == null) {
             return null;
         }
-        Path wrapper = tool.repoWrapper(markerRoot, wrapperBoundary(markerRoot), isWindows());
+        if (!com.editora.perf.Looked.allKnown(() -> {
+            tool.repoWrapper(root, wrapperBoundary(root), isWindows());
+            executable(root);
+        })) {
+            // Not looked at yet: said once it is (the next ask), looked at off the FX thread now (PERF-01).
+            com.editora.perf.OffFx.run("BuildCoordinator.executableSummary", () -> trustFacts(root), failed -> {});
+            return null;
+        }
+        Path wrapper = tool.repoWrapper(root, wrapperBoundary(root), isWindows());
         if (wrapper != null) {
             String name = "./" + wrapper.getFileName();
             return ops.isTrusted(wrapper.getParent())
@@ -325,7 +379,7 @@ final class BuildCoordinator {
         if (override != null && !override.isBlank()) {
             return tr("settings.buildTools.exec.override", override.strip());
         }
-        List<String> argv = executable(markerRoot);
+        List<String> argv = executable(root);
         return tr("settings.buildTools.exec.onPath", argv.isEmpty() ? tool.commandExample() : argv.get(0));
     }
 
@@ -616,12 +670,13 @@ final class BuildCoordinator {
             host.setStatus(disabledMessage());
             return;
         }
-        if (!Files.isDirectory(root)) {
-            host.setStatus(tr("status.build.notDetected", tool.displayName()));
-            return;
-        }
         Path project = ops.projectRoot();
         BuildDetection.execute(() -> {
+            // The folder is looked at here, off the FX thread, with the parse (PERF-01, Pauta 6.0.1).
+            if (!Files.isDirectory(root)) {
+                Platform.runLater(() -> host.setStatus(tr("status.build.notDetected", tool.displayName())));
+                return;
+            }
             BuildActionsProvider parsed;
             String error = null;
             try {
@@ -966,7 +1021,7 @@ final class BuildCoordinator {
         }
         ops.trust(trustRoot);
         if (tree != null && markerRoot != null) {
-            tree.setHeader(markerRoot, ops.projectRoot(), trustState(markerRoot));
+            setHeaderWhenKnown(markerRoot);
         }
         return true;
     }
@@ -1089,6 +1144,25 @@ final class BuildCoordinator {
                 } else {
                     panel.appendOutput(BuildCoordinator.this, line, stderr);
                 }
+            }
+
+            /** A test run's line is parsed here, on the output's reader thread (PERF-01, Pauta 6.0.1); FX applies it. */
+            @Override
+            public Runnable prepareOutput(String line, boolean stderr) {
+                if (!claimed || hook == null) {
+                    return () -> onOutput(line, stderr);
+                }
+                TestRunHook.PreparedLine prepared = hook.prepareTestOutput(line, stderr);
+                return () -> {
+                    if (outputWatcher != null) {
+                        outputWatcher.accept(line, stderr);
+                    }
+                    prepared.apply().run();
+                    String shown = prepared.shown();
+                    if (shown != null) {
+                        panel.appendOutput(BuildCoordinator.this, shown, stderr);
+                    }
+                };
             }
 
             @Override
@@ -1272,10 +1346,37 @@ final class BuildCoordinator {
         Path root = markerRoot;
         // Gated too: this spawns `./gradlew tasks --all` (`./mill resolve __.compile`, `sbt projects`) on its own,
         // bypassing launch() entirely — enumerating tasks runs the repo's wrapper (and its build scripts) exactly
-        // like running one does.
-        if (!allowRun(root)) {
+        // like running one does. The trust question's facts (the wrapper, the build files) are looked at off the
+        // FX thread first (PERF-01, Pauta 6.0.1).
+        if (!BuildTrust.gates(tool)) {
+            loadAllTasksTrusted(root);
             return;
         }
+        Path trustBoundary = wrapperBoundary(root);
+        boolean windows = isWindows();
+        String projectCommand = host.projectScope().projectBuildCommand(tool);
+        com.editora.perf.OffFx.then(
+                "BuildCoordinator.loadAllTasks",
+                () -> {
+                    Path wrapper = tool.repoWrapper(root, trustBoundary, windows);
+                    Path trustRoot = wrapper != null ? wrapper.getParent() : trustBoundary;
+                    return new TrustLook(trustRoot, BuildTrust.describe(tool, root, wrapper, projectCommand));
+                },
+                looked -> {
+                    TrustLook look = looked.value();
+                    if (look == null) {
+                        return;
+                    }
+                    if (ops.isTrusted(look.trustRoot()) || askTrust(look.trustRoot(), look.summary())) {
+                        loadAllTasksTrusted(root);
+                    }
+                });
+    }
+
+    /** What the trust question about a build root needs from the disk, looked at off the FX thread. */
+    private record TrustLook(@Nullable Path trustRoot, BuildTrust.Summary summary) {}
+
+    private void loadAllTasksTrusted(Path root) {
         String override =
                 host.projectScope().buildCommand(tool, host.settings()); // a trusted project's, else the user's
         Path boundary = wrapperBoundary(root);

@@ -149,6 +149,49 @@ final class EditorSettingsCoordinator {
     EditorSettingsCoordinator(Host host) {
         this.host = host;
         this.spell = new SpellCoordinator(host, this);
+        com.editora.editorconfig.EditorConfig.addListener(editorConfigChanged);
+        // A bundled family the FX thread asked for is registered off it (PERF-01, Pauta 6.0.1): apply the fonts
+        // again when it lands. Held weakly, so a closed window is not kept by the font loader.
+        java.lang.ref.WeakReference<Runnable> landed = new java.lang.ref.WeakReference<>(fontsLanded);
+        Fonts.whenFamiliesLoaded(() -> {
+            Runnable r = landed.get();
+            if (r != null) {
+                r.run();
+            }
+        });
+    }
+
+    /** Kept in a field: {@link Fonts#whenFamiliesLoaded} holds it only through a weak reference. */
+    private final Runnable fontsLanded = this::fontsLanded;
+
+    private void fontsLanded() {
+        try {
+            applyFontsAndPerBufferView(host.config().getSettings());
+        } catch (RuntimeException closing) {
+            // a window being torn down: nothing to show the font in
+        }
+    }
+
+    /**
+     * A look behind an FX answer found a file's {@code .editorconfig} rules changed (or a file nothing had looked
+     * at got its first answer): the open buffers of that file take the new rules (PERF-01, Pauta 6.0.1). Kept in a
+     * field because {@link com.editora.editorconfig.EditorConfig} holds its listeners weakly.
+     */
+    private final java.util.function.Consumer<Path> editorConfigChanged = this::editorConfigChanged;
+
+    private void editorConfigChanged(Path file) {
+        if (host.editorArea() == null) {
+            return;
+        }
+        for (Tab tab : host.editorArea().tabs()) {
+            EditorBuffer buffer = host.bufferOf(tab);
+            Path path = buffer == null ? null : buffer.getPath();
+            if (buffer != null
+                    && path != null
+                    && file.equals(path.toAbsolutePath().normalize())) {
+                refreshEditorConfig(buffer);
+            }
+        }
     }
 
     /** Spell checking: the per-buffer setup and the spell commands. */
@@ -473,11 +516,14 @@ final class EditorSettingsCoordinator {
         if (id == null) {
             return;
         }
-        KeymapLayers.switchKeymap(host.config().getSettings(), id);
-        host.config().save();
-        reloadKeymap();
-        host.settingsWindow().syncKeymapCombo(); // keep the Settings window combo in step if it's open
-        host.setStatus(tr("status.keymap.changed", com.editora.command.KeymapManager.displayName(id)));
+        // The keymaps are parsed off the FX thread (PERF-01, Pauta 6.0.1): the switch waits for them.
+        com.editora.command.KeymapManager.whenParsed(() -> {
+            KeymapLayers.switchKeymap(host.config().getSettings(), id);
+            host.config().save();
+            reloadKeymap();
+            host.settingsWindow().syncKeymapCombo(); // keep the Settings window combo in step if it's open
+            host.setStatus(tr("status.keymap.changed", com.editora.command.KeymapManager.displayName(id)));
+        });
     }
 
     /** Rebuilds the shared keymap (base + user + plugin overrides) and re-applies it to every window. */
@@ -486,8 +532,10 @@ final class EditorSettingsCoordinator {
         if (wm != null) {
             wm.reloadSharedKeymap();
         } else {
-            host.keymap().loadNamed(host.config().getSettings().getKeymap());
-            host.keymap().applyOverrides(UserKeys.overrides(host.config().getSettings()));
+            com.editora.command.KeymapManager.whenParsed(() -> {
+                host.keymap().loadNamed(host.config().getSettings().getKeymap());
+                host.keymap().applyOverrides(UserKeys.overrides(host.config().getSettings()));
+            });
         }
     }
 
@@ -669,11 +717,13 @@ final class EditorSettingsCoordinator {
 
     /** Re-scans the user-theme folders (config dir) so newly-added themes appear without a restart. */
     void reloadUserThemes() {
-        UserThemes.load(host.config().getConfigDir());
-        if (host.settingsWindow() != null) {
-            host.settingsWindow().syncThemes(); // rebuild the theme/editor-theme combos from the fresh list
-        }
-        host.setStatus(tr("status.userThemesReloaded"));
+        // The theme folders are read off the FX thread (PERF-01, Pauta 6.0.1); the pickers change when they land.
+        UserThemes.reload(host.config().getConfigDir(), () -> {
+            if (host.settingsWindow() != null) {
+                host.settingsWindow().syncThemes(); // rebuild the theme/editor-theme combos from the fresh list
+            }
+            host.setStatus(tr("status.userThemesReloaded"));
+        });
     }
 
     /** Applies a chrome theme and follows it with the matching editor theme (clears the user-set flag). */
@@ -1286,11 +1336,37 @@ final class EditorSettingsCoordinator {
      */
     boolean refreshEditorConfig(EditorBuffer buffer) {
         Path path = buffer.getPath();
-        com.editora.editorconfig.EditorConfigProperties now =
-                !editorConfigEnabled() || path == null || !com.editora.vfs.Vfs.isLocal(path)
-                        ? com.editora.editorconfig.EditorConfigProperties.EMPTY
-                        : com.editora.editorconfig.EditorConfig.resolveFor(path);
+        boolean applies = editorConfigEnabled() && path != null && com.editora.vfs.Vfs.isLocal(path);
+        // On the FX thread this is the answer a look off the thread last gave (PERF-01, Pauta 6.0.1); the look
+        // made again behind it brings a changed .editorconfig to the buffer when it lands.
+        com.editora.editorconfig.EditorConfigProperties now = !applies
+                ? com.editora.editorconfig.EditorConfigProperties.EMPTY
+                : com.editora.editorconfig.EditorConfig.resolveFor(path);
+        if (applies) {
+            com.editora.editorconfig.EditorConfig.refresh(path);
+        }
         return applyRefreshedEditorConfig(buffer, now);
+    }
+
+    /**
+     * Looks at {@code buffer}'s rules off the FX thread, applies them when they changed, then runs {@code then}
+     * on the FX thread: for a caller that must act on the rules as they are on disk now (a save).
+     */
+    void refreshEditorConfigThen(EditorBuffer buffer, Runnable then) {
+        Path path = buffer.getPath();
+        if (!editorConfigEnabled() || path == null || !com.editora.vfs.Vfs.isLocal(path)) {
+            applyRefreshedEditorConfig(buffer, com.editora.editorconfig.EditorConfigProperties.EMPTY);
+            then.run();
+            return;
+        }
+        com.editora.perf.OffFx.then(
+                "editorconfig-resolve", () -> com.editora.editorconfig.EditorConfig.resolveFor(path), looked -> {
+                    com.editora.editorconfig.EditorConfigProperties rules = looked.value();
+                    if (rules != null && path.equals(buffer.getPath())) {
+                        applyRefreshedEditorConfig(buffer, rules);
+                    }
+                    then.run();
+                });
     }
 
     /**
@@ -1399,29 +1475,75 @@ final class EditorSettingsCoordinator {
             host.setStatus(tr("status.editorConfig.none"));
             return;
         }
-        Path ec = com.editora.editorconfig.EditorConfig.nearestFile(path);
-        if (ec == null) {
-            host.setStatus(tr("status.editorConfig.none"));
-            return;
-        }
-        host.openPath(ec);
+        // The walk up the folders reads the disk: off the FX thread (PERF-01, Pauta 6.0.1).
+        com.editora.perf.OffFx.then(
+                "editorconfig-nearest", () -> com.editora.editorconfig.EditorConfig.nearestFile(path), found -> {
+                    Path ec = found.value();
+                    if (ec == null) {
+                        host.setStatus(tr("status.editorConfig.none"));
+                    } else {
+                        host.openPath(ec);
+                    }
+                });
     }
 
     /** Re-applies (or clears) {@code .editorconfig} for every open buffer — init + on settings apply. */
     void applyEditorConfigSupport() {
         if (!editorConfigEnabled()) {
             com.editora.editorconfig.EditorConfig.clearCache();
+            for (Tab tab : host.editorArea().tabs()) {
+                EditorBuffer buffer = host.bufferOf(tab);
+                if (buffer != null) {
+                    applyEditorConfig(buffer);
+                }
+            }
+            if (host.statusBar() != null) {
+                host.statusBar().refresh();
+            }
+            return;
         }
+        // Every open file's rules are looked at afresh off the FX thread (an .editorconfig was just saved, or
+        // the feature switched on), then applied here (PERF-01, Pauta 6.0.1).
+        java.util.Map<EditorBuffer, Path> open = new java.util.LinkedHashMap<>();
         for (Tab tab : host.editorArea().tabs()) {
             EditorBuffer buffer = host.bufferOf(tab);
-            if (buffer != null) {
+            Path path = buffer == null ? null : buffer.getPath();
+            if (buffer == null) {
+                continue;
+            }
+            if (path == null || !com.editora.vfs.Vfs.isLocal(path)) {
                 applyEditorConfig(buffer);
+            } else {
+                open.put(buffer, path);
             }
         }
-        if (host.statusBar() != null) {
-            host.statusBar().refresh();
-        }
+        long mine = ++editorConfigSupportGen;
+        com.editora.perf.OffFx.then(
+                "editorconfig-resolve-all",
+                () -> {
+                    java.util.Map<EditorBuffer, com.editora.editorconfig.EditorConfigProperties> rules =
+                            new java.util.LinkedHashMap<>();
+                    open.forEach((b, p) -> rules.put(b, com.editora.editorconfig.EditorConfig.resolveFor(p)));
+                    return rules;
+                },
+                looked -> {
+                    var rules = looked.value();
+                    if (rules == null || mine != editorConfigSupportGen) {
+                        return; // a newer apply answers
+                    }
+                    rules.forEach((b, r) -> {
+                        if (!b.isDisposed() && java.util.Objects.equals(open.get(b), b.getPath())) {
+                            applyRefreshedEditorConfig(b, r);
+                        }
+                    });
+                    if (host.statusBar() != null) {
+                        host.statusBar().refresh();
+                    }
+                });
     }
+
+    /** The latest {@link #applyEditorConfigSupport} look: an older answer is dropped. */
+    private long editorConfigSupportGen;
 
     void applyViewSettingsToAllBuffers(Settings settings) {
         WikiLinks.enabled = settings.isMarkdownWikiLinks();

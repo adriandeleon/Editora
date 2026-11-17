@@ -276,6 +276,10 @@ class RemoteSitesFxTest {
 
         FxTestSupport.runOnFx(() -> fromConfig.getItems().getFirst().fire());
 
+        // The config is asked about the host once typing pauses (off the FX thread, PERF-01).
+        for (int i = 0; i < 300 && !List.of("box", "2222", "ana", "", "").equals(values(form)); i++) {
+            Thread.sleep(10);
+        }
         assertEquals(List.of("box", "2222", "ana", "", ""), values(form));
         String shown = FxTestSupport.callOnFx(() -> {
             StringBuilder text = new StringBuilder();
@@ -289,6 +293,11 @@ class RemoteSitesFxTest {
         List<TextField> fields = fields(form);
         FxTestSupport.runOnFx(() -> fields.get(2).setText("me"));
         FxTestSupport.runOnFx(() -> fields.get(0).setText("plain.example.test"));
+        for (int i = 0;
+                i < 300 && !List.of("plain.example.test", "22", "me", "", "").equals(values(form));
+                i++) {
+            Thread.sleep(10);
+        }
         assertEquals(List.of("plain.example.test", "22", "me", "", ""), values(form));
     }
 

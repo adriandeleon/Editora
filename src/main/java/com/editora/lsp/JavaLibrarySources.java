@@ -153,12 +153,32 @@ public final class JavaLibrarySources {
     public record Attachment(
             @Nullable String error,
             @Nullable String jarPath,
-            @Nullable String sourcesPath) {
-        /** Whether the library has sources, at a path that is there. */
+            @Nullable String sourcesPath,
+            @Nullable Boolean present) {
+
+        public Attachment(@Nullable String error, @Nullable String jarPath, @Nullable String sourcesPath) {
+            this(error, jarPath, sourcesPath, null);
+        }
+
+        /**
+         * Whether the library has sources, at a path that is there: as {@link #look} found it, or looked at now when
+         * it was not looked at (off the FX thread; PERF-01, Pauta 6.0.1).
+         */
         public boolean attached() {
-            return sourcesPath != null
-                    && !sourcesPath.isBlank()
-                    && java.nio.file.Files.exists(java.nio.file.Path.of(sourcesPath));
+            return present != null ? present : sourcesThere();
+        }
+
+        /** This answer with whether its sources are there looked at now: off the FX thread. */
+        public Attachment look() {
+            return new Attachment(error, jarPath, sourcesPath, sourcesThere());
+        }
+
+        private boolean sourcesThere() {
+            if (sourcesPath == null || sourcesPath.isBlank()) {
+                return false;
+            }
+            com.editora.perf.BlockingSites.enter("JavaLibrarySources.attached");
+            return java.nio.file.Files.exists(java.nio.file.Path.of(sourcesPath));
         }
     }
 

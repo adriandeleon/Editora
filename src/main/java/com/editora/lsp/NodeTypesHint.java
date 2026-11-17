@@ -39,6 +39,7 @@ public final class NodeTypesHint {
 
     /** Whether a {@code node_modules/@types/node} is in {@code file}'s folder or any folder above it. */
     public static boolean hasNodeTypes(Path file) {
+        com.editora.perf.BlockingSites.enter("NodeTypesHint.hasNodeTypes");
         return hasNodeTypes(file, Files::isRegularFile);
     }
 

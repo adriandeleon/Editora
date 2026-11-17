@@ -186,7 +186,7 @@ public final class TypeScriptServer {
      * asks), answered from memory on it (PERF-01, Pauta 6.0.1).
      */
     private static final com.editora.perf.Looked<Path, String> SDK_VERSIONS =
-            new com.editora.perf.Looked<>("TypeScriptServer.sdkVersion", TypeScriptServer::sdkVersionNow);
+            new com.editora.perf.Looked<>("TypeScriptServer.sdkVersion", TypeScriptServer::sdkVersionNow, "");
 
     private static String sdkVersionNow(Path tsserver) {
         Path lib = tsserver.getParent();

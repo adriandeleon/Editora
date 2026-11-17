@@ -272,6 +272,9 @@ class DocumentOnDiskFxTest {
 
             FxTestSupport.runOnFx(() -> rules.getArea().appendText("[*]\nend_of_line = crlf\nindent_size = 3\n"));
             save(async, fx); // the .editorconfig tab is the active one
+            // The open files' rules are looked at again off the FX thread, then applied.
+            SettingsListPagesFxTest.waitFor(
+                    () -> "crlf".equals(open.getEditorConfigProps().endOfLine()), "the new rules reach the file");
 
             assertEquals(
                     "crlf",
@@ -294,6 +297,8 @@ class DocumentOnDiskFxTest {
 
             FxTestSupport.runOnFx(() -> rules.getArea().appendText("[*]\nend_of_line = crlf\n"));
             save(async, fx); // saved from the first window; the file it governs is open in the second
+            SettingsListPagesFxTest.waitFor(
+                    () -> "crlf".equals(elsewhere.getEditorConfigProps().endOfLine()), "the new rules reach the file");
 
             assertEquals(
                     "crlf",
@@ -657,6 +662,9 @@ class DocumentOnDiskFxTest {
 
     private static EditorBuffer load(MainController window, Path file) throws Exception {
         FileWorkflowCoordinator workflows = FxTestSupport.field(window, "fileWorkflows");
+        // A real open resolves the file's .editorconfig on the load thread; this in-place load reads it on FX,
+        // which answers what a look off the thread found: look first, as the open does.
+        com.editora.editorconfig.EditorConfig.warm(file);
         return FxTestSupport.callOnFx(() -> {
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(file);
@@ -672,6 +680,7 @@ class DocumentOnDiskFxTest {
 
     private static EditorBuffer load(FxWindowFixture fx, Path file, boolean addTab) throws Exception {
         FileWorkflowCoordinator workflows = workflows(fx);
+        com.editora.editorconfig.EditorConfig.warm(file); // as the open's load thread does (see above)
         return FxTestSupport.callOnFx(() -> {
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(file);

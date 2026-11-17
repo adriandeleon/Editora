@@ -27,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * quits right after a response landed: what is on disk afterwards.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class HttpHistoryFileMoveFxTest {
 
     private static final long WAIT_SECONDS = 30;

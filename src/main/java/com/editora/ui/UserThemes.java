@@ -65,6 +65,15 @@ final class UserThemes {
         editorThemes = scan(configDir.resolve("editor-themes"), false);
     }
 
+    /**
+     * Rescans the theme folders off the FX thread (PERF-01, Pauta 6.0.1), then runs {@code then} on the FX
+     * thread with the new lists in place: the Reload User Themes command and the Settings page's button. Until it
+     * lands the lists are the ones last read, so no theme disappears from a picker meanwhile.
+     */
+    static void reload(Path configDir, Runnable then) {
+        com.editora.perf.OffFx.run("themes-reload", () -> load(configDir), failure -> then.run());
+    }
+
     /** User AtlantaFX control themes (name → entry); the entry's stylesheet is the control CSS file. */
     static Map<String, Entry> controlThemes() {
         return controlThemes;

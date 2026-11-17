@@ -32,6 +32,8 @@ public final class EditorConfig {
     /** Clears the per-file parse cache (used when the feature is toggled, and by tests). */
     public static void clearCache() {
         CACHE.clear();
+        RESOLVED.clear();
+        FOLDERS.clear();
     }
 
     /** The merged EditorConfig properties for {@code file}, or {@link EditorConfigProperties#EMPTY}. */
@@ -43,6 +45,12 @@ public final class EditorConfig {
     /**
      * Every property that applies to {@code file}, merged as {@link #resolveFor} merges them but untyped, keys
      * lower-cased — the tool-specific ones too, such as IntelliJ's {@code ij_java_imports_layout}. Empty when none.
+     *
+     * <p>On the JavaFX thread it never touches the disk (PERF-01, Pauta 6.0.1): it answers what a look off the
+     * thread last found for the file ({@link #warm}, a file's load, any earlier ask off the thread), and looks
+     * again behind the answer when that is a few seconds old; {@link #addListener listeners} hear, on the FX
+     * thread, of a file whose answer changed. A file nothing looked at yet is answered from the parsed configs
+     * of its folders when every one of them is known, else as having no rules until its look lands.
      */
     public static Map<String, String> rawFor(@Nullable Path file) {
         if (file == null) {
@@ -54,9 +62,119 @@ public final class EditorConfig {
         } catch (RuntimeException e) {
             return Map.of();
         }
+        if (!onFx()) {
+            return rawNow(abs);
+        }
+        Kept kept = RESOLVED.get(abs);
+        if (kept == null || System.nanoTime() - kept.at() > FRESH_NANOS) {
+            lookBehind(abs);
+        }
+        if (kept != null) {
+            return kept.raw();
+        }
+        Map<String, String> fromMemory = fromMemory(abs);
+        return fromMemory == null ? Map.of() : fromMemory;
+    }
+
+    /** Looks at {@code file}'s rules now, on this thread (never the FX thread), and keeps the answer. */
+    public static void warm(@Nullable Path file) {
+        if (file != null) {
+            try {
+                rawNow(file.toAbsolutePath().normalize());
+            } catch (RuntimeException e) {
+                // nothing kept: the next ask looks again
+            }
+        }
+    }
+
+    /**
+     * Looks at {@code file}'s rules again behind the kept answer, however fresh it is (a save asks: an
+     * {@code .editorconfig} pulled since must reach the file); a changed answer reaches the listeners.
+     */
+    public static void refresh(@Nullable Path file) {
+        if (file == null) {
+            return;
+        }
+        try {
+            lookBehind(file.toAbsolutePath().normalize());
+        } catch (RuntimeException e) {
+            // not a path this file system can express: nothing to look at
+        }
+    }
+
+    /** Whether a look has answered for {@code file} (the FX thread then answers it from memory). */
+    public static boolean knows(Path file) {
+        try {
+            return RESOLVED.containsKey(file.toAbsolutePath().normalize());
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Adds a listener told, on the FX thread, of a file whose rules a look behind an FX answer found changed.
+     * Held weakly: the caller keeps the listener alive as long as it wants to hear.
+     */
+    public static void addListener(java.util.function.Consumer<Path> listener) {
+        LISTENERS.removeIf(ref -> ref.get() == null);
+        LISTENERS.add(new java.lang.ref.WeakReference<>(listener));
+    }
+
+    /** What a look found for a file, and when (System.nanoTime). */
+    private record Kept(Map<String, String> raw, long at) {}
+
+    /** How old an answer the FX thread takes before it looks again behind it. */
+    private static final long FRESH_NANOS = 3_000_000_000L;
+
+    private static final int MAX_KEPT = 4_096;
+
+    private static final ConcurrentMap<Path, Kept> RESOLVED = new ConcurrentHashMap<>();
+    /** Folders looked at: whether each holds a {@code .editorconfig}. */
+    private static final ConcurrentMap<Path, Boolean> FOLDERS = new ConcurrentHashMap<>();
+
+    private static final java.util.Set<Path> LOOKING = ConcurrentHashMap.newKeySet();
+    private static final List<java.lang.ref.WeakReference<java.util.function.Consumer<Path>>> LISTENERS =
+            new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** Where a look behind an FX answer runs. TEST SEAM: a test may run it in place. */
+    static volatile java.util.function.Consumer<Runnable> looker =
+            r -> Thread.ofVirtual().name("editorconfig-look").start(r);
+
+    private static void lookBehind(Path abs) {
+        if (!LOOKING.add(abs)) {
+            return;
+        }
+        Kept before = RESOLVED.get(abs);
+        looker.accept(() -> {
+            Map<String, String> now;
+            try {
+                now = rawNow(abs);
+            } catch (RuntimeException e) {
+                now = Map.of();
+            } finally {
+                LOOKING.remove(abs);
+            }
+            Map<String, String> was = before == null ? Map.of() : before.raw();
+            if (!now.equals(was)) {
+                javafx.application.Platform.runLater(() -> {
+                    for (var ref : LISTENERS) {
+                        java.util.function.Consumer<Path> l = ref.get();
+                        if (l != null) {
+                            l.accept(abs);
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    /** The look itself: stats, reads and parses every config up the tree, and keeps what it found. */
+    private static Map<String, String> rawNow(Path abs) {
+        com.editora.perf.BlockingSites.enter("EditorConfig.rawFor");
         List<List<Map<String, String>>> nearestFirst = new ArrayList<>();
         for (Path dir = abs.getParent(); dir != null; dir = dir.getParent()) {
             EditorConfigParser.Parsed parsed = readParsed(dir.resolve(FILENAME));
+            FOLDERS.put(dir, parsed != null);
             if (parsed == null) {
                 continue;
             }
@@ -65,6 +183,44 @@ public final class EditorConfig {
                 break;
             }
         }
+        Map<String, String> merged = merge(nearestFirst);
+        if (RESOLVED.size() >= MAX_KEPT) {
+            RESOLVED.clear();
+        }
+        if (FOLDERS.size() >= MAX_KEPT) {
+            FOLDERS.clear();
+        }
+        RESOLVED.put(abs, new Kept(Map.copyOf(merged), System.nanoTime()));
+        return merged;
+    }
+
+    /**
+     * {@code abs}'s rules worked out from memory alone: the configs of its folders as last read, when every
+     * folder up to a root config (or the file system's root) has been looked at; null when one has not.
+     */
+    private static @Nullable Map<String, String> fromMemory(Path abs) {
+        List<List<Map<String, String>>> nearestFirst = new ArrayList<>();
+        for (Path dir = abs.getParent(); dir != null; dir = dir.getParent()) {
+            Boolean present = FOLDERS.get(dir);
+            if (present == null) {
+                return null;
+            }
+            if (!present) {
+                continue;
+            }
+            Cached cached = CACHE.get(dir.resolve(FILENAME));
+            if (cached == null) {
+                return null;
+            }
+            nearestFirst.add(matchingSections(cached.parsed(), relativePath(dir, abs)));
+            if (cached.parsed().root()) {
+                break;
+            }
+        }
+        return merge(nearestFirst);
+    }
+
+    private static Map<String, String> merge(List<List<Map<String, String>>> nearestFirst) {
         // Overlay farthest → nearest (and, within a file, top → bottom) on the RAW values, so a nearer
         // `key = unset` removes the inherited value instead of being indistinguishable from "not mentioned".
         Map<String, String> merged = new LinkedHashMap<>();
@@ -76,12 +232,21 @@ public final class EditorConfig {
         return merged;
     }
 
+    private static boolean onFx() {
+        try {
+            return javafx.application.Platform.isFxApplicationThread();
+        } catch (RuntimeException | LinkageError e) {
+            return false;
+        }
+    }
+
     /**
      * The nearest {@code .editorconfig} file governing {@code file} (the closest one walking up its directory
      * tree, stopping at the first {@code root = true}), or {@code null} when none applies. Used by the status-bar
-     * indicator to open the active config.
+     * indicator to open the active config. Reads the disk: never on the FX thread.
      */
     public static @Nullable Path nearestFile(Path file) {
+        com.editora.perf.BlockingSites.enter("EditorConfig.nearestFile");
         if (file == null) {
             return null;
         }
@@ -126,7 +291,7 @@ public final class EditorConfig {
     /** The raw property maps of every section of {@code parsed} whose glob matches {@code relPath}, in order. */
     private static List<Map<String, String>> matchingSections(EditorConfigParser.Parsed parsed, String relPath) {
         List<Map<String, String>> out = new ArrayList<>();
-        // One allowance for the whole file: section globs are untrusted, and this runs on the FX thread.
+        // One allowance for the whole file: section globs are untrusted.
         EditorConfigGlob.Budget budget = new EditorConfigGlob.Budget();
         for (EditorConfigParser.Section s : parsed.sections()) {
             if (EditorConfigGlob.matches(s.glob(), relPath, budget)) {

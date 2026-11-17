@@ -86,4 +86,142 @@ class LookedFxTest {
         assertNull(onFx(() -> looked.get("b")), "a null answer is kept too");
         assertEquals(List.of("guard-look"), onFx);
     }
+
+    @Test
+    void aColdKeyOnTheFxThreadAnswersTheColdAnswerAndIsLookedAtBehind() throws Exception {
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger looks = new AtomicInteger();
+        List<String> learned = new CopyOnWriteArrayList<>();
+        Looked<String, Boolean> looked = new Looked<String, Boolean>(
+                        "cold-look",
+                        key -> {
+                            looks.incrementAndGet();
+                            try {
+                                release.await(10, TimeUnit.SECONDS);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                            return Boolean.FALSE;
+                        },
+                        Boolean.TRUE)
+                .onLearned(learned::add);
+        List<String> onFx = new CopyOnWriteArrayList<>();
+        BlockingSites.listenForTest((site, thread) -> {
+            if (Platform.isFxApplicationThread()) {
+                onFx.add(site);
+            }
+        });
+
+        assertEquals(Boolean.TRUE, onFx(() -> looked.get("a")), "unknown: the cold answer, nothing hidden");
+        assertEquals(Boolean.TRUE, onFx(() -> looked.get("a")), "a second ask while the look runs");
+        release.countDown();
+        waitUntil(() -> learned.contains("a"));
+        assertEquals(Boolean.FALSE, onFx(() -> looked.get("a")), "the look's answer once it lands");
+        assertEquals(1, looks.get(), "one look for both asks");
+        assertEquals(List.of(), onFx, "nothing looked at on the FX thread");
+    }
+
+    @Test
+    void whenKnownWaitsOffTheFxThreadAndAnswersOnIt() throws Exception {
+        Looked<String, String> looked = new Looked<>("known-look", key -> key + "!", "");
+        List<String> onFx = new CopyOnWriteArrayList<>();
+        BlockingSites.listenForTest((site, thread) -> {
+            if (Platform.isFxApplicationThread()) {
+                onFx.add(site);
+            }
+        });
+        AtomicReference<String> answer = new AtomicReference<>();
+        AtomicReference<Boolean> answeredOnFx = new AtomicReference<>();
+        onFx(() -> {
+            looked.whenKnown("b", v -> {
+                answer.set(v);
+                answeredOnFx.set(Platform.isFxApplicationThread());
+            });
+            return null;
+        });
+        waitUntil(() -> answer.get() != null);
+        assertEquals("b!", answer.get());
+        assertTrue(answeredOnFx.get(), "handed back on the FX thread");
+        assertTrue(looked.knows("b"), "and kept");
+        assertEquals(List.of(), onFx);
+
+        looked.warm("c"); // off the FX thread: looked at now
+        assertTrue(looked.knows("c"));
+    }
+
+    @Test
+    void aProbeCacheWithAColdAnswerNeverProbesOnTheFxThread() throws Exception {
+        AtomicInteger probes = new AtomicInteger();
+        List<String> learned = new CopyOnWriteArrayList<>();
+        ProbeCache<String, Boolean> cache = new ProbeCache<String, Boolean>(
+                        "cold-probe",
+                        key -> {
+                            probes.incrementAndGet();
+                            return Boolean.FALSE;
+                        },
+                        Boolean.TRUE)
+                .onLearned(learned::add);
+        List<String> onFx = new CopyOnWriteArrayList<>();
+        BlockingSites.listenForTest((site, thread) -> {
+            if (Platform.isFxApplicationThread()) {
+                onFx.add(site);
+            }
+        });
+        Boolean first = onFx(() -> cache.get("k"));
+        waitUntil(() -> learned.contains("k"));
+        assertEquals(Boolean.FALSE, onFx(() -> cache.get("k")), "the probe's answer once it lands");
+        assertTrue(first, "the cold answer meanwhile");
+        assertEquals(1, probes.get());
+        assertEquals(List.of(), onFx);
+    }
+
+    @Test
+    void allKnownChecksWithoutLookingAndALookOffTheFxThreadFillsIt() throws Exception {
+        AtomicInteger looks = new AtomicInteger();
+        Looked<String, String> memo = new Looked<>("test-all-known", k -> {
+            looks.incrementAndGet();
+            return k + "!";
+        });
+        ProbeCache<String, Boolean> cache = new ProbeCache<>("test-all-known-cache", k -> {
+            looks.incrementAndGet();
+            return Boolean.TRUE;
+        });
+        List<String> heard = new CopyOnWriteArrayList<>();
+        BlockingSites.listenForTest((site, thread) -> heard.add(site));
+
+        // Nothing kept: on the FX thread the probe says so, and nothing is looked at.
+        assertEquals(Boolean.FALSE, onFx(() -> Looked.allKnown(() -> memo.get("a"))));
+        assertEquals(Boolean.FALSE, onFx(() -> Looked.allKnown(() -> cache.get("a"))));
+        assertEquals(0, looks.get(), "a probe looks at nothing");
+        assertEquals(List.of(), heard);
+
+        // The same asks off the FX thread look for real and keep the answers; the probe then passes.
+        memo.get("a");
+        cache.get("a");
+        assertEquals(2, looks.get());
+        assertEquals(
+                Boolean.TRUE,
+                onFx(() -> Looked.allKnown(() -> {
+                    memo.get("a");
+                    cache.get("a");
+                })));
+        assertEquals("a!", onFx(() -> memo.get("a")), "and the FX thread answers from memory");
+        // A probe that finds one gap among several stops there and still says so.
+        assertEquals(
+                Boolean.FALSE,
+                onFx(() -> Looked.allKnown(() -> {
+                    memo.get("a");
+                    memo.get("b");
+                })));
+        assertEquals(2, looks.get());
+    }
+
+    private static void waitUntil(java.util.function.BooleanSupplier done) throws Exception {
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (!done.getAsBoolean()) {
+            assertTrue(System.nanoTime() < until, "timed out");
+            onFx(() -> null); // let the FX thread run what landed
+            Thread.onSpinWait();
+        }
+    }
 }

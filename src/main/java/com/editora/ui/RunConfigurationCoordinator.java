@@ -67,6 +67,17 @@ final class RunConfigurationCoordinator {
         @Nullable
         String suggestedMainClass();
 
+        /**
+         * Hands {@code then} (FX thread) the main class a run configuration of Java {@code file} with text
+         * {@code text} starts from, looked for off the FX thread ({@link #suggestedMainClass(Path, String)}).
+         */
+        default void suggestMainClass(Path file, String text, java.util.function.Consumer<@Nullable String> then) {
+            com.editora.perf.OffFx.then(
+                    "run-config-main",
+                    () -> RunConfigurationCoordinator.suggestedMainClass(file, text),
+                    a -> then.accept(a.value()));
+        }
+
         /** A configuration for the active Python or shell script, or null. */
         default com.editora.config.@Nullable RunConfiguration suggestedScriptConfiguration() {
             return null;
@@ -144,6 +155,7 @@ final class RunConfigurationCoordinator {
     java.util.function.Consumer<String> runConfigEditor = this::openRunConfigEditor;
 
     void openRunConfigEditor(String name) {
+        host.suggestedMainClass(); // looked for off the FX thread now, so the window's Add finds it known
         host.settingsWindow().showRunConfigs(name, host.stage());
     }
 
@@ -422,19 +434,15 @@ final class RunConfigurationCoordinator {
         if (!root.equals(makefileProbedRoot)) {
             makefileProbedRoot = root;
             makefileAtProjectRoot = false;
-            if (com.editora.vfs.Vfs.isLocal(root)) {
-                makefileAtProjectRoot = com.editora.run.RunConfigToolbar.hasMakefile(root);
-            } else {
-                Thread.ofVirtual().name("remote-makefile-probe").start(() -> {
-                    boolean found = com.editora.run.RunConfigToolbar.hasMakefile(root);
-                    javafx.application.Platform.runLater(() -> {
-                        if (found && root.equals(makefileProbedRoot)) {
+            // Looked for off the FX thread, here as on a remote host (PERF-01, Pauta 6.0.1); the toolbar is
+            // refreshed when it lands.
+            com.editora.perf.OffFx.then(
+                    "makefile-probe", () -> com.editora.run.RunConfigToolbar.hasMakefile(root), a -> {
+                        if (Boolean.TRUE.equals(a.value()) && root.equals(makefileProbedRoot)) {
                             makefileAtProjectRoot = true;
                             refreshRunConfigToolbar();
                         }
                     });
-                });
-            }
         }
         return makefileAtProjectRoot;
     }
@@ -557,11 +565,34 @@ final class RunConfigurationCoordinator {
             host.setStatus(tr("status.run.needJavaFile"));
             return;
         }
-        String fqn = host.suggestedMainClass();
-        if (fqn == null) {
-            host.setStatus(tr("status.run.noMainInFile"));
-            return;
+        // The main class is looked for off the FX thread (PERF-01, Pauta 6.0.1): the build script's, read from the
+        // disk, else the first main in the file's text, scanned there too.
+        Path file = java.util.Objects.requireNonNull(b.getPath());
+        String text = b.getContent();
+        host.suggestMainClass(file, text, fqn -> {
+            if (fqn == null) {
+                host.setStatus(tr("status.run.noMainInFile"));
+                return;
+            }
+            saveJavaRunConfig(b, fqn);
+        });
+    }
+
+    /**
+     * The main class a run configuration of Java {@code file} (with text {@code text}) starts from: what the Gradle
+     * {@code application} block of its project declares, else the first {@code main} in the text. Off the FX thread.
+     */
+    static @Nullable String suggestedMainClass(Path file, String text) {
+        String declared = com.editora.build.GradleApplication.mainClass(
+                com.editora.build.SpringBoot.readGradleBuildFile(JavaProjectRoot.find(file)));
+        if (declared != null) {
+            return declared;
         }
+        List<com.editora.run.MainMethodScanner.MainMethod> mains = com.editora.run.MainMethodScanner.scan(text);
+        return mains.isEmpty() ? null : mains.get(0).fqn();
+    }
+
+    private void saveJavaRunConfig(EditorBuffer b, String fqn) {
         String simple = com.editora.test.TestSourceLocator.simpleName(fqn);
         String args = host.programArgsFor(b.getPath());
         host.promptText(tr("run.config.saveTitle"), tr("run.config.saveName"), simple, name -> {

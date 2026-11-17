@@ -547,9 +547,20 @@ final class LspNavigationRequests {
             Consumer<List<Target>> cb) {
         return targets -> {
             String link = missingLink.get();
-            lastMissingInclude =
-                    !targets.isEmpty() ? null : link != null ? link : XmlServer.missingInclude(s, documentUri, pos);
-            cb.accept(targets);
+            if (!targets.isEmpty() || link != null) {
+                lastMissingInclude = targets.isEmpty() ? link : null;
+                cb.accept(targets);
+                return;
+            }
+            // Whether the include's file is there is looked at off the FX thread (PERF-01, Pauta 6.0.1).
+            com.editora.perf.OffFx.then(
+                    "XmlServer.missingInclude",
+                    () -> java.util.Optional.ofNullable(XmlServer.missingInclude(s, documentUri, pos)),
+                    missing -> {
+                        lastMissingInclude =
+                                missing.or(java.util.Optional.empty()).orElse(null);
+                        cb.accept(targets);
+                    });
         };
     }
 

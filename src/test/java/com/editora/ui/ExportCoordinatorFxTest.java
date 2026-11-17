@@ -591,7 +591,12 @@ class ExportCoordinatorFxTest {
             List<java.io.File> initial = new ArrayList<>();
             java.io.File[] answer = new java.io.File[1];
             ExportCoordinator exports = new ExportCoordinator(host, null, null, null, path -> {}, chooser -> {
-                initial.add(chooser.getInitialDirectory());
+                java.io.File start = chooser.getInitialDirectory();
+                if (start != null && !start.isDirectory()) {
+                    // what the native dialog does with a start folder that is gone (ChooserStart shows it again)
+                    throw new IllegalArgumentException("Folder parameter must be a valid folder");
+                }
+                initial.add(start);
                 return answer[0];
             });
             EditorBuffer saved = new EditorBuffer();
@@ -646,6 +651,53 @@ class ExportCoordinatorFxTest {
                 untitled.dispose();
             }
         });
+    }
+
+    /** PERF-01 (Pauta 6.0.1): whether the file the added extension leads to is there is looked at off the FX thread. */
+    @Test
+    void theFileTheExtensionLeadsToIsLookedAtOffTheFxThread() throws Exception {
+        Path typed = temp.resolve("plan");
+        Path existing = Files.writeString(temp.resolve("plan.html"), "kept");
+        List<String> onFx = new java.util.concurrent.CopyOnWriteArrayList<>();
+        List<java.io.File> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+        com.editora.perf.OffFx.runnerForTest(null); // a real thread for this one
+        com.editora.perf.BlockingSites.listenForTest((site, thread) -> {
+            if (javafx.application.Platform.isFxApplicationThread()) {
+                onFx.add(site);
+            }
+        });
+        Host host = new Host();
+        ExportCoordinator[] exports = new ExportCoordinator[1];
+        EditorBuffer[] b = new EditorBuffer[1];
+        try {
+            FxTestSupport.runOnFx(() -> {
+                exports[0] = new ExportCoordinator(host, null, null, null, path -> {}, chooser -> typed.toFile());
+                exports[0].confirmReplace = file -> {
+                    asked.add(file);
+                    return false;
+                };
+                b[0] = buffer("plan.md", "# Plan");
+                host.active = b[0];
+                exports[0].exportPreviewHtml();
+                assertEquals(List.of(), asked, "not asked before the look has landed");
+            });
+            for (int i = 0; i < 500 && asked.isEmpty(); i++) {
+                Thread.sleep(10);
+            }
+            assertEquals(List.of(existing.toFile()), asked);
+            assertEquals("kept", Files.readString(existing));
+            assertEquals(List.of(), onFx, "nothing looked at on the FX thread");
+        } finally {
+            com.editora.perf.BlockingSites.listenForTest(null);
+            FxTestSupport.runOnFx(() -> {
+                if (exports[0] != null) {
+                    exports[0].shutdown();
+                }
+                if (b[0] != null) {
+                    b[0].dispose();
+                }
+            });
+        }
     }
 
     /**

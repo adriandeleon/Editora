@@ -134,6 +134,14 @@ class ExportCoordinatorFlowFxTest {
         fail("timed out waiting for " + what);
     }
 
+    private int stagingCount() {
+        try {
+            return stagingFolders().size();
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
     private List<String> stagingFolders() throws Exception {
         try (Stream<Path> files = Files.list(temp)) {
             return files.map(p -> p.getFileName().toString())
@@ -233,10 +241,12 @@ class ExportCoordinatorFlowFxTest {
             exports.exportCodePdf();
             exports.exportCodePdf();
         });
+        await("both staging folders (made off the FX thread)", () -> stagingCount() == 2);
         assertEquals(2, stagingFolders().size(), "precondition: each export has its staging folder");
         await("the first export to be writing pages", this::pageProgressShown);
         int said = host.statuses.size();
         FxTestSupport.runOnFx(() -> exports.shutdown());
+        await("the staging folders to go (removed off the FX thread)", () -> stagingCount() == 0);
         assertEquals(List.of(), stagingFolders(), "shutdown removes the staging folder of both");
 
         // The interrupted writer winds down on its thread; whatever it still reports must change nothing.
@@ -314,18 +324,20 @@ class ExportCoordinatorFlowFxTest {
         List<java.util.function.Consumer<Boolean>> callbacks = new ArrayList<>();
         List<Boolean> reported = new ArrayList<>();
         Path[] staging = new Path[1];
+        FxTestSupport.runOnFx(() -> exports.<Boolean>staged(
+                target.toFile(),
+                (out, report) -> {
+                    staging[0] = out;
+                    callbacks.add(report);
+                },
+                ok -> ok,
+                message -> false,
+                reported::add));
+        await("the staging folder (made off the FX thread)", () -> staging[0] != null);
+        assertTrue(Files.isDirectory(staging[0].getParent()));
+        FxTestSupport.runOnFx(() -> exports.shutdown());
+        await("the staging folder to go (removed off the FX thread)", () -> !Files.exists(staging[0].getParent()));
         FxTestSupport.runOnFx(() -> {
-            exports.<Boolean>staged(
-                    target.toFile(),
-                    (out, report) -> {
-                        staging[0] = out;
-                        callbacks.add(report);
-                    },
-                    ok -> ok,
-                    message -> false,
-                    reported::add);
-            assertTrue(Files.isDirectory(staging[0].getParent()));
-            exports.shutdown();
             assertFalse(Files.exists(staging[0].getParent()), "shutdown removed the pending staging folder");
             try {
                 // the writer was still at work during shutdown and has finished its file since
@@ -338,6 +350,7 @@ class ExportCoordinatorFlowFxTest {
         });
         assertEquals(List.of(), reported);
         assertFalse(Files.exists(target), "nothing is committed for a closed window");
+        await("the late staging folder to go (removed off the FX thread)", () -> stagingCount() == 0);
         assertEquals(List.of(), stagingFolders());
         assertEquals(List.of(), replaced);
     }

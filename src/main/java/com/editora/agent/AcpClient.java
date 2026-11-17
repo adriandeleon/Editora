@@ -257,14 +257,26 @@ public final class AcpClient {
             return false;
         }
         try {
-            byte[] line = (mapper.writeValueAsString(message) + "\n").getBytes(StandardCharsets.UTF_8);
             // One write is one queue entry, so a message is never interleaved with another and the wire
-            // order is the order of these calls; the pipe write itself happens on the writer's thread.
-            out.write(line);
+            // order is the order of these calls; the encoding and the pipe write both happen on the writer's
+            // thread, never the FX thread a prompt is sent from (PERF-01, Pauta 6.0.1).
+            if (out instanceof com.editora.lsp.AsyncPipeWriter queued) {
+                queued.writeDeferred(4096, () -> encode(message));
+            } else {
+                out.write(encode(message));
+            }
             return true;
         } catch (IOException e) {
             LOG.log(Level.FINE, "ACP write failed", e);
             return false;
+        }
+    }
+
+    private byte[] encode(ObjectNode message) {
+        try {
+            return (mapper.writeValueAsString(message) + "\n").getBytes(StandardCharsets.UTF_8);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException(e); // a tree of plain values always serializes
         }
     }
 

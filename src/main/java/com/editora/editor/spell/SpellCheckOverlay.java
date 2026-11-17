@@ -551,10 +551,90 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
         }
         int[][] flagged = flaggedCache.get(line);
         if (flagged == null) {
+            int asked = lookupsAsked;
             flagged = flaggedSpans(line);
-            flaggedCache.put(line, flagged);
+            if (asked == lookupsAsked) {
+                flaggedCache.put(line, flagged); // complete: every word had its verdict
+            }
         }
         return flagged;
+    }
+
+    /** Where a word's dictionary verdict is worked out. TEST SEAM: a test may run it in place. */
+    private static final java.util.concurrent.ExecutorService LOOKUPS =
+            java.util.concurrent.Executors.newSingleThreadExecutor(
+                    Thread.ofPlatform().daemon().name("spell-lookup").factory());
+
+    static java.util.function.Consumer<Runnable> lookupRunner = r -> LOOKUPS.execute(r);
+
+    /** TEST SEAM — looks a word up where the paint meets it, as before the lookups moved off FX. */
+    public static volatile boolean lookUpInPlace;
+
+    /** Words whose verdict is being looked up; a line holding one is not kept in {@link #flaggedCache}. */
+    private final java.util.Set<String> lookingUp = new java.util.HashSet<>();
+
+    private final java.util.List<String> toLookUp = new java.util.ArrayList<>();
+    /** Bumped each time {@link #flaggedSpans} met a word with no verdict yet. */
+    private int lookupsAsked;
+
+    /**
+     * The dictionary verdict for {@code word} if known; else false for now (PERF-01, Pauta 6.0.1: a Hunspell
+     * lookup is a search, never on the FX thread), and the word is queued for a lookup off the thread that
+     * repaints the squiggles when it lands.
+     */
+    private boolean misspelled(String word, SpellChecker spell) {
+        Boolean known = spellCache.get(word);
+        if (known != null) {
+            return known;
+        }
+        if (lookUpInPlace) {
+            boolean bad = spell.isMisspelled(word);
+            spellCache.put(word, bad);
+            return bad;
+        }
+        lookupsAsked++;
+        if (lookingUp.add(word)) {
+            boolean first = toLookUp.isEmpty();
+            toLookUp.add(word);
+            if (first) {
+                javafx.application.Platform.runLater(() -> sendLookups(spell));
+            }
+        }
+        return false;
+    }
+
+    /** Sends the words a paint met with no verdict, as one batch, to the lookup thread. */
+    private void sendLookups(SpellChecker spell) {
+        java.util.List<String> words = java.util.List.copyOf(toLookUp);
+        toLookUp.clear();
+        if (words.isEmpty()) {
+            return;
+        }
+        lookupRunner.accept(() -> {
+            com.editora.perf.BlockingSites.enter("SpellCheckOverlay.lookup");
+            java.util.Map<String, Boolean> verdicts = new java.util.HashMap<>();
+            for (String w : words) {
+                boolean bad;
+                try {
+                    bad = spell.isMisspelled(w);
+                } catch (RuntimeException e) {
+                    bad = false;
+                }
+                verdicts.put(w, bad);
+            }
+            com.editora.perf.OffFx.onFx(() -> {
+                lookingUp.removeAll(words);
+                if (spell != checker) {
+                    return; // the dictionary changed meanwhile: the new one is asked afresh
+                }
+                spellCache.putAll(verdicts);
+                if (verdicts.containsValue(Boolean.TRUE)) {
+                    flaggedCache.clear();
+                    geometry.clear();
+                    scheduleRedraw();
+                }
+            });
+        });
     }
 
     /**
@@ -658,7 +738,7 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
         for (int[] span : SpellChecker.checkableWords(mode.prose(line), mode.syntax())) {
             int start = span[0];
             int end = span[1];
-            if (spellCache.computeIfAbsent(line.substring(start, end), spell::isMisspelled)) {
+            if (misspelled(line.substring(start, end), spell)) {
                 if (flagged == null) {
                     flagged = new java.util.ArrayList<>();
                 }

@@ -44,6 +44,9 @@ class SpellFxTest {
 
     @BeforeAll
     void setUp() throws Exception {
+        // A word's verdict is looked up off the FX thread and painted when it lands; these tests drive the
+        // menus and commands right after an edit, so the lookup runs where the paint meets the word.
+        com.editora.editor.spell.SpellCheckOverlay.lookUpInPlace = true;
         FxTestSupport.bootToolkit();
         fx = FxWindowFixture.create();
         Stage stage = FxTestSupport.field(fx.controller, "stage");
@@ -62,8 +65,33 @@ class SpellFxTest {
 
     @AfterAll
     void tearDown() throws Exception {
+        com.editora.editor.spell.SpellCheckOverlay.lookUpInPlace = false;
         if (fx != null) {
             fx.dispose();
+        }
+    }
+
+    @Test
+    void aWordsVerdictIsLookedUpOffTheFxThreadAndSquiggledWhenItLands() throws Exception {
+        java.util.List<String> onFx = java.util.Collections.synchronizedList(new ArrayList<>());
+        java.util.List<String> elsewhere = java.util.Collections.synchronizedList(new ArrayList<>());
+        com.editora.editor.spell.SpellCheckOverlay.lookUpInPlace = false;
+        com.editora.perf.BlockingSites.listenForTest((site, thread) -> {
+            if ("SpellCheckOverlay.lookup".equals(site)) {
+                (javafx.application.Platform.isFxApplicationThread() ? onFx : elsewhere).add(site);
+            }
+        });
+        try {
+            EditorBuffer txt = open("async.txt", "a qqzzyxwvut word\n");
+            for (int i = 0; i < 100 && !squiggled(txt).contains("qqzzyxwvut"); i++) {
+                settle();
+            }
+            assertEquals(List.of("qqzzyxwvut"), squiggled(txt), "painted once its verdict landed");
+            assertTrue(onFx.isEmpty(), "no dictionary lookup on the FX thread");
+            assertFalse(elsewhere.isEmpty(), "looked up on the spell-lookup thread");
+        } finally {
+            com.editora.perf.BlockingSites.listenForTest(null);
+            com.editora.editor.spell.SpellCheckOverlay.lookUpInPlace = true;
         }
     }
 
