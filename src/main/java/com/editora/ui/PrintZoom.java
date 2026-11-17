@@ -12,7 +12,7 @@ final class PrintZoom {
         FIT_PAGE,
         /** The sheet is as wide as the window; a tall page scrolls. */
         FIT_WIDTH,
-        /** A fixed percentage of the paper's real size (1 pt = 1 px at 100%). */
+        /** A fixed percentage of the paper's real size (1 pt = 1 px at 100%, times the UI zoom). */
         PERCENT
     }
 
@@ -45,12 +45,7 @@ final class PrintZoom {
         return Double.isFinite(factor) ? Math.max(MIN, Math.min(MAX, factor)) : 1;
     }
 
-    /**
-     * The scale factor of {@code setting} for a sheet of {@code sheetWidth}×{@code sheetHeight} in a viewport
-     * of {@code viewWidth}×{@code viewHeight}, where {@code chrome} px on each side of the sheet are not
-     * available to it (the grey gap and the drop shadow). A fit is not capped at 100%: in a large window the
-     * page grows to use it, up to {@link #MAX}. Before the viewport has a size a fit answers 1.
-     */
+    /** {@link #factor(Setting, double, double, double, double, double, double)} at a UI zoom of 100%. */
     static double factor(
             Setting setting,
             double sheetWidth,
@@ -58,22 +53,43 @@ final class PrintZoom {
             double viewWidth,
             double viewHeight,
             double chrome) {
+        return factor(setting, sheetWidth, sheetHeight, viewWidth, viewHeight, chrome, 1);
+    }
+
+    /**
+     * The on-screen scale factor of {@code setting} for a sheet of {@code sheetWidth}×{@code sheetHeight} in a
+     * viewport of {@code viewWidth}×{@code viewHeight}, where {@code chrome} px on each side of the sheet are not
+     * available to it (the grey gap and the drop shadow). A percentage is of the paper at the UI zoom
+     * {@code uiZoom} (1 = 100%): "100%" at a UI zoom of 150% draws a point as 1.5 px, as large as the text around
+     * it. A fit fills the viewport whatever the UI zoom, and is not capped at 100%: in a large window the page
+     * grows to use it, up to {@link #MAX} times the UI zoom. Before the viewport has a size a fit answers the UI
+     * zoom.
+     */
+    static double factor(
+            Setting setting,
+            double sheetWidth,
+            double sheetHeight,
+            double viewWidth,
+            double viewHeight,
+            double chrome,
+            double uiZoom) {
+        double ui = Double.isFinite(uiZoom) && uiZoom > 0 ? uiZoom : 1;
         if (setting.mode() == Mode.PERCENT) {
-            return clamp(setting.percent());
+            return clamp(setting.percent()) * ui;
         }
         double availWidth = viewWidth - 2 * chrome;
         double availHeight = viewHeight - 2 * chrome;
         if (sheetWidth <= 0 || sheetHeight <= 0 || availWidth <= 0) {
-            return 1;
+            return ui;
         }
         double fit = availWidth / sheetWidth;
         if (setting.mode() == Mode.FIT_PAGE) {
             if (availHeight <= 0) {
-                return 1;
+                return ui;
             }
             fit = Math.min(fit, availHeight / sheetHeight);
         }
-        return Math.max(MIN_FIT, Math.min(MAX, fit));
+        return Math.max(MIN_FIT, Math.min(MAX * ui, fit));
     }
 
     /** The next step above {@code factor} (the current effective scale), or {@link #MAX} at the top. */

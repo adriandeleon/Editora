@@ -34,6 +34,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every setting can be changed from the Command Palette.** Settings that were only rows of the Settings window
+  now have commands too (SET-06, Pauta 6.0.1). Most pages have one that lists their settings by name with their
+  values and flips the one you pick, lists its choices or asks for its value: Terminal: Change a Setting… (the
+  shell, theme, text size, cursor, desktop notifications and the rest), Debug: Change a Setting…, LSP: Change a
+  Language Setting… (ShellCheck and shfmt, XML and HTML formatting, ESLint and the formatters, the actions on
+  save), Build: Change a Setting… (each build tool's command, Maven's default JDK, Node.js, Build before Run),
+  Encryption: Change a Setting…, Settings Sync: Change a Setting…, Web: Change a Setting… and Editor: Change a
+  PDF Setting…. New single commands: View: Toggle a File Preview…, View: Toggle Word Wrap in Prose, View: Toggle Quick Fix Lightbulb, View: Toggle Problem Counter,
+  GitHub: Set gh Command…, Remote: Set Container Engine…, Spell Check: Set Default Language…, AI: Set API Key…
+  (typed into a field of dots), AI Agent: Set a Client's Command… and Markdown Lint: Set Rule Severity…. Each
+  keeps what its Settings row would keep and shows in an open Settings window at once. The question before a
+  paste of several lines into a terminal gets no command: it protects you, so only its row turns it off.
+
 - **Debug Bash scripts.** Press Debug on a Bash script to stop at its breakpoints, step through it and read its
   variables in a watch or by hovering (`total`, or `$total` as the script writes it). Install Bash Debug from
   Settings → Debugging → Bash; it brings its own bashdb and runs on Node.js. Scripts of other shells (zsh, fish) still
@@ -715,6 +728,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   step stops every thread of the program, and Continue resumes them all — IntelliJ's "Suspend: All".
 
 ### Changed
+
+- **Print Preview follows the interface zoom.** Its bar's text, buttons and gaps, and the window's size, grow and
+  shrink with the interface zoom (View: Zoom In Interface) like every other window (WIN-12, Pauta 6.0.1), and a
+  change of the zoom reaches an open preview at once. The page at "100%" is drawn as large as the text around it;
+  Fit Page and Fit Width still fill the window. The page itself keeps the size it was laid out at, and prints
+  exactly as before.
 
 - **File commands, installs and plugins work on disk in the background.** Opening, renaming, moving and deleting
   files in the Project panel and on the Map, New Folder, New ▸ type, Save As's "replace it?" check, Revert, Rename
