@@ -30,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * tree to a placeholder.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the filter answers before the call returns
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class BuildActionsTreeFxTest {
 

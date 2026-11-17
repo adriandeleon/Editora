@@ -13,6 +13,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import java.util.function.UnaryOperator;
 
 import javafx.scene.input.Clipboard;
 import javafx.stage.DirectoryChooser;
@@ -23,6 +24,7 @@ import com.editora.diff.BinaryDiff;
 import com.editora.diff.BlobRewrite;
 import com.editora.diff.ConflictParser;
 import com.editora.diff.DiffEngine;
+import com.editora.diff.DiffModels;
 import com.editora.diff.DiffModels.DiffModel;
 import com.editora.diff.DiffService;
 import com.editora.diff.DiffText;
@@ -529,9 +531,11 @@ final class DiffCoordinator {
         if (!NoUndoGuard.allow(b, tr("noUndo.op.diff"))) {
             return false;
         }
-        b.replaceWholeDocument(newText); // widens first: newText is whole-document text
-        host.setStatus(tr("status.diff.applied"));
-        refreshOpenDiffs();
+        // Widens first: newText is whole-document text. The span that differs is worked out off the FX thread.
+        b.replaceWholeDocumentLater(newText, applied -> {
+            host.setStatus(tr(applied ? "status.diff.applied" : "status.diff.applyFailed", b.getTitle()));
+            refreshOpenDiffs();
+        });
         return true;
     }
 
@@ -566,9 +570,12 @@ final class DiffCoordinator {
                 || !NoUndoGuard.allow(buffer, tr("noUndo.op.diff"))) {
             return false;
         }
-        buffer.replaceWholeDocument(newText);
-        host.setStatus(tr("status.diff.applied"));
-        refreshOpenDiffs();
+        buffer.replaceWholeDocumentLater(
+                newText,
+                applied -> { // the span that differs, worked out off the FX thread
+                    host.setStatus(tr(applied ? "status.diff.applied" : "status.diff.applyFailed", buffer.getTitle()));
+                    refreshOpenDiffs();
+                });
         return true;
     }
 
@@ -663,28 +670,72 @@ final class DiffCoordinator {
             host.setStatus(tr("status.diff.noFile"));
             return;
         }
-        List<PatchParser.FilePatch> files = PatchParser.parse(buffer.getContent());
-        if (files.isEmpty()) {
-            host.setStatus(tr("status.diff.patchUnparsable"));
-            return;
+        if (parsingPatch) {
+            return; // a second press while the patch is parsed
         }
+        parsingPatch = true;
+        String text = buffer.getContent();
+        String ending = buffer.getLineEnding();
+        String charset = buffer.getEffectiveCharset();
+        // Parsed, and each file's two sides composed, off the FX thread (PERF-01, Pauta 6.0.1).
+        com.editora.perf.OffFx.then(
+                PATCH_PARSE_SITE,
+                () -> {
+                    List<PatchParser.FilePatch> parsed = PatchParser.parse(text);
+                    List<String[]> sides = new ArrayList<>();
+                    for (PatchParser.FilePatch fp : parsed) {
+                        sides.add(new String[] {
+                            patchText(fp.oldLines(), fp.oldFinalNewline()),
+                            patchText(fp.newLines(), fp.newFinalNewline())
+                        });
+                    }
+                    // the bytes an Apply applies: the text that was parsed for this tab
+                    return new ParsedPatch(parsed, sides, GitPatchCoordinator.patchBytes(text, ending, charset));
+                },
+                a -> {
+                    parsingPatch = false;
+                    ParsedPatch parsed = a.value();
+                    if (parsed == null || parsed.files().isEmpty()) {
+                        host.setStatus(tr("status.diff.patchUnparsable"));
+                    } else {
+                        openPatchFile(buffer, parsed);
+                    }
+                });
+    }
+
+    /** Where a patch tab's text is parsed for Open in Diff Viewer: heard off the FX thread (PERF-01). */
+    public static final String PATCH_PARSE_SITE = "DiffCoordinator.patchParse";
+
+    /** Set while a patch is parsed for Open in Diff Viewer. */
+    private boolean parsingPatch;
+
+    /** A parsed patch and, per file, its old and new text. */
+    private record ParsedPatch(List<PatchParser.FilePatch> files, List<String[]> sides, byte[] bytes) {}
+
+    private void openPatchFile(EditorBuffer buffer, ParsedPatch parsed) {
+        List<PatchParser.FilePatch> files = parsed.files();
+        List<String[]> sides = parsed.sides();
         List<com.editora.diff.DiffModels.DiffModel> models = new ArrayList<>(Collections.nCopies(files.size(), null));
         AtomicInteger remaining = new AtomicInteger(files.size());
         for (int i = 0; i < files.size(); i++) {
             int index = i;
             PatchParser.FilePatch fp = files.get(i);
+            // Numbered as the patch numbers it on the diff's own thread (PERF-01).
+            String[] side = sides.get(i);
             diffService.compute(
-                    patchText(fp.oldLines(), fp.oldFinalNewline()),
-                    patchText(fp.newLines(), fp.newFinalNewline()),
+                    () -> side[0],
+                    () -> side[1],
                     lastDiffOptions,
-                    model -> {
-                        models.set(index, PatchLineNumbers.renumber(model, fp.oldLineNumbers(), fp.newLineNumbers()));
+                    renumbered(fp.oldLineNumbers(), fp.newLineNumbers()),
+                    done -> {
+                        DiffModels.DiffModel model = done.model();
+                        models.set(index, model);
                         if (remaining.decrementAndGet() == 0) {
                             if (models.contains(null)) {
                                 host.setStatus(tr("status.diff.tooLarge"));
                                 return;
                             }
-                            openPatchReview(buffer, files, models);
+                            openPatchReview(buffer, files, models, sides, parsed.bytes());
                         }
                     });
         }
@@ -693,11 +744,14 @@ final class DiffCoordinator {
     private void openPatchReview(
             EditorBuffer buffer,
             List<PatchParser.FilePatch> files,
-            List<com.editora.diff.DiffModels.DiffModel> models) {
+            List<com.editora.diff.DiffModels.DiffModel> models,
+            List<String[]> sides,
+            byte[] patch) {
         List<PatchReviewPane.Entry> entries = new ArrayList<>();
         for (int i = 0; i < files.size(); i++) {
             PatchParser.FilePatch fp = files.get(i);
-            DiffViewerPane pane = patchPane(null, null, null, buffer.getTitle(), fp, models.get(i));
+            DiffViewerPane pane =
+                    patchPane(null, null, null, buffer.getTitle(), fp, models.get(i), sides.get(i)[0], sides.get(i)[1]);
             String rightName = patchNames(fp, buffer.getTitle())[1];
             entries.add(new PatchReviewPane.Entry(rightName, fp.additions(), fp.deletions(), pane));
         }
@@ -710,7 +764,6 @@ final class DiffCoordinator {
             PatchReviewPane review = new PatchReviewPane(tr("diff.title.patchSet", entries.size()), entries);
             if (applicable) {
                 // The text that was parsed for this tab: what is applied is what is being reviewed.
-                byte[] patch = GitPatchCoordinator.patchBytes(buffer);
                 Path root = git.repoRoot(); // the repository it was opened in; see GitPatchCoordinator.apply
                 review.setApplyActions(
                         () -> git.patches().apply(root, patch, false),
@@ -742,12 +795,12 @@ final class DiffCoordinator {
             @Nullable String headerRight,
             String fallback,
             PatchParser.FilePatch fp,
-            com.editora.diff.DiffModels.DiffModel initial) {
+            com.editora.diff.DiffModels.DiffModel initial,
+            String leftText,
+            String rightText) {
         String[] names = patchNames(fp, fallback);
         String leftName = names[0];
         String rightName = names[1];
-        String leftText = patchText(fp.oldLines(), fp.oldFinalNewline());
-        String rightText = patchText(fp.newLines(), fp.newFinalNewline());
         DiffViewerPane pane = new DiffViewerPane(
                 title != null ? title : tr("diff.title.patch", rightName),
                 headerLeft,
@@ -771,7 +824,9 @@ final class DiffCoordinator {
         List<List<Integer>> numbers = new ArrayList<>(List.of(fp.oldLineNumbers(), fp.newLineNumbers()));
         pane.setOnSwapRequested((newLeft, newRight) -> {
             long requested = generation.incrementAndGet();
-            diffService.compute(newLeft, newRight, lastDiffOptions, model -> {
+            UnaryOperator<DiffModels.DiffModel> swapped = renumbered(numbers.get(1), numbers.get(0));
+            diffService.compute(() -> newLeft, () -> newRight, lastDiffOptions, swapped, done -> {
+                DiffModels.DiffModel model = done.model();
                 if (requested != generation.get()) {
                     pane.cancelSwap();
                     return;
@@ -784,7 +839,7 @@ final class DiffCoordinator {
                 current[0] = newLeft;
                 current[1] = newRight;
                 Collections.reverse(numbers);
-                pane.swapSides(PatchLineNumbers.renumber(model, numbers.get(0), numbers.get(1)));
+                pane.swapSides(model);
             });
         });
         pane.setOnOptionsChanged(opts -> {
@@ -792,9 +847,11 @@ final class DiffCoordinator {
             long requested = generation.incrementAndGet();
             String left = current[0];
             String right = current[1];
-            diffService.compute(left, right, opts, model -> {
+            UnaryOperator<DiffModels.DiffModel> numbered = renumbered(numbers.get(0), numbers.get(1));
+            diffService.compute(() -> left, () -> right, opts, numbered, done -> {
+                DiffModels.DiffModel model = done.model();
                 if (model != null && requested == generation.get()) {
-                    pane.updateContent(left, right, PatchLineNumbers.renumber(model, numbers.get(0), numbers.get(1)));
+                    pane.updateContent(left, right, model);
                 }
             });
         });
@@ -809,24 +866,35 @@ final class DiffCoordinator {
      */
     void openPatchFileDiff(
             String title, String headerLeft, String headerRight, String fallback, PatchParser.FilePatch fp) {
+        // The two sides are joined, diffed and numbered on the diff's own thread (PERF-01, Pauta 6.0.1).
         diffService.compute(
-                patchText(fp.oldLines(), fp.oldFinalNewline()),
-                patchText(fp.newLines(), fp.newFinalNewline()),
+                () -> patchText(fp.oldLines(), fp.oldFinalNewline()),
+                () -> patchText(fp.newLines(), fp.newFinalNewline()),
                 lastDiffOptions,
-                model -> {
+                renumbered(fp.oldLineNumbers(), fp.newLineNumbers()),
+                done -> {
+                    DiffModels.DiffModel model = done.model();
                     if (model == null) {
                         host.setStatus(tr("status.diff.tooLarge"));
                         return;
                     }
-                    ops.addDiffTab(patchPane(
-                            title,
-                            headerLeft,
-                            headerRight,
-                            fallback,
-                            fp,
-                            PatchLineNumbers.renumber(model, fp.oldLineNumbers(), fp.newLineNumbers())));
+                    ops.addDiffTab(
+                            patchPane(title, headerLeft, headerRight, fallback, fp, model, done.left(), done.right()));
                 });
     }
+
+    /** A model numbered as a patch numbers its sides: applied on the diff's own thread. */
+    private static UnaryOperator<DiffModels.DiffModel> renumbered(List<Integer> left, List<Integer> right) {
+        List<Integer> l = new ArrayList<>(left);
+        List<Integer> r = new ArrayList<>(right);
+        return model -> {
+            com.editora.perf.BlockingSites.enter(RENUMBER_SITE);
+            return PatchLineNumbers.renumber(model, l, r);
+        };
+    }
+
+    /** Where a patch's diff is numbered as the patch numbers it: heard on the diff's own thread (PERF-01). */
+    public static final String RENUMBER_SITE = "PatchLineNumbers.renumber";
 
     private static String patchText(List<String> lines, boolean finalNewline) {
         return new com.editora.diff.DiffText(lines, "\n", finalNewline).compose(lines);
@@ -2147,6 +2215,20 @@ final class DiffCoordinator {
         return patch.getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
 
+    /** Where the document's conflict markers are found and parsed: heard off the FX thread (PERF-01). */
+    public static final String MERGE_PARSE_SITE = "DiffCoordinator.mergeParse";
+
+    /** Set while the document is parsed for Resolve Conflicts: a second press meanwhile does nothing. */
+    private boolean parsingConflicts;
+
+    /** The document as Resolve Conflicts reads it, parsed off the FX thread. */
+    private record MergeText(boolean hasMarkers, DiffText format, ConflictParser.ConflictFile written) {
+        static MergeText of(String text) {
+            DiffText format = DiffText.parse(text);
+            return new MergeText(ConflictParser.hasConflictMarkers(text), format, ConflictParser.parse(format.lines()));
+        }
+    }
+
     /** Opens the merge-conflict resolution view for the active buffer (if it has conflict markers). */
     void resolveConflicts() {
         EditorBuffer b = host.activeBuffer();
@@ -2154,16 +2236,35 @@ final class DiffCoordinator {
             host.setStatus(tr("status.diff.noFile"));
             return;
         }
+        if (parsingConflicts) {
+            return;
+        }
         // The whole document, not text(): on a narrowed buffer that is only the region, and Apply replaces the
-        // whole document with the resolution.
+        // whole document with the resolution. Parsed off the FX thread (PERF-01, Pauta 6.0.1), for this version.
         String text = b.getContent();
-        boolean hasMarkers = ConflictParser.hasConflictMarkers(text);
-        DiffText format = DiffText.parse(text);
+        long version = b.docVersion();
+        parsingConflicts = true;
+        com.editora.perf.OffFx.then(MERGE_PARSE_SITE, () -> MergeText.of(text), a -> {
+            parsingConflicts = false;
+            MergeText parsed = a.value();
+            if (parsed == null) {
+                host.setStatus(tr("status.diff.applyFailed", b.getTitle()));
+            } else if (b.docVersion() != version) {
+                host.setStatus(tr("status.merge.stale"));
+            } else {
+                resolveConflicts(b, text, version, parsed);
+            }
+        });
+    }
+
+    private void resolveConflicts(EditorBuffer b, String text, long version, MergeText parsed) {
+        boolean hasMarkers = parsed.hasMarkers();
+        DiffText format = parsed.format();
         Path path = b.getPath();
         Path root = git.repoRoot();
         String rel = root == null || path == null ? null : GitService.repoRelative(root, path);
         if (root == null || rel == null) {
-            openMarkerMergeOrReport(b, text, format, hasMarkers);
+            openMarkerMergeOrReport(b, text, parsed);
             return;
         }
 
@@ -2178,7 +2279,7 @@ final class DiffCoordinator {
                                         root,
                                         ":2:" + rel,
                                         ours -> git.service().showBlob(root, ":3:" + rel, theirs -> {
-                                            if (!b.getContent().equals(text)) {
+                                            if (b.docVersion() != version) {
                                                 host.setStatus(tr("status.merge.stale"));
                                                 return;
                                             }
@@ -2187,7 +2288,7 @@ final class DiffCoordinator {
                                                 return;
                                             }
                                             if (!base.found() || !ours.found() || !theirs.found()) {
-                                                openMarkerMergeOrReport(b, text, format, hasMarkers);
+                                                openMarkerMergeOrReport(b, text, parsed);
                                                 return;
                                             }
                                             // The binary checks and the decoding of the three versions run off the
@@ -2197,7 +2298,7 @@ final class DiffCoordinator {
                                                         || BinaryDiff.isProbablyBinary(ours.bytes())
                                                         || BinaryDiff.isProbablyBinary(theirs.bytes())) {
                                                     javafx.application.Platform.runLater(
-                                                            () -> openMarkerMergeOrReport(b, text, format, hasMarkers));
+                                                            () -> openMarkerMergeOrReport(b, text, parsed));
                                                     return;
                                                 }
                                                 String baseText = decodeMergeBlob(base.bytes(), charset, openCharset);
@@ -2207,11 +2308,11 @@ final class DiffCoordinator {
                                                 ThreeWayMerge.Result result =
                                                         ThreeWayMerge.merge(baseText, oursText, theirsText);
                                                 javafx.application.Platform.runLater(() -> {
-                                                    if (!b.getContent().equals(text)) {
+                                                    if (b.docVersion() != version) {
                                                         host.setStatus(tr("status.merge.stale"));
                                                         return;
                                                     }
-                                                    openStageMerge(b, text, format, hasMarkers, result.file());
+                                                    openStageMerge(b, text, parsed, result.file());
                                                 });
                                             });
                                         })));
@@ -2237,12 +2338,10 @@ final class DiffCoordinator {
      * again from Git's versions and replacing what the file holds.
      */
     private void openStageMerge(
-            EditorBuffer buffer,
-            String sourceText,
-            DiffText format,
-            boolean hasMarkers,
-            ConflictParser.ConflictFile merged) {
-        ConflictParser.ConflictFile written = ConflictParser.parse(format.lines());
+            EditorBuffer buffer, String sourceText, MergeText parsed, ConflictParser.ConflictFile merged) {
+        DiffText format = parsed.format();
+        boolean hasMarkers = parsed.hasMarkers();
+        ConflictParser.ConflictFile written = parsed.written();
         MergeSource source = switch (ThreeWayMerge.sourceFor(merged, written)) {
             case MERGE -> MergeSource.GIT_VERSIONS;
             case FILE_MARKERS -> MergeSource.FILE_MARKERS;
@@ -2282,13 +2381,9 @@ final class DiffCoordinator {
         return DiffSideText.decode(bytes, editorConfigCharset, openCharset).text();
     }
 
-    private void openMarkerMerge(EditorBuffer buffer, String sourceText, DiffText format) {
-        openMergePane(buffer, sourceText, format, ConflictParser.parse(format.lines()));
-    }
-
-    private void openMarkerMergeOrReport(EditorBuffer buffer, String sourceText, DiffText format, boolean hasMarkers) {
-        if (hasMarkers) {
-            openMarkerMerge(buffer, sourceText, format);
+    private void openMarkerMergeOrReport(EditorBuffer buffer, String sourceText, MergeText parsed) {
+        if (parsed.hasMarkers()) {
+            openMergePane(buffer, sourceText, parsed.format(), parsed.written());
         } else {
             host.setStatus(tr("status.merge.noConflicts"));
         }
@@ -2369,9 +2464,15 @@ final class DiffCoordinator {
             }
             return false;
         }
-        target.replaceWholeDocument(resolvedText);
-        host.setStatus(tr("status.merge.applied"));
-        git.resolutionApplied(target); // a finished resolution of an unmerged path is saved and staged
+        // The span that differs is worked out off the FX thread; the resolution is saved and staged once it is in.
+        target.replaceWholeDocumentLater(resolvedText, applied -> {
+            if (applied) {
+                host.setStatus(tr("status.merge.applied"));
+                git.resolutionApplied(target); // a finished resolution of an unmerged path is saved and staged
+            } else {
+                host.setStatus(tr("status.merge.stale"));
+            }
+        });
         return true;
     }
 

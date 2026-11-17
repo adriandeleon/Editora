@@ -478,24 +478,85 @@ public final class NoteManager implements LineMarks.Carrier {
         // Only the offsets move: no line lookups here. They used to find the lines whose gutter to rebuild — two
         // offsetToPosition calls per note per keystroke and a gutter graphic rebuilt for each moved line, for a
         // glyph notes no longer have (an Enter above 200 notes queued 400 rebuilds).
+        @Nullable List<Replaced> inReplacement = null;
         for (Tracked t : tracked.values()) {
             if (!t.positioned()) {
                 continue;
             }
             int[] shifted = NoteAnchors.shiftRange(t.start, t.end, pos, removed, inserted);
             if (inserted > 0 && t.start >= pos && t.end <= pos + removed && t.end - t.start < removed) {
-                // The note sat inside a replaced span (Replace All, a formatter edit, a history restore):
-                // follow its text into the replacement instead of collapsing onto the edit point.
-                TextAnchor anchor = t.note.anchor();
-                int[] kept = NoteAnchors.relocateInReplacement(
-                        change.getInserted(), t.start - pos, anchor.selectedText(), anchor.length());
-                if (kept != null) {
-                    shifted = new int[] {pos + kept[0], pos + kept[1]};
+                // The note sat inside a replaced span (Replace All, a formatter edit, a history restore): its text
+                // is followed into the replacement off the FX thread (the replacement can be the whole document).
+                if (inReplacement == null) {
+                    inReplacement = new ArrayList<>();
                 }
+                inReplacement.add(new Replaced(t, t.note, t.start - pos));
             }
             t.start = shifted[0];
             t.end = shifted[1];
         }
+        if (inReplacement != null) {
+            followIntoReplacement(inReplacement, pos, change.getInserted());
+        }
+    }
+
+    /** {@link com.editora.perf.BlockingSites} name of following notes into a replaced span, off the FX thread. */
+    public static final String REPLACEMENT_SITE = "NoteManager.followReplacement";
+
+    /** A note that sat inside a replaced span, {@code relStart} into it. */
+    private record Replaced(Tracked tracked, PersonalNote note, int relStart) {}
+
+    /**
+     * Follows each note of {@code replaced} into the text that replaced its span, off the FX thread: until it lands
+     * the note sits collapsed at the edit point, where the shift put it. Applied only if no edit came meanwhile;
+     * otherwise the notes are found in the text as it is then ({@link #relocateLater}).
+     */
+    private void followIntoReplacement(List<Replaced> replaced, int pos, String insertedText) {
+        long version = edits;
+        com.editora.perf.OffFx.then(
+                REPLACEMENT_SITE,
+                () -> {
+                    List<int @Nullable []> found = new ArrayList<>();
+                    for (Replaced r : replaced) {
+                        TextAnchor anchor = r.note().anchor();
+                        found.add(NoteAnchors.relocateInReplacement(
+                                insertedText, r.relStart(), anchor.selectedText(), anchor.length()));
+                    }
+                    return found;
+                },
+                answer -> {
+                    List<int @Nullable []> found = answer.value();
+                    if (found == null) {
+                        return;
+                    }
+                    if (edits != version) {
+                        List<UUID> ids = new ArrayList<>();
+                        for (Replaced r : replaced) {
+                            if (tracked.get(r.note().id()) == r.tracked()) {
+                                ids.add(r.note().id());
+                            }
+                        }
+                        if (!ids.isEmpty()) {
+                            relocateLater(ids, RELOCATE_TRIES, moved -> {});
+                        }
+                        return;
+                    }
+                    boolean any = false;
+                    for (int k = 0; k < replaced.size(); k++) {
+                        Replaced r = replaced.get(k);
+                        int[] kept = found.get(k);
+                        Tracked t = r.tracked();
+                        if (kept == null || tracked.get(r.note().id()) != t || t.note != r.note()) {
+                            continue;
+                        }
+                        t.start = pos + kept[0];
+                        t.end = pos + kept[1];
+                        any = true;
+                    }
+                    if (any) {
+                        onSpansChanged.run();
+                    }
+                });
     }
 
     private void fireChanged() {

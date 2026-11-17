@@ -71,6 +71,14 @@ public final class BufferCompletion {
 
         boolean isProse();
 
+        /**
+         * The info string of the Markdown fence {@code line} is in ({@code "mermaid"}…), or null — looked up in
+         * the buffer's line map, never by scanning the document (PERF-01, Pauta 6.0.1).
+         */
+        default @Nullable String markdownFenceInfo(int line) {
+            return null;
+        }
+
         String getSpellLanguage();
 
         boolean isEditable();
@@ -483,13 +491,10 @@ public final class BufferCompletion {
         if (doc == null || doc.isBlank()) {
             return null;
         }
-        try {
-            java.util.function.Consumer<String> open = linkOpener;
-            return MarkdownRenderer.renderPopup(
-                    MarkdownRenderer.parseForRender(doc.strip()), open == null ? null : open::accept);
-        } catch (RuntimeException ex) {
-            return null;
-        }
+        // Plain text first, its rendering when the parse made off the FX thread lands (PERF-01, Pauta 6.0.1).
+        java.util.function.Consumer<String> open = linkOpener;
+        return MarkdownRenderer.renderedLater(
+                doc.strip(), ast -> MarkdownRenderer.renderPopup(ast, open == null ? null : open::accept));
     }
 
     void hideDocPopup() {
@@ -1398,15 +1403,10 @@ public final class BufferCompletion {
         return true;
     }
 
-    /** Whether the nearest fence line above {@code line} opens a mermaid block (a bounded look upwards). */
-    private static boolean mermaidFenceAbove(CodeArea a, int line) {
-        for (int i = line - 1; i >= Math.max(0, line - 400); i--) {
-            String t = a.getParagraph(i).getText().stripLeading();
-            if (t.startsWith("```") || t.startsWith("~~~")) {
-                return t.toLowerCase(java.util.Locale.ROOT).contains("mermaid");
-            }
-        }
-        return false;
+    /** Whether {@code line} is inside a mermaid fence, as the buffer's line map knows it. */
+    private boolean mermaidFenceAbove(CodeArea a, int line) {
+        String info = host.markdownFenceInfo(line);
+        return info != null && info.toLowerCase(java.util.Locale.ROOT).contains("mermaid");
     }
 
     /**
@@ -1811,15 +1811,18 @@ public final class BufferCompletion {
             return;
         }
         var smart = lspFilter;
-        var items = smart == null ? result.items() : smart.apply(result.items());
+        List<Completion> all = result.items();
         List<Completion> local = smart == null ? localItems : List.of();
         int line = a.getCurrentParagraph();
         int column = a.getCaretColumn();
         String beforeCaret = a.getText(
                 Math.max(a.getAbsolutePosition(line, 0), a.getCaretPosition() - PREFIX_LOOKBACK), a.getCaretPosition());
         long filter = CompletionTrace.now();
-        java.util.concurrent.CompletableFuture.supplyAsync(() ->
-                        mergeCompletions(CompletionEngine.filterLsp(items, prefix, line, column, beforeCaret), local))
+        // Smart Type's filter over the server's list runs with the rest of the filtering, off the FX thread.
+        java.util.concurrent.CompletableFuture.supplyAsync(() -> mergeCompletions(
+                        CompletionEngine.filterLsp(
+                                smart == null ? all : smart.apply(all), prefix, line, column, beforeCaret),
+                        local))
                 .thenAccept(merged -> Platform.runLater(() -> {
                     if (render != renderGen
                             || context != session

@@ -14,6 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The transcript is bounded in characters as well as in entries: per entry, and as a whole. */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the reply parses land in place
 class AgentPanelBudgetFxTest {
 
     @BeforeAll

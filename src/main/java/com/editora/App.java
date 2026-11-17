@@ -93,6 +93,11 @@ public class App extends Application {
     static void fallbackBootstrap(
             java.nio.file.Path configDir, java.util.List<String> args, java.util.function.Consumer<Bootstrap> then) {
         prefetchConfig(configDir, args, new java.util.concurrent.CountDownLatch(0))
+                .thenApplyAsync(
+                        App::readForFirstWindow,
+                        task -> Thread.ofVirtual()
+                                .name("config-prefetch-first-window")
+                                .start(task))
                 .whenComplete((landed, failure) -> Platform.runLater(() -> {
                     if (failure != null || landed == null) {
                         LOG.log(Level.SEVERE, "Could not load the configuration", failure);
@@ -101,6 +106,29 @@ public class App extends Application {
                         then.accept(landed);
                     }
                 }));
+    }
+
+    /** {@link com.editora.perf.BlockingSites} name of the fallback's reads for the first window, off the FX thread. */
+    static final String FALLBACK_FIRST_WINDOW_SITE = "App.fallbackFirstWindow";
+
+    /**
+     * The bundled resources the first window is built from, read on the fallback's own thread before the window is
+     * built in a {@code runLater} (PERF-01, Pauta 6.0.1: the rule lets {@code start()} read them, not a later FX
+     * task): the first frame's fonts, the catalog of the language the settings pick, the keymap, and the frame,
+     * which is then built from {@code MainView} (its copy of {@code main.fxml} in code) so no XML is parsed.
+     * {@link #startWith} then finds each one read, and reads nothing.
+     */
+    private static Bootstrap readForFirstWindow(Bootstrap boot) {
+        com.editora.perf.BlockingSites.enter(FALLBACK_FIRST_WINDOW_SITE);
+        Settings settings = boot.settings();
+        com.editora.ui.Fonts.loadForFirstPaint(settings.getFontFamily());
+        String language = uiLanguage(settings);
+        if (!language.equals(boot.language())) {
+            com.editora.i18n.Messages.init(language);
+        }
+        new KeymapManager().loadNamed(settings.getKeymap()); // parsed once and kept for the window's own
+        com.editora.ui.WindowManager.firstFrameFromCode();
+        return new Bootstrap(boot.manager(), settings, language, boot.plugins(), boot.projectWindow());
     }
 
     /** The rest of {@link #start}, once the first window's bootstrap is loaded. */
@@ -238,6 +266,8 @@ public class App extends Application {
             }
             sharedConfig = null;
         }
+        // The last of the session log, written by its own thread (PERF-01 allows this wait at the quit).
+        com.editora.ui.DebugLog.flushWrites(1000);
     }
 
     /**

@@ -38,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * (ellipsized), author, relative date.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the filter answers before the call returns
 class GitLogRowsFxTest {
 
     private static final String LONG_SUBJECT = "feat(orders): " + "a deliberately long subject line ".repeat(12);

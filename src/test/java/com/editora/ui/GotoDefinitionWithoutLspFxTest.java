@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
  * the server-free symbol index knew where the function was.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(
+        OffFxInPlace.class) // the outline and the pickers answer before the call returns
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GotoDefinitionWithoutLspFxTest {
 

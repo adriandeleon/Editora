@@ -364,9 +364,9 @@ public final class MarkdownPreview {
         return line >= 0;
     }
 
-    /** The Markdown of the blocks {@code first}…{@code last} of the column, or null when one of them did not
-     *  come from source lines. */
-    private @Nullable String sourceOf(int first, int last) {
+    /** The source lines {@code {from, to}} of the blocks {@code first}…{@code last} of the column, or null when
+     *  one of them did not come from source lines. */
+    private int @Nullable [] sourceLinesOf(int first, int last) {
         if (shownSource == null) {
             return null;
         }
@@ -380,50 +380,72 @@ public final class MarkdownPreview {
                 to = e.endLine();
             }
         }
-        if (from < 0 || to < from) {
-            return null;
-        }
-        String[] lines = shownSource.split("\\R", -1);
-        return String.join("\n", java.util.Arrays.copyOfRange(lines, from, Math.min(lines.length, to + 1)));
+        return from < 0 || to < from ? null : new int[] {from, to};
     }
+
+    /** The name the Copy's work is heard by, on its own thread: the source's lines, its plain text, its HTML. */
+    public static final String COPY_SITE = "preview-copy-html";
 
     /**
      * Puts the selection on the clipboard, as plain text and as HTML: of the Markdown itself when the selection
      * is whole blocks (or everything), else read off the selected nodes. False when nothing is selected.
+     *
+     * <p>The Markdown's lines are cut out, its plain text and its HTML rendered and its local images read
+     * (embedded) off the FX thread (PERF-01, Pauta 6.0.1); the clipboard is filled when that is done.
      */
     public boolean copySelection() {
         if (!selection.isActive()) {
             return false;
         }
-        String text;
-        String markdown = null;
-        if (selection.isAll() && shownSource != null) {
-            markdown = shownSource;
-            text = MarkdownRenderer.plainText(shownSource);
-        } else {
-            text = selection.text();
+        String source = shownSource;
+        boolean all = selection.isAll() && source != null;
+        int[] lines = null;
+        String picked = null;
+        if (!all) {
+            picked = selection.text();
             int[] whole = selection.wholeBlocks();
-            markdown = whole == null ? null : sourceOf(whole[0], whole[1]);
+            lines = whole == null ? null : sourceLinesOf(whole[0], whole[1]);
         }
-        if (markdown == null) {
+        if (!all && (lines == null || source == null)) {
             javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
-            cc.putString(text);
+            cc.putString(picked);
             cc.putHtml(PreviewSelectionHtml.of(selection.parts()));
             javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
             return true;
         }
-        // The Markdown is rendered and its local images read (embedded) off the FX thread (PERF-01, Pauta 6.0.1);
-        // the clipboard is filled when that is done.
-        String source = markdown;
+        String whole = java.util.Objects.requireNonNull(source); // all, or lines found in it: shown
+        int[] range = lines;
+        String nodesText = picked;
         boolean math = MathImages.isEnabled();
         java.nio.file.Path base = shownBaseDir;
+        record Copied(String text, @Nullable String html) {}
         com.editora.perf.OffFx.then(
-                "preview-copy-html", () -> MarkdownClipboardHtml.toHtmlIn(source, math, base), html -> {
+                COPY_SITE,
+                () -> {
+                    String markdown;
+                    String text;
+                    if (range == null) {
+                        markdown = whole;
+                        text = MarkdownRenderer.plainText(whole);
+                    } else {
+                        String[] split = whole.split("\\R", -1);
+                        markdown = String.join(
+                                "\n",
+                                java.util.Arrays.copyOfRange(
+                                        split, Math.min(split.length, range[0]), Math.min(split.length, range[1] + 1)));
+                        text = nodesText == null ? "" : nodesText;
+                    }
+                    return new Copied(text, MarkdownClipboardHtml.toHtmlIn(markdown, math, base));
+                },
+                answer -> {
+                    Copied copied = answer.value();
+                    if (copied == null) {
+                        return;
+                    }
                     javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
-                    cc.putString(text);
-                    String rendered = html.value();
-                    if (rendered != null) {
-                        cc.putHtml(rendered);
+                    cc.putString(copied.text());
+                    if (copied.html() != null) {
+                        cc.putHtml(copied.html());
                     }
                     javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
                 });
@@ -546,8 +568,17 @@ public final class MarkdownPreview {
 
     /** Parses {@code markdown} and cuts it into keyed units. Pure CPU plus a {@code stat} per local image. */
     public static Plan plan(String markdown, @Nullable Path baseDir) {
+        return plan(markdown, baseDir, null);
+    }
+
+    /**
+     * As {@link #plan(String, Path)}, its formulas rasterized here for the glyph theme the preview will show
+     * ({@code glyphsDark} null: the app's), so the FX thread finds them drawn (PERF-01, Pauta 6.0.1).
+     */
+    public static Plan plan(String markdown, @Nullable Path baseDir, @Nullable Boolean glyphsDark) {
         String md = markdown == null ? "" : markdown;
         org.commonmark.node.Node ast = MarkdownRenderer.parseForRender(md);
+        MarkdownRenderer.warmMath(ast, glyphsDark);
         String definitions = definitions(ast);
         // The anchors the table of contents and the link opener use: one numbering for all three.
         Map<Heading, String> slugs = MarkdownDocInfo.headingAnchors(ast);

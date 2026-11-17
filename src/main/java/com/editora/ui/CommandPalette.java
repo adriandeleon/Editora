@@ -199,7 +199,10 @@ public class CommandPalette {
                         (o, was, in) -> list.setPrefHeight(UiZoom.px(listHeight(0)) + (in.getTop() + in.getBottom())));
         list.setCellFactory(v -> new CommandCell());
 
-        input.textProperty().addListener((obs, old, now) -> filter(now));
+        input.textProperty().addListener((obs, old, now) -> {
+            runWhenLanded = false; // typed on after Enter: the Enter was for the query before
+            filter(now);
+        });
         input.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
         // Emacs caret movement + basic editing in the query field. Registered after onKey so the palette's own
         // list navigation / C-h docs (C-n/C-p/C-g/C-h) consume those chords first and the keymap yields to it.
@@ -296,6 +299,15 @@ public class CommandPalette {
     }
 
     private void runSelected() {
+        if (search.pending()) {
+            runWhenLanded = true; // the rows shown answer an older query: run the first of the latest once it lands
+            return;
+        }
+        runHighlighted();
+    }
+
+    /** Runs the highlighted command (a click runs the row clicked, which is shown and so known). */
+    private void runHighlighted() {
         Command command = list.getSelectionModel().getSelectedItem();
         if (command != null && isEnabled(command)) { // a grayed-out (disabled) command is not actionable (#532)
             hide();
@@ -303,12 +315,49 @@ public class CommandPalette {
         }
     }
 
+    /** Where a typed query is matched against the commands: a picker thread, never the FX thread. */
+    static final String FILTER_SITE = "CommandPalette.filter";
+
+    /** The filter in flight: a newer keystroke supersedes it, and only the latest answer is shown. */
+    private final LatestOnly search = PickerSearch.latest();
+
+    /** Enter was pressed while the rows for the query were still coming: run the first once they land. */
+    private boolean runWhenLanded;
+
     private void filter(String query) {
         // One snapshot of the live feature/context state for this whole pass — see enabledPolicy.
         enabledSnapshot = enabledPolicy.get();
-        currentQuery = query == null ? "" : query.trim();
-        items.setAll(orderedMatches(registry.all(), currentQuery));
-        selectFirstEnabled();
+        String q = query == null ? "" : query.trim();
+        List<Command> commands = List.copyOf(registry.all());
+        if (q.isEmpty()) {
+            // Nothing to match: the registry's own order, as it is.
+            search.cancel();
+            currentQuery = q;
+            items.setAll(commands);
+            selectFirstEnabled();
+            return;
+        }
+        // Matched off the FX thread (PERF-01, Pauta 6.0.1): several hundred commands, scored by title, keywords and
+        // other IDEs' names. The rows shown stay until the latest query's answer lands.
+        search.submit(
+                () -> {
+                    com.editora.perf.BlockingSites.enter(FILTER_SITE);
+                    return orderedMatches(commands, q);
+                },
+                matches -> {
+                    currentQuery = q;
+                    items.setAll(matches);
+                    selectFirstEnabled();
+                    if (runWhenLanded) {
+                        runWhenLanded = false;
+                        runHighlighted();
+                    }
+                });
+    }
+
+    /** Whether the rows shown are not yet those for the query typed (a test waits on it). */
+    boolean filtering() {
+        return search.pending();
     }
 
     /**
@@ -457,7 +506,11 @@ public class CommandPalette {
         input.clear();
         filter("");
         showing.set(true);
-        overlayHost.show(content, input::requestFocus, () -> showing.set(false));
+        overlayHost.show(content, input::requestFocus, () -> {
+            showing.set(false);
+            search.cancel(); // a filter landing after the card closed shows nothing and runs nothing
+            runWhenLanded = false;
+        });
     }
 
     public void hide() {
@@ -496,7 +549,7 @@ public class CommandPalette {
             setOnMouseClicked(e -> {
                 if (e.getButton() == MouseButton.PRIMARY && !isEmpty() && getItem() != null && isEnabled(getItem())) {
                     getListView().getSelectionModel().select(getItem());
-                    runSelected();
+                    runHighlighted();
                 }
             });
         }

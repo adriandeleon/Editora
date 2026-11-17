@@ -9,7 +9,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
-import com.editora.editor.EditorBuffer;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.editor.highlight.TextMateHighlighter.Symbol;
@@ -18,7 +17,6 @@ import com.editora.maven.PomFiles;
 import com.editora.text.EncryptedNames;
 import com.editora.text.FoldRegions.Region;
 import com.editora.text.LanguageRegistry;
-import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -98,10 +96,16 @@ final class StructureOutline {
     }
 
     /**
+     * Where a whole text is split into lines and its grammar looked up ({@link Source#file}): every caller is off the
+     * FX thread (the Structure panel's outline thread, the Project Map's outline thread), which a test checks here.
+     */
+    static final String SOURCE_SITE = "StructureOutline.source";
+
+    /**
      * What the heuristic outline is built from: the text as lines, the fold regions and the TextMate symbols,
-     * with the buffer's kind. {@link #area} reads the editor's own (the whole document while the buffer is
-     * whole); {@link #document} snapshots {@code getContent()} for a narrowed buffer, whose regions and symbols
-     * are then detected afresh — off the FX thread, see {@link #analyzed()}.
+     * with the buffer's kind. The Structure panel copies a whole buffer's text, regions and symbols on the FX thread
+     * and builds from them off it; a narrowed buffer's text is read with {@link #file} and its regions and symbols detected afresh — off
+     * the FX thread, see {@link #analyzedAs}.
      */
     record Source(
             String text,
@@ -117,55 +121,13 @@ final class StructureOutline {
             List<Symbol> symbols,
             @Nullable String fileName) {
 
-        static Source area(EditorBuffer buffer) {
-            CodeArea area = buffer.getArea();
-            return new Source(
-                    area.getText(),
-                    area.getParagraphs().size(),
-                    i -> area.getParagraph(i).getText(),
-                    buffer.getLanguage(),
-                    buffer.isMarkdown(),
-                    buffer.isTypst(),
-                    buffer.isHttpFile(),
-                    buffer.isPom(),
-                    null,
-                    buffer.getFoldManager().regions(),
-                    buffer.symbols(),
-                    nameOf(buffer));
-        }
-
-        /** The whole document, regions and symbols still to be detected ({@link #analyzed}). FX thread. */
-        static Source document(EditorBuffer buffer) {
-            String text = buffer.getContent();
-            List<String> lines = List.of(text.split("\n", -1));
-            String language = buffer.getLanguage();
-            return new Source(
-                    text,
-                    lines.size(),
-                    lines::get,
-                    language,
-                    buffer.isMarkdown(),
-                    buffer.isTypst(),
-                    buffer.isHttpFile(),
-                    buffer.isPom(),
-                    GrammarRegistry.shared().forLanguageName(language),
-                    List.of(),
-                    List.of(),
-                    nameOf(buffer));
-        }
-
-        private static @Nullable String nameOf(EditorBuffer buffer) {
-            java.nio.file.Path path = buffer.getPath();
-            java.nio.file.Path name = path == null ? null : path.getFileName();
-            return name == null ? null : name.toString();
-        }
-
         /**
          * A file's text as read from disk, its kind decided by its name the way a buffer's is ({@link
          * LanguageRegistry#forFileName}); regions and symbols still to be detected ({@link #analyzed}). Any thread,
          * though the first use of a language compiles its grammar, so callers keep it off the FX thread.
          */
         static Source file(String fileName, String text) {
+            com.editora.perf.BlockingSites.enter(SOURCE_SITE);
             List<String> lines = List.of(text.split("\n", -1));
             String language = LanguageRegistry.forFileName(fileName);
             boolean pom = "xml".equals(language)
@@ -183,6 +145,27 @@ final class StructureOutline {
                     List.of(),
                     List.of(),
                     fileName);
+        }
+
+        /**
+         * {@link #analyzed} for a buffer's text, its kind the buffer's (an override, a {@code #!} line) rather than
+         * the one its name gives. Pure but for the first use of a language's grammar: off the FX thread.
+         */
+        Source analyzedAs(String language, boolean markdown, boolean typst, boolean http, boolean pom) {
+            return new Source(
+                            text,
+                            lineCount,
+                            lineAt,
+                            language,
+                            markdown,
+                            typst,
+                            http,
+                            pom,
+                            GrammarRegistry.shared().forLanguageName(language),
+                            List.of(),
+                            List.of(),
+                            fileName)
+                    .analyzed();
         }
 
         /**

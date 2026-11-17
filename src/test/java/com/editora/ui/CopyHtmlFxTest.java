@@ -30,14 +30,15 @@ class CopyHtmlFxTest {
 
     @Test
     void aGrammarBufferReportsHighlighting() throws Exception {
-        boolean highlighted = FxTestSupport.callOnFx(() -> {
-            EditorBuffer b = new EditorBuffer();
-            b.setLanguageOverride("java");
-            b.setContent("class C {}");
-            b.getNode();
-            return b.hasHighlighting();
+        EditorBuffer b = FxTestSupport.callOnFx(() -> {
+            EditorBuffer buffer = new EditorBuffer();
+            buffer.setLanguageOverride("java");
+            buffer.setContent("class C {}");
+            buffer.getNode();
+            return buffer;
         });
-        assertTrue(highlighted, "a java buffer is syntax-highlighted");
+        // A grammar not loaded yet is loaded off the FX thread (PERF-01, Pauta 6.0.1) and applied when it lands.
+        SettingsRig.awaitFx("a java buffer is syntax-highlighted", b::hasHighlighting);
     }
 
     @Test

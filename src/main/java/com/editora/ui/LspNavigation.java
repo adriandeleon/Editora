@@ -23,6 +23,9 @@ import static com.editora.i18n.Messages.tr;
  */
 final class LspNavigation {
 
+    /** {@link com.editora.perf.BlockingSites} name of the library source's declaration line, found off FX. */
+    static final String DECLARATION_LINE_SITE = "LspNavigation.declarationLine";
+
     /** What navigation needs of {@link LspCoordinator}, resolved when called. */
     interface Host {
         /** The active buffer when its server manages it; otherwise says so and returns null. */
@@ -500,17 +503,28 @@ final class LspNavigation {
                 host.setStatus(tr("status.lsp.libraryUnavailable"));
                 return;
             }
-            EditorBuffer opened = ops.openReadOnlyDoc(LspManager.classFileTitle(uri), content, "java");
-            if (opened != null) {
-                libraryBuffers.put(uri, new java.lang.ref.WeakReference<>(opened));
-                librarySources.put(opened, new LibrarySource(uri, anchorPath)); // chain point (#684)
-                librarySourcesBar.opened(opened, uri, anchorPath);
-                // jdtls's class-file range starts at the member's Javadoc: land on the declaration (B16).
-                int line = com.editora.lsp.JavadocSkip.declarationLine(content, t.line());
-                gotoInBuffer(opened, line, line == t.line() ? t.character() : -1);
-                host.setStatus(""); // the "Loading library source…" it said is over
-                onOpened.accept(opened);
-            }
+            // jdtls's class-file range starts at the member's Javadoc: land on the declaration (B16). Its line is
+            // looked for off the FX thread, and the tab's text made ready there too (PERF-01, Pauta 6.0.1).
+            com.editora.perf.OffFx.then(
+                    DECLARATION_LINE_SITE,
+                    () -> com.editora.lsp.JavadocSkip.declarationLine(content, t.line()),
+                    found -> {
+                        if (!stillCurrent.getAsBoolean()) {
+                            return;
+                        }
+                        int line = found.or(t.line());
+                        EditorBuffer opened = ops.openReadOnlyDoc(LspManager.classFileTitle(uri), content, "java");
+                        if (opened != null) {
+                            libraryBuffers.put(uri, new java.lang.ref.WeakReference<>(opened));
+                            librarySources.put(opened, new LibrarySource(uri, anchorPath)); // chain point (#684)
+                            librarySourcesBar.opened(opened, uri, anchorPath);
+                            host.setStatus(""); // the "Loading library source…" it said is over
+                            opened.whenTextInstalled(() -> {
+                                gotoInBuffer(opened, line, line == t.line() ? t.character() : -1);
+                                onOpened.accept(opened);
+                            });
+                        }
+                    });
         });
     }
 

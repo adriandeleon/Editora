@@ -284,18 +284,19 @@ final class MarkdownLinkUpdater {
         Worked work(Plan plan) {
             com.editora.perf.BlockingSites.enter(OPEN_REWRITE_SITE);
             try {
-                return new Worked(
-                        this,
-                        MarkdownLinkRewrite.rewrite(
-                                text, before(file, plan.from(), plan.to()), file, plan.from(), plan.to(), plan.wiki()));
+                MarkdownLinkRewrite.Result result = MarkdownLinkRewrite.rewrite(
+                        text, before(file, plan.from(), plan.to()), file, plan.from(), plan.to(), plan.wiki());
+                // The span that differs, worked out here too: the FX thread only applies it.
+                return new Worked(this, result, EditorBuffer.PreparedEdit.between(version, text, result.text()));
             } catch (RuntimeException e) {
-                return new Worked(this, null);
+                return new Worked(this, null, null);
             }
         }
     }
 
-    /** An open buffer's rewrite, worked out off the FX thread; null when it failed. */
-    private record Worked(OpenDoc doc, MarkdownLinkRewrite.@Nullable Result result) {}
+    /** An open buffer's rewrite and its span, worked out off the FX thread; null when it failed. */
+    private record Worked(
+            OpenDoc doc, MarkdownLinkRewrite.@Nullable Result result, EditorBuffer.@Nullable PreparedEdit prepared) {}
 
     /** FX thread: applies each worked rewrite to its buffer if unchanged; works the others out again, then {@code done}. */
     private void applyOpen(List<Worked> worked, Plan plan, int tries, int[] totals, List<Path> failed, Runnable done) {
@@ -303,7 +304,8 @@ final class MarkdownLinkUpdater {
         for (Worked w : worked) {
             EditorBuffer buffer = w.doc().buffer();
             MarkdownLinkRewrite.Result result = w.result();
-            if (buffer.isDisposed() || result == null) {
+            EditorBuffer.PreparedEdit prepared = w.prepared();
+            if (buffer.isDisposed() || result == null || prepared == null) {
                 failed.add(w.doc().file());
             } else if (buffer.docVersion() != w.doc().version()) {
                 if (tries > 1) {
@@ -312,7 +314,7 @@ final class MarkdownLinkUpdater {
                     failed.add(w.doc().file());
                 }
             } else {
-                int count = rewriteBuffer(buffer, result);
+                int count = rewriteBuffer(buffer, result, prepared);
                 if (count < 0) {
                     failed.add(w.doc().file());
                 } else if (count > 0) {
@@ -366,7 +368,8 @@ final class MarkdownLinkUpdater {
     }
 
     /** Links rewritten in an open buffer, as one undo step; -1 when the buffer may not be edited. */
-    private static int rewriteBuffer(EditorBuffer buffer, MarkdownLinkRewrite.Result result) {
+    private static int rewriteBuffer(
+            EditorBuffer buffer, MarkdownLinkRewrite.Result result, EditorBuffer.PreparedEdit prepared) {
         if (result.count() == 0) {
             return 0;
         }
@@ -377,7 +380,9 @@ final class MarkdownLinkUpdater {
         }
         var area = buffer.getArea();
         int caret = area.getCaretPosition();
-        buffer.replaceWholeDocument(result.text());
+        if (!buffer.applyPreparedWholeText(prepared, result.text())) {
+            return -1;
+        }
         area.moveTo(Math.min(caret, area.getLength()));
         return result.count();
     }

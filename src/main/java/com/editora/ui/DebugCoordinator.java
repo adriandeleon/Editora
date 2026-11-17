@@ -22,10 +22,13 @@ import com.editora.config.Breakpoint;
 import com.editora.config.BreakpointStore;
 import com.editora.config.PathKeys;
 import com.editora.config.RunConfiguration;
+import com.editora.dap.CodeLessLines;
 import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
 import com.editora.dap.DapServerRegistry;
+import com.editora.dap.JsLaunch;
 import com.editora.dap.LogpointTokens;
+import com.editora.dap.RustLaunch;
 import com.editora.dap.TypeRenderer;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.UiZoom;
@@ -34,6 +37,7 @@ import com.editora.lsp.LspManager;
 import com.editora.run.BuildBeforeLaunch;
 import com.editora.run.ProgramArgs;
 import com.editora.run.StackTraceLinks;
+import com.editora.test.PytestScanner;
 import com.editora.vfs.Vfs;
 import org.jspecify.annotations.Nullable;
 
@@ -431,6 +435,9 @@ final class DebugCoordinator {
 
     /** The build facts a launch asks: looked at off the FX thread first when not known ({@link DebugFacts}). */
     private final DebugFacts facts = new DebugFacts(this::executableFacts, this::sayBusy);
+
+    /** The scans of a document a debug command decides by, made off the FX thread (PERF-01). */
+    private final DebugTextScans scans = new DebugTextScans();
 
     private void executableFacts(com.editora.build.BuildTool tool, Path root) {
         ops.buildExecutableFacts(tool, root);
@@ -1423,14 +1430,11 @@ final class DebugCoordinator {
         }
         forEachSession(
                 () -> { // every live session is told
-                    if (buffer.getPath() != null && dap().isActive()) {
-                        // Adapter stays current immediately — but only when what it is told actually changed: editing
-                        // the text of a breakpoint's line is a change to persist, not one to put on the wire.
-                        DapModels.FileBreakpoints now = fileBreakpoints(buffer, buffer.getPath());
-                        if (!now.equals(s().sentBreakpoints.put(buffer.getPath(), now))) {
-                            dap().updateBreakpoints(now);
-                        }
-                        showBreakpointStates(buffer); // a new breakpoint is unverified until the adapter answers for it
+                    // Adapter stays current — but only when what it is told actually changed: editing the text of a
+                    // breakpoint's line is a change to persist, not one to put on the wire. A shift made by an edit
+                    // waits for the mapping of the edited text (worked out off the FX thread).
+                    if (linesKnown(buffer, () -> resendLines(buffer))) {
+                        resendLines(buffer); // a new breakpoint is unverified until the adapter answers for it
                     }
                 });
         triggersChanged(buffer);
@@ -1612,6 +1616,9 @@ final class DebugCoordinator {
 
     /** The adapter answered for {@code file}'s breakpoints, or changed its mind about some of them. */
     private void breakpointStatusChanged(Path file, List<DapModels.BreakpointStatus> statuses, boolean whole) {
+        if (!linesKnown(ops.bufferForPath(file), () -> breakpointStatusChanged(file, statuses, whole))) {
+            return; // statuses name launched lines: placed once the mapping of the text now is known
+        }
         Map<Integer, DapModels.BreakpointStatus> known =
                 s().breakpointStatus.computeIfAbsent(file, f -> new java.util.HashMap<>());
         if (whole) {
@@ -1943,9 +1950,43 @@ final class DebugCoordinator {
         if (b == null || file == null || b.isNarrowed() || !s().launchedLines.has(file)) {
             return LaunchedLines.Mapping.IDENTITY; // a narrowed buffer's text is its region only
         }
-        // The area's own text, not getContent(): that is cached per document version, which has not moved yet
-        // when a breakpoint shift is reported in the middle of the edit.
-        return s().launchedLines.mapping(file, b.getArea().getText());
+        // Worked out off the FX thread (PERF-01): until it lands, the last one, and the file is sent again then.
+        DebugSession session = s();
+        return session.launchedLines.latest(b, "resend", () -> inSession(session, () -> resendLines(b)));
+    }
+
+    /** Whether {@code b}'s mapping is known for its text now; if not, {@code again} runs as this session's once it is. */
+    private boolean linesKnown(@Nullable EditorBuffer b, Runnable again) {
+        if (b == null
+                || b.getPath() == null
+                || b.isNarrowed()
+                || !s().launchedLines.has(b.getPath())) {
+            return true;
+        }
+        DebugSession session = s();
+        return session.launchedLines.knownOr(b, again, () -> inSession(session, again)) != null;
+    }
+
+    /** Whether the mapping of every file of {@code frames} is known; if not, {@code again} runs once they are. */
+    private boolean framesKnown(@Nullable List<DapModels.StackFrameInfo> frames, Runnable again) {
+        for (DapModels.StackFrameInfo f :
+                frames == null || s().launchedLines.isEmpty() ? List.<DapModels.StackFrameInfo>of() : frames) {
+            if (f.file() != null && !linesKnown(ops.bufferForPath(f.file()), again)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** {@code b}'s breakpoints sent again where its mapping changed them, and their states shown again. */
+    private void resendLines(EditorBuffer b) {
+        if (b.getPath() != null && dap().isActive()) {
+            DapModels.FileBreakpoints now = fileBreakpoints(b, b.getPath());
+            if (!now.equals(s().sentBreakpoints.put(b.getPath(), now))) {
+                dap().updateBreakpoints(now);
+            }
+            showBreakpointStates(b);
+        }
     }
 
     /** Records every open file's text as the session's launched text (the files were saved for the launch). */
@@ -1966,11 +2007,17 @@ final class DebugCoordinator {
             return;
         }
         DebugSession session = s(); // the file on disk is read off the FX thread (PERF-01), for this session
-        DebugPlanning.offFx("debug-launched-lines", () -> ClosedFileBreakpoints.readLinesOrNull(file), a -> {
-            if (a.value() != null) {
-                session.launchedLines.snapshotIfAbsent(file, String.join("\n", a.value()));
-            }
-        });
+        DebugPlanning.offFx(
+                "debug-launched-lines",
+                () -> {
+                    List<String> lines = ClosedFileBreakpoints.readLinesOrNull(file);
+                    return lines == null ? null : String.join("\n", lines);
+                },
+                a -> {
+                    if (a.value() != null) {
+                        session.launchedLines.snapshotIfAbsent(file, a.value());
+                    }
+                });
     }
 
     /** {@code frames} with each line as the document now has it (a frame names the launched line). */
@@ -2015,11 +2062,9 @@ final class DebugCoordinator {
             return; // a buffer found by its path always has one
         }
         s().launchedLines.rebaseline(file, b.getContent());
-        DapModels.FileBreakpoints now = fileBreakpoints(b, b.getPath());
-        if (!now.equals(s().sentBreakpoints.put(file, now))) {
-            dap().updateBreakpoints(now);
+        if (linesKnown(b, () -> resendLines(b))) { // its mapping is worked out again off the FX thread
+            resendLines(b);
         }
-        showBreakpointStates(b);
     }
 
     /**
@@ -2242,6 +2287,9 @@ final class DebugCoordinator {
 
             @Override
             public void onStopped(int threadId, String reason, List<DapModels.StackFrameInfo> stopFrames) {
+                if (!framesKnown(stopFrames, () -> onStopped(threadId, reason, stopFrames))) {
+                    return; // shown once the edited files' line mappings are known
+                }
                 s().stopSerial++;
                 s().stopException = null; // a new stop: the last one's exception is not this one's
                 hideExceptionCard();
@@ -2492,6 +2540,9 @@ final class DebugCoordinator {
             public void selectThread(int threadId) {
                 int previous = dap().currentThreadId();
                 dap().selectThread(threadId, threadFrames -> {
+                    if (!framesKnown(threadFrames, () -> selectThread(threadId))) {
+                        return;
+                    }
                     List<DapModels.StackFrameInfo> frames = currentLines(threadFrames);
                     if (!frames.isEmpty() || threadId == previous) {
                         panel().setCallStack(frames, firstFrameWithSource(frames, DebugCoordinator.this::showsOnStop));
@@ -3392,7 +3443,7 @@ final class DebugCoordinator {
                                 later(keepFocus::requestFocus); // stepping from the Debug window keeps it there, as
                                 // with files
                             }
-                            then.accept(doc);
+                            doc.whenTextInstalled(() -> then.accept(doc)); // its text is made ready off FX
                         }));
     }
 
@@ -4769,25 +4820,33 @@ final class DebugCoordinator {
 
     /** {@link #debugGoFile} for {@code path} with text {@code text} and the caret on {@code caret} (-1: nowhere). */
     private void debugGo(Path path, String text, int caret, List<String> args, LaunchExtras extras) {
-        DebugPlanning.offFx( // the module is a folder walk: off the FX thread (PERF-01)
+        DebugPlanning.offFx( // the module is a folder walk, the test at the caret a scan: off the FX thread (PERF-01)
                 "debug-go-plan",
-                () -> java.util.Optional.ofNullable(com.editora.dap.GoLaunch.moduleRoot(path)),
-                a -> debugGoIn(
-                        path,
-                        text,
-                        caret,
-                        args,
-                        extras,
-                        a.value() == null ? null : a.value().orElse(null)));
+                () -> {
+                    Path module = com.editora.dap.GoLaunch.moduleRoot(path);
+                    return new GoPlan(
+                            module,
+                            com.editora.dap.GoLaunch.launch(
+                                    path, text, caret, module != null, args, extras.env(), false, extras.cwd()),
+                            com.editora.dap.GoLaunch.sessionName(path, text, caret));
+                },
+                a -> {
+                    if (a.value() != null) {
+                        debugGoIn(path, extras, a.value());
+                    }
+                });
     }
 
-    private void debugGoIn(
-            Path path, String text, int caret, List<String> args, LaunchExtras extras, @Nullable Path module) {
+    /** A Go launch planned off the FX thread: its module (null: a loose file), launch arguments and session name. */
+    private record GoPlan(@Nullable Path module, java.util.Map<String, Object> launch, String name) {}
+
+    private void debugGoIn(Path path, LaunchExtras extras, GoPlan plan) {
+        Path module = plan.module();
         if (module != null
                 && !factsKnown(
                         "debug-go-trust-look",
                         facts.executable(com.editora.build.BuildTool.GO, module),
-                        () -> debugGoIn(path, text, caret, args, extras, module))) {
+                        () -> debugGoIn(path, extras, plan))) {
             return;
         }
         List<String> go = module != null
@@ -4797,11 +4856,10 @@ final class DebugCoordinator {
         if (go == null) {
             return; // the module was not trusted: nothing is built
         }
-        java.util.Map<String, Object> launch = com.editora.dap.GoLaunch.launch(
-                path, text, caret, module != null, args, extras.env(), false, extras.cwd());
+        java.util.Map<String, Object> launch = plan.launch();
         dap().setExternalPathDirs("go", goToolDirs(go));
         Path built = module != null ? module : path.toAbsolutePath().getParent();
-        named(extras, com.editora.dap.GoLaunch.sessionName(path, text, caret), () -> startGo(path, built, launch));
+        named(extras, plan.name(), () -> startGo(path, built, launch));
         startGo(path, built, launch);
     }
 
@@ -4852,44 +4910,36 @@ final class DebugCoordinator {
                                             root.resolve("src").resolve("main.rs"))
                                     || java.nio.file.Files.isDirectory(
                                             root.resolve("src").resolve("bin")));
-                    return new Object[] {root, program};
+                    // and the plan, whose test at the caret is a scan of the text
+                    return root == null ? null : new Object[] {root, RustLaunch.plan(root, path, text, caret, program)};
                 },
                 a -> {
                     Object[] found = a.value();
                     debugRustIn(
                             path,
-                            text,
-                            caret,
                             args,
                             extras,
                             found == null ? null : (Path) found[0],
-                            found != null && (Boolean) found[1]);
+                            found == null ? null : (RustLaunch.Plan) found[1]);
                 });
     }
 
     private void debugRustIn(
-            Path path,
-            String text,
-            int caret,
-            List<String> args,
-            LaunchExtras extras,
-            @Nullable Path root,
-            boolean hasProgram) {
-        if (root == null) {
+            Path path, List<String> args, LaunchExtras extras, @Nullable Path root, RustLaunch.@Nullable Plan plan) {
+        if (root == null || plan == null) {
             host.setStatus(tr("status.debug.rustNoPackage", path.getFileName()));
             return;
         }
         if (!factsKnown(
                 "debug-rust-trust-look",
                 facts.executable(com.editora.build.BuildTool.CARGO, root),
-                () -> debugRustIn(path, text, caret, args, extras, root, hasProgram))) {
+                () -> debugRustIn(path, args, extras, root, plan))) {
             return;
         }
         List<String> cargo = ops.buildExecutable(com.editora.build.BuildTool.CARGO, root);
         if (cargo == null) {
             return; // the package was not trusted: nothing is built
         }
-        com.editora.dap.RustLaunch.Plan plan = com.editora.dap.RustLaunch.plan(root, path, text, caret, hasProgram);
         named(extras, plan.sessionName(), () -> startRust(path, root, cargo, plan, args, extras)); // the test again
         startRust(path, root, cargo, plan, args, extras);
     }
@@ -5243,14 +5293,22 @@ final class DebugCoordinator {
      * Debug Test at Caret in a Rust file: the {@code #[test]} function at the caret, its test binary filtered to it
      * ({@link #debugRustFile}). False — nothing done — outside a test, or for any other buffer.
      */
-    boolean debugRustTestAtCaret(@Nullable EditorBuffer b) {
-        if (b == null
-                || b.getPath() == null
-                || !"rust".equals(b.getLanguage())
-                || com.editora.dap.RustLaunch.testAt(b.getContent(), caretLine(b)) == null) {
+    boolean debugRustTestAtCaret(@Nullable EditorBuffer b, Runnable otherwise) {
+        if (b == null || b.getPath() == null || !"rust".equals(b.getLanguage())) {
             return false;
         }
-        launchBuffer(b);
+        int caret = caretLine(b); // the test is found off the FX thread (PERF-01): the command goes on once it is
+        var test = scans.scan(b, "rustTest:" + caret, t -> RustLaunch.testAt(t, caret), () -> {
+            if (!debugRustTestAtCaret(b, otherwise)) {
+                otherwise.run();
+            }
+        });
+        if (test != null && test.value() == null) {
+            return false;
+        }
+        if (test != null) {
+            launchBuffer(b);
+        }
         return true;
     }
 
@@ -5284,7 +5342,11 @@ final class DebugCoordinator {
         int caret = b.getFocusedArea().getCurrentParagraph()
                 + b.getBreakpointManager().regionFirstLine();
         List<String> nodeArgs = new java.util.ArrayList<>(List.of("--test"));
-        com.editora.dap.JsLaunch.testNameAt(b.getContent(), caret).ifPresent(name -> {
+        var named = scans.scan(b, "jsTest:" + caret, t -> JsLaunch.testNameAt(t, caret), () -> debugJsTestAtCaret(b));
+        if (named == null) {
+            return true; // found off the FX thread (PERF-01): asked again once it is
+        }
+        java.util.Objects.requireNonNull(named.value()).ifPresent(name -> {
             nodeArgs.add("--test-name-pattern");
             nodeArgs.add(com.editora.dap.JsLaunch.literalPattern(name));
         });
@@ -5763,7 +5825,12 @@ final class DebugCoordinator {
         }
         int caret = b.getFocusedArea().getCurrentParagraph()
                 + b.getBreakpointManager().regionFirstLine();
-        com.editora.test.PytestScanner.TestTarget target = com.editora.test.PytestScanner.atLine(b.getContent(), caret);
+        var found = scans.scan(
+                b, "pytest:" + caret, t -> PytestScanner.atLine(t, caret), () -> debugPythonTestAtCaret(b, classLevel));
+        if (found == null) {
+            return true; // found off the FX thread (PERF-01): asked again once it is
+        }
+        PytestScanner.TestTarget target = found.value();
         if (classLevel && target != null && target.className() != null) {
             target = new com.editora.test.PytestScanner.TestTarget(
                     target.line(), target.endLine(), target.className(), null);
@@ -5790,11 +5857,16 @@ final class DebugCoordinator {
             return; // a saved file is always in a folder
         }
         String relative = cwd.relativize(file).toString().replace('\\', '/');
+        var fallback = scans.scan( // the class header is looked for off the FX thread (PERF-01)
+                b, "unittest:" + target, t -> unittestFallback(t, relative, target), () -> debugPythonTest(b, target));
+        if (fallback == null) {
+            return;
+        }
         debugPythonTests(
                 file,
                 cwd,
                 List.of(com.editora.test.PytestScanner.nodeId(relative, target)),
-                unittestFallback(b.getContent(), relative, target),
+                java.util.Objects.requireNonNullElse(fallback.value(), List.of()),
                 file.getFileName() + (target == null ? "" : " :: " + target.displayName()));
     }
 
@@ -5803,6 +5875,13 @@ final class DebugCoordinator {
      * com.editora.test.JavaTestScanner.TestTarget}s ({@code RunScan.pythonTestLines}): a class (method null), a
      * module-level function (class {@code ""}), or — class {@code ""} and no method — the whole file (null here).
      */
+    void debugPythonGlyph(EditorBuffer b, com.editora.test.JavaTestScanner.TestTarget glyph) {
+        var found = scans.scan(b, "glyph:" + glyph, t -> pytestTarget(t, glyph), () -> debugPythonGlyph(b, glyph));
+        if (found != null) { // the test's end is found off the FX thread (PERF-01): asked again once it is
+            debugPythonTest(b, found.value());
+        }
+    }
+
     static com.editora.test.PytestScanner.@Nullable TestTarget pytestTarget(
             String source, com.editora.test.JavaTestScanner.TestTarget glyph) {
         if (glyph == null || (glyph.className().isEmpty() && glyph.methodName() == null)) {
@@ -6613,6 +6692,9 @@ final class DebugCoordinator {
         if (path == null || dap().state() != DapManager.State.SUSPENDED) {
             return;
         }
+        if (!linesKnown(b, () -> runToLine(b, fileLine, force))) {
+            return; // run once the mapping of the edited text is known
+        }
         int line = lineMap(b).toLaunched(fileLine);
         if (line < 0) {
             host.setStatus(tr("status.debug.lineAddedSinceLaunch"));
@@ -6696,6 +6778,9 @@ final class DebugCoordinator {
         }
         if (!dap().supportsJumpToLine()) {
             host.setStatus(tr("status.debug.jumpUnsupported"));
+            return;
+        }
+        if (!linesKnown(b, this::debugJumpToLine)) {
             return;
         }
         int line = lineMap(b).toLaunched(fileLineAtCaret(b));
@@ -7780,11 +7865,24 @@ final class DebugCoordinator {
     void toggleBreakpointAtCaret() {
         EditorBuffer b = breakpointBuffer();
         if (b != null) {
-            int line = b.getFocusedArea().getCurrentParagraph();
-            if (breakpointAllowed(b, line, this::toggleBreakpointAtCaret)) {
-                b.toggleBreakpoint(line);
-            }
+            toggleBreakpointOn(b, b.getFocusedArea().getCurrentParagraph());
         }
+    }
+
+    /** Toggles a breakpoint on {@code line}, the caret's when pressed: a check landing later acts on that line. */
+    private void toggleBreakpointOn(EditorBuffer b, int line) {
+        if (!b.isDisposed() && breakpointAllowed(b, line, () -> toggleBreakpointOn(b, line))) {
+            b.toggleBreakpoint(line);
+        }
+    }
+
+    /** {@code command} asked again once a check lands, only while the caret is still on {@code line}. */
+    private static Runnable onSameLine(EditorBuffer b, int line, Runnable command) {
+        return () -> {
+            if (!b.isDisposed() && b.getFocusedArea().getCurrentParagraph() == line) {
+                command.run();
+            }
+        };
     }
 
     /**
@@ -7809,7 +7907,12 @@ final class DebugCoordinator {
         }
         // B8: a blank or comment-only line has no code to stop on. java-debug even called such a breakpoint
         // verified, and it never stopped.
-        if (com.editora.dap.CodeLessLines.isCodeLess(b.getContent(), line, b.getLanguage())) {
+        String language = b.getLanguage(); // the text is scanned off the FX thread (PERF-01): asked again once known
+        var codeLess = scans.scan(b, "codeLess:" + line, t -> CodeLessLines.isCodeLess(t, line, language), retry);
+        if (codeLess == null) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(codeLess.value())) {
             host.setStatus(tr("status.debug.noCodeOnLine"));
             return false;
         }
@@ -7848,7 +7951,7 @@ final class DebugCoordinator {
             return;
         }
         int line = b.getFocusedArea().getCurrentParagraph();
-        if (!breakpointAllowed(b, line, this::editBreakpointAtCaret)) {
+        if (!breakpointAllowed(b, line, onSameLine(b, line, this::editBreakpointAtCaret))) {
             return;
         }
         BreakpointEditForm.show(
@@ -7874,7 +7977,7 @@ final class DebugCoordinator {
             return;
         }
         int line = b.getFocusedArea().getCurrentParagraph();
-        if (!breakpointAllowed(b, line, this::addTriggeredBreakpointAtCaret)) {
+        if (!breakpointAllowed(b, line, onSameLine(b, line, this::addTriggeredBreakpointAtCaret))) {
             return;
         }
         var mgr = b.getBreakpointManager();
@@ -9282,7 +9385,7 @@ final class DebugCoordinator {
             return;
         }
         int line = b.getFocusedArea().getCurrentParagraph();
-        if (!breakpointAllowed(b, line, this::toggleTemporaryBreakpointAtCaret)) {
+        if (!breakpointAllowed(b, line, onSameLine(b, line, this::toggleTemporaryBreakpointAtCaret))) {
             return;
         }
         var mgr = b.getBreakpointManager();
@@ -9310,7 +9413,7 @@ final class DebugCoordinator {
             return;
         }
         int line = b.getFocusedArea().getCurrentParagraph();
-        if (!breakpointAllowed(b, line, this::toggleRecordingBreakpointAtCaret)) {
+        if (!breakpointAllowed(b, line, onSameLine(b, line, this::toggleRecordingBreakpointAtCaret))) {
             return;
         }
         var mgr = b.getBreakpointManager();

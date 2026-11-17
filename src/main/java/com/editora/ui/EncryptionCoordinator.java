@@ -392,8 +392,10 @@ final class EncryptionCoordinator {
                         return gpg().decrypt(file.ciphertext, passphrase, cancel);
                     },
                     (outcome, passphrase) -> background("gpg-decrypted", () -> {
+                        // Its document is built here too: no line-ending scan when it lands (PERF-01, Pauta 6.0.1).
                         FileWorkflowCoordinator.PreparedLoad load = files.prepareDecrypted(
-                                file.file, outcome.out(), file.size, file.mtime, file.fingerprint);
+                                        file.file, outcome.out(), file.size, file.mtime, file.fingerprint)
+                                .preparedFor(buffer);
                         Arrays.fill(outcome.out(), (byte) 0); // the text lives in the document now
                         Platform.runLater(() -> {
                             if (locked.get(buffer) == file && !buffer.isDisposed()) {

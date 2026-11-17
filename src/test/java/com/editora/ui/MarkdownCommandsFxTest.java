@@ -30,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the link and TOC lookups answer in place
 class MarkdownCommandsFxTest {
 
     private static final String TABLE = "| a | b |\n| --- | --- |\n| 1 | 2 |\n";

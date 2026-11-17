@@ -3,9 +3,14 @@ package com.editora.ui;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import javafx.application.Platform;
+
+import com.editora.editor.EditorBuffer;
+import com.editora.perf.OffFx;
 import com.github.difflib.DiffUtils;
 import com.github.difflib.patch.AbstractDelta;
 import com.github.difflib.patch.Patch;
@@ -22,26 +27,56 @@ import org.jspecify.annotations.Nullable;
  * adapter in the launched text's numbering, and frame and breakpoint lines come back through the same mapping.
  * A successful hot code replace makes the current text the launched one ({@link #rebaseline}).
  *
- * <p>Pure apart from the cache: callers give it the current text; nothing here reads a buffer or a file.
+ * <p>The mapping is a diff of the whole file, so it is worked out off the JavaFX thread (PERF-01, Pauta 6.0.1) on
+ * a snapshot of the document, keyed by its {@linkplain EditorBuffer#docVersion() version}: {@link #known} answers
+ * only for the version the document has now, {@link #latest} answers the last one worked out meanwhile, and a
+ * waiter given to either runs on the FX thread once the mapping for the then-current text has landed (worked out
+ * again while the text moved on). The snapshot is taken after the edit in progress, since a breakpoint shift is
+ * reported while the edit is being applied, before the version moves. FX-confined apart from the work.
  */
 final class LaunchedLines {
 
-    /** The launched text of each file of the session, split into lines; keyed by {@link DebugCoordinator#key}. */
-    private final Map<String, List<String>> launched = new HashMap<>();
+    /** Where the mapping is worked out: heard off the FX thread (PERF-01). */
+    static final String SITE = "LaunchedLines.mapping";
 
-    /**
-     * The last mapping computed per file, with the text it was computed for. Keyed by the text, not by the
-     * buffer's version counter: a breakpoint shift is reported while the edit is being applied, before that
-     * counter moves.
-     */
-    private final Map<String, Cached> cache = new HashMap<>();
+    /** A file's launched text; its lines are split off the FX thread, the first time a mapping needs them. */
+    private static final class Launched {
+        final String text;
+        private volatile @Nullable List<String> lines;
 
-    private record Cached(String text, Mapping mapping) {}
+        Launched(String text) {
+            this.text = text;
+        }
 
-    /** Forgets every file (a session ended, or a new one is starting). */
+        List<String> lines() {
+            List<String> l = lines;
+            if (l == null) {
+                l = LaunchedLines.lines(text);
+                lines = l;
+            }
+            return l;
+        }
+    }
+
+    /** A mapping worked out for one version of the document. */
+    private record Known(long version, Mapping mapping) {}
+
+    /** A mapping being worked out for a file, and who waits for it (keyed so a repeated ask waits once). */
+    private static final class Pending {
+        final Map<Object, Runnable> waiters = new LinkedHashMap<>();
+    }
+
+    /** The launched text of each file of the session; keyed by {@link DebugCoordinator#key}. */
+    private final Map<String, Launched> launched = new HashMap<>();
+
+    private final Map<String, Known> known = new HashMap<>();
+    private final Map<String, Pending> pending = new HashMap<>();
+
+    /** Forgets every file (a session ended, or a new one is starting); mappings in flight are dropped. */
     void clear() {
         launched.clear();
-        cache.clear();
+        known.clear();
+        pending.clear();
     }
 
     boolean isEmpty() {
@@ -51,7 +86,7 @@ final class LaunchedLines {
     /** Records {@code text} as what {@code file}'s program was built from, unless a text is already recorded. */
     void snapshotIfAbsent(Path file, String text) {
         if (file != null && text != null) {
-            launched.putIfAbsent(DebugCoordinator.key(file), lines(text));
+            launched.putIfAbsent(DebugCoordinator.key(file), new Launched(text));
         }
     }
 
@@ -59,8 +94,8 @@ final class LaunchedLines {
     void rebaseline(Path file, String text) {
         if (file != null && text != null) {
             String key = DebugCoordinator.key(file);
-            launched.put(key, lines(text));
-            cache.remove(key);
+            launched.put(key, new Launched(text));
+            known.remove(key); // a mapping in flight from the old text is worked out again when it lands
         }
     }
 
@@ -69,25 +104,91 @@ final class LaunchedLines {
     }
 
     /**
-     * The mapping between {@code file}'s launched text and {@code currentText} (the document now), or {@link
-     * Mapping#IDENTITY} when there is no launched text or nothing changed.
+     * The mapping between {@code b}'s launched text and its document now, or null while it is being worked out
+     * (then asked for). {@link Mapping#IDENTITY} when the file has no launched text.
      */
-    Mapping mapping(Path file, String currentText) {
-        if (file == null) {
+    @Nullable
+    Mapping known(EditorBuffer b) {
+        return knownOr(b, null, null);
+    }
+
+    /**
+     * As {@link #known}, but while the mapping is worked out, {@code onKnown} runs once it has landed (one waiter
+     * per {@code tag}: a later ask with the same tag replaces it).
+     */
+    @Nullable
+    Mapping knownOr(EditorBuffer b, @Nullable Object tag, @Nullable Runnable onKnown) {
+        Path file = b.getPath();
+        String key = file == null ? null : DebugCoordinator.key(file);
+        if (key == null || !launched.containsKey(key)) {
             return Mapping.IDENTITY;
         }
-        String key = DebugCoordinator.key(file);
-        List<String> before = launched.get(key);
-        if (before == null) {
-            return Mapping.IDENTITY;
+        Known k = known.get(key);
+        if (k != null
+                && k.version() == b.docVersion()
+                && !b.getBreakpointManager().isEditDriven()) {
+            return k.mapping();
         }
-        Cached hit = cache.get(key);
-        if (hit != null && hit.text().equals(currentText)) {
-            return hit.mapping();
+        ask(b, key, tag, onKnown);
+        return null;
+    }
+
+    /**
+     * The mapping for {@code b}'s text now when known; else the last one worked out for the file (identity when
+     * none yet), and {@code onKnown} runs once the current one lands.
+     */
+    Mapping latest(EditorBuffer b, Object tag, Runnable onKnown) {
+        Mapping now = knownOr(b, tag, onKnown);
+        if (now != null) {
+            return now;
         }
-        Mapping mapping = Mapping.between(before, lines(currentText));
-        cache.put(key, new Cached(currentText, mapping));
-        return mapping;
+        Path file = b.getPath();
+        Known last = file == null ? null : known.get(DebugCoordinator.key(file));
+        return last == null ? Mapping.IDENTITY : last.mapping();
+    }
+
+    private void ask(EditorBuffer b, String key, @Nullable Object tag, @Nullable Runnable onKnown) {
+        Pending p = pending.get(key);
+        boolean started = p != null;
+        if (p == null) {
+            p = new Pending();
+            pending.put(key, p);
+        }
+        if (onKnown != null) {
+            p.waiters.put(tag != null ? tag : onKnown, onKnown);
+        }
+        if (!started) {
+            Pending mine = p;
+            Platform.runLater(() -> start(b, key, mine)); // after the edit in progress: its version and text
+        }
+    }
+
+    /** On the FX thread: snapshots the document and works the mapping out off it. */
+    private void start(EditorBuffer b, String key, Pending p) {
+        Launched from = launched.get(key);
+        if (pending.get(key) != p || from == null) {
+            return; // the session was cleared meanwhile
+        }
+        long version = b.docVersion();
+        String text = b.getContent();
+        OffFx.then(SITE, () -> Mapping.between(from.lines(), lines(text)), a -> land(b, key, p, from, version, a));
+    }
+
+    private void land(EditorBuffer b, String key, Pending p, Launched from, long version, OffFx.Answer<Mapping> a) {
+        if (pending.get(key) != p) {
+            return; // cleared
+        }
+        if (launched.get(key) != from) {
+            Platform.runLater(() -> start(b, key, p)); // rebaselined meanwhile: from the new launched text
+            return;
+        }
+        known.put(key, new Known(version, a.or(Mapping.IDENTITY)));
+        if (b.docVersion() != version || b.getBreakpointManager().isEditDriven()) {
+            Platform.runLater(() -> start(b, key, p)); // the text moved on meanwhile: worked out again
+            return;
+        }
+        pending.remove(key);
+        p.waiters.values().forEach(Runnable::run);
     }
 
     private static List<String> lines(String text) {

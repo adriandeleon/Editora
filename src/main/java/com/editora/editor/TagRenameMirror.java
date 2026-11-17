@@ -8,6 +8,7 @@ import java.util.function.Supplier;
 import com.editora.editops.DoubleClickWord;
 import com.editora.editops.TagRename;
 import com.editora.editor.undo.CompletionUndoManager;
+import com.editora.perf.OffFx;
 import com.editora.text.HtmlElements;
 import com.editora.text.LanguageRegistry;
 import org.fxmisc.richtext.CodeArea;
@@ -102,16 +103,54 @@ final class TagRenameMirror {
         int changeEnd = changePos + c.getInserted().length();
         int winStart = Math.max(0, changePos - LOOKBACK);
         int winEnd = Math.min(a.getLength(), changeEnd + LOOKBACK);
-        if (changeEnd > winEnd
-                || a.getLength() > TagRename.MAX_DOC // mirror() declines such a document: do not build it to ask
-                || !TagRename.changeInTagName(
-                        a.getText(winStart, winEnd), changePos - winStart, changeEnd - winStart)) {
+        if (changeEnd > winEnd || a.getLength() > TagRename.MAX_DOC) { // mirror() declines such a document
             return;
         }
-        TagRename.Mirror m = TagRename.mirror(a.getText(), changePos, c.getRemoved(), c.getInserted(), html);
-        if (m == null) {
+        TagRename.Rename rename =
+                TagRename.renameAt(a.getText(winStart, winEnd), changePos - winStart, c.getRemoved(), c.getInserted());
+        if (rename == null) {
             return;
         }
+        // The pair is found by a lex of the whole document, off the FX thread (PERF-01, Pauta 6.0.1), and renamed
+        // when that lands if nothing was typed meanwhile. A name typed faster than that is one rename: the next
+        // keystroke in the same tag asks again with the name the tag had before the first.
+        int nameStart = winStart + rename.nameStart();
+        Pending before = pending;
+        String oldName = before != null && before.area() == a && before.nameStart() == nameStart
+                ? before.oldName()
+                : rename.oldName();
+        String newName = rename.newName();
+        long edits = CaretLook.edits(a);
+        String text = a.getText();
+        long mine = ++asks;
+        pending = new Pending(a, nameStart, oldName);
+        OffFx.then(
+                MIRROR_SITE,
+                () -> TagRename.pairFor(text, nameStart, rename.closing(), oldName, newName, html),
+                answer -> {
+                    if (mine != asks) {
+                        return; // a later keystroke asked again
+                    }
+                    pending = null;
+                    TagRename.Mirror m = answer.value();
+                    if (m != null && enabled && !applying && CaretLook.edits(a) == edits) {
+                        apply(a, m);
+                    }
+                });
+    }
+
+    /** {@link com.editora.perf.BlockingSites} name of the paired tag's search, made off the FX thread. */
+    static final String MIRROR_SITE = "TagRenameMirror.pair";
+
+    /** A rename asked and not answered yet: the tag's name start and the name it had before it was typed into. */
+    private record Pending(CodeArea area, int nameStart, String oldName) {}
+
+    private @Nullable Pending pending;
+
+    /** The latest ask: an answer to an earlier one is dropped. */
+    private long asks;
+
+    private void apply(CodeArea a, TagRename.Mirror m) {
         // The edit has committed, so these are the user's real anchor and caret (after the typed character,
         // or where Backspace left it). Carry them across the mirror: it shifts them only when it sits above.
         int anchor = a.getAnchor();

@@ -26,6 +26,8 @@ import static org.junit.jupiter.api.Assertions.fail;
  * from the real command registry, and a command-scoped query does not drag in the project index.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(
+        OffFxInPlace.class) // the outline and the pickers answer before the call returns
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class SearchEverywhereFxTest {
 

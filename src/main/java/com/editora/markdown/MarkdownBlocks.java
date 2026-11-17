@@ -185,13 +185,21 @@ public final class MarkdownBlocks {
         scan();
     }
 
+    /**
+     * The name {@link com.editora.perf.BlockingSites} hears for every scan: a scan reads a whole document, so it
+     * runs off the JavaFX thread (PERF-01, Pauta 6.0.1); a test checks it is never heard there.
+     */
+    public static final String SCAN_SITE = "MarkdownBlocks.scan";
+
     /** Scans {@code text} (lines split on {@code \n}; {@code null} is the empty document). */
     public static MarkdownBlocks scan(String text) {
+        com.editora.perf.BlockingSites.enter(SCAN_SITE);
         return new MarkdownBlocks(text == null ? new String[] {""} : text.split("\n", -1));
     }
 
     /** Scans already-split {@code lines} (each may still end in {@code \r}). */
     public static MarkdownBlocks scan(String[] lines) {
+        com.editora.perf.BlockingSites.enter(SCAN_SITE);
         return new MarkdownBlocks(lines == null ? new String[0] : lines);
     }
 

@@ -36,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The Settings window driven from the keyboard alone: the shortcut editor, the sidebar, search, Escape. */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // searches and filters answer before the call returns
 class SettingsKeyboardFxTest {
 
     @BeforeAll

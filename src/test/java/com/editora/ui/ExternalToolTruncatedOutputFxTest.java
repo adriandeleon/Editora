@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * flags the rest as dropped; applying that to a replace-buffer or replace-selection target wrote a silently
  * cut-off prefix of the tool's output over the document.
  */
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the span is worked out off FX in the app
 @Tag("fx")
 class ExternalToolTruncatedOutputFxTest {
 

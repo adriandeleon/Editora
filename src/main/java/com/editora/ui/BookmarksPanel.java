@@ -120,8 +120,18 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         filterField.setPromptText(tr("bookmarks.filterPrompt"));
         filterField.setAccessibleText(tr("bookmarks.filterPrompt"));
         filterField.getStyleClass().add("bookmarks-filter");
-        filterField.textProperty().addListener((o, w, n) -> refresh());
-        FilterFieldNav.install(filterField, tree, this::activateSelected); // Down/Enter → into / open the results
+        filterField.textProperty().addListener((o, w, n) -> {
+            activateWhenFiltered = false; // typed on after Enter: the Enter was for the text before
+            refresh();
+        });
+        // Down/Enter → into / open the results; Enter typed before the filter's answer opens the first of the latest
+        FilterFieldNav.install(filterField, tree, () -> {
+            if (filterSearch.pending()) {
+                activateWhenFiltered = true;
+            } else {
+                activateSelected();
+            }
+        });
         HBox.setHgrow(filterField, Priority.ALWAYS);
 
         // Trailing clear ("✕") button — visible only while the filter has text (mirrors the Project/Notes panels).
@@ -200,6 +210,66 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                 : filterField.getText().strip().toLowerCase();
         Scope scope = source.get();
         Map<String, Map<String, List<Bookmark>>> byProject = scope.byProject();
+        if (query.isEmpty()) {
+            filterSearch.cancel();
+            show(scope, byProject, null);
+            return;
+        }
+        // Matched off the FX thread (PERF-01, Pauta 6.0.1), on a copy of each bookmark's file name and label; the tree
+        // shown stays until the latest filter's answer lands.
+        List<String> names = new ArrayList<>();
+        List<String> labels = new ArrayList<>();
+        List<Bookmark> marks = new ArrayList<>();
+        byProject
+                .values()
+                .forEach(bucket -> bucket.forEach((file, list) -> {
+                    if (list != null) {
+                        for (Bookmark bm : list) {
+                            names.add(PathDisplay.fileName(Path.of(file)));
+                            labels.add(markLabel(bm));
+                            marks.add(bm);
+                        }
+                    }
+                }));
+        filterSearch.submit(
+                () -> {
+                    com.editora.perf.BlockingSites.enter(FILTER_SITE);
+                    java.util.Set<Bookmark> kept =
+                            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+                    for (int i = 0; i < marks.size(); i++) {
+                        if (names.get(i).toLowerCase().contains(query)
+                                || labels.get(i).toLowerCase().contains(query)) {
+                            kept.add(marks.get(i));
+                        }
+                    }
+                    return kept;
+                },
+                kept -> {
+                    show(scope, byProject, kept);
+                    if (activateWhenFiltered) {
+                        activateWhenFiltered = false;
+                        activateSelected();
+                    }
+                });
+    }
+
+    /** Where the filter is matched against the bookmarks: a picker thread, never the FX thread. */
+    static final String FILTER_SITE = "BookmarksPanel.filter";
+
+    /** The filter in flight: a newer keystroke (or refresh) supersedes it, and only the latest answer is shown. */
+    private final LatestOnly filterSearch = PickerSearch.latest();
+
+    /** Enter was pressed in the filter field while its answer was still coming: open the row once it lands. */
+    private boolean activateWhenFiltered;
+
+    /** Whether the tree is not yet the latest filter's (a test waits on it). */
+    boolean filtering() {
+        return filterSearch.pending();
+    }
+
+    /** Builds the tree: every bookmark when {@code kept} is null, else the bookmarks the filter kept. */
+    private void show(
+            Scope scope, Map<String, Map<String, List<Bookmark>>> byProject, java.util.@Nullable Set<Bookmark> kept) {
         currentKey = scope.currentKey() == null ? "" : scope.currentKey();
 
         List<String> withContent = new ArrayList<>();
@@ -227,14 +297,11 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
                     continue;
                 }
                 Path file = Path.of(e.getKey());
-                boolean fileMatches = PathDisplay.fileName(file).toLowerCase().contains(query);
                 boolean folder = e.getValue().stream().anyMatch(Bookmark::isFolder);
                 TreeItem<Row> fileNode = new TreeItem<>(new FileRow(key, file, folder));
                 fileNode.setExpanded(true);
                 for (Bookmark bm : e.getValue()) {
-                    if (query.isEmpty()
-                            || fileMatches
-                            || markLabel(bm).toLowerCase().contains(query)) {
+                    if (kept == null || kept.contains(bm)) {
                         fileNode.getChildren().add(new TreeItem<>(new MarkRow(key, file, bm)));
                     }
                 }

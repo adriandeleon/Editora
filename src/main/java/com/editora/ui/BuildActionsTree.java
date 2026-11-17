@@ -137,8 +137,17 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         filterField.setPromptText(tr("buildtree.filterPrompt"));
         filterField.setAccessibleText(tr("buildtree.filterPrompt"));
         filterField.getStyleClass().add("bookmarks-filter");
-        filterField.textProperty().addListener((o, w, n) -> rebuild());
-        FilterFieldNav.install(filterField, tree, this::runSelected);
+        filterField.textProperty().addListener((o, w, n) -> {
+            runWhenFiltered = false; // typed on after Enter: the Enter was for the text before
+            rebuild();
+        });
+        FilterFieldNav.install(filterField, tree, () -> {
+            if (filterSearch.pending()) {
+                runWhenFiltered = true; // Enter typed before the filter's answer: the first row of the latest
+            } else {
+                runSelected();
+            }
+        });
         HBox.setHgrow(filterField, Priority.ALWAYS);
         Button clearFilter = new Button("✕");
         clearFilter.getStyleClass().add("project-filter-clear");
@@ -480,12 +489,48 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
         rebuild(provider == null ? null : provider.sections(activeToggles));
     }
 
+    /** Where the filter is matched against the tasks: a picker thread, never the FX thread. */
+    static final String FILTER_SITE = "BuildActionsTree.filter";
+
+    /** The filter in flight: a newer keystroke (or rebuild) supersedes it, and only the latest answer is shown. */
+    private final LatestOnly filterSearch = PickerSearch.latest();
+
+    /** Enter was pressed in the filter field while its answer was still coming: run the row once it lands. */
+    private boolean runWhenFiltered;
+
+    /** Whether the tree is not yet the latest filter's (a test waits on it). */
+    boolean filtering() {
+        return filterSearch.pending();
+    }
+
+    /**
+     * Shows {@code sections}, narrowed by the filter. A Maven project lists hundreds of goals, so a typed filter is
+     * matched off the FX thread (PERF-01, Pauta 6.0.1); the tree shown stays until the latest answer lands.
+     */
     private void rebuild(@Nullable List<BuildAction.Section> sections) {
         String query = filterQuery();
+        if (provider == null || sections == null || query.isEmpty()) {
+            filterSearch.cancel();
+            render(sections, query, provider == null || sections == null ? List.of() : sections);
+            return;
+        }
+        List<BuildAction.Section> all = List.copyOf(sections);
+        filterSearch.submit(
+                () -> {
+                    com.editora.perf.BlockingSites.enter(FILTER_SITE);
+                    return filtered(all, query);
+                },
+                visible -> {
+                    render(all, query, visible);
+                    if (runWhenFiltered) {
+                        runWhenFiltered = false;
+                        runSelected();
+                    }
+                });
+    }
+
+    private void render(@Nullable List<BuildAction.Section> sections, String query, List<BuildAction.Section> visible) {
         boolean detected = provider != null && sections != null;
-        List<BuildAction.Section> visible = provider == null || sections == null
-                ? List.of()
-                : query.isEmpty() ? sections : filtered(sections, query);
         boolean hasProjects = !projects.isEmpty() && query.isEmpty();
         boolean has = (detected && !visible.isEmpty()) || hasProjects;
         // "No matching tasks" only when a filter is what emptied the tree — otherwise the marker-absent /

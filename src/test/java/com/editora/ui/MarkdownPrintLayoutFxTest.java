@@ -200,13 +200,16 @@ class MarkdownPrintLayoutFxTest {
     /** Math is rasterised dark-on-white for print even when the app (and so the preview) is dark. */
     @Test
     void mathPrintsDarkOnWhiteUnderADarkAppTheme() throws Exception {
+        com.editora.editor.markdown.MathImages.configure(true, true);
+        // (parsed with the feature on: math is recognised by the parser, not found in text afterwards)
+        org.commonmark.node.Node ast = MarkdownRenderer.parseForRender("Inline $x^2 + y^2$ here.\n");
+        // Print's formulas are drawn off the FX thread with its other assets (PERF-01), light on paper.
+        com.editora.editor.markdown.MarkdownPrintAssets assets =
+                com.editora.editor.markdown.MarkdownPrintAssets.resolve(ast, null);
         double brightness = FxTestSupport.callOnFx(() -> {
-            com.editora.editor.markdown.MathImages.configure(true, true);
             try {
-                // (parsed with the feature on: math is recognised by the parser, not found in text afterwards)
-                org.commonmark.node.Node ast = MarkdownRenderer.parseForRender("Inline $x^2 + y^2$ here.\n");
-                Node page =
-                        MarkdownPrintLayout.paginate(ast, null, PAGE_W, PAGE_H).get(0);
+                Node page = MarkdownPrintLayout.paginate(ast, null, assets, PAGE_W, PAGE_H)
+                        .get(0);
                 javafx.scene.image.ImageView formula = (javafx.scene.image.ImageView) page.lookup(".md-math-inline");
                 javafx.scene.image.Image img = formula.getImage();
                 double darkest = 1;

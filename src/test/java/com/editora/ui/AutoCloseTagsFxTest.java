@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * leave the caret between the tags (the pure {@code TagAutoClose} decision is unit-tested separately).
  * Also covers the macro-replay path ({@code typeString}) and the setting gate.
  */
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the pair is found off FX in the app
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class AutoCloseTagsFxTest {

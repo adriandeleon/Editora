@@ -617,48 +617,48 @@ final class NavigationCoordinator {
     void openRelated(Path current, List<String> names, List<Path> linked) {
         Path dir = current.getParent();
         // Beside the file first: when a counterpart IS a sibling that is nearly always the right one, and it costs a
-        // single exists() rather than a scan — off the FX thread (PERF-01, Pauta 6.0.1).
+        // single exists(); then the project index by name, searched on the index as it is now. Both off the FX thread
+        // (PERF-01, Pauta 6.0.1).
+        IndexCoordinator.Corpus corpus = host.indexCoordinator().corpus();
+        boolean asset = HtmlRelated.isAsset(current);
         com.editora.perf.OffFx.then(
                 "related-look",
                 () -> {
-                    List<Path> siblings = new ArrayList<>();
+                    List<Path> found = new ArrayList<>(linked);
                     for (String name : names) {
                         Path sibling = dir == null ? null : dir.resolve(name);
-                        if (sibling != null && java.nio.file.Files.isRegularFile(sibling) && !sibling.equals(current)) {
-                            siblings.add(sibling);
+                        if (sibling != null
+                                && java.nio.file.Files.isRegularFile(sibling)
+                                && !sibling.equals(current)
+                                && !found.contains(sibling)) {
+                            found.add(sibling);
+                        }
+                        for (IndexCoordinator.FileHit hit : corpus.searchFiles(name, 20)) {
+                            if (hit.file().getFileName().toString().equals(name)
+                                    && !hit.file().equals(current)
+                                    && !found.contains(hit.file())) {
+                                found.add(hit.file());
+                            }
                         }
                     }
-                    return siblings;
+                    List<Path> pages =
+                            asset ? corpus.filesMatching(HtmlRelated::isPage, HtmlRelated.MAX_PAGES) : List.of();
+                    return new Related(found, pages);
                 },
-                looked -> openRelated(current, names, linked, looked.or(List.of())));
+                looked -> openRelated(current, looked.or(new Related(new ArrayList<>(linked), List.of())), corpus));
     }
 
-    private void openRelated(Path current, List<String> names, List<Path> linked, List<Path> siblings) {
-        List<Path> found = new ArrayList<>(linked);
-        Path dir = current.getParent();
-        for (String name : names) {
-            if (dir != null) {
-                Path sibling = dir.resolve(name);
-                if (siblings.contains(sibling)) {
-                    found.add(sibling);
-                }
-            }
-            for (IndexCoordinator.FileHit hit : host.indexCoordinator().searchFiles(name, 20)) {
-                if (hit.file().getFileName().toString().equals(name)
-                        && !hit.file().equals(current)
-                        && !found.contains(hit.file())) {
-                    found.add(hit.file());
-                }
-            }
-        }
-        List<Path> pages = HtmlRelated.isAsset(current)
-                ? host.indexCoordinator().filesMatching(HtmlRelated::isPage, HtmlRelated.MAX_PAGES)
-                : List.of();
+    /** What Related File found: the counterparts by name, and the pages that may link a stylesheet or script. */
+    private record Related(List<Path> found, List<Path> pages) {}
+
+    private void openRelated(Path current, Related related, IndexCoordinator.Corpus corpus) {
+        List<Path> found = related.found();
+        List<Path> pages = related.pages();
         if (pages.isEmpty()) {
             showRelated(current, found);
             return;
         }
-        HtmlRelated.pagesLinking(current, pages, host.indexCoordinator().indexedRoot(), linking -> {
+        HtmlRelated.pagesLinking(current, pages, corpus.indexedRoot(), linking -> {
             List<Path> all = new ArrayList<>(linking); // the pages that load this stylesheet or script lead
             for (Path p : found) {
                 if (!all.contains(p)) {
@@ -876,22 +876,21 @@ final class NavigationCoordinator {
     void foldAllBlockComments() {
         EditorBuffer buffer = host.activeBuffer();
         if (buffer != null) {
-            host.setStatus(tr("status.fold.comments", buffer.getFoldManager().foldAllBlockComments()));
+            buffer.getFoldManager().foldAllBlockComments(n -> host.setStatus(tr("status.fold.comments", n)));
         }
     }
 
     void foldAllMarkerRegions() {
         EditorBuffer buffer = host.activeBuffer();
         if (buffer != null) {
-            host.setStatus(tr("status.fold.markers", buffer.getFoldManager().foldAllMarkerRegions()));
+            buffer.getFoldManager().foldAllMarkerRegions(n -> host.setStatus(tr("status.fold.markers", n)));
         }
     }
 
     void unfoldAllMarkerRegions() {
         EditorBuffer buffer = host.activeBuffer();
         if (buffer != null) {
-            host.setStatus(
-                    tr("status.fold.markersUnfolded", buffer.getFoldManager().unfoldAllMarkerRegions()));
+            buffer.getFoldManager().unfoldAllMarkerRegions(n -> host.setStatus(tr("status.fold.markersUnfolded", n)));
         }
     }
 

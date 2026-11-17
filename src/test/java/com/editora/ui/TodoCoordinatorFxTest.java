@@ -42,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * files), the edits the panel's menu asks for, the quick-add pattern prompts, and the persisted grouping.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // searches and filters answer before the call returns
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TodoCoordinatorFxTest {
 

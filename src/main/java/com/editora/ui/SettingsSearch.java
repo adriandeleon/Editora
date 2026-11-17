@@ -22,6 +22,7 @@ import javafx.scene.control.Labeled;
 import javafx.scene.control.TextInputControl;
 import javafx.scene.layout.VBox;
 
+import com.editora.perf.BlockingSites;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -59,7 +60,13 @@ final class SettingsSearch {
      * A list inside one row whose items are searched on their own (they are not part of the row's text): when
      * {@code matches} accepts the query, the row holding {@code inside} stays visible and its page counts as a hit.
      */
-    record ListSource(Object page, Node inside, Predicate<String> matches) {}
+    record ListSource(Object page, Node inside, java.util.function.Supplier<Predicate<String>> matcher) {
+
+        /** Whether the list holds a match of {@code query}. */
+        boolean matches(String query) {
+            return matcher.get().test(query);
+        }
+    }
 
     /** What a query found: the pages with a hit, the page to open, and whether the open page {@code sel} ties. */
     record Result(Map<Object, Integer> pageScores, @Nullable Object best) {
@@ -325,42 +332,152 @@ final class SettingsSearch {
 
     /**
      * Shows the rows, headings and cards {@code query} matches and marks the rows whose title or description shows
-     * a query word. A blank query shows everything and returns null.
+     * a query word. A blank query shows everything and returns null. Scores in place: a test's; the window scores
+     * off the FX thread ({@link #filterLater}).
      */
     @Nullable
     Result filter(String query) {
+        Prepared prepared = prepare(query);
+        return prepared == null ? showAll() : apply(prepared, prepared.score());
+    }
+
+    /** Where a query is scored against the rows and the shortcut list: a picker thread, never the FX thread. */
+    static final String FILTER_SITE = "SettingsSearch.filter";
+
+    /** The scoring in flight: a newer keystroke supersedes it, and only the latest answer is shown. */
+    private final LatestOnly scoring = PickerSearch.latest();
+
+    /** Whether the rows shown are not yet those for the query typed (a test waits on it). */
+    boolean filtering() {
+        return scoring.pending();
+    }
+
+    /**
+     * As {@link #filter}, with the scoring off the FX thread (PERF-01, Pauta 6.0.1): the rows' texts and what the
+     * row filter says are taken here, scored on a picker thread, and shown when the latest query's answer lands.
+     * {@code done} gets the result (null for a blank query) and whether the shortcut list holds a match.
+     */
+    void filterLater(String query, java.util.function.BiConsumer<@Nullable Result, Boolean> done) {
+        Prepared prepared = prepare(query);
+        if (prepared == null) {
+            scoring.cancel();
+            done.accept(showAll(), false);
+            return;
+        }
+        scoring.submit(prepared::score, scored -> done.accept(apply(prepared, scored), scored.listMatch()));
+    }
+
+    private @Nullable Result showAll() {
+        rows.forEach(r -> {
+            setShown(r.node(), true);
+            r.node().pseudoClassStateChanged(HIT, false);
+        });
+        sections.forEach(s -> setShown(s, true));
+        cards.forEach(c -> setShown(c, true));
+        return null;
+    }
+
+    /**
+     * What a query is scored with, taken on the FX thread: each row's texts (read once from its nodes), whether the
+     * row filter keeps it and whether it holds the shortcut list, the page names and a copy of the list's rows. Null
+     * when nothing is searched for.
+     */
+    private @Nullable Prepared prepare(String query) {
         boolean searching = query != null && !query.isBlank() || onlyRows != null;
         if (!searching) {
-            rows.forEach(r -> {
-                setShown(r.node(), true);
-                r.node().pseudoClassStateChanged(HIT, false);
-            });
-            sections.forEach(s -> setShown(s, true));
-            cards.forEach(c -> setShown(c, true));
             return null;
         }
-        Map<Object, Integer> pageScores = new LinkedHashMap<>();
+        List<Row> rs = List.copyOf(rows);
+        List<Texts> texts = new ArrayList<>(rs.size());
+        boolean[] kept = new boolean[rs.size()];
+        boolean[] holdsList = new boolean[rs.size()];
+        ListSource l = list;
+        for (int i = 0; i < rs.size(); i++) {
+            Row r = rs.get(i);
+            texts.add(textsOf(r));
+            kept[i] = onlyRows == null || onlyRows.test(r);
+            holdsList[i] = l != null && r.page() == l.page() && isUnder(l.inside(), r.node());
+        }
+        Map<Object, String> names = new LinkedHashMap<>();
+        for (Object page : pageOrder) {
+            names.put(page, pageName.apply(page));
+        }
+        Predicate<String> listMatcher = l == null ? q -> false : l.matcher().get();
+        return new Prepared(
+                query == null ? "" : query, rs, texts, kept, holdsList, names, listMatcher, onlyRows == null);
+    }
+
+    /** {@link #prepare}'s copy: scored on any thread. */
+    private record Prepared(
+            String query,
+            List<Row> rows,
+            List<Texts> texts,
+            boolean[] kept,
+            boolean[] holdsList,
+            Map<Object, String> pageNames,
+            Predicate<String> listMatcher,
+            boolean noRowFilter) {
+
+        Scored score() {
+            BlockingSites.enter(FILTER_SITE);
+            boolean anyWord = !query.isBlank();
+            boolean listMatch = anyWord && listMatcher.test(query.strip());
+            boolean listHit = listMatch && noRowFilter;
+            int[] scores = new int[rows.size()];
+            boolean[] hits = new boolean[rows.size()];
+            for (int i = 0; i < rows.size(); i++) {
+                Texts t = texts.get(i);
+                int s = !anyWord ? KEYWORD : SettingsSearch.score(query, t);
+                if (!kept[i]) {
+                    s = 0;
+                }
+                if (s == 0 && listHit && holdsList[i]) {
+                    s = KEYWORD; // a command name in the list: the weakest hit, a setting named so outranks it
+                }
+                scores[i] = s;
+                hits[i] = s > 0
+                        && anyWord
+                        && SettingsSearch.score(query, new Texts(t.title(), t.description(), "", "", "")) > 0;
+            }
+            Map<Object, Integer> pageScores = new LinkedHashMap<>();
+            for (int i = 0; i < rows.size(); i++) {
+                if (scores[i] > 0) {
+                    pageScores.merge(rows.get(i).page(), scores[i], Math::max);
+                }
+            }
+            Object best = null;
+            int bestScore = 0;
+            for (Map.Entry<Object, String> page : pageNames.entrySet()) {
+                Integer s = pageScores.get(page.getKey());
+                if (s == null) {
+                    continue;
+                }
+                if (namesPage(query, page.getValue())) {
+                    s += NAMED_PAGE;
+                    pageScores.put(page.getKey(), s);
+                }
+                if (best == null || s > bestScore) {
+                    best = page.getKey();
+                    bestScore = s;
+                }
+            }
+            return new Scored(scores, hits, new Result(pageScores, best), listMatch);
+        }
+    }
+
+    /** A query's scores per row, whether each shows a hit, the pages it found, and whether the list holds one. */
+    private record Scored(int[] scores, boolean[] hits, Result result, boolean listMatch) {}
+
+    /** Shows what {@code scored} found on the rows {@link #prepare} copied: FX thread. */
+    private Result apply(Prepared prepared, Scored scored) {
         Set<Label> visibleSections = new HashSet<>();
         Set<VBox> visibleCards = new HashSet<>();
-        boolean anyWord = query != null && !query.isBlank();
-        boolean listHit =
-                anyWord && onlyRows == null && list != null && list.matches().test(query.strip());
-        for (Row r : rows) {
-            Texts t = textsOf(r);
-            int s = !anyWord ? KEYWORD : score(query, t);
-            if (onlyRows != null && !onlyRows.test(r)) {
-                s = 0;
-            }
-            if (s == 0 && listHit && list != null && r.page() == list.page() && isUnder(list.inside(), r.node())) {
-                s = KEYWORD; // a command name in the list: the weakest hit, a setting named so outranks it
-            }
-            setShown(r.node(), s > 0);
-            r.node()
-                    .pseudoClassStateChanged(
-                            HIT,
-                            s > 0 && anyWord && score(query, new Texts(t.title(), t.description(), "", "", "")) > 0);
-            if (s > 0) {
-                pageScores.merge(r.page(), s, Math::max);
+        for (int i = 0; i < prepared.rows().size(); i++) {
+            Row r = prepared.rows().get(i);
+            boolean shown = scored.scores()[i] > 0;
+            setShown(r.node(), shown);
+            r.node().pseudoClassStateChanged(HIT, scored.hits()[i]);
+            if (shown) {
                 if (r.section() != null) {
                     visibleSections.add(r.section());
                 }
@@ -371,23 +488,7 @@ final class SettingsSearch {
         }
         sections.forEach(s -> setShown(s, visibleSections.contains(s)));
         cards.forEach(c -> setShown(c, visibleCards.contains(c)));
-        Object best = null;
-        int bestScore = 0;
-        for (Object page : pageOrder) {
-            Integer s = pageScores.get(page);
-            if (s == null) {
-                continue;
-            }
-            if (namesPage(query, pageName.apply(page))) {
-                s += NAMED_PAGE;
-                pageScores.put(page, s);
-            }
-            if (best == null || s > bestScore) {
-                best = page;
-                bestScore = s;
-            }
-        }
-        return new Result(pageScores, best);
+        return scored.result();
     }
 
     private static boolean isUnder(Node node, Node ancestor) {

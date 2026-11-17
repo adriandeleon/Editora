@@ -6,7 +6,6 @@ import java.util.Set;
 
 import com.editora.config.Settings;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -56,9 +55,11 @@ final class SettingsReapply {
             "markdownTocMaxLevel");
 
     private final MainController window;
-    private final ObjectMapper json = new ObjectMapper();
-    /** The settings as this window last re-applied them; null before the first re-apply. */
-    private @Nullable JsonNode last;
+    /**
+     * A copy of the settings as this window last re-applied them (field by field, no JSON: PERF-01, Pauta 6.0.1, as
+     * this runs on the FX thread per change); null before the first re-apply.
+     */
+    private @Nullable Settings last;
 
     SettingsReapply(MainController window) {
         this.window = window;
@@ -66,8 +67,8 @@ final class SettingsReapply {
 
     /** Re-applies {@code settings} to this window: its buffers' view only when nothing else changed. */
     void run(Settings settings) {
-        JsonNode now = json.valueToTree(settings);
-        Set<String> changed = last == null ? null : changedKeys(last, now);
+        Settings now = com.editora.config.Snapshots.copy(settings);
+        Set<String> changed = last == null ? null : SettingsModified.changedKeys(last, now);
         last = now;
         if (viewOnly(changed)) {
             window.editorSettings.applyPerBufferViewToVisible(settings); // hidden tabs catch up when shown
@@ -83,7 +84,7 @@ final class SettingsReapply {
         return changed != null && !changed.isEmpty() && VIEW_ONLY.containsAll(changed);
     }
 
-    /** The top-level settings whose value differs between the two snapshots. Pure. */
+    /** The top-level settings whose value differs between the two JSON snapshots. Pure. */
     static Set<String> changedKeys(JsonNode before, JsonNode now) {
         Set<String> out = new HashSet<>();
         for (Iterator<String> it = now.fieldNames(); it.hasNext(); ) {

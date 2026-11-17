@@ -20,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * without delimiter folding.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(
+        OffFxInPlace.class) // the outline and the pickers answer before the call returns
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class StructureOutlineFxTest {
 

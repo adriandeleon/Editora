@@ -2,6 +2,7 @@ package com.editora.editor;
 
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -97,7 +98,6 @@ import com.editora.editor.undo.CompletionUndoManager;
 import com.editora.editor.undo.UndoHistory;
 import com.editora.editor.undo.UndoMerge;
 import com.editora.logviewer.LogLevel;
-import com.editora.markdown.MarkdownInline;
 import com.editora.markdown.MarkdownLint;
 import com.editora.markdown.MarkdownTable;
 import com.editora.maven.PomFiles;
@@ -120,6 +120,7 @@ import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
+import org.fxmisc.richtext.model.TwoDimensional.Bias;
 import org.fxmisc.richtext.util.UndoUtils;
 import org.fxmisc.undo.UndoManager;
 import org.jspecify.annotations.Nullable;
@@ -217,6 +218,13 @@ public class EditorBuffer implements TabContent {
         @Override
         public boolean isProse() {
             return EditorBuffer.this.isProse();
+        }
+
+        @Override
+        public @Nullable String markdownFenceInfo(int line) {
+            return markdownEditing
+                    .blockMap()
+                    .fenceInfoAt(line, area.getParagraphs().size());
         }
 
         @Override
@@ -960,6 +968,13 @@ public class EditorBuffer implements TabContent {
             // Drop our reference to the previous version immediately. In-flight background consumers keep
             // their own immutable String; the next settled consumer materializes the new version once.
             documentSnapshots.invalidate();
+            if (isMarkdown() || markdownEditing.blockMap().holdsMap()) {
+                // The line map the Markdown keys look up, scanned again off the FX thread (PERF-01).
+                markdownEditing
+                        .blockMap()
+                        .changed(area.offsetToPosition(c.getPosition(), Bias.Forward)
+                                .getMajor());
+            }
             completionActions.documentChanged(c);
             if (!completionEditTrackers.isEmpty()) {
                 int[] start = LspEditPlacement.position(area, c.getPosition());
@@ -1200,11 +1215,12 @@ public class EditorBuffer implements TabContent {
             try {
                 int off = a.hit(e.getX(), e.getY()).getInsertionIndex();
                 if (isMarkdown()) {
-                    String url = MarkdownInline.linkAround(a.getText(), off);
-                    if (url != null) {
-                        openUrlHandler.accept(url);
-                        e.consume();
-                    }
+                    // Worked out off the FX thread (PERF-01): the link opens when its destination lands.
+                    markdownEditing.linkAt(a, off, url -> {
+                        if (url != null) {
+                            openUrlHandler.accept(url);
+                        }
+                    });
                     return;
                 }
                 if (isLspActive() || HtmlLinks.isHtml(language) && HtmlLinks.at(a.getText(), off) != null) {
@@ -1232,14 +1248,17 @@ public class EditorBuffer implements TabContent {
         return openUrlHandler;
     }
 
-    /** Opens the link under the caret externally; returns false when the caret is not on a link. */
-    public boolean openLinkUnderCaret() {
-        String url = linkUnderCaret();
-        if (url == null) {
-            return false;
-        }
-        openUrlHandler.accept(url);
-        return true;
+    /**
+     * Opens the link under the caret externally once its destination, worked out off the FX thread, lands;
+     * {@code done} hears false when the caret is not on a link.
+     */
+    public void openLinkUnderCaret(java.util.function.Consumer<Boolean> done) {
+        markdownEditing.linkUnderCaret(url -> {
+            if (url != null) {
+                openUrlHandler.accept(url);
+            }
+            done.accept(url != null);
+        });
     }
 
     public void setFormatBarEnabled(boolean enabled) {
@@ -1380,6 +1399,25 @@ public class EditorBuffer implements TabContent {
      * delegates here.
      */
     public boolean toggleComment() {
+        Boolean[] applied = {null};
+        if (!toggleComment(why -> applied[0] = why == null, text -> "")) {
+            return false;
+        }
+        return applied[0] == null || applied[0]; // still out (the app): it was started; in place: whether it applied
+    }
+
+    /** {@link com.editora.perf.BlockingSites} name of Toggle Comment's work, done off the FX thread. */
+    public static final String COMMENT_SITE = "EditorBuffer.toggleComment";
+
+    /**
+     * As {@link #toggleComment()}, the edit worked out off the FX thread (PERF-01, Pauta 6.0.1): the comment rules read
+     * the whole text in some languages (a shell here-doc, an HTML page's script and style blocks, an INI file's
+     * style) and a selection can be the whole document. It is applied when it lands if the text is unchanged;
+     * {@code done} then hears null, or, when no edit could be made, what {@code whyNot} says of the text (also worked
+     * out off the FX thread). False, with nothing started, when the buffer cannot take comments.
+     */
+    public boolean toggleComment(
+            java.util.function.Consumer<@Nullable String> done, java.util.function.Function<String, String> whyNot) {
         if (!isEditable() || largeFile) {
             return false;
         }
@@ -1389,21 +1427,41 @@ public class EditorBuffer implements TabContent {
                 a.getSelection().getStart(), a.getSelection().getEnd());
         int line = a.offsetToPosition(span[0], org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
                 .getMajor();
-        Commenter.Edit edit = JsxContext.lineInChildren(
-                        grammar,
-                        highlighter.highlightLines,
-                        line,
-                        a.getParagraph(line).getText())
-                ? Commenter.toggle(a.getText(), span[0], span[1], JsxContext.COMMENT) // {/* */} in markup (A103)
-                : Commenter.toggle(a.getText(), span[0], span[1], language, getPath());
-        if (edit == null) {
-            return false;
-        }
-        a.replaceText(edit.from(), edit.to(), edit.replacement());
-        a.selectRange(edit.selStart(), edit.selEnd());
-        a.requestFocus();
+        boolean jsx = JsxContext.lineInChildren(
+                grammar, highlighter.highlightLines, line, a.getParagraph(line).getText());
+        String text = a.getText();
+        String lang = language;
+        java.nio.file.Path file = getPath();
+        long version = docVersion;
+        OffFx.then(
+                COMMENT_SITE,
+                () -> {
+                    Commenter.Edit edit = jsx
+                            ? Commenter.toggle(text, span[0], span[1], JsxContext.COMMENT) // {/* */} in markup (A103)
+                            : Commenter.toggle(text, span[0], span[1], lang, file);
+                    return new CommentAnswer(edit, edit == null ? whyNot.apply(text) : null);
+                },
+                answer -> {
+                    CommentAnswer got = answer.value();
+                    if (got == null || disposed || docVersion != version) {
+                        return; // typed into meanwhile: the command is pressed again on the new text
+                    }
+                    Commenter.Edit edit = got.edit();
+                    if (edit == null) {
+                        done.accept(got.whyNot());
+                        return;
+                    }
+                    a.replaceText(edit.from(), edit.to(), edit.replacement());
+                    a.selectRange(edit.selStart(), edit.selEnd());
+                    a.requestFocus();
+                    done.accept(null);
+                });
         return true;
     }
+
+    /** Toggle Comment worked out off the FX thread: the edit, or why none could be made. */
+    private record CommentAnswer(
+            Commenter.@Nullable Edit edit, @Nullable String whyNot) {}
 
     final MarkdownEditing markdownEditing = new MarkdownEditing(this);
 
@@ -1496,8 +1554,9 @@ public class EditorBuffer implements TabContent {
         return markdownEditing.exportTableFile(format);
     }
 
-    public boolean insertOrUpdateToc() {
-        return markdownEditing.insertOrUpdateToc();
+    /** Inserts or regenerates the table of contents; {@code done} hears whether there was one to write. */
+    public void insertOrUpdateToc(java.util.function.Consumer<Boolean> done) {
+        markdownEditing.insertOrUpdateToc(done);
     }
 
     /** Inserts {@code text} at the focused area's caret (replacing any selection), then focuses it. */
@@ -1533,7 +1592,7 @@ public class EditorBuffer implements TabContent {
         CodeArea a = focusedArea != null ? focusedArea : area;
         TypstMarkup.Table t = TypstMarkup.table(rows, cols);
         int caret = a.getCaretPosition();
-        boolean needLeading = caret > 0 && a.getText().charAt(caret - 1) != '\n';
+        boolean needLeading = caret > 0 && a.getText(caret - 1, caret).charAt(0) != '\n'; // one char, no copy
         String prefix = needLeading ? "\n" : "";
         a.replaceText(caret, caret, prefix + t.text() + "\n");
         a.moveTo(caret + prefix.length() + t.caretOffset());
@@ -1547,12 +1606,6 @@ public class EditorBuffer implements TabContent {
             return;
         }
         insertAtCaret(TypstMarkup.OUTLINE);
-    }
-
-    /** The URL of the link under the caret, or {@code null} — for the "open link" command / Ctrl-click. */
-    public @Nullable String linkUnderCaret() {
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        return MarkdownInline.linkAround(a.getText(), a.getCaretPosition());
     }
 
     private void installOverlays() {
@@ -3725,16 +3778,25 @@ public class EditorBuffer implements TabContent {
         return caretOps.placeOccurrenceCarets(ranges, anchorStart);
     }
 
-    public int selectAllOccurrences() {
-        return caretOps.selectAllOccurrences();
+    /** {@link com.editora.perf.BlockingSites} name of Select All Occurrences' search, made off the FX thread. */
+    public static final String OCCURRENCES_SITE = BufferCarets.OCCURRENCES_SITE;
+
+    /**
+     * Select All Occurrences: searched off the FX thread, then {@code placed} hears the carets placed (on the FX
+     * thread, only if nothing moved meanwhile).
+     */
+    public void selectAllOccurrences(java.util.function.IntConsumer placed) {
+        caretOps.selectAllOccurrences(placed);
     }
 
-    public int splitSelectionIntoLines(boolean atLineEnds) {
-        return caretOps.splitSelectionIntoLines(atLineEnds);
+    /** Split into Lines / Add Cursors to Line Ends: worked out off the FX thread; {@code placed} hears the carets. */
+    public void splitSelectionIntoLines(boolean atLineEnds, java.util.function.IntConsumer placed) {
+        caretOps.splitSelectionIntoLines(atLineEnds, placed);
     }
 
-    public boolean skipOccurrence() {
-        return caretOps.skipOccurrence();
+    /** Skip Occurrence: searched off the FX thread; {@code moved} hears, on the FX thread, whether it moved. */
+    public void skipOccurrence(java.util.function.Consumer<Boolean> moved) {
+        caretOps.skipOccurrence(moved);
     }
 
     public boolean undoLastCaret() {
@@ -4049,9 +4111,13 @@ public class EditorBuffer implements TabContent {
         if (c == null || !isEditable()) {
             return;
         }
-        replaceVisibleText(area, c.text());
-        area.moveTo(UndoHistory.clamp(c.caret(), area.getLength()));
-        area.requestFocus();
+        // The span that differs is worked out off the FX thread (PERF-01, Pauta 6.0.1); then the caret.
+        replaceVisibleTextLater(area, c.text(), applied -> {
+            if (applied) {
+                area.moveTo(UndoHistory.clamp(c.caret(), area.getLength()));
+                area.requestFocus();
+            }
+        });
     }
 
     /** Toggle the highlight on the line containing the caret. */
@@ -4830,7 +4896,20 @@ public class EditorBuffer implements TabContent {
     public void setLanguageOverride(String name) {
         String resolved = name == null ? LanguageRegistry.plaintext() : name;
         languageUserOverride = true; // the user's pick wins; don't re-detect a shebang over it
-        applyLanguage(resolved, GrammarRegistry.shared().forLanguageName(resolved));
+        GrammarRegistry reg = GrammarRegistry.shared();
+        IGrammar cached = reg.cachedForLanguageName(resolved);
+        applyLanguage(resolved, cached); // bumps languageGen
+        if (cached == null && reg.hasGrammarForLanguage(resolved)) {
+            // A grammar not loaded yet is loaded off the FX thread (PERF-01, Pauta 6.0.1), highlighted when it lands.
+            long gen = languageGen;
+            reg.whenLanguageLoaded(resolved, g -> {
+                if (gen == languageGen && g != null) {
+                    this.grammar = g;
+                    highlighter.invalidateHighlighting();
+                    highlighter.applyHighlighting();
+                }
+            });
+        }
         runGutter.recomputeRun(); // a script picked as Shell (or Python) gets its Run glyph now, not on the next edit
     }
 
@@ -5363,8 +5442,9 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * How far each way from the caret the FX thread looks for a bracket's partner: a few screens (about 250 lines of
-     * 64 chars). A partner further off is looked for off the FX thread (PERF-01, Pauta 6.0.1).
+     * The most the FX thread reads each way from the caret for a bracket's partner, and only within the lines on
+     * screen ({@link #nearBraceWindow}): painting a pair the user sees is reading the screen, not searching the
+     * document. A partner further off is looked for off the FX thread (PERF-01, Pauta 6.0.1).
      */
     static final int NEAR_BRACE_SCAN = 16_384;
 
@@ -5427,9 +5507,30 @@ public class EditorBuffer implements TabContent {
                 });
     }
 
-    /** The near window around {@code caret}: {@link #NEAR_BRACE_SCAN} chars each way (a few screens). */
+    /**
+     * The near window around {@code caret}: the lines on screen, at most {@link #NEAR_BRACE_SCAN} chars each way;
+     * empty (at the caret) when the caret's line is not on screen or the view is not laid out yet, so the whole
+     * search goes off the FX thread.
+     */
     private static int[] nearBraceWindow(CodeArea a, int caret) {
-        return new int[] {Math.max(0, caret - NEAR_BRACE_SCAN), Math.min(a.getLength(), caret + NEAR_BRACE_SCAN)};
+        int first;
+        int last;
+        try {
+            first = a.firstVisibleParToAllParIndex();
+            last = a.lastVisibleParToAllParIndex();
+        } catch (RuntimeException notLaidOut) {
+            return new int[] {caret, caret};
+        }
+        int line = a.getCurrentParagraph();
+        if (first < 0 || last < first || line < first || line > last) {
+            return new int[] {caret, caret};
+        }
+        int start = a.getAbsolutePosition(first, 0);
+        int end = a.getAbsolutePosition(last, a.getParagraphLength(last));
+        return new int[] {
+            Math.max(Math.max(0, caret - NEAR_BRACE_SCAN), start),
+            Math.min(Math.min(a.getLength(), caret + NEAR_BRACE_SCAN), end)
+        };
     }
 
     private void showBraceMatch(int open, int close) {
@@ -5673,6 +5774,55 @@ public class EditorBuffer implements TabContent {
                 segmentLongLines ? InitialDocument.prepare(area, content, true) : InitialDocument.ofText(content));
     }
 
+    /** {@link com.editora.perf.BlockingSites} name of text given to a buffer, made ready off the FX thread. */
+    public static final String PREPARE_TEXT_SITE = "EditorBuffer.prepareText";
+
+    /**
+     * {@link #setContent} for a caller on the FX thread (PERF-01, Pauta 6.0.1): the text's line endings are
+     * resolved and its fingerprint worked out off the FX thread, and it is installed when that lands, as a load
+     * is. {@code then} runs once it is in; it does not run, and nothing is installed, when the buffer was closed or
+     * edited meanwhile (its text is the user's then).
+     */
+    public void setContentLater(String content, Runnable then) {
+        setInitialContentLater(content, false, then);
+    }
+
+    /** As {@link #setContentLater}, optionally splitting giant paragraphs ({@link #setInitialContent(String, boolean)}). */
+    public void setInitialContentLater(String content, boolean segmentLongLines, Runnable then) {
+        long version = docVersion;
+        installsPending++;
+        OffFx.then(PREPARE_TEXT_SITE, () -> prepareInitialContent(content, segmentLongLines), answer -> {
+            InitialDocument prepared = answer.value();
+            if (prepared != null && !disposed && docVersion == version) {
+                setInitialContent(prepared);
+                then.run();
+            }
+            if (--installsPending == 0 && !disposed) {
+                List<Runnable> waiting = new ArrayList<>(afterInstalls);
+                afterInstalls.clear();
+                waiting.forEach(Runnable::run);
+            }
+        });
+    }
+
+    /** Texts given by {@link #setInitialContentLater} not installed yet. FX thread. */
+    private int installsPending;
+
+    /** What waits for {@link #installsPending} to reach none. */
+    private final List<Runnable> afterInstalls = new ArrayList<>();
+
+    /**
+     * Runs {@code action} once the text given by {@link #setContentLater} is in (now when none is pending): a jump
+     * to a line, say, of a tab opened with its text. Dropped when the buffer is closed first.
+     */
+    public void whenTextInstalled(Runnable action) {
+        if (installsPending == 0) {
+            action.run();
+        } else {
+            afterInstalls.add(action);
+        }
+    }
+
     /**
      * Builds a load's paragraphs for {@link #setInitialContent(InitialDocument)}; safe off the FX thread. Meant
      * for the read worker, so the text's fingerprint — what the saved baseline keeps once the buffer is edited —
@@ -5727,11 +5877,25 @@ public class EditorBuffer implements TabContent {
      * profile ({@code longLine}, truncated): those install through {@link #setInitialContent}.
      */
     public void reloadContent(InitialDocument loaded) {
+        widen();
+        reloadContent(loaded, PreparedEdit.between(docVersion, documentTextSnapshot(), loaded.text()));
+    }
+
+    /**
+     * As {@link #reloadContent(InitialDocument)} with the differing span {@code prepared} worked out off the FX thread
+     * (PERF-01, Pauta 6.0.1) against the accessible text it names. When the document is no longer at that version,
+     * or is narrowed, the load is installed whole instead ({@link #setInitialContent(InitialDocument)}), which
+     * searches nothing either.
+     */
+    public void reloadContent(InitialDocument loaded, @Nullable PreparedEdit prepared) {
+        if (prepared == null || prepared.version() != docVersion || isNarrowed()) {
+            setInitialContent(loaded);
+            return;
+        }
         lineEnding = loaded.lineEnding();
         String text = loaded.text();
-        widen(); // the disk's text is the whole document; a narrowed view would duplicate the held-aside part
         Runnable refilter = logView.suspendFilter(true);
-        replaceVisibleText(area, text);
+        applyWholeEdit(area, prepared.edit());
         if (area.getLength() == text.length()) {
             documentSnapshots.seed(docVersion, text); // the rewrite left the document equal to the loaded String
         }
@@ -5865,13 +6029,139 @@ public class EditorBuffer implements TabContent {
      * end, where replacing everything left it; callers that want it elsewhere move it afterwards.
      */
     public void replaceVisibleText(CodeArea view, String text) {
-        WholeDocumentEdit edit = WholeDocumentEdit.between(documentTextSnapshot(), LineEndings.toLf(text));
+        applyWholeEdit(view, WholeDocumentEdit.between(documentTextSnapshot(), LineEndings.toLf(text)));
+    }
+
+    private void applyWholeEdit(CodeArea view, @Nullable WholeDocumentEdit edit) {
         if (edit != null) {
             preventUndoMerge();
             view.replaceText(edit.start(), edit.end(), edit.replacement());
             view.moveTo(view.getLength());
             preventUndoMerge();
         }
+    }
+
+    /** {@link com.editora.perf.BlockingSites} name of a whole-document rewrite's diff, worked out off the FX thread. */
+    public static final String WHOLE_EDIT_SITE = "EditorBuffer.wholeDocumentEdit";
+
+    /**
+     * A whole-document rewrite worked out off the FX thread: the span of the accessible text at document version
+     * {@code version} that differs from what it becomes ({@code edit} null when they are equal).
+     */
+    public record PreparedEdit(long version, @Nullable WholeDocumentEdit edit) {
+
+        /** Off the FX thread: the edit from {@code current} (the accessible text at {@code version}) to {@code next}. */
+        public static PreparedEdit between(long version, String current, String next) {
+            return new PreparedEdit(version, WholeDocumentEdit.between(current, LineEndings.toLf(next)));
+        }
+
+        /** The accessible text at {@code version}: what a worker prepares an edit against. */
+        public record Base(long version, String text) {
+
+            /** Off the FX thread: the edit that makes this text {@code next}. */
+            public PreparedEdit to(String next) {
+                return between(version, text, next);
+            }
+        }
+    }
+
+    /**
+     * The accessible text and its version, for a worker to {@linkplain PreparedEdit#between prepare} a whole-document
+     * rewrite on; widens a narrowed buffer first, as {@link #replaceWholeDocument} does. FX thread; no copy beyond the
+     * shared snapshot.
+     */
+    public PreparedEdit.Base baseForWholeEdit() {
+        widen();
+        return new PreparedEdit.Base(docVersion, documentTextSnapshot());
+    }
+
+    /**
+     * Applies a rewrite {@linkplain PreparedEdit#between prepared} off the FX thread, as {@link #replaceWholeDocument}
+     * would, only when the document is still at the version it was worked out for (and not narrowed since). False,
+     * with nothing done, otherwise: the caller works it out again on the text as it is now.
+     */
+    public boolean applyPreparedWholeEdit(PreparedEdit prepared) {
+        if (disposed || docVersion != prepared.version() || isNarrowed()) {
+            return false;
+        }
+        Runnable refilter = logView.suspendFilter(false);
+        applyWholeEdit(area, prepared.edit());
+        refilter.run();
+        return true;
+    }
+
+    /**
+     * Applies to the shown text (a narrowed buffer's region) a rewrite {@linkplain PreparedEdit#between prepared} off
+     * the FX thread against it, as {@link #replaceVisibleText} would, only when the document is still at its version.
+     */
+    public boolean applyPreparedVisibleEdit(CodeArea view, PreparedEdit prepared) {
+        if (disposed || docVersion != prepared.version()) {
+            return false;
+        }
+        applyWholeEdit(view, prepared.edit());
+        return true;
+    }
+
+    /**
+     * Makes the whole document {@code wholeText}, with the span that differs {@code prepared} off the FX thread
+     * against {@link #getContent()} at its version. False, with nothing done, when the document is no longer at that
+     * version. When it is, but the shown text is not the whole document (narrowed, or a filtered log), the span is
+     * worked out again off the FX thread against what is shown ({@link #replaceWholeDocumentLater}).
+     */
+    public boolean applyPreparedWholeText(PreparedEdit prepared, String wholeText) {
+        if (disposed || docVersion != prepared.version()) {
+            return false;
+        }
+        if (isNarrowed() || logView.filtered()) {
+            replaceWholeDocumentLater(wholeText, applied -> {});
+            return true;
+        }
+        applyWholeEdit(area, prepared.edit());
+        return true;
+    }
+
+    /**
+     * {@link #replaceWholeDocument} without searching the text on the FX thread (PERF-01, Pauta 6.0.1): widens now,
+     * works out the span that differs off the FX thread and applies it as one undo step when it lands, if the
+     * document is unchanged. Text typed meanwhile is never overwritten: {@code text} was decided on the document as
+     * it was, so the rewrite is then dropped. {@code done} hears true once applied (or nothing differed), false when
+     * it was dropped or the buffer was closed.
+     */
+    public void replaceWholeDocumentLater(String text, java.util.function.Consumer<Boolean> done) {
+        rewriteLater(area, text, true, done);
+    }
+
+    /** {@link #replaceVisibleText} worked out off the FX thread, as {@link #replaceWholeDocumentLater}. */
+    public void replaceVisibleTextLater(CodeArea view, String text, java.util.function.Consumer<Boolean> done) {
+        rewriteLater(view, text, false, done);
+    }
+
+    private void rewriteLater(CodeArea view, String text, boolean whole, java.util.function.Consumer<Boolean> done) {
+        if (disposed) {
+            done.accept(false);
+            return;
+        }
+        if (whole) {
+            widen();
+        }
+        boolean narrowed = isNarrowed();
+        long version = docVersion;
+        String current = documentTextSnapshot();
+        OffFx.then(WHOLE_EDIT_SITE, () -> PreparedEdit.between(version, current, text), answer -> {
+            PreparedEdit prepared = answer.value();
+            if (disposed || prepared == null) {
+                done.accept(false);
+                return;
+            }
+            if (docVersion == version && isNarrowed() == narrowed) {
+                Runnable refilter = whole ? logView.suspendFilter(false) : () -> {};
+                applyWholeEdit(view, prepared.edit());
+                refilter.run();
+                done.accept(true);
+            } else {
+                done.accept(false);
+            }
+        });
     }
 
     /** Keeps a programmatic mutation (or a command's edit) separate from adjacent typing (both views share

@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The status bar's caret and size segments stay off the hot paths: one refresh per pulse however many
@@ -119,11 +118,10 @@ class StatusBarCaretAndSizeFxTest {
     }
 
     @Test
-    void aLargeDocumentsSizeIsCountedOffTheFxThreadAndASupersededCountIsDropped() throws Exception {
+    void theSizeIsCountedOffTheFxThreadAndASupersededOrStaleCountIsDropped() throws Exception {
         ConcurrentLinkedDeque<Runnable> held = new ConcurrentLinkedDeque<>();
-        String big = "héllo wörld €\n".repeat(StatusBar.INLINE_SIZE_CHARS / 14 + 1000);
+        String big = "héllo wörld €\n".repeat(30_000);
         String bigger = big + "tail\n".repeat(60_000);
-        assertTrue(big.length() > StatusBar.INLINE_SIZE_CHARS);
         EditorBuffer[] active = new EditorBuffer[1];
         Object[] made = FxTestSupport.callOnFx(() -> {
             EditorBuffer small = new EditorBuffer();
@@ -136,17 +134,36 @@ class StatusBarCaretAndSizeFxTest {
             StatusBar sb = new StatusBar(() -> active[0], new CommandRegistry(), Settings::new);
             sb.sizeCounter = held::add;
             sb.attach(small);
-            return new Object[] {sb, a, b};
+            return new Object[] {sb, a, b, small};
         });
         StatusBar sb = (StatusBar) made[0];
         EditorBuffer a = (EditorBuffer) made[1];
         EditorBuffer b = (EditorBuffer) made[2];
+        EditorBuffer small = (EditorBuffer) made[3];
         Label size = FxTestSupport.callOnFx(() -> FxTestSupport.field(sb, "size"));
 
-        FxTestSupport.runOnFx(() -> {
-            assertEquals(StatusBar.formatSize(6), size.getText(), "a small document is counted where it is asked");
-            assertTrue(held.isEmpty());
+        // Even a small document is counted off the FX thread (PERF-01): nothing is counted where it is asked.
+        assertEquals("", FxTestSupport.callOnFx(size::getText));
+        assertEquals(1, held.size(), "a small one is handed to the counter too");
+        held.poll().run();
+        FxTestSupport.drainFx();
+        assertEquals(StatusBar.formatSize(6), FxTestSupport.callOnFx(size::getText));
 
+        // A count taken before an edit is not shown for the edited text; the count after the edit is.
+        FxTestSupport.runOnFx(() -> {
+            small.getArea().appendText("more\n");
+            FxTestSupport.invokeWith(sb, "refreshSize", EditorBuffer.class, small); // the edit pulse
+        });
+        assertEquals(1, held.size());
+        Runnable before = held.poll();
+        FxTestSupport.runOnFx(() -> small.getArea().appendText("x")); // typed again before the count lands
+        before.run();
+        FxTestSupport.drainFx();
+        assertEquals(StatusBar.formatSize(6), FxTestSupport.callOnFx(size::getText), "a stale count is dropped");
+        Thread.sleep(400); // past the edits' own 200 ms size pulse, whose counts are not what this checks
+        held.clear();
+
+        FxTestSupport.runOnFx(() -> {
             active[0] = a;
             sb.attach(a);
             assertEquals(1, held.size(), "a large one is handed to the counter");
@@ -166,6 +183,6 @@ class StatusBarCaretAndSizeFxTest {
         assertEquals(
                 StatusBar.formatSize(bigger.getBytes(StandardCharsets.UTF_8).length),
                 FxTestSupport.callOnFx(size::getText),
-                "the same text the inline count gives");
+                "the document's UTF-8 byte count");
     }
 }

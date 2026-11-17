@@ -32,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * bracket, a definition's start, a file card's caret stepping between the declarations of its file's outline, and the
  * wash of the other uses of the name at the caret.
  */
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the work runs off FX in the app; here in place
 @Tag("fx")
 class ProjectMapCardMovesFxTest {
 

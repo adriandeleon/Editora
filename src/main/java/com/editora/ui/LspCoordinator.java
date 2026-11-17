@@ -4381,9 +4381,16 @@ final class LspCoordinator {
             if (path != null && lspManager.isManaged(path)) { // the indent servers are told follows the text (B12)
                 lspManager.setDocumentIndent(path, LspDocumentFacts.indent(buffer));
             }
-            if (path != null && !lspManager.changeDocument(path, text)) {
-                // A net-zero edit (type + Backspace, edit + undo): the server was sent nothing and will
-                // publish nothing, but the edit already cleared the buffer's marks.
+            // A net-zero edit (type + Backspace, edit + undo): the server holds this text already and may publish
+            // nothing, but the edit already cleared the buffer's marks. Known at once for the very string last
+            // sent, otherwise once the writer thread has compared the two (PERF-01).
+            long version = buffer.docVersion();
+            Runnable unchanged = () -> {
+                if (buffer.docVersion() == version) { // dropped once the text has moved on: its marks are not these
+                    diagnosticsUnchanged(path);
+                }
+            };
+            if (path != null && !lspManager.changeDocument(path, text, unchanged)) {
                 diagnosticsUnchanged(path);
             }
         });

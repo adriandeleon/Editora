@@ -105,24 +105,29 @@ class StatusWordCountFxTest {
     }
 
     @Test
-    void aLargeDocumentIsCountedOffTheFxThread() throws Exception {
+    void theDocumentIsCountedOffTheFxThreadAndOnlyForTheVersionItWasTakenFrom() throws Exception {
         Settings settings = new Settings();
-        String big = "word ".repeat(StatusWordCount.INLINE_CHARS / 5 + 10);
-        EditorBuffer md = buffer("big.md", big);
-        Runnable[] held = {null};
+        EditorBuffer md = buffer("small.md", "one two three\n");
+        java.util.List<Runnable> held = new java.util.ArrayList<>();
         // One FX turn for all three steps. The constructor starts a count of its own on a background thread;
         // had its result been delivered between two turns, the label would already be showing here.
         StatusBar bar = FxTestSupport.callOnFx(() -> {
             StatusBar created = new StatusBar(() -> md, new CommandRegistry(), () -> settings);
-            created.wordCount.counter = task -> held[0] = task;
+            created.wordCount.counter = held::add;
             created.attach(md);
             return created;
         });
-        assertFalse(FxTestSupport.callOnFx(() -> bar.wordCount.label().isManaged()), "not counted inline");
-        held[0].run();
-        FxTestSupport.runOnFx(() -> {});
+        assertFalse(
+                FxTestSupport.callOnFx(() -> bar.wordCount.label().isManaged()), "not counted inline, however small");
+        Runnable first = held.get(held.size() - 1);
+        FxTestSupport.runOnFx(() -> md.getArea().appendText("four ")); // a newer version before the count lands
+        FxTestSupport.runOnFx(first::run);
+        assertFalse(
+                FxTestSupport.callOnFx(() -> bar.wordCount.label().isManaged()), "a count of an older text is dropped");
+        FxTestSupport.runOnFx(() -> bar.wordCount.document(md, md.getContent(), false));
+        Runnable latest = held.get(held.size() - 1);
+        FxTestSupport.runOnFx(latest::run);
         assertEquals(
-                java.text.MessageFormat.format("{0} words", StatusWordCount.INLINE_CHARS / 5 + 10),
-                FxTestSupport.callOnFx(() -> bar.wordCount.label().getText()));
+                "4 words", FxTestSupport.callOnFx(() -> bar.wordCount.label().getText()));
     }
 }

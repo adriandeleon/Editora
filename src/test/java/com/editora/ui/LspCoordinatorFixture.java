@@ -286,11 +286,18 @@ final class LspCoordinatorFixture implements AutoCloseable {
     }
 
     LspCoordinatorFixture(Path root, ServerCapabilities capabilities) throws Exception {
+        this(root, capabilities, false);
+    }
+
+    /** {@code wired}: each fake at the other end of a pair of pipes, as a real server is (see LspTestHooks). */
+    LspCoordinatorFixture(Path root, ServerCapabilities capabilities, boolean wired) throws Exception {
         FxTestSupport.bootToolkit();
         this.root = root;
         this.capabilities = capabilities;
         manager = new LspManager((f, d) -> published.put(f, List.copyOf(d)), (t, m) -> {});
-        fakes = LspTestHooks.useFakeSessionsWithRawRequests(manager, capabilities);
+        fakes = wired
+                ? LspTestHooks.useWiredFakeSessions(manager, capabilities)
+                : LspTestHooks.useFakeSessionsWithRawRequests(manager, capabilities);
         manager.configure(true, Map.of("java", "jdtls"));
         FxTestSupport.runOnFx(() -> {
             sceneRoot = new StackPane();

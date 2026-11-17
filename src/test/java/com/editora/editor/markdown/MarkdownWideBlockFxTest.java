@@ -92,8 +92,11 @@ class MarkdownWideBlockFxTest {
                     + " to wrap onto several lines when the preview pane is narrow, as it is in Split view.\n\n"
                     + "$$" + formula + "$$\n\n"
                     + "Another paragraph after the wide block, which must wrap to the pane as well.\n";
+            // The formula is drawn off the FX thread with its parse (PERF-01), as the preview does.
+            org.commonmark.node.Node ast = MarkdownRenderer.parseForRender(md);
+            MarkdownRenderer.warmMath(ast, null);
             onFx(() -> {
-                Node rendered = MarkdownRenderer.renderDocument(MarkdownRenderer.parseForRender(md), null);
+                Node rendered = MarkdownRenderer.renderDocument(ast, null);
                 ScrollPane pane = new ScrollPane(rendered);
                 pane.setFitToWidth(true);
                 Scene scene = new Scene(pane, 500, 600);

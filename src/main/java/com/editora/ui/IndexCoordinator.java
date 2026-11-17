@@ -16,6 +16,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.index.DeclarationScanner;
 import com.editora.index.Symbol;
 import com.editora.index.SymbolIndex;
+import com.editora.perf.BlockingSites;
 import com.editora.search.GitignoreFilter;
 import com.editora.search.ProjectWalk;
 import com.editora.search.RemoteFiles;
@@ -239,16 +240,46 @@ final class IndexCoordinator {
             return;
         }
         // The buffer's text is authoritative and already in memory, so this costs no disk read. Its language,
-        // too: an extension-less script is shell by its #! line, which its file name does not say.
+        // too: an extension-less script is shell by its #! line, which its file name does not say. It is scanned
+        // on the index's own thread (PERF-01, Pauta 6.0.1), in order with every other save and walk, and kept
+        // only when no project switch or rebuild came meanwhile.
         String language = buffer.getLanguage();
-        index.put(file, DeclarationScanner.scan(buffer.getContent(), language));
+        String text = buffer.getContent();
+        Path root = indexedRoot;
+        long gen = generation.get();
+        try {
+            worker.submit(() -> {
+                BlockingSites.enter(SAVE_SCAN_SITE);
+                List<Symbol> symbols = DeclarationScanner.scan(text, language);
+                Platform.runLater(() -> applySaved(gen, root, file, symbols));
+            });
+        } catch (java.util.concurrent.RejectedExecutionException closed) {
+            // the window is closing: nothing to keep the symbols for
+        }
+    }
+
+    /** Where a saved file's declarations are scanned: the index's own thread, never the FX thread. */
+    static final String SAVE_SCAN_SITE = "IndexCoordinator.saveScan";
+
+    /** Where the server-free Go to Definition scans the buffer: off the FX thread. */
+    static final String DEFINITION_SITE = "IndexCoordinator.definition";
+
+    /** Where the symbol and file corpus is searched (Search Everywhere, Go to Symbol, the Map): off the FX thread. */
+    static final String SEARCH_SITE = "IndexCoordinator.search";
+
+    /** A saved file's declarations, scanned off the FX thread: kept unless a switch or a rebuild came since. */
+    private void applySaved(long gen, @Nullable Path root, Path file, List<Symbol> symbols) {
+        if (gen != generation.get() || root == null || !root.equals(indexedRoot)) {
+            return; // the walk that replaced this index read the saved file itself
+        }
+        index.put(file, symbols);
         if (!projectFiles.contains(file)) {
             // A file first saved after the walk: its symbols were found but the file itself was not, so
             // Search Everywhere offered the class and not the file it lives in.
             List<Path> files = new ArrayList<>(projectFiles);
             files.add(file);
             projectFiles = List.copyOf(files);
-            projectRelPaths = relativize(indexedRoot, projectFiles);
+            projectRelPaths = relativize(root, projectFiles);
         }
     }
 
@@ -460,13 +491,43 @@ final class IndexCoordinator {
             host.setStatus(tr("status.definition.noName"));
             return true;
         }
-        // JavaScript/TypeScript: a parameter or local in an enclosing scope first, as a reader resolves it (A105).
-        int scoped =
-                com.editora.index.JsLocals.declarationOf(b.getContent(), a.getCaretPosition(), name, b.getLanguage());
-        Symbol local = scoped >= 0
-                ? localSymbol(b.getContent(), scoped, name)
-                : nearestDeclaration(
-                        DeclarationScanner.scan(b.getContent(), b.getLanguage()), name, a.getCurrentParagraph());
+        if (definitionBusy) {
+            host.setStatus(tr("status.index.building")); // the one in flight answers; a second press starts nothing
+            return true;
+        }
+        // The buffer's own declarations are scanned off the FX thread (PERF-01, Pauta 6.0.1), on a copy of the text;
+        // the jump is made only when the text and the caret are as they were.
+        definitionBusy = true;
+        String text = b.getContent();
+        String language = b.getLanguage();
+        int caret = a.getCaretPosition();
+        int paragraph = a.getCurrentParagraph();
+        long version = b.docVersion();
+        com.editora.perf.OffFx.then(
+                DEFINITION_SITE,
+                () -> {
+                    // JavaScript/TypeScript: a parameter or local in an enclosing scope first, as a reader resolves
+                    // it (A105).
+                    int scoped = com.editora.index.JsLocals.declarationOf(text, caret, name, language);
+                    return scoped >= 0
+                            ? localSymbol(text, scoped, name)
+                            : nearestDeclaration(DeclarationScanner.scan(text, language), name, paragraph);
+                },
+                found -> {
+                    definitionBusy = false;
+                    if (host.activeBuffer() != b || b.docVersion() != version || a.getCaretPosition() != caret) {
+                        return; // the user moved on: a jump now would pull them back
+                    }
+                    definitionFound(b, a, name, found.value());
+                });
+        return true;
+    }
+
+    /** A server-free Go to Definition is in flight: a second press waits for it. */
+    private boolean definitionBusy;
+
+    /** The buffer's own declaration of {@code name} when there is one, else the project index's. */
+    private void definitionFound(EditorBuffer b, org.fxmisc.richtext.CodeArea a, String name, @Nullable Symbol local) {
         if (local != null) {
             if (b.getPath() != null) {
                 ops.openAndGoto(b.getPath(), local.line(), local.column());
@@ -475,28 +536,35 @@ final class IndexCoordinator {
                 a.requestFollowCaret();
             }
             host.setStatus(tr("status.definition.fromIndex", name));
-            return true;
+            return;
         }
         if (!isEnabled()) {
             host.setStatus(tr("status.definition.notFound", name));
-            return true;
+            return;
         }
         ensureBuilt(() -> {
-            List<SymbolIndex.Hit> exact = index.search(name, SymbolIndex.DEFAULT_LIMIT).stream()
-                    .filter(h -> h.symbol().name().equals(name))
-                    .toList();
-            if (exact.isEmpty()) {
-                host.setStatus(tr("status.definition.notFound", name));
-            } else if (exact.size() == 1) {
-                Symbol s = exact.get(0).symbol();
-                ops.openAndGoto(exact.get(0).file(), s.line(), s.column());
-                host.setStatus(tr("status.definition.fromIndex", name));
-            } else {
-                lastResults = exact;
-                picker.show(host.window());
-            }
+            Corpus corpus = corpus();
+            definitionBusy = true;
+            com.editora.perf.OffFx.then(
+                    SEARCH_SITE,
+                    () -> corpus.searchSymbols(name, SymbolIndex.DEFAULT_LIMIT).stream()
+                            .filter(h -> h.symbol().name().equals(name))
+                            .toList(),
+                    answer -> {
+                        definitionBusy = false;
+                        List<SymbolIndex.Hit> exact = answer.or(List.of());
+                        if (exact.isEmpty()) {
+                            host.setStatus(tr("status.definition.notFound", name));
+                        } else if (exact.size() == 1) {
+                            Symbol s = exact.get(0).symbol();
+                            ops.openAndGoto(exact.get(0).file(), s.line(), s.column());
+                            host.setStatus(tr("status.definition.fromIndex", name));
+                        } else {
+                            lastResults = exact;
+                            picker.show(host.window());
+                        }
+                    });
         });
-        return true;
     }
 
     /** A symbol at {@code offset} of {@code text}, for jumping to a declaration found by offset. */
@@ -774,12 +842,18 @@ final class IndexCoordinator {
             return;
         }
         host.promptText(tr("index.gotoSymbol.title"), tr("index.gotoSymbol.prompt"), "", query -> {
-            lastResults = index.search(query);
-            if (lastResults.isEmpty()) {
-                host.setStatus(tr("status.index.noMatch", query));
-                return;
-            }
-            picker.show(host.window());
+            // Searched off the FX thread (PERF-01, Pauta 6.0.1) on the index as it is now; the picker opens when the
+            // answer lands.
+            Corpus corpus = corpus();
+            com.editora.perf.OffFx.then(
+                    SEARCH_SITE, () -> corpus.searchSymbols(query, SymbolIndex.DEFAULT_LIMIT), answer -> {
+                        lastResults = answer.or(List.of());
+                        if (lastResults.isEmpty()) {
+                            host.setStatus(tr("status.index.noMatch", query));
+                            return;
+                        }
+                        picker.show(host.window());
+                    });
         });
     }
 
@@ -860,25 +934,139 @@ final class IndexCoordinator {
         });
     }
 
-    /** Search Everywhere's file rows for {@code query}: the name, then its folder relative to the root. */
-    List<com.editora.search.SearchEverywhere.Item> fileItems(String query) {
-        ProjectIndex files = fileIndex;
-        if (files != null) {
-            Path root = ops.projectRoot();
-            return !isEnabled() || query == null || query.isBlank() || root == null
-                    ? List.of()
-                    : fileItems(files.searchListed(root, query, ProjectIndex.Kinds.FILES, 40), query);
+    /**
+     * The index as it is now, to search off the FX thread (PERF-01, Pauta 6.0.1): taken on the FX thread, where the
+     * index changes, it copies no symbol (see {@link SymbolIndex#freeze}) and the file lists are unchanging already.
+     */
+    Corpus corpus() {
+        return new Corpus(
+                isEnabled(),
+                indexedRoot,
+                ops.projectRoot(),
+                projectFiles,
+                projectRelPaths,
+                isEnabled() ? index.freeze() : SymbolIndex.Frozen.EMPTY,
+                fileIndex);
+    }
+
+    /**
+     * The files and symbols one moment of the index knows, searched on any thread: every list in it is unchanging,
+     * and the project index ({@link ProjectIndex#searchListed}) is thread-safe.
+     */
+    record Corpus(
+            boolean enabled,
+            @Nullable Path indexedRoot,
+            @Nullable Path projectRoot,
+            List<Path> files,
+            List<String> relPaths,
+            SymbolIndex.Frozen symbols,
+            @Nullable ProjectIndex fileIndex) {
+
+        /** Search Everywhere's file rows for {@code query}: the name, then its folder relative to the root. */
+        List<com.editora.search.SearchEverywhere.Item> fileItems(String query) {
+            BlockingSites.enter(SEARCH_SITE);
+            ProjectIndex listed = fileIndex;
+            if (listed != null) {
+                Path root = projectRoot;
+                return !enabled || query == null || query.isBlank() || root == null
+                        ? List.of()
+                        : IndexCoordinator.fileItems(
+                                listed.searchListed(root, query, ProjectIndex.Kinds.FILES, 40), query);
+            }
+            List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
+            for (FileHit hit : searchFiles(query, 40)) {
+                String name = hit.file().getFileName().toString();
+                String parent = hit.relativePath().contains("/")
+                        ? hit.relativePath().substring(0, hit.relativePath().lastIndexOf('/'))
+                        : "";
+                out.add(new com.editora.search.SearchEverywhere.Item(
+                        com.editora.search.SearchEverywhere.Kind.FILE, name, parent, hit.score(), hit.file()));
+            }
+            return out;
         }
-        List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
-        for (FileHit hit : searchFiles(query, 40)) {
-            String name = hit.file().getFileName().toString();
-            String parent = hit.relativePath().contains("/")
-                    ? hit.relativePath().substring(0, hit.relativePath().lastIndexOf('/'))
-                    : "";
-            out.add(new com.editora.search.SearchEverywhere.Item(
-                    com.editora.search.SearchEverywhere.Kind.FILE, name, parent, hit.score(), hit.file()));
+
+        /** Search Everywhere's symbol rows for {@code query}: the name, then its container and place. */
+        List<com.editora.search.SearchEverywhere.Item> symbolItems(String query) {
+            List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
+            for (SymbolIndex.Hit hit : searchSymbols(query, 40)) {
+                String container = hit.symbol().container();
+                String where = hit.file().getFileName() + ":" + (hit.symbol().line() + 1);
+                out.add(new com.editora.search.SearchEverywhere.Item(
+                        com.editora.search.SearchEverywhere.Kind.SYMBOL,
+                        hit.symbol().name(),
+                        container.isEmpty() ? where : container + " — " + where,
+                        hit.score() + SymbolRanking.exactNameBonus(hit.symbol().name(), query), // as library rows
+                        hit));
+            }
+            return out;
         }
-        return out;
+
+        /** Ranked symbol hits for {@code query}; empty when the index has not been built. */
+        List<SymbolIndex.Hit> searchSymbols(String query, int limit) {
+            BlockingSites.enter(SEARCH_SITE);
+            return enabled ? symbols.search(query, limit) : List.of();
+        }
+
+        /**
+         * Ranked project files for {@code query}, matched on the path relative to the root so a query can name a
+         * directory as well as a file name.
+         *
+         * <p>Bounded selection over cached relative paths, for the reasons spelled out on {@code SymbolIndex.search}:
+         * sorting every match to discard all but {@code limit} was the part that scaled worst (#876). The ranking is
+         * a total order already — two files cannot share a relative path — so unlike the symbol side it needs no
+         * scan-index key to reproduce the old output exactly.
+         */
+        List<FileHit> searchFiles(String query, int limit) {
+            BlockingSites.enter(SEARCH_SITE);
+            if (!enabled || query == null || query.isBlank() || indexedRoot == null || limit <= 0) {
+                return List.of();
+            }
+            // Ordered worst-first, so the head is the entry a better candidate evicts.
+            PriorityQueue<FileHit> keep = new PriorityQueue<>(FILE_RANK.reversed());
+            for (int i = 0; i < relPaths.size(); i++) {
+                String rel = relPaths.get(i);
+                // scoreOfPath, not ofPath: a FileHit carries only a score, and the picker re-derives the
+                // highlight at render time for the rows it draws.
+                int score = com.editora.search.FuzzyMatch.scoreOfPath(rel, query);
+                if (score == com.editora.search.FuzzyMatch.NO_SCORE) {
+                    continue;
+                }
+                if (keep.size() == limit) {
+                    FileHit worst = keep.peek();
+                    // >= 0, not > 0: on an exact tie the incumbent stays, which is what the stable sort this
+                    // replaces did.
+                    if (score < worst.score() || (score == worst.score() && rel.compareTo(worst.relativePath()) >= 0)) {
+                        continue;
+                    }
+                    keep.poll();
+                }
+                keep.add(new FileHit(files.get(i), rel, score));
+            }
+            List<FileHit> best = new ArrayList<>(keep);
+            best.sort(FILE_RANK);
+            return List.copyOf(best);
+        }
+
+        /**
+         * The indexed project files {@code keep} accepts, at most {@code limit}, in walk order — Related File's pages
+         * that may link a stylesheet (HTML review C16). Empty while the index is off or not built.
+         */
+        List<Path> filesMatching(java.util.function.Predicate<Path> keep, int limit) {
+            BlockingSites.enter(SEARCH_SITE);
+            if (!enabled || indexedRoot == null) {
+                return List.of();
+            }
+            List<Path> out = new ArrayList<>();
+            for (Path f : files) {
+                if (out.size() >= limit) {
+                    break;
+                }
+                if (keep.test(f)) {
+                    out.add(f);
+                }
+            }
+            return List.copyOf(out);
+        }
     }
 
     /**
@@ -906,87 +1094,24 @@ final class IndexCoordinator {
         return out;
     }
 
-    /** Search Everywhere's symbol rows for {@code query}: the name, then its container and place. */
+    /** As {@link Corpus#fileItems} on the index as it is now. A test's; the app searches a corpus off FX. */
+    List<com.editora.search.SearchEverywhere.Item> fileItems(String query) {
+        return corpus().fileItems(query);
+    }
+
+    /** As {@link Corpus#symbolItems} on the index as it is now. A test's; the app searches a corpus off FX. */
     List<com.editora.search.SearchEverywhere.Item> symbolItems(String query) {
-        List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
-        for (SymbolIndex.Hit hit : searchSymbols(query, 40)) {
-            String container = hit.symbol().container();
-            String where = hit.file().getFileName() + ":" + (hit.symbol().line() + 1);
-            out.add(new com.editora.search.SearchEverywhere.Item(
-                    com.editora.search.SearchEverywhere.Kind.SYMBOL,
-                    hit.symbol().name(),
-                    container.isEmpty() ? where : container + " — " + where,
-                    hit.score() + SymbolRanking.exactNameBonus(hit.symbol().name(), query), // as library rows (EN2)
-                    hit));
-        }
-        return out;
+        return corpus().symbolItems(query);
     }
 
-    /** Ranked symbol hits for {@code query}; empty when the index has not been built. */
+    /** As {@link Corpus#searchSymbols} on the index as it is now. A test's; the app searches a corpus off FX. */
     List<SymbolIndex.Hit> searchSymbols(String query, int limit) {
-        return isEnabled() ? index.search(query, limit) : List.of();
+        return corpus().searchSymbols(query, limit);
     }
 
-    /**
-     * Ranked project files for {@code query}, matched on the path relative to the root so a query can name
-     * a directory as well as a file name.
-     *
-     * <p>Bounded selection over cached relative paths, for the reasons spelled out on
-     * {@code SymbolIndex.search}: this runs on the FX thread per keystroke, and sorting every match to
-     * discard all but {@code limit} was the part that scaled worst (#876). The ranking is a total order
-     * already — two files cannot share a relative path — so unlike the symbol side it needs no scan-index
-     * key to reproduce the old output exactly.
-     */
+    /** As {@link Corpus#searchFiles} on the index as it is now. A test's; the app searches a corpus off FX. */
     List<FileHit> searchFiles(String query, int limit) {
-        if (!isEnabled() || query == null || query.isBlank() || indexedRoot == null || limit <= 0) {
-            return List.of();
-        }
-        // Ordered worst-first, so the head is the entry a better candidate evicts.
-        PriorityQueue<FileHit> keep = new PriorityQueue<>(FILE_RANK.reversed());
-        for (int i = 0; i < projectRelPaths.size(); i++) {
-            String rel = projectRelPaths.get(i);
-            // scoreOfPath, not ofPath: a FileHit carries only a score, and the picker re-derives the
-            // highlight at render time for the rows it draws.
-            int score = com.editora.search.FuzzyMatch.scoreOfPath(rel, query);
-            if (score == com.editora.search.FuzzyMatch.NO_SCORE) {
-                continue;
-            }
-            if (keep.size() == limit) {
-                FileHit worst = keep.peek();
-                // >= 0, not > 0: on an exact tie the incumbent stays, which is what the stable sort this
-                // replaces did. Paths are unique in practice, so this only ever matters if a walk were to
-                // yield one twice — but "first seen wins" is then still the old behaviour rather than a coin
-                // flip.
-                if (score < worst.score() || (score == worst.score() && rel.compareTo(worst.relativePath()) >= 0)) {
-                    continue;
-                }
-                keep.poll();
-            }
-            keep.add(new FileHit(projectFiles.get(i), rel, score));
-        }
-        List<FileHit> best = new ArrayList<>(keep);
-        best.sort(FILE_RANK);
-        return List.copyOf(best);
-    }
-
-    /**
-     * The indexed project files {@code keep} accepts, at most {@code limit}, in walk order — Related File's pages
-     * that may link a stylesheet (HTML review C16). Empty while the index is off or not built.
-     */
-    List<Path> filesMatching(java.util.function.Predicate<Path> keep, int limit) {
-        if (!isEnabled() || indexedRoot == null) {
-            return List.of();
-        }
-        List<Path> out = new ArrayList<>();
-        for (Path f : projectFiles) {
-            if (out.size() >= limit) {
-                break;
-            }
-            if (keep.test(f)) {
-                out.add(f);
-            }
-        }
-        return List.copyOf(out);
+        return corpus().searchFiles(query, limit);
     }
 
     /** The project folder the index was built from, or null. */

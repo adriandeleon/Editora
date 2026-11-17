@@ -199,8 +199,12 @@ class MapBranchReviewFxTest {
                         "0123456789abcdef0123456789abcdef01234567 A.java "
                                 + tr("project.map.changes.againstFork", "main"),
                         code.compared.getLast());
-
-                // The changed words of the changed line are marked, on both sides.
+            });
+            // The changed words of the changed line are marked, on both sides (worked out off the FX thread).
+            SettingsRig.awaitFx(
+                    "the changed words", () -> !view.changesCard().words().isEmpty());
+            FxTestSupport.runOnFx(() -> {
+                ProjectMapChangesCard card = view.changesCard();
                 Map<Integer, int[][]> words = card.words();
                 assertEquals(java.util.Set.of(2, 3), words.keySet(), "the removed line and the added one it became");
                 ListView<GitChanges.Line> diff = FxTestSupport.field(card, "diff");

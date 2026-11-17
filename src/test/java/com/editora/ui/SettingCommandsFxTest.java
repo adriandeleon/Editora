@@ -28,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * would keep, and says what the setting is now.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the picker filters off FX in the app
 class SettingCommandsFxTest {
 
     private static FxWindowFixture fx;

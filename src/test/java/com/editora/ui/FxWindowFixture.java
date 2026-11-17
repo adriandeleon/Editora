@@ -238,6 +238,34 @@ final class FxWindowFixture implements AutoCloseable {
         return root;
     }
 
+    /**
+     * Launches {@code --single-window} the way {@code App.start} does, but with no session read before the toolkit
+     * (no bootstrap): the window's session is read off the FX thread and the window built when it lands.
+     */
+    static FxWindowFixture launchWithoutReadAhead(Path dir) throws Exception {
+        Object[] made = FxTestSupport.callOnFx(() -> {
+            ConfigManager bootstrap = new ConfigManager(dir);
+            bootstrap.load();
+            SharedConfig shared = bootstrap.shared();
+            quietRemoteExecution(shared);
+            quietLanguageServers(shared, !savesLanguageServers(dir));
+            isolateExports(shared);
+            KeymapManager keymap = new KeymapManager();
+            keymap.loadNamed(shared.getSettings().getKeymap());
+            keymap.applyOverrides(UserKeys.overrides(shared.getSettings()));
+            WindowManager wm = new WindowManager(shared, keymap, null);
+            wm.launch(new javafx.stage.Stage(), null, List.of(), false, false, null, false, "", false);
+            return new Object[] {shared, wm};
+        });
+        WindowManager wm = (WindowManager) made[1];
+        SettingsRig.awaitFx(
+                "the window built once its session was read",
+                () -> !FxTestSupport.<List<?>>field(wm, "windows").isEmpty());
+        MainController controller = FxTestSupport.callOnFx(() -> (MainController) FxTestSupport.call(
+                FxTestSupport.<List<?>>field(wm, "windows").get(0), "controller", new Class<?>[] {}));
+        return new FxWindowFixture(dir, (SharedConfig) made[0], wm, controller);
+    }
+
     /** Boots the production {@code --diff-ui LEFT RIGHT} path against an isolated config directory. */
     static FxWindowFixture createDiff(Path dir, Path left, Path right, Consumer<MainController> onBuilt)
             throws Exception {

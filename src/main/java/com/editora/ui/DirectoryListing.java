@@ -15,11 +15,17 @@ import java.util.stream.Stream;
  * case bias — and which of them are folders, so that rendering a row never has to ask the disk again.
  * {@link #read} blocks (a list plus a {@code stat} per entry): call it off the JavaFX thread.
  *
+ * @param listed the entries as a set, to ask whether a path is one of them
  * @param readable false when the path is not a directory or could not be listed
  */
-record DirectoryListing(List<Path> entries, Set<Path> directories, boolean readable) {
+record DirectoryListing(List<Path> entries, Set<Path> directories, Set<Path> listed, boolean readable) {
 
-    static final DirectoryListing UNREADABLE = new DirectoryListing(List.of(), Set.of(), false);
+    static final DirectoryListing UNREADABLE = new DirectoryListing(List.of(), Set.of(), Set.of(), false);
+
+    /** Whether {@code entry} is one of the {@link #entries}: a set's look, not a scan of the list. */
+    boolean lists(Path entry) {
+        return listed.contains(entry);
+    }
 
     boolean isDirectory(Path entry) {
         return directories.contains(entry);
@@ -49,6 +55,6 @@ record DirectoryListing(List<Path> entries, Set<Path> directories, boolean reada
         List<Path> all = new ArrayList<>(dirs.size() + files.size());
         all.addAll(dirs);
         all.addAll(files);
-        return new DirectoryListing(List.copyOf(all), Set.copyOf(new HashSet<>(dirs)), true);
+        return new DirectoryListing(List.copyOf(all), Set.copyOf(new HashSet<>(dirs)), Set.copyOf(all), true);
     }
 }

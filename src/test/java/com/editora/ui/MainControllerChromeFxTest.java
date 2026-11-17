@@ -331,6 +331,16 @@ class MainControllerChromeFxTest {
 
     @Test
     void theUndoHistoryPickerAlwaysHasACheckpointAndRestoresTheOneChosen() throws Exception {
+        // The restore's edit is worked out off the FX thread in the app (PERF-01); here in place, so it lands at once.
+        com.editora.perf.OffFx.runnerForTest((name, task) -> task.run());
+        try {
+            restoresTheOneChosen();
+        } finally {
+            com.editora.perf.OffFx.runnerForTest(null);
+        }
+    }
+
+    private void restoresTheOneChosen() throws Exception {
         FxTestSupport.runOnFx(() -> {
             assertEquals(List.of(), FxTestSupport.call(controller, "undoHistoryCheckpoints", new Class<?>[] {}));
             EditorBuffer buffer = addBuffer("first state\n");

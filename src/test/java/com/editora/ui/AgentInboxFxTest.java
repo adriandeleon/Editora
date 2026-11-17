@@ -31,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * thread; each used to be queued as its own FX task. The order they arrive in must survive the batching.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // the reply parses land in place
 class AgentInboxFxTest {
 
     @BeforeAll

@@ -999,7 +999,13 @@ class PreviewCommandsFxTest {
     void aFixWorkedOutWhileTheTextChangedIsWorkedOutAgainOnTheNewText() throws Exception {
         EditorBuffer b = linted("lint.md", "# T\n\ntext   \n");
         java.util.List<Runnable> held = new java.util.concurrent.CopyOnWriteArrayList<>();
-        com.editora.perf.OffFx.runnerForTest((name, task) -> held.add(task));
+        com.editora.perf.OffFx.runnerForTest((name, task) -> {
+            if (name.equals(com.editora.editor.markdown.MarkdownBlockMap.SITE)) {
+                task.run(); // the editor's line map, not what this test holds back
+            } else {
+                held.add(task);
+            }
+        });
         try {
             run("markdownLint.fix");
             assertEquals(1, held.size(), "the fixes are worked out off the FX thread");
@@ -1008,6 +1014,8 @@ class PreviewCommandsFxTest {
             FxTestSupport.runOnFx(held.remove(0)); // lands for the old text: worked out again
             assertEquals("# T\n\ntext   \nmore   \n", text(b), "the typing is kept");
             assertEquals(1, held.size(), "asked again on the new text");
+            FxTestSupport.runOnFx(held.remove(0));
+            assertEquals(1, held.size(), "the span that differs is worked out off the FX thread too");
             FxTestSupport.runOnFx(held.remove(0));
             assertEquals("# T\n\ntext\nmore\n", text(b));
         } finally {

@@ -41,6 +41,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * The diff viewer's unified view, change navigation, per-hunk menu and toolbar options: what each shows and
  * what it hands to the controller.
  */
+// The debugger's scans, merge and apply texts are worked out off the FX thread (PERF-01): here in place, so
+// each lands before the command returns. HandlersDebugOffFxThreadFxTest runs them where the app does.
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 @Tag("fx")
 class DiffViewerUnifiedAndNavigationFxTest {
 

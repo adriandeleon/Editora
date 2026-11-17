@@ -33,6 +33,9 @@ final class BufferRunGutter {
     private boolean testGutterEnabled;
     /** 0-based line → JUnit test target (class-decl line + each test method) for the gutter ▶; empty otherwise. */
     java.util.Map<Integer, com.editora.test.JavaTestScanner.TestTarget> testLines = java.util.Map.of();
+
+    /** What the test at the caret is read from, made by the Run scan with {@link #testLines}; null without tests. */
+    com.editora.test.JavaTestScanner.@Nullable CaretIndex testIndex;
     /** Fired with a test target when its gutter ▶ is clicked (runs one class/method via the build tool). */
     java.util.function.Consumer<com.editora.test.JavaTestScanner.TestTarget> testRunHandler = t -> {};
     /** Fired with a test target from the editor context menu (debugs one class/method via the build tool). */
@@ -181,7 +184,9 @@ final class BufferRunGutter {
     }
 
     com.editora.test.JavaTestScanner.@Nullable TestTarget testTargetAt(int caret, boolean classLevel) {
-        var best = com.editora.test.JavaTestScanner.targetAt(b.getContent(), testLines, caret); // review 3, A205
+        // Read from the index the Run scan made off the FX thread with these targets: no parse here (PERF-01).
+        var index = testIndex;
+        var best = index == null ? null : com.editora.test.JavaTestScanner.targetAt(index, testLines, caret); // A205
         if (best == null) {
             return classLevel ? testClassTarget() : null; // above the class line: the class's (sixth review BS3)
         }
@@ -334,14 +339,15 @@ final class BufferRunGutter {
         // every 150 ms edit pulse just to discard it as run-ineligible.
         if (!in.needsText()) {
             runScanInFlight = false;
-            applyRunScan(RunScan.scan(in, ""));
+            applyRunScan(RunScan.scan(in, ""), null);
             landed();
             return;
         }
         String text = b.documentTextSnapshot();
         if (scanInPlaceForTest) {
             runScanInFlight = false;
-            applyRunScan(RunScan.scan(in, text));
+            RunScan.Result found = RunScan.scan(in, text);
+            applyRunScan(found, testIndexOf(text, found));
             landed();
             return;
         }
@@ -350,6 +356,7 @@ final class BufferRunGutter {
         EditorBuffer.HIGHLIGHT_POOL.execute(() -> {
             com.editora.perf.BlockingSites.enter(RUN_SCAN_SITE);
             RunScan.Result found = RunScan.scan(in, text);
+            com.editora.test.JavaTestScanner.CaretIndex index = testIndexOf(text, found);
             Platform.runLater(() -> {
                 if (gen != runScanGen || b.disposed) {
                     return; // a newer pass answers
@@ -364,7 +371,7 @@ final class BufferRunGutter {
                     return;
                 }
                 runScanInFlight = false;
-                applyRunScan(found);
+                applyRunScan(found, index);
                 landed();
             });
         });
@@ -380,7 +387,16 @@ final class BufferRunGutter {
         waiting.forEach(Runnable::run);
     }
 
-    private void applyRunScan(RunScan.Result now) {
+    /** The test-at-caret index of a scan's text, for its test targets; null when it found none. Scan thread. */
+    private static com.editora.test.JavaTestScanner.@Nullable CaretIndex testIndexOf(
+            String text, RunScan.Result found) {
+        return found.testLines().isEmpty()
+                ? null
+                : com.editora.test.JavaTestScanner.caretIndex(text, found.testLines());
+    }
+
+    private void applyRunScan(RunScan.Result now, com.editora.test.JavaTestScanner.@Nullable CaretIndex index) {
+        testIndex = index;
         boolean changed = now.runnable() != runnable;
         boolean linesChanged = !now.httpLines().equals(b.httpGutter.requestLines())
                 || !now.makeTargets().equals(makeTargets)

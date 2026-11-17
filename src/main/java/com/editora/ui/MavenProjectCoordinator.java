@@ -646,7 +646,7 @@ final class MavenProjectCoordinator {
                 }
                 // One replacement, so the whole update is a single undo step rather than one per artifact —
                 // and the buffer goes dirty, so it is the user who decides to save it.
-                open.replaceWholeDocument(out);
+                open.replaceWholeDocumentLater(out, applied -> {}); // the span that differs, worked out off FX
             } else {
                 // Only a closed pom is written on disk, where there is no undo history to belong to anyway.
                 if (!com.editora.io.AtomicFileWrite.replaceIfUnchanged(

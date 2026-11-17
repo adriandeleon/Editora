@@ -353,7 +353,7 @@ final class ExternalToolCoordinator {
         var area = b.getArea();
         switch (tool.getOutput()) {
             // stdin was getContent() (the whole file), so the result replaces the whole file: widen first.
-            case REPLACE_BUFFER -> b.replaceWholeDocument(r.out());
+            case REPLACE_BUFFER -> b.replaceWholeDocumentLater(r.out(), applied -> {}); // the span worked out off FX
             // The range selected at launch (the text is unchanged, so its offsets still hold) — not whatever
             // is selected now.
             case REPLACE_SELECTION -> {

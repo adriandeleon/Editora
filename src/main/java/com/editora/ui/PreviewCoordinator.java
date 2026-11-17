@@ -590,27 +590,46 @@ final class PreviewCoordinator {
         }
     }
 
+    /** {@link #markdownOr} for a command whose answer lands later (worked out off the FX thread). */
+    void markdownOrLater(
+            java.util.function.BiConsumer<EditorBuffer, java.util.function.Consumer<Boolean>> command,
+            String refusedKey) {
+        EditorBuffer b = editableMarkdown();
+        if (b != null) {
+            command.accept(b, done -> {
+                if (!done) {
+                    host.setStatus(tr(refusedKey));
+                }
+            });
+        }
+    }
+
     /** {@code markdown.linkToReference} / {@code linkToInline}: converts the link at the caret, or says why not. */
     void markdownConvertLink(boolean toInline) {
         EditorBuffer b = editableMarkdown();
         if (b == null) {
             return;
         }
-        if (b.markdown().linkAtCaret() == null) {
-            host.setStatus(tr("status.markdown.noLink"));
-        } else if (!b.markdown().convertLink(toInline)) {
-            host.setStatus(tr(toInline ? "status.markdown.linkNotReference" : "status.markdown.linkAlreadyReference"));
-        }
+        // Worked out off the FX thread (a reference is looked up in the whole document); said when it lands.
+        b.markdown().convertLink(toInline, result -> {
+            if (result == 1) {
+                host.setStatus(tr("status.markdown.noLink"));
+            } else if (result == 2) {
+                host.setStatus(
+                        tr(toInline ? "status.markdown.linkNotReference" : "status.markdown.linkAlreadyReference"));
+            }
+        });
     }
 
     /** {@code markdown.convertWikiLink}: the link at the caret from wiki link to Markdown link, or back. */
     void markdownConvertWikiLink() {
         EditorBuffer b = editableMarkdown();
         if (b != null) {
-            int result = b.markdown().convertWikiLink();
-            if (result != 0) {
-                host.setStatus(tr(result == 1 ? "status.markdown.noLink" : "status.markdown.linkNotLocal"));
-            }
+            b.markdown().convertWikiLink(result -> {
+                if (result != 0) {
+                    host.setStatus(tr(result == 1 ? "status.markdown.noLink" : "status.markdown.linkNotLocal"));
+                }
+            });
         }
     }
 
@@ -618,10 +637,18 @@ final class PreviewCoordinator {
     void markdownPasteAsMarkdown() {
         EditorBuffer b = editableMarkdown();
         if (b != null) {
-            host.setStatus(tr(
-                    b.markdown().pasteAsMarkdown(true)
-                            ? "status.markdown.pastedAsMarkdown"
-                            : "status.markdown.nothingToConvert"));
+            b.markdown()
+                    .pasteAsMarkdown(
+                            true,
+                            markdown -> { // converted off the FX thread
+                                if (markdown != null && !b.isDisposed()) {
+                                    b.insertAtCaret(markdown);
+                                }
+                                host.setStatus(tr(
+                                        markdown != null
+                                                ? "status.markdown.pastedAsMarkdown"
+                                                : "status.markdown.nothingToConvert"));
+                            });
         }
     }
 
@@ -634,13 +661,18 @@ final class PreviewCoordinator {
         if (b == null) {
             return;
         }
-        String[] link = b.markdown().linkForEditing(); // a Markdown link, a wiki link, or the selection
-        LinkEditCard card = new LinkEditCard(
-                link[0],
-                link[1],
-                host.overlayHost()::hide,
-                (text, url) -> b.markdown().setLink(text, url));
-        showAtCaret(card.card(), card::focus);
+        // A Markdown link, a wiki link, or the selection: worked out off the FX thread, the card shown when it lands.
+        b.markdown().linkForEditing(link -> {
+            if (host.activeBuffer() != b) {
+                return;
+            }
+            LinkEditCard card = new LinkEditCard(
+                    link[0] == null ? "" : link[0],
+                    link[1] == null ? "" : link[1],
+                    host.overlayHost()::hide,
+                    (text, url) -> b.markdown().setLink(text, url));
+            showAtCaret(card.card(), card::focus);
+        });
     }
 
     /** Shows {@code card} as an overlay under the active editor's caret (centered when it is off screen). */
@@ -681,8 +713,13 @@ final class PreviewCoordinator {
         EditorBuffer b = host.activeBuffer();
         if (b == null || !b.isMarkdown()) {
             host.setStatus(tr("status.notMarkdown"));
-        } else if (!b.openLinkUnderCaret()) {
-            host.setStatus(tr("status.markdown.noLink"));
+        } else {
+            b.openLinkUnderCaret(
+                    opened -> { // worked out off the FX thread
+                        if (!opened) {
+                            host.setStatus(tr("status.markdown.noLink"));
+                        }
+                    });
         }
     }
 
@@ -703,11 +740,9 @@ final class PreviewCoordinator {
         if (b == null) {
             return;
         }
-        if (!b.insertOrUpdateToc()) {
-            host.setStatus(tr("status.markdown.tocNoHeadings"));
-        } else {
-            host.setStatus(tr("status.markdown.tocDone"));
-        }
+        b.insertOrUpdateToc(
+                written -> // the headings are parsed off the FX thread
+                host.setStatus(tr(written ? "status.markdown.tocDone" : "status.markdown.tocNoHeadings")));
     }
 
     /** {@code markdown.tableFromCsv}: convert the selected CSV (else clipboard CSV) into a GFM table. */
@@ -811,23 +846,52 @@ final class PreviewCoordinator {
             host.setStatus(tr("status.csv.empty"));
             return;
         }
+        if (csvReformatting) {
+            return; // the last press is still being worked out
+        }
+        csvReformatting = true;
+        long version = b.docVersion();
+        // Parsed and reformatted off the FX thread, the span that differs too (PERF-01, Pauta 6.0.1).
+        com.editora.perf.OffFx.then(CSV_REFORMAT_SITE, () -> csvReformatted(text, align, version), answer -> {
+            csvReformatting = false;
+            CsvReformat worked = answer.value();
+            if (worked == null || b.isDisposed()) {
+                return;
+            }
+            if (worked.multiline()) {
+                host.setStatus(tr("status.csv.multiline"));
+            } else if (worked.edit() == null) {
+                host.setStatus(tr(align ? "status.csv.alignNoChange" : "status.csv.shrinkNoChange"));
+            } else if (b.docVersion() != version) {
+                host.setStatus(tr("status.diff.applyFailed", b.getTitle())); // typed into meanwhile: left alone
+            } else if (NoUndoGuard.allow(b, tr(align ? "command.csv.align" : "command.csv.shrink"))
+                    && b.applyPreparedWholeText(worked.edit(), worked.out())) {
+                host.setStatus(tr(align ? "status.csv.aligned" : "status.csv.shrunk"));
+            }
+        });
+    }
+
+    /** {@link com.editora.perf.BlockingSites} name of CSV Align / Shrink, worked out off the FX thread. */
+    static final String CSV_REFORMAT_SITE = "PreviewCoordinator.csvReformat";
+
+    /** A CSV Align / Shrink being worked out: a second press does nothing. FX thread. */
+    private boolean csvReformatting;
+
+    /** CSV Align / Shrink worked out: refused for a multi-line field, or the text and its span (null: unchanged). */
+    private record CsvReformat(boolean multiline, String out, EditorBuffer.@Nullable PreparedEdit edit) {}
+
+    /** Off the FX thread: the reformat of {@code text}, the whole document at {@code version}. */
+    private static CsvReformat csvReformatted(String text, boolean align, long version) {
         char delim = com.editora.csv.CsvParser.detectDelimiter(text);
         // A quoted multi-line field means a record no longer maps to one physical line — line-based
         // align/shrink would corrupt it, so refuse (mirrors the grid's edit guard).
         if (com.editora.csv.CsvParser.hasMultilineField(com.editora.csv.CsvParser.parse(text, delim))) {
-            host.setStatus(tr("status.csv.multiline"));
-            return;
+            return new CsvReformat(true, text, null);
         }
         String out = align ? com.editora.csv.CsvAlign.align(text, delim) : com.editora.csv.CsvAlign.shrink(text, delim);
-        if (out.equals(text)) {
-            host.setStatus(tr(align ? "status.csv.alignNoChange" : "status.csv.shrinkNoChange"));
-            return;
-        }
-        if (!NoUndoGuard.allow(b, tr(align ? "command.csv.align" : "command.csv.shrink"))) {
-            return;
-        }
-        b.replaceWholeDocument(out); // computed from getContent(): widens a narrowed buffer first (undoable)
-        host.setStatus(tr(align ? "status.csv.aligned" : "status.csv.shrunk"));
+        return out.equals(text)
+                ? new CsvReformat(false, out, null)
+                : new CsvReformat(false, out, EditorBuffer.PreparedEdit.between(version, text, out));
     }
 
     /** {@code markdown.toggleFormatBar}: flip the selection format-bar setting + re-sync every buffer. */

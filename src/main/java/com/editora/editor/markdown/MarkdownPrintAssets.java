@@ -36,6 +36,7 @@ public final class MarkdownPrintAssets {
     private final Map<String, PreviewImageLoader.Loaded> images;
     private final Map<String, MermaidImages.Cached> diagrams;
     private final Map<String, List<MarkdownRenderer.Run>> code;
+    private final Map<String, MathImages.Rendered> math = new HashMap<>();
 
     private MarkdownPrintAssets(
             Map<String, PreviewImageLoader.Loaded> images,
@@ -90,8 +91,27 @@ public final class MarkdownPrintAssets {
                 }
             });
         }
-        return new MarkdownPrintAssets(
+        MarkdownPrintAssets assets = new MarkdownPrintAssets(
                 PreviewImageLoader.loadAll(urls, imageTimeoutMs), MermaidImages.renderAllLight(mermaid), code);
+        if (ast != null && MathImages.isEnabled()) { // the formulas, light on paper, rasterized here (PERF-01)
+            MarkdownRenderer.forEachFormula(ast, (latex, display) -> {
+                if (display) {
+                    assets.putMath(latex, true, MarkdownRenderer.DISPLAY_MATH_SIZE);
+                }
+                assets.putMath(latex, false, MarkdownRenderer.INLINE_MATH_SIZE);
+            });
+        }
+        return assets;
+    }
+
+    private void putMath(String latex, boolean display, double size) {
+        math.computeIfAbsent(
+                MathImages.key(latex, display, size, false), k -> MathImages.rendered(latex, display, size, false));
+    }
+
+    /** A formula rasterized for paper, by {@link MathImages#key}, or null when it was not resolved. */
+    MathImages.@Nullable Rendered math(String key) {
+        return math.get(key);
     }
 
     /** The loaded image at {@code url} (already resolved to an absolute URL), or null when it did not load. */

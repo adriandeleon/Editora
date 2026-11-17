@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * visible line, and that turning the feature off actually clears the bar.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // fold regions (PERF-01: detected off FX) land at once
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class StickyScrollFxTest {
 

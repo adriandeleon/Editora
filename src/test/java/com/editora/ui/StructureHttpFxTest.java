@@ -22,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 /** A {@code .http} file's Structure: one row per request, not a method — no {@code ()}, no function icon (U11). */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(
+        OffFxInPlace.class) // the outline and the pickers answer before the call returns
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class StructureHttpFxTest {
 

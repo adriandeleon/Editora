@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Markdown selection; and the narrowing commands' answers when there is nothing to narrow to. Run through
  * the command registry in a real window against the toolkit's clipboard.
  */
+@org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class) // worked out off FX in the app; here in place
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class EditingClipboardFxTest {
