@@ -132,7 +132,7 @@ final class MapCallStack extends MapSideColumn {
     /** A row's second line: the frame's file and 1-based line ("App.java:12"), or what stands for it. */
     static String where(DapModels.StackFrameInfo frame) {
         if (frame.file() != null) {
-            return PathDisplay.fileName(frame.file()) + ":" + (frame.line() + 1);
+            return PathDisplay.fileName(frame.file()) + DebugPanelText.lineSuffix(frame.line());
         }
         if (frame.reference() != null) {
             return tr("project.map.debug.stackNoFile");

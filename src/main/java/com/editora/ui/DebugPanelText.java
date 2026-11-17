@@ -489,6 +489,14 @@ final class DebugPanelText {
         return tr("debugpanel.history.label", stop.number, HISTORY_TIME.format(stop.time));
     }
 
+    /**
+     * A frame's 1-based line after its file name ({@code ":12"}), or "" for a frame with no line (a native one, line
+     * -1), which would read {@code ":0"}.
+     */
+    static String lineSuffix(int line) {
+        return line >= 0 ? ":" + (line + 1) : "";
+    }
+
     /** Where a stop was: its selected frame's name, with its file and 1-based line. */
     static String historyWhere(DebugHistory.Stop stop) {
         DapModels.StackFrameInfo top = stop.top();
@@ -497,7 +505,7 @@ final class DebugPanelText {
                 : frameName(top.name())
                         + (top.file() == null
                                 ? ""
-                                : " (" + DebugValues.sourceName(top.file()) + ":" + (top.line() + 1) + ")");
+                                : " (" + DebugValues.sourceName(top.file()) + lineSuffix(top.line()) + ")");
     }
 
     /**
@@ -511,7 +519,7 @@ final class DebugPanelText {
                 : frameName(top.name())
                         + (top.file() == null
                                 ? ""
-                                : " (" + DebugValues.sourceName(top.file()) + ":" + (top.line() + 1) + ")");
+                                : " (" + DebugValues.sourceName(top.file()) + lineSuffix(top.line()) + ")");
         String reason = stop.reason.isBlank() ? tr("debugpanel.history.paused") : stop.reason;
         return tr("debugpanel.history.banner", stop.number, HISTORY_TIME.format(stop.time), reason, where);
     }
@@ -524,7 +532,7 @@ final class DebugPanelText {
                 : frameName(top.name())
                         + (top.file() == null
                                 ? ""
-                                : " — " + DebugValues.sourceName(top.file()) + ":" + (top.line() + 1));
+                                : " — " + DebugValues.sourceName(top.file()) + lineSuffix(top.line()));
         return tr(
                 "debugpanel.history.entry",
                 stop.number,
