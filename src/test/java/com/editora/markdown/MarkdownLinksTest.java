@@ -125,4 +125,38 @@ class MarkdownLinksTest {
         assertNull(MarkdownLinks.toInline(t, MarkdownLinks.at(t, 3)));
         assertNotNull(MarkdownLinks.at(back, 3));
     }
+
+    @Test
+    void aLineLooksLikeALinkOnlyOnItsBrackets() {
+        String line = "see [a](x) end";
+        assertTrue(MarkdownLinks.looksLikeLinkAt(line, line.indexOf('a')));
+        assertTrue(MarkdownLinks.looksLikeLinkAt(line, line.indexOf(')') + 1), "its end included");
+        assertFalse(MarkdownLinks.looksLikeLinkAt(line, line.indexOf("end")));
+        assertFalse(MarkdownLinks.looksLikeLinkAt(line, 0), "before it");
+
+        assertTrue(MarkdownLinks.looksLikeLinkAt("![i](p.png)", 0), "an image from its !");
+        assertTrue(MarkdownLinks.looksLikeLinkAt("[t][label]", 6), "a reference link's label");
+        assertTrue(MarkdownLinks.looksLikeLinkAt("a [label] b", 4), "a bare label, defined or not");
+        assertFalse(MarkdownLinks.looksLikeLinkAt("\\[a](x)", 3), "an escaped bracket");
+        assertFalse(MarkdownLinks.looksLikeLinkAt("[abc", 1), "never closed");
+        assertFalse(MarkdownLinks.looksLikeLinkAt("[t](open x", 6), "an unclosed destination ends at the ]");
+        assertFalse(MarkdownLinks.looksLikeLinkAt("[t]x y", 5), "text right after it is not part of it");
+        assertTrue(MarkdownLinks.looksLikeLinkAt("[a \\] b](x)", 7), "an escaped ] inside the text");
+    }
+
+    @Test
+    void theLinkAtTheCaretSkipsEscapedUnclosedAndEarlierLinks() {
+        String text = "\\[no](x) [one](a) [two](<b c> \"t\") [open";
+        MarkdownLinks.Link two = MarkdownLinks.at(text, text.indexOf("two"));
+        assertNotNull(two);
+        assertEquals("b c", two.destination(), "its <> and title dropped");
+        assertNull(MarkdownLinks.at(text, 2), "an escaped bracket is no link");
+        assertNull(MarkdownLinks.at(text, text.indexOf("open")), "never closed");
+        String unclosedDestination = "[x](<a";
+        MarkdownLinks.Link odd = MarkdownLinks.at("[x](<a)", 1);
+        assertNotNull(odd);
+        assertEquals("<a", odd.destination(), "an unclosed < is kept as written");
+        assertNull(MarkdownLinks.at(unclosedDestination, 1), "a destination never closed: no link");
+        assertNull(MarkdownLinks.at("[x][y", 1), "a label never closed");
+    }
 }
