@@ -405,6 +405,12 @@ class IndenterTest {
     }
 
     @Test
+    void enterOnAnEmptyLastLineOfALispFileIndentsTheBody() {
+        // The caret at the very end, after a line break: the scan used to read past the text and throw.
+        assertEquals("\n  ", Indenter.enterEdit("(defn f\n", 8, "clojure", 2).insert());
+    }
+
+    @Test
     void lispAlignsACallsArgumentsToItsFirstArgument() {
         assertEquals("\n" + " ".repeat(5), enterAtEnd("(str \"a\"", "clojure"));
         assertEquals("\n" + " ".repeat(9), enterAtEnd("  (assoc m :a 1", "clojure"));

@@ -183,7 +183,7 @@ final class LispIndent {
         int ls = lineStart(text, pos);
         int floor = Math.max(0, pos - Indenter.MAX_SCAN);
         while (ls > floor) {
-            if (text.charAt(ls) == '(' && ls < pos) {
+            if (ls < pos && text.charAt(ls) == '(') {
                 return ls;
             }
             ls = lineStart(text, ls - 1);
