@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-11-17
+
 ### Security
 
 - **A launch.json preLaunchTask and a lone C# file ask before running a folder's code.** A configuration's
@@ -50,7 +52,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (typed into a field of dots), AI Agent: Set a Client's Command… and Markdown Lint: Set Rule Severity…. Each
   keeps what its Settings row would keep and shows in an open Settings window at once. The question before a
   paste of several lines into a terminal gets no command: it protects you, so only its row turns it off.
-
 - **Debug Bash scripts.** Press Debug on a Bash script to stop at its breakpoints, step through it and read its
   variables in a watch or by hovering (`total`, or `$total` as the script writes it). Install Bash Debug from
   Settings → Debugging → Bash; it brings its own bashdb and runs on Node.js. Scripts of other shells (zsh, fish) still
@@ -99,7 +100,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is on the line), it says so and changes nothing. A plain breakpoint or bookmark is not recorded: the key that
   removed it sets it again. A removal made in Settings is said in the editor window's status bar and is undone from
   the editor window.
-
 - **Don't step into.** Name the code Step Into should go over — a class or package (`com.shop.util.*`), a module
   (`requests`), a function (`fmt.*`, `std::*`) or a file (`**/vendor/**`) — in Settings → Debugging, or right-click a
   frame in the call stack and choose Don't Step Into This…, which offers its class, file, package or namespace. Java,
@@ -116,7 +116,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`java.io.*`, `*Error`, `!InterruptedException`), and an optional condition is evaluated where the exception was
   thrown, so `KeyError` with `order.id == 42` stops on that one order's error and lets the rest go by. They are
   kept per project and work with every language whose debugger stops on exceptions. Checked with Python and Java.
-
 - **The right-click rows of the Project tree, the Git windows and the Debug window are commands.** What they do can
   now be run from the Command Palette, and given a key, on the selected row: in the Project tree (and on the Project
   Map's rows) Rename, Delete, Stage, Revert, Compare with Branch, Show Git History, Find in Folder and the rest of the
@@ -175,7 +174,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   back over a statement with the variables as they were, Reverse Continue back to the previous breakpoint or to where
   recording began. Recording slows the program a lot, so turn it on just before the part you want to replay. A
   debugger that steps back by itself (Delve or CodeLLDB on rr) is used as it is. Nothing to install for GDB.
-
 - **Move between the editor and the tool windows from the keyboard, both ways, in every keymap.** *Window:
   Other* already cycled forward but was bound in the Emacs keymap only, and nothing went back. There is now
   *Window: Other, Reverse*, and both are bound everywhere: `C-x o` and `C-x S-o` in Emacs, Alt+Page Down and
@@ -186,7 +184,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   thread you are looking at is highlighted all the way up, a click on a frame opens its line, and Copy puts the tree
   on the clipboard as text. A running program is paused for a moment and goes on, as with Thread Dump. It is in Run →
   Debugger and in the Threads view's and call stack's menus. Checked with Python, Java and Go.
-
 - **A find command for each console.** *Output: Find*, *Run: Find in Output*, *External Tools: Find in
   Output*, *Debug: Find in Console*, *Find in Test Output* and *Application Log: Find* are in the Command
   Palette and can be given a key under Settings → Keymaps. Each shows its panel and opens the find bar, and
@@ -197,7 +194,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   spreadsheet, and Open as CSV opens them in a CSV tab. The table keeps the values of the stop it was opened at;
   Refresh reads them again at the current stop. Large collections show their first 1,000 elements. Checked with
   Python, Java and Go.
-
 - **Keyboard Shortcuts in the Help menu.** Help → Keyboard Shortcuts opens the list of every command's keys
   in Settings, where you can search it and change a key. It is in the Command Palette as *Keyboard Shortcuts*.
 - **Focus Menu Bar.** *View: Focus Menu Bar* opens the first menu so the arrow keys can walk the menu bar.
@@ -209,17 +205,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Linux the program is found in the core; otherwise Editora asks for it. Go cores open in Delve, the rest in CodeLLDB.
   A core cannot be run, so Continue and the steps are disabled and say why. A launch.json configuration that opens a
   core (Delve's `"mode": "core"`) gets the same treatment.
-
 - **`--` on the command line.** Every argument after `--` is a file, so `editora -- -notes.txt` opens a file
   whose name starts with a dash, and a lone `-` is a file name too.
-
 - **Breakpoint filters.** A breakpoint can now stop only in some threads (`worker-*`), only when called from some
   functions (`OrderService.save`), or only on one object, the one you marked with Mark Object, as IntelliJ's
   breakpoint filters do. Set them in Edit Breakpoint; patterns are separated by commas, `*` and `?` are wildcards and
   `!` excludes. Editora checks the filters at each stop and lets the program go on, unseen, when one fails, so they
   work with every language, and a filtered breakpoint's hit count and log message count only the hits that pass. Mark
   the object at the breakpoint's first stop, and the following stops are that object's.
-
 - **A command for 44 buttons only the mouse could press.** Each is in the command palette, can be given a key
   under Settings → Keymaps, and the button's tooltip shows that key. On the Project Map: Back, Forward and
   History (the list of places the Map has been), Mouse and Keyboard Help, Options, and for the card the
@@ -241,7 +234,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   language's, with `this` (or `self`) for the value. Renderers apply in Variables, watches, the Evaluate window and
   hover; a watch or evaluation that calls a method or assigns is not evaluated again. Mute Type Renderers, in the
   Variables menu, shows values as the debugger gives them. Checked with Java, Python and Go.
-
 - **Buffer: Previous.** The tab before the selected one, wrapping to the last: the other way round from
   Buffer: Next, and beside it in the Window menu. Like Next it has no key of its own until you give it one
   under Settings → Keymaps.
@@ -276,7 +268,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   moving the editor: the way to see what a program that hangs is doing. Copy puts the dump on the clipboard as text,
   Open as Text opens it in a read-only tab, and Take Again takes a new one. Works with Java, Python, Go and every
   other adapter that lists threads.
-
 - **A zoom for the whole interface.** View → Zoom → Zoom In Interface, Zoom Out Interface and Reset
   Interface Zoom (also in the command palette, and as Interface zoom under Settings → Appearance) scale the
   menus, toolbar, tabs, tool windows, dialogs and status bar together, from 80% to 200% in steps of 10. It
@@ -319,7 +310,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   your keymap's Find key in the view (the Application Log also has a Find button): it searches as you type and
   shows a count, Enter goes to the next match and Shift+Enter to the previous one, wrapping around, and Escape
   closes the bar and gives the keyboard back to the text.
-
 - **Pauta conformance.** Editora now says which edition of [Pauta](https://pauta-project.dev/), the guidelines
   its family of apps follows, it is working toward and how far it has come. *Help → Pauta Conformance* (also in
   the Command Palette) lists every rule of Pauta 6.0.1 that Editora does not meet yet, each with one sentence on
@@ -327,7 +317,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the list as Markdown. About gains *Working toward Pauta 6.0.1* and *Pauta conformance: Partial*, and its
   *Copy details* text carries both. The conformance is worked out from the list, so it cannot claim more than
   the list shows.
-
 - **Debugger small wins: Copy as Expression, Jump to Type Source, Run to Here in the gutter, step timing and
   logpoint tokens.** *Copy as Expression* on a variable copies what gives its value in the stopped code, as the
   debugger itself names it (`items.get(0)` in Java, `d['k']` in Python, rather than `items[0]`); Add to Watches, Set
@@ -338,7 +327,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   long each step took* in Settings → Debug turns it off). A logpoint's message can use `$FUNCTION`, `$CALLER`,
   `$CALLSTACK`, `$TID` and `$TNAME` for the method, its caller, the call stack and the thread; such a logpoint
   pauses the program briefly at each hit while Editora writes the message.
-
 - **Debug JavaScript in the browser.** *Debug in Browser…* opens a web page in Chrome, Edge or another Chromium
   browser (Chromium, Brave, Vivaldi) under the debugger, as VS Code does: breakpoints in the page's scripts stop it,
   with its variables, call stack, console output, stepping and evaluate as for a Node.js program, and through source
@@ -351,7 +339,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the browser under Settings → Debugging → JavaScript. The browser has 30 seconds to start (a launch.json
   configuration's own `timeout` decides otherwise); when the debugger gives up on it, or it exits while starting,
   the status line says so and the Debug console has the debugger's own error.
-
 - **Mark Object.** Right-click a variable, watch or result that shows an object and choose *Mark Object…* to give
   it a label, as in IntelliJ. The label then shows before that object's value wherever it appears in the session (in
   Variables, watches, results, the hover popup and Debug History), so you can follow one object as it moves between
@@ -361,7 +348,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **View a string as JSON, XML or text.** *View As* on a string value opens its whole text in a read-only tab, laid
   out and highlighted as JSON or XML, or as plain text, so you can fold, search and copy it. If the text is not valid
   JSON or XML it opens as plain text, and the status line says why.
-
 - **Debugging code that has no file.** When a JavaScript or TypeScript program stops or steps into code the debugger
   holds only in memory, such as code run through `eval`, that code now opens in a read-only tab with the current line
   marked, as VS Code shows it. Before, Editora said there was no source. The tab is opened once per session and shown
@@ -410,7 +396,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inside the project are written relative to it. *Debug: Import Breakpoints…* sets a file's breakpoints again, each on
   the line its code is on now, leaving lines that already have one, and a running debug session gets them at once.
   Saved with the breakpoint (`breakpoints.json` schema 9).
-
 - **Triggered breakpoints.** A breakpoint can wait until another breakpoint is hit, as VS Code's triggered
   breakpoints and IntelliJ's "Disable until hitting the following breakpoint" do: until then it does not stop, and
   from then on it stops like any other, for the rest of that debug session. The next session it waits again. Choose
@@ -419,7 +404,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hollow, saying which breakpoint it waits for. It works with every debugger Editora runs, in files that are not open
   too, and a breakpoint whose trigger is removed simply stops. Saved with the breakpoint (`breakpoints.json`
   schema 8).
-
 - **Add Logpoint in one step.** Shift+click the breakpoint gutter on a line, as in IntelliJ, or use *Debug: Add
   Logpoint…* (in the editor's right-click *Breakpoints* submenu, the Run menu and the palette; `C-c C-d g` in the
   Emacs keymap). It asks only for the message to log, with `{expression}` for a value. OK makes the line a logpoint,
@@ -513,7 +497,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   History* on a variable lists its value at every stop and goes back to the one you pick. The stops are kept in
   memory only (200 by default, *Settings → Debugging → History*), and after the session ends you can still read them
   until the next one starts. Values nobody opened at a stop were never fetched, so they cannot be shown later.
-
 - **Search the text of files on the Project Map.** Start the Map's search with `%` (`%needle`) to find text in the
   files instead of their names. The files that hold it stand out on the map. Each step through the lines found opens
   the card of the declaration that holds the line, with the text selected. That card is replaced by the next one
@@ -730,6 +713,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the program.
 - **Suspend all threads when one stops** (Settings → Debugging, Java, off by default): a breakpoint, exception or
   step stops every thread of the program, and Continue resumes them all — IntelliJ's "Suspend: All".
+- **The mouse wheel zooms a PDF.** A plain wheel zooms an open PDF around the pointer (before, only Ctrl+wheel
+  did), Ctrl/Cmd+wheel zooms faster and a touchpad pinch zooms too. Shift+wheel pans across, Alt+wheel pans down and
+  a sideways swipe pans, as on the Project Map; dragging still pans.
 
 ### Changed
 
@@ -761,11 +747,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     edits during a debug session;
   - math in the Markdown preview, popups and the agent panel (a new formula appears a moment after its text),
     Copy HTML, the debug expression field's colours and the status bar's size.
-
   Two small differences: Ctrl/Cmd-click on a Markdown link now also moves the caret there, and a `*/` more than
   4,096 characters below no longer stops `/**` from closing itself. A close-save in the merge resolver closes the tab
   once the result is applied, and with `--single-window` the window appears once its session has been read.
-
 - **Searching, matching and checking a document no longer hold up typing.** The find bar searches, and works out
   Replace and Replace All, in the background for every document, not only large ones: the matches light up a moment
   after you pause, and a Replace All with text typed meanwhile is worked out again on the new text, still as one undo
@@ -778,7 +762,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tab when the save is done); a file's personal notes and the Markdown preview's find are also worked out in the
   background; Debug Test on a Gradle project waits for its
   debug script the same way. Windows opened after the first are built without reading their layout file again.
-
 - **Amber, red and green now mean only a warning, an error and a success.** Bookmarks, Personal Notes, the Stop
   buttons, deleted lines and the Map's recent-changes heat no longer borrow them. A bookmark and a note are the
   accent, in the gutter, the Project tree and the editor's note wash, told apart by their shapes, and the code-action
@@ -802,13 +785,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   frame with no source, a log's TRACE lines and the line numbers of the default Primer Light editor theme and the
   community themes' editor were drawn in the faintest text colour; they now use the muted one, 4.5:1 or more
   (ICON-09).
-
 - **Print Preview follows the interface zoom.** Its bar's text, buttons and gaps, and the window's size, grow and
   shrink with the interface zoom (View: Zoom In Interface) like every other window (WIN-12, Pauta 6.0.1), and a
   change of the zoom reaches an open preview at once. The page at "100%" is drawn as large as the text around it;
   Fit Page and Fit Width still fill the window. The page itself keeps the size it was laid out at, and prints
   exactly as before.
-
 - **Checks made as you type, switch tabs or follow a link look at the disk in the background.** A Markdown file's
   lint settings, `.editorconfig` rules, Markdown and HTTP completion, spelling verdicts, a language server's project
   folder and its Java project checks, links followed in Markdown, the terminal, the console and the agent's
@@ -825,7 +806,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parse lands; New Maven Project's Create waits until the folder has been checked, and a terminal link click on a path
   waits for the path to be checked. A Settings row for a server command or debugger path you just typed says
   "checking" until it is found. A save follows the `.editorconfig` as it is on disk at that moment.
-
 - **File commands, installs and plugins work on disk in the background.** Opening, renaming, moving and deleting
   files in the Project panel and on the Map, New Folder, New ▸ type, Save As's "replace it?" check, Revert, Rename
   File, Reopen Closed Tab, Go to Related File and Create Test, Find File's Enter on a typed path, a bookmark or a
@@ -841,7 +821,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   there, as before. A dialog's start folder is no longer checked before the dialog opens; a folder that is gone is
   dropped and the dialog opens where the system puts it. The spelling suggestions of a right-click always arrive
   in the menu's "Searching…" row.
-
 - **Run, Build, Debug and the other programs Editora starts are started in the background.** Finding the program on
   your PATH, starting it and recording it for clean-up no longer happen on the UI thread, for Run, Build, the
   program a debugger hands back, Run in Terminal, a program in a container or a WSL distribution, and the New Maven
@@ -864,7 +843,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   New Maven Project's folder, pom and archetype reads and its move into place. Quitting or closing a window with
   busy terminals asks from what each terminal last reported; a terminal on another machine that never answered
   yet is not listed.
-
 - **Settings and the other stores are saved in the background.** Changing a setting, showing a tool window,
   setting a bookmark or a breakpoint, writing a note, saving a macro, trusting a folder, adding a word to the
   dictionary and focusing or opening a window no longer wait for the config folder: the change applies at once and
@@ -875,14 +853,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the Project Map's trails and Export and Import of shared run configurations read and write in the background too;
   the Trails menu shows "Loading…" until the trails are listed, and a language's snippets are read when a file of it
   opens. Words another Editora added to the dictionary now join this one's when it writes the file.
-
 - **More of start-up's disk work is done off the UI thread.** Opening the session log, the claim on the config
   folder, cleaning up after a crashed run, reading your own themes, the recent files and the search history, making
   the zoomed stylesheets and checking the installed language servers, debuggers and configured tools now happen on
   the thread that loads the settings while the toolkit starts, before the first window is built. Windows restored
   after the first read their sessions in the background, later windows reuse the app icons, and the Welcome page
   checks which recent files and projects still exist in the background.
-
 - **Three long lists build only the rows on screen.** The shortcut list in Settings ▸ Keymaps, the list of a
   pull request's checks and the crontab preview made a row for every command, check or job, and the shortcut list
   made them all again at each key typed in its filter. Each is now a list that builds the rows it shows.
@@ -896,7 +872,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window, the Message Log, the Doctor page and the shared Output console are now built the first time each is
   opened (the Output console also by the first build or Git command that writes to it), and the Welcome page only
   in a window that opens on no file.
-
 - **Editora asks before more removals that used to happen at once.** Each of these now asks first, names what
   goes, and keeps it when you press Cancel or Enter: deleting a Git branch that is fully merged (a branch with
   unmerged commits is still asked about once, with the count); Remove All for the trusted folders; Reset draft
@@ -1066,7 +1041,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The keymap's editing keys work in every find field.** In the find bars of the consoles, the terminal and
   Project Map cards, C-a, C-e, C-k and C-y in the Emacs keymap (Ctrl+V/X/C/Z in the others) now act on the
   field, as they already did in the editor's.
-
 - **Questions before something is lost are asked the same way everywhere.** The button that confirms carries the
   action's own name (Delete, Discard, Replace, Overwrite, Reset) in red, never OK, and Cancel is the default
   button: it has the focus when the question opens, so Enter keeps what you have and the red action runs only
@@ -1100,7 +1074,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   main toolbar does.
 - **The Enable plugins setting says on its own row that it needs a restart.** The note used to sit in a separate
   row below it, where a search for the setting did not show it.
-
 - **Settings names its two scopes plainly.** In a project window the top of Settings now reads "Edit settings for
   **All projects** | **This project: name**" instead of "Settings for User | Project: name", with a little space
   between the two buttons and a tooltip on All projects saying it is used in every window unless a project sets its
@@ -1122,7 +1095,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cards; flowing down or up, at the same top and right of it, in a row — instead of cascading or going on past it.
 - **Pause stops the whole Java program.** It suspended only the thread on screen, and the program's other threads
   kept running. Continue after a Pause resumes every thread.
-
 - **Refactor:** every dialog that is answered with a button is shown through `Dialogs.showAndWait`, or
   `Dialogs.show` where it must not block, which a test answers with no window (`Dialogs.answerWith`,
   `DialogAnswers`), and every question before a destructive action takes its words from a static function
@@ -1174,12 +1146,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     fetches its `http`/`https` images the moment it is previewed; a bar offers to load them for that document.
     Settings → Markdown → Remote images → Always restores the old behaviour. A settings file from before 0.22
     that had remote images on keeps loading them.
+- **Expert mode hides the menu bar too**, as Zen does. In a window with the menu bar in the title bar only the
+  menus leave; the window title and buttons stay. Commands stay on their keys and in the command palette.
+- **Every entry in the Project Map's ⋯ menu has an icon**, not only Reveal Active File.
+- **`C-x b` (Switch to Buffer) is as tall as `C-x C-f` (Find File).** With a few buffers open it used to come up
+  less than half the height.
+- **A newer JDK builds Editora.** On JDK 26 and later the build skips the format check (Palantir Java Format runs
+  only on JDK 25) and says so, instead of refusing to build.
 
 ### Fixed
 
 - **Enter on an empty last line of a Clojure or other Lisp file no longer fails.** With the caret at the very end
   of the file after a line break, Enter threw an error instead of indenting the new line.
-
 - **Debugger review fixes.** A review of the whole debugger found these, now fixed:
   - **Several sessions at once.** A compound of saved Java, Go, Rust or Node configurations launched every member
     into its last session; each now starts its own. A Debug Test attach goes to the session waiting for it, not to
@@ -1224,14 +1202,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   paths in its replies, the diff viewer's apply arrows, Parallel Stacks frames, and the lightbulb, breakpoint and
   run marks of the gutter and the Project Map cards. A test runs every
   command, opens every tool window and Settings page, and fails on any control left without a name.
-
 - **Windows open centred on the editor window.** The detached Agent window opened in the middle of the screen,
   and a few error alerts (a template that failed to save, any dialog asked with no window behind it) did too. They
   now open over the editor window in front, centred on it, as Settings, Run Configurations and the debugger windows
   already did. A floating tool window opened for the first time is also kept wholly on the editor's screen.
 - **View: Split Tool Window Side shows its picker.** The command found the tool windows that could join a side and
   then showed nothing: its picker had never been given the place it opens in.
-
 - **Six small stalls and wrong answers under load.**
   - The debugger checks in Settings could show an older answer over a newer one when a path was changed
     quickly; an answer is now shown only while it is the newest.
@@ -1298,15 +1274,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A match-case button of a Project Map card's find bar can be reached with Tab.**
 - **Waiting for a debugged Java program's exit code, and seven other disk reads, no longer run on the JVM's
   shared worker pool**, where a slow disk could hold up unrelated background work.
-
 - **A breakpoint could be missed at the very start of a JavaScript program.** Debugging told js-debug to run the
   program before js-debug had placed the breakpoints, so one near the start (a breakpoint inside an arrow function
   most often) was sometimes passed by. Editora now waits for the breakpoints to be placed first, as VS Code does.
-
 - **A Project Map card opened from a hierarchy tree no longer closes on its own.** When its file's folder was not
   open on the map, the next folder change could close it. It now stays while the card the tree was asked from is
   open, as other result cards do.
-
 - **The build trust prompt names the project's build command, not yours.** In a folder not yet trusted, the
   build trust prompt listed the command set in your own Settings as if the project's `.editora/settings.json` ran
   it, and never listed a command the project file does set — the one trusting the folder would apply. It now lists
@@ -1343,6 +1316,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (sticky notes, Structure columns, link chips) and their connectors are drawn on the pages where they stand on the
   map, as on screen; the pages grow to take in a card standing beyond the columns. Export ▸ SVG still leaves the
   cards out.
+- **Alt-Backspace (`M-DEL`) deletes the word before the caret in text fields** such as Find File, every picker and
+  prompt; in a path it takes one folder at a time. It did nothing there.
+- **The debugger's value popup shows an arrow, and a hand over its rows**, not the editor's I-beam.
+- **The Debug tool window's columns have padding**, and turning on the Threads view no longer moves the toggle.
+- **A Project Map card no longer misses a change made while it was reading the file.** It kept the old text, and
+  its problem markers, until the next poll.
 
 ## [0.27.0] - 2026-11-05
 
