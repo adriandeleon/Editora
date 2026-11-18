@@ -21,7 +21,7 @@
         <build.timestamp>${maven.build.timestamp}</build.timestamp>
         <!-- JavaFX 27 requires JDK 25+, matching the compiler/runtime baseline. Metal is the default
              macOS pipeline in 27; we still set the per-OS order explicitly via ${prism.order} below. -->
-        <javafx.version>27</javafx.version>
+        <javafx.version>27.0.1</javafx.version>
         <javafx.plugin.version>0.0.8</javafx.plugin.version>
         <!-- Prism pipeline order (passed as -Dprism.order to both javafx:run and the packaged app). Set
              per-OS in the os-* profiles: mac=mtl,es2,sw (Metal, the M-series rendering fix; es2/sw fallback),
