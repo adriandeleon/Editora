@@ -250,7 +250,10 @@ class MarkdownLintOverlayFxTest {
                             new MarkdownLint.Diagnostic(1, 1, line.length(), "warning", "MD034", "whole line"),
                             new MarkdownLint.Diagnostic(3, 1, 5, "warning", "MD034", "one word")));
             buffer[0].setWordWrap(true);
-            stage[0] = EditorFx.show(buffer[0], 420, 400);
+            // Tall enough for every wrapped row and the short line below, whatever text size the JVM's theme sheet
+            // has: only rows on screen are painted (9 rows at the default size; 15 seen on a CI shard where an
+            // earlier class left larger text, which pushed 4 rows below a 400 px window).
+            stage[0] = EditorFx.show(buffer[0], 420, 900);
             buffer[0].setMarkdownLintEnabled(true);
         });
         // The overlay repaints on a later pulse than the layout that wraps the line, and two looks in a row can
