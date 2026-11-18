@@ -452,7 +452,24 @@ style-only change that still ended a succession — skips the draw and the snaps
   row and the one that was selected), the pull-request checks card and the live crontab preview are
   `ListView`s. A row with wrapping text binds its labels' maximum width to the list's, or the cell cannot
   say how tall it is (`CrontabPreview`, `MessageLogPopup`). The picture an export takes of a preview
-  (`CrontabPreview.content`) is off screen and holds every row.
+  (`CrontabPreview.content`) is off screen and holds every row. The other structured previews (fstab,
+  systemd, ssh config, Dockerfile, GitHub Actions, OpenAPI docs) share `editor/structured/PreviewList`: a
+  preview is a list of row suppliers, shown as a `ListView` on screen and as a column for Print and Export.
+  The HTTP client's empty state and the Check for Newer Versions dialog (`MavenUpgradeList`) are `ListView`s
+  too.
+- Where a virtualized control would change how a pane looks or works for nothing, the pane shows a number of
+  items it names and says how many there are past them (`ui/ListCap`, "Showing the first 50 of 73."): the pom
+  preview (a grid that aligns its columns; at most `PomPreview.MAX_ROWS` rows, built when shown, the filter
+  finding the others), the merge view (`MergeViewerPane.PAGE_SIZE` conflict cards a page), Parallel Stacks
+  (a drawn graph: `MAX_BOXES` boxes, `MAX_BOX_FRAMES` frames a box; Copy has them all), the note card, the
+  Welcome page's projects and sites, and the small lists of hover cards, info cards and settings pages.
+- Per keystroke, scroll and tick, other views follow the same rule (PERF-08, Pauta 6.0.1): an editable diff's
+  Result counts its edits and compares with its baseline once typing pauses, a merge result compares its text
+  only when a choice is made, Query Replace copies a piece of the document from its offset and searches it off
+  the FX thread, a piece twice as long when the answer lies past it (`QueryReplace.piece`, `nextIn`), a snippet or
+  template body is coloured once typing pauses, off the FX thread, the Markdown heading crumbs and a large Python file's indent check scan off the FX thread, and a Project Map paint
+  makes and tests the boxes of the rows on screen only (`MapProjectedRows`). A listener on a `CodeArea`'s
+  `textProperty()` builds the whole document per change: use `plainTextChanges()`.
 - **Never** call `getCharacterBoundsOnScreen` synchronously inside a layout/viewport event.
 - **Never** ask `getCharacterBoundsOnScreen` for an **empty** range — it allocates a blinking
   `CaretNode` whose timer is never stopped, permanently leaking a pulse receiver. Measure a
@@ -477,11 +494,18 @@ style-only change that still ended a succession — skips the draw and the snaps
   into its top-level blocks off the FX thread, each keyed by its exact source text (plus the link
   definitions it could use and the size/mtime of the local images it shows); a render keeps every node
   whose key is unchanged, in place, and builds the rest. Its column (`BlockColumn`) remembers each block's
-  height per width and measures only blocks that asked for layout, and a long document's first render is
-  built `MarkdownPreview.SLICE` blocks per pulse. A 5,000-line document went from ~0.6 s of frozen UI per
-  typing pause to ~10 ms, a 20,000-line one from seconds to ~20–50 ms. What is left at that size is
-  JavaFX walking the scene graph each pulse (`Parent.updateBounds`); only virtualizing the block list
-  would remove it. See [gotchas.md](gotchas.md#applycss-restyles-everything-below-the-node-it-is-called-on).
+  height and measures only blocks that asked for layout. A 5,000-line document went from ~0.6 s of frozen
+  UI per typing pause to ~10 ms. See [gotchas.md](gotchas.md#applycss-restyles-everything-below-the-node-it-is-called-on).
+- The column is **virtualized** (PERF-08, Pauta 6.0.1): `BlockColumn` holds a slot per block and builds and
+  puts in the scene only the blocks within `BlockColumn.OVERSCAN` of the viewport; blocks that leave it stay
+  built out of the scene up to `BlockColumn.KEEP`. Heights (measured, else lines × the measured height per
+  line) sit in a Fenwick tree, so a block's offset and the block at an offset are O(log n) and a scroll pulse
+  does nothing in the length of the document; when measuring changes the heights above the viewport, the
+  preview scrolls by the difference so the top block stays put (`onReflow`). What reads the whole document
+  reads the model: Find reads a block not built from a rendering without pictures
+  (`MarkdownRenderer.renderTextOnly`) and marks blocks as they enter the scene; a selection pins the blocks of
+  its two ends; Copy of whole blocks copies their Markdown. Print and Export build the whole tree once per
+  command in `MarkdownPrintLayout`, which is not on screen.
 - Each rendered block records its **source lines**, so the split view's scroll sync, the position kept
   across a re-render and across Editor/Split/Preview switches map a source line to a preview offset
   (`MarkdownPreview.yOfLine` / `lineAtY`, `PreviewScrollSync`), not a scroll fraction.

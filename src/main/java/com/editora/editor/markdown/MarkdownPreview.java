@@ -39,6 +39,14 @@ import org.jspecify.annotations.Nullable;
  * position, a source line maps to a preview offset and back ({@link #yOfLine}, {@link #lineAtY}): the split
  * view's scroll sync, the position kept across a re-render and across a mode switch all go through that map,
  * and {@link #scrollToAnchor} finds a heading by its GitHub slug.
+ *
+ * <p><b>Only what is on screen is built.</b> The column ({@link BlockColumn}) is virtualized (PERF-08, Pauta
+ * 6.0.1): every unit is an {@link Entry}, and a block is rendered when it comes within reach of the viewport, not
+ * before. A 20,000-line document has a screenful of blocks in the scene, not thousands. What reads the whole
+ * document reads the model instead: the scroll map sums the blocks' heights (measured, or estimated from their
+ * lines) in O(log n); Find reads the text of a block that is not built from a rendering without pictures
+ * ({@link MarkdownRenderer#renderTextOnly}); Copy of whole blocks copies their Markdown. Print and Export render
+ * the whole document themselves ({@code MarkdownPrintLayout}), not through this class.
  */
 public final class MarkdownPreview {
 
@@ -61,18 +69,94 @@ public final class MarkdownPreview {
             String source,
             boolean remoteImages) {}
 
-    /** A rendered unit: {@code node} is null for one that shows nothing (a comment, a link definition). */
-    private record Entry(
-            @Nullable String key,
-            @Nullable Node node,
-            int startLine,
-            int endLine,
-            @Nullable String slug,
-            List<String> refs) {}
+    /**
+     * A unit of the document shown: built when it first comes within reach of the viewport. Its node is null
+     * when not built, or when it shows nothing (a comment, a link definition).
+     */
+    final class Entry extends BlockColumn.Slot {
+        final @Nullable String key;
+        final int startLine;
+        final int endLine;
+        final @Nullable String slug;
+        final List<String> refs;
+        private final Unit unit;
+        private final MarkdownRenderer.RenderContext ctx;
+        /** Find's reading of a block that is not built (it depends only on the key). */
+        @Nullable
+        List<PreviewFind.Run> runs;
+
+        Entry(Unit unit, MarkdownRenderer.RenderContext ctx) {
+            this.unit = unit;
+            this.ctx = ctx;
+            this.key = unit.key();
+            this.startLine = unit.startLine();
+            this.endLine = unit.endLine();
+            this.slug = unit.slug();
+            this.refs = unit.refs();
+        }
+
+        @Nullable
+        Node node() {
+            return node;
+        }
+
+        /** Takes over what a block of the render before with the same key had built and measured. */
+        void takeFrom(Entry before) {
+            node = before.node;
+            built = before.built;
+            height = before.height;
+            measuredAt = before.measuredAt;
+            runs = before.runs;
+        }
+
+        @Override
+        int lines() {
+            return startLine < 0 ? 1 : endLine - startLine + 1;
+        }
+
+        @Override
+        boolean likelyEmpty() {
+            return unit.first() instanceof LinkReferenceDefinition
+                    || (unit.first() instanceof HtmlBlock html
+                            && unit.first() == unit.last()
+                            && html.getLiteral().strip().startsWith("<!--")
+                            && html.getLiteral().strip().endsWith("-->"));
+        }
+
+        @Override
+        @Nullable
+        Node build() {
+            Node n = MarkdownRenderer.renderGroup(unit.first(), unit.last(), ctx);
+            lastBuilt++;
+            builtTotal++;
+            if (n != null) {
+                n.getProperties().put(BUILT_AT_LINE, startLine);
+            }
+            return n;
+        }
+
+        /** The text runs Find reads in this block, without building it when it is not built. */
+        List<PreviewFind.Run> runs() {
+            if (node != null) {
+                return PreviewFind.runs(node);
+            }
+            if (built) {
+                return List.of();
+            }
+            if (runs == null) {
+                Node scratch = MarkdownRenderer.renderTextOnly(unit.first(), unit.last(), ctx);
+                runs = scratch == null ? List.of() : PreviewFind.runs(scratch);
+            }
+            return runs;
+        }
+    }
 
     private final BlockColumn column = MarkdownRenderer.styleColumn(new BlockColumn());
     private final StackPane root = MarkdownRenderer.wrapColumn(column);
     private List<Entry> entries = List.of();
+    /** The indices of the entries that came from source lines, in line order: the scroll map's blocks. */
+    private int[] lined = new int[0];
+
     private String contextSignature = "";
     private Consumer<String> linkOpener = u -> {};
     private @Nullable ScrollPane pane;
@@ -109,20 +193,29 @@ public final class MarkdownPreview {
      */
     void markLine(int line) {
         markedLine = line;
-        Node block = null;
-        if (line >= 0) {
-            for (Entry e : entries) {
-                if (e.node() != null && e.startLine() >= 0 && e.startLine() <= line && line <= e.endLine()) {
-                    block = e.node();
-                    break;
-                }
-            }
-        }
-        markedBlock = block;
         placeMarker();
     }
 
+    /** The entry whose source lines hold {@code line}, or -1: a binary search, not a scan (PERF-08). */
+    private int entryOfLine(int line) {
+        int lo = 0;
+        int hi = lined.length - 1;
+        int found = -1;
+        while (lo <= hi) {
+            int mid = (lo + hi) >>> 1;
+            if (entries.get(lined[mid]).startLine <= line) {
+                found = mid;
+                lo = mid + 1;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        return found >= 0 && line <= entries.get(lined[found]).endLine ? lined[found] : -1;
+    }
+
     private void placeMarker() {
+        int at = markedLine < 0 ? -1 : entryOfLine(markedLine);
+        markedBlock = at < 0 ? null : entries.get(at).node;
         Node block = markedBlock;
         boolean show = block != null && block.getParent() == column;
         caretMarker.setVisible(show);
@@ -136,19 +229,108 @@ public final class MarkdownPreview {
 
     /** The source line a point of the document belongs to: the block under it, and how far down the block. */
     private int lineAt(Node target, double sceneY) {
-        Node block = target;
-        while (block != null && block.getParent() != column) {
-            block = block.getParent();
-        }
-        for (Entry e : entries) {
-            if (e.node() == block && e.startLine() >= 0) {
-                javafx.geometry.Bounds b = block.localToScene(block.getBoundsInLocal());
-                double frac = b.getHeight() <= 0 ? 0 : (sceneY - b.getMinY()) / b.getHeight();
-                int lines = e.endLine() - e.startLine() + 1;
-                return e.startLine() + (int) Math.max(0, Math.min(lines - 1, Math.floor(frac * lines)));
-            }
+        Node block = blockRootOf(target);
+        Entry e = block == null ? null : entryOf(block);
+        if (block != null && e != null && e.startLine >= 0) {
+            javafx.geometry.Bounds b = block.localToScene(block.getBoundsInLocal());
+            double frac = b.getHeight() <= 0 ? 0 : (sceneY - b.getMinY()) / b.getHeight();
+            int lines = e.endLine - e.startLine + 1;
+            return e.startLine + (int) Math.max(0, Math.min(lines - 1, Math.floor(frac * lines)));
         }
         return -1;
+    }
+
+    // --- the blocks, for selection and Find ------------------------------------------------------------
+
+    /** The top-level block {@code node} is (in), built or on screen; null when it is not in a block. */
+    @Nullable
+    Node blockRootOf(@Nullable Node node) {
+        for (Node n = node; n != null; n = n.getParent()) {
+            if (BlockColumn.slotOf(n) != null) {
+                return n;
+            }
+        }
+        return null;
+    }
+
+    /** The entry of the current render whose node is {@code block}, or null. */
+    private @Nullable Entry entryOf(Node block) {
+        return BlockColumn.slotOf(block) instanceof Entry e
+                        && e.index >= 0
+                        && e.index < entries.size()
+                        && entries.get(e.index) == e
+                ? e
+                : null;
+    }
+
+    /** The index of the block {@code node} is (in) in the document, or -1 when it is not of this render. */
+    int blockIndexOf(@Nullable Node node) {
+        Node block = blockRootOf(node);
+        Entry e = block == null ? null : entryOf(block);
+        return e == null ? -1 : e.index;
+    }
+
+    /** How many blocks the document has (built or not). */
+    int blockCount() {
+        return entries.size();
+    }
+
+    /** The node of block {@code i}, built now when it is not (not put in the scene); null when it shows nothing. */
+    @Nullable
+    Node blockNode(int i) {
+        return column.node(i);
+    }
+
+    /** The node of block {@code i} when it is built, else null (nothing is built). */
+    @Nullable
+    Node builtNode(int i) {
+        return entries.get(i).node;
+    }
+
+    /** The offset of block {@code i}'s top in the document (px), measured or estimated. */
+    double blockTop(int i) {
+        return top(i);
+    }
+
+    /** The block at offset {@code y} of the column (column coordinates); -1 when there is none. */
+    int blockAtY(double y) {
+        return column.indexAt(y);
+    }
+
+    /** The text runs of block {@code i} that Find reads. */
+    List<PreviewFind.Run> runsOf(int i) {
+        return entries.get(i).runs();
+    }
+
+    /** Keeps the blocks of these nodes in the scene wherever they are scrolled to (the ends of a selection). */
+    void pinBlocks(@Nullable Node a, @Nullable Node b) {
+        List<Entry> pins = new ArrayList<>(2);
+        for (Node n : new Node[] {a, b}) {
+            Node block = blockRootOf(n);
+            Entry e = block == null ? null : entryOf(block);
+            if (e != null && !pins.contains(e)) {
+                pins.add(e);
+            }
+        }
+        column.setPinned(pins);
+    }
+
+    /** Scrolls block {@code i} a third of the way down the pane and builds what is then on screen. */
+    void revealBlock(int i) {
+        if (pane != null && i >= 0 && i < entries.size()) {
+            anchorUntil = 0;
+            setScrollY(Math.max(0, top(i) - pane.getViewportBounds().getHeight() / 3));
+            layoutNow();
+        }
+    }
+
+    /** Lays out now what is waiting for the pulse, so the blocks now in view are built and measured. */
+    void layoutNow() {
+        if (pane != null && pane.getScene() != null) {
+            pane.getScene().getRoot().layout();
+        } else {
+            column.fillNow();
+        }
     }
 
     /** Shown instead of a blank pane when the document renders to nothing (an empty file, only comments). */
@@ -167,6 +349,9 @@ public final class MarkdownPreview {
         caretMarker.setVisible(false);
         caretMarker.setMouseTransparent(true);
         root.getChildren().add(caretMarker);
+        column.onBuilt(this::zoomed);
+        column.onAttach(slot -> find.attached(slot.index));
+        column.onReflow(this::reflow);
         column.afterLayout(() -> {
             placeMarker();
             if (selection.isActive()) {
@@ -212,6 +397,46 @@ public final class MarkdownPreview {
     }
 
     private boolean reanchorQueued;
+    private boolean reflowQueued;
+    private double reflowShift;
+
+    /**
+     * Blocks just measured changed the height of the document: once the pane knows the new height, scrolls by
+     * {@code shift} px from where the reader is so what is at the top stays there (a scroll pane keeps its
+     * fraction, not its offset) — or to the held line after a render. Shifts add up until it runs, and it
+     * starts from wherever the reader has scrolled meanwhile.
+     */
+    private void reflow(double shift) {
+        ScrollPane at = pane;
+        double v = at == null ? 0 : at.getVvalue();
+        if (v != reflowAtV) {
+            reflowShift = 0; // measured at another place: what was owed there is not owed here
+            reflowAtV = v;
+        }
+        reflowShift += shift;
+        if (reflowQueued) {
+            return;
+        }
+        reflowQueued = true;
+        javafx.application.Platform.runLater(() -> {
+            reflowQueued = false;
+            ScrollPane p = pane;
+            if (p == null || p.getContent() != root) {
+                return;
+            }
+            double from = scrollY(); // what the reader sees now, before the pane learns the new height
+            // Scrolled elsewhere since (a key, a command, the scroll sync): the shift was for the place left.
+            double by = p.getVvalue() == reflowAtV ? reflowShift : 0;
+            reflowShift = 0;
+            column.requestLayout();
+            p.layout();
+            setScrollY(holdsAnchor() ? yOfLine(anchorLine) : Math.max(0, from + by));
+            layoutNow(); // the blocks now in view, built before the next frame is drawn
+        });
+    }
+
+    /** The scroll position the pending {@link #reflow}'s shift was measured at. */
+    private double reflowAtV = Double.NaN;
 
     private boolean holdsAnchor() {
         return anchorLine >= 0 && System.nanoTime() < anchorUntil && pane != null && pane.getContent() == root;
@@ -230,7 +455,11 @@ public final class MarkdownPreview {
     public void setZoom(double zoom) {
         if (Math.abs(zoom - this.zoom) > 1e-9) {
             this.zoom = zoom;
-            PreviewImageLoader.zoomAll(column, zoom);
+            for (Entry e : entries) {
+                if (e.node != null) {
+                    PreviewImageLoader.zoomAll(e.node, zoom); // on screen or kept: a block built later is zoomed then
+                }
+            }
         }
     }
 
@@ -364,22 +593,14 @@ public final class MarkdownPreview {
         return line >= 0;
     }
 
-    /** The source lines {@code {from, to}} of the blocks {@code first}…{@code last} of the column, or null when
-     *  one of them did not come from source lines. */
+    /** The source lines {@code {from, to}} of the blocks {@code first}…{@code last} of the document (indices of
+     *  blocks, built or not), or null when one of them did not come from source lines. */
     private int @Nullable [] sourceLinesOf(int first, int last) {
-        if (shownSource == null) {
+        if (shownSource == null || first < 0 || last >= entries.size()) {
             return null;
         }
-        int from = -1;
-        int to = -1;
-        for (Entry e : entries) {
-            if (e.node() == column.getChildren().get(first)) {
-                from = e.startLine();
-            }
-            if (e.node() == column.getChildren().get(last)) {
-                to = e.endLine();
-            }
-        }
+        int from = entries.get(first).startLine;
+        int to = entries.get(last).endLine;
         return from < 0 || to < from ? null : new int[] {from, to};
     }
 
@@ -511,6 +732,7 @@ public final class MarkdownPreview {
     /** Binds the scroll pane this document scrolls in; a gesture of the user's ends any anchoring. */
     public void attach(ScrollPane scrollPane) {
         this.pane = scrollPane;
+        column.attach(scrollPane);
         selection.attach(scrollPane);
         scrollPane.addEventFilter(javafx.scene.input.ScrollEvent.ANY, e -> anchorUntil = 0);
         scrollPane.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> anchorUntil = 0);
@@ -523,7 +745,7 @@ public final class MarkdownPreview {
     }
 
     /** Stops holding the last render's line in place: something else now decides where the document is. */
-    void releaseAnchor() {
+    public void releaseAnchor() {
         anchorUntil = 0;
     }
 
@@ -531,9 +753,9 @@ public final class MarkdownPreview {
     public void clear() {
         selection.clear();
         find.clear();
-        buildSeq++;
         entries = List.of();
-        column.getChildren().clear();
+        lined = new int[0];
+        column.setSlots(entries);
         contextSignature = "";
         anchorUntil = 0;
     }
@@ -759,27 +981,24 @@ public final class MarkdownPreview {
     }
 
     /**
-     * Shows {@code plan} in the attached pane, building only the units that changed since the last one.
-     * {@code dark} is the preview's own theme, or null to follow the app. {@code line} is the source line to
-     * bring to the top afterwards (fractional), or {@link #KEEP_VIEW}.
+     * Shows {@code plan} in the attached pane. A unit whose key is unchanged keeps the node it had; the others are
+     * built when they come within reach of the viewport (the column is virtualized). {@code dark} is the
+     * preview's own theme, or null to follow the app. {@code line} is the source line to bring to the top
+     * afterwards (fractional), or {@link #KEEP_VIEW}.
      */
     public void show(Plan plan, Consumer<String> onLinkClick, @Nullable Boolean dark, double line) {
         this.linkOpener = onLinkClick == null ? u -> {} : onLinkClick;
         this.shownSource = plan.source();
         this.shownBaseDir = plan.baseDir();
-        long seq = ++buildSeq; // whatever an earlier render still had to build is this render's business now
-        // What is at the top now, as a node: text typed above it renumbers its lines but does not replace it.
-        Node topNode = null;
+        // What is at the top now, as a unit: text typed above it renumbers its lines but does not replace it.
+        Entry topEntry = null;
         double topOffset = 0;
         if (line < 0 && isShowing()) {
             double y = scrollY();
-            for (Entry e : entries) {
-                if (e.node() != null
-                        && top(e.node()) + e.node().getBoundsInParent().getHeight() > y) {
-                    topNode = e.node();
-                    topOffset = y - top(topNode);
-                    break;
-                }
+            int i = column.indexAt(y - column.getBoundsInParent().getMinY());
+            if (i >= 0) {
+                topEntry = entries.get(i);
+                topOffset = y - top(i);
             }
         }
         String signature = dark + "|" + MathImages.epoch() + "|" + MermaidImages.epoch() + "|"
@@ -787,9 +1006,9 @@ public final class MarkdownPreview {
                 + plan.baseDir() + "|"
                 + PreviewPrefs.signature() + "|" + MarkdownRenderer.wikiLinks() + "|" + WikiLinkTargets.epoch();
         column.setMaxWidth(PreviewPrefs.contentWidth());
+        List<Entry> before = entries;
         if (!signature.equals(contextSignature)) {
-            entries = List.of(); // a theme, a tool or the folder changed: every node is out of date
-            column.getChildren().clear();
+            before = List.of(); // a theme, a tool or the folder changed: every node is out of date
             contextSignature = signature;
         }
         MarkdownRenderer.RenderContext ctx = MarkdownRenderer.previewContext(
@@ -803,37 +1022,26 @@ public final class MarkdownPreview {
                 && !remoteGranted
                 && PreviewImageLoader.remotePolicy() == PreviewImageLoader.RemotePolicy.ASK);
         List<Unit> units = plan.units();
-        List<Entry> before = entries;
         int[] ends = commonEnds(
                 units.stream().map(Unit::key).toList(),
-                before.stream().map(Entry::key).toList());
+                before.stream().map(e -> e.key).toList());
         int prefix = ends[0];
         int suffix = ends[1];
         int n = units.size();
         int m = before.size();
-
         Map<String, ArrayDeque<Entry>> pool = new HashMap<>();
-        List<Node> oldMiddle = new ArrayList<>();
         for (int i = prefix; i < m - suffix; i++) {
             Entry e = before.get(i);
-            if (e.key() != null) {
-                pool.computeIfAbsent(e.key(), k -> new ArrayDeque<>()).add(e);
-            }
-            if (e.node() != null) {
-                oldMiddle.add(e.node());
+            if (e.key != null) {
+                pool.computeIfAbsent(e.key, k -> new ArrayDeque<>()).add(e);
             }
         }
+        Map<Entry, Entry> moved = new java.util.IdentityHashMap<>();
         List<Entry> now = new ArrayList<>(n);
-        List<Node> newMiddle = new ArrayList<>();
-        List<Node> fresh = new ArrayList<>();
-        int built = 0;
-        int shown = n; // units [shown, n) are built later, a slice per pulse
+        int reused = 0;
+        int linedCount = 0;
         for (int i = 0; i < n; i++) {
             Unit u = units.get(i);
-            if (built >= SLICE && suffix == 0 && i >= prefix) {
-                shown = i;
-                break;
-            }
             Entry kept = null;
             if (i < prefix) {
                 kept = before.get(i);
@@ -843,47 +1051,34 @@ public final class MarkdownPreview {
                 ArrayDeque<Entry> same = pool.get(u.key());
                 kept = same == null ? null : same.poll(); // a block that moved keeps its node too
             }
-            Node node;
+            Entry e = new Entry(u, ctx);
             if (kept != null) {
-                node = kept.node();
-            } else {
-                node = MarkdownRenderer.renderGroup(u.first(), u.last(), ctx);
-                built++;
-                if (node != null) {
-                    fresh.add(node);
-                    zoomed(node);
-                    node.getProperties().put(BUILT_AT_LINE, u.startLine());
+                e.takeFrom(kept);
+                moved.put(kept, e);
+                if (e.built) {
+                    reused++;
                 }
             }
-            now.add(new Entry(u.key(), node, u.startLine(), u.endLine(), u.slug(), u.refs()));
-            if (i >= prefix && i < n - suffix && node != null) {
-                newMiddle.add(node);
+            if (u.startLine() >= 0) {
+                linedCount++;
             }
+            now.add(e);
         }
-        if (!oldMiddle.equals(newMiddle)) {
-            int at = 0;
-            for (int i = 0; i < prefix; i++) {
-                if (before.get(i).node() != null) {
-                    at++;
-                }
+        int[] lines = new int[linedCount];
+        for (int i = 0, k = 0; i < n; i++) {
+            if (now.get(i).startLine >= 0) {
+                lines[k++] = i;
             }
-            // Only the changed stretch leaves and enters the scene: the rest keeps its CSS and layout.
-            column.getChildren().remove(at, at + oldMiddle.size());
-            column.getChildren().addAll(at, newMiddle);
         }
         entries = now;
-        lastBuilt = built;
-        builtTotal += built;
-        lastReused = shown - built;
-        boolean complete = shown == n;
-        int next = shown;
+        lined = lines;
+        lastBuilt = 0;
+        lastReused = reused;
+        column.setSlots(now); // the blocks of the old render that are not kept leave the scene here
 
         if (pane == null) {
-            if (complete) {
-                shows.set(shows.get() + 1);
-            } else {
-                buildRest(seq, units, next, ctx, -1);
-            }
+            find.reapply();
+            shows.set(shows.get() + 1);
             return;
         }
         boolean placedNow = pane.getContent() != root;
@@ -894,114 +1089,40 @@ public final class MarkdownPreview {
                 ScrollPane scrolled = pane;
                 javafx.application.Platform.runLater(() -> scrolled.setVvalue(v)); // new content: same place
             }
+            root.applyCss(); // only the column's own style: its blocks are styled one by one as they enter
         }
-        boolean keep = topNode != null && topNode.getParent() == column;
-        if (line >= 0 || keep) {
-            // Style what is new, then lay out from the top of the scene (a pane that has only just been put
-            // there has no size yet). Not applyCss() on anything higher: it restyles every node below the one
-            // it is called on, clean or not, and each restyled text asks for layout again — for one new block
-            // in a long document that was the whole cost of the render this class exists to avoid.
-            // The whole preview is styled in one call only when every block in it is new (a first render) or it
-            // has only just been put in the scene: then nothing already styled is styled again. Otherwise each
-            // new block is styled by itself.
-            if (lastReused == 0 || placedNow) {
-                root.applyCss();
-            } else {
-                fresh.forEach(Node::applyCss);
-            }
-            javafx.scene.Parent top =
-                    pane.getScene() == null ? pane : pane.getScene().getRoot();
-            top.layout();
-            anchorLine = line >= 0 || topNode == null ? line : lineAtY(top(topNode) + topOffset);
+        Entry keepEntry = topEntry == null ? null : moved.get(topEntry);
+        boolean anchored = line >= 0 || keepEntry != null;
+        if (anchored) {
+            anchorLine = line >= 0 || keepEntry == null ? line : lineAtY(top(keepEntry.index) + topOffset);
             anchorUntil = System.nanoTime() + ANCHOR_HOLD_NANOS;
+            // First to the place, with nothing built (the pane learns the new height), then build what is there:
+            // not a screenful at the old place on the way.
+            column.holdBuild(true);
+            layoutNow();
+            column.holdBuild(false);
             setScrollY(yOfLine(anchorLine));
         }
+        layoutNow(); // builds what the viewport shows, and only that
+        if (anchored) {
+            setScrollY(yOfLine(anchorLine)); // measured now: the line is exact
+            layoutNow();
+        }
         find.reapply(); // rebuilt blocks lost their marks
-        showEmptyNote(complete && column.getChildren().isEmpty());
+        showEmptyNote(allEmpty());
         selection.revalidate();
-        markLine(markedLine); // the caret's block may be a new node, or on other lines
-        if (complete) {
-            shows.set(shows.get() + 1);
-        } else {
-            double target = line; // may lie in the part not built yet: gone to again once it is
-            javafx.application.Platform.runLater(() -> buildRest(seq, units, next, ctx, target));
-        }
-    }
-
-    /** Most blocks built in one go. A long document is built a slice per pulse, so opening its preview
-     *  shows the first screens at once and keeps the window responding instead of freezing for seconds. */
-    static final int SLICE = 250;
-
-    private long buildSeq;
-
-    /**
-     * Builds the next slice of a document whose first part is already showing, appends it, and queues itself
-     * for the one after — unless a newer render has started ({@code seq}), which then takes over from what is
-     * built so far. {@code line} is where the finished document should be scrolled to (-1: left alone).
-     */
-    private void buildRest(long seq, List<Unit> units, int from, MarkdownRenderer.RenderContext ctx, double line) {
-        if (seq != buildSeq) {
-            return;
-        }
-        int to = Math.min(units.size(), from + SLICE);
-        List<Entry> now = new ArrayList<>(entries);
-        List<Node> nodes = new ArrayList<>();
-        for (int i = from; i < to; i++) {
-            Unit u = units.get(i);
-            Node node = zoomed(MarkdownRenderer.renderGroup(u.first(), u.last(), ctx));
-            if (node != null) {
-                node.getProperties().put(BUILT_AT_LINE, u.startLine());
-            }
-            now.add(new Entry(u.key(), node, u.startLine(), u.endLine(), u.slug(), u.refs()));
-            if (node != null) {
-                nodes.add(node);
-            }
-        }
-        column.getChildren().addAll(nodes);
-        entries = now;
-        lastBuilt += to - from;
-        builtTotal += to - from;
-        if (to < units.size()) {
-            javafx.application.Platform.runLater(() -> buildRest(seq, units, to, ctx, line));
-            return;
-        }
-        if (line >= 0 && pane != null && anchorUntil != 0) { // (0: the reader has scrolled meanwhile)
-            javafx.scene.Parent top =
-                    pane.getScene() == null ? pane : pane.getScene().getRoot();
-            styleUnlaidBlocks();
-            top.layout();
-            anchorLine = line;
-            anchorUntil = System.nanoTime() + ANCHOR_HOLD_NANOS;
-            setScrollY(yOfLine(line));
-        }
-        find.reapply();
+        placeMarker(); // the caret's block may be a new node, or on other lines
         shows.set(shows.get() + 1);
     }
 
-    /**
-     * Styles the blocks no layout pass has reached yet: the slices appended since the last pulse. The blocks
-     * before them were styled by the pulses between the slices, and styling the whole document again from its
-     * root is the O(document) pass the sliced build exists to avoid (PERF-10). When not even the first block has
-     * been laid out, nothing under the root has been styled and the root is styled once.
-     */
-    private void styleUnlaidBlocks() {
-        List<Node> blocks = column.getChildren();
-        if (blocks.isEmpty() || unlaid(blocks.get(0))) {
-            root.applyCss();
-            return;
-        }
-        for (Node block : blocks) {
-            if (unlaid(block)) {
-                block.applyCss();
+    /** Whether the document shows nothing at all (only comments and definitions, or no text). */
+    private boolean allEmpty() {
+        for (Entry e : entries) {
+            if (e.built ? e.node != null : !e.likelyEmpty()) {
+                return false;
             }
         }
-    }
-
-    /** Whether {@code block} still waits for a layout pass (a leaf has no flag to ask: it counts as waiting). */
-    private static boolean unlaid(Node block) {
-        return !(block instanceof javafx.scene.Parent parent)
-                || parent.isNeedsLayout()
-                || parent.getChildrenUnmodifiable().isEmpty();
+        return true;
     }
 
     /** A block just built, with its images sized for the current zoom. */
@@ -1028,16 +1149,12 @@ public final class MarkdownPreview {
         if (!(box.getProperties().get(MarkdownRenderer.TASK_LINE) instanceof Integer builtLine)) {
             return false;
         }
-        Node block = box;
-        while (block != null && block.getParent() != column) {
-            block = block.getParent();
-        }
-        for (Entry e : entries) {
-            if (e.node() == block && e.startLine() >= 0) {
-                Object builtAt = block.getProperties().get(BUILT_AT_LINE);
-                int offset = builtLine - (builtAt instanceof Integer start ? start : e.startLine());
-                return taskToggle.test(e.startLine() + offset);
-            }
+        Node block = blockRootOf(box);
+        Entry e = block == null ? null : entryOf(block);
+        if (block != null && e != null && e.startLine >= 0) {
+            Object builtAt = block.getProperties().get(BUILT_AT_LINE);
+            int offset = builtLine - (builtAt instanceof Integer start ? start : e.startLine);
+            return taskToggle.test(e.startLine + offset);
         }
         return false;
     }
@@ -1081,9 +1198,11 @@ public final class MarkdownPreview {
         String want = MarkdownRenderer.localPath(slug.startsWith("#") ? slug.substring(1) : slug)
                 .toLowerCase(Locale.ROOT);
         for (Entry e : entries) {
-            if (e.node() != null && (want.equals(e.slug()) || e.refs().contains(want))) {
+            if (!(e.built && e.node == null) && (want.equals(e.slug) || e.refs.contains(want))) {
                 anchorUntil = 0;
-                setScrollY(top(e.node()));
+                setScrollY(top(e.index));
+                layoutNow(); // built and measured: the blocks above it may have moved it
+                setScrollY(top(e.index));
                 return true;
             }
         }
@@ -1094,8 +1213,8 @@ public final class MarkdownPreview {
     List<String> anchors() {
         List<String> out = new ArrayList<>();
         for (Entry e : entries) {
-            if (e.slug() != null) {
-                out.add(e.slug());
+            if (e.slug != null) {
+                out.add(e.slug);
             }
         }
         return out;
@@ -1103,43 +1222,92 @@ public final class MarkdownPreview {
 
     // --- line ⇄ offset map -------------------------------------------------------------------------
 
-    private double top(Node node) {
-        return column.getBoundsInParent().getMinY() + node.getBoundsInParent().getMinY();
+    /** The offset of block {@code i}'s top in the document (px from the top of the content). */
+    private double top(int i) {
+        return column.getBoundsInParent().getMinY() + column.topOf(i);
     }
 
-    /** Arrays of the laid-out units that have lines: {@code [start, end]} lines and {@code [top, bottom]} px. */
-    private double[][] geometry() {
-        int count = 0;
-        for (Entry e : entries) {
-            if (e.node() != null && e.startLine() >= 0) {
-                count++;
-            }
-        }
-        double[][] g = new double[4][count];
-        int i = 0;
-        for (Entry e : entries) {
-            if (e.node() != null && e.startLine() >= 0) {
-                double top = top(e.node());
-                g[0][i] = e.startLine();
-                g[1][i] = e.endLine();
-                g[2][i] = top;
-                g[3][i] = top + e.node().getBoundsInParent().getHeight();
-                i++;
-            }
-        }
-        return g;
+    private double bottom(int i) {
+        return top(i) + column.heightOf(i);
     }
 
-    /** The offset in the document (px from its top) at which source {@code line} is rendered. */
+    /**
+     * The offset in the document (px from its top) at which source {@code line} is rendered: as the pure
+     * {@link #yOfLine(double, double[], double[], double[], double[])}, with a binary search over the blocks
+     * that have lines instead of arrays of them all (it runs on every scroll of a split view).
+     */
     double yOfLine(double line) {
-        double[][] g = geometry();
-        return yOfLine(line, g[0], g[1], g[2], g[3]);
+        int n = lined.length;
+        if (n == 0 || line <= 0) {
+            return 0;
+        }
+        int lo = 0;
+        int hi = n - 1;
+        int k = -1; // the last block that starts at or before the line
+        while (lo <= hi) {
+            int mid = (lo + hi) >>> 1;
+            if (entries.get(lined[mid]).startLine <= line) {
+                k = mid;
+                lo = mid + 1;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        if (k < 0) {
+            double start = entries.get(lined[0]).startLine;
+            return top(lined[0]) * line / start;
+        }
+        Entry e = entries.get(lined[k]);
+        double after = e.endLine + 1;
+        double top = top(lined[k]);
+        double bottom = bottom(lined[k]);
+        if (line < after) {
+            return top + (bottom - top) * (line - e.startLine) / (after - e.startLine);
+        }
+        if (k + 1 == n) {
+            return bottom;
+        }
+        double nextStart = entries.get(lined[k + 1]).startLine;
+        return bottom + (top(lined[k + 1]) - bottom) * (line - after) / (nextStart - after);
     }
 
-    /** The source line rendered at offset {@code y} of the document. */
+    /** The source line rendered at offset {@code y} of the document: the inverse of {@link #yOfLine(double)}. */
     double lineAtY(double y) {
-        double[][] g = geometry();
-        return lineAtY(y, g[0], g[1], g[2], g[3]);
+        int n = lined.length;
+        if (n == 0) {
+            return 0;
+        }
+        Entry firstEntry = entries.get(lined[0]);
+        double top0 = top(lined[0]);
+        if (y <= top0) {
+            return top0 <= 0 ? firstEntry.startLine : firstEntry.startLine * Math.max(0, y) / top0;
+        }
+        int lo = 0;
+        int hi = n - 1;
+        int i = n; // the first block whose bottom is below y
+        while (lo <= hi) {
+            int mid = (lo + hi) >>> 1;
+            if (y < bottom(lined[mid])) {
+                i = mid;
+                hi = mid - 1;
+            } else {
+                lo = mid + 1;
+            }
+        }
+        if (i == n) {
+            return entries.get(lined[n - 1]).endLine + 1;
+        }
+        Entry e = entries.get(lined[i]);
+        double top = top(lined[i]);
+        double bottom = bottom(lined[i]);
+        if (y >= top || i == 0) {
+            double after = e.endLine + 1;
+            return e.startLine + (after - e.startLine) * (y - top) / Math.max(1e-9, bottom - top);
+        }
+        Entry prev = entries.get(lined[i - 1]);
+        double after = prev.endLine + 1;
+        double prevBottom = bottom(lined[i - 1]);
+        return after + (e.startLine - after) * (y - prevBottom) / Math.max(1e-9, top - prevBottom);
     }
 
     /**

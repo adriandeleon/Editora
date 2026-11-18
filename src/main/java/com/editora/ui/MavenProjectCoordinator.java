@@ -26,11 +26,9 @@ import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
-import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TitledPane;
 import javafx.scene.layout.GridPane;
-import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
@@ -84,6 +82,9 @@ final class MavenProjectCoordinator {
     private static final Duration CATALOG_DEADLINE = Duration.ofMinutes(3);
 
     private static final String DEFAULT_VERSION = "1.0-SNAPSHOT";
+
+    /** The new-project form asks for this many of an archetype's own properties at most (PERF-08, Pauta 6.0.1). */
+    static final int MAX_ARCHETYPE_FIELDS = 50;
 
     /** The answer to the archetype consent prompt. */
     enum Consent {
@@ -456,41 +457,9 @@ final class MavenProjectCoordinator {
             return;
         }
         host.setStatus(tr("status.mavenVersions.found", rows.size()));
-        VBox list = UiZoom.spacing(new VBox(), 4);
-        List<CheckBox> boxes = new ArrayList<>();
-        List<PomUpgrades.Row> byBox = new ArrayList<>();
-        BooleanProperty anySelected = new SimpleBooleanProperty(true);
-        Runnable sync = () -> anySelected.set(boxes.stream().anyMatch(CheckBox::isSelected));
-        for (PomUpgrades.Kind kind : PomUpgrades.Kind.values()) {
-            List<PomUpgrades.Row> group =
-                    rows.stream().filter(r -> r.kind() == kind).toList();
-            if (group.isEmpty()) {
-                continue;
-            }
-            Label heading =
-                    new Label(tr("dialog.mavenVersions.group." + kind.name().toLowerCase(java.util.Locale.ROOT)));
-            heading.getStyleClass().add("maven-version-group");
-            list.getChildren().add(heading);
-            for (PomUpgrades.Row row : group) {
-                CheckBox box = new CheckBox(rowText(row));
-                box.setSelected(true);
-                box.getStyleClass().add("maven-version-row");
-                box.selectedProperty().addListener((o, a, b) -> sync.run());
-                boxes.add(box);
-                byBox.add(row);
-                if (row.major()) {
-                    Label major = new Label(tr("dialog.mavenVersions.major"));
-                    major.getStyleClass().addAll("settings-hint", "maven-version-major");
-                    list.getChildren().add(UiZoom.spacing(new HBox(box, major), 8));
-                } else {
-                    list.getChildren().add(box);
-                }
-            }
-        }
-        ScrollPane scroll = new ScrollPane(list);
-        scroll.setFitToWidth(true);
-        UiZoom.follow(scroll, () -> scroll.setPrefViewportHeight(UiZoom.px(260)));
-        VBox body = UiZoom.spacing(new VBox(new Label(tr("dialog.mavenVersions.summary", rows.size())), scroll), 8);
+        MavenUpgradeList list = new MavenUpgradeList(rows, MavenProjectCoordinator::rowText);
+        VBox body =
+                UiZoom.spacing(new VBox(new Label(tr("dialog.mavenVersions.summary", rows.size())), list.node()), 8);
         if (unreachable) {
             Label partial = new Label(tr("status.mavenVersions.unreachable"));
             partial.getStyleClass().add("settings-hint");
@@ -513,16 +482,10 @@ final class MavenProjectCoordinator {
                 body,
                 null,
                 tr("dialog.mavenVersions.apply"),
-                anySelected,
+                list.anySelectedProperty(),
                 () -> {
                     accepted[0] = true;
-                    List<PomUpgrades.Row> chosen = new ArrayList<>();
-                    for (int i = 0; i < boxes.size(); i++) {
-                        if (boxes.get(i).isSelected()) {
-                            chosen.add(byBox.get(i));
-                        }
-                    }
-                    applyRows(pomFile, chosen);
+                    applyRows(pomFile, list.chosen());
                 },
                 null,
                 false);
@@ -1157,7 +1120,10 @@ final class MavenProjectCoordinator {
         // one without a default blocks Create until filled, instead of failing in Maven's output.
         ArchetypeDescriptor descriptor = descriptorOf(archetype);
         Map<String, TextField> propertyFields = new LinkedHashMap<>();
-        for (ArchetypeDescriptor.RequiredProperty property : descriptor.extraProperties()) {
+        // At most MAX_ARCHETYPE_FIELDS rows (PERF-08); the others keep the defaults batch mode gives them.
+        int askedFor = descriptor.extraProperties().size();
+        for (ArchetypeDescriptor.RequiredProperty property :
+                ListCap.head(descriptor.extraProperties(), MAX_ARCHETYPE_FIELDS)) {
             TextField f = field(keymap, 24);
             f.setText(property.defaultValue() == null ? "" : property.defaultValue());
             propertyFields.put(property.key(), f);
@@ -1255,6 +1221,12 @@ final class MavenProjectCoordinator {
                 propertyGrid.add(new Label(e.getKey()), 0, r);
                 propertyGrid.add(e.getValue(), 1, r++);
                 GridPane.setHgrow(e.getValue(), Priority.ALWAYS);
+            }
+            if (askedFor > MAX_ARCHETYPE_FIELDS) {
+                Label more = new Label(tr("dialog.mavenProject.propertiesCapped", MAX_ARCHETYPE_FIELDS, askedFor));
+                more.getStyleClass().addAll("settings-hint", "list-capped");
+                more.setWrapText(true);
+                propertyGrid.add(more, 0, r, 2, 1);
             }
             Label propertiesTitle = new Label(tr("dialog.mavenProject.archetypeProperties"));
             propertiesTitle.getStyleClass().add("settings-hint");

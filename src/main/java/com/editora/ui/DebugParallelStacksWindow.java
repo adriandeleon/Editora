@@ -38,6 +38,12 @@ import static com.editora.i18n.Messages.tr;
  * listing the frames they share. The boxes the shown thread passes through are drawn as such, and its frame in each.
  * A frame opens its code (click, or Enter on it). Copy puts the tree on the clipboard as text, and Take Again takes
  * the stacks again — pausing a running program for a moment, as Thread Dump does.
+ *
+ * <p>A graph laid out in two directions is not a list a virtualized control can show, and every frame of it is a Tab
+ * stop, so the window draws a named number of boxes and of frames in a box instead (PERF-08, Pauta 6.0.1): the first
+ * {@link #MAX_BOXES} boxes, the roots first and each box after the one below it, so what is drawn stays one tree; and
+ * in a box its innermost {@link #MAX_BOX_FRAMES} frames, with a row that says how many more there are. The note says
+ * how many boxes were left out, and Copy has the whole tree.
  */
 final class DebugParallelStacksWindow {
 
@@ -62,6 +68,12 @@ final class DebugParallelStacksWindow {
     static final double HEADER = 26;
     static final double ROW = 20;
     static final double GAP = 28;
+
+    /** The most boxes the window draws; the note says how many there are past them. */
+    static final int MAX_BOXES = 100;
+
+    /** The most frames a box lists; a row under them says how many more it has. */
+    static final int MAX_BOX_FRAMES = 25;
 
     private final Actions actions;
     private final Stage stage = new Stage();
@@ -142,6 +154,11 @@ final class DebugParallelStacksWindow {
         String noteText = without > 0
                 ? tr("parallelstacks.withoutStack", without)
                 : dump.pausedForIt() ? tr("threaddump.pausedForIt") : "";
+        int boxCount = stacks.boxes().size();
+        if (boxCount > MAX_BOXES) {
+            String capped = tr("parallelstacks.capped", MAX_BOXES, boxCount);
+            noteText = noteText.isEmpty() ? capped : noteText + " " + capped;
+        }
         note.setText(noteText);
         note.setVisible(!noteText.isEmpty());
         takeAgain.setDisable(!actions.canTakeAgain());
@@ -176,18 +193,23 @@ final class DebugParallelStacksWindow {
 
     /** Draws the boxes where the layout puts them, and a line from each box down to the box below it. */
     private void draw(ParallelStacks s) {
-        Map<ParallelStacks.Box, ParallelStacks.Place> places =
-                s.layout(UiZoom.px(BOX_WIDTH), UiZoom.px(HEADER), UiZoom.px(ROW), UiZoom.px(GAP), UiZoom.px(12));
+        Map<ParallelStacks.Box, ParallelStacks.Place> places = s.layout(
+                UiZoom.px(BOX_WIDTH), UiZoom.px(HEADER), UiZoom.px(ROW), UiZoom.px(GAP), UiZoom.px(12), MAX_BOX_FRAMES);
+        List<ParallelStacks.Box> all = s.boxes();
+        // The roots first and every box after the one below it: the first MAX_BOXES are one tree.
+        java.util.Set<ParallelStacks.Box> drawn =
+                java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        drawn.addAll(all.subList(0, Math.min(all.size(), MAX_BOXES)));
         List<Node> lines = new ArrayList<>();
         List<Node> boxes = new ArrayList<>();
-        for (ParallelStacks.Box b : s.boxes()) {
+        for (ParallelStacks.Box b : all) {
             ParallelStacks.Place p = places.get(b);
-            if (p == null) {
+            if (p == null || !drawn.contains(b)) {
                 continue; // every box is laid out: no box is left without a place
             }
             for (ParallelStacks.Box a : b.above()) {
                 ParallelStacks.Place q = places.get(a);
-                if (q == null) {
+                if (q == null || !drawn.contains(a)) {
                     continue;
                 }
                 Line line = new Line(p.centerX(), p.y(), q.centerX(), q.bottom());
@@ -201,11 +223,13 @@ final class DebugParallelStacksWindow {
         }
         canvas.getChildren().setAll(lines);
         canvas.getChildren().addAll(boxes);
-        double right = places.values().stream()
-                .mapToDouble(p -> p.x() + p.width())
-                .max()
-                .orElse(0);
-        double bottom = places.values().stream()
+        List<ParallelStacks.Place> drawnPlaces = drawn.stream()
+                .map(places::get)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        double right =
+                drawnPlaces.stream().mapToDouble(p -> p.x() + p.width()).max().orElse(0);
+        double bottom = drawnPlaces.stream()
                 .mapToDouble(ParallelStacks.Place::bottom)
                 .max()
                 .orElse(0);
@@ -231,10 +255,17 @@ final class DebugParallelStacksWindow {
         }
         // The shown thread's own top frame: in the last box on its way up.
         boolean shownEnds = b.hasShownThread() && b.above().stream().noneMatch(ParallelStacks.Box::hasShownThread);
-        for (int i = b.frames().size() - 1; i >= 0; i--) { // innermost on top, as the stack grows up
-            box.getChildren()
-                    .add(frameRow(
-                            b.frames().get(i), shownEnds && i == b.frames().size() - 1));
+        int frames = b.frames().size();
+        int lowest = Math.max(0, frames - MAX_BOX_FRAMES);
+        for (int i = frames - 1; i >= lowest; i--) { // innermost on top, as the stack grows up
+            box.getChildren().add(frameRow(b.frames().get(i), shownEnds && i == frames - 1));
+        }
+        if (lowest > 0) {
+            Label more = new Label(tr("parallelstacks.moreFrames", lowest));
+            more.getStyleClass().addAll("parallel-stacks-frame-more", "thread-dump-note");
+            more.setMaxWidth(Double.MAX_VALUE);
+            more.setPrefHeight(UiZoom.px(ROW));
+            box.getChildren().add(more);
         }
         box.setLayoutX(p.x());
         box.setLayoutY(p.y());

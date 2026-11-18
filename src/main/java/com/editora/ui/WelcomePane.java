@@ -78,6 +78,9 @@ public final class WelcomePane extends Region implements TabContent {
     /** Digits 1–9 open the first nine entries of the recent lists. */
     static final int NUMBERED_ENTRIES = 9;
 
+    /** A list of the page (projects, remote sites) lists this many rows at most, expanded (PERF-08, Pauta 6.0.1). */
+    static final int MAX_LISTED = 100;
+
     private final CommandRegistry registry;
     private final KeymapManager keymap;
     private final RecentFiles recentFiles;
@@ -413,7 +416,7 @@ public final class WelcomePane extends Region implements TabContent {
     private VBox projectList(List<Project> shown) {
         VBox box = new VBox();
         box.getStyleClass().add("welcome-recent");
-        addCollapsed(box, shown.stream().map(this::projectRow).toList());
+        addCollapsed(box, shown, this::projectRow);
         return box;
     }
 
@@ -457,9 +460,7 @@ public final class WelcomePane extends Region implements TabContent {
             return box;
         }
         List<Project> availableProjects = projects == null ? List.of() : projects.get();
-        addCollapsed(
-                box,
-                shown.stream().map(path -> recentRow(path, availableProjects)).toList());
+        addCollapsed(box, shown, path -> recentRow(path, availableProjects));
         return box;
     }
 
@@ -560,25 +561,47 @@ public final class WelcomePane extends Region implements TabContent {
         return chip;
     }
 
-    /** Shows the first {@link #COLLAPSED_RECENT_LIMIT} rows, and the rest behind a "Show N more" toggle. */
-    private void addCollapsed(VBox box, List<Node> rows) {
-        rows.stream().limit(COLLAPSED_RECENT_LIMIT).forEach(box.getChildren()::add);
-        if (rows.size() <= COLLAPSED_RECENT_LIMIT) {
+    /**
+     * Shows the first {@link #COLLAPSED_RECENT_LIMIT} rows, and the rest behind a "Show N more" toggle, at most {@link
+     * #MAX_LISTED} rows in all, with a line that says how many there are past them (PERF-08, Pauta 6.0.1). A row is
+     * built when it is first shown, except the first {@link #NUMBERED_ENTRIES}: the number keys open the first nine
+     * entries of the page, in page order, so those rows are numbered as they always were.
+     */
+    private <T> void addCollapsed(VBox box, List<T> items, java.util.function.Function<T, Node> rowOf) {
+        List<T> listed = ListCap.head(items, MAX_LISTED);
+        List<Node> built = new ArrayList<>();
+        int eager = Math.min(listed.size(), Math.max(COLLAPSED_RECENT_LIMIT, NUMBERED_ENTRIES));
+        for (int i = 0; i < eager; i++) {
+            built.add(rowOf.apply(listed.get(i)));
+        }
+        built.stream().limit(COLLAPSED_RECENT_LIMIT).forEach(box.getChildren()::add);
+        if (listed.size() <= COLLAPSED_RECENT_LIMIT) {
             return;
         }
-        List<Node> overflow = rows.subList(COLLAPSED_RECENT_LIMIT, rows.size());
+        int hiddenCount = listed.size() - COLLAPSED_RECENT_LIMIT;
+        List<Node> overflow = new ArrayList<>();
         Button disclosure = new Button();
         disclosure.getStyleClass().addAll("flat", "welcome-recent-disclosure");
         disclosure.setContentDisplay(ContentDisplay.RIGHT);
-        setRecentDisclosureState(disclosure, overflow.size(), false);
+        setRecentDisclosureState(disclosure, hiddenCount, false);
         disclosure.setOnAction(event -> {
+            if (overflow.isEmpty()) {
+                for (int i = built.size(); i < listed.size(); i++) {
+                    built.add(rowOf.apply(listed.get(i)));
+                }
+                overflow.addAll(built.subList(COLLAPSED_RECENT_LIMIT, built.size()));
+                Label more = ListCap.label(items.size(), MAX_LISTED, "welcome-recent-dir");
+                if (more != null) {
+                    overflow.add(more);
+                }
+            }
             boolean expanding = !box.getChildren().contains(overflow.getFirst());
             if (expanding) {
                 box.getChildren().addAll(box.getChildren().indexOf(disclosure), overflow);
             } else {
                 box.getChildren().removeAll(overflow);
             }
-            setRecentDisclosureState(disclosure, overflow.size(), expanding);
+            setRecentDisclosureState(disclosure, hiddenCount, expanding);
         });
         box.getChildren().add(disclosure);
     }
@@ -596,26 +619,26 @@ public final class WelcomePane extends Region implements TabContent {
     private VBox remoteList(List<RemoteConnection> sites) {
         VBox box = new VBox();
         box.getStyleClass().add("welcome-recent");
-        List<Node> rows = new ArrayList<>();
-        for (RemoteConnection c : sites) {
-            Hyperlink link = new Hyperlink(c.displayLabel());
-            link.getStyleClass().add("welcome-link");
-            link.setMinWidth(Region.USE_PREF_SIZE);
-            link.setOnAction(e -> onConnectRemote.accept(c));
-            HBox row = new HBox(UiZoom.px(8 * zoom), link);
-            row.getStyleClass().add("welcome-recent-row");
-            String detail = WelcomeText.siteDetail(c);
-            if (!detail.isEmpty()) {
-                Label where = folderLabel(detail);
-                HBox.setHgrow(where, Priority.ALWAYS);
-                row.getChildren().add(where);
-            }
-            row.setAlignment(Pos.BASELINE_LEFT);
-            Tooltip.install(row, ControlNames.tooltip("sftp://" + c.id()));
-            rows.add(row);
-        }
-        addCollapsed(box, rows);
+        addCollapsed(box, sites, this::siteRow);
         return box;
+    }
+
+    private Node siteRow(RemoteConnection c) {
+        Hyperlink link = new Hyperlink(c.displayLabel());
+        link.getStyleClass().add("welcome-link");
+        link.setMinWidth(Region.USE_PREF_SIZE);
+        link.setOnAction(e -> onConnectRemote.accept(c));
+        HBox row = new HBox(UiZoom.px(8 * zoom), link);
+        row.getStyleClass().add("welcome-recent-row");
+        String detail = WelcomeText.siteDetail(c);
+        if (!detail.isEmpty()) {
+            Label where = folderLabel(detail);
+            HBox.setHgrow(where, Priority.ALWAYS);
+            row.getChildren().add(where);
+        }
+        row.setAlignment(Pos.BASELINE_LEFT);
+        Tooltip.install(row, ControlNames.tooltip("sftp://" + c.id()));
+        return row;
     }
 
     // --- Customize ---

@@ -124,6 +124,11 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
     private int sortColumn = -1; // -1 = unsorted; else 0-based data column
     private boolean sortAscending = true;
     private int expectedCols; // for ragged-row highlighting
+    /** The column types and ragged-row count of the rows shown, worked out once when they are set: the
+     *  filter's keystrokes only filter (PERF-08, Pauta 6.0.1). Null until then. */
+    private @org.jspecify.annotations.Nullable List<ColumnType> shownTypes;
+
+    private int shownRagged;
     private final List<Row> allRows = new ArrayList<>(); // unfiltered/unsorted data rows
     private final List<Label> headerLabels = new ArrayList<>();
     private final List<String> baseTitles = new ArrayList<>();
@@ -226,6 +231,7 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
     /** Replaces the grid contents with {@code parsedRows} (already parsed by the coordinator). */
     void setData(List<List<String>> parsedRows) {
         this.rows = parsedRows == null ? List.of() : parsedRows;
+        shownTypes = null;
         rebuild();
     }
 
@@ -293,6 +299,8 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         boolean header = headerToggle.isSelected();
         List<String> headerRow = header ? rows.get(0) : null;
         List<ColumnType> types = CsvColumns.inferTypes(rows, header);
+        shownTypes = types;
+        shownRagged = CsvColumns.raggedRowCount(rows, header);
         expectedCols = CsvColumns.expectedColumns(rows, header);
         List<Integer> contentLengths = CsvColumns.maxContentLengths(rows);
 
@@ -354,9 +362,13 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         table.setItems(FXCollections.observableArrayList(view));
         refreshHeaderArrows();
         int cols = baseTitles.size();
-        int ragged = CsvColumns.raggedRowCount(rows, headerToggle.isSelected());
-        summary.setText(summaryText(
-                allRows.size(), view.size(), cols, CsvColumns.inferTypes(rows, headerToggle.isSelected()), ragged));
+        List<ColumnType> types = shownTypes;
+        if (types == null) {
+            types = CsvColumns.inferTypes(rows, headerToggle.isSelected());
+            shownTypes = types;
+            shownRagged = CsvColumns.raggedRowCount(rows, headerToggle.isSelected());
+        }
+        summary.setText(summaryText(allRows.size(), view.size(), cols, types, shownRagged));
     }
 
     private static boolean rowMatches(Row row, String lowerQuery) {

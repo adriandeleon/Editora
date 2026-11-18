@@ -94,7 +94,12 @@ class LanguageChangeFxTest {
         FxTestSupport.runOnFx(() -> b.setRunEnabled(true));
         assertFalse(FxTestSupport.callOnFx(b::isRunnable), "plain text is not runnable");
 
-        FxTestSupport.runOnFx(() -> b.setLanguageOverride("shell"));
+        // The pick starts the Run scan at once; its text is read off the FX thread (PERF-01), so the scan in flight
+        // is landed here, as a Run command does by waiting for it (EditorBuffer.whenRunScanned).
+        FxTestSupport.runOnFx(() -> {
+            b.setLanguageOverride("shell");
+            b.settleRunScanForTest();
+        });
 
         // The text is scanned off the FX thread (PERF-01): the glyph shows when the scan lands, not at the next edit.
         OnFx.holdsWithin(b::isRunnable, Duration.ofSeconds(10));

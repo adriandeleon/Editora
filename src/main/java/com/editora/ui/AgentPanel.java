@@ -693,17 +693,24 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         modeLabel.setText(tr("agent.modeLabel", name == null || name.isEmpty() ? "—" : name));
     }
 
+    /** The plan shows this many entries at most, and says how many it has past them (PERF-08, Pauta 6.0.1). */
+    static final int MAX_PLAN_ENTRIES = 100;
+
     /** Renders the agent's current plan as a checklist (one line per entry, status glyph prefixed).
      *  Each {@code plan} update is a full replacement, never incremental, so this replaces the whole
      *  checklist wholesale rather than appending. */
     public void setPlan(List<AcpJson.PlanEntry> entries) {
         planBox.getChildren().clear();
-        for (AcpJson.PlanEntry e : entries) {
+        for (AcpJson.PlanEntry e : ListCap.head(entries, MAX_PLAN_ENTRIES)) {
             Label line = new Label(glyphFor(e.status()) + " " + e.content());
             line.getStyleClass()
                     .add("plan-entry-" + (e.status() == null || e.status().isEmpty() ? "pending" : e.status()));
             line.setWrapText(true);
             planBox.getChildren().add(line);
+        }
+        Label more = ListCap.label(entries.size(), MAX_PLAN_ENTRIES, "plan-entry-more");
+        if (more != null) {
+            planBox.getChildren().add(more);
         }
         boolean show = !entries.isEmpty();
         planBox.setManaged(show);

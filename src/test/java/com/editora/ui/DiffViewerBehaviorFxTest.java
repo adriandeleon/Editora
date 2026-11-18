@@ -57,8 +57,16 @@ class DiffViewerBehaviorFxTest {
         }
         DiffViewerPane pane = pane(left.toString(), right.toString());
         CodeArea area = FxTestSupport.field(pane, "leftArea");
-        assertTrue(area.getText().contains("unchanged lines"), area.getText());
-        assertTrue(area.getParagraphs().size() < 30);
+        // A model whose kept layouts were dropped (more diffs made since, in this JVM) is laid out off the FX thread
+        // and shown when that lands (PERF-01): wait for the view, checking after each FX round trip.
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        while (!FxTestSupport.callOnFx(() -> area.getText().contains("unchanged lines"))
+                && System.nanoTime() < deadline) {
+            FxTestSupport.drainFx();
+        }
+        String shown = FxTestSupport.callOnFx(area::getText);
+        assertTrue(shown.contains("unchanged lines"), shown);
+        assertTrue(FxTestSupport.callOnFx(() -> area.getParagraphs().size()) < 30);
     }
 
     @Test

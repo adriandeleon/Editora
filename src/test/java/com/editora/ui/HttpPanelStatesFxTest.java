@@ -20,7 +20,6 @@ import javafx.application.Platform;
 import javafx.event.Event;
 import javafx.scene.Group;
 import javafx.scene.Scene;
-import javafx.scene.control.Button;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 
@@ -174,7 +173,7 @@ class HttpPanelStatesFxTest {
         await(() -> empty.titleForTest().equals(tr("httppanel.empty.noRequest")), "the caret is above the requests");
         assertEquals(
                 tr("httppanel.empty.runRow", "Missing page"),
-                FxTestSupport.callOnFx(() -> empty.rowsForTest().get(1).getAccessibleText()));
+                FxTestSupport.callOnFx(() -> empty.rowAccessibleTextForTest(1)));
 
         FxTestSupport.runOnFx(() -> b.getArea().moveTo(3, 0));
         await(
@@ -191,8 +190,7 @@ class HttpPanelStatesFxTest {
         await(() -> empty.rowsForTest().size() == 3, "a new request is listed");
 
         // A click on a row runs that request (the caret is elsewhere).
-        Button missing = FxTestSupport.callOnFx(() -> empty.rowsForTest().get(1));
-        FxTestSupport.runOnFx(missing::fire);
+        FxTestSupport.runOnFx(() -> Event.fireEvent(rowCell(empty, 1), click()));
         host.awaitStatus(s -> s.startsWith(tr("status.http.failedStatus", "GET " + url("/missing"), "404 Not Found")));
         assertEquals(List.of("missing"), hits);
         assertEquals(HttpClientPanel.BodyView.RESPONSE, FxTestSupport.callOnFx(p::bodyViewForTest));
@@ -201,11 +199,47 @@ class HttpPanelStatesFxTest {
         // Clear brings it back, and Enter on a focused row runs that request.
         FxTestSupport.runOnFx(p::clearForTest);
         assertEquals(HttpClientPanel.BodyView.EMPTY, FxTestSupport.callOnFx(p::bodyViewForTest));
-        Button first = FxTestSupport.callOnFx(() -> empty.rowsForTest().get(0));
-        FxTestSupport.runOnFx(() -> Event.fireEvent(
-                first, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER, false, false, false, false)));
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.control.ListView<HttpEmptyState.Row> list = empty.rowListForTest();
+            list.requestFocus();
+            list.getSelectionModel().select(0);
+            Event.fireEvent(
+                    list, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER, false, false, false, false));
+        });
         host.awaitStatus(s -> s.equals(tr("status.http.finished", "GET " + url("/json"), "200 OK")));
         assertEquals(List.of("missing", "json"), hits);
+    }
+
+    /** The empty state's cell that shows row {@code index}, laid out. */
+    private static javafx.scene.Node rowCell(HttpEmptyState empty, int index) {
+        empty.getScene().getRoot().applyCss();
+        empty.getScene().getRoot().layout();
+        return empty.lookupAll(".http-empty-row").stream()
+                .filter(n -> n instanceof javafx.scene.control.ListCell<?> c && c.getIndex() == index && !c.isEmpty())
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static javafx.scene.input.MouseEvent click() {
+        return new javafx.scene.input.MouseEvent(
+                javafx.scene.input.MouseEvent.MOUSE_CLICKED,
+                0,
+                0,
+                0,
+                0,
+                javafx.scene.input.MouseButton.PRIMARY,
+                1,
+                false,
+                false,
+                false,
+                false,
+                true,
+                false,
+                false,
+                true,
+                false,
+                false,
+                null);
     }
 
     @Test

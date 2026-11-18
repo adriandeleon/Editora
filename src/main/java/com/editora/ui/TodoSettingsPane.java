@@ -36,6 +36,14 @@ import static com.editora.i18n.Messages.tr;
  */
 final class TodoSettingsPane {
 
+    /**
+     * The most patterns the list holds: Add pattern stops there, and a list made longer by hand shows its first ones
+     * and says how many it has (PERF-08, Pauta 6.0.1). Every pattern is a regex run over each visible line.
+     */
+    static final int MAX_PATTERNS = 50;
+
+    private final Button add = FocusCommands.press(new Button(tr("settings.todo.add")), "settings.addTodoPattern");
+
     private final Supplier<Settings> settings;
     private final Runnable apply;
     private final VBox patternsBox = UiZoom.spacing(new VBox(), 4);
@@ -60,7 +68,6 @@ final class TodoSettingsPane {
 
     /** The pattern rows plus "Add pattern". */
     Node patternsEditor() {
-        Button add = FocusCommands.press(new Button(tr("settings.todo.add")), "settings.addTodoPattern");
         // A new row starts empty, with the caret in its name: typing BUG makes it match \bBUG\b. It used to
         // start as "NEW" matching \bTODO\b, which counted every TODO twice until the regex was edited.
         add.setOnAction(e -> {
@@ -83,9 +90,14 @@ final class TodoSettingsPane {
     void rebuildRows() {
         patternsBox.getChildren().clear();
         int size = settings.get().getTodoPatterns().size();
-        for (int i = 0; i < size; i++) {
+        for (int i = 0; i < Math.min(size, MAX_PATTERNS); i++) {
             patternsBox.getChildren().add(row(i));
         }
+        Label more = ListCap.label(size, MAX_PATTERNS, "settings-hint");
+        if (more != null) {
+            patternsBox.getChildren().add(more);
+        }
+        add.setDisable(size >= MAX_PATTERNS);
     }
 
     private Node row(int index) {

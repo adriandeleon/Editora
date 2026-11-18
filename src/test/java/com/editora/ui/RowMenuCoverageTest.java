@@ -56,7 +56,10 @@ class RowMenuCoverageTest {
             // The tree previews answer the right-click on their holder (BufferPreview.showTreePreviewContextMenu).
             Map.entry("StructuredTree.tree", "the preview holder's menu (Export PDF, Print); no row actions"),
             Map.entry("XmlTree.tree", "the preview holder's menu (Export PDF, Print); no row actions"),
-            Map.entry("CrontabPreview.list", "the preview holder's menu (Export PDF, Print); a read-out, no rows"));
+            Map.entry("CrontabPreview.list", "the preview holder's menu (Export PDF, Print); a read-out, no rows"),
+            Map.entry("PreviewList.list", "the preview holder's menu (Export PDF, Print); a read-out, no rows"),
+            Map.entry("HttpEmptyState.rows", "a row's one action is to run its request (click or Enter)"),
+            Map.entry("MavenUpgradeList.list", "the check-box list of an overlay dialog; a row's action is its box"));
 
     private static final Pattern DECLARATION = Pattern.compile(
             "(?:(?:ListView|TreeView|TableView|TreeTableView)<[^=;]*?>\\s+|^\\s+(?:this\\.)?)"

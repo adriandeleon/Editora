@@ -184,11 +184,21 @@ class MarkdownPreviewFxTest {
         open(buffer, MarkdownViewMode.PREVIEW);
         Node[] root = new Node[1];
         List<Node> before = new ArrayList<>();
+        long[] built = new long[1];
         EditorFx.onFx(() -> {
             root[0] = pane(buffer).getContent();
+            MarkdownPreview p = preview(buffer);
+            assertEquals(123, p.blockCount(), "heading, links, code, 60 × (heading + paragraph)");
+            int inScene = column(buffer).getChildren().size();
+            assertTrue(inScene > 0 && inScene < 50, "a screenful of blocks is in the scene, not 123: " + inScene);
+            assertTrue(p.builtTotal() < 50, "and little else is built: " + p.builtTotal());
+            assertTrue(p.scrollToAnchor("marker-30"));
+        });
+        layout(buffer);
+        EditorFx.onFx(() -> {
             before.addAll(column(buffer).getChildren());
-            assertEquals(123, before.size(), "heading, links, code, 60 × (heading + paragraph)");
-            assertEquals(123, preview(buffer).builtTotal());
+            built[0] = preview(buffer).builtTotal();
+            assertTrue(EditorFx.textOf(column(buffer)).contains("Paragraph 30 of prose."));
         });
 
         rerender(buffer, () -> {
@@ -198,26 +208,28 @@ class MarkdownPreviewFxTest {
         EditorFx.onFx(() -> {
             assertSame(root[0], pane(buffer).getContent(), "the document node is not replaced");
             List<Node> after = column(buffer).getChildren();
-            assertEquals(124, preview(buffer).builtTotal(), "one block changed, one block is built");
+            assertEquals(built[0] + 1, preview(buffer).builtTotal(), "one block changed, one block is built");
             int changed = 0;
-            for (int i = 0; i < after.size(); i++) {
-                if (after.get(i) != before.get(i)) {
+            for (Node n : after) {
+                if (!before.contains(n)) {
                     changed++;
-                    assertTrue(EditorFx.textOf(after.get(i)).contains("Edited Paragraph 30"));
+                    assertTrue(EditorFx.textOf(n).contains("Edited Paragraph 30"));
                 }
             }
             assertEquals(1, changed, "every other node is the very node that was on screen");
+            built[0] = preview(buffer).builtTotal();
         });
 
-        // A new block in the middle: nothing around it is rebuilt, and the blocks below know their new lines.
+        // A new block above the screen: nothing is built for it, and the blocks below know their new lines.
         rerender(buffer, () -> {
             int at = buffer.getArea().getText().indexOf("## Marker 10\n");
             buffer.getArea().insertText(at, "Inserted paragraph.\n\n");
         });
         EditorFx.onFx(() -> {
-            assertEquals(125, preview(buffer).builtTotal(), "and one more for the inserted paragraph");
-            assertEquals(124, column(buffer).getChildren().size());
             MarkdownPreview p = preview(buffer);
+            assertEquals(built[0], p.builtTotal(), "a paragraph inserted off screen is not built");
+            assertEquals(124, p.blockCount());
+            assertTrue(EditorFx.textOf(column(buffer)).contains("Edited Paragraph 30"), "the view stayed put");
             int line = lineOf(buffer, "## Marker 40");
             assertTrue(Math.abs(p.lineAtY(p.yOfLine(line)) - line) < 1e-6);
         });
@@ -232,86 +244,124 @@ class MarkdownPreviewFxTest {
     }
 
     @Test
-    void aLongDocumentComesUpASliceAtATimeAndIsCompleteInTheEnd() throws Exception {
+    void aLongDocumentBuildsOnlyTheBlocksOnScreen() throws Exception {
+        // PERF-08 (Pauta 6.0.1): 5,000 blocks, and the scene holds a screenful of them wherever it is scrolled.
         StringBuilder md = new StringBuilder();
-        for (int i = 0; i < 2000; i++) {
+        for (int i = 0; i < 5000; i++) {
             md.append("Paragraph number ").append(i).append(".\n\n");
         }
         EditorBuffer[] ref = new EditorBuffer[1];
         Stage[] stage = new Stage[1];
         EditorFx.onFx(() -> {
             ref[0] = markdown(md.toString());
+            ref[0].getArea().moveTo(0);
             stage[0] = EditorFx.show(ref[0], 700, 400);
         });
         EditorBuffer buffer = ref[0];
-        int[] first = new int[1];
-        boolean[] firstHasTheTop = new boolean[1];
-        // The first slice is on screen as soon as the render lands; the FX thread is free between slices.
-        // Counted in the FX turn that puts it there: the other slices are queued right behind it, and a test
-        // thread that looked afterwards on a busy machine found all 2000 blocks already built.
-        java.util.concurrent.CountDownLatch shown = new java.util.concurrent.CountDownLatch(1);
+        open(buffer, MarkdownViewMode.PREVIEW);
+        int[] most = new int[1];
         EditorFx.onFx(() -> {
-            pane(buffer).contentProperty().addListener(new javafx.beans.InvalidationListener() {
-                @Override
-                public void invalidated(javafx.beans.Observable o) {
-                    o.removeListener(this);
-                    first[0] = column(buffer).getChildren().size();
-                    firstHasTheTop[0] = EditorFx.textOf(column(buffer)).contains("Paragraph number 0.");
-                    shown.countDown();
-                }
+            MarkdownPreview p = preview(buffer);
+            assertEquals(5000, p.blockCount());
+            most[0] = column(buffer).getChildren().size();
+            assertTrue(most[0] > 0 && most[0] <= 60, "a screenful and its margins: " + most[0]);
+            assertTrue(p.builtTotal() <= 100, "a few screens of 5,000 blocks built: " + p.builtTotal());
+            assertTrue(EditorFx.textOf(column(buffer))
+                    .contains("Paragraph number " + (int) Math.round(p.topLine() / 2) + "."));
+            assertTrue(column(buffer).prefHeight(600) > 5000 * 10, "yet the column is as tall as the document");
+        });
+        // To the middle, then the end: each time a screenful, and the right one.
+        for (int target : new int[] {2500, 4999}) {
+            EditorFx.onFx(() -> {
+                MarkdownPreview p = preview(buffer);
+                // As the split view's scroll sync does: there, then exact once the blocks there are measured.
+                double y = p.yOfLine(lineOf(buffer, "Paragraph number " + target + "."));
+                p.releaseAnchor(); // the reader decides now, not the line the render held
+                p.setScrollY(y);
+                p.layoutNow();
+                p.setScrollY(p.yOfLine(lineOf(buffer, "Paragraph number " + target + ".")));
+                p.layoutNow();
             });
-            buffer.setMarkdownViewMode(MarkdownViewMode.PREVIEW);
-        });
-        assertTrue(shown.await(30, java.util.concurrent.TimeUnit.SECONDS), "the preview never showed");
-        assertTrue(
-                first[0] >= MarkdownPreview.SLICE && first[0] < 2000,
-                "not built in one go, and not empty either: " + first[0]);
-        assertTrue(firstHasTheTop[0]);
-        EditorFx.awaitUntil(
-                () -> preview(buffer).showsProperty(),
-                () -> preview(buffer).showsProperty().get() > 0);
-        EditorFx.onFx(() -> {
-            assertEquals(2000, column(buffer).getChildren().size());
-            assertTrue(EditorFx.textOf(column(buffer)).contains("Paragraph number 1999."));
-        });
-        // From then on an edit is one block again.
+            layout(buffer);
+            EditorFx.onFx(() -> {
+                MarkdownPreview p = preview(buffer);
+                int inScene = column(buffer).getChildren().size();
+                assertTrue(inScene <= 60, "still a screenful: " + inScene);
+                List<Node> kids = column(buffer).getChildren();
+                assertTrue(
+                        EditorFx.textOf(column(buffer)).contains("Paragraph number " + target + "."),
+                        "the blocks there are the ones on screen: top line " + p.topLine() + ", scene "
+                                + EditorFx.textOf(kids.get(0)) + " … " + EditorFx.textOf(kids.get(kids.size() - 1))
+                                + ", y " + p.scrollY() + " of " + column(buffer).getHeight());
+                assertTrue(p.builtTotal() <= 60 * 3 + BlockColumn.KEEP, "built so far: " + p.builtTotal());
+            });
+        }
+        // An edit far above the screen builds nothing.
         long built = EditorFx.callFx(() -> preview(buffer).builtTotal());
         rerender(buffer, () -> buffer.getArea().insertText(0, "X"));
         EditorFx.onFx(() -> {
-            assertEquals(built + 1, preview(buffer).builtTotal());
-            assertEquals(2000, column(buffer).getChildren().size());
+            assertEquals(built, preview(buffer).builtTotal());
+            assertTrue(EditorFx.textOf(column(buffer)).contains("Paragraph number 4999."));
             stage[0].close();
             buffer.dispose();
         });
+    }
+
+    /** A block of a test column: a paragraph of text, built when the column asks. */
+    private static final class TestSlot extends BlockColumn.Slot {
+        final String text;
+        int builds;
+
+        TestSlot(String text) {
+            this.text = text;
+        }
+
+        @Override
+        int lines() {
+            return 1;
+        }
+
+        @Override
+        boolean likelyEmpty() {
+            return false;
+        }
+
+        @Override
+        Node build() {
+            builds++;
+            return new TextFlow(new Text(text));
+        }
     }
 
     @Test
     void theColumnMeasuresOnlyTheBlocksThatAskedForLayout() throws Exception {
         EditorFx.onFx(() -> {
             BlockColumn column = new BlockColumn();
+            List<TestSlot> slots = new ArrayList<>();
             for (int i = 0; i < 200; i++) {
-                column.getChildren()
-                        .add(new TextFlow(new Text("Paragraph " + i + " with enough words to wrap around.")));
+                slots.add(new TestSlot("Paragraph " + i + " with enough words to wrap around."));
             }
+            column.setSlots(slots);
             Stage stage = new Stage();
             stage.setScene(new Scene(column, 300, 400));
             stage.show();
             column.applyCss();
             column.layout();
             long afterFirst = column.measured();
-            assertTrue(afterFirst >= 200, "every block is measured once");
+            int inScene = column.getChildren().size();
+            assertTrue(inScene > 0 && inScene < 200, "without a pane, the first screens only: " + inScene);
+            assertTrue(afterFirst >= inScene, "every block in the scene is measured");
+            assertEquals(column.built(), afterFirst, "and each block built is measured once");
+            assertEquals(0, slots.get(199).builds, "a block far below is not built");
 
-            // The way a scroll pane asks: the height at two widths, every pass. Nothing is measured again.
+            // The way a scroll pane asks: the height at two widths, every pass. Nothing is measured for it.
             for (int pass = 0; pass < 5; pass++) {
                 column.prefHeight(300);
                 column.prefHeight(286);
             }
-            long steady = column.measured();
-            assertTrue(steady <= afterFirst + 200, "a second width costs one more measure per block, once");
-            column.prefHeight(300);
-            column.prefHeight(286);
             column.layout();
-            assertEquals(steady, column.measured(), "unchanged blocks at known widths are not measured");
+            long steady = column.measured();
+            assertEquals(afterFirst, steady, "unchanged blocks at known widths are not measured");
 
             // One block changes: it is measured, its neighbours only move.
             double below = column.getChildren().get(11).getLayoutY();
@@ -323,14 +373,18 @@ class MarkdownPreviewFxTest {
             assertTrue(delta >= 1 && delta <= 3, "only the block that asked for layout: " + delta);
             assertTrue(column.getChildren().get(11).getLayoutY() > below, "the blocks below it moved down");
 
-            // A block replaced by another one: one measure, and the height adds up.
-            column.getChildren().set(20, new TextFlow(new Text("New.")));
+            // A block replaced by another one: it alone is built and measured, and the heights add up.
+            List<TestSlot> next = new ArrayList<>(slots);
+            next.set(5, new TestSlot("New."));
             long beforeLayout = column.measured();
-            double height = column.prefHeight(300);
+            column.setSlots(next);
             column.layout();
             assertTrue(column.measured() - beforeLayout <= 3);
-            Node last = column.getChildren().get(199);
-            assertEquals(height, last.getLayoutY() + last.getLayoutBounds().getHeight(), 1.0);
+            assertEquals(1, next.get(5).builds);
+            assertEquals(column.topOf(6), column.topOf(5) + column.heightOf(5) + column.getSpacing(), 0.5);
+            Node last = column.getChildren().get(column.getChildren().size() - 1);
+            int lastIndex = BlockColumn.slotOf(last).index;
+            assertEquals(column.topOf(lastIndex), last.getLayoutY(), 0.5);
             stage.close();
         });
     }
@@ -502,6 +556,7 @@ class MarkdownPreviewFxTest {
         open(buffer, MarkdownViewMode.PREVIEW);
         // In Preview: the editor comes in beside the preview (Split) with its caret on that line.
         EditorFx.onFx(() -> {
+            assertTrue(preview(buffer).scrollToAnchor("marker-30")); // on screen: only those blocks are built
             Text heading = textNode(pane(buffer).getContent(), "Marker 30");
             heading.fireEvent(doubleClick(heading));
         });
@@ -511,6 +566,8 @@ class MarkdownPreviewFxTest {
             assertEquals(lineOf(buffer, "## Marker 30"), buffer.getArea().getCurrentParagraph());
             // A double click on a link is the link's, not a jump.
             int caret = buffer.getArea().getCurrentParagraph();
+            preview(buffer).setScrollY(0); // the link is at the top: only the blocks on screen are built
+            preview(buffer).layoutNow();
             Text link = textNode(pane(buffer).getContent(), "out");
             link.fireEvent(doubleClick(link));
             assertEquals(caret, buffer.getArea().getCurrentParagraph());
@@ -571,11 +628,15 @@ class MarkdownPreviewFxTest {
             assertFalse(buffer.scrollPreviewToAnchor("no-such-heading"));
             assertFalse(markdown("# A\n").scrollPreviewToAnchor("a"), "no preview showing: nothing to scroll");
 
+            p.setScrollY(0); // only the blocks on screen are in the scene (PERF-08): back to the link
+            p.layoutNow();
             Text jump = textNode(pane(buffer).getContent(), "Jump");
             jump.fireEvent(click(MouseButton.PRIMARY, true));
             assertTrue(opened.isEmpty(), "an in-document anchor is not handed to the link opener");
             assertEquals(lineOf(buffer, "## Marker 40"), p.topLine(), 0.5, "the preview scrolled to the heading");
 
+            p.setScrollY(0); // back to the link at the top: only the blocks on screen are in the scene
+            p.layoutNow();
             Text out = textNode(pane(buffer).getContent(), "out");
             out.fireEvent(click(MouseButton.SECONDARY, true));
             out.fireEvent(click(MouseButton.PRIMARY, false));
@@ -592,6 +653,8 @@ class MarkdownPreviewFxTest {
 
         // The menu knows what the pointer is on.
         EditorFx.onFx(() -> {
+            preview(buffer).setScrollY(0);
+            preview(buffer).layoutNow();
             Text out = textNode(pane(buffer).getContent(), "out");
             pane(buffer)
                     .fireEvent(new ContextMenuEvent(
@@ -1120,18 +1183,24 @@ class MarkdownPreviewFxTest {
         open(buffer, MarkdownViewMode.PREVIEW);
         EditorFx.onFx(() -> {
             Node root = pane(buffer).getContent();
-            List<String> refs = collect(root, Text.class).stream()
+            // The whole document's blocks (the scene holds only those on screen: PERF-08).
+            List<Node> blocks = PreviewBlocks.all(preview(buffer));
+            List<String> refs = blocks.stream()
+                    .flatMap(b -> collect(b, Text.class).stream())
                     .filter(t -> t.getStyleClass().contains("md-footnote-ref"))
                     .map(Text::getText)
                     .toList();
             assertEquals(List.of("[1]", "[2]", "[1]"), refs, "numbers by first use, not the author's labels");
-            List<String> markers = collect(root, Label.class).stream()
+            List<String> markers = blocks.stream()
+                    .flatMap(b -> collect(b, Label.class).stream())
                     .filter(l -> l.getStyleClass().contains("md-footnote-def-marker"))
                     .map(Label::getText)
                     .toList();
             assertEquals(List.of("[2]", "[1]", "[unused]"), markers, "a definition carries its reference's number");
 
             MarkdownPreview p = preview(buffer);
+            p.setScrollY(0);
+            p.layoutNow();
             Text first = textNode(root, "[1]");
             first.fireEvent(click(MouseButton.PRIMARY, true));
             assertTrue(opened.isEmpty(), "a footnote link stays in the preview");
@@ -1157,12 +1226,15 @@ class MarkdownPreviewFxTest {
                 () -> buffer.getArea()
                         .insertText(buffer.getArea().getText().indexOf("First claim"), "Before[^alpha]. "));
         EditorFx.onFx(() -> {
-            List<String> refs = collect(pane(buffer).getContent(), Text.class).stream()
+            List<Node> blocks = PreviewBlocks.all(preview(buffer));
+            List<String> refs = blocks.stream()
+                    .flatMap(b -> collect(b, Text.class).stream())
                     .filter(t -> t.getStyleClass().contains("md-footnote-ref"))
                     .map(Text::getText)
                     .toList();
             assertEquals(List.of("[1]", "[2]", "[1]", "[2]"), refs);
-            List<String> markers = collect(pane(buffer).getContent(), Label.class).stream()
+            List<String> markers = blocks.stream()
+                    .flatMap(b -> collect(b, Label.class).stream())
                     .filter(l -> l.getStyleClass().contains("md-footnote-def-marker"))
                     .map(Label::getText)
                     .toList();

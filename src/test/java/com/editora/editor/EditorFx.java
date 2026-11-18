@@ -353,6 +353,37 @@ public final class EditorFx {
         return call(target, method, new Class<?>[0]);
     }
 
+    /**
+     * The text a preview shows, a virtualized one's (a {@code ListView}'s) rows too: a list has nodes for the rows on
+     * screen only, and a preview in no window has none, so its rows are read through the list's own cell factory.
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static String shownText(Node node) {
+        StringBuilder text = new StringBuilder(textOf(node));
+        java.util.List<Node> lists = new java.util.ArrayList<>();
+        if (node instanceof javafx.scene.control.ListView<?>) {
+            lists.add(node);
+        }
+        lists.addAll(node.lookupAll(".list-view"));
+        for (Node found : new java.util.LinkedHashSet<>(lists)) {
+            javafx.scene.control.ListView list = (javafx.scene.control.ListView) found;
+            for (Object item : list.getItems()) {
+                javafx.scene.control.ListCell cell =
+                        (javafx.scene.control.ListCell) list.getCellFactory().call(list);
+                try {
+                    java.lang.reflect.Method update =
+                            cell.getClass().getDeclaredMethod("updateItem", Object.class, boolean.class);
+                    update.setAccessible(true);
+                    update.invoke(cell, item, false);
+                } catch (ReflectiveOperationException e) {
+                    throw new AssertionError(e);
+                }
+                text.append(textOf(cell.getGraphic()));
+            }
+        }
+        return text.toString();
+    }
+
     /** Every label/text string under {@code node}, joined with newlines — what the user can read there. */
     public static String textOf(Node node) {
         StringBuilder sb = new StringBuilder();

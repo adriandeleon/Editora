@@ -265,6 +265,10 @@ public final class PreviewScrollSync {
                 try {
                     now.releaseAnchor(); // the editor decides where the preview is, not the last render
                     now.setScrollY(now.yOfLine(target));
+                    // The blocks there are built and measured only now (the column is virtualized): the line
+                    // is exact once they are.
+                    now.layoutNow();
+                    now.setScrollY(now.yOfLine(target));
                 } finally {
                     syncing = false;
                 }

@@ -7,12 +7,14 @@ import java.util.function.IntConsumer;
 import javafx.css.PseudoClass;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
-import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
+import javafx.scene.control.ListView;
 import javafx.scene.control.OverrunStyle;
-import javafx.scene.control.ScrollPane;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -30,6 +32,9 @@ import static com.editora.i18n.Messages.tr;
  * caret, by its title, name or method and URL — the Run chord from the live keymap, that the gutter's ▶ runs a
  * request, and the file's requests as rows. A click on a row, or Enter on it, runs that request; Up and Down move
  * between the rows. Filled by {@link HttpEmptyStateFeed} while it is on show.
+ *
+ * <p>The rows are a virtualized list (PERF-08, Pauta 6.0.1): an API collection of hundreds of requests builds the
+ * rows on screen, and a request added near the top of the file rebuilds no row.
  */
 final class HttpEmptyState extends VBox {
 
@@ -46,8 +51,7 @@ final class HttpEmptyState extends VBox {
     private final Label chord = new Label();
     private final Label gutterHint = new Label(tr("httppanel.empty.gutter"));
     private final Label listTitle = new Label(tr("httppanel.empty.requests"));
-    private final VBox rows = UiZoom.spacing(new VBox(), 1);
-    private final ScrollPane rowsScroll = new ScrollPane(rows);
+    private final ListView<Row> rows = new ListView<>();
     private List<Row> shown = List.of();
     private int caretRow = -1;
     private boolean blocked;
@@ -75,16 +79,26 @@ final class HttpEmptyState extends VBox {
         gutterHint.getStyleClass().add("http-empty-hint");
         gutterHint.setWrapText(true);
         listTitle.getStyleClass().add("http-empty-heading");
-        rows.getStyleClass().add("http-empty-rows");
-        rowsScroll.setFitToWidth(true);
-        rowsScroll.getStyleClass().add("http-empty-scroll");
-        rowsScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-        VBox.setVgrow(rowsScroll, Priority.ALWAYS);
+        rows.getStyleClass().addAll("http-empty-rows", "http-empty-scroll");
+        rows.setAccessibleText(tr("httppanel.empty.requests"));
+        rows.setCellFactory(view -> new RowCell());
+        UiZoom.follow(rows, () -> rows.setFixedCellSize(UiZoom.px(ROW_HEIGHT)));
+        // Enter runs the row the keyboard is on; Up and Down are the list's own.
+        rows.addEventHandler(KeyEvent.KEY_PRESSED, e -> {
+            if (e.getCode() == KeyCode.ENTER && !e.isShortcutDown() && !e.isAltDown()) {
+                run(rows.getSelectionModel().getSelectedItem());
+                e.consume();
+            }
+        });
+        VBox.setVgrow(rows, Priority.ALWAYS);
         UiZoom.follow(listTitle, () -> VBox.setMargin(listTitle, UiZoom.insets(8, 0, 0, 0)));
-        getChildren().addAll(title, chordHint, gutterHint, listTitle, rowsScroll);
+        getChildren().addAll(title, chordHint, gutterHint, listTitle, rows);
         setChord(null);
         setRequests(List.of(), -1);
     }
+
+    /** A row's height at 100 % zoom: the method chip and the name on one line, padded as the buttons were. */
+    static final double ROW_HEIGHT = 28;
 
     private static Label hint(String text) {
         Label l = new Label(text);
@@ -103,7 +117,14 @@ final class HttpEmptyState extends VBox {
     /** A remote file's requests do not run from here: the rows are shown but cannot be run. */
     void setRunBlocked(boolean blocked) {
         this.blocked = blocked;
-        rows.getChildren().forEach(n -> n.setDisable(blocked));
+        rows.refresh();
+    }
+
+    /** Runs the request {@code r} stands for, unless the file's requests do not run from here. */
+    private void run(@Nullable Row r) {
+        if (r != null && !blocked) {
+            onRun.accept(r.line());
+        }
     }
 
     /**
@@ -112,23 +133,23 @@ final class HttpEmptyState extends VBox {
      */
     void setRequests(List<Row> requests, int caret) {
         List<Row> now = requests == null ? List.of() : List.copyOf(requests);
+        int was = caretRow;
+        caretRow = caret >= 0 && caret < now.size() ? caret : -1;
         if (!now.equals(shown)) {
             shown = now;
-            List<Node> built = new ArrayList<>(now.size());
-            for (Row r : now) {
-                built.add(row(r));
+            int selected = rows.getSelectionModel().getSelectedIndex();
+            rows.getItems().setAll(now);
+            if (selected >= 0 && selected < now.size()) {
+                rows.getSelectionModel().select(selected);
             }
-            rows.getChildren().setAll(built);
-        }
-        caretRow = caret >= 0 && caret < now.size() ? caret : -1;
-        for (int i = 0; i < rows.getChildren().size(); i++) {
-            rows.getChildren().get(i).pseudoClassStateChanged(AT_CARET, i == caretRow);
+        } else if (was != caretRow) {
+            rows.refresh(); // the mark moves: only the rows on screen are drawn again
         }
         showTitle(caretRow < 0 ? null : now.get(caretRow).label());
         boolean any = !now.isEmpty();
         listTitle.setText(any ? tr("httppanel.empty.requests") : tr("httppanel.empty.none"));
-        rowsScroll.setVisible(any);
-        rowsScroll.setManaged(any);
+        rows.setVisible(any);
+        rows.setManaged(any);
     }
 
     private void showTitle(@Nullable String request) {
@@ -155,47 +176,61 @@ final class HttpEmptyState extends VBox {
         return t;
     }
 
-    private Button row(Row r) {
-        Label method = new Label(r.method() == null ? "" : r.method());
-        method.getStyleClass().add("http-empty-method");
-        method.setMinWidth(Region.USE_PREF_SIZE);
-        Label name = new Label(r.label());
-        name.getStyleClass().add("http-empty-name-cell");
-        name.setMinWidth(0);
-        name.setTextOverrun(OverrunStyle.ELLIPSIS);
-        HBox box = UiZoom.spacing(new HBox(method, name), 10);
-        box.setAlignment(Pos.CENTER_LEFT);
-        String url = r.url() == null ? "" : r.url();
-        if (!url.isEmpty() && !r.label().endsWith(url)) {
-            Label where = new Label(url);
+    /** A request's row: its method, its name and, when the name does not end with it, its URL. */
+    private final class RowCell extends ListCell<Row> {
+        private final Label method = new Label();
+        private final Label name = new Label();
+        private final Label where = new Label();
+        private final HBox box = UiZoom.spacing(new HBox(method, name, where), 10);
+
+        RowCell() {
+            getStyleClass().add("http-empty-row");
+            method.getStyleClass().add("http-empty-method");
+            method.setMinWidth(Region.USE_PREF_SIZE);
+            name.getStyleClass().add("http-empty-name-cell");
+            name.setMinWidth(0);
+            name.setTextOverrun(OverrunStyle.ELLIPSIS);
             where.getStyleClass().add("http-empty-url");
             where.setMinWidth(0);
             where.setTextOverrun(OverrunStyle.CENTER_ELLIPSIS);
+            where.managedProperty().bind(where.visibleProperty());
             HBox.setHgrow(where, Priority.ALWAYS);
-            box.getChildren().add(where);
-        }
-        Button b = new Button();
-        b.setGraphic(box);
-        b.getStyleClass().addAll("flat", "http-empty-row");
-        b.setMaxWidth(Double.MAX_VALUE);
-        b.setAlignment(Pos.CENTER_LEFT);
-        b.setMnemonicParsing(false);
-        b.setAccessibleText(tr("httppanel.empty.runRow", r.label()));
-        b.setDisable(blocked);
-        b.setOnAction(e -> onRun.accept(r.line()));
-        b.addEventHandler(KeyEvent.KEY_PRESSED, e -> {
-            if (e.getCode() == KeyCode.ENTER && !e.isShortcutDown() && !e.isAltDown()) {
-                b.fire();
-                e.consume();
-            } else if (e.getCode() == KeyCode.DOWN || e.getCode() == KeyCode.UP) {
-                int i = rows.getChildren().indexOf(b) + (e.getCode() == KeyCode.DOWN ? 1 : -1);
-                if (i >= 0 && i < rows.getChildren().size()) {
-                    rows.getChildren().get(i).requestFocus();
+            box.setAlignment(Pos.CENTER_LEFT);
+            box.setMinWidth(0);
+            setPrefWidth(0); // never wider than the list: a long URL is cut short, the list does not scroll sideways
+            addEventHandler(MouseEvent.MOUSE_CLICKED, e -> {
+                if (e.getButton() == MouseButton.PRIMARY && !isEmpty()) {
+                    run(getItem());
                 }
-                e.consume();
+            });
+        }
+
+        @Override
+        protected void updateItem(Row r, boolean empty) {
+            super.updateItem(r, empty);
+            setText(null);
+            if (empty || r == null) {
+                setGraphic(null);
+                setAccessibleText(null);
+                pseudoClassStateChanged(AT_CARET, false);
+                setDisable(false);
+                return;
             }
-        });
-        return b;
+            method.setText(r.method() == null ? "" : r.method());
+            name.setText(r.label());
+            String url = r.url() == null ? "" : r.url();
+            where.setText(url);
+            where.setVisible(!url.isEmpty() && !r.label().endsWith(url));
+            setAccessibleText(runRowText(r));
+            pseudoClassStateChanged(AT_CARET, getIndex() == caretRow);
+            setDisable(blocked);
+            setGraphic(box);
+        }
+    }
+
+    /** What a screen reader says for a row: "Run {name}". */
+    private static String runRowText(Row r) {
+        return tr("httppanel.empty.runRow", r.label());
     }
 
     // --- test accessors ---
@@ -209,9 +244,19 @@ final class HttpEmptyState extends VBox {
         return sb.toString();
     }
 
-    /** The rows' buttons, in file order. Test accessor. */
-    List<Button> rowsForTest() {
-        return rows.getChildren().stream().map(Button.class::cast).toList();
+    /** The rows, in file order. Test accessor. */
+    List<Row> rowsForTest() {
+        return List.copyOf(rows.getItems());
+    }
+
+    /** What a screen reader says for the row at {@code index}. Test accessor. */
+    String rowAccessibleTextForTest(int index) {
+        return runRowText(rows.getItems().get(index));
+    }
+
+    /** The list of rows. Test accessor. */
+    ListView<Row> rowListForTest() {
+        return rows;
     }
 
     /** The chord shown, or null when the line is hidden. Test accessor. */

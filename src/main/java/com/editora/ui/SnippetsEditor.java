@@ -346,15 +346,15 @@ final class SnippetsEditor {
         });
         // Live: the other fields apply once typing pauses. A name is applied on Enter or leaving it, never
         // half typed — each pause would rename the snippet on disk.
-        PauseCommit.watch(
+        Runnable typed = PauseCommit.watch(
                 () -> {
                     if (!name.isFocused()) {
                         commit.run();
                     }
                 },
                 prefix.textProperty(),
-                description.textProperty(),
-                body.textProperty());
+                description.textProperty());
+        body.plainTextChanges().subscribe(c -> typed.run()); // not textProperty(): it builds the body per key
 
         // Load the form when a different row is selected.
         list.getSelectionModel().selectedItemProperty().addListener((o, was, s) -> {

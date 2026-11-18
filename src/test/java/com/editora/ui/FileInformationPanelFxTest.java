@@ -76,6 +76,17 @@ class FileInformationPanelFxTest {
     }
 
     @Test
+    void theSelectedLinesAreCountedFromTheParagraphsAsStringLinesCountsThem() {
+        // PERF-08: from the paragraphs the ends are in, not a copy of the selection. Each case is what
+        // String.lines() says of the selected text.
+        assertEquals("abc".lines().count(), FileInformationPanel.selectedLines(0, 0, 3));
+        assertEquals("abc\n".lines().count(), FileInformationPanel.selectedLines(0, 1, 0));
+        assertEquals("a\nb".lines().count(), FileInformationPanel.selectedLines(0, 1, 1));
+        assertEquals("\n\n".lines().count(), FileInformationPanel.selectedLines(0, 2, 0));
+        assertEquals(1, FileInformationPanel.selectedLines(4, 5, 0), "one line break alone is one line");
+    }
+
+    @Test
     void withNoBufferEveryValueIsADash() throws Exception {
         FxTestSupport.runOnFx(() -> {
             Rig r = new Rig();

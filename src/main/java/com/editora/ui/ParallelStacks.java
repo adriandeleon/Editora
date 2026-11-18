@@ -209,6 +209,14 @@ final class ParallelStacks {
      * the roots side by side. The tallest pile ends at {@code margin} from the top. Pure.
      */
     Map<Box, Place> layout(double width, double header, double row, double gap, double margin) {
+        return layout(width, header, row, gap, margin, Integer.MAX_VALUE);
+    }
+
+    /**
+     * {@link #layout(double, double, double, double, double)} for boxes that show {@code maxFrames} frames at most, and
+     * a row that says how many more there are past them.
+     */
+    Map<Box, Place> layout(double width, double header, double row, double gap, double margin, int maxFrames) {
         Map<Box, Double> span = new IdentityHashMap<>();
         for (Box b : roots) {
             span(b, width, gap, span);
@@ -216,7 +224,7 @@ final class ParallelStacks {
         Map<Box, Place> places = new IdentityHashMap<>();
         double x = margin;
         for (Box b : roots) {
-            place(b, x, 0, width, header, row, gap, span, places);
+            place(b, x, 0, width, header, row, gap, maxFrames, span, places);
             x += spanOf(span, b) + gap;
         }
         double top = places.values().stream().mapToDouble(Place::y).min().orElse(0);
@@ -246,9 +254,10 @@ final class ParallelStacks {
             double header,
             double row,
             double gap,
+            int maxFrames,
             Map<Box, Double> span,
             Map<Box, Place> places) {
-        double height = header + row * b.frames().size();
+        double height = header + row * shownRows(b, maxFrames);
         double s = spanOf(span, b);
         Place p = new Place(left + (s - width) / 2, bottom - height, width, height);
         places.put(b, p);
@@ -259,9 +268,15 @@ final class ParallelStacks {
         above += gap * Math.max(0, b.above().size() - 1);
         double x = left + (s - above) / 2;
         for (Box a : b.above()) {
-            place(a, x, p.y() - gap, width, header, row, gap, span, places);
+            place(a, x, p.y() - gap, width, header, row, gap, maxFrames, span, places);
             x += spanOf(span, a) + gap;
         }
+    }
+
+    /** The rows a box shows: its frames, or {@code maxFrames} of them and a row that says how many more. */
+    static int shownRows(Box b, int maxFrames) {
+        int frames = b.frames().size();
+        return frames <= maxFrames ? frames : maxFrames + 1;
     }
 
     private static double spanOf(Map<Box, Double> span, Box b) {

@@ -519,16 +519,16 @@ class PreviewSelectionFxTest {
             }
             open(md.toString());
             int want = sizes[k];
+            // The column holds only the blocks on screen (PERF-08): count the document's blocks, not its children.
             Await.until(
-                    EditorFx.checkOnFx(() ->
-                            pane.preview().column().getChildrenUnmodifiable().size() >= want),
+                    EditorFx.checkOnFx(() -> pane.preview().blockCount() >= want),
                     "the document never finished building");
             EditorFx.onFx(() -> assertTrue(sel().selectAll()));
             settle();
             int at = k;
             EditorFx.onFx(() -> {
                 shapes[at] = sel().paintedShapes();
-                blocks[at] = pane.preview().column().getChildrenUnmodifiable().size();
+                blocks[at] = pane.preview().blockCount();
                 assertEquals(blocks[at], sel().parts().size(), "all of it is selected");
                 // Scrolled to the middle, the highlight is drawn there, and is no larger.
                 pane.preview().setScrollY(pane.preview().yOfLine(want));

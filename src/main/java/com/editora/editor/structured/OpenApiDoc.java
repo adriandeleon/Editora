@@ -1,11 +1,13 @@
 package com.editora.editor.structured;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
+import java.util.function.Supplier;
 
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
-import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 
@@ -18,62 +20,69 @@ import org.jspecify.annotations.Nullable;
  * header, servers, endpoints grouped by path (colored method badges + params + responses), and schemas.
  * Self-scrolling (wrapped in a {@code ScrollPane}) so it hosts directly as the Split/Preview side, like
  * {@link StructuredTree}. Kept in {@code editor} (no {@code ui} dependency).
+ *
+ * <p>The live docs are a virtualized list of those rows ({@link PreviewList}, PERF-08, Pauta 6.0.1): a spec of
+ * hundreds of operations and schemas builds the rows on screen. {@link #content} builds them all, for a print.
  */
 public final class OpenApiDoc {
 
     private OpenApiDoc() {}
 
     public static Node build(@Nullable OpenApiModel m) {
-        ScrollPane sp = new ScrollPane(content(m));
-        sp.setFitToWidth(true);
-        sp.getStyleClass().add("openapi-scroll");
-        return sp;
+        return PreviewList.of(rows(m), "openapi-doc-list");
     }
 
     /**
-     * The docs themselves, without the scroll pane {@link #build} wraps them in — what Print and Export to
-     * PDF snapshot (at a width they set), since a scroll pane would give them only its viewport.
+     * The docs themselves, without the list {@link #build} shows them in — what Print and Export to PDF snapshot
+     * (at a width they set), since a list would give them only the rows on screen.
      */
     public static VBox content(@Nullable OpenApiModel m) {
-        VBox root = new VBox();
-        root.getStyleClass().add("openapi-doc");
+        return PreviewList.column(rows(m), -1, "openapi-doc");
+    }
+
+    /** The title and description, then the servers, the endpoints and the schemas, each under its heading. */
+    private static List<Supplier<Node>> rows(@Nullable OpenApiModel m) {
+        List<Supplier<Node>> rows = new ArrayList<>();
         if (m == null) {
-            return root;
+            return rows;
         }
 
         String title = m.title() == null || m.title().isBlank() ? Messages.tr("openapi.untitled") : m.title();
-        Label h = new Label(m.version() == null || m.version().isBlank() ? title : title + "  " + m.version());
-        h.getStyleClass().add("openapi-title");
-        h.setWrapText(true);
-        root.getChildren().add(h);
-        if (m.description() != null && !m.description().isBlank()) {
-            root.getChildren().add(wrapped(m.description(), "openapi-desc"));
+        String heading = m.version() == null || m.version().isBlank() ? title : title + "  " + m.version();
+        rows.add(() -> {
+            Label h = new Label(heading);
+            h.getStyleClass().add("openapi-title");
+            h.setWrapText(true);
+            return h;
+        });
+        String description = m.description();
+        if (description != null && !description.isBlank()) {
+            rows.add(() -> wrapped(description, "openapi-desc"));
         }
 
         if (!m.servers().isEmpty()) {
-            root.getChildren().add(section(Messages.tr("openapi.servers")));
+            rows.add(() -> section(Messages.tr("openapi.servers")));
             for (OpenApiModel.Server s : m.servers()) {
-                root.getChildren().add(wrapped(s.url(), "openapi-server"));
+                rows.add(() -> wrapped(s.url(), "openapi-server"));
             }
         }
 
         if (!m.paths().isEmpty()) {
-            root.getChildren().add(section(Messages.tr("openapi.endpoints")));
+            rows.add(() -> section(Messages.tr("openapi.endpoints")));
             for (OpenApiModel.PathItem p : m.paths()) {
                 for (OpenApiModel.Operation op : p.operations()) {
-                    root.getChildren().add(operationNode(p.path(), op));
+                    rows.add(() -> operationNode(p.path(), op));
                 }
             }
         }
 
         if (!m.schemas().isEmpty()) {
-            root.getChildren().add(section(Messages.tr("openapi.schemas")));
+            rows.add(() -> section(Messages.tr("openapi.schemas")));
             for (OpenApiModel.Schema s : m.schemas()) {
-                root.getChildren().add(schemaNode(s));
+                rows.add(() -> schemaNode(s));
             }
         }
-
-        return root;
+        return rows;
     }
 
     private static Node operationNode(String path, OpenApiModel.Operation op) {

@@ -69,6 +69,9 @@ final class PluginCoordinator {
     /** A {@code start()} slower than this on the UI thread is named in the Message Log and on its Settings row. */
     static final long SLOW_START_MS = 250;
 
+    /** A plugin adds this many status-bar segments at most; past them the status line says so (PERF-08). */
+    static final int MAX_STATUS_SEGMENTS = 5;
+
     /** A plugin-contributed editor menu item: a label + an action over the {@link ActiveEditor}. */
     private record EditorMenuContribution(
             String pluginName, String label, Consumer<ActiveEditor> action, String commandId) {}
@@ -1231,6 +1234,11 @@ final class PluginCoordinator {
                         ? desc.displayName()
                         : desc.displayName() + ": "
                                 + registry.get(cmd).map(Command::title).orElse(cmd);
+                if (contributions.segments.size() >= MAX_STATUS_SEGMENTS) {
+                    // A plugin adds a few segments; one adding them in a loop would fill the bar (PERF-08).
+                    host.setStatus(tr("status.plugins.segmentCap", desc.displayName(), MAX_STATUS_SEGMENTS));
+                    return;
+                }
                 contributions.segments.add(statusBar.addPluginSegment(label, cmd, hint));
             });
         }

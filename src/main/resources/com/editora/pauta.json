@@ -49,14 +49,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1557"
     },
     {
-      "rule": "PERF-08",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/performance/#perf-08",
-      "kind": "pending",
-      "reason": "The Markdown preview keeps the nodes of every block of the document, and a few other views build a row for each item of a list or rebuild a whole document on each key.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1559"
-    },
-    {
       "rule": "ACC-07",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-07",

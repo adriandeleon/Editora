@@ -51,6 +51,9 @@ import static com.editora.i18n.Messages.tr;
  */
 final class RecipientPicker {
 
+    /** The picker shows a chip for this many ticked keys at most, and says how many are past them (PERF-08). */
+    static final int MAX_CHIPS = 30;
+
     private RecipientPicker() {}
 
     /**
@@ -353,7 +356,7 @@ final class RecipientPicker {
             keysHint.setManaged(keysHint.isVisible());
             chips.getChildren().clear();
             List<GpgKey> chosen = chosen(req.keys(), ticked);
-            for (GpgKey k : chosen) {
+            for (GpgKey k : ListCap.head(chosen, MAX_CHIPS)) {
                 Label chipName = new Label(k.secret() ? tr("encryption.you", k.name()) : k.name());
                 Button x = new Button("×");
                 Icons.name(x, tr("settings.plugins.removeNamed", k.name()));
@@ -367,6 +370,10 @@ final class RecipientPicker {
                 chip.setAlignment(Pos.CENTER_LEFT);
                 chip.getStyleClass().add("encryption-chip");
                 chips.getChildren().add(chip);
+            }
+            Label moreChips = ListCap.label(chosen.size(), MAX_CHIPS, "encryption-chip-more");
+            if (moreChips != null) {
+                chips.getChildren().add(moreChips);
             }
             chips.setVisible(!chosen.isEmpty());
             chips.setManaged(!chosen.isEmpty());

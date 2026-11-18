@@ -395,7 +395,7 @@ final class SettingsSnippetPages {
                 commit.run();
             }
         });
-        PauseCommit.watch( // live, but never a half-typed id (it is the file name)
+        Runnable typed = PauseCommit.watch( // live, but never a half-typed id (it is the file name)
                 () -> {
                     if (!id.isFocused()) {
                         commit.run();
@@ -404,8 +404,8 @@ final class SettingsSnippetPages {
                 name.textProperty(),
                 description.textProperty(),
                 language.textProperty(),
-                fileName.textProperty(),
-                body.textProperty());
+                fileName.textProperty());
+        body.plainTextChanges().subscribe(c -> typed.run()); // not textProperty(): it builds the body per key
 
         list.getSelectionModel().selectedIndexProperty().addListener((o, was, now) -> {
             int i = now == null ? -1 : now.intValue();
@@ -724,7 +724,6 @@ final class SettingsSnippetPages {
             }
             int caret = area.getCaretPosition();
             int len = area.getLength();
-            String text = area.getText();
             if (ctrl) {
                 switch (e.getCode()) {
                     case A -> consume(e, () -> area.moveTo(area.getCurrentParagraph(), 0));
@@ -758,8 +757,9 @@ final class SettingsSnippetPages {
                 }
             } else {
                 switch (e.getCode()) {
-                    case F -> consume(e, () -> area.moveTo(nextWordBoundary(text, caret)));
-                    case B -> consume(e, () -> area.moveTo(prevWordBoundary(text, caret)));
+                    // The text is read for a word move only, not on every Ctrl key (PERF-08, Pauta 6.0.1).
+                    case F -> consume(e, () -> area.moveTo(nextWordBoundary(area.getText(), caret)));
+                    case B -> consume(e, () -> area.moveTo(prevWordBoundary(area.getText(), caret)));
                     default -> {}
                 }
             }

@@ -1641,18 +1641,35 @@ final class EditingCoordinator {
         /** A search is out: the session's commands wait for it. */
         private boolean searching;
 
+        /** What a search of a piece of the document found: a match, none, or that it read past the piece. */
+        private record Found(java.util.@Nullable Optional<com.editora.editor.search.QueryReplace.Match> match) {}
+
         /**
-         * Finds the next match from {@link #from} off the FX thread, then highlights it and prompts — or, when none
-         * remain, ends the session ({@code first}: saying there was none at all). A match found in text that changed
-         * meanwhile is looked for again.
+         * Finds the next match from {@link #from}, then highlights it and prompts — or, when none remain, ends the
+         * session ({@code first}: saying there was none at all). Only a piece of the document from the offset is
+         * copied on the FX thread and searched off it (PERF-01, PERF-08, Pauta 6.0.1), a piece twice as long each
+         * time the search reads past it; a match found in text that changed meanwhile is looked for again.
          */
         private void showNext(boolean first) {
-            String text = area.getText();
-            long version = buffer.docVersion();
+            showNext(first, com.editora.editor.search.QueryReplace.FIRST_PIECE);
+        }
+
+        private void showNext(boolean first, int size) {
             int at = from;
+            var piece = com.editora.editor.search.QueryReplace.piece(
+                    com.editora.editor.search.QueryReplace.Source.of(area::getLength, area::getText), at, size);
+            long version = buffer.docVersion();
             searching = true;
             com.editora.perf.OffFx.then(
-                    QUERY_REPLACE_SITE, () -> com.editora.editor.search.QueryReplace.next(text, at, spec), answer -> {
+                    QUERY_REPLACE_SITE,
+                    () -> {
+                        try {
+                            return new Found(com.editora.editor.search.QueryReplace.nextIn(piece, at, spec));
+                        } catch (com.editora.editor.search.QueryReplace.NeedMore more) {
+                            return new Found(null);
+                        }
+                    },
+                    answer -> {
                         searching = false;
                         if (!active) {
                             return;
@@ -1666,7 +1683,12 @@ final class EditingCoordinator {
                             showNext(first); // changed under the search (a reload): look again
                             return;
                         }
-                        var m = answer.value();
+                        Found found = answer.value();
+                        var m = found == null ? null : found.match();
+                        if (found != null && m == null) {
+                            showNext(first, size * 2); // the answer lies past the piece
+                            return;
+                        }
                         if (m == null || m.isEmpty()) {
                             current = null;
                             finish();

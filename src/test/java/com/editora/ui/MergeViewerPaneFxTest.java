@@ -68,6 +68,39 @@ class MergeViewerPaneFxTest {
         }
     }
 
+    /** An edit typed back to what was generated is no edit: the choices work again. */
+    @Test
+    void anEditUndoneByHandLetsTheChoicesWorkAgain() throws Exception {
+        var merge = ThreeWayMerge.merge("before\nold\nafter\n", "before\nours\nafter\n", "before\ntheirs\nafter\n");
+        MergeViewerPane pane = FxTestSupport.callOnFx(
+                () -> new MergeViewerPane("merge", merge.file(), "Monospaced", 13, "\n", true, text -> {}));
+        Stage stage = FxTestSupport.callOnFx(() -> {
+            Stage window = new Stage();
+            window.setScene(new Scene(new StackPane(pane.node()), 900, 650));
+            window.show();
+            window.getScene().getRoot().applyCss();
+            window.getScene().getRoot().layout();
+            return window;
+        });
+        try {
+            TextArea result = FxTestSupport.field(pane, "resultArea");
+            FxTestSupport.runOnFx(button((Parent) pane.node(), "Accept Ours")::fire);
+            assertEquals("before\nours\nafter\n", result.getText());
+            FxTestSupport.runOnFx(() -> {
+                result.insertText(0, "x");
+                result.deleteText(0, 1); // typed and deleted again
+            });
+            assertTrue(pane.hasUnsavedChanges());
+            FxTestSupport.runOnFx(button((Parent) pane.node(), "Accept Theirs")::fire);
+            assertEquals("before\ntheirs\nafter\n", result.getText(), "the text is what was generated");
+            FxTestSupport.runOnFx(() -> result.insertText(0, "x"));
+            FxTestSupport.runOnFx(button((Parent) pane.node(), "Accept Ours")::fire);
+            assertEquals("xbefore\ntheirs\nafter\n", result.getText(), "a real edit still blocks the choice");
+        } finally {
+            FxTestSupport.runOnFx(stage::close);
+        }
+    }
+
     /** A TextArea drops control characters; the resolution must not lose them from untouched lines. */
     @Test
     void applyKeepsControlCharactersOutsideTheEditedLines() throws Exception {

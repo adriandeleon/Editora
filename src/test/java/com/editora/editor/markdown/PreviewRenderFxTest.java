@@ -231,7 +231,7 @@ class PreviewRenderFxTest {
         EditorFx.onFx(() -> {
             assertTrue(buffer.isStructuredOpenApi());
             assertTrue(buffer.showsApiDocs());
-            docs[0] = EditorFx.textOf(treeHolder(buffer));
+            docs[0] = shownText(treeHolder(buffer));
             assertTrue(docs[0].contains("Orders API"), docs[0]);
             assertTrue(docs[0].contains("List the orders"), docs[0]);
         });
@@ -244,7 +244,7 @@ class PreviewRenderFxTest {
         awaitTree(buffer, buffer::toggleStructuredView);
         EditorFx.onFx(() -> {
             assertTrue(buffer.showsApiDocs());
-            assertEquals(docs[0], EditorFx.textOf(treeHolder(buffer)), "and back to the same docs page");
+            assertEquals(docs[0], shownText(treeHolder(buffer)), "and back to the same docs page");
             buffer.setMarkdownViewMode(MarkdownViewMode.EDITOR);
             buffer.toggleStructuredView(); // with no preview up, only the choice is remembered
             assertFalse(buffer.showsApiDocs());

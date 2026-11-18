@@ -916,6 +916,9 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         detailsScroll.setVvalue(0);
     }
 
+    /** The details show this many parents, and this many refs, at most, and say how many are past them (PERF-08). */
+    static final int MAX_DETAIL_CHIPS = 30;
+
     private void showParents(List<String> parents) {
         detailsParents.getChildren().clear();
         if (parents.isEmpty()) {
@@ -924,7 +927,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         Label label = new Label(tr(parents.size() > 1 ? "gitlog.details.parents" : "gitlog.details.parent"));
         label.getStyleClass().add("git-log-meta");
         detailsParents.getChildren().add(label);
-        for (String parent : parents) {
+        for (String parent : ListCap.head(parents, MAX_DETAIL_CHIPS)) {
             Hyperlink link = new Hyperlink(GitFormat.shortHash(parent));
             link.getStyleClass().add("git-log-parent");
             link.setFocusTraversable(false);
@@ -936,14 +939,22 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             });
             detailsParents.getChildren().add(link);
         }
+        Label more = ListCap.label(parents.size(), MAX_DETAIL_CHIPS, "git-log-meta");
+        if (more != null) {
+            detailsParents.getChildren().add(more);
+        }
     }
 
     private void showRefs(List<GitLog.Ref> refs) {
         detailsRefs.getChildren().clear();
-        for (GitLog.Ref ref : refs) {
+        for (GitLog.Ref ref : ListCap.head(refs, MAX_DETAIL_CHIPS)) {
             Label chip = new Label(refLabel(ref));
             chip.getStyleClass().addAll("git-ref", refCssClass(ref));
             detailsRefs.getChildren().add(chip);
+        }
+        Label more = ListCap.label(refs.size(), MAX_DETAIL_CHIPS, "git-log-meta");
+        if (more != null) {
+            detailsRefs.getChildren().add(more);
         }
         detailsRefs.setVisible(!refs.isEmpty());
         detailsRefs.setManaged(!refs.isEmpty());

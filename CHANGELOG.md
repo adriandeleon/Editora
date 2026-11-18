@@ -733,6 +733,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Long documents stay light on screen (PERF-08).** The Markdown preview builds only the blocks on and near the
+  screen, so a 20,000-line document holds a screenful of blocks instead of thousands, and scrolling it does no
+  work in its length; Find in the preview, selection, Copy, the outline links and the split view's scroll sync
+  work as before. The fstab, systemd, ssh config, Dockerfile, GitHub Actions and OpenAPI previews, the HTTP
+  client's request list and the newer-versions dialog are scrolling lists that build only the rows shown; the pom
+  preview, the merge view (20 conflicts a page), Parallel Stacks, the note card and a few small lists show a
+  named number of items and say how many more there are. Query Replace reads only as far as the next match, and
+  the CSV grid's filter, the Markdown format bar and the File Information panel no longer read the whole file
+  on each key.
 - **Typing, pickers and editor commands no longer pause on large files and projects.** The work behind them now runs
   in the background and lands a moment later:
   - typing in Search Everywhere, the command palette, every picker, Find File, the Settings search and the Git log,

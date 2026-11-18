@@ -39,6 +39,11 @@ import static com.editora.i18n.Messages.tr;
  * editor updates from those choices and remains directly editable for a hand-crafted resolution. A toolbar
  * tracks the resolved count and applies the exact Result text through the injected callback. Unchanged
  * regions are summarized so the conflicts stay prominent. Pure view over a parsed {@link ConflictFile}.
+ *
+ * <p>A card holds two or three text areas, so a file of hundreds of conflicts (a lock file, a generated file) shows
+ * them {@link #PAGE_SIZE} at a time, with a line that says which and buttons to the pages before and after (PERF-08,
+ * Pauta 6.0.1). A choice is kept with its conflict, not its card: a page left and come back to shows it again, and
+ * the Result and Save always cover the whole file.
  */
 public final class MergeViewerPane implements TabContent {
 
@@ -48,7 +53,19 @@ public final class MergeViewerPane implements TabContent {
     /** Set while a save waits for its answer (the document may be read off the FX thread first). */
     private boolean saving;
 
+    /** How many conflict cards are shown at once. */
+    static final int PAGE_SIZE = 20;
+
     private final List<Choice> choices;
+    private final VBox cards = UiZoom.spacing(new VBox(), 8);
+    private final ScrollPane cardScroll = new ScrollPane(cards);
+    private final Label pageLabel = new Label();
+    private final Button previousPage = new Button(tr("merge.pagePrevious"));
+    private final Button nextPage = new Button(tr("merge.pageNext"));
+    private final HBox pager = UiZoom.spacing(new HBox(), 8);
+    /** The index of the first conflict on the page shown. */
+    private int pageStart;
+
     private final String lineSeparator;
     private final boolean finalNewline;
 
@@ -57,7 +74,9 @@ public final class MergeViewerPane implements TabContent {
     private final TextArea resultArea = new TextArea();
     private final String fontStyle;
     private boolean updatingResult;
+    /** The Result was edited since {@link #refreshResult} filled it; whether it differs is asked at a choice. */
     private boolean manuallyEdited;
+
     private boolean draftDirty;
     private String generatedResult = "";
     /** What the Result area showed for {@link #generatedResult}: a TextArea drops control characters. */
@@ -117,22 +136,15 @@ public final class MergeViewerPane implements TabContent {
     }
 
     private SplitPane buildBody() {
-        VBox list = UiZoom.spacing(new VBox(), 8);
-        UiZoom.padding(list, 8);
-        int conflictIndex = 0;
-        for (Segment seg : file.segments()) {
-            if (seg instanceof PlainSegment p) {
-                if (!p.lines().isEmpty()) {
-                    Label note = new Label(tr("merge.unchanged", p.lines().size()));
-                    note.getStyleClass().add("merge-context");
-                    list.getChildren().add(note);
-                }
-            } else if (seg instanceof ConflictSegment cs) {
-                list.getChildren().add(buildConflictCard(conflictIndex, cs.conflict()));
-                conflictIndex++;
-            }
-        }
-        ScrollPane scroll = new ScrollPane(list);
+        UiZoom.padding(cards, 8);
+        pageLabel.getStyleClass().add("merge-page");
+        previousPage.setOnAction(e -> showPage(pageStart - PAGE_SIZE));
+        nextPage.setOnAction(e -> showPage(pageStart + PAGE_SIZE));
+        pager.getChildren().setAll(pageLabel, spacer(), previousPage, nextPage);
+        pager.setAlignment(Pos.CENTER_LEFT);
+        pager.getStyleClass().add("merge-pager");
+        showPage(0);
+        ScrollPane scroll = cardScroll;
         scroll.setFitToWidth(true);
         scroll.getStyleClass().add("merge-scroll");
 
@@ -164,6 +176,54 @@ public final class MergeViewerPane implements TabContent {
         return split;
     }
 
+    /**
+     * Shows the page of conflicts that starts at {@code start}: its cards, and the unchanged stretches between them.
+     * A file with no more conflicts than a page holds has no pager.
+     */
+    private void showPage(int start) {
+        int count = file.conflictCount();
+        pageStart = Math.max(0, Math.min(start, (Math.max(count, 1) - 1) / PAGE_SIZE * PAGE_SIZE));
+        int end = Math.min(count, pageStart + PAGE_SIZE);
+        List<Node> shown = new ArrayList<>();
+        if (count > PAGE_SIZE) {
+            pageLabel.setText(tr("merge.page", pageStart + 1, end, count));
+            previousPage.setDisable(pageStart == 0);
+            nextPage.setDisable(end >= count);
+            shown.add(pager);
+        }
+        int conflictIndex = 0;
+        for (Segment seg : file.segments()) {
+            if (seg instanceof PlainSegment p) {
+                // The stretch before a conflict of the page, or after the file's last one when the page ends there.
+                boolean onPage =
+                        conflictIndex >= pageStart && conflictIndex < end || conflictIndex == count && end == count;
+                if (onPage && !p.lines().isEmpty()) {
+                    Label note = new Label(tr("merge.unchanged", p.lines().size()));
+                    note.getStyleClass().add("merge-context");
+                    shown.add(note);
+                }
+            } else if (seg instanceof ConflictSegment cs) {
+                if (conflictIndex >= pageStart && conflictIndex < end) {
+                    shown.add(buildConflictCard(conflictIndex, cs.conflict()));
+                }
+                conflictIndex++;
+            }
+        }
+        cards.getChildren().setAll(shown);
+        cardScroll.setVvalue(0);
+    }
+
+    /** What a card says of the choice made for its conflict, or nothing while it is unresolved. */
+    private static String keptText(Choice choice) {
+        return switch (choice) {
+            case OURS -> tr("merge.kept.ours");
+            case THEIRS -> tr("merge.kept.theirs");
+            case BOTH -> tr("merge.kept.both");
+            case BASE -> tr("merge.kept.base");
+            case UNRESOLVED -> "";
+        };
+    }
+
     private VBox buildConflictCard(int index, Conflict c) {
         Label header = new Label(tr("merge.conflictN", index + 1, file.conflictCount()));
         header.getStyleClass().add("merge-conflict-header");
@@ -186,7 +246,7 @@ public final class MergeViewerPane implements TabContent {
             sides = UiZoom.spacing(new HBox(ours, theirs), 8);
         }
 
-        Label chosen = new Label();
+        Label chosen = new Label(keptText(choices.get(index)));
         chosen.getStyleClass().add("merge-chosen");
         Button acceptOurs = new Button(tr("merge.acceptOurs"));
         Button acceptTheirs = new Button(tr("merge.acceptTheirs"));
@@ -231,6 +291,26 @@ public final class MergeViewerPane implements TabContent {
         area.setPrefRowCount(Math.min(Math.max(lines.size(), 1), 12));
         VBox box = UiZoom.spacing(new VBox(l, area), 2);
         return box;
+    }
+
+    // --- test reads ---
+
+    /** The page's conflict cards. Test accessor. */
+    List<Node> cardsForTest() {
+        return cards.getChildren().stream()
+                .filter(n -> n.getStyleClass().contains("merge-conflict-card"))
+                .toList();
+    }
+
+    /** The pager's line, or null when the file fits a page. Test accessor. */
+    @Nullable
+    String pageTextForTest() {
+        return cards.getChildren().contains(pager) ? pageLabel.getText() : null;
+    }
+
+    /** Goes to the next page, as its button does. Test accessor. */
+    void nextPageForTest() {
+        nextPage.fire();
     }
 
     private void choose(int index, Choice choice, Label chosen, String text) {
