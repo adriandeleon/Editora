@@ -135,6 +135,9 @@ class EverySettingHasACommandFxTest {
     }
 
     @Test
+    // Every setting command, once per picker row: about 90 s on a Linux runner, 250 to 300 s on macOS, at the
+    // suite's 5-minute default.
+    @org.junit.jupiter.api.Timeout(value = 10, unit = java.util.concurrent.TimeUnit.MINUTES)
     void everySettingARowWritesIsWrittenByAPaletteCommand() throws Exception {
         baseline = FxTestSupport.callOnFx(() -> json.valueToTree(settings()));
         Map<String, String> rowSettings = whatTheRowsWrite();

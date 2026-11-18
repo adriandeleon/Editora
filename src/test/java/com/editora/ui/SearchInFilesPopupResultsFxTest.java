@@ -177,9 +177,13 @@ class SearchInFilesPopupResultsFxTest {
             assertEquals(
                     Path.of("/elsewhere/Beta.java").toAbsolutePath().toString(),
                     labels(cell(3)).getFirst());
+            // A screen reader reads the cell, not its graphic: each row says what it shows (ACC-01).
+            assertEquals(Path.of("src", "Alpha.java") + " (2)", cell(0).getAccessibleText());
+            assertEquals("3: foo();", cell(1).getAccessibleText());
             ListCell<Object> reused = cell(1);
             reused.updateIndex(-1);
             assertNull(reused.getGraphic());
+            assertNull(reused.getAccessibleText(), "an emptied cell says nothing");
 
             overlay.hide();
             assertFalse(popup.isShown());
