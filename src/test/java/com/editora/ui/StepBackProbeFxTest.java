@@ -143,8 +143,18 @@ class StepBackProbeFxTest {
 
     /** {@code name}'s value in the variables of the stop shown, once it is loaded. */
     private static String awaitValue(DebugCoordinator debug, String name) throws InterruptedException {
-        await(name, 60, () -> call(() -> row(debug, name) != null));
-        return call(() -> row(debug, name).getValue().value());
+        // Found and read in one FX turn: the variables tree can be refilled between two reads (the stop's
+        // scopes load in more than one answer), and a row found in one may be gone in the next.
+        String[] value = new String[1];
+        await(
+                name,
+                60,
+                () -> (value[0] = call(() -> {
+                            TreeItem<DebugPanel.VarRow> row = row(debug, name);
+                            return row == null ? null : row.getValue().value();
+                        }))
+                        != null);
+        return value[0];
     }
 
     private static TreeItem<DebugPanel.VarRow> row(DebugCoordinator debug, String name) {

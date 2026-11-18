@@ -107,7 +107,11 @@ class StructureAttachFxTest {
                     });
                     read[0] = landed;
                     // The regions land, then the outline is built from them off the FX thread and shown (PERF-01).
-                    return (Integer) landed[0] > 0 && (Integer) landed[2] > buildsAtAttach;
+                    // The build attach started read the text before the regions landed and may show an empty
+                    // outline first (a tree build), so the wait is for the outline that has rows, not any build.
+                    @SuppressWarnings("unchecked")
+                    List<StructurePanel.Outline> rows = (List<StructurePanel.Outline>) landed[1];
+                    return (Integer) landed[0] > 0 && !rows.isEmpty() && (Integer) landed[2] > buildsAtAttach;
                 },
                 Duration.ofSeconds(20));
         Object[] landed = read[0];
