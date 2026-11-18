@@ -706,6 +706,12 @@ class TestRunCoordinatorActionsFxTest {
 
     // --- Debug Test on Maven: the chosen port is polled, since Surefire 3 withholds the banner (review D1) ---
 
+    /**
+     * The fake fork never accepts, so every probe stays in its queue. With a backlog of 1, macOS queues one
+     * connection and the probe after the attach could not connect ("ACCEPTING" never heard); Linux queues two.
+     */
+    private static final int BACKLOG = 50;
+
     @Test
     void aMavenTestJvmIsAttachedWhenTheChosenPortListensWithoutAnyBanner() throws Exception {
         debugAvailable = true;
@@ -732,7 +738,7 @@ class TestRunCoordinatorActionsFxTest {
         awaitHeard(heard, "REFUSED KEEP_WAITING"); // a probe of the port after the test phase began
         assertEquals(List.of(), attaches(), "nothing listens yet: no attach");
 
-        try (ServerSocket fork = new ServerSocket(port, 1, InetAddress.getLoopbackAddress())) {
+        try (ServerSocket fork = new ServerSocket(port, BACKLOG, InetAddress.getLoopbackAddress())) {
             awaitAttaches(1, 5);
             assertEquals(List.of("attach demo.CalcTest localhost:" + port), attaches(), "the fork listens");
             sessionActive = true; // the adapter connected …
@@ -742,7 +748,7 @@ class TestRunCoordinatorActionsFxTest {
         // … and the agent stopped listening for it. Debug ▸ Stop then disconnects the adapter, and the same
         // agent listens again while its JVM runs the test to the end: not a new fork, nothing to attach.
         awaitHeard(heard, "REFUSED KEEP_WAITING"); // the poller saw it stop listening while the session was on
-        try (ServerSocket again = new ServerSocket(port, 1, InetAddress.getLoopbackAddress())) {
+        try (ServerSocket again = new ServerSocket(port, BACKLOG, InetAddress.getLoopbackAddress())) {
             // Listening again before the session is over, so no probe can see the port closed with it over.
             sessionActive = false;
             awaitHeard(heard, "ACCEPTING KEEP_WAITING"); // a probe of it listening again, the session over
@@ -751,7 +757,7 @@ class TestRunCoordinatorActionsFxTest {
         }
         // That JVM exited; a second fork of the same run binds the same port and waits suspended: attached.
         awaitHeard(heard, "REFUSED PORT_CLOSED");
-        try (ServerSocket secondFork = new ServerSocket(port, 1, InetAddress.getLoopbackAddress())) {
+        try (ServerSocket secondFork = new ServerSocket(port, BACKLOG, InetAddress.getLoopbackAddress())) {
             awaitAttaches(2, 5);
             assertEquals(
                     List.of("attach demo.CalcTest localhost:" + port, "attach demo.CalcTest localhost:" + port),

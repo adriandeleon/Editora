@@ -18,6 +18,7 @@ import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -63,8 +64,9 @@ class DebugHistoryProbeFxTest {
         probe(dir, file, 2, "javascript", s -> {});
     }
 
+    /** Its folder is kept: JDT LS outlives the window and can still write there while JUnit deletes it. */
     @Test
-    void java(@TempDir Path dir) throws Exception {
+    void java(@TempDir(cleanup = CleanupMode.NEVER) Path dir) throws Exception {
         assumeTrue(Boolean.getBoolean("lsp.probe"), "opt-in: -Dlsp.probe=true");
         Path jdtls = HOME.resolve(".editora/plugins/lsp/java/bin/jdtls");
         Path plugin = DebugAdapterLocator.locate("", HOME).orElse(null);
@@ -109,8 +111,9 @@ class DebugHistoryProbeFxTest {
         recordingProbe(dir, file, 2, "javascript", s -> {});
     }
 
+    /** Its folder is kept: JDT LS outlives the window and can still write there while JUnit deletes it. */
     @Test
-    void javaRecording(@TempDir Path dir) throws Exception {
+    void javaRecording(@TempDir(cleanup = CleanupMode.NEVER) Path dir) throws Exception {
         assumeTrue(Boolean.getBoolean("lsp.probe"), "opt-in: -Dlsp.probe=true");
         Path jdtls = HOME.resolve(".editora/plugins/lsp/java/bin/jdtls");
         Path plugin = DebugAdapterLocator.locate("", HOME).orElse(null);
