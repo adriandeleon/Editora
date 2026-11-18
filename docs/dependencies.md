@@ -40,6 +40,12 @@ in-project `m2-repo/`** (source: github.com/adriandeleon/RichTextFX). It adds VS
   change in JavaFX funnels through), `Paragraph.getText()` returns a single segment's own `String` instead
   of a copy, and `ReadOnlyStyledDocument.getText()` builds the document text from segments without filling
   every paragraph's text cache. A plain-text file is no longer held twice by the model.
+- **0.11.7-inlay.3** is `inlay.2` plus one paste fix. The area copies its styled text under a custom
+  clipboard format as a `byte[]`, and paste cast what came back to `byte[]`. JavaFX 27.0.1's headless
+  clipboard (the one the tests run on) returns a `ByteBuffer` holding the array's Java serialization
+  instead, so paste threw `ClassCastException`. Paste now takes a `byte[]` or a `ByteBuffer`, and unwraps a
+  serialized `byte[]` (a filter rejects anything else; a styled document can never start with the
+  serialization header). Source: branch `fix/paste-bytebuffer`, cut from `perf/cell-height-cache` (`inlay.2`).
 
 **To update the fork:** rebuild it (**with JDK 21** — see
 [packaging-notes.md](reference/packaging-notes.md); `./gradlew :richtextfx:test` then

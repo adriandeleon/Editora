@@ -733,6 +733,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Internal: JavaFX 27 → 27.0.1, and RichTextFX fork 0.11.7-inlay.3.** JavaFX 27.0.1 hands the editor's own
+  styled-text clipboard value back as a `ByteBuffer` (in the headless toolkit, the serialized array), where the
+  fork's paste cast it to `byte[]` and threw. The fork's paste now reads either form; nothing else changed in it.
 - **Long documents stay light on screen (PERF-08).** The Markdown preview builds only the blocks on and near the
   screen, so a 20,000-line document holds a screenful of blocks instead of thousands, and scrolling it does no
   work in its length; Find in the preview, selection, Copy, the outline links and the split view's scroll sync
