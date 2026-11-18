@@ -253,8 +253,19 @@ class MarkdownLintOverlayFxTest {
             stage[0] = EditorFx.show(buffer[0], 420, 400);
             buffer[0].setMarkdownLintEnabled(true);
         });
-        List<int[]> bands = bands(buffer[0]);
-        int rows = EditorFx.callFx(() -> buffer[0].getArea().getParagraphLinesCount(0));
+        // The overlay repaints on a later pulse than the layout that wraps the line, and two looks in a row can
+        // both be of the paint before it: wait for the paint of the rows the line has now, then assert on it.
+        List<List<int[]>> painted = new ArrayList<>(List.of(List.of()));
+        int[] seenRows = {0};
+        Await.holdsWithin(
+                EditorFx.check(() -> {
+                    seenRows[0] = EditorFx.callFx(() -> buffer[0].getArea().getParagraphLinesCount(0));
+                    painted.set(0, paintedBands(buffer[0]));
+                    return painted.get(0).size() == seenRows[0] + 1;
+                }),
+                java.time.Duration.ofSeconds(5));
+        List<int[]> bands = painted.get(0);
+        int rows = seenRows[0];
         assertTrue(rows >= 3, "the fixture wraps: " + rows);
         assertEquals(rows + 1, bands.size(), "one underline per visual row, plus the short one below");
         int[] shortOne = bands.get(bands.size() - 1);
