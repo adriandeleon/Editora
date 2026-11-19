@@ -357,6 +357,11 @@ final class FxWindowFixture implements AutoCloseable {
             failure = combine(failure, e);
         }
         try {
+            awaitServersGone(configDir);
+        } catch (RuntimeException e) {
+            failure = combine(failure, e);
+        }
+        try {
             shared.shutdown();
         } catch (RuntimeException e) {
             failure = combine(failure, e);
@@ -383,6 +388,43 @@ final class FxWindowFixture implements AutoCloseable {
         }
         if (failure != null) {
             throw failure;
+        }
+    }
+
+    /**
+     * Waits for the programs this window started with its config folder on their command line (JDT LS's
+     * {@code -data <configDir>/jdtls-workspaces/…}) to exit, and ends any still running after 30 s. Closing a window
+     * asks its servers to stop without waiting for them; JDT LS goes on writing its workspace while it stops, and
+     * the folder is deleted next (by {@link #dispose()} or by the test's {@code @TempDir}).
+     */
+    private static void awaitServersGone(Path configDir) {
+        java.util.Set<String> names = new java.util.HashSet<>();
+        names.add(configDir.toAbsolutePath().toString());
+        try {
+            names.add(configDir.toRealPath().toString()); // macOS: /var/folders/… is /private/var/folders/…
+        } catch (IOException e) {
+            // gone already: the absolute name is all there is
+        }
+        List<ProcessHandle> servers = ProcessHandle.current()
+                .descendants()
+                .filter(p -> p.info()
+                        .commandLine()
+                        .map(line -> names.stream().anyMatch(line::contains))
+                        .orElse(false))
+                .toList();
+        if (servers.isEmpty()) {
+            return;
+        }
+        try {
+            java.util.concurrent.CompletableFuture.allOf(servers.stream()
+                            .map(ProcessHandle::onExit)
+                            .toArray(java.util.concurrent.CompletableFuture[]::new))
+                    .get(30, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (java.util.concurrent.TimeoutException | java.util.concurrent.ExecutionException e) {
+            servers.forEach(ProcessHandle::destroyForcibly);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            servers.forEach(ProcessHandle::destroyForcibly);
         }
     }
 

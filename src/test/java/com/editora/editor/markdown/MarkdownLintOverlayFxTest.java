@@ -250,11 +250,25 @@ class MarkdownLintOverlayFxTest {
                             new MarkdownLint.Diagnostic(1, 1, line.length(), "warning", "MD034", "whole line"),
                             new MarkdownLint.Diagnostic(3, 1, 5, "warning", "MD034", "one word")));
             buffer[0].setWordWrap(true);
-            stage[0] = EditorFx.show(buffer[0], 420, 400);
+            // Tall enough for every wrapped row and the short line below, whatever text size the JVM's theme sheet
+            // has: only rows on screen are painted (9 rows at the default size; 15 seen on a CI shard where an
+            // earlier class left larger text, which pushed 4 rows below a 400 px window).
+            stage[0] = EditorFx.show(buffer[0], 420, 900);
             buffer[0].setMarkdownLintEnabled(true);
         });
-        List<int[]> bands = bands(buffer[0]);
-        int rows = EditorFx.callFx(() -> buffer[0].getArea().getParagraphLinesCount(0));
+        // The overlay repaints on a later pulse than the layout that wraps the line, and two looks in a row can
+        // both be of the paint before it: wait for the paint of the rows the line has now, then assert on it.
+        List<List<int[]>> painted = new ArrayList<>(List.of(List.of()));
+        int[] seenRows = {0};
+        Await.holdsWithin(
+                EditorFx.check(() -> {
+                    seenRows[0] = EditorFx.callFx(() -> buffer[0].getArea().getParagraphLinesCount(0));
+                    painted.set(0, paintedBands(buffer[0]));
+                    return painted.get(0).size() == seenRows[0] + 1;
+                }),
+                java.time.Duration.ofSeconds(5));
+        List<int[]> bands = painted.get(0);
+        int rows = seenRows[0];
         assertTrue(rows >= 3, "the fixture wraps: " + rows);
         assertEquals(rows + 1, bands.size(), "one underline per visual row, plus the short one below");
         int[] shortOne = bands.get(bands.size() - 1);

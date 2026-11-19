@@ -406,19 +406,23 @@ final class SearchInFilesPopup {
             super.updateItem(item, empty);
             if (empty || item == null) {
                 setGraphic(null);
+                setAccessibleText(null);
                 return;
             }
             LineMatch m = item.match();
+            // The row's text is in its graphic, which a screen reader does not read: say it on the cell (ACC-01).
             if (m == null) { // a file header
                 fileName.setText(displayPath(currentRoot, item.file()));
                 fileName.setGraphic(
                         FileIcons.forFileName(String.valueOf(item.file().getFileName())));
                 count.setText("(" + item.count() + ")");
                 setGraphic(header);
+                setAccessibleText(fileName.getText() + " " + count.getText());
             } else {
                 lineNo.setText(String.valueOf(m.line()));
                 preview.setText(previewOf(m));
                 setGraphic(matchRow);
+                setAccessibleText(lineNo.getText() + ": " + preview.getText());
             }
         }
     }

@@ -112,8 +112,23 @@ class HttpSecretTrustWindowFxTest {
 
             // Kept: the history file on disk and the History label hold the mask, never the value.
             HttpClientPanel panel = FxTestSupport.callOnFx(() -> http.panelForTest(b));
-            String label = FxTestSupport.callOnFx(
-                    () -> panel.controlsForTest().historyPicker().getValue().label(ZoneId.systemDefault()));
+            // The run's entry reaches the History picker after the run ends (it is recorded off the FX thread).
+            String[] seen = new String[1];
+            com.editora.testkit.Await.until(
+                    () -> {
+                        try {
+                            seen[0] = FxTestSupport.callOnFx(() -> {
+                                var entry =
+                                        panel.controlsForTest().historyPicker().getValue();
+                                return entry == null ? null : entry.label(ZoneId.systemDefault());
+                            });
+                        } catch (Exception e) {
+                            throw new IllegalStateException(e);
+                        }
+                        return seen[0] != null;
+                    },
+                    "the run's entry in the History picker");
+            String label = seen[0];
             assertFalse(label.contains(SECRET), "the History label shows the value: " + label);
             String saved = awaitSavedHistory(cfg.resolve("http-history"), "/send");
             assertFalse(saved.contains(SECRET), "the history file on disk holds the value");

@@ -119,17 +119,26 @@ class StepBackProbeFxTest {
         }
     }
 
-    /** Runs {@code command} and waits for the stop it ends in. */
+    /**
+     * Runs {@code command} and waits for the stop it ends in, with that stop's variables in the tree: until they come
+     * back (a new root, see DebugPanel.setScopes) the tree still shows the previous stop's values.
+     */
     private static void step(MainController c, DapManager dap, DebugCoordinator debug, String command)
             throws Exception {
         int stops = call(() -> debug.s().stopSerial);
+        Object rootBefore = call(() -> variables(debug).getRoot());
         run(c, command);
         await(
                 command + "'s stop",
                 60,
                 () -> call(() -> debug.s().stopSerial > stops
                         && dap.state() == DapManager.State.SUSPENDED
-                        && !debug.panel().callStack().isEmpty()));
+                        && !debug.panel().callStack().isEmpty()
+                        && variables(debug).getRoot() != rootBefore));
+    }
+
+    private static TreeView<DebugPanel.VarRow> variables(DebugCoordinator debug) {
+        return FxTestSupport.field(debug.panel(), "variables");
     }
 
     private static void awaitStop(DapManager dap, DebugCoordinator debug, int line) throws InterruptedException {
@@ -143,8 +152,18 @@ class StepBackProbeFxTest {
 
     /** {@code name}'s value in the variables of the stop shown, once it is loaded. */
     private static String awaitValue(DebugCoordinator debug, String name) throws InterruptedException {
-        await(name, 60, () -> call(() -> row(debug, name) != null));
-        return call(() -> row(debug, name).getValue().value());
+        // Found and read in one FX turn: the variables tree can be refilled between two reads (the stop's
+        // scopes load in more than one answer), and a row found in one may be gone in the next.
+        String[] value = new String[1];
+        await(
+                name,
+                60,
+                () -> (value[0] = call(() -> {
+                            TreeItem<DebugPanel.VarRow> row = row(debug, name);
+                            return row == null ? null : row.getValue().value();
+                        }))
+                        != null);
+        return value[0];
     }
 
     private static TreeItem<DebugPanel.VarRow> row(DebugCoordinator debug, String name) {
