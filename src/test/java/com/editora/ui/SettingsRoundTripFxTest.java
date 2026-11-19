@@ -16,6 +16,7 @@ import javafx.scene.control.Spinner;
 import javafx.stage.Stage;
 
 import com.editora.testkit.Await;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -40,6 +41,12 @@ class SettingsRoundTripFxTest {
     @BeforeAll
     static void boot() throws Exception {
         FxTestSupport.bootToolkit();
+    }
+
+    /** Stepping every number field steps the UI zoom too (to 110%): put it back for the next class. */
+    @AfterAll
+    static void zoomBack() throws Exception {
+        DefaultUiZoom.restore();
     }
 
     /** The window's switch, number and choice fields (its own and its page classes'), by name. */
