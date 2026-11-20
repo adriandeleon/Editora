@@ -1116,6 +1116,7 @@ final class RunCoordinator {
      * @param env the configuration's variables, for the program
      * @param dir its own working directory, or null for where Debug File runs the program
      * @param again the whole launch once more: Rerun builds an edited file again
+     * @param configured a saved configuration's launch (its form can be opened at what is wrong), not Run File's
      */
     private record CompiledRun(
             String label,
@@ -1123,7 +1124,8 @@ final class RunCoordinator {
             List<String> args,
             java.util.Map<String, String> env,
             @Nullable Path dir,
-            Runnable again) {}
+            Runnable again,
+            boolean configured) {}
 
     /** A built program found for a {@link CompiledRun}, or why there is none ({@code problem}, said as it is). */
     private record Built(
@@ -1159,16 +1161,55 @@ final class RunCoordinator {
         }
         boolean inTerminal = terminalRun;
         CompiledRun run = new CompiledRun(
-                cfg.name(), source.toAbsolutePath(), args, env, cfg.workingDir().isBlank() ? null : cwd, () -> {
+                cfg.name(),
+                source.toAbsolutePath(),
+                args,
+                env,
+                cfg.workingDir().isBlank() ? null : cwd,
+                () -> {
                     terminalRun = inTerminal;
                     runCompiledConfig(cfg, cwd, source, args, env, false);
-                });
+                },
+                true);
         if (ScriptRunCommand.GO.equals(cfg.type())) {
             runGo(run);
         } else if (ScriptRunCommand.RUST.equals(cfg.type())) {
             runRust(run);
         } else {
             runNative(run, ScriptRunCommand.CPP.equals(cfg.type()));
+        }
+    }
+
+    /**
+     * Run File on a C, C++, Go or Rust file ({@code language}): built as Debug File builds it — a C or C++ file's
+     * CMake or Make project or the file alone, a Go file's package or the file alone, a Rust file's Cargo package —
+     * and the program that made runs in the Run console with the file's arguments, in the folder Debug File runs it
+     * in. Run had no way to start such a file outside a saved configuration, though Debug did. On this machine
+     * only: the program is built into this machine's cache.
+     */
+    private void launchCompiledFile(String language, Path path, List<String> args) {
+        if (!com.editora.process.ExecTargets.runsHere(path)) {
+            host.setStatus(tr("status.run.compiledFileRemote", path.getFileName()));
+            return;
+        }
+        Path source = path.toAbsolutePath();
+        CompiledRun run = new CompiledRun(
+                String.valueOf(source.getFileName()),
+                source,
+                args,
+                java.util.Map.of(),
+                null,
+                () -> {
+                    List<String> again = programArgs(ops.programArgs(source), null);
+                    if (again != null) {
+                        launchCompiledFile(language, source, again);
+                    }
+                },
+                false);
+        switch (language) {
+            case ScriptRunCommand.GO -> runGo(run);
+            case ScriptRunCommand.RUST -> runRust(run);
+            default -> runNative(run, ScriptRunCommand.CPP.equals(language));
         }
     }
 
@@ -1272,7 +1313,9 @@ final class RunCoordinator {
         String declared = planned.declared();
         if (declared != null && !"main".equals(declared)) {
             host.setStatus(tr("status.run.goNotMain", source.getFileName(), declared));
-            ops.editConfiguration(run.label()); // to the Source file field: another file is what would run
+            if (run.configured()) {
+                ops.editConfiguration(run.label()); // to the Source file field: another file is what would run
+            }
             return;
         }
         Path module = planned.module();
@@ -3190,6 +3233,7 @@ final class RunCoordinator {
         boolean javaSource = !buffer.isPython()
                 && !buffer.isShell()
                 && !com.editora.run.NodeRunPlan.isNodeLanguage(buffer.getLanguage())
+                && !com.editora.run.CompiledRunLine.supports(buffer.getLanguage())
                 && !jvmScript;
         boolean onJdk = javaSource || jvmScript;
         // On a remote host the program runs with the host's own java and environment: this machine's JDK
@@ -3264,6 +3308,10 @@ final class RunCoordinator {
         }
         if (com.editora.run.NodeRunPlan.isNodeLanguage(buffer.getLanguage())) {
             launchNode(path, args);
+            return;
+        }
+        if (com.editora.run.CompiledRunLine.supports(buffer.getLanguage())) {
+            launchCompiledFile(buffer.getLanguage(), path, args);
             return;
         }
         if (buffer.isPython()) {

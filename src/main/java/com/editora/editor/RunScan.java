@@ -116,6 +116,10 @@ final class RunScan {
             // file's ▶ runs its tests (node --test) — decided at launch, where the path is known.
             runnable = true;
             line = 0;
+        } else if (in.eligible() && com.editora.run.CompiledRunLine.supports(language)) {
+            // A C, C++, Go or Rust file with a program's main: Run File builds it as Debug File does, then runs it.
+            line = com.editora.run.CompiledRunLine.runLine(language, in.name(), text);
+            runnable = line >= 0;
         } else if (in.eligible()
                 && "java".equals(language)
                 && (CompactSource.isLaunchable(in.name(), text)
