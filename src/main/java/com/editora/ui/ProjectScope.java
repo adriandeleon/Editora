@@ -128,9 +128,9 @@ final class ProjectScope {
      * meanwhile — telling the listeners when what applies changed.
      */
     private void startRead(Path r) {
-        startToolchainRead(r);
         long generation = ++readGeneration;
-        readingRoot = r;
+        readingRoot = r; // before the toolchain read, which may land in place and ask settings() again
+        startToolchainRead(r);
         java.util.concurrent.CompletableFuture.supplyAsync(() -> ProjectSettings.load(r), reads)
                 .whenComplete((read, failure) -> {
                     Runnable land = () -> landRead(generation, r, read);
@@ -161,7 +161,12 @@ final class ProjectScope {
         long generation = ++toolchainGeneration;
         toolchainReading = r;
         if (!com.editora.process.ExecTargets.runsHere(r)) {
-            landToolchain(generation, r, ProjectToolchain.Resolution.NONE, ProjectToolchain.Resolution.NONE);
+            // Nothing to resolve here: the same answer as before any read, so nobody is told (telling them asks
+            // settings(), which would start this read again).
+            toolchainReading = null;
+            toolchainRoot = r;
+            toolchainTrusted = ProjectToolchain.Resolution.NONE;
+            toolchainFileOnly = ProjectToolchain.Resolution.NONE;
             return;
         }
         java.util.function.Supplier<ProjectToolchain.Installs> scan = installs;
