@@ -622,6 +622,7 @@ final class MenuBarModel {
                                 submenu("menubar.tools.encryption"),
                                 SEPARATOR,
                                 "install.languageServer",
+                                submenu("menubar.tools.javaToolchain"),
                                 "view.doctor",
                                 SEPARATOR,
                                 // Here, not in File: the File menu is at the height the screen allows.
@@ -656,7 +657,23 @@ final class MenuBarModel {
                                                 EncryptionCoordinator.SIGN_DETACHED,
                                                 EncryptionCoordinator.VERIFY,
                                                 SEPARATOR,
-                                                EncryptionCoordinator.IMPORT_KEY)))),
+                                                EncryptionCoordinator.IMPORT_KEY)),
+                                // The project's JDK, Maven and Gradle, then jkit's own installs.
+                                new MenuSpec(
+                                        "menubar.tools.javaToolchain",
+                                        List.of(
+                                                "toolchain.setProjectJdk",
+                                                "toolchain.setProjectMaven",
+                                                "toolchain.setProjectGradle",
+                                                "toolchain.installProjectTools",
+                                                SEPARATOR,
+                                                "toolchain.jkit.installJdk",
+                                                "toolchain.jkit.installMaven",
+                                                "toolchain.jkit.installGradle",
+                                                "toolchain.jkit.upgrade",
+                                                SEPARATOR,
+                                                "toolchain.jkit.setDefault",
+                                                "toolchain.jkit.remove")))),
                 new MenuSpec(
                         "menubar.window",
                         List.of(

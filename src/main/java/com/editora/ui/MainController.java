@@ -345,6 +345,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** In-app install of LSP servers + DAP adapters + Mermaid tools. Built in {@link #setupToolWindows}
      *  (after the LSP/Debug coordinators it re-detects through). See {@link InstallCoordinator}. */
     InstallCoordinator installCoordinator;
+    /** The project JDK, Maven and Gradle commands and jkit's (install, upgrade, default, remove). */
+    ToolchainCommands toolchainCommands;
 
     /** The Commit panel; null until {@link #gitPanel()} builds it. The state it shows is tracked below. */
     @Nullable
@@ -2298,6 +2300,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Mirror a recognized `test` run of any build tool into the Test Results window.
         buildCoordinators.forEach(c -> c.setTestRunHook(testRunCoordinator));
         installCoordinator = new InstallCoordinator(coordinatorHost, new InstallOpsHost(this));
+        toolchainCommands = new ToolchainCommands(
+                coordinatorHost, lspCoordinator::projectScope, lspCoordinator::reloadProjectSettings);
         remoteCoordinator = new RemoteCoordinator(coordinatorHost, new RemoteOpsHost(this));
         containerCoordinator = new ContainerCoordinator(coordinatorHost, new ContainerCoordinator.Ops() {
             @Override

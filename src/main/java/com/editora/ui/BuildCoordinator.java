@@ -867,7 +867,7 @@ final class BuildCoordinator {
         boolean gated = BuildTrust.gates(tool);
         String projectCommand = gated ? host.projectScope().projectBuildCommand(tool) : "";
         boolean localJdk = onSettingsJdk() && com.editora.process.ExecTargets.runsHere(root);
-        String jdkHome = host.settings().getMavenJdkHome();
+        String jdkHome = host.projectScope().jdkHome(host.settings());
         planner.execute(() -> {
             Plan plan;
             RuntimeException failure = null;
@@ -928,12 +928,17 @@ final class BuildCoordinator {
         }
     }
 
-    /** Whether the build runs on the JDK chosen in Settings, as Run does (Gradle picks its own). */
+    /**
+     * Whether the build runs on the JDK chosen in Settings, as Run does. Gradle picks its own through its
+     * toolchains, unless the project names its JDK ({@code .sdkmanrc}'s {@code java=}, the project settings'
+     * {@code toolchain.jdk}): then Gradle runs on that one too, as {@code sdk env} would start it.
+     */
     private boolean onSettingsJdk() {
         return tool == BuildTool.MAVEN
                 || tool == BuildTool.SBT
                 || tool == BuildTool.MILL
-                || tool == BuildTool.SCALA_CLI;
+                || tool == BuildTool.SCALA_CLI
+                || (tool == BuildTool.GRADLE && host.projectScope().projectJdk());
     }
 
     /** The launch argv prefix: the project wrapper when present, else the Settings override, else the tool's
@@ -1101,7 +1106,7 @@ final class BuildCoordinator {
                                 ? RunCoordinator.remoteJdkEnvironment(
                                         com.editora.process.ExecTargets.remoteTool(root, "jdk.home"))
                                 : com.editora.run.JdkToolchain.environment(
-                                        host.settings().getMavenJdkHome(),
+                                        host.projectScope().jdkHome(host.settings()),
                                         com.editora.process.ProcessRunner.augmentedPath());
         if (npm != null) {
             environment = npm.env();

@@ -139,6 +139,14 @@ class CommandSweepFxTest {
         m.put("install.mermaidSupport", installs);
         m.put("install.typstCli", installs);
         m.put("install.shellTools", installs);
+        String jkit = "runs jkit on this machine (network searches, installs, removals, its global default)";
+        m.put("toolchain.installProjectTools", jkit);
+        m.put("toolchain.jkit.installJdk", jkit);
+        m.put("toolchain.jkit.installMaven", jkit);
+        m.put("toolchain.jkit.installGradle", jkit);
+        m.put("toolchain.jkit.upgrade", jkit);
+        m.put("toolchain.jkit.setDefault", jkit);
+        m.put("toolchain.jkit.remove", jkit);
         return Collections.unmodifiableMap(m);
     }
 

@@ -2,13 +2,21 @@ package com.editora.doctor;
 
 import java.util.List;
 
+import com.editora.i18n.Messages;
 import com.editora.run.NodeRuntimes;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /** Review E6: Doctor's one Run → Node.js row. */
 class NodeRuntimeRowTest {
+
+    /** The catalog is process-wide and starts empty: this test reads English text, so it loads English itself. */
+    @BeforeAll
+    static void english() {
+        Messages.init("en");
+    }
 
     @Test
     void aVersionIsOkAndNoVersionIsRedOnlyWhenTheProjectNeedsNode() {

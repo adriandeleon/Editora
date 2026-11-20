@@ -30,7 +30,8 @@ final class RemoteJavaRuntimes {
               onpath=${j%/bin/javac}
             fi
             for d in "$1" "$JAVA_HOME" "$onpath" \\
-                "$HOME"/.sdkman/candidates/java/* "$HOME"/.asdf/installs/java/* \\
+                "${SDKMAN_DIR:-$HOME/.sdkman}"/candidates/java/* "${JKIT_HOME:-$HOME/.jkit}"/tools/jdk/* \\
+                "$HOME"/.asdf/installs/java/* \\
                 "$HOME"/.local/share/mise/installs/java/* "$HOME"/.jabba/jdk/* "$HOME"/.jdks/* \\
                 /usr/lib/jvm/* /usr/java/* /Library/Java/JavaVirtualMachines/*/Contents/Home \\
                 /opt/homebrew/opt/*/libexec/openjdk.jdk/Contents/Home /usr/local/opt/*/libexec/openjdk.jdk/Contents/Home

@@ -915,7 +915,8 @@ final class DoctorCoordinator {
 
         // Run ------------------------------------------------------------------------------------
         // Standalone Java/Python/Make runs work without LSP; Bash Run no longer depends on it either.
-        String selectedJava = com.editora.run.JdkToolchain.javaExecutable(s.getMavenJdkHome());
+        String selectedJava =
+                com.editora.run.JdkToolchain.javaExecutable(host.projectScope().jdkHome(s));
         String javaExecutable = selectedJava.isBlank() ? "java" : selectedJava;
         // The JDK is the Build Tools page's Maven JDK, so that is where "Settings…" leads.
         DoctorCheck java = DoctorCheck.checking("run.java", "run", tr("doctor.label.jdk"), javaExecutable)

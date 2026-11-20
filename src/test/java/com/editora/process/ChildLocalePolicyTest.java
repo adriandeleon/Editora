@@ -66,6 +66,7 @@ class ChildLocalePolicyTest {
             "mermaid/Mermaid.java", // detect() + maid's JSON report
             "run/RunService.java", // `java -version`
             "run/RuntimeProbe.java", // the Run/Debug runtime chip: `java -XshowSettings`, `--version`
+            "toolchain/JkitCli.java", // jkit's --json documents and `jkit --version`
             "ui/NodeRunLauncher.java", // `node --version`: whether this Node strips TypeScript types
             "search/RemoteFiles.java", // rg --version and file lists on a remote host
             "search/Ripgrep.java", // rg --version
@@ -115,6 +116,7 @@ class ChildLocalePolicyTest {
             Map.entry("terminal/LocalShell.java", 1), // the integrated terminal's shell
             Map.entry("terminal/PrimarySelection.java", 2), // wl-copy/xclip and wl-paste/xclip: the user's text
             Map.entry("terminal/TerminalImageCheck.java", 1), // a shell on a pseudo-terminal
+            Map.entry("toolchain/JkitCli.java", 1), // a jkit install or upgrade: its progress lines are shown
             Map.entry("typst/TypstRenderer.java", 2), // render + export
             Map.entry("ui/PluginCoordinator.java", 1), // a plugin's own command
             Map.entry("web/HtmlPreviewService.java", 1)); // the browser

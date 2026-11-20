@@ -146,6 +146,8 @@ final class WindowCommandRegistrar {
 
         InstallCoordinator installCoordinator();
 
+        ToolchainCommands toolchainCommands();
+
         ToolWindow commitToolWindow();
 
         GitLogPanel.Actions gitLogOps();
@@ -906,6 +908,45 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "install.shellTools", () -> host.installCoordinator().installShellTools()));
         host.registry().register(Command.of("install.languageServer", host::chooseInstallServer));
+        // The project's JDK, Maven and Gradle (.sdkmanrc, .editora/settings.json), and jkit (jkit-project.dev).
+        host.registry()
+                .register(Command.of(
+                        "toolchain.installProjectTools",
+                        () -> host.toolchainCommands().installProjectTools()));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.setProjectJdk",
+                        () -> host.toolchainCommands().setProjectTool("jdk")));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.setProjectMaven",
+                        () -> host.toolchainCommands().setProjectTool("maven")));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.setProjectGradle",
+                        () -> host.toolchainCommands().setProjectTool("gradle")));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.installJdk",
+                        () -> host.toolchainCommands().installWithJkit("jdk")));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.installMaven",
+                        () -> host.toolchainCommands().installWithJkit("maven")));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.installGradle",
+                        () -> host.toolchainCommands().installWithJkit("gradle")));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.upgrade", () -> host.toolchainCommands().upgradeJkit()));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.setDefault",
+                        () -> host.toolchainCommands().setJkitDefault()));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.remove", () -> host.toolchainCommands().removeJkitInstall()));
         host.registry().register(Command.of("view.toggleColumnRuler", host.editorSettings()::toggleColumnRuler));
         host.registry().register(Command.of("editor.setRulers", host.editorSettings()::promptRulers));
         host.registry().register(Command.of("editor.setLanguageRulers", host.editorSettings()::promptLanguageRulers));

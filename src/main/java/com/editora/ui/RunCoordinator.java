@@ -863,7 +863,7 @@ final class RunCoordinator {
         String language = cfg.type();
         String jdkHome = !cfg.jdkHome().isBlank()
                 ? cfg.jdkHome()
-                : elsewhere ? remoteJdkHome(cwd) : host.settings().getMavenJdkHome();
+                : elsewhere ? remoteJdkHome(cwd) : host.projectScope().jdkHome(host.settings());
         // The script's head (for the trust question), the tool and the project the launch is planned by are read
         // off the FX thread (PERF-01, Pauta 6.0.1); the question and the launch are made back on it.
         offFx(
@@ -2511,7 +2511,7 @@ final class RunCoordinator {
         justSaved = null;
         // The project, its build files, an env @file and the Maven module are read off the FX thread (PERF-01,
         // Pauta 6.0.1): one plan for Run and Debug (review D9), working directory, JDK, environment and arguments.
-        String settingsJdk = host.settings().getMavenJdkHome();
+        String settingsJdk = host.projectScope().jdkHome(host.settings());
         Path project = ops.projectRoot();
         offFx(
                 "run-java-plan",
@@ -2648,7 +2648,7 @@ final class RunCoordinator {
     /** What a {@link com.editora.run.JavaLaunchPlan} of a configuration in {@code root}'s project needs to know. */
     com.editora.run.JavaLaunchPlan.Inputs javaLaunchInputs(Path root) {
         return com.editora.run.JavaLaunchPlan.Inputs.of(
-                root, host.settings().getMavenJdkHome(), ops.mavenProjectAt(root));
+                root, host.projectScope().jdkHome(host.settings()), ops.mavenProjectAt(root));
     }
 
     /** Says which field of {@code cfg} a plan could not read, and opens its form there. */
@@ -2896,7 +2896,7 @@ final class RunCoordinator {
             return "";
         }
         return JdkToolchain.effectiveHome(
-                cfg == null ? "" : cfg.jdkHome(), host.settings().getMavenJdkHome());
+                cfg == null ? "" : cfg.jdkHome(), host.projectScope().jdkHome(host.settings()));
     }
 
     private @Nullable String javaExecutableFor(Path root, @Nullable String resolved) {
@@ -3240,7 +3240,7 @@ final class RunCoordinator {
         // setting is a path here, and its PATH means nothing there. A host can name its JDK (jdk.home).
         boolean remote = !com.editora.process.ExecTargets.runsHere(path);
         String jdkHome =
-                !onJdk ? "" : remote ? remoteJdkHome(path) : host.settings().getMavenJdkHome();
+                !onJdk ? "" : remote ? remoteJdkHome(path) : host.projectScope().jdkHome(host.settings());
         String selectedJava = JdkToolchain.javaExecutable(jdkHome);
         String javaExecutable = selectedJava.isBlank() ? "java" : selectedJava;
         java.util.Map<String, String> launchEnv = !onJdk

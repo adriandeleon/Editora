@@ -8,6 +8,7 @@ import java.util.function.Supplier;
 import com.editora.config.ConfigManager;
 import com.editora.config.ProjectSettings;
 import com.editora.config.Settings;
+import com.editora.toolchain.ProjectToolchain;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -49,6 +50,32 @@ final class ProjectScope {
     /** The root of the read under way, or {@code null}. */
     private @Nullable Path readingRoot;
 
+    /**
+     * The JDK, Maven and Gradle the project asks for ({@code .editora/settings.json}'s {@code toolchain}, else its
+     * {@code .sdkmanrc}), matched to the installs, for the root {@link #toolchainRoot}: with the project file's
+     * requests ({@link #toolchainTrusted}) and without them ({@link #toolchainFileOnly}, its untrusted answer).
+     */
+    private ProjectToolchain.Resolution toolchainTrusted = ProjectToolchain.Resolution.NONE;
+
+    private ProjectToolchain.Resolution toolchainFileOnly = ProjectToolchain.Resolution.NONE;
+    private @Nullable Path toolchainRoot;
+    private long toolchainGeneration;
+    private @Nullable Path toolchainReading;
+
+    /**
+     * How the installs are found (a seam: a test stands in for the disk): jkit's and SDKMAN's folders and the
+     * machine's other JDKs.
+     */
+    java.util.function.Supplier<ProjectToolchain.Installs> installs = () -> ProjectToolchain.scan(
+            com.editora.toolchain.JkitInstalls.home(),
+            com.editora.toolchain.SdkmanInstalls.dir(),
+            com.editora.lsp.JavaRuntimes.discover().stream()
+                    .map(com.editora.lsp.JavaRuntimes.Jdk::path)
+                    .toList());
+
+    /** Where a toolchain read runs: a thread of its own (a seam: a test may read in place). */
+    java.util.concurrent.Executor toolchainReads = com.editora.process.BlockingTasks.named("project-toolchain-read");
+
     /** Where a read runs: a thread of its own (a seam: a test may read in place). */
     java.util.concurrent.Executor reads = com.editora.process.BlockingTasks.named("project-settings-read");
 
@@ -77,6 +104,9 @@ final class ProjectScope {
             if (ahead != null) {
                 cachedRoot = r;
                 cache = ahead;
+                if (!r.equals(toolchainReading) && !r.equals(toolchainRoot)) {
+                    startToolchainRead(r);
+                }
             } else {
                 if (!r.equals(readingRoot)) {
                     startRead(r);
@@ -99,7 +129,8 @@ final class ProjectScope {
      */
     private void startRead(Path r) {
         long generation = ++readGeneration;
-        readingRoot = r;
+        readingRoot = r; // before the toolchain read, which may land in place and ask settings() again
+        startToolchainRead(r);
         java.util.concurrent.CompletableFuture.supplyAsync(() -> ProjectSettings.load(r), reads)
                 .whenComplete((read, failure) -> {
                     Runnable land = () -> landRead(generation, r, read);
@@ -121,6 +152,94 @@ final class ProjectScope {
         notifyIfChanged();
     }
 
+    /**
+     * Reads {@code r}'s toolchain requests ({@code .editora/settings.json}, {@code .sdkmanrc}) and what is installed
+     * off the FX thread, and keeps both resolutions when it lands, if no newer read was started meanwhile. A remote
+     * project's tools are its host's: nothing is resolved here for it.
+     */
+    private void startToolchainRead(Path r) {
+        long generation = ++toolchainGeneration;
+        toolchainReading = r;
+        if (!com.editora.process.ExecTargets.runsHere(r)) {
+            // Nothing to resolve here: the same answer as before any read, so nobody is told (telling them asks
+            // settings(), which would start this read again).
+            toolchainReading = null;
+            toolchainRoot = r;
+            toolchainTrusted = ProjectToolchain.Resolution.NONE;
+            toolchainFileOnly = ProjectToolchain.Resolution.NONE;
+            return;
+        }
+        java.util.function.Supplier<ProjectToolchain.Installs> scan = installs;
+        java.util.concurrent.CompletableFuture.supplyAsync(
+                        () -> {
+                            Map<String, String> rc = com.editora.toolchain.SdkmanRc.read(r);
+                            Map<String, String> own = ProjectSettings.load(r).getToolchain();
+                            boolean asks =
+                                    !rc.isEmpty() || own.values().stream().anyMatch(v -> v != null && !v.isBlank());
+                            ProjectToolchain.Installs found = asks ? scan.get() : ProjectToolchain.Installs.NONE;
+                            return new ProjectToolchain.Resolution[] {
+                                ProjectToolchain.resolve(own, rc, found), ProjectToolchain.resolve(Map.of(), rc, found)
+                            };
+                        },
+                        toolchainReads)
+                .whenComplete((read, failure) -> {
+                    ProjectToolchain.Resolution trusted = read == null ? ProjectToolchain.Resolution.NONE : read[0];
+                    ProjectToolchain.Resolution fileOnly = read == null ? ProjectToolchain.Resolution.NONE : read[1];
+                    Runnable land = () -> landToolchain(generation, r, trusted, fileOnly);
+                    if (javafx.application.Platform.isFxApplicationThread()) {
+                        land.run();
+                    } else {
+                        javafx.application.Platform.runLater(land);
+                    }
+                });
+    }
+
+    private void landToolchain(
+            long generation, Path r, ProjectToolchain.Resolution trusted, ProjectToolchain.Resolution fileOnly) {
+        if (generation != toolchainGeneration) {
+            return;
+        }
+        toolchainReading = null;
+        toolchainRoot = r;
+        toolchainTrusted = trusted;
+        toolchainFileOnly = fileOnly;
+        notifyIfChanged();
+    }
+
+    /**
+     * The JDK, Maven and Gradle this project asks for and what answers each: the project file's requests in a
+     * trusted folder, else its {@code .sdkmanrc}'s alone. {@link ProjectToolchain.Resolution#NONE} without a
+     * project, for a remote one, and until the first read lands.
+     */
+    ProjectToolchain.Resolution toolchain() {
+        Path r = root.get();
+        if (r == null || !r.equals(toolchainRoot)) {
+            if (r != null && !r.equals(toolchainReading)) {
+                startToolchainRead(r); // a root not read yet: answered as the user's until the read lands
+            }
+            return ProjectToolchain.Resolution.NONE;
+        }
+        return trusted() ? toolchainTrusted : toolchainFileOnly;
+    }
+
+    /**
+     * The JDK this project's builds, runs, debug sessions and Java language server use: the project's own
+     * ({@link #toolchain}) when it names one that is installed, else the user's Default JDK (blank: PATH's java).
+     */
+    String jdkHome(Settings user) {
+        String own = toolchain().home(com.editora.toolchain.ToolInstall.JDK);
+        if (own != null) {
+            return own;
+        }
+        String mine = user.getMavenJdkHome();
+        return mine == null ? "" : mine;
+    }
+
+    /** Whether the project names its own JDK and it is installed, so {@link #jdkHome} is the project's. */
+    boolean projectJdk() {
+        return toolchain().home(com.editora.toolchain.ToolInstall.JDK) != null;
+    }
+
     private final List<Runnable> changeListeners = new java.util.ArrayList<>();
 
     /** Runs {@code listener} after a {@link #reload} that changed what applies (the values, or the trust). */
@@ -140,6 +259,9 @@ final class ProjectScope {
             readingRoot = null;
             cachedRoot = null;
             cache = EMPTY;
+            toolchainGeneration++;
+            toolchainReading = null;
+            toolchainRoot = null;
             notifyIfChanged();
             return;
         }
@@ -165,7 +287,8 @@ final class ProjectScope {
 
     /** What applies here, as one string: root, trust and the values (language servers aside: LspCoordinator's). */
     private String signature() {
-        return root() + "|" + trusted() + "|" + settings().valueOverrides();
+        return root() + "|" + trusted() + "|" + settings().valueOverrides() + "|"
+                + toolchain().signature();
     }
 
     /**
@@ -241,7 +364,19 @@ final class ProjectScope {
 
     /** The command build tool {@code tool} runs here (blank = the tool's own default lookup). */
     String buildCommand(com.editora.build.BuildTool tool, Settings user) {
-        return settings().buildCommand(toolId(tool), tool.commandIn(user), trusted());
+        String own = settings().buildCommand(toolId(tool), "", trusted());
+        if (!own.isBlank()) {
+            return own;
+        }
+        String toolchainTool = tool == com.editora.build.BuildTool.MAVEN
+                ? com.editora.toolchain.ToolInstall.MAVEN
+                : tool == com.editora.build.BuildTool.GRADLE ? com.editora.toolchain.ToolInstall.GRADLE : null;
+        String home = toolchainTool == null ? null : toolchain().home(toolchainTool);
+        if (toolchainTool != null && home != null) {
+            // the Maven or Gradle the project names (.sdkmanrc's maven=, …); the project's wrapper still wins
+            return ProjectToolchain.executable(toolchainTool, home, com.editora.Os.isWindows());
+        }
+        return tool.commandIn(user);
     }
 
     /**

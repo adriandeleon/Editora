@@ -221,7 +221,7 @@ final class MavenProjectCoordinator {
      */
     Map<String, String> mavenEnvironment() {
         return com.editora.run.JdkToolchain.environment(
-                host.settings().getMavenJdkHome(), com.editora.process.ProcessRunner.augmentedPath());
+                host.projectScope().jdkHome(host.settings()), com.editora.process.ProcessRunner.augmentedPath());
     }
 
     // --- Update Versions ---------------------------------------------------------------------------

@@ -69,6 +69,13 @@ public class ProjectSettings {
     /** Debug adapter id ({@code java}, {@code python}, {@code javascript}) → its program or command. */
     private Map<String, String> debugTools = new LinkedHashMap<>();
 
+    /**
+     * The project's JDK, Maven and Gradle ({@code jdk}, {@code maven}, {@code gradle} → a request as
+     * {@link com.editora.toolchain.ToolRequest} reads it: {@code 21.0.9-tem}, {@code 21}, {@code 3.9.11}). Wins
+     * over the project's {@code .sdkmanrc} and the user's Default JDK, in a trusted folder.
+     */
+    private Map<String, String> toolchain = new LinkedHashMap<>();
+
     /** Server id → command line, overriding the global per-server command. */
     private Map<String, String> lspCommands = new LinkedHashMap<>();
 
@@ -165,7 +172,8 @@ public class ProjectSettings {
                 && getHtml().isEmpty()
                 && editor.isEmpty()
                 && blankValues(buildCommands)
-                && blankValues(debugTools);
+                && blankValues(debugTools)
+                && blankValues(toolchain);
     }
 
     private static boolean blankValues(Map<String, String> map) {
@@ -257,6 +265,12 @@ public class ProjectSettings {
         return own == null ? "" : own.strip();
     }
 
+    /** The project's own request for {@code tool} ({@code jdk}, {@code maven}, {@code gradle}), applied or not; "" when none. */
+    public String ownToolchain(String tool) {
+        String own = toolchain.get(tool);
+        return own == null ? "" : own.strip();
+    }
+
     /** The program or command debug adapter {@code adapterId} uses here; as {@link #buildCommand}. */
     public String debugTool(String adapterId, String user, boolean trusted) {
         String own = debugTools.get(adapterId);
@@ -311,6 +325,12 @@ public class ProjectSettings {
                 out.put("debug." + id, cmd.strip());
             }
         });
+        for (String tool : java.util.List.of("jdk", "maven", "gradle")) {
+            String own = ownToolchain(tool);
+            if (!own.isEmpty()) {
+                out.put("toolchain." + tool, own);
+            }
+        }
         return out;
     }
 
@@ -347,6 +367,14 @@ public class ProjectSettings {
 
     public void setBuildCommands(Map<String, String> buildCommands) {
         this.buildCommands = buildCommands == null ? new LinkedHashMap<>() : new LinkedHashMap<>(buildCommands);
+    }
+
+    public Map<String, String> getToolchain() {
+        return toolchain;
+    }
+
+    public void setToolchain(Map<String, String> toolchain) {
+        this.toolchain = toolchain == null ? new LinkedHashMap<>() : new LinkedHashMap<>(toolchain);
     }
 
     public Map<String, String> getDebugTools() {
