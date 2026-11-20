@@ -140,6 +140,67 @@ class NativeDebugWindowFxTest {
         return session;
     }
 
+    /** The Debug console's text. */
+    private String console() {
+        return call(() -> FxTestSupport.<org.fxmisc.richtext.CodeArea>field(debug.panel(), "console")
+                .getText());
+    }
+
+    /**
+     * A stand-in for CodeLLDB's launcher ({@code codelldb-launch}), which recent CodeLLDB (1.12) has the client start through
+     * {@code runInTerminal}: it prints a line, waits for {@code release} to exist, then exits 143 as the real one
+     * does when CodeLLDB ends it with SIGTERM after the program has exited.
+     */
+    private Path standInLauncher(Path release) throws Exception {
+        Path dir = Files.createDirectories(fx.configDir.resolve("codelldb-bin"));
+        Path launcher = dir.resolve("codelldb-launch");
+        Files.writeString(
+                launcher,
+                "#!/bin/sh\necho 'tally: 5 items'\nwhile [ ! -f '" + release + "' ]; do sleep 0.05; done\nexit 143\n");
+        assertTrue(launcher.toFile().setExecutable(true));
+        return launcher;
+    }
+
+    /**
+     * adl's report: the console said "Process exited with code 0." (CodeLLDB) then "Process finished with exit code
+     * 143", and the status bar 143. The 143 was CodeLLDB's launcher's, SIGTERMed once the program had ended; the
+     * program's code is the adapter's exited event's, and the launcher's end still ends the session.
+     */
+    @Test
+    void theProgramsExitCodeIsTheAdaptersNotItsLaunchersSigterm() throws Exception {
+        open(root.resolve("shelf.c"));
+        Path release = fx.configDir.resolve("release-1");
+        Path launcher = standInLauncher(release);
+        run("debug.start");
+        FakeDebugAdapter.Session session = next("launch");
+        session.runInTerminal(root.toString(), List.of(launcher.toString(), "--connect=127.0.0.1:1"), Map.of())
+                .get(20, java.util.concurrent.TimeUnit.SECONDS);
+        await("the program's output", () -> console().contains("tally: 5 items"));
+        session.exited(0);
+        Files.createFile(release);
+        await("the session's end", () -> !call(manager::isActive));
+        assertTrue(console().contains(com.editora.i18n.Messages.tr("run.exited", 0)), console());
+        assertFalse(console().contains("143"), console());
+        assertEquals(com.editora.i18n.Messages.tr("run.exited", 0), status());
+    }
+
+    /** Without the adapter's exited event the launcher's end still ends the session, saying only that it ended. */
+    @Test
+    void aLaunchersEndWithoutTheAdaptersExitEndsTheSessionWithoutACode() throws Exception {
+        open(root.resolve("shelf.c"));
+        Path release = fx.configDir.resolve("release-2");
+        Path launcher = standInLauncher(release);
+        run("debug.start");
+        FakeDebugAdapter.Session session = next("launch");
+        session.runInTerminal(root.toString(), List.of(launcher.toString()), Map.of())
+                .get(20, java.util.concurrent.TimeUnit.SECONDS);
+        await("the program's output", () -> console().contains("tally: 5 items"));
+        Files.createFile(release);
+        await("the session's end", () -> !call(manager::isActive));
+        assertTrue(console().contains(com.editora.i18n.Messages.tr("debug.console.programEnded")), console());
+        assertFalse(console().contains("143"), console());
+    }
+
     @Test
     void f5BuildsTheMakeProjectAndLaunchesTheProgramItMadeAndRestartDoesItAgain() throws Exception {
         EditorBuffer shelf = open(root.resolve("shelf.c"));

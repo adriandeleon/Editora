@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -401,6 +402,68 @@ class NativeDebugProbeFxTest {
             assertEquals("greet.cpp", call(() -> (String) FxTestSupport.field(debug.panel(), "sessionFile")));
             FxTestSupport.runOnFx(dap::stop);
             await("stopped", () -> !call(dap::isActive));
+        } finally {
+            fx.dispose();
+        }
+    }
+
+    /**
+     * adl's report: F5 on the lone {@code samples/debug/c/tally.c} with a breakpoint in its loop ran to the end without
+     * stopping, and the console said the program exited 143 though it exited 0.
+     */
+    @Test
+    void inAWindowF5OnALoneCFileStopsInItsLoopAndReportsTheProgramsExit(@TempDir Path dir) throws Exception {
+        String configured = assumeToolsAndCodelldb("cc");
+        Path folder = Files.createDirectory(dir.resolve("c"));
+        Path tally = Files.copy(Path.of("samples/debug/c/tally.c"), folder.resolve("tally.c"))
+                .toRealPath();
+        Path configDir = Files.createDirectory(dir.resolve("config"));
+        com.editora.config.SharedConfig seed = new com.editora.config.SharedConfig(configDir, false);
+        seed.load();
+        seed.getSettings().setDebugSupport(true);
+        seed.getSettings().setRustDebugPath(configured);
+        assertTrue(seed.saveSettings());
+        seed.shutdown();
+        FxWindowFixture fx = FxWindowFixture.create(
+                configDir, false, false, false, List.of(new MainController.OpenTarget(tally, 0, 0)), true, c -> {});
+        try {
+            MainController c = fx.controller;
+            DebugCoordinator debug = FxTestSupport.field(c, "debugCoordinator");
+            DapManager dap = FxTestSupport.field(c, "dapManager");
+            await("C/C++ debugging available", () -> call(() -> debug.debugEffectiveFor("cpp")));
+            com.editora.editor.EditorBuffer b = FxTestSupport.callOnFx(c::activeBuffer);
+            FxTestSupport.runOnFx(() -> b.toggleBreakpoint(22)); // line 23: total += subtotal(&items[i]);
+            // adl's window had breakpoints in other languages' files too, open in other tabs.
+            Path sh = Files.writeString(folder.resolve("shelf.sh"), "#!/bin/bash\necho a\necho b\n");
+            Path java =
+                    Files.writeString(folder.resolve("A.java"), "class A {\n  void m() {\n    int x = 1;\n  }\n}\n");
+            for (Path other : List.of(sh, java)) {
+                FxTestSupport.runOnFx(() -> c.fileWorkflows.openPath(other));
+                await(
+                        other + " open",
+                        () -> call(() -> c.activeBuffer() != null
+                                && other.equals(c.activeBuffer().getPath())));
+                com.editora.editor.EditorBuffer o = FxTestSupport.callOnFx(c::activeBuffer);
+                FxTestSupport.runOnFx(() -> o.toggleBreakpoint(1));
+            }
+            FxTestSupport.runOnFx(() -> c.fileWorkflows.openPath(tally));
+            await("tally in front", () -> call(() -> c.activeBuffer() == b));
+            FxTestSupport.runOnFx(() ->
+                    ((com.editora.command.CommandRegistry) FxTestSupport.field(c, "registry")).run("debug.start"));
+            await(
+                    "a stop in the loop",
+                    () -> call(() -> dap.state() == DapManager.State.SUSPENDED
+                            && !debug.panel().callStack().isEmpty()
+                            && debug.panel().callStack().get(0).line() == 22));
+            FxTestSupport.runOnFx(() -> b.toggleBreakpoint(22));
+            FxTestSupport.runOnFx(dap::resume);
+            await("the program's end", () -> !call(dap::isActive));
+            String console = call(() -> {
+                Object area = FxTestSupport.field(debug.panel(), "console");
+                return ((org.fxmisc.richtext.CodeArea) area).getText();
+            });
+            assertTrue(console.contains("tally: 5 items"), console);
+            assertFalse(console.contains("143"), "the program exited 0, not the adapter's SIGTERM: " + console);
         } finally {
             fx.dispose();
         }

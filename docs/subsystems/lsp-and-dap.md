@@ -1117,6 +1117,11 @@ with `--message-format=json`, which builds nothing, and launches the executable 
 
 The `launch` adds `sourceLanguages: ["rust"]` (Rust's formatters and the panic stop) and `terminal`: `console`, or
 `integrated` (`runInTerminal`, the program's input) with "Run the debugged program in the Debug console".
+CodeLLDB 1.12 also uses `runInTerminal` in `console` mode: it has the client start its launcher,
+`codelldb-launch --connect=…`, which connects back so the adapter can start the program with the launcher's standard
+streams, and it ends the launcher with SIGTERM once the program has exited. So that launcher is not the program
+(`DapManager.isAdapterLauncher`): its exit (143) is not reported, the adapter's `exited` event gives the program's code,
+and the launcher's end ends the session after that event (or after `LAUNCHER_EXIT_GRACE_MILLIS` without it).
 CodeLLDB reports a panic's stop with the reason `breakpoint`. Rust's LLDB formatters expand a `Vec`, a `String` and a
 `HashMap`, but not a `BTreeMap`, which shows as its raw tree (so `samples/debug/rust` keeps a `HashMap`).
 Attaching to a running Rust program isn't offered yet.
