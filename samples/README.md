@@ -444,6 +444,15 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
   - `samples/debug/go/shelf_test.go` — four green tests and a benchmark: put the caret in one and use
     **Debug Test at Caret** (or F5) to debug that test alone.
 
+- `samples/debug/bash/shelf.sh` — the same shelf as a **Bash** script (two files, ~120 lines), for
+  debugging on bashdb (Settings → Debugging → Bash). Open it and press F5. Every suggested spot is a
+  `break here` comment. Evaluate and watch bare names (`total`, not `$total`). `bash shelf.sh 3` totals three
+  items, `bash shelf.sh word` reports a bad quantity, and `bash shelf.sh crash` ends on an unset variable.
+  - `samples/debug/bash/shelf.sh` — a first plain breakpoint, Step Into `checkout`, a **watch** on `total`,
+    a **logpoint**, an associative array that grows, and a nested loop for a **hit-count** breakpoint.
+  - `samples/debug/bash/pricing.sh` — sourced by `shelf.sh`: Step Into crosses into this file, and a
+    `case` takes a **conditional** breakpoint (`$quantity -gt 5`).
+
 - `samples/debug/rust/Cargo.toml` — the same shelf as a standalone **Cargo** package (four files, ~200
   lines), for debugging Rust on CodeLLDB (Settings → Debugging → Rust; Install there fetches CodeLLDB).
   Open `src/main.rs` and press F5: Cargo builds it in the Debug console, then the debugger stops at your
