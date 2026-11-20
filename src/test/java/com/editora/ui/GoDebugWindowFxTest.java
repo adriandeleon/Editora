@@ -269,23 +269,21 @@ class GoDebugWindowFxTest {
         }
     }
 
-    /** A Go file is never runnable (no Run File), so the editor menu gives Debug File a place of its own. */
+    /**
+     * A Go file with a program's {@code main} is runnable: Run File builds and runs it, and Debug File sits
+     * beside Run File in the editor menu, so the debugger's own items add no second one. Debug: Debug Current File
+     * debugs it as F5 does.
+     */
     @Test
-    void theEditorMenuOffersDebugFile() throws Exception {
+    void theEditorMenuOffersDebugFileBesideRunFile() throws Exception {
         EditorBuffer b = open(root.resolve("main.go"));
-        List<javafx.scene.control.MenuItem> items = FxTestSupport.callOnFx(() -> debug.editorMenuItems(b));
-        javafx.scene.control.MenuItem debugFile = items.stream()
-                .filter(i -> tr("editmenu.debugFile").equals(i.getText()))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError(items.stream()
-                        .map(javafx.scene.control.MenuItem::getText)
-                        .toList()));
-        FxTestSupport.runOnFx(debugFile::fire);
-        FakeDebugAdapter.Session session = nextSession("launch");
-        assertEquals("debug", session.launchArgs.get("mode"), "the package, as F5 debugs it");
-        List<String> during = FxTestSupport.callOnFx(() -> debug.editorMenuItems(b).stream()
+        await("the Run scan", () -> call(b::isRunnable));
+        List<String> items = FxTestSupport.callOnFx(() -> debug.editorMenuItems(b).stream()
                 .map(javafx.scene.control.MenuItem::getText)
                 .toList());
-        assertFalse(during.contains(tr("editmenu.debugFile")), "not again while it is debugged: " + during);
+        assertFalse(items.contains(tr("editmenu.debugFile")), "beside Run File, not twice: " + items);
+        run("debug.debugFile");
+        FakeDebugAdapter.Session session = nextSession("launch");
+        assertEquals("debug", session.launchArgs.get("mode"), "the package, as F5 debugs it");
     }
 }

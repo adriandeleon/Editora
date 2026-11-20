@@ -22,6 +22,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and drives jkit from Tools ▸ Java Toolchain: install the JDK, Maven and Gradle the project names, install
   another JDK from any vendor, upgrade every install to its newest build, make one jkit's default, and remove
   one. Driving jkit needs a jkit with `--json`.
+- **Run File runs C, C++, Go and Rust files.** A file with a program's `main` — a lone C or C++ file, one of a CMake or
+  Make project, a Go file of `package main` (or a Go test file), a Rust file of a Cargo package — gets the gutter ▶
+  and Run File, as Python and shell scripts do. It is built the way Debug File builds it (`cc -g -O0` for a lone C
+  file, the project's own build otherwise), and the program runs in the Run console with its output and exit code.
+  Before, only F5 started such a file, and Run said it was not runnable. Debug: Debug Current File now also works on
+  a file that Run File runs.
+
+### Fixed
+
+- **Debugging a C, C++ or Rust program on CodeLLDB reports the program's own exit code.** The Debug console said
+  "Process finished with exit code 143" (and the status bar 143) after a program that exited 0. Recent CodeLLDB
+  (1.12) has Editora start its launcher, `codelldb-launch`, and ends that launcher with SIGTERM once the program has
+  exited; its 143 was reported as the program's. The program's code now comes from CodeLLDB's own exit event.
 
 ## [0.28.0] - 2026-11-18
 

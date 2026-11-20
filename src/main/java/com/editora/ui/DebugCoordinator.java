@@ -9525,8 +9525,9 @@ final class DebugCoordinator {
     /**
      * Whether the editor menu offers Debug File of its own for a file of {@code language}: one that Run File can't
      * run ({@code runnable} false; a runnable file has Debug File beside Run File) but Debug can. That is a classic
-     * Java main class outside a Maven or Gradle project ({@code inJavaProject} false), and any Go, Rust, C, C++, C#,
-     * Ruby or PHP file, which only the debugger's own launch runs. Pure.
+     * Java main class outside a Maven or Gradle project ({@code inJavaProject} false), a Go, Rust, C or C++ file
+     * without a program's {@code main} (a test file, a library file), and any C#, Ruby or PHP file, which only the
+     * debugger's own launch runs. Pure.
      */
     static boolean offersOwnDebugFile(String language, boolean runnable, boolean inJavaProject) {
         if (runnable) {
@@ -9609,7 +9610,8 @@ final class DebugCoordinator {
      */
     void debugActiveFile() {
         EditorBuffer b = host.activeBuffer();
-        if (b == null || !isDebuggableBuffer(b) || !offersDebugFile(b)) {
+        // A runnable file has the row beside Run File (the editor menu's own), any other one the Debug File of its own.
+        if (b == null || !isDebuggableBuffer(b) || !((b.isRunnable() && !b.isHttpFile()) || offersDebugFile(b))) {
             host.setStatus(tr("status.debug.noDebugFile"));
             return;
         }

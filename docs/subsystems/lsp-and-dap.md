@@ -1117,6 +1117,11 @@ with `--message-format=json`, which builds nothing, and launches the executable 
 
 The `launch` adds `sourceLanguages: ["rust"]` (Rust's formatters and the panic stop) and `terminal`: `console`, or
 `integrated` (`runInTerminal`, the program's input) with "Run the debugged program in the Debug console".
+CodeLLDB 1.12 also uses `runInTerminal` in `console` mode: it has the client start its launcher,
+`codelldb-launch --connect=…`, which connects back so the adapter can start the program with the launcher's standard
+streams, and it ends the launcher with SIGTERM once the program has exited. So that launcher is not the program
+(`DapManager.isAdapterLauncher`): its exit (143) is not reported, the adapter's `exited` event gives the program's code,
+and the launcher's end ends the session after that event (or after `LAUNCHER_EXIT_GRACE_MILLIS` without it).
 CodeLLDB reports a panic's stop with the reason `breakpoint`. Rust's LLDB formatters expand a `Vec`, a `String` and a
 `HashMap`, but not a `BTreeMap`, which shows as its raw tree (so `samples/debug/rust` keeps a `HashMap`).
 Attaching to a running Rust program isn't offered yet.
@@ -1171,6 +1176,14 @@ What is built for it is decided at launch, by the code F5 uses:
   Cargo build tools' (`Ops.buildExecutable`), and the folder's for CMake and Make (`Ops.trustBuild`).
 - Both paths refuse a file that runs elsewhere (a remote host, a container, WSL, a deployment): the program is built
   into this machine's cache.
+- **Run File.** A C, C++, Go or Rust file with a program's `main` is runnable (`RunScan`, from
+  `run.CompiledRunLine`: a C or C++ `main` definition outside a header, `func main` in `package main` or a Go test
+  file's first test, a top-level Rust `fn main`), so it gets the gutter ▶, the Run File row (with Debug File beside
+  it) and `file.run`. `RunCoordinator.launchCompiledFile` builds a `CompiledRun` with the file's own program
+  arguments and no working directory of its own and hands it to the same `runNative`, `runGo` or `runRust` a
+  configuration uses; nothing it finds wrong opens a configuration form (`CompiledRun.configured` is false). A file
+  without a `main` keeps Debug File of its own (`DebugCoordinator.offersOwnDebugFile`), and Debug: Debug Current File
+  accepts either kind.
 
 **Attach to Process: native programs.** On Linux `LocalProcesses` lists a program built with debug information
 (`ProgramFiles.kind`: `.debug_info` and no Go section). It's listed as Rust when rustc's `.debug_gdb_scripts` or
