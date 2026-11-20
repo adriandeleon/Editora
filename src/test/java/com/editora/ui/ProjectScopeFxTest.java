@@ -78,6 +78,52 @@ class ProjectScopeFxTest {
                 () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {}));
     }
 
+    /**
+     * The project's JDK and Maven: its {@code .sdkmanrc} picks them from the installs whether or not the folder is
+     * trusted (it only chooses among what is installed); the project file's {@code toolchain.jdk} wins once the folder
+     * is trusted; a project build command still wins over the {@code .sdkmanrc} Maven.
+     */
+    @Test
+    void theProjectsSdkmanrcAndToolchainChooseItsJdkAndMaven() throws Exception {
+        Files.writeString(project.resolve(".sdkmanrc"), "java=21.0.9-tem\nmaven=3.9.11\n");
+        Files.writeString(ProjectSettings.fileFor(project), """
+                {"version": 2, "toolchain": {"jdk": "25"}, "buildCommands": {"maven": "./tools/mvn"}}
+                """);
+        com.editora.toolchain.ToolInstall jdk21 = new com.editora.toolchain.ToolInstall(
+                "jdk", "21.0.9+10", "temurin", false, Path.of("/jk/jdk21"), "jkit", "21.0.9+10-temurin");
+        com.editora.toolchain.ToolInstall jdk25 = new com.editora.toolchain.ToolInstall(
+                "jdk", "25.0.1+8", "temurin", false, Path.of("/jk/jdk25"), "jkit", "25.0.1+8-temurin");
+        com.editora.toolchain.ToolInstall maven = new com.editora.toolchain.ToolInstall(
+                "maven", "3.9.11", null, false, Path.of("/jk/mvn"), "jkit", "3.9.11");
+        FxTestSupport.runOnFx(() -> {
+            config.getSettings().setMavenJdkHome("/mine/jdk");
+            config.getSettings().setMavenCommand("");
+            ProjectScope scope = scope();
+            scope.reads = Runnable::run;
+            scope.toolchainReads = Runnable::run;
+            scope.installs = () -> new com.editora.toolchain.ProjectToolchain.Installs(
+                    List.of(jdk21, jdk25), List.of(maven), List.of());
+            scope.reload();
+            assertEquals("/jk/jdk21", scope.jdkHome(config.getSettings()), "untrusted: .sdkmanrc's java=");
+            assertEquals(
+                    Path.of("/jk/mvn", "bin", com.editora.Os.isWindows() ? "mvn.cmd" : "mvn")
+                            .toString(),
+                    scope.buildCommand(com.editora.build.BuildTool.MAVEN, config.getSettings()),
+                    "untrusted: .sdkmanrc's maven=, not the project file's command");
+
+            config.getTrustStore().trust(project);
+            scope.reload();
+            assertEquals("/jk/jdk25", scope.jdkHome(config.getSettings()), "trusted: the project file's toolchain.jdk");
+            assertEquals("./tools/mvn", scope.buildCommand(com.editora.build.BuildTool.MAVEN, config.getSettings()));
+        });
+        Files.delete(project.resolve(".sdkmanrc"));
+        Files.writeString(ProjectSettings.fileFor(project), "{\"version\": 2}");
+        FxTestSupport.runOnFx(() -> {
+            scope().reload();
+            assertEquals("/mine/jdk", scope().jdkHome(config.getSettings()), "nothing named: the user's Default JDK");
+        });
+    }
+
     @Test
     void anUntrustedProjectsValuesAreKeptButTheUsersApply() throws Exception {
         EditorBuffer buffer = open(Files.writeString(project.resolve("A.java"), "class A {}\n"));

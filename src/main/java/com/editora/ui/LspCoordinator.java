@@ -366,6 +366,12 @@ final class LspCoordinator {
         this.host = host;
         this.lspManager = lspManager;
         this.ops = ops;
+        // The project's JDK (.sdkmanrc, toolchain.jdk) lands after a read off the FX thread, or changes with an
+        // edited file or a trust decision: a running jdtls is told then, as for a Settings change.
+        projectScope.addChangeListener(() -> {
+            lspManager.setJavaDefaultJdk(projectScope.jdkHome(host.settings()));
+            sayMissingTools();
+        });
         this.xmlTrust = new XmlFolderTrust(this, host, lspManager, ops);
         this.html = new HtmlLspAids(host, lspManager, ops);
         this.eslint = new EslintCoordinator(this, host, ops);
@@ -1881,7 +1887,7 @@ final class LspCoordinator {
      *  that server when it changes). */
     void applyOnTypeFormatting() {
         lspManager.setJavaOnTypeFormatting(host.settings().isLspOnTypeFormatting());
-        lspManager.setJavaDefaultJdk(host.settings().getMavenJdkHome()); // a running jdtls is told at once
+        lspManager.setJavaDefaultJdk(projectScope.jdkHome(host.settings())); // a running jdtls is told at once
         lspManager.setMavenCentralIndex(host.settings().isMavenPomCentralIndex());
         lspManager.setJavaDownloadSources(host.settings().isJavaDownloadSources());
     }
@@ -2048,6 +2054,30 @@ final class LspCoordinator {
         return ops.config();
     }
 
+    /** The missing tools last said, so the same ones are said once, not on every reload. */
+    private String saidMissing = "";
+
+    /**
+     * Says, once, when the project names a JDK, Maven or Gradle that is not installed ({@code .sdkmanrc}'s
+     * {@code java=21.0.9-tem}), and which command installs it.
+     */
+    private void sayMissingTools() {
+        List<com.editora.toolchain.ProjectToolchain.Choice> missing =
+                projectScope.toolchain().missing();
+        List<String> names = new java.util.ArrayList<>();
+        for (com.editora.toolchain.ProjectToolchain.Choice c : missing) {
+            String file = c.origin() == com.editora.toolchain.ProjectToolchain.Origin.SDKMANRC
+                    ? com.editora.toolchain.SdkmanRc.FILE
+                    : ".editora/settings.json";
+            names.add(ToolchainCommands.toolName(c.tool()) + " " + c.request().raw() + " (" + file + ")");
+        }
+        String now = String.join(", ", names);
+        if (!now.isEmpty() && !now.equals(saidMissing)) {
+            host.setError(tr("toolchain.missing", now, tr("command.toolchain.installProjectTools")));
+        }
+        saidMissing = now;
+    }
+
     /** This window's project scope, which every reader of a project-scopable setting asks. */
     ProjectScope projectScope() {
         return projectScope;
@@ -2197,6 +2227,15 @@ final class LspCoordinator {
                             case "java" -> "Java";
                             case "python" -> "Python";
                             case "javascript" -> "JavaScript";
+                            default -> name;
+                        });
+            case "toolchain" ->
+                tr(
+                        "settings.scope.toolchain",
+                        switch (name) {
+                            case "jdk" -> "JDK";
+                            case "maven" -> "Maven";
+                            case "gradle" -> "Gradle";
                             default -> name;
                         });
             default -> tr("settings.scope." + name);
@@ -2461,13 +2500,18 @@ final class LspCoordinator {
         return projectScope.settings();
     }
 
-    /** Whether {@code file} is this window's project {@code .editora/settings.json}. */
+    /**
+     * Whether {@code file} is this window's project {@code .editora/settings.json} or its {@code .sdkmanrc}, whose
+     * saving changes what applies here.
+     */
     private boolean isProjectSettingsFile(@Nullable Path file) {
         Path root = ops.lspProjectRoot();
         return file != null
                 && root != null
                 && com.editora.vfs.Vfs.isLocal(file)
-                && com.editora.config.PathKeys.sameNormalized(file, com.editora.config.ProjectSettings.fileFor(root));
+                && (com.editora.config.PathKeys.sameNormalized(file, com.editora.config.ProjectSettings.fileFor(root))
+                        || com.editora.config.PathKeys.sameNormalized(
+                                file, com.editora.toolchain.SdkmanRc.fileFor(root)));
     }
 
     /** The overrides in force when {@link #applySupport} last configured the manager. */

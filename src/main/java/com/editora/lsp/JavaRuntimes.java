@@ -34,7 +34,13 @@ public final class JavaRuntimes {
     private static List<java.nio.file.Path> searchRoots() {
         List<java.nio.file.Path> roots = new ArrayList<>();
         String home = System.getProperty("user.home", "");
-        roots.add(java.nio.file.Path.of(home, ".sdkman", "candidates", "java"));
+        roots.add(
+                com.editora.toolchain.SdkmanInstalls.dir().resolve("candidates").resolve("java"));
+        if (!com.editora.toolchain.SdkmanInstalls.dir().equals(java.nio.file.Path.of(home, ".sdkman"))) {
+            roots.add(java.nio.file.Path.of(home, ".sdkman", "candidates", "java"));
+        }
+        // jkit (jkit-project.dev): $JKIT_HOME/tools/jdk/<version>-<vendor>, GraalVM builds too
+        roots.add(com.editora.toolchain.JkitInstalls.toolsDir(com.editora.toolchain.JkitInstalls.home(), "jdk"));
         roots.add(java.nio.file.Path.of(home, ".asdf", "installs", "java"));
         roots.add(java.nio.file.Path.of(home, ".local", "share", "mise", "installs", "java"));
         roots.add(java.nio.file.Path.of(home, ".jabba", "jdk"));

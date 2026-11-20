@@ -5449,7 +5449,7 @@ final class DebugCoordinator {
         }
         Path path = java.util.Objects.requireNonNull(b.getPath()); // checked above
         String text = b.getContent();
-        String settingsJdk = host.settings().getMavenJdkHome();
+        String settingsJdk = host.projectScope().jdkHome(host.settings());
         // What the launch reads from the disk is looked at off the FX thread first (PERF-01): the trust gate's
         // project files, the build root and its pom, the JDK's java, PATH's java. What follows answers from that.
         planOffFx("debug-file-plan", () -> DebugPlanning.warmJavaLaunch(language, path, text, settingsJdk), a -> {
@@ -5562,7 +5562,7 @@ final class DebugCoordinator {
                 !(java || jvmScript) || !com.editora.process.ExecTargets.runsHere(path)
                         ? ""
                         : compactSource || jvmScript
-                                ? host.settings().getMavenJdkHome()
+                                ? host.projectScope().jdkHome(host.settings())
                                 : configuredJdkHome(projectRoot, null));
         String selectedJava = com.editora.run.JdkToolchain.javaExecutable(jdkHome);
         // A Java file without a build tool runs on Run's JDK: the Settings JDK, else PATH's java (review 2, B102).
@@ -6127,7 +6127,8 @@ final class DebugCoordinator {
             return;
         }
         Path window = ops.projectRoot();
-        String jdk = host.settings().getMavenJdkHome(); // the project and the plan are read off the FX thread
+        String jdk =
+                host.projectScope().jdkHome(host.settings()); // the project and the plan are read off the FX thread
         planOffFx("debug-config-plan", () -> DebugPlanning.planJava(cfg, routing, window, jdk), a -> {
             if (a.value() != null) {
                 debugJavaConfig(cfg, routing, a.value());
@@ -6345,7 +6346,7 @@ final class DebugCoordinator {
                 || !trusted(read.gate())) { // the project's trust first, as Run asks it, so "no" starts nothing
             return;
         }
-        String jdkHome = cfg.jdkHome().isBlank() ? host.settings().getMavenJdkHome() : cfg.jdkHome();
+        String jdkHome = cfg.jdkHome().isBlank() ? host.projectScope().jdkHome(host.settings()) : cfg.jdkHome();
         java.util.Map<String, String> launchEnv = new java.util.LinkedHashMap<>(
                 com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
         launchEnv.putAll(env);
@@ -6695,7 +6696,7 @@ final class DebugCoordinator {
             return "";
         }
         return com.editora.run.JdkToolchain.effectiveHome(
-                cfg == null ? "" : cfg.jdkHome(), host.settings().getMavenJdkHome());
+                cfg == null ? "" : cfg.jdkHome(), host.projectScope().jdkHome(host.settings()));
     }
 
     private String configuredJavaExecutable(@Nullable Path root, @Nullable RunConfiguration cfg) {

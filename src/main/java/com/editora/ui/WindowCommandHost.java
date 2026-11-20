@@ -260,6 +260,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public ToolchainCommands toolchainCommands() {
+        return mc.toolchainCommands;
+    }
+
+    @Override
     public ToolWindow commitToolWindow() {
         return mc.commitToolWindow;
     }

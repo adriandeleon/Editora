@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A project's own JDK, Maven and Gradle, from its `.sdkmanrc`.** A project with an `.sdkmanrc`
+  (`java=21.0.9-tem`, `maven=3.9.11`, `gradle=8.14.3`) now builds, runs, debugs and is analysed by the Java
+  language server on that JDK, and builds with that Maven or Gradle when it has no wrapper, instead of the one
+  Default JDK in Settings. A project can also name them in `.editora/settings.json` (`"toolchain": {"jdk":
+  "21"}`), which wins in a trusted folder. Java Toolchain: Set Project JDK… (and Maven, Gradle) picks one from
+  every install on the machine and asks whether to keep it in `.sdkmanrc` or Editora's project settings. Gradle
+  runs on the project's JDK when it names one. When the project names something that is not installed, Editora
+  says so once.
+- **jkit support.** Editora finds every JDK, Maven and Gradle [jkit](https://jkit-project.dev) installed
+  (`~/.jkit`, or `JKIT_HOME`), for the Java language server, Run and Debug, the Default JDK list and remote hosts,
+  and drives jkit from Tools ▸ Java Toolchain: install the JDK, Maven and Gradle the project names, install
+  another JDK from any vendor, upgrade every install to its newest build, make one jkit's default, and remove
+  one. Driving jkit needs a jkit with `--json`.
+
 ## [0.28.0] - 2026-11-18
 
 ### Security
