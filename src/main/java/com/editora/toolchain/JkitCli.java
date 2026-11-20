@@ -80,13 +80,6 @@ public final class JkitCli {
         }
     }
 
-    /** Thrown when jkit is not installed. */
-    public static final class NotInstalledException extends RuntimeException {
-        public NotInstalledException() {
-            super("jkit is not installed");
-        }
-    }
-
     /**
      * The {@code jkit} program: on the augmented PATH, else where its packages install it ({@code /usr/bin},
      * {@code /usr/local/bin}, {@code ~/.local/bin}); null when there is none. Reads the disk: off the FX thread.
