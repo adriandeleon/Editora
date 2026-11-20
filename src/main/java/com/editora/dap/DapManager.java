@@ -5871,7 +5871,10 @@ public final class DapManager {
             return;
         }
         killDebuggee(); // a session has one program
-        programStartedEpoch = epoch;
+        boolean launcher = isAdapterLauncher(argv);
+        if (!launcher) {
+            programStartedEpoch = epoch; // its exit is the program's: the adapter's exited event is not reported
+        }
         // A Node.js program's stdout and stderr share one pipe: two pipes read by two threads reordered its lines
         // (review D102). Java and Python keep their red stderr.
         Debuggee program = new Debuggee(shared.programTerminal, programTitle(), jsSession);
@@ -5913,27 +5916,75 @@ public final class DapManager {
                                                 source.getFileName()),
                                         true);
                             }
-                            startProgram(epoch, program, from, argv, env, started);
+                            startProgram(epoch, program, from, argv, env, started, launcher);
                         });
                     });
                     return;
                 }
             }
-            startProgram(epoch, program, dir, argv, env, started);
+            startProgram(epoch, program, dir, argv, env, started, launcher);
         } catch (RuntimeException e) {
             program.kill();
             started.completeExceptionally(e); // the adapter fails the launch with this, which reports it
         }
     }
 
-    /** Starts {@code program} for the session of {@code epoch} and answers the adapter's request when it has. */
+    /** How long an adapter's launcher's end waits for the adapter's {@code exited} event before ending the session. */
+    static final long LAUNCHER_EXIT_GRACE_MILLIS = 2_000;
+
+    /**
+     * Ends session {@code epoch}, whose adapter's launcher ended at {@code since} ({@link System#nanoTime}), once the
+     * adapter has reported the program's exit; after {@link #LAUNCHER_EXIT_GRACE_MILLIS} without it, says only that
+     * the program ended (FX thread).
+     */
+    private void endAfterAdapterExit(long epoch, long since) {
+        if (!isCurrent(epoch)) {
+            return; // the adapter ended it meanwhile
+        }
+        if (exitReportedEpoch != epoch) {
+            if (System.nanoTime() - since < TimeUnit.MILLISECONDS.toNanos(LAUNCHER_EXIT_GRACE_MILLIS)) {
+                CompletableFuture.delayedExecutor(50, TimeUnit.MILLISECONDS)
+                        .execute(() -> fx(() -> endAfterAdapterExit(epoch, since)));
+                return;
+            }
+            outputPump.flush();
+            listener.onOutput(com.editora.i18n.Messages.tr("debug.console.programEnded") + "\n", "console");
+        }
+        endSession(epoch);
+    }
+
+    /**
+     * Whether {@code argv}, asked for by an adapter's {@code runInTerminal}, starts the adapter's own launcher rather
+     * than the program: recent CodeLLDB (1.12) has the client start {@code codelldb-launch --connect=…}, which connects
+     * back, has the adapter start the program with its standard streams, and is ended by the adapter with SIGTERM
+     * once the program has exited. Its exit code (143 on Linux) is not the program's; the adapter's {@code exited}
+     * event has that.
+     */
+    static boolean isAdapterLauncher(List<String> argv) {
+        if (argv == null || argv.isEmpty() || argv.getFirst() == null) {
+            return false;
+        }
+        String first = argv.getFirst().replace('\\', '/');
+        String name = first.substring(first.lastIndexOf('/') + 1).toLowerCase(java.util.Locale.ROOT);
+        if (name.endsWith(".exe")) {
+            name = name.substring(0, name.length() - ".exe".length());
+        }
+        return name.equals("codelldb-launch");
+    }
+
+    /**
+     * Starts {@code program} for the session of {@code epoch} and answers the adapter's request when it has. When an
+     * adapter's {@code launcher} ({@link #isAdapterLauncher}) ends, its own code is not reported: the session ends
+     * after the adapter's exited event ({@link #endAfterAdapterExit}).
+     */
     private void startProgram(
             long epoch,
             Debuggee program,
             @Nullable Path dir,
             List<String> argv,
             Map<String, String> env,
-            CompletableFuture<Long> started) {
+            CompletableFuture<Long> started,
+            boolean launcher) {
         try {
             debuggee = program; // a Stop while it starts ends it as soon as it has started
             program.start(dir, argv, env, new Debuggee.Sink() {
@@ -5955,6 +6006,12 @@ public final class DapManager {
                             if (isCurrent(epoch)) {
                                 if (inputWasOpen) {
                                     listener.onProgramInput(false);
+                                }
+                                if (launcher) {
+                                    // The adapter's exited event says how the program ended (its code, not this
+                                    // launcher's SIGTERM): the session ends once it has come, or after a grace.
+                                    endAfterAdapterExit(epoch, System.nanoTime());
+                                    return;
                                 }
                                 listener.onProgramExit(code);
                                 endSession(epoch);
@@ -6026,7 +6083,8 @@ public final class DapManager {
 
     /**
      * The adapter reports the program exited: the console says with which code, after the program's last
-     * output. A program Editora started itself reports its own exit instead (see {@link #startDebuggee}).
+     * output. A program Editora started itself reports its own exit instead (see {@link #startDebuggee}); an
+     * adapter's own launcher it started does not ({@link #isAdapterLauncher}).
      */
     private void onExited(long epoch, int exitCode) {
         fx(() -> {

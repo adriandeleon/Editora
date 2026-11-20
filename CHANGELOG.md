@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Debugging a C, C++ or Rust program on CodeLLDB reports the program's own exit code.** The Debug console said
+  "Process finished with exit code 143" (and the status bar 143) after a program that exited 0. Recent CodeLLDB (1.12) has
+  Editora start its launcher, `codelldb-launch`, and ends that launcher with SIGTERM once the program has exited; its
+  143 was reported as the program's. The program's code now comes from CodeLLDB's own exit event.
+
 ## [0.28.0] - 2026-11-18
 
 ### Security

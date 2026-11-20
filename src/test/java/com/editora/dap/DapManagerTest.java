@@ -231,4 +231,15 @@ class DapManagerTest {
         Files.writeString(f, "package demo;\n\npublic class Café {\n  public static void main(String[] a) {}\n}\n");
         assertEquals("demo.Café", DapManager.mainClassFromFile(f));
     }
+
+    /** CodeLLDB's launcher, started for it through runInTerminal, is not the program (its exit is not the program's). */
+    @Test
+    void codelldbsLauncherIsTheAdaptersNotTheProgram() {
+        assertTrue(DapManager.isAdapterLauncher(
+                java.util.List.of("/home/u/.editora/plugins/dap/rust/extension/bin/codelldb-launch", "--connect=x")));
+        assertTrue(DapManager.isAdapterLauncher(java.util.List.of("C:\\codelldb\\bin\\codelldb-launch.exe")));
+        assertFalse(DapManager.isAdapterLauncher(java.util.List.of("/usr/bin/java", "Echo.java")));
+        assertFalse(DapManager.isAdapterLauncher(java.util.List.of("/tmp/codelldb-launch-test/tally")));
+        assertFalse(DapManager.isAdapterLauncher(java.util.List.of()));
+    }
 }
