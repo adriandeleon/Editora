@@ -802,6 +802,65 @@ class RunCoordinatorFlowsFxTest {
     }
 
     /**
+     * Run File on a Go file: Debug File could start one but Run File said it was not runnable. It is built as a Go
+     * configuration is — by the {@code go} of Settings, into the cache — and the program runs in the file's folder
+     * with the file's own arguments; Rerun builds it again.
+     */
+    @Test
+    void runFileBuildsAGoFileAndRunsItsProgram() throws Exception {
+        host.configDir = outside.resolve("config");
+        host.settings.setGoCommand(standInGo().toString());
+        ops.programArgs.put("hello.go", "one 'two three'");
+        open("cmd/hello.go", "package main\n\nfunc main() {}\n", true);
+
+        FxTestSupport.runOnFx(run::runActiveFile);
+        awaitStatus(tr("status.run.ok"));
+        assertEquals("hello one two three in cmd MODE=\n", console());
+        assertEquals(List.of("build hello.go in cmd"), Files.readAllLines(outside.resolve("go.log")));
+        assertTrue(
+                statuses().contains(tr("status.run.compiledBuild", "hello.go")),
+                statuses().toString());
+        assertEquals(List.of(), ops.edited, "no configuration form opens for a file");
+
+        clearLog();
+        FxTestSupport.runOnFx(run::rerunLast);
+        awaitStatus(tr("status.run.ok"));
+        assertEquals(2, Files.readAllLines(outside.resolve("go.log")).size(), "Rerun builds it again");
+    }
+
+    /**
+     * Run File on a lone C file (adl's {@code samples/debug/c/tally.c}): compiled by {@code cc} as Debug File
+     * compiles it, then run in the Run console with its output and exit code. A file without {@code main} is not
+     * runnable at all.
+     */
+    @Test
+    void runFileCompilesALoneCFileAndRunsIt() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                com.editora.process.ProcessRunner.resolveExecutable(List.of("cc"))
+                        .get(0)
+                        .contains("/"),
+                "needs a C compiler");
+        host.configDir = outside.resolve("config");
+        open(
+                "c/tally.c",
+                "#include <stdio.h>\n\nint main(int argc, char **argv) {\n"
+                        + "    printf(\"tally: %d\\n\", argc - 1);\n    return 3;\n}\n",
+                true);
+        ops.programArgs.put("tally.c", "a b");
+
+        FxTestSupport.runOnFx(run::runActiveFile);
+        awaitStatus(tr("status.run.exit", 3));
+        assertEquals("tally: 2\n", console());
+        assertTrue(
+                statuses().contains(tr("status.run.compiledBuild", "tally.c")),
+                statuses().toString());
+
+        EditorBuffer library = open("c/lib.c", "int add(int a, int b) { return a + b; }\n", false);
+        FxTestSupport.drainFx();
+        assertFalse(FxTestSupport.callOnFx(library::isRunnable), "no main: nothing to run");
+    }
+
+    /**
      * A Go file of a package other than {@code main} has no program: {@code go build -o} would write the package's
      * archive and exit 0, and starting that failed with "permission denied". It is said before anything is built,
      * and the form opens at the file to change. A test file of such a package still runs its tests.

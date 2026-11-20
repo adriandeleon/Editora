@@ -1171,6 +1171,14 @@ What is built for it is decided at launch, by the code F5 uses:
   Cargo build tools' (`Ops.buildExecutable`), and the folder's for CMake and Make (`Ops.trustBuild`).
 - Both paths refuse a file that runs elsewhere (a remote host, a container, WSL, a deployment): the program is built
   into this machine's cache.
+- **Run File.** A C, C++, Go or Rust file with a program's `main` is runnable (`RunScan`, from
+  `run.CompiledRunLine`: a C or C++ `main` definition outside a header, `func main` in `package main` or a Go test
+  file's first test, a top-level Rust `fn main`), so it gets the gutter ▶, the Run File row (with Debug File beside
+  it) and `file.run`. `RunCoordinator.launchCompiledFile` builds a `CompiledRun` with the file's own program
+  arguments and no working directory of its own and hands it to the same `runNative`, `runGo` or `runRust` a
+  configuration uses; nothing it finds wrong opens a configuration form (`CompiledRun.configured` is false). A file
+  without a `main` keeps Debug File of its own (`DebugCoordinator.offersOwnDebugFile`), and Debug: Debug Current File
+  accepts either kind.
 
 **Attach to Process: native programs.** On Linux `LocalProcesses` lists a program built with debug information
 (`ProgramFiles.kind`: `.debug_info` and no Go section). It's listed as Rust when rustc's `.debug_gdb_scripts` or

@@ -430,7 +430,8 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
 
 - `samples/debug/go/go.mod` — the same shelf as a standalone **Go module** (five files, ~170 lines),
   for debugging Go on Delve (Settings → Debugging → Go; Install there runs `go install` for Delve).
-  Open `main.go` and press F5: Delve builds the package and stops at your breakpoints. Every suggested
+  Open `main.go` and press F5: Delve builds the package and stops at your breakpoints (Run File, the gutter
+  ▶, builds it the same way and runs it in the Run console). Every suggested
   spot is a `break here` comment. `go run .` runs it outside Editora, `go test` runs the tests, and the
   `crash` program argument panics, which Delve stops on by itself.
   - `samples/debug/go/main.go` — the entry point: a first plain breakpoint, then Step Into `checkout`.
@@ -456,7 +457,7 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
 - `samples/debug/rust/Cargo.toml` — the same shelf as a standalone **Cargo** package (four files, ~200
   lines), for debugging Rust on CodeLLDB (Settings → Debugging → Rust; Install there fetches CodeLLDB).
   Open `src/main.rs` and press F5: Cargo builds it in the Debug console, then the debugger stops at your
-  breakpoints, with Strings, Vecs and maps shown as Rust values. Every suggested spot is a `break here`
+  breakpoints (Run File, the gutter ▶, builds it and runs it in the Run console instead), with Strings, Vecs and maps shown as Rust values. Every suggested spot is a `break here`
   comment. `cargo run` runs it outside Editora, `cargo test` runs the tests, and the `crash` program
   argument panics, which stops the debugger where it happened.
   - `samples/debug/rust/src/main.rs` — the entry point: a first plain breakpoint, then Step Into `checkout`.
@@ -474,7 +475,8 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
 - `samples/debug/cpp/CMakeLists.txt` — the same shelf as a standalone **CMake C++** project (five files,
   ~150 lines), for debugging C++ on CodeLLDB (Settings → Debugging → Rust, C and C++; Install there fetches
   CodeLLDB). Open `src/main.cpp` and press F5: Editora configures a Debug build in `build/editora-debug`
-  (after asking to trust the folder), builds it in the Debug console, then stops at your breakpoints, with
+  (after asking to trust the folder), builds it in the Debug console, then stops at your breakpoints (Run
+  File, the gutter ▶, builds the project the same way and runs the program in the Run console), with
   `std::string`, `std::vector` and `std::map` shown as values. The `crash` program argument throws,
   which stops the debugger where it was thrown.
   - `samples/debug/cpp/src/main.cpp` — the entry point: a first plain breakpoint, Step Into `checkout`,
@@ -489,7 +491,8 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
     Configuration…**: the same program on CodeLLDB (with a `pickString` input for its argument), on GDB's
     DAP mode (`"type": "gdb"`), and as Microsoft's `cppdbg` form; each builds first with the `build` task.
 - `samples/debug/c/tally.c` — a **lone C file**: F5 compiles it with `cc -g -O0`, no project needed;
-  a struct array, Step Into / Step Out on `subtotal`, a watch on `total`.
+  a struct array, Step Into / Step Out on `subtotal`, a watch on `total`. Run File (the gutter ▶) compiles it
+  the same way and runs it in the Run console, with its output and exit code.
 
 - `samples/debug/csharp/Shelf.csproj` — the same shelf as a standalone **.NET 10 C#** project (four files,
   ~150 lines), for debugging C# on netcoredbg (Settings → Debugging → C#; Install there fetches netcoredbg).

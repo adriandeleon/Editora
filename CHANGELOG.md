@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Run File runs C, C++, Go and Rust files.** A file with a program's `main` — a lone C or C++ file, one of a CMake or
+  Make project, a Go file of `package main` (or a Go test file), a Rust file of a Cargo package — gets the gutter ▶
+  and Run File, as Python and shell scripts do. It is built the way Debug File builds it (`cc -g -O0` for a lone C
+  file, the project's own build otherwise), and the program runs in the Run console with its output and exit code.
+  Before, only F5 started such a file, and Run said it was not runnable. Debug: Debug Current File now also works on
+  a file that Run File runs.
+
 ## [0.28.0] - 2026-11-18
 
 ### Security

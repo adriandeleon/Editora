@@ -1,6 +1,6 @@
 /*
- * A lone C file: open it and press F5 (Debug). Editora compiles it with `cc -g -O0` (no project needed), then
- * CodeLLDB runs it. Every suggested spot is a "break here" comment.
+ * A lone C file: press F5 (Debug) and Editora compiles it with `cc -g -O0` (no project needed), then CodeLLDB
+ * runs it; Run File (the gutter ▶) compiles it the same way. Every suggested spot is a "break here" comment.
  */
 #include <stdio.h>
 #include <string.h>
