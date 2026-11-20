@@ -246,4 +246,19 @@ class RunScanTest {
         assertEquals(
                 0, RunScan.scan(inputs("python", "test_empty.py"), "x = 1\n").line(), "no tests: a script");
     }
+
+    /** A C, C++, Go or Rust file with a program's main is run by Run File, as Debug File debugs it. */
+    @Test
+    void aCompiledFileWithAMainIsRunnableAtIt() {
+        RunScan.Result c = RunScan.scan(inputs("c", "tally.c"), "#include <stdio.h>\n\nint main(void) {\n}\n");
+        assertTrue(c.runnable());
+        assertEquals(2, c.line());
+        assertFalse(RunScan.scan(inputs("c", "lib.c"), "int add(int a) { return a; }\n")
+                .runnable());
+        assertTrue(RunScan.scan(inputs("go", "a.go"), "package main\nfunc main() {}\n")
+                .runnable());
+        assertTrue(RunScan.scan(inputs("rust", "main.rs"), "fn main() {}\n").runnable());
+        RunScan.Inputs off = new RunScan.Inputs(false, false, false, false, "c", "tally.c", false);
+        assertFalse(RunScan.scan(off, "int main(void) {}\n").runnable(), "the Run feature off");
+    }
 }
