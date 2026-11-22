@@ -1633,7 +1633,7 @@ class RunCoordinatorFlowsFxTest {
     void aDeclinedTrustRunsNoFileOfAScalaCliProject() throws Exception {
         Path app = Files.createDirectories(project.resolve("cli-app"));
         Files.writeString(app.resolve("project.scala"), "//> using scala 3\n");
-        open("cli-app/Hello.scala", "@main def hello(): Unit = println(\"ran\")\n", false);
+        open("cli-app/Hello.scala", "@main def hello(): Unit = println(\"ran\")\n", true);
         ops.refuseTrust = true;
 
         FxTestSupport.runOnFx(run::runActiveFile);
