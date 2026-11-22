@@ -113,14 +113,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1575"
     },
     {
-      "rule": "CONF-11",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-11",
-      "kind": "pending",
-      "reason": "The Force Push command can be run directly, without a rejected push first.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1575"
-    },
-    {
       "rule": "REL-09",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/release/#rel-09",
