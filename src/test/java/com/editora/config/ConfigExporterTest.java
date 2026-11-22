@@ -107,41 +107,42 @@ class ConfigExporterTest {
         assertEquals("rw-------", PosixFilePermissions.toString(perms));
     }
 
+    /** The keys are never exported (SET-13): blank in any settings file or copy that still has one, keys/ left out. */
     @Test
-    void theAiApiKeysAreBlankedInTheSettingsFileAndItsCopiesUnlessIncluded(@TempDir Path cfg, @TempDir Path home)
-            throws Exception {
+    void theAiApiKeysAreNeverExported(@TempDir Path cfg, @TempDir Path home) throws Exception {
         String json =
                 "{\n  \"aiApiKey\" : \"sk-ant-FAKE\\\"x\",\n  \"aiApiKeyOpenai\" : \"sk-FAKE\",\n  \"fontSize\" : 14\n}\n";
         Files.writeString(cfg.resolve("settings.json"), json);
         Files.writeString(cfg.resolve("settings.json.corrupt.bak"), "{ \"aiApiKeyLmstudio\":\"lm-FAKE\", broken");
         Files.writeString(cfg.resolve("settings.toml.migrated"), "aiApiKey = \"sk-ant-OLD\"\nfontSize = 14\n");
         Files.writeString(cfg.resolve("notes.json"), "{\"aiApiKey\":\"a note is not settings\"}");
+        new com.editora.secrets.EncryptedFileStore(cfg).write("ai-api-key.anthropic", "sk-ant-FAKE");
 
-        Path zip = ConfigExporter.export(cfg, home, "1.0.0", "someone", WHEN, false, false);
-        try (ZipFile zf = new ZipFile(zip.toFile())) {
-            String settings =
-                    new String(zf.getInputStream(zf.getEntry("settings.json")).readAllBytes());
-            assertEquals("{\n  \"aiApiKey\" : \"\",\n  \"aiApiKeyOpenai\" : \"\",\n  \"fontSize\" : 14\n}\n", settings);
-            String bak = new String(
-                    zf.getInputStream(zf.getEntry("settings.json.corrupt.bak")).readAllBytes());
-            assertFalse(bak.contains("lm-FAKE"), bak);
-            String toml = new String(
-                    zf.getInputStream(zf.getEntry("settings.toml.migrated")).readAllBytes());
-            assertEquals("aiApiKey = \"\"\nfontSize = 14\n", toml);
-            String notes =
-                    new String(zf.getInputStream(zf.getEntry("notes.json")).readAllBytes());
-            assertTrue(notes.contains("a note is not settings"), "only the settings files are touched");
-        }
-        Files.delete(zip);
-        Path withKeys = ConfigExporter.export(cfg, home, "1.0.0", "someone", WHEN, false, true);
-        try (ZipFile zf = new ZipFile(withKeys.toFile())) {
-            assertEquals(
-                    json,
-                    new String(zf.getInputStream(zf.getEntry("settings.json")).readAllBytes()));
+        for (boolean everything : new boolean[] {false, true}) {
+            Path zip = ConfigExporter.export(cfg, home, "1.0.0", "someone", WHEN, everything, everything);
+            try (ZipFile zf = new ZipFile(zip.toFile())) {
+                String settings = new String(
+                        zf.getInputStream(zf.getEntry("settings.json")).readAllBytes());
+                assertEquals(
+                        "{\n  \"aiApiKey\" : \"\",\n  \"aiApiKeyOpenai\" : \"\",\n  \"fontSize\" : 14\n}\n", settings);
+                String bak = new String(zf.getInputStream(zf.getEntry("settings.json.corrupt.bak"))
+                        .readAllBytes());
+                assertFalse(bak.contains("lm-FAKE"), bak);
+                String toml = new String(
+                        zf.getInputStream(zf.getEntry("settings.toml.migrated")).readAllBytes());
+                assertEquals("aiApiKey = \"\"\nfontSize = 14\n", toml);
+                String notes =
+                        new String(zf.getInputStream(zf.getEntry("notes.json")).readAllBytes());
+                assertTrue(notes.contains("a note is not settings"), "only the settings files are touched");
+                assertTrue(
+                        zf.stream().noneMatch(e -> e.getName().startsWith("keys/")),
+                        "the encrypted keys and their key stay home");
+            }
+            Files.delete(zip);
         }
     }
 
-    /** A sync URL stored with a token before the Sync page refused them is exported without it, keys or not. */
+    /** A sync URL stored with a token before the Sync page refused them is exported without it, always. */
     @Test
     void aTokenInTheStoredSyncUrlNeverReachesTheZip(@TempDir Path cfg, @TempDir Path home) throws Exception {
         Files.writeString(
@@ -150,8 +151,8 @@ class ConfigExporterTest {
         Files.writeString(
                 cfg.resolve("settings.toml.migrated"),
                 "syncRepoUrl = \"https://ghp_FAKEOLD000@github.com/me/s.git\"\n");
-        for (boolean keys : new boolean[] {false, true}) {
-            Path zip = ConfigExporter.export(cfg, home, "1.0.0", "someone", WHEN, false, keys);
+        for (boolean pluginData : new boolean[] {false, true}) {
+            Path zip = ConfigExporter.export(cfg, home, "1.0.0", "someone", WHEN, false, pluginData);
             try (ZipFile zf = new ZipFile(zip.toFile())) {
                 String json = new String(
                         zf.getInputStream(zf.getEntry("settings.json")).readAllBytes());

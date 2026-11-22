@@ -5,8 +5,9 @@ import java.util.Optional;
 /**
  * A place for small secrets (the AI providers' API keys) outside {@code settings.json}: the operating system's
  * keychain. Each secret is filed under a service name and an account name. Calls may block (D-Bus, a keychain
- * prompt), so callers run them off the FX thread where they can. Implementations: {@link MacKeychainStore},
+ * prompt), so callers run them off the FX thread. Implementations: {@link MacKeychainStore},
  * {@link WindowsCredentialStore}, {@link LinuxSecretServiceStore}; {@link SecretStores#forThisMachine} picks one.
+ * Where none answers, {@link EncryptedFileStore} keeps them in an encrypted file of their own.
  */
 public interface SecretStore {
 

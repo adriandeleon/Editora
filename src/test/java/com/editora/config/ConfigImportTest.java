@@ -212,7 +212,8 @@ class ConfigImportTest {
         try (ZipFile zf = new ZipFile(backup.toFile())) {
             String before =
                     new String(zf.getInputStream(zf.getEntry("settings.json")).readAllBytes());
-            assertTrue(before.contains("sk-ant-FAKE-HERE"), "the copy is complete, keys included");
+            assertTrue(before.contains("\"fontSize\""), "the copy is complete");
+            assertFalse(before.contains("sk-ant-FAKE-HERE"), "but no zip carries an AI key (SET-13)");
             assertTrue(new String(
                             zf.getInputStream(zf.getEntry("snippets/go.json")).readAllBytes())
                     .contains("mine"));

@@ -100,6 +100,19 @@ class SyncEngineTest {
         assertEquals(SyncReport.Status.OK, report.status(), report.detail());
     }
 
+    /** Settings sync never carries the AI keys: neither settings.json nor the encrypted keys/ files (SET-13). */
+    @Test
+    void noCategoryOwnsTheSettingsFileOrTheEncryptedKeys() {
+        for (String path : List.of(
+                "settings.json",
+                com.editora.secrets.EncryptedFileStore.DIR + "/" + com.editora.secrets.EncryptedFileStore.DATA_FILE,
+                com.editora.secrets.EncryptedFileStore.DIR + "/" + com.editora.secrets.EncryptedFileStore.KEY_FILE)) {
+            for (SyncCategory c : ALL) {
+                assertFalse(c.owns(path), c + " owns " + path);
+            }
+        }
+    }
+
     @Test
     void theFirstMachineFillsAnEmptyRepositoryAndTheSecondReceivesIt() throws Exception {
         a.write("dictionary.txt", "editora\nzim\n");
