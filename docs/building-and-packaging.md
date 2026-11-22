@@ -44,9 +44,9 @@ Produces `target/dist/Editora.app` on macOS; the OS profiles auto-select DMG/MSI
 **no cross-building** — jpackage + JavaFX are host-specific, so each platform builds for itself.
 
 **Windows: two launchers and the PATH.** `Editora.exe` is a GUI-subsystem program, so a shell neither waits for
-it nor shows its output. The `os-windows` profile adds a second launcher, `editora-cli.exe`, the same app built
-as a console program (`packaging/windows/editora-cli.properties`, merged into the `dist` app-image execution by
-its id) for `editora-cli http …`, `--version` and `--help`. The MSI puts the install folder on the system PATH
+it nor shows its output. A Windows-activated profile, `windows-cli-launcher`, adds a second launcher, `editora-cli.exe`, the same app
+built as a console program (`packaging/windows/editora-cli.properties`, merged into the `dist` app-image execution
+by its id; declared after `dist`, or Maven runs `aot_build.java` before jpackage) for `editora-cli http …`, `--version` and `--help`. The MSI puts the install folder on the system PATH
 (appended, removed on uninstall) through `packaging/windows/msi/os-condition.wxf`, passed by `aot_build.java` as
 `--resource-dir`: jpackage has no option for it, and that fragment's component group is the one its main feature
 already installs. `WindowsCommandLineTest` pins all three; the Terminal image workflow runs the launcher and

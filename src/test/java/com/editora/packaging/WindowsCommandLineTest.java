@@ -15,6 +15,7 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -40,20 +41,30 @@ class WindowsCommandLineTest {
     }
 
     @Test
-    void theWindowsProfileAddsItToTheDistAppImage() throws IOException {
+    void aWindowsProfileDeclaredAfterDistAddsItToTheDistAppImage() throws IOException {
         String pom = Files.readString(ROOT.resolve("pom.xml"));
-        int windows = pom.indexOf("<id>os-windows</id>");
-        int linux = pom.indexOf("<id>os-linux</id>");
-        assertTrue(windows > 0 && linux > windows, "the os-windows profile comes before os-linux");
-        String profile = pom.substring(windows, linux);
+        int dist = pom.indexOf("<id>dist</id>");
+        int cli = pom.indexOf("<id>windows-cli-launcher</id>");
+        assertTrue(dist > 0, "the dist profile exists");
+        // Maven injects active profiles in declaration order. Declared before dist (as it first was, in
+        // os-windows), this jpackage plugin came first in the build and dist's aot-train-and-deliver ran
+        // ahead of jpackage: no image, nothing delivered, a green build with an empty target/dist.
+        assertTrue(cli > dist, "the launcher's profile is declared after dist");
+        String profile = pom.substring(cli, pom.indexOf("</profile>", cli));
+        assertTrue(profile.contains("<family>windows</family>"), profile);
         assertTrue(profile.contains("<name>editora-cli</name>"), profile);
         assertTrue(profile.contains("packaging/windows/editora-cli.properties"), profile);
         // Merged by execution id: a different id would add a second, goal-less execution and no launcher.
         assertTrue(profile.contains("<id>jpackage-app-image</id>"), profile);
-        assertTrue(
-                pom.substring(0, windows).contains("<id>jpackage-app-image</id>")
-                        || pom.substring(linux).contains("<id>jpackage-app-image</id>"),
-                "the dist profile's app-image execution has the same id");
+        String distProfile = pom.substring(dist, pom.indexOf("</profile>", dist));
+        assertTrue(distProfile.contains("<id>jpackage-app-image</id>"), "dist's app-image execution has the same id");
+        for (String early : List.of("os-mac", "os-windows", "os-linux")) {
+            int at = pom.indexOf("<id>" + early + "</id>");
+            String before = pom.substring(at, pom.indexOf("</profile>", at));
+            assertFalse(
+                    before.contains("<artifactId>jpackage-maven-plugin</artifactId>"),
+                    early + " (declared before dist) declares no jpackage");
+        }
     }
 
     @Test
