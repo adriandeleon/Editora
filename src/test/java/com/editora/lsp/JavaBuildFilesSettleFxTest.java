@@ -2,13 +2,11 @@ package com.editora.lsp;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
 import com.editora.lsp.LspManager.WatchedFile;
 import com.editora.lsp.LspManager.WatchedKind;
-import com.editora.testkit.Await;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,12 +38,17 @@ class JavaBuildFilesSettleFxTest {
 
     private LspManager manager;
     private List<FakeLanguageServer> fakes;
+    private final List<Runnable> scheduled = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final List<Long> delays = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @BeforeEach
     void setUp() throws Exception {
         manager = new LspManager((f, d) -> {}, (t, s) -> {});
         fakes = LspTestHooks.useFakeSessionsWithRawRequests(manager, new org.eclipse.lsp4j.ServerCapabilities());
-        manager.setBuildSettleMsForTest(300);
+        manager.setBuildSettleSchedulerForTest((ms, task) -> {
+            delays.add(ms);
+            scheduled.add(task);
+        });
         manager.configure(true, Map.of("java", "jdtls"));
         Files.createDirectories(root.resolve("core"));
         Files.writeString(root.resolve("pom.xml"), "<project/>");
@@ -78,14 +81,16 @@ class JavaBuildFilesSettleFxTest {
     }
 
     @Test
-    void burstsOfBuildFileChangesEndInOneForcedUpdateOfThemAll() throws Exception {
+    void burstsOfBuildFileChangesEndInOneForcedUpdateOfThemAll() {
         manager.notifyWatchedFiles(List.of(new WatchedFile(root.resolve("core/pom.xml"), WatchedKind.CHANGED)));
-        Thread.sleep(100);
         manager.notifyWatchedFiles(List.of(
                 new WatchedFile(root.resolve("pom.xml"), WatchedKind.CHANGED),
                 new WatchedFile(root.resolve("A.java"), WatchedKind.CHANGED)));
-        assertTrue(Await.holdsWithin(() -> !updates().isEmpty(), Duration.ofSeconds(10)), "the forced update");
-        Thread.sleep(600); // no second one for the first burst
+        assertEquals(2, scheduled.size(), "each burst waits again");
+        assertEquals(LspFileWatching.BUILD_SETTLE_MS, delays.get(0));
+        scheduled.get(0).run(); // the first burst's wait ends: a later change is still settling
+        assertTrue(updates().isEmpty(), updates().toString());
+        scheduled.get(1).run();
         List<FakeLanguageServer.Raw> sent = updates();
         assertEquals(1, sent.size(), sent.toString());
         List<String> uris = uris(sent.get(0));
@@ -96,11 +101,11 @@ class JavaBuildFilesSettleFxTest {
     }
 
     @Test
-    void sourceChangesAndDeletedBuildFilesForceNothing() throws Exception {
+    void sourceChangesAndDeletedBuildFilesForceNothing() {
         manager.notifyWatchedFiles(List.of(
                 new WatchedFile(root.resolve("A.java"), WatchedKind.CHANGED),
                 new WatchedFile(root.resolve("core/pom.xml"), WatchedKind.DELETED)));
-        Thread.sleep(900);
+        assertTrue(scheduled.isEmpty(), "nothing waits");
         assertTrue(updates().isEmpty(), updates().toString());
     }
 }

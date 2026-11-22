@@ -220,7 +220,10 @@ final class LspFileWatching {
     /** How long a Java project's build files stay unchanged before jdtls is made to update their projects. */
     static final long BUILD_SETTLE_MS = 2000;
 
-    private volatile long buildSettleMs = BUILD_SETTLE_MS;
+    /** Runs a task after a delay in milliseconds; tests run the tasks themselves. */
+    private volatile java.util.function.BiConsumer<Long, Runnable> buildSettleScheduler =
+            (ms, task) -> CompletableFuture.delayedExecutor(ms, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    .execute(task);
 
     /** The build files changed in a burst not yet settled, per Java session. */
     private final Map<LanguageServerSession, SettlingBuildFiles> settlingBuildFiles = new ConcurrentHashMap<>();
@@ -230,8 +233,8 @@ final class LspFileWatching {
         long generation;
     }
 
-    void setBuildSettleMsForTest(long ms) {
-        buildSettleMs = ms;
+    void setBuildSettleSchedulerForTest(java.util.function.BiConsumer<Long, Runnable> scheduler) {
+        buildSettleScheduler = scheduler;
     }
 
     /**
@@ -263,8 +266,7 @@ final class LspFileWatching {
             settling.files.addAll(build);
             generation = ++settling.generation;
         }
-        CompletableFuture.delayedExecutor(buildSettleMs, java.util.concurrent.TimeUnit.MILLISECONDS)
-                .execute(() -> buildFilesSettled(s, settling, generation));
+        buildSettleScheduler.accept(BUILD_SETTLE_MS, () -> buildFilesSettled(s, settling, generation));
     }
 
     private void buildFilesSettled(LanguageServerSession s, SettlingBuildFiles settling, long generation) {

@@ -63,6 +63,14 @@ class JdtlsMavenVersionBumpProbeTest {
         Files.writeString(project.resolve("pom.xml"), parentPom(version));
     }
 
+    private static String readQuietly(Path file) {
+        try {
+            return Files.readString(file);
+        } catch (java.io.IOException e) {
+            return "";
+        }
+    }
+
     @Test
     void siblingImportsSurviveAVersionBump() throws Exception {
         Assumptions.assumeTrue(Boolean.getBoolean("lsp.probe"), "opt-in: -Dlsp.probe=true");
@@ -99,21 +107,24 @@ class JdtlsMavenVersionBumpProbeTest {
                             () -> m.isRunning("java", project) && diagnostics.containsKey(key),
                             java.time.Duration.ofSeconds(120)),
                     "the server and Main's first diagnostics");
-            Thread.sleep(5000); // the import settles
             System.out.println("PROBE errors before the bump: " + diagnostics.get(key));
-            assertTrue(errors.getAsInt() == 0, "resolved before: " + diagnostics.get(key));
+            com.editora.testkit.Await.until(
+                    () -> errors.getAsInt() == 0, "resolved before the bump", java.time.Duration.ofSeconds(60));
 
             writePoms(project, "1.1-SNAPSHOT");
-            Thread.sleep(20000); // the watcher reports the burst, jdtls updates the projects and republishes
+            // the watcher reports the burst, jdtls updates the projects, and once the poms settle the forced update
+            Path log;
+            try (var dirs = Files.list(base)) {
+                log = dirs.findFirst().orElseThrow().resolve(".metadata/.log");
+            }
+            com.editora.testkit.Await.until(
+                    () -> readQuietly(log).contains("Projects updated in"),
+                    "the forced update",
+                    java.time.Duration.ofSeconds(60));
+            com.editora.testkit.Await.until(
+                    () -> errors.getAsInt() == 0, "Main republished", java.time.Duration.ofSeconds(30));
             System.out.println("PROBE errors after the bump: " + diagnostics.get(key));
             assertTrue(errors.getAsInt() == 0, "still resolved after the bump: " + diagnostics.get(key));
-            // jdtls updated the parent on the watched-file event, and again on the forced update once the poms
-            // settled: what puts right a project jdtls skipped mid-burst
-            String log;
-            try (var dirs = Files.list(base)) {
-                log = Files.readString(dirs.findFirst().orElseThrow().resolve(".metadata/.log"));
-            }
-            assertTrue(log.contains("Projects updated in"), "the forced update ran (it logs once for all projects)");
         } finally {
             m.close();
         }
