@@ -13,7 +13,7 @@
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/documentation/#docs-18",
       "kind": "pending",
-      "reason": "Screenshots for the website are not taken by a built-in capture at double resolution.",
+      "reason": "The website's screenshots can now be taken by a built-in capture at double resolution, but the published ones have not been retaken with it yet.",
       "link": "https://github.com/adriandeleon/Editora/issues/1557"
     },
     {
@@ -23,22 +23,6 @@
       "kind": "pending",
       "reason": "The release steps include a pass with a screen reader, but no release has had that pass yet.",
       "link": "https://github.com/adriandeleon/Editora/issues/1561"
-    },
-    {
-      "rule": "ACC-09",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-09",
-      "kind": "pending",
-      "reason": "There is no high-contrast theme, and the high-contrast setting of Windows is not followed.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1561"
-    },
-    {
-      "rule": "ICON-16",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-16",
-      "kind": "pending",
-      "reason": "There is no theme that follows the system's light or dark setting.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1563"
     },
     {
       "rule": "TBAR-03",

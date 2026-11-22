@@ -99,7 +99,7 @@ class ThemesTest {
     @Test
     void flagshipPaletteDefinesEveryTokenTheVendoredThemesDo() throws Exception {
         var expected = paletteTokens("blue-light");
-        for (String base : List.of("editora-light", "editora-dark")) {
+        for (String base : List.of("editora-light", "editora-dark", "high-contrast-light", "high-contrast-dark")) {
             assertEquals(expected, paletteTokens(base), base + ".css palette tokens differ from the vendored set");
         }
     }
@@ -122,6 +122,58 @@ class ThemesTest {
         }
         assertTrue(names.size() > 90, base + ".css palette looks truncated: " + names.size() + " tokens");
         return names;
+    }
+
+    /**
+     * ACC-09: the high-contrast pair is the Caret &amp; Ink pair with another palette. Their component rules are a
+     * copy, so a change to {@code editora-*.css}'s rules must be made to the copy too: this fails until it is.
+     */
+    @Test
+    void theHighContrastPairKeepsItsBasesRules() throws Exception {
+        for (String kind : List.of("light", "dark")) {
+            assertEquals(
+                    rulesAfterPalette("editora-" + kind),
+                    rulesAfterPalette("high-contrast-" + kind),
+                    "high-contrast-" + kind + ".css's rules differ from editora-" + kind + ".css's");
+        }
+    }
+
+    private static String rulesAfterPalette(String base) throws Exception {
+        try (var in = Themes.class.getResourceAsStream("/com/editora/styles/atlantafx-themes/" + base + ".css")) {
+            String css = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            return css.substring(css.indexOf("\n}", css.indexOf(".root {")));
+        }
+    }
+
+    /** ICON-16: "System" is offered first, kept as saved, and is a Caret &amp; Ink theme. */
+    @Test
+    void systemIsAChoiceOfBothPickers() {
+        assertEquals(SystemTheme.SYSTEM, Themes.names().get(0));
+        assertEquals(SystemTheme.SYSTEM, EditorThemes.names().get(0));
+        assertEquals(SystemTheme.SYSTEM, Themes.normalize(SystemTheme.SYSTEM));
+        assertEquals(SystemTheme.SYSTEM, EditorThemes.normalize(SystemTheme.SYSTEM));
+        assertEquals(SystemTheme.SYSTEM, EditorThemes.defaultFor(SystemTheme.SYSTEM), "the editor follows it");
+        // No OS read here: the default appearance, light without high contrast.
+        assertEquals(Themes.stylesheetFor("Editora Light"), Themes.stylesheetFor(SystemTheme.SYSTEM));
+        assertEquals(EditorThemes.stylesheetFor("Editora Light"), EditorThemes.stylesheetFor(SystemTheme.SYSTEM));
+        assertTrue(!Themes.isDark(SystemTheme.SYSTEM));
+        assertEquals(com.editora.i18n.Messages.tr("settings.theme.system"), Themes.label(SystemTheme.SYSTEM));
+        assertEquals("Dracula", Themes.label("Dracula"));
+    }
+
+    /** ACC-09: the high-contrast pair is in both catalogs, one light and one dark, and has its editor themes. */
+    @Test
+    void theHighContrastPairIsSelectableEverywhere() {
+        for (String name : List.of(SystemTheme.HIGH_CONTRAST_LIGHT, SystemTheme.HIGH_CONTRAST_DARK)) {
+            assertTrue(Themes.NAMES.contains(name), name);
+            assertTrue(EditorThemes.NAMES.contains(name), name);
+            assertTrue(EditorThemes.stylesheetFor(name)
+                    .endsWith("/editor-themes/high-contrast-" + (name.endsWith("Dark") ? "dark" : "light") + ".css"));
+        }
+        assertTrue(Themes.themeFor(SystemTheme.HIGH_CONTRAST_DARK).isDarkMode());
+        assertTrue(!Themes.themeFor(SystemTheme.HIGH_CONTRAST_LIGHT).isDarkMode());
+        assertTrue(EditorThemes.isDarkTheme(SystemTheme.HIGH_CONTRAST_DARK));
+        assertTrue(!EditorThemes.isDarkTheme(SystemTheme.HIGH_CONTRAST_LIGHT));
     }
 
     @Test

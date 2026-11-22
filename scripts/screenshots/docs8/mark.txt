@@ -1,0 +1,55 @@
+#@ needs jdtls on the PATH
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 800
+set lspSupport true
+set debugSupport true
+set javaDebugPluginPath "${javaDebugJar}"
+start
+project ${workspace}/samples/debug/java
+run buffer.closeAll
+run tool.project
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 48
+wait 60000
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 48
+focuseditor
+run debug.toggleBreakpoint
+wait 800
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Main.java 18
+run debug.start
+wait 45000
+divider 0 0.5
+fieldtext Filter|item
+wait 1500
+focussel .debug-vars
+key HOME
+key DOWN - 3
+wait 500
+ctxrow .debug-vars
+popitem Mark Object
+wait 1000
+focuslast
+key BACK_SPACE - 10
+type pencil
+key ENTER
+wait 1000
+fieldtext Filter|
+wait 1000
+run debug.addWatch
+wait 1000
+focuslast
+type items.get(0)
+wait 300
+click OK
+wait 3000
+divider 2 0.24 0
+divider 2 0.8 1
+focussel .debug-vars
+key HOME
+key DOWN - 9
+wait 800
+settext .status-message
+shot ${out}/docs/debug-mark-object${suffix}.png

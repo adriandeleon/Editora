@@ -1,0 +1,11 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1200 650
+start
+project ${workspace}
+open ${workspace}/src/main/java/com/editora/config/MapTrails.java 1
+run buffer.closeOthers
+wait 3000
+shot ${out}/map/projects-tree${suffix}.png

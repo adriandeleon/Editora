@@ -1,0 +1,29 @@
+#@ needs Delve (dlv) and Go on the PATH
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 800
+set lspSupport false
+set debugSupport true
+start
+project ${workspace}/samples/debug/go
+run buffer.closeAll
+run tool.project
+open ${workspace}/samples/debug/go/restock.go 16
+focuseditor
+run debug.toggleBreakpoint
+open ${workspace}/samples/debug/go/main.go 12
+wait 1500
+run debug.start
+wait 30000
+divider 0 0.48
+divider 2 0.3 0
+divider 2 0.68 1
+open ${workspace}/samples/debug/go/restock.go 10
+wait 1000
+run debug.threads
+wait 3000
+settext .status-message
+shot ${out}/docs/debug-go-goroutines${suffix}.png

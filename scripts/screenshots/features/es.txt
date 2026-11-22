@@ -1,0 +1,14 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set uiLanguage "es"
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 39
+wait 2000
+settext .status-message
+shot ${out}/features/localized-ui${suffix}.png
