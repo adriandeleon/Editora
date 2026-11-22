@@ -1058,7 +1058,8 @@ public class SettingsWindow {
         themeCombo = new ComboBox<>();
         themeCombo.getItems().setAll(appThemeChoices());
         UiZoom.prefWidth(themeCombo, 220);
-        ThemeGroups.install(themeCombo, name -> name);
+        ThemeGroups.install(themeCombo, Themes::label);
+        themeCombo.setButtonCell(labelledCell(Themes::label)); // "System" in the UI's language
         themeCombo.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null || ThemeGroups.isHeading(now)) {
                 return;
@@ -1713,9 +1714,9 @@ public class SettingsWindow {
                 mainCard,
                 Category.APPEARANCE,
                 tr("settings.theme"),
-                null,
+                tr("settings.themeNote"),
                 themeCombo,
-                "theme appearance dark light app chrome");
+                "theme appearance dark light app chrome system follow high contrast accessibility");
         controlRow(
                 mainCard,
                 Category.APPEARANCE,
@@ -4930,30 +4931,38 @@ public class SettingsWindow {
         };
     }
 
-    /** The app themes under their Light / Dark / Your themes headings. */
-    private static List<String> appThemeChoices() {
-        return ThemeGroups.grouped(
-                Themes.names(),
+    /** "System" (follow the system, ICON-16), then the app themes under their Light / Dark / Your themes headings. */
+    static List<String> appThemeChoices() {
+        List<String> choices = new ArrayList<>();
+        choices.add(SystemTheme.SYSTEM);
+        choices.addAll(ThemeGroups.grouped(
+                Themes.names().stream()
+                        .filter(name -> !SystemTheme.SYSTEM.equals(name))
+                        .toList(),
                 name -> Themes.themeFor(name).isDarkMode(),
-                UserThemes.controlThemes().keySet());
+                UserThemes.controlThemes().keySet()));
+        return choices;
     }
 
-    /** "" (Automatic), then the editor themes under their Light / Dark / Your themes headings. */
-    private static List<String> editorThemeChoices() {
+    /** "" (Automatic), "System", then the editor themes under their Light / Dark / Your themes headings. */
+    static List<String> editorThemeChoices() {
         Set<String> user = new java.util.HashSet<>(UserThemes.controlThemes().keySet());
         user.addAll(UserThemes.editorThemes().keySet());
         List<String> choices = new ArrayList<>();
         choices.add("");
+        choices.add(SystemTheme.SYSTEM);
         choices.addAll(ThemeGroups.grouped(
-                EditorThemes.names(),
-                name -> EditorThemes.editorBackgroundFor(name).getBrightness() < 0.5,
+                EditorThemes.names().stream()
+                        .filter(name -> !SystemTheme.SYSTEM.equals(name))
+                        .toList(),
+                EditorThemes::isDarkTheme,
                 user));
         return choices;
     }
 
-    /** "Automatic" for "", else the theme's name. */
+    /** "Automatic" for "", "System" in the UI's language, else the theme's name. */
     private static String editorThemeLabel(String name) {
-        return name.isEmpty() ? tr("settings.editorTheme.auto") : name;
+        return name.isEmpty() ? tr("settings.editorTheme.auto") : Themes.label(name);
     }
 
     /** The editor-theme combo's button: "Automatic" for "", else the theme's name. */

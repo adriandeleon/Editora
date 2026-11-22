@@ -227,7 +227,7 @@ class EditorSettingsPickersFxTest {
             assertEquals(EditorThemes.defaultFor(app), settings.getEditorTheme(), "the editor theme follows");
             assertFalse(settings.isEditorThemeUserSet());
             assertEquals(Themes.stylesheetFor(app), javafx.application.Application.getUserAgentStylesheet());
-            assertEquals(tr("status.appTheme", app), echo());
+            assertEquals(tr("status.appTheme", Themes.label(app)), echo()); // "System" in the UI's language
             assertEquals(
                     app, this.<ComboBox<String>>settingsControl("themeCombo").getValue());
 
@@ -241,7 +241,7 @@ class EditorSettingsPickersFxTest {
             assertEquals(editor, settings.getEditorTheme());
             assertTrue(settings.isEditorThemeUserSet(), "chosen: it no longer follows the app theme");
             assertEquals(app, settings.getTheme());
-            assertEquals(tr("status.editorTheme", editor), echo());
+            assertEquals(tr("status.editorTheme", Themes.label(editor)), echo());
             assertEquals(
                     editor,
                     this.<ComboBox<String>>settingsControl("editorThemeCombo").getValue());
