@@ -22,11 +22,12 @@ import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.GrammarRegistry;
-import com.editora.editor.LspDiagnostic;
-import com.editora.editor.SemanticToken;
-import com.editora.editor.TextMateHighlighter;
+import com.editora.editor.highlight.GrammarRegistry;
+import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.i18n.Messages;
+import com.editora.text.LspDiagnostic;
+import com.editora.text.SearchMatches;
+import com.editora.text.SemanticToken;
 import com.editora.ui.Fonts;
 import com.editora.ui.Themes;
 import org.fxmisc.richtext.CodeArea;
@@ -260,12 +261,12 @@ public final class EditorProbe extends Application {
         for (int i = 0; i < 24; i++) {
             final boolean last = i % 2 == 0;
             long start = System.nanoTime();
-            fx(() -> buffer.setSearchMatches(List.of(new int[] {0, 6}), 0));
+            fx(() -> buffer.setSearchMatches(SearchMatches.ofPairs(List.of(new int[] {0, 6})), 0));
             sample("search-highlight-dispatch", start);
             start = System.nanoTime();
             fx(() -> {
                 int line = last ? area.getParagraphs().size() - 1 : 0;
-                buffer.setSearchMatches(List.of(new int[] {0, 6}), 0);
+                buffer.setSearchMatches(SearchMatches.ofPairs(List.of(new int[] {0, 6})), 0);
                 area.setParagraphStyle(line, List.of("probe-paragraph"));
                 stage.setWidth(900 + (last ? 50 : 0));
                 stage.setHeight(620 + (last ? 40 : 0));
@@ -349,10 +350,16 @@ public final class EditorProbe extends Application {
                     new LspDiagnostic(1, 8, 1, 13, LspDiagnostic.Severity.WARNING, "probe diagnostic", "P1", "probe")));
             buffer.setInlayHintsActive(true);
             buffer.setInlayHints(List.of(new EditorBuffer.InlayHint(1, 13, ": int")));
-            buffer.setSearchMatches(List.of(new int[] {13, 18}, new int[] {29, 34}), 0);
+            buffer.setSearchMatches(SearchMatches.ofPairs(List.of(new int[] {13, 18}, new int[] {29, 34})), 0);
             buffer.setChangeBars(Map.of(1, "diff-added"));
             buffer.toggleBookmark(1);
             buffer.getFoldManager().recompute();
+        });
+        // Fold detection runs off the FX thread (PERF-01): wait for the regions, as fold commands do.
+        var regionsKnown = new CompletableFuture<Void>();
+        fx(() -> buffer.getFoldManager().whenRegionsKnown(() -> regionsKnown.complete(null)));
+        regionsKnown.get(120, TimeUnit.SECONDS);
+        fx(() -> {
             check(!buffer.getFoldManager().regions().isEmpty(), "fold regions detected");
             var region = buffer.getFoldManager().regions().getFirst();
             buffer.getFoldManager().fold(region);
