@@ -58,47 +58,30 @@ class ConfigExportFxTest {
     }
 
     /**
-     * A saved AI API key is a billable credential, and an export is what people hand to someone else: the
-     * command asks, with "Include AI API keys" off, and the zip's settings.json then holds the key blank.
+     * A saved AI API key is a billable credential, and an export is what people hand to someone else: the keys are
+     * in no settings file and the command does not ask about them (SET-13); the zip's settings.json has none.
      */
     @Test
-    void anExportLeavesTheAiApiKeysOutUnlessTheUserIncludesThem() throws Exception {
+    void anExportNeverCarriesTheAiApiKeys() throws Exception {
         fx = FxWindowFixture.create();
-        FxTestSupport.runOnFx(() -> fx.shared.getSettings().setAiApiKey("sk-ant-FAKE-BILLABLE"));
+        FxTestSupport.runOnFx(() ->
+                fx.shared.getSettings().setApiKeyFor(com.editora.ai.AiProvider.ANTHROPIC, "sk-ant-FAKE-BILLABLE"));
         CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
-        FxTestSupport.runOnFx(() -> javafx.application.Platform.runLater(() -> registry.run("config.export")));
-        DialogPane ask = awaitPane(tr("dialog.exportConfig.ask"));
-        FxTestSupport.runOnFx(() -> {
-            javafx.scene.control.CheckBox keys = (javafx.scene.control.CheckBox) ask.lookup("#include-api-keys");
-            assertTrue(keys.isVisible() && !keys.isSelected(), "asked, and off by default");
-            assertEquals(null, ask.lookup("#include-http-history"), "no HTTP history to ask about");
-            ((javafx.scene.control.Button) ask.lookupButton(ask.getButtonTypes().getFirst())).fire();
-        });
+        FxTestSupport.runOnFx(() -> assertTrue(registry.run("config.export")));
         Path zip = awaitOnlyFile(fx.exportDir);
         awaitDialog(tr("dialog.exportConfig.done"));
         String settings;
         try (var zf = new java.util.zip.ZipFile(zip.toFile())) {
             settings =
                     new String(zf.getInputStream(zf.getEntry("settings.json")).readAllBytes());
+            assertTrue(zf.stream().noneMatch(e -> e.getName().startsWith("keys/")));
         }
-        assertTrue(settings.contains("\"aiApiKey\" : \"\""), settings);
+        assertTrue(!settings.contains("aiApiKey\""), settings);
         assertTrue(!settings.contains("FAKE-BILLABLE"), "the key never reaches the zip");
-        assertEquals("sk-ant-FAKE-BILLABLE", fx.shared.getSettings().getAiApiKey(), "and stays in Editora");
-    }
-
-    /** The showing dialog whose header is {@code header} (left open). */
-    private static DialogPane awaitPane(String header) throws Exception {
-        return EventuallyFx.valueOnFx("the \"" + header + "\" dialog to show", Duration.ofSeconds(30), () -> {
-            for (Window window : List.copyOf(Window.getWindows())) {
-                if (window.isShowing()
-                        && window.getScene() != null
-                        && window.getScene().getRoot() instanceof DialogPane p
-                        && header.equals(p.getHeaderText())) {
-                    return p;
-                }
-            }
-            return null;
-        });
+        assertEquals(
+                "sk-ant-FAKE-BILLABLE",
+                fx.shared.getSettings().getApiKeyFor(com.editora.ai.AiProvider.ANTHROPIC),
+                "and stays in Editora");
     }
 
     private static List<Path> zipsIn(Path dir, String prefix) throws Exception {

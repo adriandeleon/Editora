@@ -6,7 +6,7 @@ public final class SecretStores {
     /** The service name Editora's secrets are filed under. */
     public static final String SERVICE = "Editora";
 
-    /** {@code -Deditora.secretStore=none} keeps every secret in {@code settings.json}, as without a keychain. */
+    /** {@code -Deditora.secretStore=none} uses no keychain: the secrets go to the {@link EncryptedFileStore}, as without one. */
     public static final String PROPERTY = "editora.secretStore";
 
     private SecretStores() {}

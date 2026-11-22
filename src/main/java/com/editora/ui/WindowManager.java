@@ -163,6 +163,14 @@ public class WindowManager {
                 manager.announceUncaughtError(message);
             }
         });
+        // The OS's light or dark setting and Windows' high-contrast mode (ICON-16, ACC-09): a theme they decide is
+        // applied again when they change. Weak for the same reason; the last manager made holds the hook.
+        SystemTheme.onChange((before, after) -> {
+            WindowManager manager = self.get();
+            if (manager != null) {
+                manager.systemAppearanceChanged(before, after);
+            }
+        });
         // A second Editora process on this config dir (a launch that was not forwarded to the running editor)
         // works from its own in-memory copy of settings, notes, bookmarks, breakpoints, projects and recents.
         // Say so once, after the first window exists, instead of letting one editor silently undo the other.
@@ -954,6 +962,12 @@ public class WindowManager {
 
     /** Where a command's window has its session read: a thread of its own (a seam: a test may read in place). */
     java.util.concurrent.Executor sessionReads = com.editora.process.BlockingTasks.named("window-session-read");
+
+    /**
+     * TEST SEAM — builds every window decorated whatever {@code extendedWindow} says, without touching the
+     * setting, so a test window keeps the menu bar as its first row while the settings read back as stored.
+     */
+    boolean decoratedForTest;
 
     /** TEST SEAM — told of each window's controller right after its {@code init}; a test sets its own seams. */
     java.util.function.Consumer<MainController> builtForTest = controller -> {};
@@ -1909,6 +1923,22 @@ public class WindowManager {
         shared.reloadSettings(issues -> status.accept(applyReloadedSettings(issues)));
     }
 
+    /**
+     * The OS switched between light and dark, or Windows' high-contrast mode went on or off (ICON-16, ACC-09).
+     * When that changes the theme the app theme or the editor theme gives ("System", or any theme while high
+     * contrast is on), the app theme is applied again and every window re-applies its editor theme.
+     */
+    void systemAppearanceChanged(SystemTheme.Appearance before, SystemTheme.Appearance after) {
+        Settings settings = shared.getSettings();
+        if (!Themes.followSystem(settings.getTheme(), settings.getEditorTheme(), before, after)) {
+            return;
+        }
+        broadcastSettingsApplied(); // no setting changed, so each window re-applies everything, its editor theme too
+        for (Holder h : new ArrayList<>(windows)) {
+            h.controller().settingsWindow().syncThemes(); // the preview follows
+        }
+    }
+
     /** Applies settings just re-read everywhere; returns the status line saying so. */
     String applyReloadedSettings(@Nullable List<com.editora.config.SettingsFileCheck.Issue> issues) {
         if (issues == null) {
@@ -2175,7 +2205,8 @@ public class WindowManager {
             primaryStage = null; // only the first window reuses the JavaFX primary stage
             // Before anything else touches the stage: initStyle throws once a stage has been shown, and
             // this is read per window at construction, which is why the setting applies on restart.
-            if (ExtendedWindow.enabled(shared.getSettings().isExtendedWindow(), com.editora.Os.current())) {
+            if (!decoratedForTest
+                    && ExtendedWindow.enabled(shared.getSettings().isExtendedWindow(), com.editora.Os.current())) {
                 try {
                     stage.initStyle(StageStyle.EXTENDED);
                 } catch (RuntimeException e) {

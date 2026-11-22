@@ -47,7 +47,6 @@ class FoldLevelsFxTest {
         FxTestSupport.runOnFx(() -> registry.run(id));
     }
 
-    /** A Java buffer whose regions are known: they are detected off the FX thread (PERF-01), so wait for them. */
     private EditorBuffer addJavaBuffer() throws Exception {
         EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
             EditorBuffer b = new EditorBuffer();
@@ -57,9 +56,8 @@ class FoldLevelsFxTest {
             b.getFoldManager().recompute();
             return b;
         });
-        var known = new java.util.concurrent.CompletableFuture<Void>();
-        FxTestSupport.runOnFx(() -> buffer.getFoldManager().whenRegionsKnown(() -> known.complete(null)));
-        known.get(10, java.util.concurrent.TimeUnit.SECONDS);
+        // The scan runs off the FX thread (PERF-01) and lands later: wait for it, not for the FX queue to drain.
+        OnFx.until(() -> buffer.getFoldManager().scansSettledForTest(), "the fold scan of the Java buffer");
         return buffer;
     }
 

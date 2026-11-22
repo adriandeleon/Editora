@@ -307,13 +307,19 @@ public class SharedConfig {
         List<String> skipped = new ArrayList<>();
         int before = loadProblems.size();
         settings = loadSettings();
-        if (apiKeys != null) {
-            settings.useApiKeyVault(apiKeys); // a reload replaced the Settings object the keys were attached to
+        ApiKeyVault vault = apiKeys;
+        boolean keysMoved = false;
+        if (vault != null) {
+            settings.useApiKeyVault(vault); // a reload replaced the Settings object the keys were attached to
+            keysMoved = vault.absorb(settings); // a key the file holds again goes to the vault, not back to the file
         }
         loadProblems.subList(before, loadProblems.size()).forEach(p -> skipped.addAll(p.skipped()));
         byte[] loadedBytes = settingsBytes();
         settingsFileIssues = checkSettingsFile(skipped, loadedBytes);
         sync.loaded(getSettingsFile(), loadedBytes);
+        if (keysMoved) {
+            enqueueSettings(); // the file still holds the key the vault took: written again without it
+        }
         loadBookmarks();
         loadBreakpoints();
         loadHistory();
@@ -443,10 +449,10 @@ public class SharedConfig {
             }
             skipped.addAll(p.skipped());
         }
-        // A key typed into the file moves to the keychain here, off the FX thread; the file then lets go of it.
+        // A key typed into the file moves to the vault here; the vault writes its store on its own thread, and
+        // the file lets go of the key when it is saved next (its key fields are never written).
         ApiKeyVault vault = apiKeys;
-        // A keychain that refuses puts the keys it held into read, not into the live settings (the FX thread's).
-        boolean keysMoved = vault != null && (vault.absorb(read) | vault.settingsChanged());
+        boolean keysMoved = vault != null && vault.absorb(read);
         byte[] bytes = serialize(read, file);
         List<SettingsFileCheck.Issue> issues = checkSettingsFile(skipped, bytes);
         sync.loaded(file, bytes); // what is on disk now is this process's own state
@@ -954,16 +960,11 @@ public class SharedConfig {
     }
 
     Path exportConfig(Path destinationDir, boolean includeHttpHistory) throws IOException {
-        return exportConfig(destinationDir, includeHttpHistory, false);
+        return exportConfig(destinationDir, includeHttpHistory, true);
     }
 
-    Path exportConfig(Path destinationDir, boolean includeHttpHistory, boolean includeApiKeys) throws IOException {
-        return exportConfig(destinationDir, includeHttpHistory, includeApiKeys, true);
-    }
-
-    Path exportConfig(
-            Path destinationDir, boolean includeHttpHistory, boolean includeApiKeys, boolean includePluginData)
-            throws IOException {
+    /** The AI API keys are never in it: they are in no settings file, and the {@code keys/} folder is left out. */
+    Path exportConfig(Path destinationDir, boolean includeHttpHistory, boolean includePluginData) throws IOException {
         if (includeHttpHistory) {
             awaitHttpHistoryWork(); // the response that just landed belongs in the export too
         }
@@ -977,7 +978,6 @@ public class SharedConfig {
                 System.getProperty("user.name"),
                 java.time.LocalDateTime.now(),
                 includeHttpHistory,
-                includeApiKeys,
                 includePluginData);
     }
 
@@ -995,29 +995,58 @@ public class SharedConfig {
         }
     }
 
-    /** The AI keys' vault once {@link #useSecretStore} ran; null keeps them in {@code settings.json}. */
+    /** The AI keys' vault once {@link #useSecretStore} ran; null holds them in the settings fields, for the session. */
     private volatile @Nullable ApiKeyVault apiKeys;
 
     /**
-     * Keeps the AI providers' API keys in {@code store} (the system keychain), moving any that {@code settings.json}
-     * still holds (see {@link ApiKeyVault#open}). Blocking — the launch calls it off the FX thread. Tests never call
-     * it, so they never reach a real keychain.
+     * Keeps the AI providers' API keys in {@code store} (the system keychain) or, when it does not answer, in the
+     * encrypted file {@code keys/secrets.enc}, moving any key {@code settings.json} still holds (see
+     * {@link ApiKeyVault#open}) and blanking it in the file's older copies beside it. Blocking — the launch calls it
+     * off the FX thread. Tests pass a fake keychain, so they never reach a real one.
      */
     public void useSecretStore(com.editora.secrets.SecretStore store) {
-        ApiKeyVault vault = ApiKeyVault.open(store, settings);
+        ApiKeyVault vault = ApiKeyVault.open(store, new com.editora.secrets.EncryptedFileStore(configDir), settings);
         apiKeys = vault;
         if (vault.settingsChanged()) {
             saveSettings();
+            scrubSettingsCopies(configDir);
         }
     }
 
-    /** Whether an AI provider API key is saved in {@code settings.json} (never true for keys in the keychain),
-     *  which an export leaves out unless the user asks. */
-    public boolean hasApiKeys() {
-        Settings s = settings;
-        return !(s.getAiApiKey().isBlank()
-                && s.getAiApiKeyOpenai().isBlank()
-                && s.getAiApiKeyLmstudio().isBlank());
+    /**
+     * Blanks the {@code aiApiKey…} values in the settings file's older copies in {@code configDir}
+     * ({@code settings.json.v104.bak}, {@code settings.toml.migrated}, …), which still hold them as the file held
+     * them when the copy was made. Textual, as an export's ({@link ConfigExporter#withoutApiKeys}); a copy that
+     * cannot be rewritten is said in the log and left.
+     */
+    static void scrubSettingsCopies(Path configDir) {
+        try (Stream<Path> files = Files.list(configDir)) {
+            for (Path f : files.toList()) {
+                String name = f.getFileName().toString();
+                if (!ConfigExporter.isSettingsCopy(name)
+                        || name.equals(ConfigManager.SETTINGS_FILE_NAME)
+                        || !Files.isRegularFile(f)) {
+                    continue;
+                }
+                try {
+                    String text = Files.readString(f, java.nio.charset.StandardCharsets.UTF_8);
+                    String blank = ConfigExporter.withoutApiKeys(text);
+                    if (!blank.equals(text)) {
+                        ConfigWriter.writeAtomicChecked(f, blank.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    }
+                } catch (IOException | UncheckedIOException e) {
+                    java.util.logging.Logger.getLogger(SharedConfig.class.getName())
+                            .warning("Could not blank the API keys in " + f + ": " + e.getMessage());
+                }
+            }
+        } catch (IOException | UncheckedIOException e) {
+            // no config folder to look in
+        }
+    }
+
+    /** The vault, once {@link #useSecretStore} ran. */
+    public @Nullable ApiKeyVault apiKeyVault() {
+        return apiKeys;
     }
 
     /** Waits for the HTTP Client's history saves still queued in the windows (see {@link HttpResponseHistory}). */
@@ -1052,37 +1081,21 @@ public class SharedConfig {
 
     /** As {@link #exportConfigAsync()}, with the HTTP response history when {@code includeHttpHistory}. */
     public synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync(boolean includeHttpHistory) {
-        return exportConfigAsync(exportDirectory(), includeHttpHistory, false);
-    }
-
-    /** As {@link #exportConfigAsync()}, with the HTTP response history and the AI API keys when asked for. */
-    public synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync(
-            boolean includeHttpHistory, boolean includeApiKeys) {
-        return exportConfigAsync(exportDirectory(), includeHttpHistory, includeApiKeys);
+        return exportConfigAsync(exportDirectory(), includeHttpHistory, true);
     }
 
     /** As above, and the plugins' data folders when {@code includePluginData}. */
     public synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync(
-            boolean includeHttpHistory, boolean includeApiKeys, boolean includePluginData) {
-        return exportConfigAsync(exportDirectory(), includeHttpHistory, includeApiKeys, includePluginData);
+            boolean includeHttpHistory, boolean includePluginData) {
+        return exportConfigAsync(exportDirectory(), includeHttpHistory, includePluginData);
     }
 
     synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync(Path destinationDir) {
-        return exportConfigAsync(destinationDir, false);
+        return exportConfigAsync(destinationDir, false, true);
     }
 
     synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync(
-            Path destinationDir, boolean includeHttpHistory) {
-        return exportConfigAsync(destinationDir, includeHttpHistory, false);
-    }
-
-    synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync(
-            Path destinationDir, boolean includeHttpHistory, boolean includeApiKeys) {
-        return exportConfigAsync(destinationDir, includeHttpHistory, includeApiKeys, true);
-    }
-
-    synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync(
-            Path destinationDir, boolean includeHttpHistory, boolean includeApiKeys, boolean includePluginData) {
+            Path destinationDir, boolean includeHttpHistory, boolean includePluginData) {
         if (runningExport != null && !runningExport.isDone()) {
             return runningExport;
         }
@@ -1091,8 +1104,7 @@ public class SharedConfig {
         Thread thread = new Thread(
                 () -> {
                     try {
-                        export.complete(
-                                exportConfig(destinationDir, includeHttpHistory, includeApiKeys, includePluginData));
+                        export.complete(exportConfig(destinationDir, includeHttpHistory, includePluginData));
                     } catch (IOException | RuntimeException e) {
                         export.completeExceptionally(e);
                     }

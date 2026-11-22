@@ -1,0 +1,84 @@
+#@ needs jdtls on the PATH
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+set lspSupport true
+set debugSupport true
+set javaDebugPluginPath "${javaDebugJar}"
+start
+project ${workspace}/samples/debug/java
+run buffer.closeAll
+run tool.project
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 56
+wait 60000
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 56
+focuseditor
+key RIGHT - 30
+run debug.toggleLambdaBreakpoint
+wait 1500
+ctxbp 0
+wait 800
+settext .status-message
+shot ${out}/docs/debug-lambda-breakpoint${suffix}.png
+closewins
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 56
+focuseditor
+key RIGHT - 30
+run debug.toggleLambdaBreakpoint
+wait 800
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 40
+focuseditor
+run debug.toggleMethodBreakpoint
+wait 800
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 13
+focuseditor
+key RIGHT - 30
+run debug.toggleFieldWatchpoint
+wait 5000
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 14
+wait 1500
+settext .status-message
+shot ${out}/docs/debug-member-marks${suffix}.png
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 13
+focuseditor
+key RIGHT - 30
+run debug.toggleFieldWatchpoint
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 40
+focuseditor
+run debug.toggleMethodBreakpoint
+wait 800
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 52
+focuseditor
+run debug.toggleBreakpoint
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 54
+focuseditor
+run debug.pinValue
+wait 1200
+focuslast
+type total
+key ENTER
+wait 800
+focuseditor
+run debug.pinValue
+wait 1200
+focuslast
+type subtotal
+key ENTER
+wait 800
+focuseditor
+run debug.pinValue
+wait 1200
+focuslast
+type item.name()
+key ENTER
+wait 800
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Main.java 18
+run debug.start
+wait 45000
+run debug.continue
+wait 5000
+settext .status-message
+shot ${out}/docs/debug-pinned-values${suffix}.png

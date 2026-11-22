@@ -1,0 +1,11 @@
+# The smallest shot: a window with one sample file open, written at 2x. ShotsFxTest runs it behind
+# -Deditora.test.shots=<dir>, and `java scripts/screenshots/Shoot.java sample.txt` runs it like any other.
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set htmlPreviewBrowser "/usr/bin/true"
+size 900 600
+start
+open ${workspace}/samples/README.md 1
+settext .status-message
+shot ${out}/sample${suffix}.png

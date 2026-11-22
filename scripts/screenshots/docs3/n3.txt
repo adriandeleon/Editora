@@ -1,0 +1,70 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+set debugSupport true
+set javaDebugPluginPath "${javaDebugJar}"
+start
+project ${workspace}
+wait 6000
+run buffer.closeAll
+open ${workspace}/samples/http/environments.http 1
+wait 2000
+run http.selectEnvironment
+wait 1500
+settext .status-message
+winshotp ${out}/docs/http-environments${suffix}.png
+closewins
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 40
+run view.splitEditorRight
+wait 800
+open ${workspace}/samples/debug/java/src/test/java/com/example/shelf/ShelfTest.java 20
+wait 1500
+settext .status-message
+shot ${out}/docs/editor-groups${suffix}.png
+run view.unsplitEditorGroups
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 49
+focuseditor
+run debug.toggleBreakpoint
+wait 500
+run debug.editBreakpoint
+wait 1200
+focuslast
+type item.price() > 1.0
+wait 500
+settext .status-message
+shot ${out}/docs/edit-breakpoint${suffix}.png
+key ESCAPE
+run debug.toggleBreakpoint
+run tool.terminal
+wait 2000
+divider 0 0.42
+wait 3000
+type git --no-pager log --oneline -12
+key ENTER
+wait 3000
+run terminal.find
+wait 800
+focuslast
+type map
+wait 1500
+settext .status-message
+shot ${out}/docs/terminal-find${suffix}.png
+key ESCAPE
+run view.closeFocusedToolWindow
+run view.debugLog
+wait 2000
+windows
+winsize 1000 640
+retext \Q${config}\E => /home/ada/.editora
+winshot ${out}/docs/application-log${suffix}.png
+closewins
+run view.settings
+wait 2000
+winsize 1100 720
+settings TOOL_WINDOWS
+winshot ${out}/docs/settings-tool-windows${suffix}.png

@@ -354,14 +354,17 @@ class SettingsLangsPagesFxTest {
     }
 
     @Test
-    void withoutAKeychainTheAiPageSaysTheKeyIsInSettingsJson() throws Exception {
+    void withoutAKeychainTheAiPageSaysTheKeyIsInTheEncryptedFile() throws Exception {
         com.editora.secrets.FakeSecretStore store = new com.editora.secrets.FakeSecretStore();
         store.available = false;
         FxTestSupport.runOnFx(() -> {
             rig.config.shared().useSecretStore(store);
             rig.show();
             Label note = rig.control("aiKeyNote");
-            org.junit.jupiter.api.Assertions.assertEquals(tr("settings.ai.apiKeyNote"), note.getText());
+            String file = rig.config.shared().apiKeyVault().filePath().toString();
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    tr("settings.ai.apiKeyInEncryptedFile", file), note.getText());
+            org.junit.jupiter.api.Assertions.assertFalse(note.getText().contains("plain text"));
         });
     }
 

@@ -1,0 +1,32 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 800
+set lspSupport false
+set debugSupport true
+start
+project ${workspace}/samples/debug/go
+run buffer.closeAll
+run tool.project
+open ${workspace}/samples/debug/go/main.go 22
+focuseditor
+run debug.toggleBreakpoint
+wait 800
+run debug.start
+wait 30000
+open ${workspace}/samples/debug/go/shelf_test.go 8
+focuseditor
+run debug.toggleBreakpoint
+wait 800
+run test.debugAtCaret
+wait 2500
+winshot ${out}/docs/debug-both-question${suffix}.png
+click Debug Both
+wait 30000
+divider 0 0.48
+divider 2 0.3 0
+divider 2 0.68 1
+settext .status-message
+shot ${out}/docs/debug-sessions${suffix}.png

@@ -1,0 +1,18 @@
+#@ http 8765
+#@ copy orders.http api/orders.http
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}
+open ${workspace}/api/orders.http 5
+run tool.project
+run buffer.closeOthers
+wait 1500
+run http.runRequest
+wait 2000
+wait 5000
+dividers
+shot ${out}/docs/http-response${suffix}.png

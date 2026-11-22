@@ -1,0 +1,23 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}/samples/debug/java
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Pricing.java 1
+run buffer.closeOthers
+wait 1500
+run project.toggleMapView
+wait 3000
+winsize 2400 1000
+winpos 0 0
+wait 1000
+clicksel .project-map-preview-button
+wait 800
+focussel .project-map-surface
+key ENTER S
+wait 3000
+maplinks CALLERS 22 18
+wait 6000
+winshot ${out}/map/references${suffix}.png

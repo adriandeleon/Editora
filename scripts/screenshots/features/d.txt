@@ -1,0 +1,29 @@
+#@ needs jdtls on the PATH
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set lspSupport true
+set debugSupport true
+set javaDebugPluginPath "${javaDebugJar}"
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}/samples/debug/java
+run buffer.closeAll
+run tool.project
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 48
+run debug.toggleBreakpoint
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Main.java 18
+wait 60000
+run debug.start
+wait 45000
+shot ${out}/features/debug-1${suffix}.png
+run debug.continue
+wait 4000
+run debug.stepOver
+wait 3000
+run debug.stepOver
+wait 3000
+settext .status-message
+shot ${out}/features/debugging${suffix}.png

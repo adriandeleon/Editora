@@ -95,8 +95,8 @@ public final class EditorProbe extends Application {
                     buffer = new EditorBuffer();
                     area = buffer.getArea();
                     buffer.setPath(file);
-                    // Mirror the production loader: >=5 MiB intentionally disables highlighting/undo.
-                    buffer.setLargeFile(bytes >= EditorBuffer.LARGE_FILE_BYTES);
+                    // Mirror the production loader: large-file mode intentionally disables highlighting/undo.
+                    buffer.setLargeFile(EditorBuffer.largeFileMode(bytes, (int) loaded.lines().count()));
                     buffer.setHeavyFile(
                             loaded.lines().count() >= new com.editora.config.Settings().getLargeFileThreshold());
                     buffer.setInitialContent(loaded);

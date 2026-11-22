@@ -1,0 +1,30 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 22
+run buffer.closeOthers
+wait 1500
+run tool.commit
+wait 3000
+focuslast
+type Add scissors to the sample shelf
+wait 500
+shot ${out}/docs/git-commit${suffix}.png
+run view.closeFocusedToolWindow
+run tool.gitLog
+wait 5000
+run view.maximizeToolWindow
+wait 1500
+dividers
+divider 2 0.64
+wait 800
+shot ${out}/docs/git-log${suffix}.png
+run view.maximizeToolWindow
+run view.closeFocusedToolWindow
+run git.toggleBlame
+wait 4000
+shot ${out}/docs/git-blame${suffix}.png

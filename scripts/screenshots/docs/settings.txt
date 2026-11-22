@@ -1,0 +1,10 @@
+size 1280 760
+start
+project ${workspace}
+run view.settings
+wait 2000
+winsize 1100 720
+settings APPEARANCE
+winshot ${out}/docs/settings${suffix}.png
+settings SYNC
+winshot ${out}/docs/settings-sync${suffix}.png

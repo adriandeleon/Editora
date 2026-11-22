@@ -534,8 +534,10 @@ public final class ConfigImport {
                 continue; // the zip does not say: what is here stays
             }
             JsonNode value = field.getValue();
-            if (key.startsWith("aiApiKey") && (value == null || value.asText().isBlank())) {
-                continue; // an export leaves the keys blank; a blank one never replaces the key here
+            if (key.startsWith("aiApiKey")) {
+                // The keys are in the keychain or the encrypted file, never in settings.json (SET-13): an older
+                // export's key is not written into it, and whether this machine's keys are in a keychain is its own.
+                continue;
             }
             current.set(key, value);
         }

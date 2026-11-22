@@ -1,0 +1,30 @@
+#@ needs jdtls on the PATH
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+set lspSupport true
+start
+project ${workspace}/samples/debug/java
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Pricing.java 1
+wait 60000
+run tool.project
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 48
+focuseditor
+key RIGHT - 42
+wait 1500
+run lsp.findReferences
+wait 5000
+settext .status-message
+shot ${out}/docs/lsp-references${suffix}.png
+run view.closeFocusedToolWindow
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 48
+focuseditor
+key RIGHT - 42
+run lsp.hover
+wait 4000
+settext .status-message
+shot ${out}/docs/lsp-hover${suffix}.png

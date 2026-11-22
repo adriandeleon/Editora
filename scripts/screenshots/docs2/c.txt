@@ -1,0 +1,49 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}
+run buffer.closeAll
+open ${workspace}/samples/structured/petstore.yaml 1
+run tool.project
+run view.toggleSplitPreview
+wait 4000
+settext .status-message
+shot ${out}/docs/openapi-preview${suffix}.png
+run buffer.closeAll
+open ${workspace}/samples/crontab/deploy.crontab 1
+run view.toggleSplitPreview
+wait 3000
+settext .status-message
+shot ${out}/docs/crontab-preview${suffix}.png
+run buffer.closeAll
+open ${workspace}/README.md 1
+run crypto.encryptFile
+wait 3000
+key SPACE
+key DOWN
+key DOWN
+key SPACE
+wait 500
+settext .status-message
+shot ${out}/docs/encrypt-recipients${suffix}.png
+key ESCAPE
+closewins
+run deploy.edit
+wait 2500
+click Add
+wait 1500
+clicksel .text-field 0
+key HOME
+key END S
+type staging
+clicksel .text-field 1
+type staging.example.com
+clicksel .text-field 5
+type /srv/apps/shelf
+clicksel .text-field 0
+wait 800
+winshot ${out}/docs/deployments${suffix}.png

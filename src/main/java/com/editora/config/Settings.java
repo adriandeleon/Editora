@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 177;
+    public static final int SCHEMA_VERSION = 180;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -86,6 +86,8 @@ public class Settings {
     public static final int MAX_HISTORY_AGE_DAYS = 3650;
     public static final int MAX_HISTORY_TOTAL_MB = 10_000;
     public static final int MAX_LARGE_FILE_THRESHOLD = 10_000_000;
+    /** The default of {@link #largeFileThreshold}; settings files stored the old 10,000 (moved by v177 → v178). */
+    public static final int DEFAULT_LARGE_FILE_THRESHOLD = 50_000;
 
     /** Author name used by file templates' {@code ${author}}; blank = the OS user (see getter). */
     private String authorName = "";
@@ -110,10 +112,12 @@ public class Settings {
     private boolean editorThemeUserSet;
 
     private int tabSize = 4;
-    /** Line count above which a file enters the intermediate "large source file" tier: the minimap and
-     *  LSP are auto-disabled (highlighting + editing stay) so a very long single file (e.g. a 13k-line
-     *  source) stays responsive. {@code 0} disables the tier. Distinct from the 5 MB hard large-file mode. */
-    private int largeFileThreshold = 10_000;
+    /** Line count above which a file enters the intermediate "large source file" tier: its language server
+     *  is not started (highlighting, the minimap and editing stay), unless the language keeps it longer
+     *  ({@code LspServerRegistry.heavyFileLspLineLimit}). {@code 0} disables the tier. Distinct from large-file
+     *  mode ({@code EditorBuffer.LARGE_FILE_LINES}). Was 10,000 until measured (2026-11-22): the minimap costs
+     *  nothing measurable up to 200,000 lines, and the servers measured keep 50,000-line files. */
+    private int largeFileThreshold = DEFAULT_LARGE_FILE_THRESHOLD;
     /**
      * Global indent unit for Tab/Enter: {@code "detect"} (per-file auto-detection, default), {@code "space"}
      * (force {@link #tabSize} spaces), or {@code "tab"}. A file's {@code .editorconfig} {@code indent_style}
@@ -674,11 +678,13 @@ public class Settings {
     private boolean pomPreview = true;
     /**
      * Draw the menu bar inside the window's own title bar ({@code StageStyle.EXTENDED}), reclaiming a
-     * whole row of chrome. Off by default and <b>experimental</b>: it changes how the window is decorated,
-     * which is the most platform-specific thing an app does, and it is currently gated to Linux — see
-     * {@code ui/ExtendedWindow}. Read once per window at construction, so it applies on restart.
+     * whole row of chrome. On by default (Pauta WIN-03: the family starts with the menu in the title bar on
+     * Windows and Linux); off falls back to a decorated window with the menu bar below the title bar. macOS
+     * ignores it, its menus being in the system menu bar — see {@code ui/ExtendedWindow}. Read once per window
+     * at construction, so it applies on restart. Existing configs that stored the old default are moved to it
+     * by {@code ConfigMigrations.extendedWindowOn} (v177 → v178).
      */
-    private boolean extendedWindow = false;
+    private boolean extendedWindow = true;
     /**
      * Pin the enclosing scope headers above the viewport as you scroll (VS Code's sticky scroll): on by
      * default. Suppressed in large-file mode along with the other per-viewport work.
@@ -739,14 +745,20 @@ public class Settings {
     private boolean aiSupport = false;
     /** AI action model id; blank = provider default (claude-opus-4-8 for Anthropic, Codex default for Codex). */
     private String aiModel = "";
-    /** Anthropic API key override; blank = the ANTHROPIC_API_KEY environment variable. Stored in
-     *  settings.json as plain text — prefer the environment variable on shared machines. Per-provider:
-     *  this is the Anthropic key only, so switching to the OpenAI provider never sends it to that endpoint
-     *  (see {@link #getApiKeyFor}). */
+    /** Anthropic API key override; blank = the ANTHROPIC_API_KEY environment variable. Per-provider: this is the
+     *  Anthropic key only, so switching to the OpenAI provider never sends it to that endpoint (see
+     *  {@link #getApiKeyFor}). The three key fields are read from an older settings.json and never written to one
+     *  ({@code WRITE_ONLY}: Jackson sets them, never serializes them): {@link ApiKeyVault} moves what they hold to
+     *  the system keychain or its encrypted file (SET-13, Pauta 6.0.1). Without a vault they hold a key for the
+     *  session only. */
+    @com.fasterxml.jackson.annotation.JsonProperty(
+            access = com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY)
     private String aiApiKey = "";
     /** The OpenAI-compatible provider's API key override (a hosted OpenAI-compatible host — OpenRouter,
      *  Together, Groq — needs one; a local LM Studio/Ollama server does not). Kept separate from
      *  {@link #aiApiKey} so a key configured for one provider is never disclosed to the other's endpoint. */
+    @com.fasterxml.jackson.annotation.JsonProperty(
+            access = com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY)
     private String aiApiKeyOpenai = "";
     /** AI inline ghost-text completion (a short continuation after a typing pause): off by default;
      *  effective only when {@link #aiSupport} is on and an API key is available. */
@@ -771,6 +783,9 @@ public class Settings {
 
     private String aiLmStudioModel = "";
     private String aiLmStudioCompletionModel = "";
+
+    @com.fasterxml.jackson.annotation.JsonProperty(
+            access = com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY)
     private String aiApiKeyLmstudio = "";
     /** Codex's model id (blank = the Codex default). Its own field: it shared the Anthropic one. */
     private String aiModelCodex = "";
@@ -779,7 +794,7 @@ public class Settings {
      * the keychain does not answer can say the keys are there, not lost.
      */
     private boolean aiApiKeysInKeychain = false;
-    /** Where the AI keys live this session; null (no keychain asked) means the fields above. Not persisted. */
+    /** Where the AI keys live this session; null (no vault opened) means the fields above, for the session only. */
     @JsonIgnore
     private transient @Nullable ApiKeyVault apiKeyVault;
     /**
@@ -1726,31 +1741,36 @@ public class Settings {
     }
 
     /**
-     * The API key for {@code provider}: from the system keychain when the keys live there ({@link ApiKeyVault}),
-     * else from this provider's own field. Codex always has none. Kept per provider so switching provider never
-     * sends one provider's credential to another's (user-supplied) endpoint. {@code provider} null → Anthropic.
+     * The API key for {@code provider}: from the vault ({@link ApiKeyVault}: the system keychain or its encrypted
+     * file), else from this provider's own field, held for the session. Codex always has none. Kept per provider so
+     * switching provider never sends one provider's credential to another's (user-supplied) endpoint.
+     * {@code provider} null → Anthropic.
      */
     public String getApiKeyFor(com.editora.ai.AiProvider provider) {
         if (provider == com.editora.ai.AiProvider.CODEX) {
             return "";
         }
         ApiKeyVault vault = apiKeyVault;
-        return vault != null && vault.inKeychain() ? vault.get(aiSlot(provider)) : rawApiKey(aiSlot(provider));
+        return vault != null ? vault.get(aiSlot(provider)) : rawApiKey(aiSlot(provider));
     }
 
-    /** Sets the API key for {@code provider}: into the keychain when the keys live there, else into its field. */
+    /**
+     * Sets the API key for {@code provider}: into the vault, which writes its store off the caller's thread, else
+     * into its field for the session (never saved to settings.json).
+     */
     public void setApiKeyFor(com.editora.ai.AiProvider provider, String key) {
         if (provider == com.editora.ai.AiProvider.CODEX) {
             return;
         }
         ApiKeyVault vault = apiKeyVault;
-        if (vault != null && vault.inKeychain() && vault.put(aiSlot(provider), key)) {
-            return;
+        if (vault != null) {
+            vault.put(aiSlot(provider), key);
+        } else {
+            setRawApiKey(aiSlot(provider), key);
         }
-        setRawApiKey(aiSlot(provider), key); // no keychain, or it just refused (the vault fell back)
     }
 
-    /** The key field of {@code provider} as {@code settings.json} holds it (blank once moved to the keychain). */
+    /** The key field of {@code provider} as an older {@code settings.json} held it (blank once moved). */
     String rawApiKey(com.editora.ai.AiProvider provider) {
         return switch (provider) {
             case LMSTUDIO -> getAiApiKeyLmstudio();
@@ -1770,15 +1790,17 @@ public class Settings {
     /** Attaches the vault the keys are read from and written to (see {@link ApiKeyVault#open}). */
     void useApiKeyVault(ApiKeyVault vault) {
         this.apiKeyVault = vault;
-        if (vault != null) {
-            vault.bind(this);
-        }
     }
 
-    /** Where the AI keys live this session (the fields, when no keychain was asked). */
+    /** Where the AI keys live this session: in memory for the session when no vault was opened. */
     public ApiKeyVault.Storage apiKeyStorage() {
         ApiKeyVault vault = apiKeyVault;
-        return vault == null ? ApiKeyVault.Storage.SETTINGS_FILE : vault.storage();
+        return vault == null ? ApiKeyVault.Storage.SESSION_ONLY : vault.storage();
+    }
+
+    /** The vault, for the AI page to say where the keys are and what went wrong; null when none was opened. */
+    public @Nullable ApiKeyVault apiKeyVault() {
+        return apiKeyVault;
     }
 
     /** The keychain's name, for the AI Actions page ("macOS Keychain", …); empty without a vault. */

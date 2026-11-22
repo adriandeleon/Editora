@@ -1022,6 +1022,27 @@ class ConfigMigrationsTest {
         assertTrue(new com.editora.config.Settings().isRemoteExecution(), "on for a new install too");
     }
 
+    /** Pauta WIN-03: the menu bar in the title bar is the default, for a new install and an existing one. */
+    @Test
+    void theExtendedWindowIsTurnedOnWhereAnEarlierBuildStoredItsOldDefault() throws Exception {
+        JsonNode stored = ConfigMigrations.extendedWindowOn(mapper.readTree("{\"extendedWindow\":false}"));
+        assertTrue(stored.get("extendedWindow").asBoolean());
+
+        JsonNode on = mapper.readTree("{\"extendedWindow\":true}");
+        assertEquals(on.deepCopy(), ConfigMigrations.extendedWindowOn(on), "on stays on");
+        JsonNode absent = ConfigMigrations.extendedWindowOn(mapper.readTree("{\"tabSize\":4}"));
+        assertEquals(mapper.readTree("{\"tabSize\":4}"), absent, "absent is the new default already");
+        assertEquals(stored.deepCopy(), ConfigMigrations.extendedWindowOn(stored), "safe to repeat");
+
+        ObjectNode up = ConfigMigrations.upgrade(
+                ConfigSchema.SETTINGS, mapper.readTree("{\"schemaVersion\":178,\"extendedWindow\":false}"), mapper);
+        assertTrue(up.get("extendedWindow").asBoolean());
+        ObjectNode current = ConfigMigrations.upgrade(
+                ConfigSchema.SETTINGS, mapper.readTree("{\"schemaVersion\":179,\"extendedWindow\":false}"), mapper);
+        assertFalse(current.get("extendedWindow").asBoolean(), "turned off after the move, it stays off");
+        assertTrue(new com.editora.config.Settings().isExtendedWindow(), "on for a new install too");
+    }
+
     @Test
     void upgradingASettingsFileFromV120CarriesRemoteImagesOffIntoTheLoadedSettings() throws Exception {
         ObjectNode up = ConfigMigrations.upgrade(
@@ -1118,5 +1139,32 @@ class ConfigMigrationsTest {
         com.editora.config.PluginStore store = mapper.treeToValue(v2, com.editora.config.PluginStore.class);
         assertTrue(store.allows("a", "whatever is installed"), "nobody's plugins switch off on the upgrade");
         assertFalse(store.allows("b", "x"));
+    }
+
+    /** v177 → v178: the stored old default moves to the new one; a value somebody chose stays. */
+    @Test
+    void raiseLargeFileThresholdMovesOnlyTheOldDefault() throws Exception {
+        ObjectNode out = ConfigMigrations.upgrade(
+                ConfigSchema.SETTINGS,
+                mapper.readTree("{\"schemaVersion\":177,\"largeFileThreshold\":10000,\"fontSize\":17}"),
+                mapper);
+        assertEquals(
+                com.editora.config.Settings.SCHEMA_VERSION,
+                out.get("schemaVersion").asInt());
+        assertEquals(
+                com.editora.config.Settings.DEFAULT_LARGE_FILE_THRESHOLD,
+                out.get("largeFileThreshold").asInt());
+        assertEquals(17, out.get("fontSize").asInt(), "nothing else changes");
+
+        for (int chosen : new int[] {0, 5_000, 20_000, 200_000}) {
+            JsonNode kept = ConfigMigrations.raiseLargeFileThreshold(
+                    mapper.readTree("{\"largeFileThreshold\":" + chosen + "}"));
+            assertEquals(chosen, kept.get("largeFileThreshold").asInt(), "a chosen threshold is kept: " + chosen);
+        }
+        JsonNode twice = ConfigMigrations.raiseLargeFileThreshold(
+                ConfigMigrations.raiseLargeFileThreshold(mapper.readTree("{\"largeFileThreshold\":10000}")));
+        assertEquals(50_000, twice.get("largeFileThreshold").asInt(), "safe to repeat");
+        assertTrue(
+                ConfigMigrations.raiseLargeFileThreshold(mapper.readTree("{}")).isEmpty(), "absent stays absent");
     }
 }

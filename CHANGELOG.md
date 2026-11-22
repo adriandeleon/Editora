@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Run and debug Django, Flask and FastAPI apps.** Run or Debug a Django project's `manage.py` and its development
+  server starts (`runserver`); do the same on a Flask or FastAPI app's file and Editora serves it with
+  `flask run --reload` or `uvicorn --reload`, from the right folder. Breakpoints in your views stop, and keep
+  stopping after you edit a file and the server reloads: the debugger follows the reloader into each new server
+  process. Add (and Save as Run Configuration) proposes the server as a run configuration, and Python run
+  configurations, scripts and modules alike, can now be debugged, with their interpreter, options and variables.
+- **A System theme that follows your light or dark setting.** Settings ▸ Appearance ▸ Theme (and Set App Theme in
+  the Command Palette) now starts with System: Editora Light while your system is light, Editora Dark while it is
+  dark, and it switches as soon as the system does, without a restart. The editor theme follows it on Automatic,
+  and can be set to System on its own too.
+- **High Contrast Light and High Contrast Dark.** A pair of app and editor themes with black or white grounds, and
+  text, accents, states and syntax colours that read at 7:1 or better. Pick one like any theme; while Windows'
+  high-contrast mode is on, Editora switches to it by itself (the light or the dark one, as the Windows scheme
+  is), and goes back to your theme when the mode ends.
 - **Ctrl/Cmd-hover shows what Ctrl/Cmd-click follows.** Hold Ctrl (Cmd on macOS) over code and the symbol under
   the mouse is underlined, and the pointer becomes a hand, when Go to Definition can take you somewhere from
   there: a symbol the language server resolves, or an HTML page's `href`/`src`. Click to go, as before; let go of
@@ -45,6 +59,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The terminal's paste confirmation has a palette command too.** Terminal: Change a Setting… now lists
+  "Confirm a paste of several lines", so it can be turned off and on from the palette as from its Settings row.
+
+- **The menu bar is in the title bar by default on Windows and Linux.** The extended window, until now an
+  experimental option, is on for new installs and for existing ones that had left it off (it was off by default,
+  so an untouched setting and a deliberate off look the same). The Settings row "Merge the menu bar into the title
+  bar", or View: Toggle Menu Bar in Title Bar, turns it off for the system title bar with the menu bar below it; it applies
+  after a restart. macOS is unchanged: its menus stay in the system menu bar.
+
+
+- **Big files keep more of the editor, from measured limits.** The size limits were set by hand; they are now
+  measured, and most moved up. A file now loses highlighting, the minimap and undo at 200,000 lines (or 16 MB)
+  instead of 5 MB, so a 150,000-line generated source keeps its colours while a 5 MB file of very short lines,
+  which costs more memory, no longer slips through on its byte count. A long file keeps its minimap: from
+  50,000 lines (was 10,000, and a stored 10,000 moves to it) only the language server stays off, unless the
+  language keeps it longer. A line up to 1 MiB (was 64 KiB) keeps undo, and highlighting for the rest of the file; such
+  a line still opens unwrapped, as before. A file whose document would not fit the
+  free memory opens as a read-only slice, now counted by lines as well as size.
 - **Settings ▸ Snippets writes a snippet file whole.** A save, a removal or switching a snippet off or on now
   writes that language's snippet file as plain JSON, so comments in it are not kept (the order of the snippets,
   every trigger, the scope and fields Editora does not use still are). A file with comments still loads, and the
@@ -98,6 +130,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "Process finished with exit code 143" (and the status bar 143) after a program that exited 0. Recent CodeLLDB
   (1.12) has Editora start its launcher, `codelldb-launch`, and ends that launcher with SIGTERM once the program has
   exited; its 143 was reported as the program's. The program's code now comes from CodeLLDB's own exit event.
+
+### Security
+
+- **AI API keys are never written to settings.json.** Without a system keychain (a Linux session with no Secret
+  Service, `-Deditora.secretStore=none`, or a keychain that refuses a write) the keys were kept in `settings.json`
+  as plain text. They now go to an encrypted file of their own, `~/.editora/keys/secrets.enc` (AES-256-GCM, under a
+  random key Editora generates in `keys/secrets.key`; the folder and both files are readable by you alone where the
+  file system has permissions). A key an older version left in `settings.json`, or in a backup of it beside it, is
+  moved there on the next launch and blanked; keys typed while the keychain did not answer move into it once it
+  does. Export Configuration and Settings sync never carry the keys, so Export no longer asks about them. A file
+  that does not decrypt is reported in Settings → AI and read as no keys; it is moved aside, never written over,
+  when a key is saved. Saving a key from Settings no longer writes the keychain on the interface thread.
 
 ## [0.28.0] - 2026-11-18
 

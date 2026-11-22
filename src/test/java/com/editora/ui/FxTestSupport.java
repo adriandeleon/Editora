@@ -184,6 +184,67 @@ final class FxTestSupport {
         };
     }
 
+    /**
+     * The scale every screenshot is written at (DOCS-18, Pauta 6.0.1): twice the scene's size, as a HiDPI screen
+     * shows it, so the website and the README never carry a blurry 1x picture.
+     */
+    static final double SHOT_SCALE = 2;
+
+    /**
+     * Renders {@code window} at {@link #SHOT_SCALE} from its next pulse on: a canvas (the Project Map, the terminal)
+     * rasterises at its window's render scale, so without this it would come out at 1x, stretched. Call on the FX
+     * thread.
+     */
+    static void renderAtShotScale(javafx.stage.Window window) {
+        if (window.getRenderScaleX() != SHOT_SCALE || window.getRenderScaleY() != SHOT_SCALE) {
+            window.setRenderScaleX(SHOT_SCALE);
+            window.setRenderScaleY(SHOT_SCALE);
+        }
+    }
+
+    /**
+     * {@code scene}'s root drawn at {@link #SHOT_SCALE}: an image twice the scene's width and height, on the scene's
+     * own fill. Call on the FX thread.
+     */
+    static javafx.scene.image.WritableImage snapshotAtShotScale(javafx.scene.Scene scene) {
+        javafx.scene.SnapshotParameters params = new javafx.scene.SnapshotParameters();
+        params.setTransform(javafx.scene.transform.Transform.scale(SHOT_SCALE, SHOT_SCALE));
+        javafx.scene.paint.Paint fill = scene.getFill();
+        params.setFill(fill == null ? javafx.scene.paint.Color.TRANSPARENT : fill);
+        // The viewport keeps the image to the scene's own size even when a node lies outside it.
+        params.setViewport(
+                new javafx.geometry.Rectangle2D(0, 0, scene.getWidth() * SHOT_SCALE, scene.getHeight() * SHOT_SCALE));
+        return scene.getRoot().snapshot(params, null);
+    }
+
+    /** {@code image} as an ARGB {@link java.awt.image.BufferedImage}, to write with ImageIO or composite. */
+    static java.awt.image.BufferedImage toBufferedImage(javafx.scene.image.Image image) {
+        int w = (int) image.getWidth();
+        int h = (int) image.getHeight();
+        java.awt.image.BufferedImage out =
+                new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        int[] argb = new int[w * h];
+        image.getPixelReader().getPixels(0, 0, w, h, javafx.scene.image.PixelFormat.getIntArgbInstance(), argb, 0, w);
+        out.setRGB(0, 0, w, h, argb, 0, w);
+        return out;
+    }
+
+    /**
+     * Writes {@code scene} as a PNG at {@link #SHOT_SCALE} to {@code file}: the window is switched to that render
+     * scale, two pulses lay out and render it, then the scene is drawn. Call off the FX thread.
+     */
+    static java.awt.image.BufferedImage writeShot(javafx.scene.Scene scene, java.nio.file.Path file) throws Exception {
+        runOnFx(() -> renderAtShotScale(scene.getWindow()));
+        PulseChecks.pulses(2);
+        java.awt.image.BufferedImage image = toBufferedImage(callOnFx(() -> snapshotAtShotScale(scene)));
+        java.nio.file.Path parent = file.toAbsolutePath().getParent();
+        if (parent != null) {
+            java.nio.file.Files.createDirectories(parent);
+        }
+        javax.imageio.ImageIO.write(image, "png", file.toFile());
+        return image;
+    }
+
     /** Calls a private one-argument method, searching the class hierarchy like {@link #invoke}. */
     static Object invokeWith(Object target, String method, Class<?> paramType, Object arg) {
         for (Class<?> c = target.getClass(); c != null; c = c.getSuperclass()) {

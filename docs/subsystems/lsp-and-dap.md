@@ -2379,6 +2379,42 @@ off. js-debug's children stay inside their session (`DapClient`'s root owns them
 call stack already show each process's threads. `PythonSubprocessSessionsWindowFxTest` drives a child session on
 the fake adapter; `SeveralSessionsProbeFxTest#aPythonSubprocess…` a `multiprocessing` child on debugpy.
 
+**Python web apps** (PyCharm's Django Server, Flask Server and FastAPI configurations; VS Code's `django`, `flask` and
+`fastapi` launch templates). [`run/PythonWebApps`](../../src/main/java/com/editora/run/PythonWebApps.java) (pure)
+knows a web app's file: Django's `manage.py` (one that names Django), and a file that makes a Flask or FastAPI app at
+module level (`app = Flask(__name__)`, `api: FastAPI = fastapi.FastAPI(…)`). Run File and Debug File start its
+development server: `manage.py runserver` when the file has no program arguments (on its own it prints its help;
+with some, such as `migrate`, it runs them as before), `python -m flask --app module:app run --reload` and
+`python -m uvicorn module:app --reload` for a Flask or FastAPI app's file that does not start a server itself under
+`if __name__ == "__main__"` (on its own it defines the app and exits), its program arguments after the server's own.
+The module is named from the first folder up without an `__init__.py`, where the server runs, so a package's relative
+imports work. Run plans it as a module run (`RunCoordinator.runPythonServer`, `FilePlan.web`, read off the FX thread);
+Debug in `DapManager.webOrScript`, where the launch is shaped.
+
+Each of these servers reloads by running the app in a child process (Django's autoreloader, Werkzeug's, uvicorn's
+`--reload`): the root process only watches the files, so a launch that did not follow subprocesses never stopped in a
+view. A local launch that serves a web app (`DapManager.servesWeb`: its target `python -m` a server module — `flask`,
+`uvicorn`, `fastapi`, `hypercorn`, `gunicorn`, `django`, `daphne`, `granian` — or `manage.py`; a launch.json
+configuration's `module` or `program` one; or the file a web app that starts its own server, `app.run(debug=True)`)
+sets `subProcess` whatever *Debug Python subprocesses* says, so each server process is a session of its own
+("Subprocess 1234", above): a breakpoint in a view stops, and after an edit the reloader's new process stops too. A
+launch on a host cannot follow its children, so there the reloader is turned off instead
+(`PythonWebApps.withoutReload`: `runserver --noreload`, `run --no-reload`, uvicorn without `--reload`). Probed with
+debugpy 1.8, Django 6.1, Flask 3.1 and uvicorn 0.54. Template breakpoints (below) are on by themselves in such a
+project.
+
+Python run configurations (a script, or a module) debug too ([`ui/PythonDebugLaunch`](../../src/main/java/com/editora/ui/PythonDebugLaunch.java)),
+as Run runs them: the target, program arguments, working directory, the configuration's Interpreter and Interpreter
+options and variables (`DapManager.planProgram` keeps a request's `configured`, `interpreterOptions` and `userEnv`),
+after the before-launch step; a module's session is anchored in its folder, where its venv is looked for
+(`DapManager.startPythonModule`, `startPythonScript`). Add and Save as Run Configuration propose a web app's server
+for its file (`RunConfigDefaults.forWebApp`): `manage.py` with `runserver`, or a Python module configuration of
+`flask` or `uvicorn` in the folder the app's module is named from. `PythonWebAppsTest` and `PythonWebLaunchTest`
+cover detection and the targets; `PythonRunWindowFxTest#aWebAppsFileRunsItsDevelopmentServer` Run File with a
+stand-in uvicorn; `PythonWebProbeFxTest` (opt-in, a venv with the four packages: `-Dweb.venv`, by default
+`~/.cache/editora/web-venv`) stops in a Django, a Flask and a FastAPI view before and after a reload, and in a FastAPI
+view debugged from a saved configuration.
+
 The Variables tree marks a value that changed since the previous stop
 ([`ui/DebugValueChanges`](../../src/main/java/com/editora/ui/DebugValueChanges.java)). Values are recorded as rows
 reach the tree (`DebugPanel.noteValue`: loaded children, evaluated watches, rows loaded on a click — only rows of the tree

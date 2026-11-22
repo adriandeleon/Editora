@@ -12,6 +12,8 @@ public final class FakeSecretStore implements SecretStore {
     public volatile boolean refuseWrites;
     /** Hands back something other than what was written (a keychain that mangles text). */
     public volatile boolean garbleReads;
+    /** The thread each write and delete ran on. */
+    public final java.util.List<String> threads = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @Override
     public String name() {
@@ -31,6 +33,7 @@ public final class FakeSecretStore implements SecretStore {
 
     @Override
     public void write(String account, String secret) throws SecretStoreException {
+        threads.add(Thread.currentThread().getName());
         if (refuseWrites) {
             throw new SecretStoreException("refused");
         }
@@ -39,6 +42,7 @@ public final class FakeSecretStore implements SecretStore {
 
     @Override
     public void delete(String account) {
+        threads.add(Thread.currentThread().getName());
         items.remove(account);
     }
 }

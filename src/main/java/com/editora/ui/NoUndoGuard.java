@@ -12,7 +12,7 @@ import static com.editora.i18n.Messages.tr;
 /**
  * The gate every <em>programmatic</em> bulk edit passes before it changes a buffer that has no undo.
  *
- * <p>A file of 5 MB or more, or one with a very long line, is opened in large-file mode, whose undo manager
+ * <p>A file of 200,000 lines or more (or 16 MB), or one with a line of 1 MiB, is opened in large-file mode, whose undo manager
  * is a no-op ({@link EditorBuffer#isLargeFile()}). Typing there is the user's own, visible, one keystroke at
  * a time. A whole-document or bulk replacement is not — Replace in Files, a line transform, an external
  * tool's output, an AI rewrite, a CSV re-align, a lint fix, an agent / MCP / plugin / language-server edit

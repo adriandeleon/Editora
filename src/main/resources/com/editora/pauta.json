@@ -13,7 +13,7 @@
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/documentation/#docs-18",
       "kind": "pending",
-      "reason": "Screenshots for the website are not taken by a built-in capture at double resolution.",
+      "reason": "The website's screenshots can now be taken by a built-in capture at double resolution, but the published ones have not been retaken with it yet.",
       "link": "https://github.com/adriandeleon/Editora/issues/1557"
     },
     {
@@ -23,30 +23,6 @@
       "kind": "pending",
       "reason": "The release steps include a pass with a screen reader, but no release has had that pass yet.",
       "link": "https://github.com/adriandeleon/Editora/issues/1561"
-    },
-    {
-      "rule": "ACC-09",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-09",
-      "kind": "pending",
-      "reason": "There is no high-contrast theme, and the high-contrast setting of Windows is not followed.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1561"
-    },
-    {
-      "rule": "WIN-03",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/window-shell/#win-03",
-      "kind": "pending",
-      "reason": "On Windows and Linux the menu bar sits below the title bar unless you turn on the extended window setting.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1562"
-    },
-    {
-      "rule": "ICON-16",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/icons-and-color/#icon-16",
-      "kind": "pending",
-      "reason": "There is no theme that follows the system's light or dark setting.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1563"
     },
     {
       "rule": "TBAR-03",
@@ -73,19 +49,11 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1566"
     },
     {
-      "rule": "SET-06",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/settings/#set-06",
-      "kind": "pending",
-      "reason": "Every setting has a command in the Command Palette except the terminal's multi-line paste confirmation, which should be turned off only in the config file, and so should lose its Settings row rather than gain a command.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1568"
-    },
-    {
       "rule": "SET-13",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/settings/#set-13",
       "kind": "pending",
-      "reason": "On a machine with no system keychain, AI API keys are kept in the settings file.",
+      "reason": "On a machine with no system keychain, AI API keys are kept in an encrypted file of their own rather than only in memory for the session.",
       "link": "https://github.com/adriandeleon/Editora/issues/1568"
     },
     {

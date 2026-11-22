@@ -1,0 +1,19 @@
+#@ trust none
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+set mavenJdkHome "${jdk}"
+start
+project ${workspace}/samples/debug/java
+wait 5000
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/test/java/com/example/shelf/ShelfTest.java 1
+wait 1000
+run test.run
+wait 5000
+windows
+winshot ${out}/docs/trust-folder${suffix}.png
+shot ${out}/docs/trust-folder-scene${suffix}.png
