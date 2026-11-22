@@ -24,8 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Pauta WIN-03: with the settings a new install starts with, the main window on Windows and Linux is
  * {@code StageStyle.EXTENDED} with a {@link HeaderBar} that holds the menu bar; on macOS it is decorated and the
- * menu bar is the system one. Built through the production boot path ({@link FxWindowFixture}, which otherwise
- * keeps test windows decorated), with the setting put back to its default before the window is built.
+ * menu bar is the system one. Built through the production boot path on a fresh config folder, in the style
+ * the settings ask for ({@link FxWindowFixture#createWithDefaultWindowStyle}; other test windows are decorated).
  */
 @Tag("fx")
 class ExtendedWindowDefaultFxTest {
@@ -42,9 +42,7 @@ class ExtendedWindowDefaultFxTest {
         FxTestSupport.bootToolkit();
         Os.override(os);
         Path dir = Files.createTempDirectory("editora-win03");
-        boolean byDefault = new Settings().isExtendedWindow();
-        try (FxWindowFixture fx =
-                FxWindowFixture.create(dir, shared -> shared.getSettings().setExtendedWindow(byDefault))) {
+        try (FxWindowFixture fx = FxWindowFixture.createWithDefaultWindowStyle(dir, shared -> {})) {
             return FxTestSupport.callOnFx(() -> {
                 Stage stage = FxTestSupport.field(fx.controller, "stage");
                 VBox top = FxTestSupport.field(fx.controller, "topBox");
@@ -72,6 +70,7 @@ class ExtendedWindowDefaultFxTest {
         assertFalse(mac.firstRow() instanceof HeaderBar, "no header, so no header holds menus");
         assertSame(mac.menuBar(), mac.firstRow());
         assertTrue(mac.systemMenuBar(), "the menus are in the system menu bar");
+        assertTrue(new Settings().isExtendedWindow(), "the setting is on by default even here, and ignored");
     }
 
     private static void assertInTheTitleBar(Shell shell) {

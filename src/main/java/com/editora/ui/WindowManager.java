@@ -955,6 +955,12 @@ public class WindowManager {
     /** Where a command's window has its session read: a thread of its own (a seam: a test may read in place). */
     java.util.concurrent.Executor sessionReads = com.editora.process.BlockingTasks.named("window-session-read");
 
+    /**
+     * TEST SEAM — builds every window decorated whatever {@code extendedWindow} says, without touching the
+     * setting, so a test window keeps the menu bar as its first row while the settings read back as stored.
+     */
+    boolean decoratedForTest;
+
     /** TEST SEAM — told of each window's controller right after its {@code init}; a test sets its own seams. */
     java.util.function.Consumer<MainController> builtForTest = controller -> {};
 
@@ -2175,7 +2181,8 @@ public class WindowManager {
             primaryStage = null; // only the first window reuses the JavaFX primary stage
             // Before anything else touches the stage: initStyle throws once a stage has been shown, and
             // this is read per window at construction, which is why the setting applies on restart.
-            if (ExtendedWindow.enabled(shared.getSettings().isExtendedWindow(), com.editora.Os.current())) {
+            if (!decoratedForTest
+                    && ExtendedWindow.enabled(shared.getSettings().isExtendedWindow(), com.editora.Os.current())) {
                 try {
                     stage.initStyle(StageStyle.EXTENDED);
                 } catch (RuntimeException e) {

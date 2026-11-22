@@ -92,13 +92,13 @@ final class FxWindowFixture implements AutoCloseable {
             bootstrap.load();
             SharedConfig shared = bootstrap.shared();
             quietRemoteExecution(shared);
-            quietExtendedWindow(shared);
             quietLanguageServers(shared, fresh);
             isolateExports(shared);
             KeymapManager keymap = new KeymapManager();
             keymap.loadNamed(shared.getSettings().getKeymap());
             keymap.applyOverrides(UserKeys.overrides(shared.getSettings()));
             WindowManager wm = new WindowManager(shared, keymap, null);
+            wm.decoratedForTest = !defaultWindowStyle;
             // A window a command opens has its session read in place here, so a test gets it back at once; the
             // read off the FX thread is StoresOffFxThreadFxTest's.
             wm.sessionReads = FxWindowFixture::readAndWait;
@@ -119,13 +119,23 @@ final class FxWindowFixture implements AutoCloseable {
     }
 
     /**
-     * A test window is decorated, the menu bar its first row, as it was before the extended window became the
-     * default (Pauta WIN-03): the tests that look for the menu bar, the tool-window rows or the first row of the
-     * window were written against that. {@code ExtendedWindowDefaultFxTest} builds the default window, and a
-     * test about the extended window turns it on in {@code beforeWindows}.
+     * Whether a fixture's windows are built decorated, the menu bar their first row, as before the extended
+     * window became the default (Pauta WIN-03): the tests that look for the menu bar or the window's first row
+     * were written against that. Only the window build is told ({@link WindowManager#decoratedForTest}); the
+     * {@code extendedWindow} setting keeps what was stored, so a round trip of the settings sees it unchanged.
+     * {@link #createWithDefaultWindowStyle} builds the window the app would.
      */
-    private static void quietExtendedWindow(SharedConfig shared) {
-        shared.getSettings().setExtendedWindow(false);
+    private static volatile boolean defaultWindowStyle;
+
+    /** As {@link #create(Path, Consumer)}, with the window built in the style the settings ask for, as the app does. */
+    static FxWindowFixture createWithDefaultWindowStyle(Path dir, Consumer<SharedConfig> beforeWindows)
+            throws Exception {
+        defaultWindowStyle = true;
+        try {
+            return create(dir, beforeWindows);
+        } finally {
+            defaultWindowStyle = false;
+        }
     }
 
     /** Whether {@code dir}'s settings file already says whether language servers are on. */
@@ -213,7 +223,6 @@ final class FxWindowFixture implements AutoCloseable {
             bootstrap.load();
             SharedConfig shared = bootstrap.shared();
             quietRemoteExecution(shared);
-            quietExtendedWindow(shared);
             quietLanguageServers(shared, fresh);
             isolateExports(shared);
             beforeWindows.accept(shared);
@@ -224,6 +233,7 @@ final class FxWindowFixture implements AutoCloseable {
             keymap.loadNamed(shared.getSettings().getKeymap());
             keymap.applyOverrides(UserKeys.overrides(shared.getSettings()));
             WindowManager wm = new WindowManager(shared, keymap, null);
+            wm.decoratedForTest = !defaultWindowStyle;
             if (inPlace) {
                 // A window a command opens has its session read in place here, so a test gets it back at once;
                 // the read off the FX thread is StoresOffFxThreadFxTest's.
@@ -260,13 +270,13 @@ final class FxWindowFixture implements AutoCloseable {
             bootstrap.load();
             SharedConfig shared = bootstrap.shared();
             quietRemoteExecution(shared);
-            quietExtendedWindow(shared);
             quietLanguageServers(shared, !savesLanguageServers(dir));
             isolateExports(shared);
             KeymapManager keymap = new KeymapManager();
             keymap.loadNamed(shared.getSettings().getKeymap());
             keymap.applyOverrides(UserKeys.overrides(shared.getSettings()));
             WindowManager wm = new WindowManager(shared, keymap, null);
+            wm.decoratedForTest = !defaultWindowStyle;
             wm.launch(new javafx.stage.Stage(), null, List.of(), false, false, null, false, "", false);
             return new Object[] {shared, wm};
         });
@@ -288,13 +298,13 @@ final class FxWindowFixture implements AutoCloseable {
             bootstrap.load();
             SharedConfig shared = bootstrap.shared();
             quietRemoteExecution(shared);
-            quietExtendedWindow(shared);
             quietLanguageServers(shared, fresh);
             isolateExports(shared);
             KeymapManager keymap = new KeymapManager();
             keymap.loadNamed(shared.getSettings().getKeymap());
             keymap.applyOverrides(UserKeys.overrides(shared.getSettings()));
             WindowManager wm = new WindowManager(shared, keymap, null);
+            wm.decoratedForTest = !defaultWindowStyle;
             // A window a command opens has its session read in place here, so a test gets it back at once; the
             // read off the FX thread is StoresOffFxThreadFxTest's.
             wm.sessionReads = FxWindowFixture::readAndWait;
