@@ -33,6 +33,7 @@ class DebugLogSessionFileTest {
     @AfterEach
     void detach() {
         DebugLog.detachFileForTest();
+        DebugLog.setFileLimitForTest(-1);
         DebugLog.clear();
         DebugLog.suspendCaptureForTest(false);
     }
@@ -77,6 +78,40 @@ class DebugLogSessionFileTest {
                 List.of("left over from the previous run"),
                 Files.readAllLines(DebugLog.previousSessionFile(configDir)),
                 "the session before is kept: a crash is reported from the launch after it");
+    }
+
+    @Test
+    void theFileStopsAtItsLimitWithANoteAndTheMemoryLogGoesOn(@TempDir Path configDir) throws Exception {
+        DebugLog.clear();
+        DebugLog.setFileLimitForTest(30);
+        DebugLog.append("0123456789"); // 11 with its line break
+        DebugLog.attachFile(configDir);
+        DebugLog.append("abcdefghij"); // 22
+        DebugLog.append("past the limit"); // would be 37
+        DebugLog.append("and another");
+        assertTrue(DebugLog.flushWrites(5000));
+        assertEquals(
+                List.of("0123456789", "abcdefghij", DebugLog.FILE_FULL_NOTE),
+                Files.readAllLines(DebugLog.sessionFile(configDir)));
+        assertTrue(DebugLog.snapshot().endsWith("and another"), "the in-app log keeps every record");
+
+        // A new session's file starts counting again.
+        Path other = Files.createDirectories(configDir.resolve("other"));
+        DebugLog.attachFile(other);
+        assertEquals(
+                List.of("0123456789", "abcdefghij", DebugLog.FILE_FULL_NOTE),
+                Files.readAllLines(DebugLog.sessionFile(other)),
+                "the records kept in memory, up to the limit");
+    }
+
+    @Test
+    void attachingAgainClosesTheFileAttachedBefore(@TempDir Path configDir) throws Exception {
+        DebugLog.clear();
+        DebugLog.attachFile(configDir);
+        java.io.PrintWriter first = DebugLog.fileForTest();
+        DebugLog.attachFile(Files.createDirectories(configDir.resolve("again")));
+        first.println("after close");
+        assertTrue(first.checkError(), "a closed writer reports an error on use: the file handle was released");
     }
 
     @Test

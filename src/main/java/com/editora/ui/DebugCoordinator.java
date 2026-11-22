@@ -426,13 +426,18 @@ final class DebugCoordinator {
     }
 
     /** The build facts a launch asks: looked at off the FX thread first when not known ({@link DebugFacts}). */
-    private final DebugFacts facts = new DebugFacts(this::executableFacts, this::sayBusy);
+    private final DebugFacts facts = new DebugFacts(this::executableFacts, this::sayBusy, this::lookFailed);
 
     /** The scans of a document a debug command decides by, made off the FX thread (PERF-01). */
     private final DebugTextScans scans = new DebugTextScans();
 
     private void executableFacts(com.editora.build.BuildTool tool, Path root) {
         ops.buildExecutableFacts(tool, root);
+    }
+
+    private void lookFailed(Exception why) {
+        host.setStatus(
+                tr("status.debug.lookFailed", why.getMessage() == null ? String.valueOf(why) : why.getMessage()));
     }
 
     private void sayBusy() {
@@ -455,13 +460,39 @@ final class DebugCoordinator {
      */
     private <T> void planOffFx(
             String name, java.util.concurrent.Callable<T> work, Consumer<DebugPlanning.Answer<T>> then) {
-        DebugPlanning.offFx(name, work, asThisSession(then));
+        DebugSession session = s();
+        session.stepPending(); // until it answers (it always does), a launch of this session is getting ready
+        Consumer<DebugPlanning.Answer<T>> asked = asThisSession(then);
+        DebugPlanning.offFx(name, work, answer -> {
+            session.stepAnswered();
+            asked.accept(answer);
+            session.launchStepDone(); // nothing more pending: the launch has started, or stopped
+        });
     }
 
-    /** {@code c}, run as the session being handled now ({@link #s()}) whenever it is called. */
+    /**
+     * {@code c}, run as the session being handled now ({@link #s()}) whenever it is called; not at all once that
+     * session is gone (its tab closed, or made room for another), when a launch it was planning has no tab to run in.
+     */
     private <T extends @Nullable Object> Consumer<T> asThisSession(Consumer<T> c) {
         DebugSession session = s();
-        return value -> inSession(session, () -> c.accept(value));
+        return value -> {
+            if (sessions.all().contains(session)) {
+                inSession(session, () -> c.accept(value));
+            }
+        };
+    }
+
+    /** {@code r}, run as the session being handled now whenever it runs, as {@link #asThisSession} does. */
+    private Runnable bound(Runnable r) {
+        Consumer<Object> c = asThisSession(ignored -> r.run());
+        return () -> c.accept(null);
+    }
+
+    /** {@link DebugTextScans#scan}, its retry run as the session that asked (a save, a plan may come between). */
+    private <T> DebugTextScans.@Nullable Known<T> scan(
+            EditorBuffer b, String what, Function<String, @Nullable T> fn, Runnable retry) {
+        return scans.scan(b, what, fn, bound(retry));
     }
 
     /** Runs {@code r} as each session's in turn, oldest first. */
@@ -1061,6 +1092,7 @@ final class DebugCoordinator {
 
     /** Stops the session being handled: a before-launch build still running is what gets stopped; else the session. */
     private void stopOne() {
+        s().launching = false; // a launch still saving or planning is not getting ready any more
         stopChildren(); // a program's subprocesses go with it
         CsharpTestDebug.stopRun(s()); // C#'s Debug Test: the dotnet test run the session attached to
         s().closedBreakpointsRead = null; // a start still reading closed files' breakpoints is not made (review D104)
@@ -2216,6 +2248,7 @@ final class DebugCoordinator {
                     s().dumpForParallel = false;
                 }
                 if (state == DapManager.State.STARTING) {
+                    s().launching = false; // the launch let through has its session
                     s().recordedStops = 0; // the recording breakpoints' limit is per session
                     s().filteredHits.clear(); // and a filtered breakpoint's hit count
                     s().lastExceptionFrames = List.of(); // and the exception an exception breakpoint last showed
@@ -2265,6 +2298,8 @@ final class DebugCoordinator {
                     host.forEachBuffer(DebugCoordinator.this::showBreakpointStates);
                 }
                 if (state != DapManager.State.SUSPENDED) {
+                    s().stopDeferred = false; // a stop still waiting is not the program's state any more
+                    s().heldExceptionInfo = null;
                     clearExecHighlight();
                     clearDebugEditorSurfaces(); // inline values + hover live only while suspended
                     if (shown()) {
@@ -2304,9 +2339,22 @@ final class DebugCoordinator {
 
             @Override
             public void onStopped(int threadId, String reason, List<DapModels.StackFrameInfo> stopFrames) {
-                if (!framesKnown(stopFrames, () -> onStopped(threadId, reason, stopFrames))) {
+                long deferral = ++s().stopDeferral; // a newer stop, or the program going on, makes this one stale
+                if (!framesKnown(stopFrames, () -> {
+                    if (deferral == s().stopDeferral && dap().state() == DapManager.State.SUSPENDED) {
+                        s().stopDeferred = false;
+                        onStopped(threadId, reason, stopFrames);
+                        DapModels.ExceptionInfo held = s().heldExceptionInfo;
+                        s().heldExceptionInfo = null;
+                        if (held != null) {
+                            onExceptionInfo(threadId, held); // it came while the stop waited
+                        }
+                    }
+                })) {
+                    s().stopDeferred = true;
                     return; // shown once the edited files' line mappings are known
                 }
+                s().stopDeferred = false; // the newest stop is the one shown
                 s().stopSerial++;
                 s().stopException = null; // a new stop: the last one's exception is not this one's
                 hideExceptionCard();
@@ -2457,6 +2505,10 @@ final class DebugCoordinator {
 
             @Override
             public void onExceptionInfo(int threadId, DapModels.ExceptionInfo info) {
+                if (s().stopDeferred) {
+                    s().heldExceptionInfo = info; // its stop is not shown yet: it would be cleared by it
+                    return;
+                }
                 if (s().quietStop == s().stopSerial) {
                     return; // a stop not shown (or not yet: exception breakpoints are deciding)
                 }
@@ -4654,7 +4706,7 @@ final class DebugCoordinator {
             return;
         }
         // The test lines are the Run scan's and the main class a parse: both made off the FX thread (PERF-01).
-        b.whenRunScanned(() -> {
+        b.whenRunScanned(bound(() -> {
             String text = b.getContent();
             planOffFx("debug-own-main", () -> DebugPlanning.ownMainClass(text), a -> {
                 s().startCleared = true; // Debug Test's own check (clearToDebugTest) has been answered here
@@ -4664,7 +4716,7 @@ final class DebugCoordinator {
                     launchBuffer(b);
                 }
             });
-        });
+        }));
     }
 
     /** Debug File (the editor menu, the Debug File handler): {@code b}, after the same check as F5's. */
@@ -4732,10 +4784,12 @@ final class DebugCoordinator {
                 switch (answer) {
                     case BOTH -> {
                         openSession(); // the launch asked for is the new session's
+                        launching(path);
                         return true;
                     }
                     case STOP -> {
                         endLiveLaunch(); // retarget to the file asked for
+                        launching(path);
                         return true;
                     }
                     default -> {
@@ -4744,21 +4798,60 @@ final class DebugCoordinator {
                 }
             }
             default -> {
+                launching(path); // getting ready while it saves and plans
                 return true; // nothing to end first
             }
         }
     }
 
-    /** A launch is getting ready with no session yet: a jdtls build, a before-launch step, a test run's JVM. */
+    /**
+     * The longest a session's answers still to come (a save, a plan, a scan: off the FX thread since PERF-01) count
+     * as a launch getting ready: one that never answers (a save that failed) does not hold F5 for longer.
+     */
+    static final long STEPS_PENDING_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(15);
+
+    /** A launch's plan could not be read (the disk, a remote host gone): says so, instead of doing nothing. */
+    private void planFailed(Path file, @Nullable Exception why) {
+        String reason = why == null || why.getMessage() == null ? String.valueOf(why) : why.getMessage();
+        host.setStatus(tr("status.debug.planFailed", file.getFileName(), reason));
+    }
+
+    /** {@code path}'s launch is let through: until its last save or plan has answered, it is getting ready. */
+    private void launching(@Nullable Path path) {
+        s().launching = true;
+        s().launchAskedFile = path;
+    }
+
+    /**
+     * A launch let through is still saving its files or reading its plan: an answer is still to come, not long ago.
+     * A second F5 meanwhile launched the program twice.
+     */
+    private boolean launchAskedRecently() {
+        return s().launching
+                && s().stepsPending > 0
+                && dap().state() == DapManager.State.INACTIVE
+                && System.nanoTime() - s().stepsPendingSince < STEPS_PENDING_NANOS;
+    }
+
+    /**
+     * A launch is getting ready with no session yet: a jdtls build, a before-launch step, a test run's JVM, or one
+     * still saving its files or reading its plan.
+     */
     private boolean launchPreparing() {
-        return !dap().isActive() && (s().pendingBuild != null || beforeLaunchActive() || s().pendingAttachStop != null);
+        return !dap().isActive()
+                && (s().pendingBuild != null
+                        || beforeLaunchActive()
+                        || s().pendingAttachStop != null
+                        || launchAskedRecently());
     }
 
     /** The file the launch getting ready is for, when known. */
     private @Nullable Path preparingFile() {
         return s().pendingBuild != null
                 ? s().pendingBuildFile
-                : s().pendingAttachStop != null ? s().pendingAttachFile : null;
+                : s().pendingAttachStop != null
+                        ? s().pendingAttachFile
+                        : launchAskedRecently() ? s().launchAskedFile : null;
     }
 
     /** A launch of {@code file} is live or getting ready. */
@@ -4885,6 +4978,8 @@ final class DebugCoordinator {
                 a -> {
                     if (a.value() != null) {
                         debugGoIn(path, extras, a.value());
+                    } else {
+                        planFailed(path, a.failure());
                     }
                 });
     }
@@ -5332,7 +5427,24 @@ final class DebugCoordinator {
 
     /** {@link SaveChain#savedOrThen} through this window's save path: no nested wait (PERF-01, Pauta 6.0.1). */
     boolean savedOrThen(List<EditorBuffer> buffers, Runnable again) {
-        return SaveChain.savedOrThen(buffers, ops::saveThen, again);
+        DebugSession session = s();
+        Runnable asked = bound(again); // the saves answer later
+        boolean saved = SaveChain.savedOrThen(
+                buffers,
+                ops::saveThen,
+                () -> {
+                    session.stepAnswered();
+                    asked.run();
+                    session.launchStepDone();
+                },
+                () -> { // refused, or edited again meanwhile: the launch is not getting ready
+                    session.stepAnswered();
+                    session.launchStepDone();
+                });
+        if (!saved) {
+            session.stepPending();
+        }
+        return saved;
     }
 
     /** The 0-based document line of {@code b}'s caret. */
@@ -5350,7 +5462,7 @@ final class DebugCoordinator {
             return false;
         }
         int caret = caretLine(b); // the test is found off the FX thread (PERF-01): the command goes on once it is
-        var test = scans.scan(b, "rustTest:" + caret, t -> RustLaunch.testAt(t, caret), () -> {
+        var test = scan(b, "rustTest:" + caret, t -> RustLaunch.testAt(t, caret), () -> {
             if (!debugRustTestAtCaret(b, otherwise)) {
                 otherwise.run();
             }
@@ -5394,7 +5506,7 @@ final class DebugCoordinator {
         int caret = b.getFocusedArea().getCurrentParagraph()
                 + b.getBreakpointManager().regionFirstLine();
         List<String> nodeArgs = new java.util.ArrayList<>(List.of("--test"));
-        var named = scans.scan(b, "jsTest:" + caret, t -> JsLaunch.testNameAt(t, caret), () -> debugJsTestAtCaret(b));
+        var named = scan(b, "jsTest:" + caret, t -> JsLaunch.testNameAt(t, caret), () -> debugJsTestAtCaret(b));
         if (named == null) {
             return true; // found off the FX thread (PERF-01): asked again once it is
         }
@@ -5440,11 +5552,19 @@ final class DebugCoordinator {
             return;
         }
         if (b.isDirty() || b.getPath() == null) { // saved off the FX thread, then launched (PERF-01, Pauta 6.0.1)
-            ops.saveThen(b, saved -> {
-                if (saved && b.getPath() != null && !b.isDirty()) {
-                    launchBuffer(b, nodeArgs);
-                }
-            });
+            ops.saveThen(
+                    b,
+                    asThisSession(
+                            saved -> { // the session that asked, whichever is focused when it lands
+                                if (saved && b.getPath() != null && !b.isDirty()) {
+                                    launchBuffer(b, nodeArgs);
+                                } else if (saved) { // typed into while it saved: said, not dropped unseen
+                                    Path edited = b.getPath();
+                                    host.setStatus(tr(
+                                            "status.debug.editedWhileSaving",
+                                            edited == null ? "" : String.valueOf(edited.getFileName())));
+                                }
+                            }));
             return;
         }
         Path path = java.util.Objects.requireNonNull(b.getPath()); // checked above
@@ -5455,6 +5575,8 @@ final class DebugCoordinator {
         planOffFx("debug-file-plan", () -> DebugPlanning.warmJavaLaunch(language, path, text, settingsJdk), a -> {
             if (a.value() != null) {
                 launchBufferPlanned(b, path, language, nodeArgs, a.value());
+            } else {
+                planFailed(path, a.failure());
             }
         });
     }
@@ -5462,7 +5584,7 @@ final class DebugCoordinator {
     private void launchBufferPlanned(
             EditorBuffer b, Path path, String language, List<String> nodeArgs, DebugPlanning.FileRead read) {
         if (b.runScanPending()) { // compact-source detection is the Run scan, made off FX: decide from its result
-            b.whenRunScanned(() -> launchBufferPlanned(b, path, language, nodeArgs, read));
+            b.whenRunScanned(bound(() -> launchBufferPlanned(b, path, language, nodeArgs, read)));
             return;
         }
         // A Clojure file of a Leiningen, deps.edn or bb.edn project, a file of a Scala CLI project: its tool loads
@@ -5876,7 +5998,7 @@ final class DebugCoordinator {
         }
         int caret = b.getFocusedArea().getCurrentParagraph()
                 + b.getBreakpointManager().regionFirstLine();
-        var found = scans.scan(
+        var found = scan(
                 b, "pytest:" + caret, t -> PytestScanner.atLine(t, caret), () -> debugPythonTestAtCaret(b, classLevel));
         if (found == null) {
             return true; // found off the FX thread (PERF-01): asked again once it is
@@ -5908,7 +6030,7 @@ final class DebugCoordinator {
             return; // a saved file is always in a folder
         }
         String relative = cwd.relativize(file).toString().replace('\\', '/');
-        var fallback = scans.scan( // the class header is looked for off the FX thread (PERF-01)
+        var fallback = scan( // the class header is looked for off the FX thread (PERF-01)
                 b, "unittest:" + target, t -> unittestFallback(t, relative, target), () -> debugPythonTest(b, target));
         if (fallback == null) {
             return;
@@ -5927,7 +6049,7 @@ final class DebugCoordinator {
      * module-level function (class {@code ""}), or — class {@code ""} and no method — the whole file (null here).
      */
     void debugPythonGlyph(EditorBuffer b, com.editora.test.JavaTestScanner.TestTarget glyph) {
-        var found = scans.scan(b, "glyph:" + glyph, t -> pytestTarget(t, glyph), () -> debugPythonGlyph(b, glyph));
+        var found = scan(b, "glyph:" + glyph, t -> pytestTarget(t, glyph), () -> debugPythonGlyph(b, glyph));
         if (found != null) { // the test's end is found off the FX thread (PERF-01): asked again once it is
             debugPythonTest(b, found.value());
         }
@@ -6692,7 +6814,11 @@ final class DebugCoordinator {
         if (root != null && !com.editora.process.ExecTargets.runsHere(root)) {
             return ""; // a JDK setting names a folder on this machine; the jdtls where it runs resolves its own
         }
-        if (root != null && !RunOpsHost.isMavenProject(root)) { // the plan looked at it off the FX thread
+        // A Gradle (or any other) project runs on its build's own JDK, unless it names one itself (.sdkmanrc, its
+        // settings): its build then compiles with that JDK, and the program must run on it too.
+        if (root != null
+                && !RunOpsHost.isMavenProject(root) // the plan looked at it off the FX thread
+                && !host.projectScope().projectJdk()) {
             return "";
         }
         return com.editora.run.JdkToolchain.effectiveHome(
@@ -6832,7 +6958,7 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.jumpUnsupported"));
             return;
         }
-        if (!linesKnown(b, this::debugJumpToLine)) {
+        if (!linesKnown(b, onSameLine(b, b.getFocusedArea().getCurrentParagraph(), this::debugJumpToLine))) {
             return;
         }
         int line = lineMap(b).toLaunched(fileLineAtCaret(b));
@@ -6867,17 +6993,32 @@ final class DebugCoordinator {
      */
     private @Nullable DebugSession attachWaiter;
 
+    /** The session waiting for a test run's JVMs is no longer: the attach was refused there. */
+    private void releaseAttachWaiter() {
+        if (attachWaiter == s()) {
+            attachWaiter = null;
+        }
+    }
+
+    /**
+     * A Debug Test run's JVM: attached in the session waiting for that run ({@link #attachWaiter}), whichever is
+     * focused. Only the test run's own: a run configuration's or Run's JVM attaches where it is started.
+     */
+    void attachTestJvm(Path anchorFile, String attachHost, int port, @Nullable Runnable stopOwner) {
+        DebugSession waiter = attachWaiter;
+        if (waiter != null && sessions.all().contains(waiter)) {
+            inSession(waiter, () -> attachToPort(anchorFile, attachHost, port, stopOwner));
+        } else {
+            attachToPort(anchorFile, attachHost, port, stopOwner);
+        }
+    }
+
     /**
      * As above; {@code stopOwner} ends the test or build run that started the JVM: Stop on this session runs
      * it after detaching, so Stop ends the program as it does every other session's — detaching alone left
      * the test or app running on (review A4).
      */
     void attachToPort(Path anchorFile, String attachHost, int port, @Nullable Runnable stopOwner) {
-        DebugSession waiter = attachWaiter;
-        if (dispatching == null && waiter != null && sessions.all().contains(waiter)) {
-            inSession(waiter, () -> attachToPort(anchorFile, attachHost, port, stopOwner));
-            return;
-        }
         if (anchorFile != null
                 && !factsKnown( // the anchor's project routes the attach: looked at off the FX thread (PERF-01)
                         "debug-attach-look",
@@ -6902,6 +7043,7 @@ final class DebugCoordinator {
             // A Kotlin (or Groovy) program of a build: Editora's JVM adapter, which binds by source name.
             if (!debugEffectiveFor(jvmLanguage, anchorFile)) {
                 host.setStatus(unavailableMessage(jvmLanguage, anchorFile));
+                releaseAttachWaiter(); // refused: the run attaches nothing here
                 return;
             }
             ops.openToolWindow();
@@ -6913,6 +7055,7 @@ final class DebugCoordinator {
         // On a remote anchor's host the adapter attaches from there: "localhost" is the host itself.
         if (!debugEffectiveFor("java", anchorFile)) {
             host.setStatus(unavailableMessage("java", anchorFile));
+            releaseAttachWaiter(); // refused: the run attaches nothing here
             return;
         }
         ops.openToolWindow();
@@ -7936,9 +8079,9 @@ final class DebugCoordinator {
     }
 
     /** {@code command} asked again once a check lands, only while the caret is still on {@code line}. */
-    private static Runnable onSameLine(EditorBuffer b, int line, Runnable command) {
-        return () -> {
-            if (!b.isDisposed() && b.getFocusedArea().getCurrentParagraph() == line) {
+    private Runnable onSameLine(EditorBuffer b, int line, Runnable command) {
+        return () -> { // the command reads the active tab: still the one it was given, its caret on the same line
+            if (!b.isDisposed() && breakpointBuffer() == b && b.getFocusedArea().getCurrentParagraph() == line) {
                 command.run();
             }
         };
@@ -7967,7 +8110,7 @@ final class DebugCoordinator {
         // B8: a blank or comment-only line has no code to stop on. java-debug even called such a breakpoint
         // verified, and it never stopped.
         String language = b.getLanguage(); // the text is scanned off the FX thread (PERF-01): asked again once known
-        var codeLess = scans.scan(b, "codeLess:" + line, t -> CodeLessLines.isCodeLess(t, line, language), retry);
+        var codeLess = scan(b, "codeLess:" + line, t -> CodeLessLines.isCodeLess(t, line, language), retry);
         if (codeLess == null) {
             return false;
         }
@@ -8288,6 +8431,18 @@ final class DebugCoordinator {
 
     // --- buffer wiring + panel-action delegates ----------------------------------------------------
 
+    /**
+     * A gutter click's breakpoint, once whether the line has code is known: added, unless one is there by then. The
+     * text may change again before that is known: asked again, not dropped.
+     */
+    private void addGutterBreakpoint(EditorBuffer b, int line) {
+        if (!b.isDisposed()
+                && !b.getBreakpointManager().isBreakpoint(line)
+                && breakpointAllowed(b, line, () -> addGutterBreakpoint(b, line))) {
+            b.toggleBreakpoint(line);
+        }
+    }
+
     /** Wires the debug hooks onto a freshly-added buffer (breakpoint gutter gate + change/hover hooks +
      *  restore persisted breakpoints). Called from {@code MainController.addBuffer}. */
     void wireBuffer(EditorBuffer buffer) {
@@ -8300,12 +8455,7 @@ final class DebugCoordinator {
                     : b.getBreakpointManager().memberMark(line);
             if (mark != null) {
                 mark.members().forEach(memberBreakpoints::toggle); // a method breakpoint's mark: removes it
-            } else if (breakpointAllowed(b, line, () -> {
-                if (!b.getBreakpointManager().isBreakpoint(line)
-                        && breakpointAllowed(b, line, () -> {})) { // known now: never waits again
-                    b.toggleBreakpoint(line);
-                }
-            })) {
+            } else if (breakpointAllowed(b, line, () -> addGutterBreakpoint(b, line))) {
                 b.toggleBreakpoint(line);
             }
         });
@@ -9239,9 +9389,7 @@ final class DebugCoordinator {
      * aimed at. An import mid-session, an edit in the Breakpoints list or on a Map card.
      */
     void sendClosed(Map<String, List<Breakpoint>> saved) {
-        if (breakpointsMuted) {
-            return; // sent when Mute is turned off
-        }
+        // Muted, each session still learns them (Unmute sends what it knows); only the adapter is told nothing yet.
         Map<String, List<Breakpoint>> copy = new LinkedHashMap<>(saved);
         forEachSession(() -> {
             if (!dap().isActive()) {
@@ -9266,7 +9414,9 @@ final class DebugCoordinator {
                     for (DapModels.FileBreakpoints fb : byKey.values()) {
                         if (ops.bufferForPath(fb.file()) == null) { // opened meanwhile: its tab sent them
                             s().closedBreakpoints.put(key(fb.file()), fb);
-                            dap().updateBreakpoints(fb);
+                            if (!breakpointsMuted) {
+                                dap().updateBreakpoints(fb);
+                            }
                         }
                     }
                 });
@@ -9401,7 +9551,9 @@ final class DebugCoordinator {
         EditorBuffer b = breakpointBuffer();
         if (b != null
                 && breakpointAllowed(
-                        b, b.getFocusedArea().getCurrentParagraph(), this::toggleLambdaBreakpointAtCaret)) {
+                        b,
+                        b.getFocusedArea().getCurrentParagraph(),
+                        onSameLine(b, b.getFocusedArea().getCurrentParagraph(), this::toggleLambdaBreakpointAtCaret))) {
             lambdaBreakpoints.toggleAtCaret(b);
         }
     }
@@ -9610,6 +9762,14 @@ final class DebugCoordinator {
      */
     void debugActiveFile() {
         EditorBuffer b = host.activeBuffer();
+        if (b != null && b.runScanPending()) { // whether it is runnable is the Run scan's, made off the FX thread
+            b.whenRunScanned(bound(() -> {
+                if (host.activeBuffer() == b) {
+                    debugActiveFile();
+                }
+            }));
+            return;
+        }
         // A runnable file has the row beside Run File (the editor menu's own), any other one the Debug File of its own.
         if (b == null || !isDebuggableBuffer(b) || !((b.isRunnable() && !b.isHttpFile()) || offersDebugFile(b))) {
             host.setStatus(tr("status.debug.noDebugFile"));
@@ -9625,7 +9785,7 @@ final class DebugCoordinator {
     void debugMainClassAtCaret() {
         EditorBuffer b = host.activeBuffer();
         if (b != null && b.runScanPending()) { // the load's scan runs off FX: decide once it has landed
-            b.whenRunScanned(this::debugMainClassAtCaret);
+            b.whenRunScanned(bound(this::debugMainClassAtCaret));
             return;
         }
         var main = b == null ? null : b.mainTargetAtCaret();

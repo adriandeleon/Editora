@@ -100,6 +100,34 @@ class GoLaunchTest {
     }
 
     @Test
+    void aDebugBinaryASessionHoldsIsNotCleanedUpHoweverOld(@TempDir Path dir) throws Exception {
+        String name = Path.of(GoLaunch.debugBinary()).getFileName().toString(); // held from the start
+        Path held = Files.writeString(dir.resolve(name), "x");
+        Path restarted = Files.writeString(dir.resolve("editora-dlv-restarted"), "x");
+        java.time.Instant now = java.time.Instant.now();
+        java.nio.file.attribute.FileTime twoDaysAgo =
+                java.nio.file.attribute.FileTime.from(now.minus(java.time.Duration.ofDays(2)));
+        Files.setLastModifiedTime(held, twoDaysAgo);
+        Files.setLastModifiedTime(restarted, twoDaysAgo);
+        GoLaunch.holdDebugBinary(restarted.toString());
+        assertEquals(0, GoLaunch.deleteStaleDebugBinaries(dir, now.minus(java.time.Duration.ofHours(1))));
+        assertTrue(Files.exists(held), "another window's session still runs it");
+
+        java.util.List<Runnable> later = new java.util.ArrayList<>();
+        GoLaunch.releaseDebugBinary(restarted.toString(), later::add);
+        GoLaunch.holdDebugBinary(restarted.toString()); // Restart: the same program, built again
+        later.forEach(Runnable::run);
+        assertTrue(Files.exists(restarted), "held again before it went");
+        GoLaunch.releaseDebugBinary(restarted.toString(), Runnable::run);
+        assertFalse(Files.exists(restarted), "its session ended");
+
+        GoLaunch.releaseDebugBinary(held.toString(), r -> {});
+        assertEquals(1, GoLaunch.deleteStaleDebugBinaries(dir, now.minus(java.time.Duration.ofHours(1))));
+        assertFalse(Files.exists(held));
+        assertTrue(GoLaunch.STALE_DEBUG_BINARY_AGE.toHours() >= 24, "another Editora's session may run one that long");
+    }
+
+    @Test
     void aTestRunsByNameAndABenchmarkWithoutTheTests() {
         assertEquals(List.of("-test.run", "^TestAdd$"), GoLaunch.testArgs("TestAdd"));
         assertEquals(List.of("-test.run", "^FuzzParse$"), GoLaunch.testArgs("FuzzParse"), "its seed corpus");
