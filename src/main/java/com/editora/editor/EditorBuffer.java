@@ -1240,6 +1240,79 @@ public class EditorBuffer implements TabContent {
         });
     }
 
+    /** The site an HTML page's link under a Ctrl/Cmd-hover is looked for on (the page is parsed whole). */
+    public static final String HTML_LINK_HOVER_SITE = "EditorBuffer.htmlLinkHover";
+
+    /** Asks the language server whether the symbol at a 0-based line and UTF-16 column has a definition. */
+    @FunctionalInterface
+    public interface DefinitionProbe {
+        void probe(int line, int column, java.util.function.Consumer<Boolean> found);
+    }
+
+    private @Nullable DefinitionProbe definitionProbe;
+
+    /** Injects the definition probe behind Ctrl/Cmd-hover links ({@link DefinitionLinks}); null turns it off. */
+    public void setDefinitionProbe(@Nullable DefinitionProbe probe) {
+        this.definitionProbe = probe;
+    }
+
+    /**
+     * Whether a Ctrl/Cmd-click at {@code offset} of {@code a} goes somewhere, for {@link DefinitionLinks}: the same
+     * cases the click handler above follows. An HTML page's {@code href}/{@code src} (worked out off the FX thread,
+     * the page is parsed whole), then, with a live language server, the identifier there if the server knows its
+     * definition. A Markdown link is styled as one already and is left alone.
+     */
+    void probeDefinitionLink(
+            CodeArea a, int offset, java.util.function.Consumer<DefinitionLinks.@Nullable Span> answer) {
+        if (isMarkdown() || largeFile) {
+            answer.accept(null);
+            return;
+        }
+        if (HtmlLinks.isHtml(language)) {
+            long version = docVersion;
+            String text = a.getText();
+            com.editora.perf.OffFx.then(HTML_LINK_HOVER_SITE, () -> HtmlLinks.at(text, offset), found -> {
+                if (docVersion != version || isDisposed()) {
+                    answer.accept(null);
+                    return;
+                }
+                HtmlLinks.Link link = found.ok() ? found.value() : null;
+                if (link != null && link.end() > link.start()) {
+                    answer.accept(new DefinitionLinks.Span(link.start(), link.end(), true));
+                } else {
+                    probeSymbolLink(a, offset, answer);
+                }
+            });
+            return;
+        }
+        probeSymbolLink(a, offset, answer);
+    }
+
+    private void probeSymbolLink(
+            CodeArea a, int offset, java.util.function.Consumer<DefinitionLinks.@Nullable Span> answer) {
+        DefinitionProbe probe = definitionProbe;
+        if (probe == null || !isLspActive() || offset < 0 || offset >= a.getLength()) {
+            answer.accept(null);
+            return;
+        }
+        var pos = a.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+        int line = pos.getMajor();
+        int column = pos.getMinor();
+        int[] word = DefinitionLinks.wordAt(a.getParagraph(line).getText(), column, language);
+        if (word == null) {
+            answer.accept(null);
+            return;
+        }
+        int start = offset - column + word[0];
+        int end = offset - column + word[1];
+        long version = docVersion;
+        sendLspChange(); // the server must see what is under the mouse, not the text of a moment ago
+        probe.probe(line, column, found -> {
+            boolean current = docVersion == version && !isDisposed() && isLspActive();
+            answer.accept(new DefinitionLinks.Span(start, end, current && Boolean.TRUE.equals(found)));
+        });
+    }
+
     /** Injects the external-URL opener (controller's HostServices) used by Ctrl/Cmd-click + open-link. */
     public void setOpenUrlHandler(java.util.function.Consumer<String> handler) {
         completionActions.setLinkOpener(this.openUrlHandler = handler == null ? u -> {} : handler);
@@ -1663,6 +1736,8 @@ public class EditorBuffer implements TabContent {
         noteOverlay.setSpans(notes::activeSpans, notes::hasActiveSpans); // inert until a note is positioned
         noteOverlay.setActive(true);
         installPointerHovers(area);
+        // Ctrl/Cmd-hover underlines what Ctrl/Cmd-click follows; a region with one hidden bar until then.
+        attachLazyOverlay(new DefinitionLinks(area, this::probeDefinitionLink), OverlayLayer.DEFINITION_LINK);
         AnchorPane.setTopAnchor(minimap, 0d);
         AnchorPane.setBottomAnchor(minimap, 0d);
         AnchorPane.setRightAnchor(minimap, 0d);

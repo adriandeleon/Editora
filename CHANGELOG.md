@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Ctrl/Cmd-hover shows what Ctrl/Cmd-click follows.** Hold Ctrl (Cmd on macOS) over code and the symbol under
+  the mouse is underlined, and the pointer becomes a hand, when Go to Definition can take you somewhere from
+  there: a symbol the language server resolves, or an HTML page's `href`/`src`. Click to go, as before; let go of
+  the key and the link goes away. VS Code and IntelliJ show the same.
 - **Run `.http` files from the command line.** `editora http api.http` runs every request of the file, in order,
   as Run All does — same cookie jar, chained responses, `# @assert` checks and JavaScript handlers — and prints
   each response and test, for CI and scripts. Like JetBrains' `ijhttp`: `--env dev`, `--env-file`,

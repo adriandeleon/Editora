@@ -5267,6 +5267,11 @@
 .problems-panel .problem-error { -fx-text-fill: -state-red; }
 .problems-panel .problem-warning { -fx-text-fill: -state-amber; }
 .problems-panel .problem-info { -fx-text-fill: -state-accent; }
+/* Ctrl/Cmd-hover: the symbol a Ctrl/Cmd-click would follow (DefinitionLinks). */
+.definition-link-underline {
+    -fx-background-color: -color-accent-fg;
+}
+
 .lsp-diagnostic-tooltip {
     -fx-font-size: 12px;
     -fx-background-color: -color-bg-overlay;
