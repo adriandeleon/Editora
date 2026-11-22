@@ -4963,6 +4963,36 @@ public final class DapManager {
                 }));
     }
 
+    /** Whether the session changes the program's memory ({@code writeMemory}: CodeLLDB, GDB, Delve). */
+    public boolean supportsWriteMemory() {
+        DapClient c = client;
+        return c != null && c.supportsWriteMemory();
+    }
+
+    /**
+     * Writes {@code data} at {@code memoryReference} + {@code offset} (how many bytes were written to {@code cb} on the
+     * FX thread; why not, to {@code failed}).
+     */
+    public void writeMemory(
+            String memoryReference, long offset, byte[] data, Consumer<Integer> cb, Consumer<String> failed) {
+        DapClient c = client;
+        if (c == null || !c.supportsWriteMemory()) {
+            failed.accept("");
+            return;
+        }
+        c.writeMemory(memoryReference, offset, data)
+                .whenComplete((written, e) -> fx(() -> {
+                    if (client != c) {
+                        return;
+                    }
+                    if (e != null || written == null) {
+                        failed.accept(e == null ? "" : msg(e));
+                    } else {
+                        cb.accept(written);
+                    }
+                }));
+    }
+
     /**
      * The memory reference of {@code expression}'s value in frame {@code frameId} (to {@code cb} on the FX thread; null
      * when it has none or could not be evaluated).
@@ -4973,12 +5003,26 @@ public final class DapManager {
             cb.accept(null);
             return;
         }
+        String address = addressOf(expression);
         c.memoryReferenceOf(expression, frameId)
+                .thenCompose(ref -> ref != null || address == null
+                        ? CompletableFuture.completedFuture(ref)
+                        : c.memoryReferenceOf(address, frameId))
                 .whenComplete((ref, e) -> fx(() -> {
                     if (client == c) {
                         cb.accept(e != null ? null : ref);
                     }
                 }));
+    }
+
+    /**
+     * The expression that asks for {@code expression}'s address, {@code &(expression)}, for when its value has no
+     * memory reference: GDB gives a C array none (only a pointer one), and the native languages that read memory
+     * (C, C++, Rust, Go) all take {@code &}. Null when it already asks for an address. Pure.
+     */
+    static @Nullable String addressOf(String expression) {
+        String e = expression.strip();
+        return e.isEmpty() || e.startsWith("&") ? null : "&(" + e + ")";
     }
 
     /**

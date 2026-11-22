@@ -429,6 +429,7 @@ final class DebugCoordinator {
     private final PythonDebugLaunch python = new PythonDebugLaunch(this);
 
     private final InstructionBreakpoints instructionBreakpoints = new InstructionBreakpoints(this);
+    private final MemoryEdits memoryEdits = new MemoryEdits(this);
 
     /** The build facts a launch asks: looked at off the FX thread first when not known ({@link DebugFacts}). */
     private final DebugFacts facts = new DebugFacts(this::executableFacts, this::sayBusy, this::lookFailed);
@@ -733,6 +734,7 @@ final class DebugCoordinator {
             built.disassemblyView().setOnOpenSource(this::openSourceLine);
             instructionBreakpoints.install(built.disassemblyView());
             built.memoryView().setOnGo(this::memoryGo);
+            memoryEdits.install(built.memoryView());
             built.memoryView().setOnPage(direction -> {
                 if (s().memoryReference != null) {
                     s().memoryOffset += (long) direction * DebugMemoryView.PAGE;
@@ -4475,7 +4477,7 @@ final class DebugCoordinator {
     }
 
     /** Reads a page at the Memory view's reference and offset into it. */
-    private void readMemory() {
+    void readMemory() {
         String ref = s().memoryReference;
         if (ref == null || s().panel == null) {
             return;

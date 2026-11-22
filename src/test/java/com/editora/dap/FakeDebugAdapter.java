@@ -122,6 +122,15 @@ public final class FakeDebugAdapter implements AutoCloseable {
     /** While set, {@code setInstructionBreakpoints} fails, with the message {@code adapter fell over}. */
     public volatile boolean instructionBreakpointsFail;
 
+    /** While set, {@code writeMemory} fails, with the message {@code Cannot access memory}. */
+    public volatile boolean writeMemoryFails;
+
+    /** While set, {@code writeMemory} answers that it wrote one byte, whatever it was given (and writes that one). */
+    public volatile boolean writeMemoryPartly;
+
+    /** When set (before the client connects), {@link #lowLevel} sessions do not advertise {@code writeMemory}. */
+    public volatile boolean readOnlyMemory;
+
     /**
      * How many more listings asked from a byte offset come back out of step, as x86 decoded from inside an instruction
      * does: one byte into an instruction, so none of their instructions starts at the address asked about.
@@ -632,6 +641,7 @@ public final class FakeDebugAdapter implements AutoCloseable {
             if (lowLevel) {
                 capabilities.setSupportsDisassembleRequest(true);
                 capabilities.setSupportsReadMemoryRequest(true);
+                capabilities.setSupportsWriteMemoryRequest(!readOnlyMemory);
                 capabilities.setSupportsSteppingGranularity(true);
                 capabilities.setSupportsInstructionBreakpoints(true);
             }
@@ -1059,7 +1069,7 @@ public final class FakeDebugAdapter implements AutoCloseable {
             String scripted = evaluateResults.get(args.getExpression());
             response.setResult(scripted != null ? scripted : "val(" + args.getExpression() + ")");
             response.setType(evaluateTypes.get(args.getExpression()));
-            if (lowLevel && !args.getExpression().equals("noaddress")) {
+            if (lowLevel && !args.getExpression().contains("noaddress")) {
                 response.setMemoryReference("0x2000");
             }
             return CompletableFuture.completedFuture(response);
@@ -1097,6 +1107,33 @@ public final class FakeDebugAdapter implements AutoCloseable {
             org.eclipse.lsp4j.debug.SetInstructionBreakpointsResponse response =
                     new org.eclipse.lsp4j.debug.SetInstructionBreakpointsResponse();
             response.setBreakpoints(out);
+            return CompletableFuture.completedFuture(response);
+        }
+
+        /** Every {@code writeMemory} request, in arrival order. */
+        public final List<org.eclipse.lsp4j.debug.WriteMemoryArguments> memoryWrites = new CopyOnWriteArrayList<>();
+
+        /** The bytes {@code writeMemory} wrote, by address: reads show them. */
+        private final java.util.Map<Long, Byte> written = new java.util.concurrent.ConcurrentHashMap<>();
+
+        @Override
+        public CompletableFuture<org.eclipse.lsp4j.debug.WriteMemoryResponse> writeMemory(
+                org.eclipse.lsp4j.debug.WriteMemoryArguments args) {
+            memoryWrites.add(args);
+            record("writeMemory");
+            if (writeMemoryFails) {
+                return refused("Cannot access memory");
+            }
+            byte[] data = java.util.Base64.getDecoder().decode(args.getData());
+            int count = writeMemoryPartly ? Math.min(1, data.length) : data.length;
+            long at = Long.decode(args.getMemoryReference()) + (args.getOffset() == null ? 0 : args.getOffset());
+            for (int i = 0; i < count; i++) {
+                written.put(at + i, data[i]);
+            }
+            org.eclipse.lsp4j.debug.WriteMemoryResponse response = new org.eclipse.lsp4j.debug.WriteMemoryResponse();
+            if (writeMemoryPartly) {
+                response.setBytesWritten(count);
+            }
             return CompletableFuture.completedFuture(response);
         }
 
@@ -1152,6 +1189,12 @@ public final class FakeDebugAdapter implements AutoCloseable {
             }
             org.eclipse.lsp4j.debug.ReadMemoryResponse response = new org.eclipse.lsp4j.debug.ReadMemoryResponse();
             long at = Long.decode(args.getMemoryReference()) + (args.getOffset() == null ? 0 : args.getOffset());
+            for (int i = 0; i < data.length; i++) {
+                Byte b = written.get(at + i);
+                if (b != null) {
+                    data[i] = b;
+                }
+            }
             response.setAddress(String.format("0x%x", at));
             response.setData(java.util.Base64.getEncoder().encodeToString(data));
             return CompletableFuture.completedFuture(response);

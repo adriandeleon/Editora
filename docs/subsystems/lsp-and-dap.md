@@ -1419,8 +1419,20 @@ to move between pages.
 - Its field takes an address (`0x…`), or an expression whose value's memory reference comes from `evaluate`
   (`memoryReferenceOf`).
 - A variable's context menu has View Memory, which opens the view at the variable's path expression.
+- An expression whose value has no memory reference is asked again as `&(expression)` (`DapManager.addressOf`):
+  GDB gives a C array none, only a pointer.
 - An address that can't be read is said, as is an expression with no address, or an adapter that doesn't read
   memory.
+- **Edit Bytes…** (`debug.memoryEditBytes`: a double-click, F2 or the row's menu) changes a row's bytes where the
+  adapter has `supportsWriteMemoryRequest` (CodeLLDB, GDB and Delve; probed 2026-11-22). The work is in
+  [`ui/MemoryEdits`](../../src/main/java/com/editora/ui/MemoryEdits.java), out of `DebugCoordinator`. The prompt
+  starts from the row's bytes in hex and takes hex (`48 65`, `4865`, `0x48`) or `"quoted text"` (UTF-8)
+  (`DebugMemoryView.parseBytes`); typing past the row is allowed up to the page's readable end. Only the span from
+  the first changed byte to the last is written (`DebugMemoryView.edit`), at the page's reference + offset as
+  `readMemory` reads it. Then the page and the frame's scopes are read again, and a `bytesWritten` short of the
+  count is said. A step, another page or another address while the prompt is open writes nothing
+  (`status.debug.memoryMovedOn`). `MemoryWriteProbeFxTest` drives CodeLLDB and GDB; Delve's is unprobed (no Go
+  toolchain on the dev machine).
 
 `DisassemblyMemoryProbeFxTest` drives the real CodeLLDB; `GoDebugProbeFxTest` checks Delve's answers too.
 `InstructionBreakpointProbeFxTest` stops at an instruction breakpoint on CodeLLDB, GDB and Delve, through the
