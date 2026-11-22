@@ -25,14 +25,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1561"
     },
     {
-      "rule": "WIN-03",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/window-shell/#win-03",
-      "kind": "pending",
-      "reason": "On Windows and Linux the menu bar sits below the title bar unless you turn on the extended window setting.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1562"
-    },
-    {
       "rule": "TBAR-03",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-03",

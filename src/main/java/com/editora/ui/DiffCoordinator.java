@@ -515,7 +515,8 @@ final class DiffCoordinator {
 
     /**
      * Writes new text into the open buffer {@code b} as an undoable whole-document edit, marking it dirty,
-     * then re-diffs every tab. Returns whether the buffer accepted the edit.
+     * then re-diffs every tab. Tells {@code landed} whether the edit was made, once it has landed (the span
+     * that differs is worked out off the FX thread first).
      *
      * <p><b>Unguarded:</b> it replaces whatever the buffer holds now. Only a caller that has already proved
      * the buffer is the version it means to replace may use it — Local File History's whole-file restore
@@ -523,20 +524,23 @@ final class DiffCoordinator {
      * displayed diff) must use {@link #applyToLocalIfUnchangedAsync} with the text that diff was showing,
      * which also opens a closed target in the background, off the FX thread.
      */
-    boolean applyToLocal(EditorBuffer b, String newText) {
+    void applyToLocal(EditorBuffer b, String newText, Consumer<Boolean> landed) {
         if (b == null || !b.isEditable() || b.isDisposed() || b.isTruncatedLoad()) {
             host.setStatus(tr("status.diff.applyFailed", b == null ? "" : b.getTitle()));
-            return false;
+            landed.accept(false);
+            return;
         }
         if (!NoUndoGuard.allow(b, tr("noUndo.op.diff"))) {
-            return false;
+            landed.accept(false);
+            return;
         }
-        // Widens first: newText is whole-document text. The span that differs is worked out off the FX thread.
+        // Widens first: newText is whole-document text. The span that differs is worked out off the FX thread,
+        // so the answer comes when the edit has landed (or failed), not when it was asked for.
         b.replaceWholeDocumentLater(newText, applied -> {
             host.setStatus(tr(applied ? "status.diff.applied" : "status.diff.applyFailed", b.getTitle()));
             refreshOpenDiffs();
+            landed.accept(applied);
         });
-        return true;
     }
 
     /**
