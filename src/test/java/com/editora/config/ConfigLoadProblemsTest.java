@@ -58,7 +58,7 @@ class ConfigLoadProblemsTest {
                 Map.of("emacs", Map.of("file.save", List.of("C-x s"))),
                 settings.getKeyBindings(),
                 "key bindings survive");
-        assertEquals("sk-kept", settings.getAiApiKey(), "API keys survive");
+        assertEquals("sk-kept", settings.getAiApiKey(), "API keys are read, for the vault to take");
 
         List<ConfigLoadProblem> problems = config.shared().takeLoadProblems();
         assertEquals(1, problems.size());
@@ -76,7 +76,7 @@ class ConfigLoadProblemsTest {
         assertEquals(
                 "C-x s",
                 saved.get("keyBindings").get("emacs").get("file.save").get(0).asText());
-        assertEquals("sk-kept", saved.get("aiApiKey").asText());
+        assertFalse(saved.has("aiApiKey"), "a key is never written back to settings.json (SET-13)");
     }
 
     @Test

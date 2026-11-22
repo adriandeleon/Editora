@@ -3039,6 +3039,16 @@ public final class DapManager {
         startProgram(anchor, "python", PythonLaunch.Target.module(module, args, where));
     }
 
+    /**
+     * Debugs the Python {@code script} with {@code args} in {@code cwd} — a run configuration's — under the
+     * interpreter {@link #setPythonPlan} planned. Restart repeats it.
+     */
+    public void startPythonScript(Path script, List<String> args, Path cwd) {
+        var exec = com.editora.process.ExecTargets.forPath(script);
+        String where = cwd == null ? null : exec.toTargetPath(cwd);
+        startProgram(script, "python", PythonLaunch.Target.script(exec.toTargetPath(script), args, where));
+    }
+
     private boolean readyProgram(Path file, String language) {
         if (managerClosed) {
             return false;
@@ -3103,8 +3113,8 @@ public final class DapManager {
         // DAP is on stdin/stdout; an undrained PIPE deadlocks
         AdapterStderr stderr = adapterStderr(epoch, AdapterStderr.drain(proc));
         boolean console = shared.programConsole;
-        PythonLaunch.Target target =
-                module != null ? module : PythonLaunch.Target.script(file.toString(), programArgs, cwdOf(file));
+        String content = module == null ? readQuietly(file) : null;
+        PythonLaunch.Target target = module != null ? module : webOrScript(file, content, programArgs, true);
         // What runs, first in the console (muted): which Python, in which venv, with which arguments.
         onOutput(epoch, PythonLaunch.commandLine(program, target) + "\n", COMMAND_CATEGORY);
         // The plan's PYTHONPATH (project root, src/, the user's) when it set one; else the user's own, or "" —
@@ -3112,8 +3122,9 @@ public final class DapManager {
         String inherited = System.getenv("PYTHONPATH");
         Map<String, Object> planned = PythonLaunch.request(
                 target, program, List.of(), inherited == null ? "" : inherited, File.pathSeparator, console);
-        if (shared.pythonSubprocesses) {
-            planned.put("subProcess", true); // each subprocess a session of its own (onChildSession)
+        if (shared.pythonSubprocesses || servesWeb(target, content, configured)) {
+            // Each subprocess a session of its own (onChildSession): a web server's reloader serves from a child.
+            planned.put("subProcess", true);
         }
         Map<String, Object> launch = overlay(planned, configured);
         attachStdio(proc, spec, bps, filters, epoch, DapPaths.LOCAL, launch, console, stderr);
@@ -3152,14 +3163,19 @@ public final class DapManager {
         if (com.editora.run.PythonLaunch.isRunner(com.editora.run.PythonLaunch.shebang(firstLine))) {
             firstLine = null; // debugpy needs an interpreter, not `uv run --script`: the project's Python runs it
         }
-        com.editora.run.PythonRunPlan.Request request = com.editora.run.PythonRunPlan.Request.file(
+        // A run configuration's Interpreter, its options and its variables (Debug of a configuration) are kept.
+        com.editora.run.PythonRunPlan.Request request = new com.editora.run.PythonRunPlan.Request(
                 file,
                 asked != null ? asked.projectRoot() : pythonRootFor(file),
                 target.toTargetPath(file),
+                false,
                 List.of(),
                 firstLine,
+                asked != null ? asked.configured() : "",
+                asked != null ? asked.interpreterOptions() : List.of(),
                 asked != null ? asked.projectChoice() : pythonProjectChoice,
-                asked != null ? asked.setting() : local ? shared.pythonCommand : "");
+                asked != null ? asked.setting() : local ? shared.pythonCommand : "",
+                asked != null ? asked.userEnv() : java.util.Map.of());
         com.editora.run.PythonRunPlan.Host host = pythonHost != null
                 ? pythonHost
                 : local
@@ -4040,9 +4056,10 @@ public final class DapManager {
                 com.editora.process.ExecSpec.of(argv, dir, python.env(), com.editora.process.ExecSpec.Locale.USER)
                         .withLongLived(true)
                         .withDiscardedOutput(false, true));
+        // A web server's reloader serves from a child process, which a host's launch does not follow: it is off.
         PythonLaunch.Target what = module != null
-                ? module
-                : PythonLaunch.Target.script(target.toTargetPath(file), programArgs, target.toTargetPath(dir));
+                ? withoutReload(module)
+                : withoutReload(webOrScript(file, readQuietly(file), programArgs, false));
         onOutput(epoch, PythonLaunch.commandLine(program, what) + "\n", COMMAND_CATEGORY);
         // The host's own PYTHONPATH is not known here (null): the plan's is used, else it is left as the host has it.
         Map<String, Object> launch = PythonLaunch.request(what, program, List.of(), null, ":", false);
@@ -4190,6 +4207,58 @@ public final class DapManager {
         try (ServerSocket s = new ServerSocket(0)) {
             return s.getLocalPort();
         }
+    }
+
+    /**
+     * What Debug File runs for the Python {@code file}: the development server of a web app it is
+     * ({@link com.editora.run.PythonWebApps#serve}: {@code manage.py runserver}, Flask's, uvicorn's), else the file
+     * with {@code args}. Paths as the machine the program runs on names them ({@code local}: this one).
+     */
+    static PythonLaunch.Target webOrScript(Path file, @Nullable String content, List<String> args, boolean local) {
+        var exec = com.editora.process.ExecTargets.forPath(file);
+        com.editora.run.PythonWebApps.Server web = com.editora.run.PythonWebApps.serve(
+                file, content, args, d -> java.nio.file.Files.isRegularFile(d.resolve("__init__.py")));
+        String program = local ? file.toString() : exec.toTargetPath(file);
+        Path dir = file.getParent();
+        String cwd = dir == null ? null : local ? cwdOf(file) : exec.toTargetPath(dir);
+        if (web == null) {
+            return PythonLaunch.Target.script(program, args, cwd);
+        }
+        if (web.module() == null) {
+            return PythonLaunch.Target.script(program, web.args(), cwd);
+        }
+        String folder = local ? web.folder().toString() : exec.toTargetPath(web.folder());
+        return PythonLaunch.Target.module(web.module(), web.args(), folder);
+    }
+
+    /**
+     * Whether a local launch serves a web app — its target a server ({@code python -m flask}, {@code manage.py}),
+     * a launch.json configuration's {@code module} or {@code program} one, or the file a web app that starts its own
+     * server ({@code app.run(debug=True)}) — and so follows subprocesses: the reloader's child is what serves.
+     */
+    static boolean servesWeb(
+            PythonLaunch.Target target, @Nullable String content, @Nullable Map<String, Object> configured) {
+        if (com.editora.run.PythonWebApps.servesWeb(target.module(), target.program())) {
+            return true;
+        }
+        if (configured != null
+                && com.editora.run.PythonWebApps.servesWeb(
+                        configured.get("module") instanceof String m ? m : null,
+                        configured.get("program") instanceof String p ? p : null)) {
+            return true;
+        }
+        if (target.module() != null || target.program() == null || content == null) {
+            return false;
+        }
+        Path name = Path.of(target.program()).getFileName();
+        return com.editora.run.PythonWebApps.framework(name == null ? null : name.toString(), content) != null;
+    }
+
+    /** {@code target} with its web server's reloader off ({@link com.editora.run.PythonWebApps#withoutReload}). */
+    static PythonLaunch.Target withoutReload(PythonLaunch.Target target) {
+        List<String> args =
+                com.editora.run.PythonWebApps.withoutReload(target.module(), target.program(), target.args());
+        return new PythonLaunch.Target(target.program(), target.module(), args, target.cwd(), target.fallback());
     }
 
     private static @Nullable String cwdOf(Path file) {

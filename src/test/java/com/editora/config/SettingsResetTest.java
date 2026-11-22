@@ -43,7 +43,8 @@ class SettingsResetTest {
 
         Settings d = new Settings();
         assertEquals(d.isAiSupport(), s.isAiSupport());
-        assertEquals("", s.getAiApiKey(), "a reset must not leave a credential behind");
+        // The AI keys are no settings (SET-13): they are in the keychain or the encrypted file, which a reset
+        // leaves alone, as SettingsResetFlow keeps them ("a reset is not a sign-out").
         assertEquals(d.isLspSupport(), s.isLspSupport());
         assertEquals(d.isDebugSupport(), s.isDebugSupport());
         assertEquals(d.isSimpleMode(), s.isSimpleMode());

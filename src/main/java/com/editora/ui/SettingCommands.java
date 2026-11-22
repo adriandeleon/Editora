@@ -218,6 +218,10 @@ final class SettingCommands {
                         Settings::isTerminalMacOptionIsMeta,
                         Settings::setTerminalMacOptionIsMeta),
                 flag(
+                        "settings.terminal.confirmMultilinePaste",
+                        Settings::isTerminalConfirmMultilinePaste,
+                        Settings::setTerminalConfirmMultilinePaste),
+                flag(
                         "settings.terminal.copyOnSelect",
                         Settings::isTerminalCopyOnSelect,
                         Settings::setTerminalCopyOnSelect),

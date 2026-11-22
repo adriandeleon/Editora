@@ -553,7 +553,11 @@ final class RunConfigurationCoordinator {
         // A Python or shell script saves as a script configuration (it used to say "Open a Java file").
         com.editora.config.RunConfiguration script = host.suggestedScriptConfiguration();
         if (script != null && b != null) { // a suggestion is only made for the active buffer's file
-            String args = host.programArgsFor(b.getPath());
+            // A web app's server (manage.py runserver, flask, uvicorn) has its arguments, the file's among them; a
+            // Python module runs in the folder its app module is named from.
+            String args = script.args().isBlank() ? host.programArgsFor(b.getPath()) : script.args();
+            String workingDir =
+                    com.editora.run.ScriptRunCommand.PYTHON_MODULE.equals(script.type()) ? script.workingDir() : "";
             host.promptText(tr("run.config.saveTitle"), tr("run.config.saveName"), script.name(), name -> {
                 if (name == null || name.isBlank()) {
                     return;
@@ -561,7 +565,7 @@ final class RunConfigurationCoordinator {
                 List<com.editora.config.RunConfiguration> list = new java.util.ArrayList<>(
                         host.config().getWorkspaceState().getRunConfigurations());
                 list.add(new com.editora.config.RunConfiguration(
-                        name.strip(), script.type(), script.target(), "", "", args, "", "", "", "", ""));
+                        name.strip(), script.type(), script.target(), "", "", args, "", workingDir, "", "", ""));
                 host.config().getWorkspaceState().setRunConfigurations(list);
                 host.config().save();
                 refreshRunConfigs();

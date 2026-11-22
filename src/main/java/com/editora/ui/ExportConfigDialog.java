@@ -16,39 +16,25 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * Asked before Export Configuration when the export would otherwise leave something sensitive out: the HTTP
- * Client's saved responses (bodies and full URLs, where a query may carry a key), the AI provider API keys
- * in {@code settings.json} (billable credentials, written blank unless asked for), and the data plugins keep
- * ({@code plugins/<id>/data/}: a token, a scratchpad's notes). An export is the thing
- * people hand to someone else, so both are off by default, every time.
+ * Client's saved responses (bodies and full URLs, where a query may carry a key) and the data plugins keep
+ * ({@code plugins/<id>/data/}: a token, a scratchpad's notes). An export is the thing people hand to someone else,
+ * so both are off by default, every time. The AI provider API keys are never in an export, so there is nothing to
+ * ask about them: they are in the system keychain or an encrypted file the export leaves out (SET-13, Pauta 6.0.1).
  */
 final class ExportConfigDialog {
 
     private ExportConfigDialog() {}
 
     /** What to put in the zip besides the configuration. */
-    record Choice(boolean includeHttpHistory, boolean includeApiKeys, boolean includePluginData) {
-        Choice(boolean includeHttpHistory, boolean includeApiKeys) {
-            this(includeHttpHistory, includeApiKeys, false);
-        }
-    }
+    record Choice(boolean includeHttpHistory, boolean includePluginData) {}
 
     /** The user's choice, or empty when cancelled. Blocks (modal). */
-    static Optional<Choice> ask(Window owner, boolean askHttpHistory, boolean askApiKeys) {
-        return ask(owner, askHttpHistory, askApiKeys, false);
-    }
-
-    /** As above, also asking about the plugins' own data when {@code askPluginData}. */
-    static Optional<Choice> ask(Window owner, boolean askHttpHistory, boolean askApiKeys, boolean askPluginData) {
-        return build(owner, askHttpHistory, askApiKeys, askPluginData).showAndWait();
+    static Optional<Choice> ask(Window owner, boolean askHttpHistory, boolean askPluginData) {
+        return build(owner, askHttpHistory, askPluginData).showAndWait();
     }
 
     /** The dialog, not yet shown (tests look inside it). Only the questions that apply are shown. */
-    static Dialog<Choice> build(Window owner, boolean askHttpHistory, boolean askApiKeys) {
-        return build(owner, askHttpHistory, askApiKeys, false);
-    }
-
-    /** As above, with the plugin-data question. */
-    static Dialog<Choice> build(Window owner, boolean askHttpHistory, boolean askApiKeys, boolean askPluginData) {
+    static Dialog<Choice> build(Window owner, boolean askHttpHistory, boolean askPluginData) {
         Dialog<Choice> dialog = Dialogs.styled(new Dialog<Choice>());
         if (owner != null) {
             dialog.initOwner(owner);
@@ -62,12 +48,6 @@ final class ExportConfigDialog {
                 "include-http-history",
                 "dialog.exportConfig.includeHttpHistory",
                 "dialog.exportConfig.includeHttpHistory.note");
-        CheckBox keys = option(
-                content,
-                askApiKeys,
-                "include-api-keys",
-                "dialog.exportConfig.includeApiKeys",
-                "dialog.exportConfig.includeApiKeys.note");
         CheckBox pluginData = option(
                 content,
                 askPluginData,
@@ -77,8 +57,8 @@ final class ExportConfigDialog {
         dialog.getDialogPane().setContent(content);
         ButtonType export = new ButtonType(tr("dialog.exportConfig.export"), ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().setAll(export, Dialogs.cancel());
-        dialog.setResultConverter(button ->
-                button == export ? new Choice(http.isSelected(), keys.isSelected(), pluginData.isSelected()) : null);
+        dialog.setResultConverter(
+                button -> button == export ? new Choice(http.isSelected(), pluginData.isSelected()) : null);
         return dialog;
     }
 

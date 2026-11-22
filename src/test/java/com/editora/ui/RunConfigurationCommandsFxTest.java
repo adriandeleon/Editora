@@ -432,6 +432,11 @@ class RunConfigurationCommandsFxTest {
         return new RunConfiguration(name, "shell", "", "", "", "", "", "", "", "", ""); // no target: runs nothing
     }
 
+    /** A make target: a type that runs but does not debug. */
+    private static RunConfiguration make(String name) {
+        return new RunConfiguration(name, "make", "all", "", "", "", "", "", "", "", "");
+    }
+
     private static RunConfiguration python(String name, String target) {
         return new RunConfiguration(name, "python", target, "", "", "", "", "", "", "", "");
     }
@@ -561,14 +566,14 @@ class RunConfigurationCommandsFxTest {
 
     @Test
     void theDebugPickerDebugsTheChosenConfiguration() throws Exception {
-        configurations(script("Deploy"), python("Report", "report.py"));
+        configurations(script("Deploy"), make("Report"));
 
         FxTestSupport.runOnFx(coordinator::debugSavedConfig);
         assertEquals(2, pickerRows().size());
         answerPicker(1, KeyCode.ENTER);
 
         assertEquals(
-                List.of(tr("status.debug.configTypeUnsupported", tr("settings.runConfig.type.python"))), runStatuses);
+                List.of(tr("status.debug.configTypeUnsupported", tr("settings.runConfig.type.make"))), runStatuses);
     }
 
     @Test
@@ -608,7 +613,7 @@ class RunConfigurationCommandsFxTest {
 
     @Test
     void eachConfigurationGetsARunAndADebugCommandThatDispatchToIt() throws Exception {
-        configurations(script("Deploy"), python("Report", "report.py"));
+        configurations(script("Deploy"), make("Report"));
         FxTestSupport.runOnFx(coordinator::refreshRunConfigs);
 
         Command runDeploy =
@@ -626,7 +631,7 @@ class RunConfigurationCommandsFxTest {
         assertEquals(
                 List.of(
                         tr("status.run.configNeedsTarget", "Deploy"),
-                        tr("status.debug.configTypeUnsupported", tr("settings.runConfig.type.python"))),
+                        tr("status.debug.configTypeUnsupported", tr("settings.runConfig.type.make"))),
                 runStatuses);
 
         // Renamed in Settings: the old ids must not linger in the palette.

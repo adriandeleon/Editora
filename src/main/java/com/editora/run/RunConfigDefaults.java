@@ -85,6 +85,41 @@ public final class RunConfigDefaults {
     }
 
     /**
+     * The configuration Add and Save as Run Configuration propose for a web app's file: its development server
+     * ({@link PythonWebApps#serve}). Django's {@code manage.py} is a Python configuration with {@code runserver};
+     * a Flask or FastAPI app a Python module one ({@code flask}, {@code uvicorn}) in the folder its module is named
+     * from. Paths relative to {@code projectRoot} when inside it, as {@link #forScript} writes them.
+     */
+    public static com.editora.config.RunConfiguration forWebApp(
+            PythonWebApps.Server server, java.nio.file.Path file, java.nio.file.@Nullable Path projectRoot) {
+        java.nio.file.Path name = file.getFileName();
+        String label = (name == null ? file.toString() : name.toString()) + " ("
+                + switch (server.framework()) {
+                    case DJANGO -> "Django";
+                    case FLASK -> "Flask";
+                    case FASTAPI -> "FastAPI";
+                }
+                + ")";
+        String args = RunService.commandLine(server.args());
+        if (server.module() == null) {
+            com.editora.config.RunConfiguration script = forScript(ScriptRunCommand.PYTHON, file, projectRoot);
+            String target = script == null ? file.toString() : script.target();
+            String workingDir = script == null ? "" : script.workingDir();
+            return new com.editora.config.RunConfiguration(
+                    label, ScriptRunCommand.PYTHON, target, "", "", args, "", workingDir, "", "", "");
+        }
+        java.nio.file.Path folder = server.folder().normalize();
+        String workingDir = folder.toString();
+        if (projectRoot != null
+                && folder.getFileSystem() == projectRoot.getFileSystem()
+                && folder.startsWith(projectRoot.normalize())) {
+            workingDir = projectRoot.normalize().relativize(folder).toString();
+        }
+        return new com.editora.config.RunConfiguration(
+                label, ScriptRunCommand.PYTHON_MODULE, server.module(), "", "", args, "", workingDir, "", "", "");
+    }
+
+    /**
      * The run configuration type that launches a file named {@code fileName} written in {@code language}, or
      * null when no type does (a Markdown note, a C# file). {@code package.json} is npm's, a makefile is make's,
      * and a script goes by its language — so a script with no extension, or one not saved yet, still counts —

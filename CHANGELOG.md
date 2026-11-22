@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Run and debug Django, Flask and FastAPI apps.** Run or Debug a Django project's `manage.py` and its development
+  server starts (`runserver`); do the same on a Flask or FastAPI app's file and Editora serves it with
+  `flask run --reload` or `uvicorn --reload`, from the right folder. Breakpoints in your views stop, and keep
+  stopping after you edit a file and the server reloads: the debugger follows the reloader into each new server
+  process. Add (and Save as Run Configuration) proposes the server as a run configuration, and Python run
+  configurations, scripts and modules alike, can now be debugged, with their interpreter, options and variables.
 - **A System theme that follows your light or dark setting.** Settings ▸ Appearance ▸ Theme (and Set App Theme in
   the Command Palette) now starts with System: Editora Light while your system is light, Editora Dark while it is
   dark, and it switches as soon as the system does, without a restart. The editor theme follows it on Automatic,
@@ -57,6 +63,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   palette command are gone. When a push is rejected because the remote branch has commits yours does not, the
   question offers Pull, then Push (the default) and, in red beside it, Force with Lease, which still refuses to
   overwrite commits you have not fetched.
+
+- **The terminal's paste confirmation has a palette command too.** Terminal: Change a Setting… now lists
+  "Confirm a paste of several lines", so it can be turned off and on from the palette as from its Settings row.
 
 - **The menu bar is in the title bar by default on Windows and Linux.** The extended window, until now an
   experimental option, is on for new installs and for existing ones that had left it off (it was off by default,
@@ -126,6 +135,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "Process finished with exit code 143" (and the status bar 143) after a program that exited 0. Recent CodeLLDB
   (1.12) has Editora start its launcher, `codelldb-launch`, and ends that launcher with SIGTERM once the program has
   exited; its 143 was reported as the program's. The program's code now comes from CodeLLDB's own exit event.
+
+### Security
+
+- **AI API keys are never written to settings.json.** Without a system keychain (a Linux session with no Secret
+  Service, `-Deditora.secretStore=none`, or a keychain that refuses a write) the keys were kept in `settings.json`
+  as plain text. They now go to an encrypted file of their own, `~/.editora/keys/secrets.enc` (AES-256-GCM, under a
+  random key Editora generates in `keys/secrets.key`; the folder and both files are readable by you alone where the
+  file system has permissions). A key an older version left in `settings.json`, or in a backup of it beside it, is
+  moved there on the next launch and blanked; keys typed while the keychain did not answer move into it once it
+  does. Export Configuration and Settings sync never carry the keys, so Export no longer asks about them. A file
+  that does not decrypt is reported in Settings → AI and read as no keys; it is moved aside, never written over,
+  when a key is saved. Saving a key from Settings no longer writes the keychain on the interface thread.
 
 ## [0.28.0] - 2026-11-18
 

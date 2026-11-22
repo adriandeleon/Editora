@@ -168,6 +168,7 @@ final class SettingsAiPages {
             config.getSettings().setApiKeyFor(selectedAiProvider(), now);
             w.apply();
             scheduleAiStatus();
+            refreshKeyNoteAfterWrites();
         });
         aiInlineCheck = new CheckBox(tr("settings.ai.inline"));
         aiInlineCheck.selectedProperty().addListener((obs, was, now) -> {
@@ -555,14 +556,48 @@ final class SettingsAiPages {
         updateAiProviderControls();
     }
 
-    /** Says where the API keys are stored: the system keychain, or settings.json and why. */
+    /**
+     * The vault writes its store on its own thread (never the FX thread, SET-13): once it has, the note says where
+     * the key went, which a keychain or a file that refused has changed.
+     */
+    private void refreshKeyNoteAfterWrites() {
+        com.editora.config.ApiKeyVault vault = config.getSettings().apiKeyVault();
+        if (vault == null || aiKeyNote == null) {
+            return;
+        }
+        java.util.concurrent.CompletableFuture.runAsync(
+                        vault::awaitWrites, com.editora.process.BlockingTasks.named("api-key-note"))
+                .thenRunAsync(
+                        () -> {
+                            if (aiKeyNote != null) {
+                                aiKeyNote.setText(apiKeyNote(config.getSettings()));
+                            }
+                        },
+                        javafx.application.Platform::runLater);
+    }
+
+    /** Says where the API keys are stored: the system keychain, the encrypted file, or this session only. */
     private @Nullable Label aiKeyNote;
 
     static String apiKeyNote(Settings settings) {
-        return switch (settings.apiKeyStorage()) {
+        com.editora.config.ApiKeyVault vault = settings.apiKeyVault();
+        String file = vault == null ? "" : vault.filePath().toString();
+        String where = switch (settings.apiKeyStorage()) {
             case KEYCHAIN -> tr("settings.ai.apiKeyInKeychain", settings.apiKeyStoreName());
-            case KEYCHAIN_UNREACHABLE -> tr("settings.ai.apiKeyKeychainUnreachable");
-            case SETTINGS_FILE -> tr("settings.ai.apiKeyNote");
+            case KEYCHAIN_UNREACHABLE -> tr("settings.ai.apiKeyKeychainUnreachable", file);
+            case ENCRYPTED_FILE -> tr("settings.ai.apiKeyInEncryptedFile", file);
+            case SESSION_ONLY ->
+                tr(
+                        "settings.ai.apiKeySessionOnly",
+                        vault == null || vault.failure().isBlank() ? "-" : vault.failure());
+        };
+        if (vault == null) {
+            return where;
+        }
+        return switch (vault.problem()) {
+            case NONE -> where;
+            case FILE_UNREADABLE -> where + " " + tr("settings.ai.apiKeyFileUnreadable", vault.problemDetail());
+            case FILE_SET_ASIDE -> where + " " + tr("settings.ai.apiKeyFileSetAside", vault.problemDetail());
         };
     }
 

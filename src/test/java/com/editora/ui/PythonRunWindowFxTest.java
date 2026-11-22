@@ -244,4 +244,34 @@ class PythonRunWindowFxTest {
             await("the failed test's rerun", () -> console(c).contains("ran test_shop.py::test_bad"));
         }
     }
+
+    @Test
+    void aWebAppsFileRunsItsDevelopmentServer() throws Exception {
+        Files.writeString(dir.resolve("pyproject.toml"), "[project]\nname = \"w\"\n");
+        Path site = venv(dir);
+        // A stand-in uvicorn: says how it was asked to serve, and where.
+        Files.writeString(site.resolve("uvicorn.py"), "import os, sys\nprint('serving', sys.argv[1:], os.getcwd())\n");
+        Files.createDirectories(dir.resolve("shop"));
+        Files.writeString(dir.resolve("shop/__init__.py"), "");
+        Path main = dir.resolve("shop/main.py");
+        Files.writeString(main, "from fastapi import FastAPI\n\napi = FastAPI()\n");
+        Path manage = dir.resolve("manage.py");
+        Files.writeString(manage, "import sys\n# django\nprint('manage', sys.argv[1:])\n");
+        try (FxWindowFixture fx = FxWindowFixture.create()) {
+            MainController c = fx.controller;
+            open(c, main);
+            run(c, "file.run");
+            // On its own the file defined the app and exited: uvicorn serves it, from the folder above its package.
+            await("uvicorn to serve the app", () -> console(c).contains("serving"));
+            assertTrue(console(c).contains("serving ['shop.main:api', '--reload'] " + dir.toRealPath()), console(c));
+            String first = console(c).lines().findFirst().orElse("");
+            assertTrue(first.contains("-m uvicorn shop.main:api --reload"), first);
+            await("the run to end", () -> !c.runCoordinator.isRunning());
+
+            open(c, manage);
+            run(c, "file.run");
+            // On its own manage.py only printed its help.
+            await("manage.py runserver", () -> console(c).contains("manage ['runserver']"));
+        }
+    }
 }
