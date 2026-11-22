@@ -73,7 +73,7 @@ not new logic:
 4. A `Settings.lspSupport`-style per-server `…LspCommand` + `…LspEnabled` pair, and an entry in
    `SettingsLspPage.lspServerUis()` (the LSP page is data-driven over that descriptor list), plus the
    `settings-controls.properties` rows, a schema bump with an additive migration, and the i18n keys in
-   all six catalogs.
+   all six catalogs — including `settings.lsp.lang.<id>`, the server's name in the page's Language picker.
 5. An installer, if it has one: `InstallCatalog.serverInstall` (`ARCHIVE` for a per-OS binary,
    `JVM_LSP_JAR` for one pinned jar run with `java -jar`, `JVM_LSP_ZIP` for a jar bundle — plus any
    pinned jars the bundle leaves out (`InstallCatalog.jvmLspExtraJars`, SHA-256 checked) and a
@@ -103,6 +103,12 @@ remote host, "unavailable" message), which [`dap/DapServerRegistry.java`](../src
 answers from; `languageIdsForDebug()` gates the breakpoint gutter + debug commands, an adapter with settings of its
 own (a switch, a command or path) is a binding in `ui/DebugAdapterSettings`, and the Settings → Debugging page is
 data-driven over `SettingsDebugPage.debugAdapterUis()`.
+
+Both pages show one language at a time: `SettingsLanguagePicker` adds a Language picker and one holder per server or
+adapter, of which only the picked one shows; the cards every language shares sit above them on Language Servers and
+below them on Debugging (its shared cards are long, and above them the picker was out of sight). A card for one
+language goes in that language's holder (Go's Goroutines card sits with the Go adapter); a search ignores the pick
+and shows every holder with a hit.
 
 An adapter that is its own program (Delve, CodeLLDB, lldb-dap) is `Kind.EXTERNAL`: its profile's
 [`ExternalAdapter`](../src/main/java/com/editora/dap/ExternalAdapter.java) names the command and the transport (its

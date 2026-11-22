@@ -225,11 +225,16 @@ class SettingsLayoutFxTest {
             }
             open(stage, sidebar, scroll, "DEBUG");
             Map<String, TextField> debugFields = SettingsRig.control(window, "debugCommandFields");
+            SettingsLanguagePicker languages =
+                    FxTestSupport.field(FxTestSupport.field(window, "debugPage"), "languages");
             for (var e : debugFields.entrySet()) {
                 if (!e.getKey().equals("python")) { // on the LSP page's Python card (Python review 2, C101)
+                    languages.show(e.getKey()); // one language's card shows (and is laid out) at a time
+                    stage.getScene().getRoot().applyCss();
+                    stage.getScene().getRoot().layout();
                     assertTrue(
                             e.getValue().getWidth() >= 300,
-                            "a path field is " + e.getValue().getWidth() + "px wide");
+                            e.getKey() + "'s path field is " + e.getValue().getWidth() + "px wide");
                 }
             }
             open(stage, sidebar, scroll, "LSP");
