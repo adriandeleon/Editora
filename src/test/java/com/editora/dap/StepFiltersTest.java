@@ -92,6 +92,22 @@ class StepFiltersTest {
     }
 
     @Test
+    void aSourceRootFolderIsNotTakenForALibrarysPackage() {
+        assertFalse(StepFilters.matches("kotlin", "kotlin.*", "MainKt.main", "/p/src/main/kotlin/com/shop/Main.kt"));
+        assertFalse(
+                StepFilters.matches("java", "java.*", "Main.main(String[])", "/p/src/main/java/com/shop/Main.java"));
+        assertFalse(StepFilters.matches("scala", "scala.*", "Main$.main", "/p/src/test/scala/com/shop/Main.scala"));
+        assertFalse(StepFilters.matches("kotlin", "kotlin.*", "AppKt.run", "/p/src/jvmMain/kotlin/App.kt"));
+        assertFalse(StepFilters.matches("java", "java.*", "Main.main(String[])", "/home/me/src/java/demo/Main.java"));
+        assertTrue(StepFilters.matches(
+                "kotlin", "kotlin.*", "CollectionsKt.map", "/cache/kotlin-stdlib-sources/kotlin/collections/Maps.kt"));
+        assertTrue(StepFilters.matches(
+                "java", "java.*", "ArrayList.add(Object)", "/jdk/lib/src/java.base/java/util/ArrayList.java"));
+        assertTrue(StepFilters.matches(
+                "kotlin", "com.shop.util.*", "Strings.pad", "/p/src/main/kotlin/com/shop/util/Strings.kt"));
+    }
+
+    @Test
     void theCodeOfAFrameIsSuggestedAsItsLanguageNamesIt() {
         assertEquals(
                 "com.shop.util.Strings",
