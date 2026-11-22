@@ -91,7 +91,7 @@ public final class MarkdownEmoji {
     }
 
     /**
-     * Reads the table now, on this thread: the launch does it off the FX thread (PERF-01, Pauta 6.0.1), so the first
+     * Reads the table now, on this thread: the launch does it off the FX thread (PERF-01, Pauta 6.2.0), so the first
      * emoji completion or {@code :name:} rendered there finds it read.
      */
     public static void warm() {

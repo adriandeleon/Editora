@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-01 (Pauta 6.0.1), start-up: before the first window is shown, the FX thread waits once for the
+ * PERF-01 (Pauta 6.2.0), start-up: before the first window is shown, the FX thread waits once for the
  * config-prefetch thread and reads nothing of the user's itself. The test runs the launch's own prefetch
  * ({@code App.prefetchConfig}, on its real {@code config-prefetch} thread), builds the windows on the FX thread
  * as {@code App.start} does, and listens to {@link BlockingSites}, which each place that start-up or a window's

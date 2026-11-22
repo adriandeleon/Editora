@@ -11,7 +11,7 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * The commands behind the right-click rows of the smaller tool windows that no command reached (KBD-01 and MENU-05,
- * Pauta 6.0.1): Local History, Bookmarks, Personal Notes and Test Results. Each does to the selected row of a window
+ * Pauta 6.2.0): Local History, Bookmarks, Personal Notes and Test Results. Each does to the selected row of a window
  * that is open what its menu row does to the row right-clicked, which a right-click selects first; Bookmarks, Notes
  * and Test Results build the row's menu and fire the row ({@link MenuRows}), so a command is offered exactly where
  * its row is. With the window closed, or no row selected, the status line says so and nothing is opened for it.

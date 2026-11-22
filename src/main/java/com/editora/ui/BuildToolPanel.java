@@ -211,7 +211,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
 
     /**
      * URL, Git-diff and Git-file clicks plus the hand cursor over them, on {@code area}. Each looks at the line under
-     * the pointer alone ({@link RunPanel#lineAt}), never at a copy of the whole console (PERF-01, Pauta 6.0.1: the
+     * the pointer alone ({@link RunPanel#lineAt}), never at a copy of the whole console (PERF-01, Pauta 6.2.0: the
      * hover runs on every mouse move).
      */
     private void installMouse(CodeArea area) {
@@ -233,7 +233,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
                     && graph[0] <= offset - line.start()
                     && offset - line.start() < graph[1]) {
                 // On a change graph: the diff it opens is found by walking the transcript up to its "Updating a..b",
-                // on a snapshot off the FX thread (PERF-01, Pauta 6.0.1); the click acts when it lands.
+                // on a snapshot off the FX thread (PERF-01, Pauta 6.2.0); the click acts when it lands.
                 e.consume();
                 String transcript = area.getText();
                 RunPanel.LineAt clicked = line;
@@ -499,7 +499,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
      */
     void saveOutputTo(Path target) {
         String text = shownText();
-        // written off the FX thread (PERF-01, Pauta 6.0.1)
+        // written off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.run(
                 "save-output", () -> com.editora.io.StagedExport.writeString(target, text), failure -> {
                     if (failure != null) {

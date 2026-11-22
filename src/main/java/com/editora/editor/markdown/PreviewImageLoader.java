@@ -130,7 +130,7 @@ public final class PreviewImageLoader {
                 return;
             }
             // Whether the file was replaced since it was decoded is looked at off the FX thread (PERF-01, Pauta
-            // 6.0.1): the picture it holds now replaces the one shown when it differs.
+            // 6.2.0): the picture it holds now replaces the one shown when it differs.
             EXEC.submit(() -> {
                 if (!fileStamp(url).equals(STAMPS.getOrDefault(url, ""))) {
                     CACHE.remove(url);
@@ -216,7 +216,7 @@ public final class PreviewImageLoader {
      * What identifies the current content of the local file behind a {@code file:} URL — its size and
      * modification time — or "" for any other URL, or a file that is not there. The cache is keyed by URL, and
      * a URL says nothing about a file that was exported again: without this a changed image kept showing its
-     * old picture until the app restarted. A {@code stat}, made off the FX thread (PERF-01, Pauta 6.0.1).
+     * old picture until the app restarted. A {@code stat}, made off the FX thread (PERF-01, Pauta 6.2.0).
      */
     static String fileStamp(@Nullable String url) {
         if (url == null || !url.regionMatches(true, 0, "file:", 0, 5)) {

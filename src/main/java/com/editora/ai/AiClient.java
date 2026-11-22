@@ -59,7 +59,7 @@ public final class AiClient {
 
     /**
      * TEST SEAM — run after each idle check of a stream the watchdog let go on: a test paces a slow stream by the
-     * checks themselves instead of by the clock (QUAL-07, Pauta 6.0.1). Null in the app.
+     * checks themselves instead of by the clock (QUAL-07, Pauta 6.2.0). Null in the app.
      */
     static volatile @Nullable Runnable idleCheckedForTest;
 

@@ -291,7 +291,7 @@ final class ExternalLinks {
         if (link == null) {
             return; // nothing was asked for (an item with no URL) — not a refusal worth reporting
         }
-        // Classifying a local link stats it and resolves its real path: off the FX thread (PERF-01, Pauta 6.0.1).
+        // Classifying a local link stats it and resolves its real path: off the FX thread (PERF-01, Pauta 6.2.0).
         looked("link-classify", () -> classify(link, documentFile, projectRoot, anchor != null), target -> {
             if (target != null) {
                 dispatch(target, browser, editor, anchor, status);
@@ -324,7 +324,7 @@ final class ExternalLinks {
     /**
      * Runs {@code look} (it touches the disk) and hands its answer to {@code then}: on the JavaFX thread the look
      * runs on a virtual thread named {@code name} and {@code then} runs back on the FX thread (PERF-01, Pauta
-     * 6.0.1); off it, both run here and now. A look that throws answers null.
+     * 6.2.0); off it, both run here and now. A look that throws answers null.
      */
     static <T> void looked(String name, java.util.concurrent.Callable<T> look, Consumer<@Nullable T> then) {
         boolean fx;

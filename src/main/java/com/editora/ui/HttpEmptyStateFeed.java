@@ -18,7 +18,7 @@ import org.reactfx.Subscription;
  * Feeds a response view's empty state ({@link HttpEmptyState}) from its {@code .http} buffer: the file's requests and
  * the one at the caret. Only while the empty state is on show (and the panel is in a scene): it then follows the caret
  * line and the text, debounced, so typing parses nothing until it pauses, and moving the caret within the text
- * already parsed parses nothing at all. The text is parsed off the FX thread (PERF-01, Pauta 6.0.1), and an answer
+ * already parsed parses nothing at all. The text is parsed off the FX thread (PERF-01, Pauta 6.2.0), and an answer
  * for text edited since is dropped. FX thread only otherwise.
  */
 final class HttpEmptyStateFeed {

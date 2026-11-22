@@ -11,7 +11,7 @@ import static com.editora.i18n.Messages.tr;
 /**
  * A small list the user or the data could grow without a limit, shown in a plain pane: the app shows the first
  * {@code max} items and says so ("Showing the first 50 of 73."), so no list makes a node per item past a number it
- * names (PERF-08, Pauta 6.0.1). For lists that are a few items in practice, where a virtualized list would change how
+ * names (PERF-08, Pauta 6.2.0). For lists that are a few items in practice, where a virtualized list would change how
  * the pane looks and works for nothing. Pure but for the label.
  */
 final class ListCap {

@@ -306,7 +306,7 @@ final class SettingsLspPage {
             return;
         }
         // The window's own: a trusted project's tool paths are the ones that run (Bash review A10). Editora's copies
-        // and the paths are looked at off the FX thread (PERF-01, Pauta 6.0.1); a later refresh wins.
+        // and the paths are looked at off the FX thread (PERF-01, Pauta 6.2.0); a later refresh wins.
         // Editora's installed copies are answered from memory here (InstallCatalog.installedToolIfPresent).
         com.editora.lsp.BashIdeConfig tools = w.projectLsp != null
                 ? w.projectLsp.bashIdeConfig()
@@ -340,7 +340,7 @@ final class SettingsLspPage {
     /** Which {@link #refreshLspStatus} is the latest: an older one's answers are dropped. */
     private long lspStatusGen;
 
-    /** What a found server's status line says from the disk, read off the FX thread (PERF-01, Pauta 6.0.1). */
+    /** What a found server's status line says from the disk, read off the FX thread (PERF-01, Pauta 6.2.0). */
     record StatusLook(
             boolean mavenIncomplete,
             @Nullable String outdated,
@@ -706,7 +706,7 @@ final class SettingsLspPage {
         // Probe the commands this page shows, without configuring the manager. This window must not
         // (re)configure it: doing so with the global commands replaced a trusted project's override and
         // shut its running server down every time Settings was merely opened. Which of them is Editora's own
-        // copy is looked at off the FX thread (PERF-01, Pauta 6.0.1); the rows say "checking" until it lands.
+        // copy is looked at off the FX thread (PERF-01, Pauta 6.2.0); the rows say "checking" until it lands.
         long gen = ++lspStatusGen;
         lspStatusLabels.values().forEach(ToolStatusRow::checking);
         com.editora.perf.OffFx.then(
@@ -738,7 +738,7 @@ final class SettingsLspPage {
                     srv.id(),
                     shown.getOrDefault(srv.id(), ""),
                     found -> { // blank = default
-                        // Receipts, fingerprints and paths off the FX thread (PERF-01, Pauta 6.0.1); a later refresh
+                        // Receipts, fingerprints and paths off the FX thread (PERF-01, Pauta 6.2.0); a later refresh
                         // wins.
                         Path configDir = config.getConfigDir();
                         com.editora.perf.OffFx.then(

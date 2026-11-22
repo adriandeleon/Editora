@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Fold regions are detected off the FX thread (PERF-01, Pauta 6.0.1): an answer for a text that has changed since is
+ * Fold regions are detected off the FX thread (PERF-01, Pauta 6.2.0): an answer for a text that has changed since is
  * dropped, never shown, and the regions are detected again; a fold command asked meanwhile waits and then acts on the
  * regions of the text as it is.
  */

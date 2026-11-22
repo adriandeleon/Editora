@@ -16,7 +16,7 @@ import javafx.stage.Stage;
 import javafx.stage.Window;
 
 /**
- * The screenshot harness (DOCS-18, Pauta 6.0.1): drives the real Editora window headlessly from a command script
+ * The screenshot harness (DOCS-18, Pauta 6.2.0): drives the real Editora window headlessly from a command script
  * ({@link ShotScript}) and writes each {@code shot}/{@code winshot} at twice the scene's size ({@link
  * FxTestSupport#SHOT_SCALE}). It lives with the tests because it builds the window through {@link FxWindowFixture},
  * the production boot path the FX tests use; it is not a test and never runs in the suite. {@code

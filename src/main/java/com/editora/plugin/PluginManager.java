@@ -194,7 +194,7 @@ public final class PluginManager {
         }
         if (javafx.application.Platform.isFxApplicationThread()) {
             // A descriptor no scan has seen (a row of a list shown before a rescan): not looked at on the FX thread
-            // (PERF-01, Pauta 6.0.1). Taken as present, so the consent question names the folder rather than leave
+            // (PERF-01, Pauta 6.2.0). Taken as present, so the consent question names the folder rather than leave
             // out what the plugin may bring; the launch and the next scan look at the disk.
             return assets;
         }

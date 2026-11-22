@@ -58,7 +58,7 @@ final class InstallOpsHost implements InstallCoordinator.Ops {
     @Override
     public void reapplyToolSupport() {
         // An install put a copy in place (or a failed one left the old): what was kept of the disk is stale. It is
-        // looked at again off the FX thread, and the support applied when it has been (PERF-01, Pauta 6.0.1): the
+        // looked at again off the FX thread, and the support applied when it has been (PERF-01, Pauta 6.2.0): the
         // FX thread re-probed every server's own copy and the java-debug plugin in place.
         com.editora.perf.OffFx.run(
                 "install-reprobe",

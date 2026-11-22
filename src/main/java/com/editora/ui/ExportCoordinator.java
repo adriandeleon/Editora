@@ -239,7 +239,7 @@ final class ExportCoordinator {
             java.util.function.Predicate<R> ok,
             java.util.function.Function<String, R> failure,
             java.util.function.Consumer<R> report) {
-        // The staging folder is made, and the result moved into place, off the FX thread (PERF-01, Pauta 6.0.1).
+        // The staging folder is made, and the result moved into place, off the FX thread (PERF-01, Pauta 6.2.0).
         com.editora.perf.OffFx.then(
                 "ExportCoordinator.staged", () -> com.editora.io.StagedExport.begin(f.toPath()), begun -> {
                     com.editora.io.StagedExport stage = begun.value();
@@ -393,7 +393,7 @@ final class ExportCoordinator {
             host.setStatus(tr("status.export.none"));
             return;
         }
-        // still there? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        // still there? looked at off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then("export-look", () -> java.nio.file.Files.isRegularFile(file), there -> {
             if (!there.or(false)) {
                 host.setStatus(tr("status.export.gone", file.toString()));
@@ -1103,7 +1103,7 @@ final class ExportCoordinator {
                 }
             };
             // Whether it reads image files or runs Mermaid is a look through the whole source: made off the FX
-            // thread too (PERF-01, Pauta 6.0.1), then the export goes on.
+            // thread too (PERF-01, Pauta 6.2.0), then the export goes on.
             com.editora.perf.OffFx.then(
                     HTML_EXPORT_CHECK_SITE,
                     () -> com.editora.editor.markdown.MarkdownHtmlExport.readsFilesOrRunsTools(markdown, options),
@@ -1117,7 +1117,7 @@ final class ExportCoordinator {
     /** Writes the HTML export: with a progress chip when it reads files or runs tools, else quietly. */
     private void exportHtml(java.io.File f, java.util.function.Supplier<@Nullable Exception> write, boolean slow) {
         if (!slow) {
-            // text only: nothing to wait for, but still built and written off the FX thread (PERF-01, Pauta 6.0.1)
+            // text only: nothing to wait for, but still built and written off the FX thread (PERF-01, Pauta 6.2.0)
             com.editora.perf.OffFx.then("html-export", write::get, done -> htmlExported(f, done.value(), true));
             return;
         }
@@ -1226,7 +1226,7 @@ final class ExportCoordinator {
                 && host.isLocalBuffer(source)) {
             directory = source.getPath().getParent().toFile();
         }
-        // No look at the folder first (PERF-01, Pauta 6.0.1): a folder that has since been deleted makes the native
+        // No look at the folder first (PERF-01, Pauta 6.2.0): a folder that has since been deleted makes the native
         // dialog throw, and ChooserStart then shows it again without a start folder.
         ChooserStart.set(chooser, directory == null ? null : directory.toPath());
         java.io.File chosen = ChooserStart.show(chooser, chooseDestination::apply);
@@ -1243,7 +1243,7 @@ final class ExportCoordinator {
         }
         // The Save dialog asked about replacing the name as typed. The name with the extension added is a
         // different file, which nobody has agreed to replace yet: whether it is there is looked at off the FX
-        // thread (PERF-01, Pauta 6.0.1), then asked about, over the same window the dialog was.
+        // thread (PERF-01, Pauta 6.2.0), then asked about, over the same window the dialog was.
         javafx.stage.Window owner = dialogOwnerOverride;
         com.editora.perf.OffFx.then("ExportCoordinator.chooseExportDestination", target::exists, there -> {
             javafx.stage.Window previous = dialogOwnerOverride;
@@ -1284,7 +1284,7 @@ final class ExportCoordinator {
         }
         chooseExportDestination(null, bufferBaseName(b), "timeline", "json", "JSON", b, f -> {
             String text = b.getContent();
-            // parsed and written off the FX thread (PERF-01, Pauta 6.0.1)
+            // parsed and written off the FX thread (PERF-01, Pauta 6.2.0)
             com.editora.perf.OffFx.run(
                     "markwhen-export",
                     () -> com.editora.io.StagedExport.writeString(
@@ -1559,7 +1559,7 @@ final class ExportCoordinator {
     /** Prints a DOT/PlantUML diagram by rendering it to a temporary PNG via its CLI, then paginating the image
      *  (there's no native-vector print path for the diagram tools, unlike Markdown). */
     private void printDiagramViaImage(EditorBuffer b, PrintPreview.Job job) {
-        // The temporary file is made, and the rendered image read back, off the FX thread (PERF-01, Pauta 6.0.1).
+        // The temporary file is made, and the rendered image read back, off the FX thread (PERF-01, Pauta 6.2.0).
         String text = b.getContent();
         com.editora.diagram.@Nullable DiagramKind kind = b.diagramKind();
         com.editora.perf.OffFx.then(
@@ -1719,7 +1719,7 @@ final class ExportCoordinator {
     /** Writes {@code csv} text to a user-chosen {@code .csv} file (the Markdown-table → CSV file export). */
     void exportCsvTextToFile(String csv, String base) {
         chooseOfficeDestination(base, "csv", "CSV", host.activeBuffer(), f -> {
-            // written off the FX thread (PERF-01, Pauta 6.0.1)
+            // written off the FX thread (PERF-01, Pauta 6.2.0)
             com.editora.perf.OffFx.run(
                     "csv-export",
                     () -> com.editora.io.StagedExport.writeString(f.toPath(), csv),

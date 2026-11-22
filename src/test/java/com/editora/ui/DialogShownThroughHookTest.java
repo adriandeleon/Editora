@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * A dialog that is answered with a button is shown through {@link Dialogs#showAndWait}, or through
  * {@link Dialogs#show(javafx.scene.control.Dialog, java.util.function.Consumer)} when it must not block, which a
- * test answers with no window (CONF-12, Pauta 6.0.1), never through its own {@code showAndWait()} or {@code show()}.
+ * test answers with no window (CONF-12, Pauta 6.2.0), never through its own {@code showAndWait()} or {@code show()}.
  * Read from the source, under {@code src/main/java}: a call of {@code showAndWait()} with no argument, a reference
  * {@code X::showAndWait} to anything but {@code Dialogs}, and a call of {@code show()} on a variable whose
  * declaration in the same file is an {@code Alert}, a {@code Dialog}, a {@code TextInputDialog} or a

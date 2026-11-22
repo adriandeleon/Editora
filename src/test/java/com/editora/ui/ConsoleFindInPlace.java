@@ -7,7 +7,7 @@ import org.junit.jupiter.api.extension.ExtensionContext;
 
 /**
  * Runs a console find bar's search in place and without the typing pause, for a test class that reads the count as
- * the query is set (PERF-01, Pauta 6.0.1, moved the search off the FX thread and made typing wait for a pause).
+ * the query is set (PERF-01, Pauta 6.2.0, moved the search off the FX thread and made typing wait for a pause).
  * Called on the FX thread, the answer then lands before the call returns. {@code HandlersConsoleOffFxThreadFxTest}
  * drives the bar the way the app runs it.
  */

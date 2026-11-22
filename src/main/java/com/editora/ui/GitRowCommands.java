@@ -8,7 +8,7 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * The commands behind the right-click rows of the Git windows that no command reached (KBD-01 and MENU-05, Pauta
- * 6.0.1). Each does to the selected row what its menu row does to the row right-clicked, which a right-click selects
+ * 6.2.0). Each does to the selected row what its menu row does to the row right-clicked, which a right-click selects
  * first, so the row and the command call the same method. With no row selected, or one the row would not be offered
  * for, the status line says so; nothing is opened for it. Confirmations stay where the rows have them.
  */

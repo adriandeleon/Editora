@@ -165,7 +165,7 @@ final class HeadingLinks {
             Consumer<String> status) {
         int[] place = linePlace(fragment);
         // The heading's line: a scan of the open document's text, or a read of the closed file — off the FX
-        // thread (PERF-01, Pauta 6.0.1); the text of an open buffer is taken here, as it is now.
+        // thread (PERF-01, Pauta 6.2.0); the text of an open buffer is taken here, as it is now.
         EditorBuffer open = file == null ? clicked : openBuffer.apply(file);
         boolean fromBuffer = file == null || (open != null && !open.isLoading());
         String text = fromBuffer && open != null && open.isMarkdown() ? open.getContent() : null;

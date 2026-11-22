@@ -34,7 +34,7 @@ import javafx.scene.control.TreeTableRow;
 import javafx.stage.WindowEvent;
 
 /**
- * ACC-01 (Pauta 6.0.1): what a screen reader says for a control. A control a person can reach with Tab or the
+ * ACC-01 (Pauta 6.2.0): what a screen reader says for a control. A control a person can reach with Tab or the
  * mouse is named by its own text, a {@code Label} whose {@code labelFor} is the control, or its accessible text;
  * a filled list or tree cell by its text or its graphic's accessible text; a menu row by its text, or, for a
  * {@code CustomMenuItem}, by its content's accessible text. This walks a scene and collects every one that

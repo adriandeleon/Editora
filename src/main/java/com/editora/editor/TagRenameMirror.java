@@ -111,7 +111,7 @@ final class TagRenameMirror {
         if (rename == null) {
             return;
         }
-        // The pair is found by a lex of the whole document, off the FX thread (PERF-01, Pauta 6.0.1), and renamed
+        // The pair is found by a lex of the whole document, off the FX thread (PERF-01, Pauta 6.2.0), and renamed
         // when that lands if nothing was typed meanwhile. A name typed faster than that is one rename: the next
         // keystroke in the same tag asks again with the name the tag had before the first.
         int nameStart = winStart + rename.nameStart();

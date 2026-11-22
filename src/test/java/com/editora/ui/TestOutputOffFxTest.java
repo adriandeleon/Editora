@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-01 (Pauta 6.0.1): a test run's output is parsed where it is read, not on the FX thread. The pump prepares each
+ * PERF-01 (Pauta 6.2.0): a test run's output is parsed where it is read, not on the FX thread. The pump prepares each
  * line on its reader thread ({@link OutputPump.Sink#prepare}) and the FX thread runs what the line came to, in
  * order; a run's line stage ({@link TestLineStage}) parses {@code go test -json}, sniffs npm's TAP and finds the
  * console text there.

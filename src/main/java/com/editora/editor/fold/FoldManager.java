@@ -524,7 +524,7 @@ public final class FoldManager {
 
     /**
      * TEST SEAM — whether the regions are those of the current text: no debounced scan is still owed for an edit and
-     * none is still out (QUAL-07, Pauta 6.0.1: a test waits for the scan, not for a time). FX thread.
+     * none is still out (QUAL-07, Pauta 6.2.0: a test waits for the scan, not for a time). FX thread.
      */
     public boolean scansSettledForTest() {
         return !heuristicEnabled
@@ -579,7 +579,7 @@ public final class FoldManager {
     }
 
     /**
-     * As {@link #recomputeAsync()}; {@code awaited} makes fold commands wait for the answer (PERF-01, Pauta 6.0.1:
+     * As {@link #recomputeAsync()}; {@code awaited} makes fold commands wait for the answer (PERF-01, Pauta 6.2.0:
      * every recompute scans off the FX thread, and a command never acts on regions not yet known).
      */
     private void recomputeAsync(boolean awaited) {
@@ -1008,7 +1008,7 @@ public final class FoldManager {
      * through {@link #restoreBreaks}. Returns {@code text} itself when no collapsed fold is at, directly
      * above or directly below any of the lines {@code pars} — the only folds such a command can reach.
      *
-     * <p>Only those folds are looked at (PERF-01, Pauta 6.0.1): the hidden runs that touch the lines around each
+     * <p>Only those folds are looked at (PERF-01, Pauta 6.2.0): the hidden runs that touch the lines around each
      * of {@code pars}, found from the area's fold state, and the check for a real {@link #HIDDEN_BREAK} covers
      * just the lines a command can rewrite — never a walk over the whole document on the FX thread.
      */
@@ -1452,7 +1452,7 @@ public final class FoldManager {
 
     /**
      * Folds every multi-line block comment (VS Code's {@code foldAllBlockComments}); {@code done} gets the count on
-     * the FX thread once the comments are found, off it (PERF-01, Pauta 6.0.1). Refused while a kind scan is in
+     * the FX thread once the comments are found, off it (PERF-01, Pauta 6.2.0). Refused while a kind scan is in
      * flight.
      */
     public void foldAllBlockComments(java.util.function.IntConsumer done) {

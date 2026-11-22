@@ -12,7 +12,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The keys that can follow a pending multi-key prefix, for the which-key style hint the window shows while a
- * prefix such as {@code C-x} waits for its next key (KBD-14 in Pauta 6.0.1). Pure: it reads a snapshot of the
+ * prefix such as {@code C-x} waits for its next key (KBD-14 in Pauta 6.2.0). Pure: it reads a snapshot of the
  * bindings, the active keymap's with the user's own layered on, and knows nothing of the window.
  */
 public final class KeymapContinuations {

@@ -495,7 +495,7 @@ public class ConfigManager {
 
     /**
      * Saves preferences + this window's session state. On the FX thread it queues them and returns at once
-     * (PERF-01, Pauta 6.0.1): a copy of each is taken here, and serialized and written on the shared
+     * (PERF-01, Pauta 6.2.0): a copy of each is taken here, and serialized and written on the shared
      * {@link ConfigWriter}'s thread, in order with every other config write. On any other thread it then waits
      * until both are on disk. The wait that makes the session durable at quit is {@code Application.stop()}'s
      * {@link SharedConfig#shutdown}, which drains the writer.

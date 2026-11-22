@@ -69,7 +69,7 @@ public final class GradleDebugInit {
     /**
      * {@link #write}, once per set of tasks: the script does not change, so the file written first serves every
      * later debug run, and a write that failed is not tried again (the run falls back to {@code --debug-jvm}).
-     * Writes on the calling thread: the FX thread asks through {@link #whenPrepared} instead (PERF-01, Pauta 6.0.1).
+     * Writes on the calling thread: the FX thread asks through {@link #whenPrepared} instead (PERF-01, Pauta 6.2.0).
      */
     public static @Nullable Path prepared(Collection<String> taskNames) {
         List<String> key = List.copyOf(taskNames);
@@ -85,7 +85,7 @@ public final class GradleDebugInit {
     /**
      * Hands {@code then} {@link #prepared}'s file for {@code taskNames}, or null when it could not be written: at
      * once when it was written (or failed) already, else after the write, made off the FX thread; {@code then} runs
-     * on the FX thread. A debug command waits for it so (PERF-01, Pauta 6.0.1).
+     * on the FX thread. A debug command waits for it so (PERF-01, Pauta 6.2.0).
      */
     public static void whenPrepared(Collection<String> taskNames, java.util.function.Consumer<@Nullable Path> then) {
         List<String> key = List.copyOf(taskNames);

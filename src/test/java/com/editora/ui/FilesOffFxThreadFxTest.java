@@ -29,7 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-01 (Pauta 6.0.1), the file commands, installs and plugins: each test drives a representative set of them on the
+ * PERF-01 (Pauta 6.2.0), the file commands, installs and plugins: each test drives a representative set of them on the
  * FX thread, the way a command does, and listens to {@link BlockingSites}. The disk work they do — a file read as it
  * is opened, the admin-save check, Local History's copy before a delete, a pasted image written, New ▸ type, a clone's
  * follow-up look, a workspace edit and its Undo Refactoring, an installed-version check, the Project tree's New Folder,

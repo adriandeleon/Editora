@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Every list, tree and table in the app's windows has a right-click menu (MENU-05, Pauta 6.0.1), or is one the rule
+ * Every list, tree and table in the app's windows has a right-click menu (MENU-05, Pauta 6.2.0), or is one the rule
  * leaves out, named here with the reason. Read from the source: a control declared {@code X<…> name = new X<>…},
  * or made so in the method that builds its card on first use ({@code name = new X<>…}), passes when its file gives {@code name} a menu, through {@link ListRowCommands#install}, {@link RowMenus#install},
  * {@code setContextMenu}, {@code setOnContextMenuRequested}, or {@link RowContextMenu} for a menu on its cells.

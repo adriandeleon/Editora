@@ -209,7 +209,7 @@ public class NotesPanel extends VBox implements ToolWindowContent {
             show(scope, byProject, null);
             return;
         }
-        // Matched off the FX thread (PERF-01, Pauta 6.0.1), on a copy of each note's file and text; the tree shown
+        // Matched off the FX thread (PERF-01, Pauta 6.2.0), on a copy of each note's file and text; the tree shown
         // stays until the latest filter's answer lands.
         List<String> files = new ArrayList<>();
         List<PersonalNote> notes = new ArrayList<>();

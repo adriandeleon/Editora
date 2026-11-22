@@ -392,7 +392,7 @@ final class EncryptionCoordinator {
                         return gpg().decrypt(file.ciphertext, passphrase, cancel);
                     },
                     (outcome, passphrase) -> background("gpg-decrypted", () -> {
-                        // Its document is built here too: no line-ending scan when it lands (PERF-01, Pauta 6.0.1).
+                        // Its document is built here too: no line-ending scan when it lands (PERF-01, Pauta 6.2.0).
                         FileWorkflowCoordinator.PreparedLoad load = files.prepareDecrypted(
                                         file.file, outcome.out(), file.size, file.mtime, file.fingerprint)
                                 .preparedFor(buffer);
@@ -1124,7 +1124,7 @@ final class EncryptionCoordinator {
 
     /**
      * Runs {@code then} when {@code target} is not there or the user agrees to replace it; {@code declined} when
-     * not. Whether it is there is looked at off the FX thread (PERF-01, Pauta 6.0.1).
+     * not. Whether it is there is looked at off the FX thread (PERF-01, Pauta 6.2.0).
      */
     private void ifOverwriteAllowed(Path target, Runnable declined, Runnable then) {
         background("gpg-target", () -> {

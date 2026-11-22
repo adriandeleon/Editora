@@ -37,7 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The lists that had no right-click menu have one (MENU-05, Pauta 6.0.1): the debugger's memory and disassembly
+ * The lists that had no right-click menu have one (MENU-05, Pauta 6.2.0): the debugger's memory and disassembly
  * views, a Settings page's list, a Project Map card's lists; each row is a command's, does what the command does to
  * the selected row of the list the keyboard is in, and is disabled while it cannot act.
  */

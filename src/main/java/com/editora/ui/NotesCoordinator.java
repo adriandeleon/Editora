@@ -283,7 +283,7 @@ final class NotesCoordinator {
         EditorBuffer open = ops.bufferForPath(file);
         if (open == null) {
             // a folder or a file, and its identity (a stat and a hash), looked at off the FX thread (PERF-01, Pauta
-            // 6.0.1)
+            // 6.2.0)
             com.editora.perf.OffFx.then(
                     "notes-look",
                     () -> new Object[] {java.nio.file.Files.isDirectory(file), FileIdentity.of(file)},
@@ -306,7 +306,7 @@ final class NotesCoordinator {
 
     /**
      * Adds {@code body}'s note to {@code buffer} once its file's identity is known: its size, time, real path and
-     * (for a small file) hash are looked at off the FX thread (PERF-01, Pauta 6.0.1).
+     * (for a small file) hash are looked at off the FX thread (PERF-01, Pauta 6.2.0).
      */
     private void addWithIdentity(EditorBuffer buffer, NoteDraft draft, String body) {
         Path path = buffer.getPath();
@@ -540,7 +540,7 @@ final class NotesCoordinator {
             // The file may have been renamed/moved outside Editora — match by content hash and re-key. The hash
             // reads the whole file (up to 5 MB), so it is computed only if some stored note's file is gone and had
             // this file's size; opening a file with no notes usually never reads it. All of it off the FX thread
-            // (PERF-01, Pauta 6.0.1): the notes it finds are applied when it lands.
+            // (PERF-01, Pauta 6.2.0): the notes it finds are applied when it lands.
             Path file = buffer.getPath();
             Map<String, List<PersonalNote>> stored = Map.copyOf(map);
             com.editora.perf.OffFx.then(
@@ -572,7 +572,7 @@ final class NotesCoordinator {
      */
     void pathRenamed(Path old, Path target) {
         String sep = old.getFileSystem().getSeparator();
-        // The keys resolve links (a real path per folder): resolved off the FX thread (PERF-01, Pauta 6.0.1), then
+        // The keys resolve links (a real path per folder): resolved off the FX thread (PERF-01, Pauta 6.2.0), then
         // the notes are re-keyed here.
         com.editora.perf.OffFx.then(
                 "notes-rename-keys",
@@ -602,7 +602,7 @@ final class NotesCoordinator {
         Path now = buffer.getPath();
         if (oldPath != null) {
             // Its old key, and whether the old file is gone (a rename, not a Save As), are looked at off the FX thread
-            // (PERF-01, Pauta 6.0.1); the old file's notes follow when they land.
+            // (PERF-01, Pauta 6.2.0); the old file's notes follow when they land.
             boolean narrowed = buffer.isNarrowed();
             String newKey = now == null ? null : ops.noteKey(buffer);
             com.editora.perf.OffFx.then(
@@ -981,7 +981,7 @@ final class NotesCoordinator {
         if (f == null) {
             return;
         }
-        // A copy taken here; serialized and written off the FX thread (PERF-01, Pauta 6.0.1).
+        // A copy taken here; serialized and written off the FX thread (PERF-01, Pauta 6.2.0).
         Map<String, List<PersonalNote>> notes = new java.util.LinkedHashMap<>();
         ops.notes().forEach((k, v) -> notes.put(k, List.copyOf(v)));
         com.editora.perf.OffFx.run(

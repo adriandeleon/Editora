@@ -12,7 +12,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The last answer a look at the disk gave, by key: a look made off the FX thread refreshes it, and the FX thread
- * answers from it (PERF-01, Pauta 6.0.1). A launch's plan looks off the thread first for exactly what its FX part
+ * answers from it (PERF-01, Pauta 6.2.0). A launch's plan looks off the thread first for exactly what its FX part
  * asks next, so the FX part finds it. Bounded: the keys of a session.
  *
  * <p>No memo looks on the FX thread. A key nothing has looked at yet is answered there with the memo's <em>cold
@@ -71,7 +71,7 @@ public final class Looked<K, V> {
      * Whether everything {@code asks} would ask of a memo is kept, worked out without looking at anything: while it
      * runs on this thread, a key no look has filled is not looked at (it answers the cold answer, or null) but
      * noted. The way an FX command asks whether it may go on now, or must first have {@code asks} run off the FX
-     * thread, where it looks for real (PERF-01, Pauta 6.0.1). {@code asks} must have no other effect, and must not
+     * thread, where it looks for real (PERF-01, Pauta 6.2.0). {@code asks} must have no other effect, and must not
      * catch {@code RuntimeException} around a memo's ask.
      */
     public static boolean allKnown(Runnable asks) {

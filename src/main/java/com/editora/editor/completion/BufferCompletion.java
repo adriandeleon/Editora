@@ -73,7 +73,7 @@ public final class BufferCompletion {
 
         /**
          * The info string of the Markdown fence {@code line} is in ({@code "mermaid"}…), or null — looked up in
-         * the buffer's line map, never by scanning the document (PERF-01, Pauta 6.0.1).
+         * the buffer's line map, never by scanning the document (PERF-01, Pauta 6.2.0).
          */
         default @Nullable String markdownFenceInfo(int line) {
             return null;
@@ -491,7 +491,7 @@ public final class BufferCompletion {
         if (doc == null || doc.isBlank()) {
             return null;
         }
-        // Plain text first, its rendering when the parse made off the FX thread lands (PERF-01, Pauta 6.0.1).
+        // Plain text first, its rendering when the parse made off the FX thread lands (PERF-01, Pauta 6.2.0).
         java.util.function.Consumer<String> open = linkOpener;
         return MarkdownRenderer.renderedLater(
                 doc.strip(), ast -> MarkdownRenderer.renderPopup(ast, open == null ? null : open::accept));
@@ -1293,7 +1293,7 @@ public final class BufferCompletion {
     private int noOfferCaret = -1;
 
     /**
-     * Works out a structural offer off the JavaFX thread (PERF-01, Pauta 6.0.1): it scans the whole document and
+     * Works out a structural offer off the JavaFX thread (PERF-01, Pauta 6.2.0): it scans the whole document and
      * may list a folder or read another file. Answers true (handled) while it is out; when it lands for the same
      * text and caret it is shown, and when it has nothing the completion runs again as for ordinary prose.
      */
@@ -1879,7 +1879,7 @@ public final class BufferCompletion {
 
     /**
      * {@code items} (the snippets) followed by the shell script's own names for {@code prefix} at {@code wordStart}.
-     * The script is scanned off the FX thread (PERF-01, Pauta 6.0.1), once per document version and caret: until
+     * The script is scanned off the FX thread (PERF-01, Pauta 6.2.0), once per document version and caret: until
      * that scan lands the snippets are offered alone, and when it lands for the same text and caret the list is
      * worked out again with the names.
      */

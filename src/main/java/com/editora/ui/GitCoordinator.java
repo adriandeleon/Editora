@@ -129,7 +129,7 @@ final class GitCoordinator {
         /**
          * Saves {@code buffer} through the window's ordinary save path (encoding, line endings, format on save) and
          * tells {@code then}, on the FX thread, whether it is on disk afterwards. The write runs off the FX thread
-         * (PERF-01, Pauta 6.0.1); this default, for test stand-ins, answers {@link #saveBeforeGit} at once.
+         * (PERF-01, Pauta 6.2.0); this default, for test stand-ins, answers {@link #saveBeforeGit} at once.
          */
         default void saveBeforeGitThen(EditorBuffer buffer, Consumer<Boolean> then) {
             then.accept(saveBeforeGit(buffer));
@@ -639,7 +639,7 @@ final class GitCoordinator {
      * that is still being edited silently recorded its <em>previous</em> text. Each buffer goes through the
      * window's normal save; one that cannot be saved stops the operation, with the reason in the status bar.
      *
-     * The writes run off the FX thread (PERF-01, Pauta 6.0.1): {@code then} runs once every one has landed, and not
+     * The writes run off the FX thread (PERF-01, Pauta 6.2.0): {@code then} runs once every one has landed, and not
      * at all when one could not be saved — the caller's command does not run.
      */
     void saveUnsaved(Path root, List<String> pathspecs, Runnable then) {
@@ -817,7 +817,7 @@ final class GitCoordinator {
      * {@code <<<<<<<} markers commits the markers, so it is confirmed first, naming the file. Called after
      * the unsaved buffers were written, so the disk copy is what git is about to stage.
      *
-     * <p>The unmerged files are read off the FX thread (PERF-01, Pauta 6.0.1); with none, {@code then} runs at once.
+     * <p>The unmerged files are read off the FX thread (PERF-01, Pauta 6.2.0); with none, {@code then} runs at once.
      *
      * @param pathspecs the paths being staged; empty means the whole repository (Stage All)
      * @param then the staging, unless the user declined
@@ -967,7 +967,7 @@ final class GitCoordinator {
             return;
         }
         List<String> untracked = discard.untracked();
-        // which rows are folders is looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        // which rows are folders is looked at off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then(
                 "git-untracked-look",
                 () -> GitUntrackedDelete.folders(root, untracked),
@@ -1180,7 +1180,7 @@ final class GitCoordinator {
         String successMessage =
                 tr("status.git.discardedAll", all.tracked(), all.untracked().size());
         List<String> untracked = discard.untracked();
-        // which rows are folders is looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        // which rows are folders is looked at off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then(
                 "git-untracked-look",
                 () -> GitUntrackedDelete.folders(root, untracked),
@@ -1854,7 +1854,7 @@ final class GitCoordinator {
                 return;
             }
             if (com.editora.vfs.Vfs.isLocal(file)) {
-                // a folder? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+                // a folder? looked at off the FX thread (PERF-01, Pauta 6.2.0)
                 com.editora.perf.OffFx.then("git-path-look", () -> Files.isDirectory(file), folder -> {
                     if (folder.or(false)) {
                         action.run();
@@ -1947,7 +1947,7 @@ final class GitCoordinator {
         if (file == null || rel == null || rel.isEmpty()) {
             return;
         }
-        // The file is looked at, and .gitignore read and written, off the FX thread (PERF-01, Pauta 6.0.1).
+        // The file is looked at, and .gitignore read and written, off the FX thread (PERF-01, Pauta 6.2.0).
         DebugPlanning.offFx(
                 "git-ignore-write",
                 () -> {
@@ -2140,7 +2140,7 @@ final class GitCoordinator {
                     }
                     Path dir = com.editora.config.PathKeys.resolveUserInput(
                             text.strip(), suggested, System.getProperty("user.home"));
-                    // a folder? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+                    // a folder? looked at off the FX thread (PERF-01, Pauta 6.2.0)
                     com.editora.perf.OffFx.then(
                             "git-init-folder",
                             () -> dir != null && java.nio.file.Files.isDirectory(dir),
@@ -2298,7 +2298,7 @@ final class GitCoordinator {
                     if (remoteBase == null) {
                         // Resolved like the folder typed for git.init (~ and relative paths), validated, and
                         // its missing parent folders created — git creates the target, not what is above it. Off
-                        // the FX thread (PERF-01, Pauta 6.0.1).
+                        // the FX thread (PERF-01, Pauta 6.2.0).
                         host.setStatus(tr("status.cloning", url));
                         com.editora.perf.OffFx.then(
                                 "clone-destination",
@@ -2407,7 +2407,7 @@ final class GitCoordinator {
      * files from it (File: Open / Find File).
      */
     private void openClonedEntry(Path dir) {
-        // Each look is a stat (an SFTP round trip on a host): made off the FX thread (PERF-01, Pauta 6.0.1).
+        // Each look is a stat (an SFTP round trip on a host): made off the FX thread (PERF-01, Pauta 6.2.0).
         com.editora.perf.OffFx.then(
                 "clone-entry",
                 () -> java.util.Optional.ofNullable(clonedEntry(dir)),

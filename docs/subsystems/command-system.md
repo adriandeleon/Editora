@@ -267,7 +267,7 @@ Each time `pending` starts, grows or ends, the dispatcher tells its prefix liste
 (`setPrefixListener`): the sequence so far (`C-x`, then `C-x v`), or `""` when it completed, was
 undefined or was cancelled. The window's [`PrefixKeyHint`](../../src/main/java/com/editora/ui/PrefixKeyHint.java)
 listens (wired in `MainController.setKeyDispatcher`) and, after `PrefixKeyHint.DELAY` (600 ms) with the
-prefix still pending, lists every key that can follow — KBD-14 in Pauta 6.0.1:
+prefix still pending, lists every key that can follow — KBD-14 in Pauta 6.2.0:
 
 - **What it lists** comes from `KeymapManager.continuations(prefix, known)`
   ([`KeymapContinuations`](../../src/main/java/com/editora/command/KeymapContinuations.java), pure): the live
@@ -670,7 +670,7 @@ pure translation between that and what a keymap takes (overrides, chord → id w
   `setShowDelay`: `TooltipDelayTest` fails on either outside `ControlNames`, and on a tooltip declared in
   FXML. The delay cannot live in the stylesheet: `-fx-show-delay` does not survive the precompiled `.bss`
   form (`StylesheetBinaryTest`).
-- **A menu bar row whose command cannot run stays, grayed, and says why** (KBD-04 in Pauta 6.0.1).
+- **A menu bar row whose command cannot run stays, grayed, and says why** (KBD-04 in Pauta 6.2.0).
   `MainMenuBar.refreshEnablement` asks `Chrome.disabledReason` for every row and `MainMenuBar.showAvailability`
   shows the answer: the row keeps working as a row (a disabled node gets no mouse events, so no tooltip, and
   the keyboard skips it), carries the `unavailable` style class (dimmed in `app.css`), a tooltip with the

@@ -8,7 +8,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * A command that searches the text from the caret — the matching bracket, the next balanced expression, every
- * occurrence of a word — worked out off the JavaFX thread (PERF-01, Pauta 6.0.1). The text and the caret are taken on
+ * occurrence of a word — worked out off the JavaFX thread (PERF-01, Pauta 6.2.0). The text and the caret are taken on
  * the FX thread; the search runs on a virtual thread named for it; its answer is acted on, on the FX thread, only if
  * the area still holds that text with the caret and the selection where they were. Otherwise it is dropped: the
  * command answered a state that is gone, and the user presses it again on the new one.

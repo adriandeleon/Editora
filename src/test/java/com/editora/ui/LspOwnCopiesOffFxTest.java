@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-01 (Pauta 6.0.1): a server command set in Settings a moment ago is looked at (is it Editora's own copy?) off
+ * PERF-01 (Pauta 6.2.0): a server command set in Settings a moment ago is looked at (is it Editora's own copy?) off
  * the FX thread. The support is applied when the look lands, never with a command guessed meanwhile, and nothing is
  * looked at on the FX thread.
  */

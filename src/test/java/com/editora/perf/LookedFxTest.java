@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * {@link Looked}: a look made off the FX thread is kept, and the FX thread answers from it without looking (PERF-01,
- * Pauta 6.0.1); a key never looked at answers its cold answer (or null) there and is looked at behind.
+ * Pauta 6.2.0); a key never looked at answers its cold answer (or null) there and is looked at behind.
  */
 @Tag("fx")
 class LookedFxTest {

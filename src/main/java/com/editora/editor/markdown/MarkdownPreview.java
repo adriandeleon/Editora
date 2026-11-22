@@ -41,7 +41,7 @@ import org.jspecify.annotations.Nullable;
  * and {@link #scrollToAnchor} finds a heading by its GitHub slug.
  *
  * <p><b>Only what is on screen is built.</b> The column ({@link BlockColumn}) is virtualized (PERF-08, Pauta
- * 6.0.1): every unit is an {@link Entry}, and a block is rendered when it comes within reach of the viewport, not
+ * 6.2.0): every unit is an {@link Entry}, and a block is rendered when it comes within reach of the viewport, not
  * before. A 20,000-line document has a screenful of blocks in the scene, not thousands. What reads the whole
  * document reads the model instead: the scroll map sums the blocks' heights (measured, or estimated from their
  * lines) in O(log n); Find reads the text of a block that is not built from a rendering without pictures
@@ -612,7 +612,7 @@ public final class MarkdownPreview {
      * is whole blocks (or everything), else read off the selected nodes. False when nothing is selected.
      *
      * <p>The Markdown's lines are cut out, its plain text and its HTML rendered and its local images read
-     * (embedded) off the FX thread (PERF-01, Pauta 6.0.1); the clipboard is filled when that is done.
+     * (embedded) off the FX thread (PERF-01, Pauta 6.2.0); the clipboard is filled when that is done.
      */
     public boolean copySelection() {
         if (!selection.isActive()) {
@@ -795,7 +795,7 @@ public final class MarkdownPreview {
 
     /**
      * As {@link #plan(String, Path)}, its formulas rasterized here for the glyph theme the preview will show
-     * ({@code glyphsDark} null: the app's), so the FX thread finds them drawn (PERF-01, Pauta 6.0.1).
+     * ({@code glyphsDark} null: the app's), so the FX thread finds them drawn (PERF-01, Pauta 6.2.0).
      */
     public static Plan plan(String markdown, @Nullable Path baseDir, @Nullable Boolean glyphsDark) {
         String md = markdown == null ? "" : markdown;

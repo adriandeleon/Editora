@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The pull-request checks card's rows are a virtualized list (PERF-08, Pauta 6.0.1): a pull request with thousands
+ * The pull-request checks card's rows are a virtualized list (PERF-08, Pauta 6.2.0): a pull request with thousands
  * of check runs builds the rows on screen and no more, in the order and with the content the card always had, and
  * the list is driven from the keyboard as the app's other lists are.
  */

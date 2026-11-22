@@ -123,7 +123,7 @@ class MenuBarEnablementFxTest {
     }
 
     /**
-     * KBD-04 (Pauta 6.0.1): a row whose command cannot run stays in its menu, grayed, and says why — in its
+     * KBD-04 (Pauta 6.2.0): a row whose command cannot run stays in its menu, grayed, and says why — in its
      * tooltip, to a screen reader, and in the status bar when it is chosen, instead of running. The sentence is
      * the one the Command Palette shows for the same command. A row that can run carries none of it.
      */

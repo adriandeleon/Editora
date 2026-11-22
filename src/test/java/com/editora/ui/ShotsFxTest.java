@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Screenshots are written at twice the scene's size (DOCS-18, Pauta 6.0.1): the shared helper every {@code shot()}
+ * Screenshots are written at twice the scene's size (DOCS-18, Pauta 6.2.0): the shared helper every {@code shot()}
  * uses, and the harness the website's screenshots come from, run on its sample script.
  */
 @Tag("fx")
@@ -36,8 +36,11 @@ class ShotsFxTest {
         Stage stage = FxTestSupport.callOnFx(() -> {
             Rectangle red = new Rectangle(10, 10, 20, 20);
             red.setFill(Color.RED);
+            Pane pane = new Pane(red);
+            // Its own white ground: a theme another test set as the user-agent stylesheet paints .root otherwise.
+            pane.setStyle("-fx-background-color: white;");
             Stage s = new Stage();
-            s.setScene(new Scene(new Pane(red), 320, 200, Color.WHITE));
+            s.setScene(new Scene(pane, 320, 200, Color.WHITE));
             s.show();
             return s;
         });

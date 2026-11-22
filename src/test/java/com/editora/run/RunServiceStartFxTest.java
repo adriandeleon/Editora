@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@link RunService} starts its program off the FX thread (PERF-01, Pauta 6.0.1): what a press, a Stop, typed
+ * {@link RunService} starts its program off the FX thread (PERF-01, Pauta 6.2.0): what a press, a Stop, typed
  * input and a closing window do while the start is under way. The starts are held by the test and released on a
  * thread of its own, so each case is the window between the press and the program's start.
  */

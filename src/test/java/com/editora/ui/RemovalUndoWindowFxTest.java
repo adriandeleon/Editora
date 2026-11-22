@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Edit: Undo Last Removal through the window (CONF-01, Pauta 6.0.1): each small removal that asks nothing is made the
+ * Edit: Undo Last Removal through the window (CONF-01, Pauta 6.2.0): each small removal that asks nothing is made the
  * way the user makes it, the command is run from the registry, and what was removed is back as it was. Then the same
  * removal with its place taken or gone: the status line says it can no longer be undone and nothing is overwritten.
  */

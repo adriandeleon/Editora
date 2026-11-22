@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * ACC-01 (Pauta 6.0.1): every control a person can reach with Tab or the mouse has a name a screen reader says.
+ * ACC-01 (Pauta 6.2.0): every control a person can reach with Tab or the mouse has a name a screen reader says.
  *
  * <p>The windows, dialogs, popups and tool windows the app has are the ones its commands open, so the sweep is
  * {@link CommandSweepFxTest}'s: every registered command runs in a project window on a Git repository with a

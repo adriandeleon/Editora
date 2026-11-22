@@ -207,7 +207,7 @@ final class RegisterCommands {
             jumpInto(path, position);
             return;
         }
-        // still there? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        // still there? looked at off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then("register-look", () -> java.nio.file.Files.exists(path), there -> {
             if (there.or(false)) {
                 jumpInto(path, position);

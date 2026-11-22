@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Colour rules of Pauta 6.0.1 that a change anywhere can break, checked on the repository's own text (pure: no
+ * Colour rules of Pauta 6.2.0 that a change anywhere can break, checked on the repository's own text (pure: no
  * toolkit):
  *
  * <ul>

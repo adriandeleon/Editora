@@ -31,7 +31,7 @@ public final class BuildService {
 
         /**
          * On the output's reader thread, before the line is queued for the FX thread: what to run there for it
-         * ({@link OutputPump.Sink#prepare}). A listener that parses its lines does it here (PERF-01, Pauta 6.0.1).
+         * ({@link OutputPump.Sink#prepare}). A listener that parses its lines does it here (PERF-01, Pauta 6.2.0).
          * Default: {@link #onOutput} on the FX thread.
          */
         default Runnable prepareOutput(String line, boolean stderr) {
@@ -70,7 +70,7 @@ public final class BuildService {
 
     /**
      * True from {@link #run} until the build has started (or failed to) on the {@code build-start} thread
-     * (PERF-01, Pauta 6.0.1). A second press meanwhile finds the service running and starts nothing.
+     * (PERF-01, Pauta 6.2.0). A second press meanwhile finds the service running and starts nothing.
      */
     private volatile boolean starting;
 

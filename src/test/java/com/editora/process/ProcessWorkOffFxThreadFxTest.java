@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * What the process layer does when it is asked on the FX thread (PERF-01, Pauta 6.0.1): the augmented PATH is never
+ * What the process layer does when it is asked on the FX thread (PERF-01, Pauta 6.2.0): the augmented PATH is never
  * built there (a cold one is answered without the login shell, and the warm-up starts), the process ledger is never
  * written there, and Stop's walk of the process table is never made there.
  */

@@ -494,7 +494,7 @@ class MavenProjectFlowFxTest {
     }
 
     /**
-     * PERF-01 (Pauta 6.0.1): whether the target folder holds something is looked at off the FX thread. Until the
+     * PERF-01 (Pauta 6.2.0): whether the target folder holds something is looked at off the FX thread. Until the
      * answer lands Create is disabled and the form says it is checking; a folder that fills after the form looked
      * is refused by the generation, which looks again before it writes.
      */

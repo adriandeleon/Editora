@@ -224,7 +224,7 @@ final class ProjectScopeSettings {
 
     /**
      * Writes {@code value} (null or blank = remove) as {@code key} of the project in {@code root}, off the FX
-     * thread (PERF-01, Pauta 6.0.1); when it is written, has every window read the file again and runs
+     * thread (PERF-01, Pauta 6.2.0); when it is written, has every window read the file again and runs
      * {@code stored}. When it could not be written a message says so, and {@code stored} does not run.
      */
     private void store(Path root, String key, @Nullable Object value, Runnable stored) {

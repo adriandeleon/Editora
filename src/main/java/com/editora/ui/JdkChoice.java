@@ -60,7 +60,7 @@ record JdkChoice(String home, int major) {
 
     /**
      * Fills {@code combo} with this machine's JDKs and selects {@code home}. The JDKs are looked for off the FX
-     * thread (PERF-01, Pauta 6.0.1): until they land the list holds the inherited choice and {@code home} (its
+     * thread (PERF-01, Pauta 6.2.0): until they land the list holds the inherited choice and {@code home} (its
      * version not known yet), selected; then the whole list, with the same home selected, now with its version. The
      * value changes then but its home does not: a listener that saves the home asks {@link #sameHome} first. A later
      * call's list wins.
@@ -140,7 +140,7 @@ record JdkChoice(String home, int major) {
     }
 
     /**
-     * This machine's JDKs, looked for off the FX thread and handed to {@code then} on it (PERF-01, Pauta 6.0.1):
+     * This machine's JDKs, looked for off the FX thread and handed to {@code then} on it (PERF-01, Pauta 6.2.0):
      * for a list that needs them all, as New Maven Project's Java versions do. An empty list when the look failed.
      */
     static void jdksLater(java.util.function.Consumer<List<JavaRuntimes.Jdk>> then) {

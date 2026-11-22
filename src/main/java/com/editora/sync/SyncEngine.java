@@ -458,7 +458,7 @@ public final class SyncEngine {
         }
     }
 
-    /** {@value #FORMAT_FILE}'s text: {@code formatVersion}, written through Jackson (PLAT-14, Pauta 6.0.1). */
+    /** {@value #FORMAT_FILE}'s text: {@code formatVersion}, written through Jackson (PLAT-14, Pauta 6.2.0). */
     static String formatFileText() throws IOException {
         return MAPPER.writer(new com.fasterxml.jackson.core.util.DefaultPrettyPrinter()
                                 .withObjectIndenter(new com.fasterxml.jackson.core.util.DefaultIndenter("  ", "\n")))

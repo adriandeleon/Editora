@@ -266,7 +266,7 @@ final class LspRename {
     /** As {@link #willRenameFile(Path, Path, Consumer)}, asking {@code fallback} when jdtls has no edit for it. */
     public void willRenameFile(Path from, Path to, Consumer<Boolean> proceed, RenameFallback fallback) {
         // What the item is, and whether a moved .java file's package line fits where it goes, are looked at off the
-        // FX thread (PERF-01, Pauta 6.0.1); the servers are asked from the FX thread, as before.
+        // FX thread (PERF-01, Pauta 6.2.0); the servers are asked from the FX thread, as before.
         com.editora.perf.OffFx.then(
                 "lsp-rename-look",
                 () -> RenameLook.of(from, to),

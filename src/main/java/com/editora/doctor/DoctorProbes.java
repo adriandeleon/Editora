@@ -126,7 +126,7 @@ public final class DoctorProbes {
 
     /**
      * Whether a configured path is an executable file: looked at off the FX thread where a status row's check asks
-     * ({@link #lookAt}), answered from memory on it (PERF-01, Pauta 6.0.1).
+     * ({@link #lookAt}), answered from memory on it (PERF-01, Pauta 6.2.0).
      */
     private static final com.editora.perf.Looked<String, Boolean> EXECUTABLE = new com.editora.perf.Looked<>(
             "DoctorProbes.resolvedPath",

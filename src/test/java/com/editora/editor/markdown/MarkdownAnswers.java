@@ -8,7 +8,7 @@ import org.jspecify.annotations.Nullable;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The answers of the Markdown commands that work the document out off the JavaFX thread (PERF-01, Pauta 6.0.1),
+ * The answers of the Markdown commands that work the document out off the JavaFX thread (PERF-01, Pauta 6.2.0),
  * read at once by a test that runs that work in place ({@code com.editora.ui.OffFxInPlace}): called on the FX
  * thread, each answer lands before the command returns.
  */

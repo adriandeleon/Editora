@@ -302,7 +302,7 @@ final class BuildCoordinator {
 
     /**
      * Sets the tree's header for {@code root} once its wrapper is known: at once from memory, else after a look off
-     * the FX thread (PERF-01, Pauta 6.0.1). The header keeps what it showed until then.
+     * the FX thread (PERF-01, Pauta 6.2.0). The header keeps what it showed until then.
      */
     private void setHeaderWhenKnown(@Nullable Path root) {
         if (tree == null) {
@@ -672,7 +672,7 @@ final class BuildCoordinator {
         }
         Path project = ops.projectRoot();
         BuildDetection.execute(() -> {
-            // The folder is looked at here, off the FX thread, with the parse (PERF-01, Pauta 6.0.1).
+            // The folder is looked at here, off the FX thread, with the parse (PERF-01, Pauta 6.2.0).
             if (!Files.isDirectory(root)) {
                 Platform.runLater(() -> host.setStatus(tr("status.build.notDetected", tool.displayName())));
                 return;
@@ -836,7 +836,7 @@ final class BuildCoordinator {
     private boolean planning;
 
     /**
-     * What a build needs from the disk before it starts (PERF-01, Pauta 6.0.1): whether its folder is there, the
+     * What a build needs from the disk before it starts (PERF-01, Pauta 6.2.0): whether its folder is there, the
      * argv prefix (the wrapper is a file in the folder or above it), the folder whose trust it needs and what the
      * trust prompt would list (it reads the pom), and the selected JDK's environment over the augmented PATH.
      */
@@ -1151,7 +1151,7 @@ final class BuildCoordinator {
                 }
             }
 
-            /** A test run's line is parsed here, on the output's reader thread (PERF-01, Pauta 6.0.1); FX applies it. */
+            /** A test run's line is parsed here, on the output's reader thread (PERF-01, Pauta 6.2.0); FX applies it. */
             @Override
             public Runnable prepareOutput(String line, boolean stderr) {
                 if (!claimed || hook == null) {
@@ -1352,7 +1352,7 @@ final class BuildCoordinator {
         // Gated too: this spawns `./gradlew tasks --all` (`./mill resolve __.compile`, `sbt projects`) on its own,
         // bypassing launch() entirely — enumerating tasks runs the repo's wrapper (and its build scripts) exactly
         // like running one does. The trust question's facts (the wrapper, the build files) are looked at off the
-        // FX thread first (PERF-01, Pauta 6.0.1).
+        // FX thread first (PERF-01, Pauta 6.2.0).
         if (!BuildTrust.gates(tool)) {
             loadAllTasksTrusted(root);
             return;

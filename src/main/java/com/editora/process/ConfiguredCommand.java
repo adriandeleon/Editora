@@ -73,7 +73,7 @@ public final class ConfiguredCommand {
      * Looks up, on the calling thread, every text value of {@code settings} that a command line could take whole (a
      * value with a space and no quote: {@link #tokens} and {@code ProgramArgs.commandLine} ask whether it names a
      * file). Run off the FX thread when settings arrive (the launch's prefetch, the writer that saw a change), so
-     * the FX thread that builds a command line from them answers from memory (PERF-01, Pauta 6.0.1).
+     * the FX thread that builds a command line from them answers from memory (PERF-01, Pauta 6.2.0).
      */
     public static void prepareAllIn(com.fasterxml.jackson.databind.JsonNode settings) {
         java.util.ArrayDeque<com.fasterxml.jackson.databind.JsonNode> todo = new java.util.ArrayDeque<>();
@@ -99,7 +99,7 @@ public final class ConfiguredCommand {
     /**
      * Whether a configured value names a file. A value nothing looked at yet (a path with a space typed into Settings
      * a moment ago) answers "not a file" on the FX thread, as a value that names none is taken, and is looked at
-     * behind; {@link #onLearned} listeners then build their command line again (PERF-01, Pauta 6.0.1).
+     * behind; {@link #onLearned} listeners then build their command line again (PERF-01, Pauta 6.2.0).
      */
     private static final com.editora.perf.ProbeCache<String, Boolean> IS_FILE = new com.editora.perf.ProbeCache<>(
                     "tool-path-is-file", ConfiguredCommand::isRegularFile, Boolean.FALSE)

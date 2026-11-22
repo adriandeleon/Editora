@@ -478,7 +478,7 @@ final class EditingCoordinator {
             return;
         }
         if (b != null && b.isMarkdown() && b.markdown().pasteMayConvert(false)) {
-            // Structured HTML → Markdown: the clipboard is converted off the FX thread (PERF-01, Pauta 6.0.1), then
+            // Structured HTML → Markdown: the clipboard is converted off the FX thread (PERF-01, Pauta 6.2.0), then
             // the paste lands — converted, or as plain text when there was nothing to convert.
             b.markdown().pasteAsMarkdown(false, markdown -> {
                 if (host.activeBuffer() != b || b.isDisposed() || !activeEditable()) {
@@ -587,7 +587,7 @@ final class EditingCoordinator {
 
     /**
      * Writes a pasted image into the assets folder under the configured name pattern and links it. The pixels are
-     * copied here; the PNG is encoded and the file written off the FX thread (PERF-01, Pauta 6.0.1), and the link
+     * copied here; the PNG is encoded and the file written off the FX thread (PERF-01, Pauta 6.2.0), and the link
      * goes where the caret was.
      */
     private void savePastedImage(EditorBuffer b, javafx.scene.image.Image img, String alt) {
@@ -655,7 +655,7 @@ final class EditingCoordinator {
 
     /**
      * {@code alt}: the alt text for every image; null gives each its file's name. The images are copied off the
-     * FX thread (PERF-01, Pauta 6.0.1); the links go where the caret was.
+     * FX thread (PERF-01, Pauta 6.2.0); the links go where the caret was.
      */
     private void insertDroppedImages(EditorBuffer b, java.util.List<java.io.File> files, @Nullable String alt) {
         java.nio.file.Path file = b.getPath(); // the caller checked: the buffer is saved
@@ -1052,7 +1052,7 @@ final class EditingCoordinator {
             return;
         }
         // The comment logic lives on the buffer (so the editor right-click menu can invoke it too). It runs off the
-        // FX thread, and so does the reason for a refusal, read from the same text (PERF-01, Pauta 6.0.1).
+        // FX thread, and so does the reason for a refusal, read from the same text (PERF-01, Pauta 6.2.0).
         CodeArea a = buffer.getFocusedArea() != null ? buffer.getFocusedArea() : buffer.getArea();
         int start = a.getSelection().getStart();
         int end = a.getSelection().getEnd();
@@ -1624,7 +1624,7 @@ final class EditingCoordinator {
         }
 
         /**
-         * Takes the keys and looks for the first match. The search runs off the FX thread (PERF-01, Pauta 6.0.1):
+         * Takes the keys and looks for the first match. The search runs off the FX thread (PERF-01, Pauta 6.2.0):
          * while it is out the session owns the keys and ignores its commands, so nothing acts on a match not yet
          * found; Escape, Enter and {@code q} still end it.
          */
@@ -1647,7 +1647,7 @@ final class EditingCoordinator {
         /**
          * Finds the next match from {@link #from}, then highlights it and prompts — or, when none remain, ends the
          * session ({@code first}: saying there was none at all). Only a piece of the document from the offset is
-         * copied on the FX thread and searched off it (PERF-01, PERF-08, Pauta 6.0.1), a piece twice as long each
+         * copied on the FX thread and searched off it (PERF-01, PERF-08, Pauta 6.2.0), a piece twice as long each
          * time the search reads past it; a match found in text that changed meanwhile is looked for again.
          */
         private void showNext(boolean first) {
@@ -1872,7 +1872,7 @@ final class EditingCoordinator {
         long version = buffer.docVersion();
         boolean python = buffer.isPython();
         // Its bounds are looked for off the FX thread, and narrowed to when they land if the text is unchanged
-        // (PERF-01, Pauta 6.0.1); text typed meanwhile has them looked for again.
+        // (PERF-01, Pauta 6.2.0); text typed meanwhile has them looked for again.
         com.editora.perf.OffFx.then(DEFUN_SITE, () -> defunBounds(text, pos, python), answer -> {
             if (buffer.isDisposed()) {
                 return;
@@ -2206,7 +2206,7 @@ final class EditingCoordinator {
         if (area == null) {
             return;
         }
-        // Searched off the FX thread, the caret moved when it lands if nothing moved meanwhile (PERF-01, Pauta 6.0.1).
+        // Searched off the FX thread, the caret moved when it lands if nothing moved meanwhile (PERF-01, Pauta 6.2.0).
         com.editora.editor.CaretLook.then(MOTION_SITE, area, at -> nav.apply(at.text(), at.caret()), target -> {
             area.moveTo(target, host.selPolicy());
             area.requestFollowCaret();
@@ -2326,7 +2326,7 @@ final class EditingCoordinator {
         java.util.List<int[]> chain =
                 buffer == null || newLadder ? null : host.lspCoordinator().selectionChain(buffer);
         // The next range is looked for off the FX thread, and applied when it lands if the text and the selection
-        // are unchanged (PERF-01, Pauta 6.0.1); null: already the whole document.
+        // are unchanged (PERF-01, Pauta 6.2.0); null: already the whole document.
         com.editora.editor.CaretLook.then(
                 MOTION_SITE,
                 area,
@@ -2369,7 +2369,7 @@ final class EditingCoordinator {
             return;
         }
         CodeArea area = buffer.getFocusedArea();
-        // The end of the expression is looked for off the FX thread (PERF-01, Pauta 6.0.1); the kill happens when it
+        // The end of the expression is looked for off the FX thread (PERF-01, Pauta 6.2.0); the kill happens when it
         // lands, if nothing moved. Folds keep every offset, so the plain text gives the span the folded one would.
         killLater(
                 buffer,
@@ -2449,7 +2449,7 @@ final class EditingCoordinator {
 
     /** The second half of {@code zap-to-char}: kill up to and including the next {@code ch}. */
     private void zapTo(EditorBuffer buffer, CodeArea area, char ch) {
-        // The character is looked for off the FX thread (PERF-01, Pauta 6.0.1); the kill happens when it lands.
+        // The character is looked for off the FX thread (PERF-01, Pauta 6.2.0); the kill happens when it lands.
         killLater(
                 buffer,
                 area,

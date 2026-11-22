@@ -51,7 +51,7 @@ public final class SymbolIndex {
 
     /**
      * An unchanging copy of the index as it is now, to {@linkplain Frozen#search search} on another thread
-     * (PERF-01, Pauta 6.0.1: the FX thread searches nothing). Copies one entry per file — never a symbol — and only
+     * (PERF-01, Pauta 6.2.0: the FX thread searches nothing). Copies one entry per file — never a symbol — and only
      * after a change: asking again with nothing changed answers the same copy.
      */
     public Frozen freeze() {

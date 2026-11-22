@@ -14,7 +14,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * What one claimed test run's output lines come to, worked out where the output is read, not on the FX thread
- * (PERF-01, Pauta 6.0.1): the result parser ({@code go test -json}, Cargo, TAP, the Node spec reporter) reads each
+ * (PERF-01, Pauta 6.2.0): the result parser ({@code go test -json}, Cargo, TAP, the Node spec reporter) reads each
  * line, the npm sniff picks the parser, and the console text and the line facts the run needs (a JDWP banner, a
  * Gradle task line) are found here. The FX thread then applies the {@link Line} it is handed.
  *

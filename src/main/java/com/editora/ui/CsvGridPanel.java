@@ -125,7 +125,7 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
     private boolean sortAscending = true;
     private int expectedCols; // for ragged-row highlighting
     /** The column types and ragged-row count of the rows shown, worked out once when they are set: the
-     *  filter's keystrokes only filter (PERF-08, Pauta 6.0.1). Null until then. */
+     *  filter's keystrokes only filter (PERF-08, Pauta 6.2.0). Null until then. */
     private @org.jspecify.annotations.Nullable List<ColumnType> shownTypes;
 
     private int shownRagged;

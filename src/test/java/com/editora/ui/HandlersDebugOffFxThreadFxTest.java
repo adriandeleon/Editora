@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-01 (Pauta 6.0.1), the debugger's, the diff viewer's and the Map cards' handlers: each test drives on the FX
+ * PERF-01 (Pauta 6.2.0), the debugger's, the diff viewer's and the Map cards' handlers: each test drives on the FX
  * thread, the way an event does, what used to diff, parse or scan a document there — a breakpoint's line remapped
  * against the launched text after an edit, a hand-edited merge Result saved, Resolve Conflicts and Open in Diff
  * Viewer on a patch tab, a diff's hunk applied, a Map Changes card's file picked, a History card shown, a breakpoint

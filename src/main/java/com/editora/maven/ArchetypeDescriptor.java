@@ -88,7 +88,7 @@ public record ArchetypeDescriptor(List<RequiredProperty> requiredProperties) {
 
     /**
      * Reads the descriptors of {@code archetypes} from the local repository named by {@code userHome}'s Maven
-     * settings, on a thread of its own (PERF-01, Pauta 6.0.1: the settings file and the archetype jars are never
+     * settings, on a thread of its own (PERF-01, Pauta 6.2.0: the settings file and the archetype jars are never
      * read on the FX thread), then runs {@code then} on the FX thread so a form showing defaults shows the read ones.
      */
     public static void warm(Path userHome, List<MavenArchetype> archetypes, Runnable then) {

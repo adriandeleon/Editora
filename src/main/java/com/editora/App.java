@@ -72,7 +72,7 @@ public class App extends Application {
             return;
         }
         // The prefetch failed, or main() was bypassed: the same load runs on a config-prefetch thread of its own,
-        // which start() does not wait for (PERF-01, Pauta 6.0.1), and the first window is built when it lands. The
+        // which start() does not wait for (PERF-01, Pauta 6.2.0), and the first window is built when it lands. The
         // FX thread touches nothing in the config dir meanwhile; that thread claims the instance lock first, before
         // the settings are loaded or anything is written, as the prefetch does (loadForFirstWindow).
         fallbackBootstrap(configDir, rawArgs, landed -> {
@@ -113,7 +113,7 @@ public class App extends Application {
 
     /**
      * The bundled resources the first window is built from, read on the fallback's own thread before the window is
-     * built in a {@code runLater} (PERF-01, Pauta 6.0.1: the rule lets {@code start()} read them, not a later FX
+     * built in a {@code runLater} (PERF-01, Pauta 6.2.0: the rule lets {@code start()} read them, not a later FX
      * task): the first frame's fonts, the catalog of the language the settings pick, the keymap, and the frame,
      * which is then built from {@code MainView} (its copy of {@code main.fxml} in code) so no XML is parsed.
      * {@link #startWith} then finds each one read, and reads nothing.
@@ -621,7 +621,7 @@ public class App extends Application {
 
     /**
      * Everything the first window needs read, written or decided before it is shown, in order: the
-     * config-prefetch thread's work, which {@code start()} waits for once (PERF-01, PERF-16, Pauta 6.0.1).
+     * config-prefetch thread's work, which {@code start()} waits for once (PERF-01, PERF-16, Pauta 6.2.0).
      * Blocking, never on the FX thread: {@link #fallbackBootstrap} runs it on a thread of its own when the prefetch
      * failed.
      */
@@ -708,7 +708,7 @@ public class App extends Application {
     /**
      * The prefetched config when {@link #main} started one for this same directory and it succeeded, else null:
      * {@link #start} then loads it on a thread of its own ({@link #fallbackBootstrap}). The one wait {@code start()}
-     * makes (PERF-01, PERF-16, Pauta 6.0.1).
+     * makes (PERF-01, PERF-16, Pauta 6.2.0).
      *
      * <p>The fallback is what keeps this an optimization rather than a second code path: a prefetch that
      * failed surfaces its error where the fallback load raises it again, and an entry point that does not

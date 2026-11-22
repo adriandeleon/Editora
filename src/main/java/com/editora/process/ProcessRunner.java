@@ -567,7 +567,7 @@ public final class ProcessRunner {
             return cached;
         }
         if (onFxThread()) {
-            // Cold on the FX thread (PERF-01, Pauta 6.0.1): the login shell may take seconds. Answer with what is
+            // Cold on the FX thread (PERF-01, Pauta 6.2.0): the login shell may take seconds. Answer with what is
             // known without it, start the warm-up, and let the next caller have the full PATH.
             warmAugmentedPathAsync();
             return provisionalPath();
@@ -793,14 +793,14 @@ public final class ProcessRunner {
             return command; // already an absolute/relative path
         }
         // On the FX thread a name nothing has looked up yet is left as it is (ProcessBuilder may still find it) and
-        // looked up behind, on the full PATH, for the next ask (PERF-01, Pauta 6.0.1).
+        // looked up behind, on the full PATH, for the next ask (PERF-01, Pauta 6.2.0).
         String found = ON_PATH.get(exe);
         return found == null || found.equals(exe) ? command : rewriteFirst(command, found);
     }
 
     /**
      * A bare name's path on the augmented PATH (the name itself when it is not there). Looked up off the FX thread by
-     * a launch's plan, answered from memory on it (PERF-01, Pauta 6.0.1).
+     * a launch's plan, answered from memory on it (PERF-01, Pauta 6.2.0).
      */
     private static final com.editora.perf.Looked<String, String> ON_PATH = new com.editora.perf.Looked<>(
             "PATH lookup",

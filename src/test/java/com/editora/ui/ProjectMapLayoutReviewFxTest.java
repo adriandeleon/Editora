@@ -359,7 +359,7 @@ class ProjectMapLayoutReviewFxTest {
     // ---- B19: faded rows ------------------------------------------------------------------------------
 
     // A faded label's floor is StyleContrastTest.aFadedMapLabelRecedesButStaysReadableInBothEditoraThemes: pure
-    // arithmetic, no toolkit (ICON-14, Pauta 6.0.1).
+    // arithmetic, no toolkit (ICON-14, Pauta 6.2.0).
 
     // ---- B13 / B25: fonts and targets -----------------------------------------------------------------
 

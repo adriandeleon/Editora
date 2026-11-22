@@ -1560,7 +1560,7 @@ public final class TerminalView extends Region {
         if (!hasCommandOutput()) {
             return false;
         }
-        // The rows are read under the lock without waiting for it (PERF-01, Pauta 6.0.1), copied when read.
+        // The rows are read under the lock without waiting for it (PERF-01, Pauta 6.2.0), copied when read.
         @Nullable String[] read = {null};
         boolean[] done = {false};
         underLockSoon(buf -> read[0] = lastCommandOutput(), () -> {
@@ -2166,7 +2166,7 @@ public final class TerminalView extends Region {
      */
     private boolean exists(java.nio.file.@Nullable Path path) {
         if (path == null) return false;
-        // Local or remote, the stat runs off the FX thread (PERF-01, Pauta 6.0.1): a hover answers what was last
+        // Local or remote, the stat runs off the FX thread (PERF-01, Pauta 6.2.0): a hover answers what was last
         // looked at and asks again behind an answer older than two seconds; the hover is redone when an answer
         // lands that makes the word a link.
         Checked known = pathChecks.get(path);
@@ -2474,7 +2474,7 @@ public final class TerminalView extends Region {
         MenuItem copyOutputItem =
                 item(tr("terminal.menu.copyLastOutput"), menuIcons.apply("copy"), this::copyLastOutput);
 
-        // Each row is named for the window, which ties it to its command (MENU-05 in Pauta 6.0.1).
+        // Each row is named for the window, which ties it to its command (MENU-05 in Pauta 6.2.0).
         rowTagger.accept(copyItem, "copy");
         rowTagger.accept(pasteItem, "paste");
         rowTagger.accept(openLinkItem, "openLink");
@@ -2546,7 +2546,7 @@ public final class TerminalView extends Region {
     }
 
     /**
-     * Runs {@code work} under the buffer lock on the FX thread without ever waiting for it (PERF-01, Pauta 6.0.1): the
+     * Runs {@code work} under the buffer lock on the FX thread without ever waiting for it (PERF-01, Pauta 6.2.0): the
      * lock is tried now, and while the emulator's thread holds it (one write of a chunk of output) tried again a
      * moment later, when {@code after} runs too. Nothing else on the FX thread waits for this lock: the frame tries
      * it ({@code tryLock}) and the find's scan holds it on its own thread a chunk of rows at a time.
@@ -2625,7 +2625,7 @@ public final class TerminalView extends Region {
             unknownPathSeen = false;
             Hover target = linkAt(e.getX(), e.getY());
             if (unknownPathSeen) {
-                // A path under the pointer is being looked at off the FX thread (PERF-01, Pauta 6.0.1): the click
+                // A path under the pointer is being looked at off the FX thread (PERF-01, Pauta 6.2.0): the click
                 // is acted on when the answer lands, never on a guess.
                 pendingClicks.add(new double[] {e.getX(), e.getY()});
                 e.consume();
@@ -2663,7 +2663,7 @@ public final class TerminalView extends Region {
             case 2 -> {
                 TerminalTextBuffer words = buffer;
                 if (words != null) {
-                    // The word's ends are read under the lock, never waited for (PERF-01, Pauta 6.0.1).
+                    // The word's ends are read under the lock, never waited for (PERF-01, Pauta 6.2.0).
                     @Nullable TerminalSelection[] word = {null};
                     underLockSoon(buf -> word[0] = wordSelection(at, buf), () -> {
                         TerminalSelection found = word[0];
@@ -2801,7 +2801,7 @@ public final class TerminalView extends Region {
 
     /**
      * {@link #lineTextAt} for a caller that does not hold the lock: the mouse handlers, on the FX thread. The lock is
-     * only tried (PERF-01, Pauta 6.0.1): while output is being written the row reads "", so a drag's end lands on the
+     * only tried (PERF-01, Pauta 6.2.0): while output is being written the row reads "", so a drag's end lands on the
      * cell's column for that one event, and the next event reads the row.
      */
     private String lockedLineTextAt(int row) {

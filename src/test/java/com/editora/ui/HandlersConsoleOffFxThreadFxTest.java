@@ -35,7 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-01 (Pauta 6.0.1), the console, Settings and grammar handlers: each test drives on the FX thread, the way an
+ * PERF-01 (Pauta 6.2.0), the console, Settings and grammar handlers: each test drives on the FX thread, the way an
  * event does, what used to search, tokenize or load there — a console find typed into and stepped, a body typed into
  * in the snippet editor, a diff viewer opened on a file type whose grammar nobody loaded, the Settings window opened
  * and changed — and listens to {@link BlockingSites}: every named place is heard off the FX thread, none on it.

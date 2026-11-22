@@ -106,7 +106,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
 
         /**
          * {@link #currentText}, for a file that may be closed: a closed file is read off the FX thread (PERF-01,
-         * Pauta 6.0.1); {@code then} gets the text on the FX thread.
+         * Pauta 6.2.0); {@code then} gets the text on the FX thread.
          */
         default void currentTextLater(Path target, Consumer<String> then) {
             then.accept(currentText(target));
@@ -677,7 +677,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
     }
 
     /**
-     * Hashes the editor's text off the FX thread (PERF-01, Pauta 6.0.1) and, when it lands and is still the latest,
+     * Hashes the editor's text off the FX thread (PERF-01, Pauta 6.2.0) and, when it lands and is still the latest,
      * moves the "Current" tag to the row it equals.
      */
     private void rehashEditorText() {

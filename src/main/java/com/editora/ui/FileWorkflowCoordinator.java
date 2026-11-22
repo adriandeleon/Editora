@@ -106,7 +106,7 @@ final class FileWorkflowCoordinator {
 
     /**
      * What a save needs to work its payload out again on the save worker with the {@code .editorconfig} rules as
-     * they are on disk then (PERF-01, Pauta 6.0.1: the FX thread looks at no file; an outside change governs the very
+     * they are on disk then (PERF-01, Pauta 6.2.0: the FX thread looks at no file; an outside change governs the very
      * next save). {@code inputs} is null when the rules do not apply (EditorConfig off, a remote file, Save As's own
      * freshly resolved target).
      */
@@ -407,7 +407,7 @@ final class FileWorkflowCoordinator {
         this.host = host;
         this.encodings = new EncodingCommands(host, this);
         this.encryption = new EncryptionCoordinator(host, this);
-        com.editora.io.Trash.warm(); // asked on the FX thread later: looked for here, off it (PERF-01, Pauta 6.0.1)
+        com.editora.io.Trash.warm(); // asked on the FX thread later: looked for here, off it (PERF-01, Pauta 6.2.0)
     }
 
     /** Reopen / Save with Encoding. */
@@ -569,7 +569,7 @@ final class FileWorkflowCoordinator {
     /**
      * A command-line {@code FILE} target: its tab is there at once, on the first frame, as any open's; a file that
      * is not there yet, in a local folder that is, becomes a new empty buffer bound to it ({@link #openNewFileAt}) —
-     * which the read finds out, off the FX thread (PERF-01, Pauta 6.0.1).
+     * which the read finds out, off the FX thread (PERF-01, Pauta 6.2.0).
      */
     void openStartupTarget(Path file) {
         String name = file.getFileName() == null ? "" : file.getFileName().toString();
@@ -622,7 +622,7 @@ final class FileWorkflowCoordinator {
 
     /**
      * Whether {@code file} is a new file in an existing local folder — the disk half of {@link #openNewFileAt}, for
-     * a caller that looks off the FX thread (PERF-01, Pauta 6.0.1).
+     * a caller that looks off the FX thread (PERF-01, Pauta 6.2.0).
      */
     static boolean isNewFileTarget(Path file) {
         com.editora.perf.BlockingSites.enter("FileWorkflowCoordinator.isNewFileTarget");
@@ -1151,7 +1151,7 @@ final class FileWorkflowCoordinator {
     private PreparedLoad prepareLoad(Path file, boolean sniffBinary, boolean forDocument) throws IOException {
         com.editora.perf.BlockingSites.enter("FileWorkflowCoordinator.prepareLoad");
         if (forDocument) {
-            // What the tab asks when it is shown, looked at here, off the FX thread (PERF-01, Pauta 6.0.1): whether
+            // What the tab asks when it is shown, looked at here, off the FX thread (PERF-01, Pauta 6.2.0): whether
             // the file may be written (View mode), its repository, and whether a save needs the administrator.
             com.editora.vfs.Vfs.isWritableOnDisk(file);
             GitPathScope.lookAt(file); // the repository its tab's menu and the Git commands ask about
@@ -1945,7 +1945,7 @@ final class FileWorkflowCoordinator {
         // The decision to let the disk win is about the document as it is now. The read comes back on a
         // later FX turn; whatever was typed in between was never part of that decision and must survive.
         ReloadGuard guard = ReloadGuard.capture(buffer);
-        // The text the differing span is worked out against, on the read worker (PERF-01, Pauta 6.0.1).
+        // The text the differing span is worked out against, on the read worker (PERF-01, Pauta 6.2.0).
         EditorBuffer.PreparedEdit.@Nullable Base base = buffer.isNarrowed()
                 ? null
                 : new EditorBuffer.PreparedEdit.Base(buffer.docVersion(), buffer.getVisibleContent());
@@ -2039,7 +2039,7 @@ final class FileWorkflowCoordinator {
     }
 
     static {
-        // The View mode banner answers from what the file's read looked at (PERF-01, Pauta 6.0.1).
+        // The View mode banner answers from what the file's read looked at (PERF-01, Pauta 6.2.0).
         EditorBuffer.setWritableCheck(com.editora.vfs.Vfs::isWritableOnDisk);
     }
 
@@ -2069,7 +2069,7 @@ final class FileWorkflowCoordinator {
     /**
      * Whether a plain save of the local file {@code p} would fail for permissions where an elevated one could not:
      * looked at off the FX thread when the file is read ({@link #prepareLoad}) and after a save, answered from
-     * memory on it (PERF-01, Pauta 6.0.1).
+     * memory on it (PERF-01, Pauta 6.2.0).
      */
     private static boolean needsElevation(Path p) {
         return Boolean.TRUE.equals(NEEDS_ELEVATION.get(p));
@@ -2133,7 +2133,7 @@ final class FileWorkflowCoordinator {
         boolean available = elevationAvailable();
         if (available) {
             // whether each open file's save needs the administrator, looked at again off the FX thread for the
-            // next Save (PERF-01, Pauta 6.0.1): its permissions may have changed since it was read
+            // next Save (PERF-01, Pauta 6.2.0): its permissions may have changed since it was read
             List<Path> open = new ArrayList<>();
             for (Tab t : host.editorArea().tabs()) {
                 EditorBuffer b = host.bufferOf(t);
@@ -2201,7 +2201,7 @@ final class FileWorkflowCoordinator {
         MarkdownLintActions lint = host.previews().lint();
         if (lint.fixesOnSave(buffer)) {
             // "Fix Markdown lint issues on save", one undo step: worked out off the FX thread (PERF-01, Pauta
-            // 6.0.1), applied while the text is unchanged, then saved.
+            // 6.2.0), applied while the text is unchanged, then saved.
             lint.fixThenSave(buffer, () -> {
                 if (!buffer.isDisposed() && !refuseUnsavable(buffer)) {
                     saveFixed(buffer);
@@ -2223,7 +2223,7 @@ final class FileWorkflowCoordinator {
         host.editorSettings().applyPendingView(buffer); // a hidden tab's view settings (TOC levels) before saving
         if (buffer.isMarkdown() && host.config().getSettings().isMarkdownTocUpdateOnSave()) {
             // An explicit Save only (autosave never edits the buffer). The headings are parsed off the FX thread
-            // (PERF-01, Pauta 6.0.1); the write follows once the regenerated block is in the buffer.
+            // (PERF-01, Pauta 6.2.0); the write follows once the regenerated block is in the buffer.
             buffer.markdown().updateTocForSave(() -> {
                 if (!buffer.isDisposed() && !refuseUnsavable(buffer) && buffer.getPath() != null) {
                     writeFixed(buffer);
@@ -2304,7 +2304,7 @@ final class FileWorkflowCoordinator {
         }
         MarkdownLintActions lint = host.previews().lint();
         if (lint.fixesOnSave(buffer)) {
-            // The fixes on save are worked out off the FX thread first (PERF-01, Pauta 6.0.1), then the save runs.
+            // The fixes on save are worked out off the FX thread first (PERF-01, Pauta 6.2.0), then the save runs.
             CompletableFuture<Boolean> saved = new CompletableFuture<>();
             lint.fixThenSave(buffer, () -> {
                 if (buffer.isDisposed() || refuseUnsavable(buffer)) {
@@ -2328,7 +2328,7 @@ final class FileWorkflowCoordinator {
     private CompletableFuture<Boolean> saveTrackedFixed(EditorBuffer buffer) {
         host.editorSettings().applyPendingView(buffer); // a hidden tab's view settings (TOC levels) before saving
         if (buffer.isMarkdown() && host.config().getSettings().isMarkdownTocUpdateOnSave()) {
-            // The table of contents is regenerated off the FX thread (PERF-01, Pauta 6.0.1), then the write runs.
+            // The table of contents is regenerated off the FX thread (PERF-01, Pauta 6.2.0), then the write runs.
             CompletableFuture<Boolean> saved = new CompletableFuture<>();
             buffer.markdown().updateTocForSave(() -> {
                 if (buffer.isDisposed() || refuseUnsavable(buffer)) {
@@ -2395,7 +2395,7 @@ final class FileWorkflowCoordinator {
             revertLooked(buffer, file, true);
             return;
         }
-        // whether the file is still there is looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        // whether the file is still there is looked at off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then(
                 "revert-look", () -> Files.exists(file), there -> revertLooked(buffer, file, there.or(false)));
     }
@@ -2467,7 +2467,7 @@ final class FileWorkflowCoordinator {
      * Saves {@code buffer} as {@link #saveSynchronously} does — a write, or Save As for an untitled one — without
      * waiting: the write runs on the save worker and {@code then} hears on the FX thread whether the bytes are on
      * disk. A command that must run on the saved file goes on there, never in a nested event loop (PERF-01, Pauta
-     * 6.0.1).
+     * 6.2.0).
      */
     void saveThen(EditorBuffer buffer, java.util.function.Consumer<Boolean> then) {
         if (refuseUnsavable(buffer)) {
@@ -2777,7 +2777,7 @@ final class FileWorkflowCoordinator {
             if (refuseTargetOpenElsewhere(buffer, target)) {
                 return; // before asking to overwrite: the answer could not be honoured
             }
-            // whether the typed name is taken is looked at off the FX thread (PERF-01, Pauta 6.0.1)
+            // whether the typed name is taken is looked at off the FX thread (PERF-01, Pauta 6.2.0)
             com.editora.perf.OffFx.then("save-as-look", () -> Files.exists(target), taken -> {
                 if (buffer.isDisposed() || refuseTargetOpenElsewhere(buffer, target)) {
                     return;
@@ -2933,7 +2933,7 @@ final class FileWorkflowCoordinator {
     /**
      * On the save worker, before the bytes are sealed and written: looks at the file's {@code .editorconfig} rules
      * as they are on disk now and, when they differ from the ones the FX thread captured the save with, works the
-     * payload out again by them (PERF-01, Pauta 6.0.1). A charset that cannot hold the text refuses the save.
+     * payload out again by them (PERF-01, Pauta 6.2.0). A charset that cannot hold the text refuses the save.
      */
     private static void reresolveRules(SaveRequest request) throws IOException {
         SaveInputs in = request.rules().inputs;
@@ -2941,7 +2941,7 @@ final class FileWorkflowCoordinator {
             return;
         }
         // The payload (the save transform and the encoding of the whole text) is worked out here, on the save
-        // worker, never on the FX thread (PERF-01, Pauta 6.0.1).
+        // worker, never on the FX thread (PERF-01, Pauta 6.2.0).
         SavePayload again;
         com.editora.editorconfig.EditorConfigProperties found = in.rulesUsed();
         if (in.resolveOnDisk()) {
@@ -3678,7 +3678,7 @@ final class FileWorkflowCoordinator {
      * After an explicit save: moves the images pasted into the document in this session that nothing
      * mentions any more to the trash ({@link PastedImageCleanup}). The save does not wait for it.
      *
-     * <p>Nothing is searched on the FX thread (PERF-01, Pauta 6.0.1): it takes the texts there (the saved text,
+     * <p>Nothing is searched on the FX thread (PERF-01, Pauta 6.2.0): it takes the texts there (the saved text,
      * the other open documents), and the search for the images they mention, the reading of the sibling documents
      * and the moving of files run on {@link #fileLoadExecutor}. Between the two the texts are taken again on the FX
      * thread — the user may have undone the deletion — and checked once more off it; the status note is posted from

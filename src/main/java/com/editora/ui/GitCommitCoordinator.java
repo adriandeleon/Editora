@@ -217,7 +217,7 @@ final class GitCommitCoordinator {
             onDone.accept(false);
             return;
         }
-        // Saved first, off the FX thread; a save that fails says why and commits nothing (PERF-01, Pauta 6.0.1).
+        // Saved first, off the FX thread; a save that fails says why and commits nothing (PERF-01, Pauta 6.2.0).
         git.saveUnsaved(root, List.of(), () -> commitSaved(root, request, onDone), () -> onDone.accept(false));
     }
 

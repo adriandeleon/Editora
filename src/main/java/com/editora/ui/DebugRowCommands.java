@@ -5,7 +5,7 @@ import java.util.List;
 import com.editora.command.Command;
 
 /**
- * The commands behind the Debug window's right-click rows that no command reached (KBD-01 and MENU-05, Pauta 6.0.1):
+ * The commands behind the Debug window's right-click rows that no command reached (KBD-01 and MENU-05, Pauta 6.2.0):
  * the Variables view's (watches, values, marks, View As), the Threads view's, the call stack's and the console's.
  * Each runs its row for the window's selection, as choosing it would ({@link DebugPanel#runMenuRow}), so it is
  * offered exactly where the row is; elsewhere the status line says so. Copy Value, Copy Name and Add to Watches act

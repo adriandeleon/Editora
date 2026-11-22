@@ -270,7 +270,7 @@ final class BufferRunGutter {
 
     /**
      * Runs {@code then} once the Run scan has landed: at once when none is in flight, else when it lands. The scan
-     * runs off the FX thread (PERF-01, Pauta 6.0.1), so a Run or Debug command issued right after a file opens
+     * runs off the FX thread (PERF-01, Pauta 6.2.0), so a Run or Debug command issued right after a file opens
      * waits for the answer here before deciding how to launch, rather than scanning the text itself.
      */
     void whenRunScanned(Runnable then) {
@@ -314,7 +314,7 @@ final class BufferRunGutter {
 
     /**
      * As {@link #recomputeRun()}. The scan of the text ({@link RunScan}, up to 256 KiB) runs off the FX thread
-     * whatever asked for it (PERF-01, Pauta 6.0.1) — a settled edit, a load, Save As, a feature toggle — and a
+     * whatever asked for it (PERF-01, Pauta 6.2.0) — a settled edit, a load, Save As, a feature toggle — and a
      * generation counter drops a superseded result, as for {@link BufferTodos#refreshTodoMarks}. A pass that needs
      * no text (the features are off or the file is too large) answers at once. {@code settled} is kept for the
      * callers' sake: it no longer changes where the scan runs.

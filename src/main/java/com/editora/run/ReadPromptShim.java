@@ -103,7 +103,7 @@ public final class ReadPromptShim {
     static @Nullable Path file() {
         Path f = written;
         if (onFxThread()) {
-            // PERF-01 (Pauta 6.0.1): the FX thread neither checks nor writes the file. It takes the one written
+            // PERF-01 (Pauta 6.2.0): the FX thread neither checks nor writes the file. It takes the one written
             // (by the PATH warm-up, or an earlier run off the thread); with none yet, it is written for next time.
             if (f == null) {
                 Thread.ofVirtual().name("read-prompt-shim").start(ReadPromptShim::file);

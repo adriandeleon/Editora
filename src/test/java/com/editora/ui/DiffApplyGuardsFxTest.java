@@ -907,7 +907,7 @@ class DiffApplyGuardsFxTest {
 
     /**
      * Applies a merge resolution and waits for its answer: a closed document is read again off the FX thread first
-     * (PERF-01, Pauta 6.0.1), so the answer may come a moment later.
+     * (PERF-01, Pauta 6.2.0), so the answer may come a moment later.
      */
     private static boolean applyMerge(DiffCoordinator diff, EditorBuffer opened, String source, String resolved)
             throws Exception {

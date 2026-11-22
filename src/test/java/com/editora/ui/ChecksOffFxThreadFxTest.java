@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-01 (Pauta 6.0.1), the checks made as the user types, per buffer sync, per publish and per command: each test
+ * PERF-01 (Pauta 6.2.0), the checks made as the user types, per buffer sync, per publish and per command: each test
  * drives them on the FX thread the way an event does and listens to {@link BlockingSites}. The looks they make — a
  * Markdown buffer's lint config and {@code .editorconfig} as it is typed into and saved, a Java buffer's server root,
  * a link followed to a heading of a closed file, a log followed from its end, a keymap switched, the About

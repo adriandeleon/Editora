@@ -46,7 +46,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * A right-click row that cannot run says why, as a menu bar row does (KBD-04 in Pauta 6.0.1): it stays, grayed as a
+ * A right-click row that cannot run says why, as a menu bar row does (KBD-04 in Pauta 6.2.0): it stays, grayed as a
  * disabled row is, its tooltip and its spoken text say why, the arrow keys reach it, and choosing it says why in the
  * status line. Above all it never runs: not on a click, Enter, Space, an accelerator, {@code fire()} or a command
  * that fires the row; a check row does not turn over and a submenu does not open.

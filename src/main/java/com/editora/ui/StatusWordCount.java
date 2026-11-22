@@ -28,7 +28,7 @@ import static com.editora.i18n.Messages.tr;
  */
 final class StatusWordCount {
 
-    /** Where words are counted: off the FX thread, whatever the size (PERF-01, Pauta 6.0.1). */
+    /** Where words are counted: off the FX thread, whatever the size (PERF-01, Pauta 6.2.0). */
     static final String COUNT_SITE = "StatusWordCount.count";
 
     private final Label label = new Label();

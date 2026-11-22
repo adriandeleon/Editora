@@ -16,7 +16,7 @@ import org.jspecify.annotations.Nullable;
  * fingerprint comes from the save or load worker, or is worked out off the JavaFX thread from the held text
  * ({@link #knowFingerprint}) before the text is let go ({@link #sealIfFingerprinted}). A sealed baseline answers
  * {@link #matches} by hashing the current text, which the buffer does off the JavaFX thread (PERF-01, Pauta
- * 6.0.1): on the FX thread it asks {@link #matchesWithoutHashing}, which says when a hash is needed.
+ * 6.2.0): on the FX thread it asks {@link #matchesWithoutHashing}, which says when a hash is needed.
  *
  * <p>The fields are volatile and nothing here locks: a hash on a worker never makes the FX thread wait. The
  * fingerprint is written before the text is let go, so a baseline without its text always has its fingerprint.

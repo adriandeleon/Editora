@@ -38,7 +38,7 @@ final class TodoSettingsPane {
 
     /**
      * The most patterns the list holds: Add pattern stops there, and a list made longer by hand shows its first ones
-     * and says how many it has (PERF-08, Pauta 6.0.1). Every pattern is a regex run over each visible line.
+     * and says how many it has (PERF-08, Pauta 6.2.0). Every pattern is a regex run over each visible line.
      */
     static final int MAX_PATTERNS = 50;
 

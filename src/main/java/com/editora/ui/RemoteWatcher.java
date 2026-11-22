@@ -75,7 +75,7 @@ final class RemoteWatcher {
      * Starts watching {@code root} on its host, handing each batch to {@code onChanges} on the reader thread.
      * Null when the host cannot run commands now (the watch is then simply absent, as before).
      *
-     * <p>The command starts on a thread of its own (PERF-01, Pauta 6.0.1): the first command on a host asks for
+     * <p>The command starts on a thread of its own (PERF-01, Pauta 6.2.0): the first command on a host asks for
      * its environment and waits for the channel, which must not hold the FX thread that sets the Project panel's
      * root. The watcher counts as running from here until it is stopped or its command could not start.
      */

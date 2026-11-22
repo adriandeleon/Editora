@@ -27,7 +27,7 @@ import static com.editora.i18n.Messages.tr;
 /**
  * The rows of Check for Newer Versions: a heading per kind of artifact, then a check box per newer version found,
  * each checked to start with, a <b>major</b> tag beside one whose leading number changes. A virtualized list (PERF-08,
- * Pauta 6.0.1): a pom far behind its dependencies builds the rows on screen. The list is one Tab stop; the arrow keys
+ * Pauta 6.2.0): a pom far behind its dependencies builds the rows on screen. The list is one Tab stop; the arrow keys
  * move along it and Space ticks or clears the row the keyboard is on, as a click on its box does.
  */
 final class MavenUpgradeList {

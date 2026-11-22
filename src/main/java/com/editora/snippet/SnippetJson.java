@@ -12,7 +12,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.jspecify.annotations.Nullable;
 
 /**
- * One snippet of a snippet file, in the VS Code format, as Jackson reads and writes it (PLAT-14, Pauta 6.0.1).
+ * One snippet of a snippet file, in the VS Code format, as Jackson reads and writes it (PLAT-14, Pauta 6.2.0).
  * {@code prefix}, {@code body} and {@code description} are a string or an array of strings, {@code scope} a
  * comma-separated list of language ids; {@code disabled} is Editora's own, a user entry that switches the snippet of
  * its name off. They are kept as the file wrote them (a string, a list, …) so that a save keeps an array an array.

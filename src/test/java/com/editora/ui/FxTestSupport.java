@@ -106,7 +106,7 @@ final class FxTestSupport {
 
     /**
      * Waits until {@code condition}, read on the FX thread, holds: re-checked after each FX pulse by {@link
-     * com.editora.testkit.Await} (QUAL-07, Pauta 6.0.1), failing with {@code what} after {@code timeout}.
+     * com.editora.testkit.Await} (QUAL-07, Pauta 6.2.0), failing with {@code what} after {@code timeout}.
      */
     static void awaitFxCondition(Callable<Boolean> condition, String what, java.time.Duration timeout)
             throws InterruptedException {
@@ -185,7 +185,7 @@ final class FxTestSupport {
     }
 
     /**
-     * The scale every screenshot is written at (DOCS-18, Pauta 6.0.1): twice the scene's size, as a HiDPI screen
+     * The scale every screenshot is written at (DOCS-18, Pauta 6.2.0): twice the scene's size, as a HiDPI screen
      * shows it, so the website and the README never carry a blurry 1x picture.
      */
     static final double SHOT_SCALE = 2;

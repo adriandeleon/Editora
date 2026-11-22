@@ -94,7 +94,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
     private record Looked(Optional<ConfigHit> hit, long at) {}
 
     /**
-     * The config each folder resolved to at the last look (PERF-01, Pauta 6.0.1): the FX thread answers from
+     * The config each folder resolved to at the last look (PERF-01, Pauta 6.2.0): the FX thread answers from
      * here and never stats or reads a config itself. A folder never looked at is looked at on
      * {@link #configExec}, and the lint it held back runs when the answer lands.
      */
@@ -447,7 +447,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
 
     /**
      * The save hook of "fix on save": works out the safe fixes of {@code buffer}'s text off the FX thread (PERF-01,
-     * Pauta 6.0.1), applies them as one undo step when the text has not changed meanwhile, then runs {@code save}
+     * Pauta 6.2.0), applies them as one undo step when the text has not changed meanwhile, then runs {@code save}
      * on the FX thread (always, also for a buffer closed meanwhile: the caller checks). Text typed while the fixes were worked out is fixed again (a few times at most; then the
      * save goes on with the text as it is). Runs {@code save} at once when "fix on save" does not apply.
      */
@@ -583,7 +583,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         int column = area.getCaretColumn();
         int top = Math.max(0, area.firstVisibleParToAllParIndex());
         // Computed from getContent(): widens a narrowed buffer first. The span that differs is worked out off the
-        // FX thread (PERF-01, Pauta 6.0.1), then the place is put back.
+        // FX thread (PERF-01, Pauta 6.2.0), then the place is put back.
         b.replaceWholeDocumentLater(result.text(), applied -> {
             if (!applied || narrowed) {
                 return;
@@ -738,7 +738,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         if (b == null || refusedInPreview(b) || !NoUndoGuard.allow(b, tr("command.markdownLint.disableLine"))) {
             return;
         }
-        // Worked out off the FX thread on a copy of the text (PERF-01, Pauta 6.0.1); applied while it is unchanged.
+        // Worked out off the FX thread on a copy of the text (PERF-01, Pauta 6.2.0); applied while it is unchanged.
         String text = b.getContent();
         long version = b.docVersion();
         com.editora.perf.OffFx.then(
@@ -762,7 +762,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         if (b == null || refusedInPreview(b) || !NoUndoGuard.allow(b, tr("command.markdownLint.disableFile"))) {
             return;
         }
-        // The document is scanned off the FX thread on a copy of its text (PERF-01, Pauta 6.0.1); applied while it
+        // The document is scanned off the FX thread on a copy of its text (PERF-01, Pauta 6.2.0); applied while it
         // is unchanged.
         String text = b.getContent();
         long version = b.docVersion();
@@ -834,7 +834,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
 
     private void writeRuleOff(Path config, String code) {
         String name = String.valueOf(config.getFileName());
-        // Read, parsed, edited and written off the FX thread (PERF-01, Pauta 6.0.1); the lint runs again after.
+        // Read, parsed, edited and written off the FX thread (PERF-01, Pauta 6.2.0); the lint runs again after.
         com.editora.perf.OffFx.then(
                 "markdown-lint-config-write",
                 () -> {
@@ -1077,7 +1077,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
                 paths.add(path);
             }
         }
-        // The stats, reads and parses happen on configExec (PERF-01, Pauta 6.0.1); the answer is compared on FX.
+        // The stats, reads and parses happen on configExec (PERF-01, Pauta 6.2.0); the answer is compared on FX.
         configExec.execute(() -> {
             Map<HitKey, Optional<ConfigHit>> found = new HashMap<>();
             StringBuilder signature = new StringBuilder();

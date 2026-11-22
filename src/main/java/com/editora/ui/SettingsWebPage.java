@@ -209,7 +209,7 @@ final class SettingsWebPage {
         java.util.List<String> argv = com.editora.run.ProgramArgs.commandLine(shown);
         boolean on = httpCheck.isSelected() && httpScriptsCheck.isSelected();
         long mine = ++nodeLooks;
-        // Whether it is there is looked at off the FX thread (PERF-01, Pauta 6.0.1); the row says so when it lands.
+        // Whether it is there is looked at off the FX thread (PERF-01, Pauta 6.2.0); the row says so when it lands.
         com.editora.perf.OffFx.then(
                 "SettingsWebPage.httpNode", () -> com.editora.doctor.DoctorProbes.lookAt(argv), a -> {
                     if (mine == nodeLooks) {

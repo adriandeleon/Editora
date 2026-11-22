@@ -80,7 +80,7 @@ final class ServedText {
     /**
      * Records that the agent now knows {@code text} as the content of {@code key} (it read it, or wrote it). The
      * text itself is kept, not a digest: this runs on the FX thread, where no document is hashed (PERF-01, Pauta
-     * 6.0.1); comparing it later is a walk over the two texts.
+     * 6.2.0); comparing it later is a walk over the two texts.
      */
     synchronized void served(Object key, String text) {
         String before = texts.put(key, text == null ? "" : text);

@@ -25,7 +25,7 @@ import static com.editora.i18n.Messages.tr;
 /**
  * The commands behind the right-click rows and the buttons of the smaller panels, the debugger's popups and windows,
  * the diff and merge views, the find bars and the banners, which only the mouse reached (KBD-01 and MENU-05, Pauta
- * 6.0.1). Each is found the one way {@link FocusCommands} finds a control: the row is {@linkplain FocusCommands#row
+ * 6.2.0). Each is found the one way {@link FocusCommands} finds a control: the row is {@linkplain FocusCommands#row
  * tagged} with its command in the menu a node gives for its selection ({@link FocusCommands#menu}), or the button is
  * {@linkplain FocusCommands#press bound} to it, and the command looks from where the keyboard is, then in what the
  * window shows (the active tab, the open tool windows). It fires the row or presses the button, so it does exactly

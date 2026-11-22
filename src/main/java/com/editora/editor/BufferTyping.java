@@ -407,7 +407,7 @@ final class BufferTyping {
         int col = a.getCaretColumn();
         String before = line.substring(0, col);
         // Cheap first: below the caret only on a "/*" line, and only as far as Enter looks for a closing "*/"
-        // (IndentWindow.LOOK_BELOW_CHARS): a keystroke never searches the rest of the document (PERF-01, Pauta 6.0.1).
+        // (IndentWindow.LOOK_BELOW_CHARS): a keystroke never searches the rest of the document (PERF-01, Pauta 6.2.0).
         if (!before.strip().equals("/*")) {
             return false;
         }

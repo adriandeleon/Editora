@@ -42,7 +42,7 @@ import static com.editora.i18n.Messages.tr;
  *
  * <p>A card holds two or three text areas, so a file of hundreds of conflicts (a lock file, a generated file) shows
  * them {@link #PAGE_SIZE} at a time, with a line that says which and buttons to the pages before and after (PERF-08,
- * Pauta 6.0.1). A choice is kept with its conflict, not its card: a page left and come back to shows it again, and
+ * Pauta 6.2.0). A choice is kept with its conflict, not its card: a page left and come back to shows it again, and
  * the Result and Save always cover the whole file.
  */
 public final class MergeViewerPane implements TabContent {
@@ -336,7 +336,7 @@ public final class MergeViewerPane implements TabContent {
 
     private @Nullable Runnable afterComposed;
 
-    /** The Result for the choices made, put together off the FX thread (PERF-01, Pauta 6.0.1) and shown when it lands. */
+    /** The Result for the choices made, put together off the FX thread (PERF-01, Pauta 6.2.0) and shown when it lands. */
     private void refreshResult() {
         List<Choice> now = List.copyOf(choices);
         long mine = ++resultGeneration;
@@ -378,7 +378,7 @@ public final class MergeViewerPane implements TabContent {
     public static final String SAVE_SITE = "MergeViewerPane.resultText";
 
     /**
-     * Applies the result. Its text is worked out off the FX thread (PERF-01, Pauta 6.0.1): an edited Result is
+     * Applies the result. Its text is worked out off the FX thread (PERF-01, Pauta 6.2.0): an edited Result is
      * compared and diffed against the generated one there; the answer may come later still (a closed document is
      * read again off the FX thread first). A press while a save is under way does nothing. {@code whenSaved} runs
      * once the result has been applied.

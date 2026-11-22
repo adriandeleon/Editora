@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-01 (Pauta 6.0.1), the stores: a window's commands change the config and project stores on the FX thread,
+ * PERF-01 (Pauta 6.2.0), the stores: a window's commands change the config and project stores on the FX thread,
  * and every read, write, listing and serialization of their files runs on a thread of its own. The test builds a
  * window that does its file work where the app does ({@link FxWindowFixture#createWithFileWorkOffThread}), drives
  * a representative set of store paths on the FX thread — a settings change, a tool window shown, a bookmark, a

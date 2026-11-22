@@ -164,7 +164,7 @@ final class RenamedFileState {
 
     /**
      * As above; {@code gone} says {@code old} is known to be gone (a rename, after the move), so the disk is not asked
-     * whether it still exists — on the FX thread that is a look not to make (PERF-01, Pauta 6.0.1).
+     * whether it still exists — on the FX thread that is a look not to make (PERF-01, Pauta 6.2.0).
      */
     static @Nullable String formerCanonicalKey(Path old, boolean gone) {
         if (old == null) {

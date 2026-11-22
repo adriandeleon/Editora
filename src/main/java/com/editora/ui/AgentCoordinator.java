@@ -803,7 +803,7 @@ final class AgentCoordinator implements AcpClient.Host {
      *  file (the syntactic pre-filter in {@code AgentPanel.looksLikePath} can't know that without disk I/O). */
     private void openPathCandidate(String text) {
         Path resolved = PathKeys.resolveUserInput(text, sessionCwd(), System.getProperty("user.home"));
-        // Whether it exists is asked off the FX thread (PERF-01, Pauta 6.0.1).
+        // Whether it exists is asked off the FX thread (PERF-01, Pauta 6.2.0).
         ExternalLinks.looked(
                 "agent-path-look", () -> resolved != null && Files.exists(resolved) ? resolved : null, found -> {
                     if (found != null) {
@@ -988,7 +988,7 @@ final class AgentCoordinator implements AcpClient.Host {
         String body = content == null ? "" : content;
         // null = no buffer holds the file; "" = applied to its buffer; anything else = why it was refused. The span
         // that differs is worked out here, on the agent's thread, against the buffer's text at a version, and
-        // applied on the FX thread only to that version (PERF-01, Pauta 6.0.1); worked out again when typed into.
+        // applied on the FX thread only to that version (PERF-01, Pauta 6.2.0); worked out again when typed into.
         String refusal = null;
         String bodyLf = com.editora.editops.LineEndings.toLf(body); // what the buffer holds once it is applied
         EditorBuffer.PreparedEdit.Base base = fxCall(() -> baseOf(openBuffer(file)));

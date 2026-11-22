@@ -47,7 +47,7 @@ import static com.editora.i18n.Messages.tr;
  * <p><b>Every dialog that is answered with a button is shown through {@link #showAndWait}</b>, or through
  * {@link #show(Dialog, java.util.function.Consumer)} when it must not block, never through its own
  * {@code showAndWait()} or {@code show()} ({@code DialogShownThroughHookTest} holds that): a test then answers it
- * with {@link #answerWith} and no window opens (CONF-12, Pauta 6.0.1).
+ * with {@link #answerWith} and no window opens (CONF-12, Pauta 6.2.0).
  */
 final class Dialogs {
 

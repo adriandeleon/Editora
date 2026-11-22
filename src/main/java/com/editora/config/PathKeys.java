@@ -127,7 +127,7 @@ public final class PathKeys {
             return hit;
         }
         if (onFx()) {
-            // Never resolved on the FX thread (PERF-01, Pauta 6.0.1): what was known before the last invalidation,
+            // Never resolved on the FX thread (PERF-01, Pauta 6.2.0): what was known before the last invalidation,
             // else the plain absolute form (a real path, as a server reports it, is its own), resolved behind.
             Path before = STALE.get(cacheKey);
             resolveBehind(cacheKey, p);

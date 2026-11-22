@@ -92,7 +92,7 @@ final class NodeTestRunner {
                 if (!shown[0] || (split && stderr)) {
                     return;
                 }
-                parses.parse(() -> parse(text, stderr)); // on the parse thread, in order (PERF-01, Pauta 6.0.1)
+                parses.parse(() -> parse(text, stderr)); // on the parse thread, in order (PERF-01, Pauta 6.2.0)
             }
 
             /** On the parse thread: sniffs the reporter, then parses with it. */

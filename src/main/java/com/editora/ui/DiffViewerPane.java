@@ -93,7 +93,7 @@ public final class DiffViewerPane implements TabContent {
     private DiffModel model;
     /**
      * The name the syntax grammar is looked up by, when one is bundled for it. The grammar itself is loaded on the
-     * highlight executor (PERF-01, Pauta 6.0.1: a cold grammar is read, parsed and compiled), never here.
+     * highlight executor (PERF-01, Pauta 6.2.0: a cold grammar is read, parsed and compiled), never here.
      */
     private final @Nullable String grammarName;
 
@@ -792,7 +792,7 @@ public final class DiffViewerPane implements TabContent {
 
     /**
      * The commands behind the bar's option buttons, the result editor's buttons and the gutter's apply chevrons
-     * (KBD-01 in Pauta 6.0.1): each presses its button, or applies the current change or the caret's line as a
+     * (KBD-01 in Pauta 6.2.0): each presses its button, or applies the current change or the caret's line as a
      * chevron applies the change or line it sits on, in the diff the keyboard is in or the active tab shows.
      */
     private void bindCommands() {
@@ -1008,7 +1008,7 @@ public final class DiffViewerPane implements TabContent {
     public static final String APPLY_SITE = "DiffViewerPane.applyText";
 
     /**
-     * Works out an apply's text off the FX thread (PERF-01, Pauta 6.0.1), the apply buttons busy meanwhile (a second
+     * Works out an apply's text off the FX thread (PERF-01, Pauta 6.2.0), the apply buttons busy meanwhile (a second
      * press does nothing), then hands it to {@code then} unless the diff was computed again meanwhile.
      */
     private void applyWorkedOut(java.util.concurrent.Callable<String> work, java.util.function.Consumer<String> then) {
@@ -1851,7 +1851,7 @@ public final class DiffViewerPane implements TabContent {
         private Color bandColor(DiffConnectorModel.Kind kind, boolean selected) {
             double opacity = selected ? 0.52 : 0.30;
             // The theme's green for added lines and its accent for changed ones, through probes; removed lines are
-            // the neutral, as the diff's rows and the gutter draw them: red is for errors (ICON-18, Pauta 6.0.1).
+            // the neutral, as the diff's rows and the gutter draw them: red is for errors (ICON-18, Pauta 6.2.0).
             com.editora.editor.ThemeProbes theme = probes;
             Color base = switch (kind) {
                 case ADDED -> theme == null ? NEUTRAL : theme.get(com.editora.editor.ThemeProbes.GREEN, NEUTRAL);
@@ -2108,7 +2108,7 @@ public final class DiffViewerPane implements TabContent {
     }
 
     /**
-     * Lays the view out off the FX thread (PERF-01, Pauta 6.0.1) when the model's kept layouts were dropped before
+     * Lays the view out off the FX thread (PERF-01, Pauta 6.2.0) when the model's kept layouts were dropped before
      * this viewer asked (more diffs made since, or a model made elsewhere), then shows it with {@code show}. The view
      * shown until then stays; an answer for another model, view or collapse is dropped.
      */

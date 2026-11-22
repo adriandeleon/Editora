@@ -428,7 +428,7 @@ final class HttpClientCoordinator {
             host.setStatus(tr("status.http.noRequest"));
             return;
         }
-        // The file is parsed off the FX thread (PERF-01, Pauta 6.0.1); the run starts when it lands.
+        // The file is parsed off the FX thread (PERF-01, Pauta 6.2.0); the run starts when it lands.
         parsedFiles.withParsed(buffer, parsed -> {
             int index = parsed.indexAt(line);
             if (index < 0) {
@@ -647,7 +647,7 @@ final class HttpClientCoordinator {
             runRequest(buffer, buffer.getArea().getCurrentParagraph());
             return;
         }
-        // The file is parsed and its requests hashed off the FX thread (PERF-01, Pauta 6.0.1).
+        // The file is parsed and its requests hashed off the FX thread (PERF-01, Pauta 6.2.0).
         String text = buffer.getContent();
         int caret = buffer.getArea().getCurrentParagraph();
         com.editora.perf.OffFx.then(
@@ -690,7 +690,7 @@ final class HttpClientCoordinator {
         if (buffer == null || entry == null) {
             return;
         }
-        String text = buffer.getContent(); // parsed and matched off the FX thread (PERF-01, Pauta 6.0.1)
+        String text = buffer.getContent(); // parsed and matched off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then(
                 "http-jump-find",
                 () -> {
@@ -1064,7 +1064,7 @@ final class HttpClientCoordinator {
                 return; // one import at a time: the command is busy until the conversion lands
             }
             importingCurl = true;
-            // The command is parsed off the FX thread (PERF-01, Pauta 6.0.1), and so is the new tab's text.
+            // The command is parsed off the FX thread (PERF-01, Pauta 6.2.0), and so is the new tab's text.
             com.editora.perf.OffFx.then(CURL_IMPORT_SITE, () -> curlImport(clip), answer -> {
                 importingCurl = false;
                 CurlImported imported = answer.value();
@@ -1301,7 +1301,7 @@ final class HttpClientCoordinator {
             return;
         }
         // The file is parsed and each request matched to its newest run (a hash per request) off the FX thread
-        // (PERF-01, Pauta 6.0.1); the latest refresh's answer is the one shown.
+        // (PERF-01, Pauta 6.2.0); the latest refresh's answer is the one shown.
         String text = buffer.getContent();
         List<HttpHistoryEntry> runs = List.copyOf(entries);
         long generation = inlineGenerations.merge(buffer, 1L, Long::sum);
@@ -1405,7 +1405,7 @@ final class HttpClientCoordinator {
 
     /**
      * As above, then {@code after}. The requests' fingerprints are hashed off the FX thread first (PERF-01, Pauta
-     * 6.0.1); the ■ turns back into ▶ at once, and the results land in the view and the history when they are done.
+     * 6.2.0); the ■ turns back into ▶ at once, and the results land in the view and the history when they are done.
      */
     private void finishRun(
             EditorBuffer buffer,

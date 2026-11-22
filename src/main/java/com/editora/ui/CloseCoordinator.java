@@ -69,7 +69,7 @@ final class CloseCoordinator {
     }
 
     /**
-     * Whether {@code tab} may close now. A Save picked in the question writes off the FX thread (PERF-01, Pauta 6.0.1):
+     * Whether {@code tab} may close now. A Save picked in the question writes off the FX thread (PERF-01, Pauta 6.2.0):
      * the tab stays for now, and {@code afterSave} asks for the close again once the write has landed.
      */
     boolean confirmClose(Tab tab, @Nullable Runnable afterSave) {
@@ -108,7 +108,7 @@ final class CloseCoordinator {
 
     /**
      * Asks whether to save {@code buffer}'s unsaved changes before it closes. Save writes off the FX thread (PERF-01,
-     * Pauta 6.0.1) and answers {@link Answer#SAVING}: {@code afterSave} runs once the write has landed, and asks for
+     * Pauta 6.2.0) and answers {@link Answer#SAVING}: {@code afterSave} runs once the write has landed, and asks for
      * the close again. With no {@code afterSave} (the quit, which may wait) it waits for the write instead.
      */
     Answer askCloseIfDirty(EditorBuffer buffer, @Nullable Runnable afterSave) {

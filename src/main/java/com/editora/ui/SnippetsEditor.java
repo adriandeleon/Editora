@@ -247,7 +247,7 @@ final class SnippetsEditor {
             }
         };
 
-        // The language's files are read on the snippet thread (PERF-01, Pauta 6.0.1); the page fills when they land.
+        // The language's files are read on the snippet thread (PERF-01, Pauta 6.2.0); the page fills when they land.
         Consumer<String> load = keep -> {
             if (manager == null) {
                 fill.accept(keep);
@@ -506,7 +506,7 @@ final class SnippetsEditor {
     }
 
     /**
-     * Runs one write of the user file on the snippet thread (PERF-01, Pauta 6.0.1); once it is written and the
+     * Runs one write of the user file on the snippet thread (PERF-01, Pauta 6.2.0); once it is written and the
      * language read again (also there), runs {@code written} on the FX thread. A failure is shown and leaves the
      * page as it was.
      *

@@ -343,7 +343,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
 
     /**
      * Shows the scan's TODOs narrowed by the filter and grouped. A project can hold thousands, so they are matched and
-     * grouped off the FX thread (PERF-01, Pauta 6.0.1); the tree shown stays until the latest answer lands.
+     * grouped off the FX thread (PERF-01, Pauta 6.2.0); the tree shown stays until the latest answer lands.
      */
     private void rebuild() {
         TodoService.Outcome outcome = lastOutcome;

@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The MCP endpoint file is written and removed off the FX thread (PERF-01, Pauta 6.0.1): the settings toggle,
+ * The MCP endpoint file is written and removed off the FX thread (PERF-01, Pauta 6.2.0): the settings toggle,
  * New Token and the last window's close ask on the FX thread, and the {@code mcp-endpoint} thread does the file
  * work, in the order asked.
  */

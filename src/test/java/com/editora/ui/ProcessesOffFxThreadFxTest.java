@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-01 (Pauta 6.0.1), the programs Editora starts: Run, Build, the debugged program, Run in Terminal, Git,
+ * PERF-01 (Pauta 6.2.0), the programs Editora starts: Run, Build, the debugged program, Run in Terminal, Git,
  * gpg, the Doctor's probes and the rest start, wait for and plan their processes off the FX thread. Each test
  * drives a representative set of those paths on the FX thread, the way a command does, and listens to
  * {@link BlockingSites}: the process start ({@code BusyExecutable}), the PATH lookup, a wait for a process, the

@@ -268,7 +268,7 @@ final class HtmlPreviewCoordinator {
         }
         Path project = host.projectScope().root();
         // The folders up from the page, the home and temp folders and user-dirs.dirs are looked at off the FX thread
-        // (PERF-01, Pauta 6.0.1).
+        // (PERF-01, Pauta 6.2.0).
         com.editora.perf.OffFx.then(
                 "html-site-root",
                 () -> {

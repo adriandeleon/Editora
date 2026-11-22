@@ -50,7 +50,7 @@ class ChordChipThemeFxTest {
                     // The app theme's -state-key, as JavaFX resolves it on the window's own ground: a probe on the
                     // scene root, outside the editor, where no editor theme reaches. Its contrast on every bundled
                     // theme is StyleContrastTest's (theKeyboardPeriwinkleReadsOnEveryBundledAppTheme), so no
-                    // ratio is computed here (ICON-14, Pauta 6.0.1).
+                    // ratio is computed here (ICON-14, Pauta 6.2.0).
                     assertEquals(keyInk(main), ink, theme + ": the Welcome keys take the app theme's periwinkle");
                 });
             }

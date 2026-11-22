@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * A right-click or drop-down row that cannot run says why (KBD-04, Pauta 6.0.1): it is grayed through {@code
+ * A right-click or drop-down row that cannot run says why (KBD-04, Pauta 6.2.0): it is grayed through {@code
  * RowReasons} ({@code because}, {@code when}, {@code featureOn}, {@code bind}, {@code set}), which takes the sentence,
  * or made a {@code RowReasons.placeholder} when it is a label rather than a command. Read from the source: a call of
  * {@code setDisable(…)} or {@code disableProperty()} on a variable whose declaration in the same file is a {@code

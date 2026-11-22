@@ -9,7 +9,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-/** Save as Run Configuration looks for its main class off the FX thread (PERF-01, Pauta 6.0.1); what it finds. */
+/** Save as Run Configuration looks for its main class off the FX thread (PERF-01, Pauta 6.2.0); what it finds. */
 class RunConfigSuggestedMainOffFxTest {
 
     @Test

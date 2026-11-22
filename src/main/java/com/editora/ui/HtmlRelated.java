@@ -71,7 +71,7 @@ final class HtmlRelated {
 
     /**
      * {@link #assetsOf} worked out off the FX thread (it scans the page and stats each asset; PERF-01, Pauta
-     * 6.0.1); {@code done} gets the list on the FX thread.
+     * 6.2.0); {@code done} gets the list on the FX thread.
      */
     static void assetsOfLater(String text, Path page, @Nullable Path root, Consumer<List<Path>> done) {
         ExternalLinks.looked(

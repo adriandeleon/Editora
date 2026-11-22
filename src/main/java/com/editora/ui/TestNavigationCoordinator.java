@@ -268,7 +268,7 @@ final class TestNavigationCoordinator {
     /**
      * Opens a server-resolved frame URI, or runs {@code otherwise} when it names something we can't open. A
      * {@code jdt://} answer is a library frame and opens as read-only class-file source (#665). Whether the file is
-     * there is looked at off the FX thread (PERF-01, Pauta 6.0.1).
+     * there is looked at off the FX thread (PERF-01, Pauta 6.2.0).
      */
     void openResolvedFrame(Path anchor, String uri, com.editora.run.StackTraceLinks.Link link, Runnable otherwise) {
         if (uri.startsWith("jdt:")) {
@@ -409,7 +409,7 @@ final class TestNavigationCoordinator {
     }
 
     /**
-     * The file a console link names, resolved with the disk looked at off the FX thread (PERF-01, Pauta 6.0.1):
+     * The file a console link names, resolved with the disk looked at off the FX thread (PERF-01, Pauta 6.2.0):
      * what the window knows (its project, open tabs, last run folder) is taken here, the stats run on a thread of
      * their own, and {@code onResult} gets the file, or null, on the FX thread.
      */
@@ -507,7 +507,7 @@ final class TestNavigationCoordinator {
                 return;
             }
         }
-        // The project's Python markers are looked at off the FX thread (PERF-01, Pauta 6.0.1).
+        // The project's Python markers are looked at off the FX thread (PERF-01, Pauta 6.2.0).
         Path root = projectRoot();
         com.editora.perf.OffFx.then(
                 "TestNavigationCoordinator.looksLikePythonProject", () -> looksLikePythonProject(root), python -> {

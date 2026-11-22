@@ -107,7 +107,7 @@ final class PythonTestRunner {
             return;
         }
         Path tests = root.resolve("tests");
-        // Whether there is a tests folder: looked at off the FX thread (PERF-01, Pauta 6.0.1).
+        // Whether there is a tests folder: looked at off the FX thread (PERF-01, Pauta 6.2.0).
         com.editora.perf.OffFx.then(
                 "PythonTestRunner.runAll",
                 () -> !com.editora.vfs.Vfs.isRemote(tests) && Files.isDirectory(tests),
@@ -216,7 +216,7 @@ final class PythonTestRunner {
             launchPytest(scope, where, false, report, reportArg);
             return;
         }
-        // The local report's temporary file is made off the FX thread (PERF-01, Pauta 6.0.1).
+        // The local report's temporary file is made off the FX thread (PERF-01, Pauta 6.2.0).
         com.editora.perf.OffFx.then(
                 "PythonTestRunner.launchPytest",
                 () -> {
@@ -477,7 +477,7 @@ final class PythonTestRunner {
             return;
         }
         // Whether the file is there, and the line of its def, are looked at off the FX thread (PERF-01, Pauta
-        // 6.0.1).
+        // 6.2.0).
         Path source = file;
         int hinted = line;
         String method = node.methodName();

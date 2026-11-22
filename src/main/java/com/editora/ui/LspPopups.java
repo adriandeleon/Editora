@@ -127,7 +127,7 @@ final class LspPopups {
             showHoverContent(area, markdown, null, problemsHere);
             return;
         }
-        // The Markdown is parsed off the FX thread (PERF-01, Pauta 6.0.1); the popup shows when it lands, unless
+        // The Markdown is parsed off the FX thread (PERF-01, Pauta 6.2.0); the popup shows when it lands, unless
         // another hover, a caret move or a hide came first.
         long generation = hoverGeneration;
         MarkdownRenderer.parseLater(markdown, ast -> {

@@ -31,7 +31,7 @@ interface TestRunHook {
 
     /**
      * What a claimed run's raw output line comes to, worked out on the thread that read it from the process, not
-     * on the FX thread (PERF-01, Pauta 6.0.1): {@code apply} runs on the FX thread with what the line's parse found,
+     * on the FX thread (PERF-01, Pauta 6.2.0): {@code apply} runs on the FX thread with what the line's parse found,
      * and {@code shown} is what the raw Output console shows for it (null: nothing). Lines are prepared one at a
      * time and in order. Default: the line handed to {@link #onTestOutput} and {@link #consoleLine} as it is.
      */

@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** The query-replace session reads the document only as far as its next match (PERF-08, Pauta 6.0.1). */
+/** The query-replace session reads the document only as far as its next match (PERF-08, Pauta 6.2.0). */
 class QueryReplaceWindowTest {
 
     /** A document that counts the characters it hands out. */

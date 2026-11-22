@@ -18,7 +18,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** A stop's frame files are looked at off the FX thread; the FX thread answers from that (PERF-01, Pauta 6.0.1). */
+/** A stop's frame files are looked at off the FX thread; the FX thread answers from that (PERF-01, Pauta 6.2.0). */
 @Tag("fx")
 class FrameFilesFxTest {
 

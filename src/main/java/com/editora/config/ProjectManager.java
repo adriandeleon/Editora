@@ -219,7 +219,7 @@ public class ProjectManager {
      *
      * <p>With the shared writer attached (the app) the index is copied here and serialized, merged and written on
      * the writer's thread ({@link #saveQueued}): window open, close and focus call this on the FX thread
-     * (PERF-01, Pauta 6.0.1). A caller that is not the FX thread then waits for the write.
+     * (PERF-01, Pauta 6.2.0). A caller that is not the FX thread then waits for the write.
      *
      * @return whether the index in memory is now the one on disk (queued, for an FX caller)
      */

@@ -198,7 +198,7 @@ public final class WorkspaceEditJournal {
 
         /**
          * The paths the transaction was working on — where the user knows the files from. Looked at once, off the FX
-         * thread (where the journal is found), and kept for the question asked on it (PERF-01, Pauta 6.0.1).
+         * thread (where the journal is found), and kept for the question asked on it (PERF-01, Pauta 6.2.0).
          */
         public List<Path> originals() {
             List<Path> kept = originals;

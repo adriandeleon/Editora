@@ -749,7 +749,7 @@ public class Settings {
      *  Anthropic key only, so switching to the OpenAI provider never sends it to that endpoint (see
      *  {@link #getApiKeyFor}). The three key fields are read from an older settings.json and never written to one
      *  ({@code WRITE_ONLY}: Jackson sets them, never serializes them): {@link ApiKeyVault} moves what they hold to
-     *  the system keychain or its encrypted file (SET-13, Pauta 6.0.1). Without a vault they hold a key for the
+     *  the system keychain or its encrypted file (SET-13, Pauta 6.2.0). Without a vault they hold a key for the
      *  session only. */
     @com.fasterxml.jackson.annotation.JsonProperty(
             access = com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY)

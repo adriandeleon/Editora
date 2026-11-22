@@ -6,7 +6,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Names the places start-up and a window's set-up touch the disk, so a test can say on which thread each ran
- * (PERF-01, Pauta 6.0.1: before the first window is shown, the FX thread may wait once for the config read and
+ * (PERF-01, Pauta 6.2.0: before the first window is shown, the FX thread may wait once for the config read and
  * read the bundled resources that window is built from; nothing else).
  *
  * <p>Each such place calls {@link #enter} with its name just before its file work. In a running app nobody

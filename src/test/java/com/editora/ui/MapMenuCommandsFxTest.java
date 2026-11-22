@@ -43,7 +43,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The Project Map's rows and buttons as commands (KBD-01 and MENU-05, Pauta 6.0.1): each {@link MapMenuCommands}
+ * The Project Map's rows and buttons as commands (KBD-01 and MENU-05, Pauta 6.2.0): each {@link MapMenuCommands}
  * command does what its row or button does to what the Map's keyboard is on, and says why when it cannot. The commands
  * run on a Map on its own in a shown window; a status line, a prompt and a picker are recorded.
  */

@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@code CHANGELOG.md} keeps the shape Keep a Changelog 1.1 and REPO-02 (Pauta 6.0.1) ask for: {@code ## [Unreleased]}
+ * {@code CHANGELOG.md} keeps the shape Keep a Changelog 1.1 and REPO-02 (Pauta 6.2.0) ask for: {@code ## [Unreleased]}
  * first, every other release headed {@code ## [x.y.z] - YYYY-MM-DD}, its entries under the six standard headings
  * only, and every entry opening with a bold one-line summary. Entries are the top-level list items; the items nested
  * under one belong to it.

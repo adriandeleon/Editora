@@ -162,7 +162,7 @@ public final class JavaLibrarySources {
 
         /**
          * Whether the library has sources, at a path that is there: as {@link #look} found it, or looked at now when
-         * it was not looked at (off the FX thread; PERF-01, Pauta 6.0.1).
+         * it was not looked at (off the FX thread; PERF-01, Pauta 6.2.0).
          */
         public boolean attached() {
             return present != null ? present : sourcesThere();

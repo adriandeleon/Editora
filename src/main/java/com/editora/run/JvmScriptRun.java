@@ -118,7 +118,7 @@ public final class JvmScriptRun {
 
     /**
      * What {@link #launch} reads of a Clojure {@code file} (its head, its project's files), read here: off the FX
-     * thread, by a plan, so the launch made on the FX thread reads nothing (PERF-01, Pauta 6.0.1). Null for any
+     * thread, by a plan, so the launch made on the FX thread reads nothing (PERF-01, Pauta 6.2.0). Null for any
      * other language.
      */
     public static ClojureRun.@Nullable Plan clojurePlan(String language, @Nullable Path file) {

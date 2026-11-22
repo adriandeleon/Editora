@@ -555,7 +555,7 @@ public final class GitService {
         }
         if (onFxThread()) {
             // Never probed (a command given before the first refresh's lane task): a probe is a process, never
-            // started or waited for here (PERF-01, Pauta 6.0.1). Taken as there until the probe, started now, says.
+            // started or waited for here (PERF-01, Pauta 6.2.0). Taken as there until the probe, started now, says.
             Thread.ofVirtual().name("git-version-probe").start(() -> probeVersion(command));
             return true;
         }
@@ -2403,7 +2403,7 @@ public final class GitService {
     /**
      * {@link #realPath} of a local path: looked at off the FX thread (as a file is read, {@link #lookAt}), answered
      * from memory on it — a context menu and every Git command on a path ask, and each open buffer after a Git change
-     * (PERF-01, Pauta 6.0.1).
+     * (PERF-01, Pauta 6.2.0).
      */
     private static final com.editora.perf.Looked<Path, Path> REAL_PATHS =
             new com.editora.perf.Looked<>("GitService.realPath", GitService::realPathNow, null);

@@ -79,7 +79,7 @@ class JavaScriptShadowFxTest {
         script = root.resolve("launcher");
         Files.writeString(script, SCRIPT);
         manager.openDocument(script, root, "java", SCRIPT);
-        // The stand-in is written off the FX thread and the document opened after it (PERF-01, Pauta 6.0.1).
+        // The stand-in is written off the FX thread and the document opened after it (PERF-01, Pauta 6.2.0).
         com.editora.testkit.Await.holdsWithin(
                 () -> !(fakes.isEmpty() || fake().opened.isEmpty()), java.time.Duration.ofSeconds(10));
     }
@@ -231,7 +231,7 @@ class JavaScriptShadowFxTest {
         Path standIn = DocumentUris.toPath(standInUri());
 
         manager.closeDocument(script);
-        // deleted off the FX thread, in order after its write (PERF-01, Pauta 6.0.1)
+        // deleted off the FX thread, in order after its write (PERF-01, Pauta 6.2.0)
         com.editora.testkit.Await.holdsWithin(
                 () -> !Files.exists(standIn.getParent()), java.time.Duration.ofSeconds(10));
 

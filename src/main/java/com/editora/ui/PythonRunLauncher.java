@@ -57,7 +57,7 @@ final class PythonRunLauncher {
     static void plan(PythonRunPlan.Request request, @Nullable Path where, Consumer<PythonRunPlan> onPlan) {
         PythonRunPlan.Host host = hostFor(where);
         if (host.local()) {
-            // The interpreter's file checks run off the FX thread too (PERF-01, Pauta 6.0.1).
+            // The interpreter's file checks run off the FX thread too (PERF-01, Pauta 6.2.0).
             com.editora.perf.OffFx.then("python-run-plan", () -> PythonRunPlan.plan(request, host), a -> {
                 PythonRunPlan done = a.value();
                 onPlan.accept(done != null ? done : PythonRunPlan.plan(request, host.withoutLookups()));

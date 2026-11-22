@@ -26,7 +26,7 @@ import lib.Repo;
 import lib.TempDir;
 
 /**
- * Takes the website's screenshots (DOCS-18, Pauta 6.0.1): runs the headless harness ({@code com.editora.ui.Shots},
+ * Takes the website's screenshots (DOCS-18, Pauta 6.2.0): runs the headless harness ({@code com.editora.ui.Shots},
  * in {@code src/test/java}) on command scripts, each in light and dark, and writes 2x PNGs.
  *
  * <pre>

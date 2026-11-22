@@ -51,7 +51,7 @@ public final class HttpScriptLines {
 
     /**
      * What the editor asks of a {@code .http} document's scripts, worked out in one parse (off the FX thread, PERF-01,
-     * Pauta 6.0.1): its script lines, and the lines of the requests that have a pre-request script or a handler.
+     * Pauta 6.2.0): its script lines, and the lines of the requests that have a pre-request script or a handler.
      */
     public record Map(BitSet scriptLines, BitSet scriptedRequestLines) {
 

@@ -101,7 +101,7 @@ final class StepFilterCommands {
         String language = d.dap().sessionLanguage();
         String file = f.file() == null ? null : f.file().toString();
         // The frame's file is read (when no tab holds it) and its package found off the FX thread (PERF-01,
-        // Pauta 6.0.1); the form opens when the answer lands.
+        // Pauta 6.2.0); the form opens when the answer lands.
         EditorBuffer open = f.file() == null ? null : ops.bufferForPath(f.file());
         String openText = open == null ? null : open.getArea().getText();
         Path onDisk = f.file();

@@ -302,7 +302,7 @@ public final class PinnedVersions {
 
     /**
      * {@link #canonical} by path: looked at off the FX thread (a Doctor run's look, the Settings status line's, an
-     * install's), answered from memory on it (PERF-01, Pauta 6.0.1).
+     * install's), answered from memory on it (PERF-01, Pauta 6.2.0).
      */
     private static final com.editora.perf.Looked<Path, Path> CANONICAL =
             new com.editora.perf.Looked<>("PinnedVersions.canonical", PinnedVersions::canonicalNow, null);

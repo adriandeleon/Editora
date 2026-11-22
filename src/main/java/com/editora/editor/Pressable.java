@@ -9,7 +9,7 @@ import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 
 /**
- * A node the app builds from a label or a pane that acts as a button. ACC-02 (Pauta 6.0.1): it takes the
+ * A node the app builds from a label or a pane that acts as a button. ACC-02 (Pauta 6.2.0): it takes the
  * {@code BUTTON} role and a screen reader presses it through {@link AccessibleAction#FIRE}, which runs the same
  * action as a primary click, and as Enter or Space once it has focus. {@link PressableLabel}, {@link PressableBox}
  * and {@link PressablePane} are the three shapes; each overrides {@code executeAccessibleAction} and calls

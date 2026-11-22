@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The stores written on the config writer's thread (PERF-01, Pauta 6.0.1): a change made where the FX thread makes
+ * The stores written on the config writer's thread (PERF-01, Pauta 6.2.0): a change made where the FX thread makes
  * it is on disk once the writes are waited for, a later save of a file wins over one still queued, the quit's
  * save writes what was changed just before it, a failure is reported once and written later, another process's
  * entries are kept, and what comes back to the FX thread is applied only while it is still the newest.

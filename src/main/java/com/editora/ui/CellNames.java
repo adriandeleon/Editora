@@ -13,7 +13,7 @@ import org.jspecify.annotations.Nullable;
 /**
  * Names a list or tree row that lays out its own nodes. JavaFX reads a cell from its text or, when it has none,
  * from its graphic's accessible text; a row built from an icon and a few labels has neither, and a screen reader
- * says nothing as it moves through the list. ACC-01 (Pauta 6.0.1): the row's graphic carries the words it shows.
+ * says nothing as it moves through the list. ACC-01 (Pauta 6.2.0): the row's graphic carries the words it shows.
  */
 final class CellNames {
 

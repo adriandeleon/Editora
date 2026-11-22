@@ -9,7 +9,7 @@ import java.util.function.Supplier;
 import com.editora.test.ParsedSuite;
 
 /**
- * One test run's output parse, off the FX thread (PERF-01, Pauta 6.0.1): a stream that hands its lines over on the
+ * One test run's output parse, off the FX thread (PERF-01, Pauta 6.2.0): a stream that hands its lines over on the
  * FX thread queues each line's parse here, on one thread in arrival order, and the results come back on the FX
  * thread in the same order; {@link #then} runs after every parse queued before it (a run's exit after its last
  * line). For the runs whose output does not come through the build tool's pump (Python's unittest).

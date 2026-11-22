@@ -566,7 +566,7 @@ final class SearchCoordinator {
      * are edited in-memory (undoable); closed files are rewritten on disk (UTF-8, line endings kept as
      * they live in the text). Asks for confirmation, then re-runs the search to refresh the panel.
      *
-     * <p>Nothing is searched on the FX thread (PERF-01, Pauta 6.0.1): the replacement is checked off it before the
+     * <p>Nothing is searched on the FX thread (PERF-01, Pauta 6.2.0): the replacement is checked off it before the
      * question, and an open buffer's edits are worked out on the replace worker from a snapshot of its text, then
      * applied on the FX thread as one undo step only to the version they were found in (worked out again, up to
      * {@link #OPEN_REPLACE_TRIES} times, when it was typed into meanwhile).

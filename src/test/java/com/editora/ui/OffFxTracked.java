@@ -10,7 +10,7 @@ import org.junit.jupiter.api.extension.ExtensionContext;
 
 /**
  * Runs the work handed to {@link OffFx} where the app runs it (a virtual thread named for it), and counts what has not
- * finished, so a test can wait until the background looks a window started have landed (QUAL-07, Pauta 6.0.1: wait
+ * finished, so a test can wait until the background looks a window started have landed (QUAL-07, Pauta 6.2.0: wait
  * on the thing itself, not for a while). {@link OffFxInPlace} runs the work in place instead, for a test that reads a
  * command's result as the command returns.
  */

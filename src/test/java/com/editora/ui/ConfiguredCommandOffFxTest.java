@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-01 (Pauta 6.0.1): whether a configured command with a space names a file is never looked at on the FX thread.
+ * PERF-01 (Pauta 6.2.0): whether a configured command with a space names a file is never looked at on the FX thread.
  * A value nothing looked at answers "not a file" there, is looked at behind, and its listeners build the command line
  * again; a value the settings' arrival looked at ({@link ConfiguredCommand#prepareAllIn}) answers from memory.
  */

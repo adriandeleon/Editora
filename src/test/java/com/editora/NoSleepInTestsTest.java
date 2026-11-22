@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests do not sleep (QUAL-07, Pauta 6.0.1). A test waits on the thing it is waiting for: a latch or a future the
+ * Tests do not sleep (QUAL-07, Pauta 6.2.0). A test waits on the thing it is waiting for: a latch or a future the
  * code completes, {@code drainFx} after the work landed, a listener, {@code AsyncTestScope}'s barriers, or, for
  * state nothing announces, {@link com.editora.testkit.Await}, which re-checks after each FX pulse or each change a
  * fake signals. A fake that has to be slow holds on a latch the test releases; a file time that has to differ is

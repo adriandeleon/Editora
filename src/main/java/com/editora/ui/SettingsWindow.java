@@ -1729,7 +1729,7 @@ public class SettingsWindow {
         openThemes.setOnAction(e -> {
             Path dir = config.getConfigDir().resolve("themes");
             Path editorThemes = config.getConfigDir().resolve("editor-themes");
-            // made off the FX thread (PERF-01, Pauta 6.0.1); a config folder that cannot be written to has no themes
+            // made off the FX thread (PERF-01, Pauta 6.2.0); a config folder that cannot be written to has no themes
             com.editora.perf.OffFx.run(
                     "themes-folder",
                     () -> {
@@ -1745,7 +1745,7 @@ public class SettingsWindow {
         Hyperlink reloadThemes = new Hyperlink(tr("settings.userThemes.reload"));
         reloadThemes.setOnAction(e -> {
             Path configDir = config.getConfigDir();
-            // read off the FX thread (PERF-01, Pauta 6.0.1), shown when they land
+            // read off the FX thread (PERF-01, Pauta 6.2.0), shown when they land
             com.editora.perf.OffFx.run("themes-reload", () -> UserThemes.load(configDir), failure -> syncThemes());
         });
         controlRow(
@@ -3076,7 +3076,7 @@ public class SettingsWindow {
             status.tool(ToolStatusRow.toolName(argv, command));
             boolean on = bt.enabledIn(config.getSettings());
             long mine = buildCommandLooks.merge(bt, 1L, Long::sum);
-            // Whether it is there is looked at off the FX thread (PERF-01, Pauta 6.0.1); the row says so when it lands.
+            // Whether it is there is looked at off the FX thread (PERF-01, Pauta 6.2.0); the row says so when it lands.
             com.editora.perf.OffFx.then(
                     "SettingsWindow.buildCommandStatus", () -> com.editora.doctor.DoctorProbes.lookAt(argv), a -> {
                         if (mine == buildCommandLooks.getOrDefault(bt, 0L)) {
@@ -4004,7 +4004,7 @@ public class SettingsWindow {
     /**
      * What a row's title names for a screen reader: the control itself, or, when the row holds a box (a field
      * and its Browse button, a list and its buttons), the first control in it that has no text of its own. A
-     * label pointing at the box named nothing a person can reach (ACC-01, Pauta 6.0.1).
+     * label pointing at the box named nothing a person can reach (ACC-01, Pauta 6.2.0).
      */
     static Node labelTarget(Node control) {
         Node found = FormLabels.firstUnnamed(control);
@@ -4110,7 +4110,7 @@ public class SettingsWindow {
                         ? r -> SettingRowState.peek(r.node()) instanceof SettingRowState st && st.isModified()
                         : null);
         String query = SettingsSearch.withoutModifiedToken(typed);
-        // Scored off the FX thread (PERF-01, Pauta 6.0.1); the pages follow when the latest query's answer lands.
+        // Scored off the FX thread (PERF-01, Pauta 6.2.0); the pages follow when the latest query's answer lands.
         search.filterLater(query, (found, listHit) -> searched(query, found, listHit));
     }
 
@@ -4216,7 +4216,7 @@ public class SettingsWindow {
         preview.setPrefHeight(170);
         preview.setMinHeight(170);
         preview.setWrapText(false);
-        // The sample is tokenized off the FX thread, its grammar loaded there the first time (PERF-01, Pauta 6.0.1).
+        // The sample is tokenized off the FX thread, its grammar loaded there the first time (PERF-01, Pauta 6.2.0).
         CodeArea shown = preview;
         com.editora.perf.OffFx.then(
                 PREVIEW_HIGHLIGHT_SITE,

@@ -635,7 +635,7 @@ class SettingsFollowsFxTest {
 
     @Test
     void aBodyIsHighlightedForItsLanguageAndLeftPlainForNone() throws Exception {
-        // Tokenized off the FX thread (PERF-01, Pauta 6.0.1): the styles land a moment later.
+        // Tokenized off the FX thread (PERF-01, Pauta 6.2.0): the styles land a moment later.
         CodeArea area = FxTestSupport.callOnFx(() -> new CodeArea("class A { int x = 1; }"));
         java.util.function.BooleanSupplier styled = () -> area.getStyleSpans(0, area.getLength()).stream()
                 .anyMatch(span -> !span.getStyle().isEmpty());

@@ -187,7 +187,7 @@ public final class MarkdownBlocks {
 
     /**
      * The name {@link com.editora.perf.BlockingSites} hears for every scan: a scan reads a whole document, so it
-     * runs off the JavaFX thread (PERF-01, Pauta 6.0.1); a test checks it is never heard there.
+     * runs off the JavaFX thread (PERF-01, Pauta 6.2.0); a test checks it is never heard there.
      */
     public static final String SCAN_SITE = "MarkdownBlocks.scan";
 

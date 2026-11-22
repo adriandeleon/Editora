@@ -113,7 +113,7 @@ final class StringViews {
     private static final ObjectMapper JSON = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
 
     /**
-     * Lays {@code text} out as JSON ({@code json}) or XML off the FX thread (PERF-01, Pauta 6.0.1: a debuggee's
+     * Lays {@code text} out as JSON ({@code json}) or XML off the FX thread (PERF-01, Pauta 6.2.0: a debuggee's
      * string may be of any size), then hands {@code laidOut} the result on the FX thread, or {@code failed} why not.
      */
     static void layOutLater(

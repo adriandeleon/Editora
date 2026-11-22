@@ -66,7 +66,7 @@ final class UserThemes {
     }
 
     /**
-     * Rescans the theme folders off the FX thread (PERF-01, Pauta 6.0.1), then runs {@code then} on the FX
+     * Rescans the theme folders off the FX thread (PERF-01, Pauta 6.2.0), then runs {@code then} on the FX
      * thread with the new lists in place: the Reload User Themes command and the Settings page's button. Until it
      * lands the lists are the ones last read, so no theme disappears from a picker meanwhile.
      */

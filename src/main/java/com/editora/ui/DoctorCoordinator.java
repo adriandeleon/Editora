@@ -253,7 +253,7 @@ final class DoctorCoordinator {
     void runChecks() {
         // What the catalog asks of the disk (whether a server's program is Editora's copy, the project's
         // package.json) is looked at off the FX thread first, so building it answers from memory (PERF-01, Pauta
-        // 6.0.1). A later run replaces one still looking.
+        // 6.2.0). A later run replaces one still looking.
         List<List<String>> argvs = new ArrayList<>();
         for (String id : LspServerCommands.serverIds()) {
             argvs.add(ops.lspServerArgv(id));
@@ -302,7 +302,7 @@ final class DoctorCoordinator {
 
     /**
      * {@code spec} with its probe also looking at the path its result names, off the FX thread, so the pane's
-     * Reveal and Clear answer from memory when they show it (PERF-01, Pauta 6.0.1).
+     * Reveal and Clear answer from memory when they show it (PERF-01, Pauta 6.2.0).
      */
     private static DoctorService.CheckSpec lookingAtItsPath(DoctorService.CheckSpec spec) {
         java.util.function.Supplier<DoctorCheck> probe = spec.probe();

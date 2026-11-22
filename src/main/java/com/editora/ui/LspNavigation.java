@@ -504,7 +504,7 @@ final class LspNavigation {
                 return;
             }
             // jdtls's class-file range starts at the member's Javadoc: land on the declaration (B16). Its line is
-            // looked for off the FX thread, and the tab's text made ready there too (PERF-01, Pauta 6.0.1).
+            // looked for off the FX thread, and the tab's text made ready there too (PERF-01, Pauta 6.2.0).
             com.editora.perf.OffFx.then(
                     DECLARATION_LINE_SITE,
                     () -> com.editora.lsp.JavadocSkip.declarationLine(content, t.line()),

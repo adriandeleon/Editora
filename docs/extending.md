@@ -56,7 +56,7 @@ A setting is a `Settings` field **plus** a Settings-window control **plus** a pa
    an item of its page's command in `ui/SettingCommands.java` (`terminal.changeSetting`, `lsp.changeSetting`,
    …), which lists the page's settings by their rows' names. `EverySettingHasACommandFxTest` changes every
    control of every row and runs every setting command, and fails on a row whose setting no command writes
-   (SET-06, Pauta 6.0.1).
+   (SET-06, Pauta 6.2.0).
 4. **i18n** for the command + the Settings label.
 
 ## Add an LSP server

@@ -26,7 +26,7 @@ import org.jspecify.annotations.Nullable;
  * the text runs of the rendered blocks — with the same matcher and options as the editor's
  * ({@link SearchMatcher}: case, whole word, regex).
  *
- * <p><b>Only the blocks on screen are marked</b> (PERF-08, Pauta 6.0.1). The preview builds only the blocks
+ * <p><b>Only the blocks on screen are marked</b> (PERF-08, Pauta 6.2.0). The preview builds only the blocks
  * near the viewport, so the search reads each block's {@linkplain Run runs}: of its node when it is built, else
  * of a rendering without pictures that is kept as text ({@link MarkdownPreview.Entry#runs}). The matches are a
  * list of {@link Hit}s; a block is marked when it enters the scene, and stepping to a match in a block not on
@@ -84,7 +84,7 @@ public final class PreviewFind {
     /**
      * Finds every match of {@code query}, makes the first one at or below the top of the view current and
      * scrolls to it, then hands {@code found} the number of matches; an empty query or an invalid regex clears
-     * the search. The blocks' text is taken on the FX thread and searched off it (PERF-01, Pauta 6.0.1): the
+     * the search. The blocks' text is taken on the FX thread and searched off it (PERF-01, Pauta 6.2.0): the
      * marks land a moment later, and only for the latest search.
      */
     public void search(String query, boolean matchCase, boolean regex, boolean wholeWord, IntConsumer found) {

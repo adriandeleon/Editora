@@ -12,7 +12,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The app's bundled icons ({@code icons/icon-<size>.png}), read and decoded once. The first window reads them
- * as it is built, which PERF-01 (Pauta 6.0.1) allows of the resources the first window is built from; every
+ * as it is built, which PERF-01 (Pauta 6.2.0) allows of the resources the first window is built from; every
  * later window, and every Welcome tab, takes the same images from here instead of reading them again.
  */
 final class AppIcons {

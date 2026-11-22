@@ -45,7 +45,7 @@ import org.jspecify.annotations.Nullable;
  * {@code //} and block comments and trailing commas are accepted. Results are cached until {@link #reload()}.
  *
  * <p>A file is read and written through Jackson as {@link UserSnippetFile} and {@link SnippetJson} (PLAT-14, Pauta
- * 6.0.1). A save from Settings writes the user file whole, so comments in it are not kept.
+ * 6.2.0). A save from Settings writes the user file whole, so comments in it are not kept.
  */
 public final class SnippetManager {
 
@@ -204,7 +204,7 @@ public final class SnippetManager {
 
     /**
      * The one thread snippet files are read and written on, for every window, in the order asked (PERF-01, Pauta
-     * 6.0.1). The FX thread never reads one: an ask for a language not loaded yet is answered from what is loaded
+     * 6.2.0). The FX thread never reads one: an ask for a language not loaded yet is answered from what is loaded
      * (nothing of that language) and starts its load here; {@link #warm} loads a buffer's language as the buffer
      * is set up, so the first Tab or completion normally finds it loaded. Files are read and written outside this
      * object's lock, which is only ever held for what is in memory.
@@ -678,7 +678,7 @@ public final class SnippetManager {
 
     /**
      * True when {@code language}'s user file holds a comment, which saving it from Settings drops: the file is
-     * written whole, through Jackson (PLAT-14, Pauta 6.0.1).
+     * written whole, through Jackson (PLAT-14, Pauta 6.2.0).
      */
     public boolean userFileHasComments(String language) {
         com.editora.perf.BlockingSites.enter("snippets read " + norm(language));

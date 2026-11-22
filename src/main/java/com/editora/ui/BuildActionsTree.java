@@ -505,7 +505,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
 
     /**
      * Shows {@code sections}, narrowed by the filter. A Maven project lists hundreds of goals, so a typed filter is
-     * matched off the FX thread (PERF-01, Pauta 6.0.1); the tree shown stays until the latest answer lands.
+     * matched off the FX thread (PERF-01, Pauta 6.2.0); the tree shown stays until the latest answer lands.
      */
     private void rebuild(@Nullable List<BuildAction.Section> sections) {
         String query = filterQuery();

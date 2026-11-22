@@ -334,7 +334,7 @@ class ProjectMapDataReviewFxTest {
                 "the watch on docs/",
                 Duration.ofSeconds(10));
 
-        // The rename's move is made off the FX thread now (PERF-01, Pauta 6.0.1); the row waits for it below.
+        // The rename's move is made off the FX thread now (PERF-01, Pauta 6.2.0); the row waits for it below.
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
                 panel,
                 "move",

@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** A buffer's recovery id needs no secure random (no /dev/urandom read per tab: PERF-01, Pauta 6.0.1). */
+/** A buffer's recovery id needs no secure random (no /dev/urandom read per tab: PERF-01, Pauta 6.2.0). */
 class RecoveryStoreIdTest {
 
     @Test

@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@link LazyChangeEvents}: the changes of one {@code didChange}, worked out when first read (PERF-01, Pauta 6.0.1):
+ * {@link LazyChangeEvents}: the changes of one {@code didChange}, worked out when first read (PERF-01, Pauta 6.2.0):
  * a splice when the change is incremental, the whole (or rewritten) text otherwise, and a change that changes
  * nothing, with the FX thread told, when the two texts are equal.
  */

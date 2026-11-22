@@ -12,7 +12,7 @@ import com.editora.perf.OffFx;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The debugger's scans of a document a command decides by (PERF-01, Pauta 6.0.1): whether a breakpoint's line has
+ * The debugger's scans of a document a command decides by (PERF-01, Pauta 6.2.0): whether a breakpoint's line has
  * code, the Rust, JavaScript or pytest test at the caret. Each is worked out off the JavaFX thread on a snapshot of
  * the text and kept for the document's {@linkplain EditorBuffer#docVersion() version}: a command asks, and while the
  * answer is not known it does nothing and is asked again once the answer lands (worked out again when the text moved

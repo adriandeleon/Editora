@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-08 (Pauta 6.0.1): a file of 300 conflicts shows {@link MergeViewerPane#PAGE_SIZE} conflict cards at a time, each
+ * PERF-08 (Pauta 6.2.0): a file of 300 conflicts shows {@link MergeViewerPane#PAGE_SIZE} conflict cards at a time, each
  * with its text areas, and says which; a choice made on one page is kept when the page is left and shown again when
  * it comes back, and the Result and Save cover every conflict.
  */

@@ -39,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-08 (Pauta 6.0.1), the lists that make a node per item: each either is a virtualized list (the newer-versions
+ * PERF-08 (Pauta 6.2.0), the lists that make a node per item: each either is a virtualized list (the newer-versions
  * dialog) or shows a number of items it names and says how many there are past them (Parallel Stacks, the note card,
  * the agent's plan, the hover card's problems, the Markwhen timeline).
  */

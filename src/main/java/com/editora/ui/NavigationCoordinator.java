@@ -287,7 +287,7 @@ final class NavigationCoordinator {
             host.fileWorkflows().openPath(target);
             return;
         }
-        // there already? looked at off the FX thread (PERF-01, Pauta 6.0.1); on a host it is a round trip
+        // there already? looked at off the FX thread (PERF-01, Pauta 6.2.0); on a host it is a round trip
         com.editora.perf.OffFx.then("find-file-look", () -> Files.isRegularFile(target), there -> {
             if (there.or(false)) {
                 host.fileWorkflows().openPath(target);
@@ -509,7 +509,7 @@ final class NavigationCoordinator {
         }
         if (host.tabForPath(loc.path()) == null) {
             // deleted or unreadable since it was visited? answered from what was looked at off the FX thread
-            // (PERF-01, Pauta 6.0.1); a place never looked at is looked at behind, and shown when it lands
+            // (PERF-01, Pauta 6.2.0); a place never looked at is looked at behind, and shown when it lands
             Path place = loc.path();
             if (place == null) {
                 return;
@@ -618,7 +618,7 @@ final class NavigationCoordinator {
         Path dir = current.getParent();
         // Beside the file first: when a counterpart IS a sibling that is nearly always the right one, and it costs a
         // single exists(); then the project index by name, searched on the index as it is now. Both off the FX thread
-        // (PERF-01, Pauta 6.0.1).
+        // (PERF-01, Pauta 6.2.0).
         IndexCoordinator.Corpus corpus = host.indexCoordinator().corpus();
         boolean asset = HtmlRelated.isAsset(current);
         com.editora.perf.OffFx.then(
@@ -677,7 +677,7 @@ final class NavigationCoordinator {
                 host.setStatus(tr("status.related.none", current.getFileName()));
                 return;
             }
-            // there already? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+            // there already? looked at off the FX thread (PERF-01, Pauta 6.2.0)
             com.editora.perf.OffFx.then("related-look", () -> java.nio.file.Files.exists(test), there -> {
                 if (!there.or(true) && createTestConfirmer.test(test)) {
                     createTest(test);
@@ -727,7 +727,7 @@ final class NavigationCoordinator {
         if (dir == null) {
             return; // testFor always answers a path inside a src/test/java
         }
-        // written off the FX thread (PERF-01, Pauta 6.0.1)
+        // written off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.run(
                 "create-test",
                 () -> {

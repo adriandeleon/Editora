@@ -56,7 +56,7 @@ public final class ControlNames {
 
     /**
      * A label that names {@code control} for a screen reader ({@code labelFor}), as a form's row label does: a
-     * field, a list or a box beside a label reads as that label (ACC-01, Pauta 6.0.1).
+     * field, a list or a box beside a label reads as that label (ACC-01, Pauta 6.2.0).
      */
     public static Label label(String text, Node control) {
         Label label = new Label(text);

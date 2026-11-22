@@ -33,7 +33,7 @@ public final class ProjectSettingsFile {
 
     /**
      * The one thread project settings files are written on, in the order the writes were asked for (PERF-01,
-     * Pauta 6.0.1: a Settings row in Project scope, a toggle, Edit Project Settings are FX handlers).
+     * Pauta 6.2.0: a Settings row in Project scope, a toggle, Edit Project Settings are FX handlers).
      */
     private static final java.util.concurrent.ExecutorService WRITES =
             java.util.concurrent.Executors.newSingleThreadExecutor(

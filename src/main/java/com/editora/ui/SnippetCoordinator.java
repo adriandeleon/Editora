@@ -218,7 +218,7 @@ final class SnippetCoordinator {
         EditorBuffer b = host.activeBuffer();
         String lang = b == null ? "global" : b.getLanguage();
         Path file = manager.userFile(lang);
-        // Seeded on the snippet thread (PERF-01, Pauta 6.0.1); opened when that is done.
+        // Seeded on the snippet thread (PERF-01, Pauta 6.2.0); opened when that is done.
         manager.later(
                 m -> {
                     if (!Files.exists(file)) {

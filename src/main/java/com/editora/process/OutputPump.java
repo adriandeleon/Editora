@@ -70,7 +70,7 @@ public final class OutputPump {
 
         /**
          * Called on the reader thread for each complete line, before it is queued: what to run on the FX thread for
-         * it. A sink that parses its lines (test results) does it here, off the FX thread (PERF-01, Pauta 6.0.1),
+         * it. A sink that parses its lines (test results) does it here, off the FX thread (PERF-01, Pauta 6.2.0),
          * and hands the FX thread what it found. Lines of both streams are prepared one at a time, in the order
          * they are queued. Default: {@link #line} on the FX thread.
          */

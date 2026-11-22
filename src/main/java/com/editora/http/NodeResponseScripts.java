@@ -120,7 +120,7 @@ public final class NodeResponseScripts implements ResponseScripts {
 
     /**
      * TEST SEAM — run once when a debugged script is still running past the timeout an undebugged one would have been
-     * stopped at: a test sees the timeout pass instead of sleeping past it (QUAL-07, Pauta 6.0.1). Null in the app.
+     * stopped at: a test sees the timeout pass instead of sleeping past it (QUAL-07, Pauta 6.2.0). Null in the app.
      */
     static volatile @Nullable Runnable debuggedPastTimeoutForTest;
 

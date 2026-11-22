@@ -183,7 +183,7 @@ final class FxWindowFixture implements AutoCloseable {
 
     /**
      * Has a test window do in place, on the FX thread, the file work the app hands to threads of its own
-     * (PERF-01, Pauta 6.0.1): snippet and template files, project settings, shared run configurations. A test
+     * (PERF-01, Pauta 6.2.0): snippet and template files, project settings, shared run configurations. A test
      * then sees the result as its step returns, as it did before the work left the FX thread; the work off the
      * FX thread itself is StoresOffFxThreadFxTest's.
      */

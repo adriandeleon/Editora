@@ -386,7 +386,7 @@ final class LanguageServerSession implements LanguageClient {
 
     /**
      * TEST SEAM — how often a request's time ran out and was held for an open question: a test sees the hold happen
-     * instead of waiting past the timeout (QUAL-07, Pauta 6.0.1).
+     * instead of waiting past the timeout (QUAL-07, Pauta 6.2.0).
      */
     int timeoutsHeldForTest() {
         return timeoutsHeld.get();
@@ -1416,7 +1416,7 @@ final class LanguageServerSession implements LanguageClient {
     private void pushConfiguration() {
         if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && onFxThread()) {
             // jdtls's settings carry the project's style, read from its build file, formatter profile and
-            // .editorconfig: read and pushed on a thread of its own, in order (PERF-01, Pauta 6.0.1).
+            // .editorconfig: read and pushed on a thread of its own, in order (PERF-01, Pauta 6.2.0).
             JAVA_STYLE.execute(this::pushConfiguration);
             return;
         }
@@ -2023,7 +2023,7 @@ final class LanguageServerSession implements LanguageClient {
     /**
      * As {@link #didChange(String, String)}; {@code onIdentical} runs on the FX thread when the text turns out to
      * be equal to what the server holds (an edit and its undo). That compare, the diff and the JSON are worked out
-     * on the writer thread, in wire order ({@link LazyChangeEvents}, PERF-01, Pauta 6.0.1): such a change still
+     * on the writer thread, in wire order ({@link LazyChangeEvents}, PERF-01, Pauta 6.2.0): such a change still
      * goes out, changing nothing, so the server's version is the one counted here.
      */
     boolean didChange(String uri, String text, Runnable onIdentical) {
@@ -2216,7 +2216,7 @@ final class LanguageServerSession implements LanguageClient {
     /**
      * An unchanging copy of a message's parameter tree — maps, lists and JSON copied, other values (strings,
      * numbers, LSP4J objects the server sent) kept — so the writer thread encodes what was sent even when the
-     * caller changes its own maps meanwhile (PERF-01, Pauta 6.0.1: see {@link DeferredSyncConsumer}). A copy of
+     * caller changes its own maps meanwhile (PERF-01, Pauta 6.2.0: see {@link DeferredSyncConsumer}). A copy of
      * collections, not an encoding.
      */
     static @Nullable Object frozen(@Nullable Object value) {

@@ -197,7 +197,7 @@ public final class PrReviewPane extends Region implements TabContent {
     private static Node renderMarkdown(String markdown, @Nullable Consumer<String> onOpenUrl) {
         // Links in a description or a comment open through the pane's own opener (the window's link choke
         // point): rendered without one they looked like links and did nothing. The text shows plain at once and
-        // rendered when the parse made off the FX thread lands (PERF-01, Pauta 6.0.1).
+        // rendered when the parse made off the FX thread lands (PERF-01, Pauta 6.2.0).
         Node node = MarkdownRenderer.renderedLater(
                 markdown,
                 ast -> MarkdownRenderer.renderDocument(ast, null, onOpenUrl, MarkdownRenderer.ImagePolicy.DATA_ONLY));
@@ -258,7 +258,7 @@ public final class PrReviewPane extends Region implements TabContent {
         row.getStyleClass().add("pr-review-actions");
         row.setAlignment(Pos.CENTER_LEFT);
         PrDetail shown = detail; // every update rebuilds this row
-        // Each link's command acts on the pull request this tab reviews (KBD-01 in Pauta 6.0.1).
+        // Each link's command acts on the pull request this tab reviews (KBD-01 in Pauta 6.2.0).
         if (shown != null && !shown.url().isBlank()) {
             row.getChildren()
                     .add(FocusCommands.press(

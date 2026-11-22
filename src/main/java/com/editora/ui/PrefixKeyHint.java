@@ -29,7 +29,7 @@ import com.editora.editor.UiZoom;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * The which-key style hint (KBD-14 in Pauta 6.0.1): while a multi-key prefix such as {@code C-x} waits for its
+ * The which-key style hint (KBD-14 in Pauta 6.2.0): while a multi-key prefix such as {@code C-x} waits for its
  * next key, a card at the bottom of the window lists every key that can follow, each with the title of the
  * command it runs, and for a key that leads further ({@code C-x v}) how many commands lie behind it.
  *

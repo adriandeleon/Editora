@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-01 (Pauta 6.0.1), part 4: the pieces the file commands, installs and plugins moved off the FX thread with —
+ * PERF-01 (Pauta 6.2.0), part 4: the pieces the file commands, installs and plugins moved off the FX thread with —
  * {@link OffFx}, the looks they make before they act, and their refusal and failure answers.
  */
 @Tag("fx")

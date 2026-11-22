@@ -1092,7 +1092,7 @@ public final class ProcessRegistry {
             return;
         }
         if (onFxThread()) {
-            // PERF-01 (Pauta 6.0.1): the FX thread never writes the file. Every write takes the rows as they are
+            // PERF-01 (Pauta 6.2.0): the FX thread never writes the file. Every write takes the rows as they are
             // when it runs, so one queued write covers every change made before it.
             if (LEDGER_WRITE_QUEUED.compareAndSet(false, true)) {
                 try {

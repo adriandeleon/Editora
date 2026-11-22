@@ -220,7 +220,7 @@ final class InstallCoordinator {
                 .filter(s -> onlyStep == null || s.id().equals(onlyStep))
                 .toList();
         // What is installed is read off the FX thread (receipts, launchers, TypeScript's version: PERF-01, Pauta
-        // 6.0.1); the language counts as installing meanwhile, so a second press says so and starts nothing.
+        // 6.2.0); the language counts as installing meanwhile, so a second press says so and starts nothing.
         installing.add(lang);
         StepLook look = stepLook(all);
         com.editora.perf.OffFx.then("install-look", look::read, read -> {
@@ -323,7 +323,7 @@ final class InstallCoordinator {
         }
         Path config = ops.configDir();
         String xmlCommand = host.settings() == null ? "" : host.settings().getXmlLspCommand();
-        // Receipts, launchers and the XML server's bundle are looked at off the FX thread (PERF-01, Pauta 6.0.1);
+        // Receipts, launchers and the XML server's bundle are looked at off the FX thread (PERF-01, Pauta 6.2.0);
         // the server counts as installing meanwhile, so a second press says so.
         installingServers.add(serverId);
         com.editora.perf.OffFx.then(
@@ -465,7 +465,7 @@ final class InstallCoordinator {
                                         : tr("status.install.javaFallback", serverName(serverId), fellBack));
                         if ("bash".equals(serverId)) {
                             // the server alone lints and formats nothing: ShellCheck and shfmt come with it (C8);
-                            // which of them are here is looked at off the FX thread (PERF-01, Pauta 6.0.1)
+                            // which of them are here is looked at off the FX thread (PERF-01, Pauta 6.2.0)
                             com.editora.config.Settings settings = host.settings();
                             Path config = ops.configDir();
                             com.editora.perf.OffFx.then(
@@ -595,7 +595,7 @@ final class InstallCoordinator {
             onResult.accept(false);
             return;
         }
-        // Each tool's receipt is read off the FX thread (PERF-01, Pauta 6.0.1); busy meanwhile.
+        // Each tool's receipt is read off the FX thread (PERF-01, Pauta 6.2.0); busy meanwhile.
         installingServers.add(key);
         Path config = ops.configDir();
         com.editora.perf.OffFx.then(
@@ -716,7 +716,7 @@ final class InstallCoordinator {
         if (lang == Lang.JAVA) {
             Path bin = ops.configDir().resolve("plugins/lsp/java/bin");
             Path launcher = isWindows() ? bin.resolve("jdtls.bat") : bin.resolve("jdtls");
-            // looked at off the FX thread (PERF-01, Pauta 6.0.1)
+            // looked at off the FX thread (PERF-01, Pauta 6.2.0)
             com.editora.perf.OffFx.then("install-look", () -> Files.exists(launcher), there -> {
                 if (there.or(false)) {
                     host.settings().setJavaLspCommand(InstallCatalog.quoteCommandPath(launcher.toString()));
@@ -729,7 +729,7 @@ final class InstallCoordinator {
     }
 
     /**
-     * What {@link #stepInstalled} reads from the disk, read off the FX thread (PERF-01, Pauta 6.0.1): which pinned
+     * What {@link #stepInstalled} reads from the disk, read off the FX thread (PERF-01, Pauta 6.2.0): which pinned
      * copies are older than this Editora's, whether debugpy is where the installer puts it, whether Editora's own
      * TypeScript server is there, and whether the TypeScript the configured server runs is suitable.
      */
@@ -740,7 +740,7 @@ final class InstallCoordinator {
     /** The inputs of a {@link StepDisk} read, taken on the FX thread. */
     record StepLook(List<Step> steps, Path config, String typeScriptCommand, String javaDebugPath) {
         StepDisk read() {
-            // what "is java-debug there" asks on the FX thread next, looked at here (PERF-01, Pauta 6.0.1): every
+            // what "is java-debug there" asks on the FX thread next, looked at here (PERF-01, Pauta 6.2.0): every
             // path kept, and the one configured now
             com.editora.dap.DebugAdapterLocator.relocateKept();
             com.editora.dap.DapManager.prepareLocate(javaDebugPath);

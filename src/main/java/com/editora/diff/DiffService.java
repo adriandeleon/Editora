@@ -52,7 +52,7 @@ public final class DiffService {
 
     /**
      * As {@link #compute(String, String, DiffEngine.DiffOptions, Consumer)}, on this service's thread from the start
-     * (PERF-01, Pauta 6.0.1): the two texts are made there ({@code left}, {@code right}), the model is passed through
+     * (PERF-01, Pauta 6.2.0): the two texts are made there ({@code left}, {@code right}), the model is passed through
      * {@code after} there (a patch's own line numbers), and its viewer layouts ({@link DiffLayout}) are worked out
      * there too, before the texts and the model are posted on the FX thread.
      */

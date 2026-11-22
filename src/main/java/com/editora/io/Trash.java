@@ -78,7 +78,7 @@ public final class Trash {
 
     /**
      * Finds {@link #system} on a thread of its own, so the FX thread's first ask (a pasted image dropped at a save,
-     * the encrypted file's Move to Trash) answers from memory (PERF-01, Pauta 6.0.1). Each window asks as it opens.
+     * the encrypted file's Move to Trash) answers from memory (PERF-01, Pauta 6.2.0). Each window asks as it opens.
      */
     public static void warm() {
         if (system == null) {

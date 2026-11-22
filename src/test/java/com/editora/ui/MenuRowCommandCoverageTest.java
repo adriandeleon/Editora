@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Every row of every right-click or drop-down menu the app builds is a command's (MENU-05 and KBD-01, Pauta 6.0.1),
+ * Every row of every right-click or drop-down menu the app builds is a command's (MENU-05 and KBD-01, Pauta 6.2.0),
  * or is one of the rows left untagged here, counted per file with the reason. Read from the source: a
  * {@code new MenuItem(…)} (or {@code CheckMenuItem}, {@code RadioMenuItem}) passes when it is handed straight to
  * {@code MenuChords.tag}, {@code FocusCommands.row} / {@code also} (or the Map's), or when the variable it is assigned

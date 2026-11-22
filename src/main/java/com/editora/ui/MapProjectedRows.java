@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.RandomAccess;
 
 /**
- * The Project Map's row boxes on screen, projected from the world layout when they are read (PERF-08, Pauta 6.0.1).
+ * The Project Map's row boxes on screen, projected from the world layout when they are read (PERF-08, Pauta 6.2.0).
  * A pan or a zoom changes the projection, not the rows: a paint used to allocate a screen box for every listed row
  * (5,000 for a whole folder, tens of thousands at the caps) and test each against the viewport. Now a new projection
  * costs nothing, a box is made the first time a row is read in it and kept until the next one, and the paint reads

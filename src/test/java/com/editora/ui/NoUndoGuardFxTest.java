@@ -98,7 +98,7 @@ class NoUndoGuardFxTest {
     }
 
     /**
-     * PERF-01 (Pauta 6.0.1): the safety copy is queued, not waited for. It is on disk once the history worker has
+     * PERF-01 (Pauta 6.2.0): the safety copy is queued, not waited for. It is on disk once the history worker has
      * written it, and it is written before a capture of the same file asked for after it.
      */
     @Test
@@ -152,7 +152,7 @@ class NoUndoGuardFxTest {
 
         assertTrue(result.changed());
         assertEquals(UNSAVED.replace("old", "new"), FxTestSupport.callOnFx(b::getContent));
-        // The text was taken before the edit; its write is queued on the history worker (PERF-01, Pauta 6.0.1).
+        // The text was taken before the edit; its write is queued on the history worker (PERF-01, Pauta 6.2.0).
         SettingsRig.awaitFx(
                 "the safety copy recorded", () -> !revisionsNow(file).isEmpty());
         List<HistoryRevision> revisions = revisions(file);

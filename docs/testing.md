@@ -84,7 +84,7 @@ prototype platform's input/rendering limitations don't apply.
   resource.
 ### Waiting: tests do not sleep
 
-QUAL-07 (Pauta 6.0.1): no test calls `Thread.sleep`, a `TimeUnit` sleep or a timed `LockSupport` park, and
+QUAL-07 (Pauta 6.2.0): no test calls `Thread.sleep`, a `TimeUnit` sleep or a timed `LockSupport` park, and
 `NoSleepInTestsTest` (guard) fails on one anywhere in `src/test/java`. A sleep waits for a guess at how long
 something takes: too short on a loaded machine (a flake), too long everywhere else. Wait on the thing itself,
 in this order:

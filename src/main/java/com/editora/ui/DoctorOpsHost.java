@@ -161,7 +161,7 @@ final class DoctorOpsHost implements DoctorCoordinator.Ops {
 
     @Override
     public void reveal(java.nio.file.Path path) {
-        // whether it is a folder is looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        // whether it is a folder is looked at off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then(
                 "doctor-reveal",
                 () -> java.nio.file.Files.isDirectory(path),

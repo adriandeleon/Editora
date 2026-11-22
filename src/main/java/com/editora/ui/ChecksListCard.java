@@ -31,7 +31,7 @@ import static com.editora.i18n.Messages.tr;
  * The list behind the status bar's pull-request checks segment: one row per check — state glyph, name, its
  * workflow, a link to it on GitHub and, for a failed GitHub Actions job, its failure log — in an in-scene
  * card ({@link OverlayHost}). Failed checks come first, then pending ones: they are why the list was opened.
- * The rows are a virtualized list (PERF-08, Pauta 6.0.1): a pull request can have any number of checks, and only
+ * The rows are a virtualized list (PERF-08, Pauta 6.2.0): a pull request can have any number of checks, and only
  * the rows on screen have nodes. The list is one Tab stop: the arrow keys move along the rows and Enter runs the
  * selected row's first action (its failure log, else its page on GitHub); the links of the rows on screen and
  * the buttons under the list are Tab stops as before, and Esc closes the card.

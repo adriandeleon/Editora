@@ -18,7 +18,7 @@ import javafx.scene.layout.VBox;
  * The window frame {@code main.fxml} declares, built in code: what every window after the first is built from.
  *
  * <p>The first window is built from {@code main.fxml}, a bundled resource the rule lets start-up read. A later
- * window would parse that XML again on the FX thread, which PERF-01 (Pauta 6.0.1) does not allow, so it is built here
+ * window would parse that XML again on the FX thread, which PERF-01 (Pauta 6.2.0) does not allow, so it is built here
  * instead: the same nodes in the same order, each with the id, style class and layout the FXML gives it, injected into
  * the controller's {@code @FXML} fields and wired to its handlers as {@code FXMLLoader} would. {@code MainViewFxTest}
  * keeps the two the same.

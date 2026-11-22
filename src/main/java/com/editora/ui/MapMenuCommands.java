@@ -12,7 +12,7 @@ import org.jspecify.annotations.Nullable;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * The commands behind the rest of the Project Map's right-click rows and buttons (KBD-01 and MENU-05, Pauta 6.0.1):
+ * The commands behind the rest of the Project Map's right-click rows and buttons (KBD-01 and MENU-05, Pauta 6.2.0):
  * the options menu's rows, the filters, the zoom bar, the results strip, a column's header, the row menu of the map
  * and of a card's Structure column, a card's own menu, and the bars and menus of the other cards.
  *

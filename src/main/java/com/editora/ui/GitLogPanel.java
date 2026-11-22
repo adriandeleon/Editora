@@ -503,7 +503,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
 
     /**
      * Narrows the loaded commits to those the text is found in. The loaded commits grow by a page of 200 each time
-     * the list is scrolled to its end, so they are matched off the FX thread (PERF-01, Pauta 6.0.1) on a copy; the
+     * the list is scrolled to its end, so they are matched off the FX thread (PERF-01, Pauta 6.2.0) on a copy; the
      * rows shown stay until the latest answer lands.
      */
     private void applyCommitFilter(String text) {

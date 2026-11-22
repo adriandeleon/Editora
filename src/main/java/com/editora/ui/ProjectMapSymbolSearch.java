@@ -71,7 +71,7 @@ final class ProjectMapSymbolSearch {
             status.accept(tr("project.map.status.symbolsIndexing"));
         }
         index.ensureBuilt(() -> {
-            // Searched and ranked off the FX thread (PERF-01, Pauta 6.0.1), on the index as it is now; the Map drops
+            // Searched and ranked off the FX thread (PERF-01, Pauta 6.2.0), on the index as it is now; the Map drops
             // an answer for a query it has moved on from.
             IndexCoordinator.Corpus corpus = index.corpus();
             LspManager server = anchor == null ? null : lsp;

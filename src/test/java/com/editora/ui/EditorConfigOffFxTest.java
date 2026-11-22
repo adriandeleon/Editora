@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@code .editorconfig} rules on the JavaFX thread come from what a look off it found (PERF-01, Pauta 6.0.1):
+ * {@code .editorconfig} rules on the JavaFX thread come from what a look off it found (PERF-01, Pauta 6.2.0):
  * the FX thread never stats, reads or parses a config, a file never looked at answers from the folders' configs
  * in memory (or as having no rules), and a changed config reaches the listeners when the look behind lands.
  */

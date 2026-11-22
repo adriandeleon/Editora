@@ -8,7 +8,7 @@ import com.editora.editor.PressableLabel;
 
 /**
  * A status-bar segment that does something when pressed: a {@link PressableLabel} that reads and looks like its
- * neighbours, but is a button to everyone. ACC-02 (Pauta 6.0.1): the {@code BUTTON} role, a screen reader's
+ * neighbours, but is a button to everyone. ACC-02 (Pauta 6.2.0): the {@code BUTTON} role, a screen reader's
  * {@code FIRE}, Enter or Space once Tab has reached it (KBD-15), and a click all run its action.
  *
  * <p>The echo line is one too (it opens the Message Log); {@link #announce} tells a screen reader that its text

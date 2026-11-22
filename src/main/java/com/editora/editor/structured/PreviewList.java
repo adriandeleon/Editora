@@ -17,7 +17,7 @@ import javafx.scene.layout.VBox;
 import com.editora.editor.UiZoom;
 
 /**
- * The two shapes of a structured preview's rows (PERF-08, Pauta 6.0.1). On screen a preview is a virtualized list: a
+ * The two shapes of a structured preview's rows (PERF-08, Pauta 6.2.0). On screen a preview is a virtualized list: a
  * file can hold any number of jobs, hosts, operations or entries, and only the rows on screen have nodes. Print and
  * Export to PDF take a picture of the whole preview, so {@link #column} builds every row once, in a plain column, for
  * them. A row is a {@link Supplier} of its node, so both shapes show the same rows with the same nodes.

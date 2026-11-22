@@ -396,7 +396,7 @@ final class DebugTableWindow {
                 failed(ev == null ? "" : ev.result());
                 return;
             }
-            // The page's JSON is parsed off the FX thread (PERF-01, Pauta 6.0.1).
+            // The page's JSON is parsed off the FX thread (PERF-01, Pauta 6.2.0).
             PythonDataTable.parseLater(ev.result(), page -> {
                 if (load == generation) {
                     showPage(page);

@@ -10,7 +10,7 @@ import javafx.animation.AnimationTimer;
 import javafx.application.Platform;
 
 /**
- * Waits for a condition a test has no event for (QUAL-07, Pauta 6.0.1: tests do not sleep). A test that can wait on
+ * Waits for a condition a test has no event for (QUAL-07, Pauta 6.2.0: tests do not sleep). A test that can wait on
  * the thing itself (a latch the code counts down, a {@code CompletableFuture}, a listener, {@code drainFx} after
  * the work landed) does that instead; this is for what only shows as state, such as a row the FX thread added
  * after a worker answered, or a line a fake server recorded.

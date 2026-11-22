@@ -26,7 +26,7 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * The commands behind the right-click menus of the lists, trees and tables whose rows had none: the Settings
- * pages' lists, the Project Map's cards and columns, the debugger's views and windows (MENU-05, Pauta 6.0.1).
+ * pages' lists, the Project Map's cards and columns, the debugger's views and windows (MENU-05, Pauta 6.2.0).
  *
  * <p>Those lists do a handful of things to a row, each the same in all of them: copy it, open it (what Enter or a
  * double-click does, or the page's button for it), rename it, turn it on or off, remove it, move it up or down. Each of those is one command

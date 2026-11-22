@@ -93,7 +93,7 @@ public final class RunService {
 
     /**
      * True from {@link #runInDir} until the program has started (or failed to) on the {@code run-start} thread
-     * (PERF-01, Pauta 6.0.1: the PATH lookup, the start and the ledger write never run on the FX thread). A second
+     * (PERF-01, Pauta 6.2.0: the PATH lookup, the start and the ledger write never run on the FX thread). A second
      * press meanwhile finds the service running and starts nothing.
      */
     private volatile boolean starting;

@@ -152,7 +152,7 @@ final class PrintPreview {
 
     /*
      * The window's sizes, in px at 100%: like every other window, the preview follows the UI zoom (WIN-12, Pauta
-     * 6.0.1), so each is multiplied by it where it is used. The page itself is paper and is not restyled: see
+     * 6.2.0), so each is multiplied by it where it is used. The page itself is paper and is not restyled: see
      * {@link #paper}.
      */
     private static final double WIDTH = 760;

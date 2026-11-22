@@ -1783,7 +1783,7 @@ final class DebugCoordinator {
         if (newPath == null || newPath.equals(oldPath)) {
             return;
         }
-        Path from = oldPath; // whether it is gone is asked off the FX thread (PERF-01, Pauta 6.0.1)
+        Path from = oldPath; // whether it is gone is asked off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then("debug-path-moved", () -> from == null || !Files.exists(from), a -> {
             boolean known = a.ok(); // a remote file whose connection is gone: nothing can be asked about it
             pathMoved(buffer, known ? from : null, newPath, known && Boolean.TRUE.equals(a.value()));
@@ -5433,7 +5433,7 @@ final class DebugCoordinator {
         return out;
     }
 
-    /** {@link SaveChain#savedOrThen} through this window's save path: no nested wait (PERF-01, Pauta 6.0.1). */
+    /** {@link SaveChain#savedOrThen} through this window's save path: no nested wait (PERF-01, Pauta 6.2.0). */
     boolean savedOrThen(List<EditorBuffer> buffers, Runnable again) {
         DebugSession session = s();
         Runnable asked = bound(again); // the saves answer later
@@ -5559,7 +5559,7 @@ final class DebugCoordinator {
             host.setStatus(unavailableMessage(language, b.getPath()));
             return;
         }
-        if (b.isDirty() || b.getPath() == null) { // saved off the FX thread, then launched (PERF-01, Pauta 6.0.1)
+        if (b.isDirty() || b.getPath() == null) { // saved off the FX thread, then launched (PERF-01, Pauta 6.2.0)
             ops.saveThen(
                     b,
                     asThisSession(
@@ -7256,7 +7256,7 @@ final class DebugCoordinator {
     private @Nullable Path chooseFile(String title, @Nullable Path folder) {
         javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
         chooser.setTitle(title);
-        ChooserStart.set(chooser, folder); // no look at the disk on the FX thread first (PERF-01, Pauta 6.0.1)
+        ChooserStart.set(chooser, folder); // no look at the disk on the FX thread first (PERF-01, Pauta 6.2.0)
         java.io.File chosen = ChooserStart.show(
                 chooser, c -> chooseFile != null ? chooseFile.apply(c) : c.showOpenDialog(host.window()));
         return chosen == null ? null : chosen.toPath();

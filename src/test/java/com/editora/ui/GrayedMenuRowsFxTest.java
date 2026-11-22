@@ -43,7 +43,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The menus this change gave reasons to: each grayed row says the sentence for why it is grayed, in each case, and a
- * row that can run says nothing (KBD-04, Pauta 6.0.1). Built as their code builds them, without opening a window
+ * row that can run says nothing (KBD-04, Pauta 6.2.0). Built as their code builds them, without opening a window
  * where the menu does not need one.
  */
 @Tag("fx")

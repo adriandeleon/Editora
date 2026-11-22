@@ -1,5 +1,5 @@
 # Every click handler in src/main/java on a node, and why it needs no keyboard or screen-reader path of its own
-# (ACC-02, Pauta 6.0.1). Read by ClickHandlersGuardTest. One line per file, receiver and method, tab-separated:
+# (ACC-02, Pauta 6.2.0). Read by ClickHandlersGuardTest. One line per file, receiver and method, tab-separated:
 #   path<TAB>receiver<TAB>method<TAB>reason
 # A node built from panes or labels that acts as a button is a PressableLabel / PressableBox / PressablePane
 # (com.editora.editor.Pressable) and needs no line here. A new handler on anything else needs one: a Control

@@ -658,7 +658,7 @@ final class TerminalCoordinator {
 
     /**
      * Opens {@code argv} on a pseudo-terminal where {@code directory}'s commands run, always off the FX thread
-     * (PERF-01, Pauta 6.0.1): elsewhere an SSH channel waits on the host (and on a free long-lived slot), which froze
+     * (PERF-01, Pauta 6.2.0): elsewhere an SSH channel waits on the host (and on a free long-lived slot), which froze
      * the editor; here the PATH lookup, the fork and the ledger write are no work for it either. A program that
      * cannot start ends its tab with the error, as one elsewhere does.
      */

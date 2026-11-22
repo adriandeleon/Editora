@@ -10,11 +10,11 @@ change.
 
 ## Pauta
 
-This app is working toward Pauta 6.0.1. Its rules: https://pauta-project.dev/6.0.1/llms.txt
-(every rule in one file: https://pauta-project.dev/6.0.1/llms-full.txt).
+This app is working toward Pauta 6.2.0. Its rules: https://pauta-project.dev/6.2.0/llms.txt
+(every rule in one file: https://pauta-project.dev/6.2.0/llms-full.txt).
 
 - Before building a feature, read the rules on its page and copy from the code each rule's Reference names.
-- Cite a rule by its ID and edition: "KBD-07 (Pauta 6.0.1)".
+- Cite a rule by its ID and edition: "KBD-07 (Pauta 6.2.0)".
 - Read the numbered edition, never the newest one. Moving to a newer edition is its own change: `pauta.version`
   in `pom.xml`, this file and the README change together.
 - A rule the app does not meet is an entry in `src/main/resources/com/editora/pauta.json`, with an issue. A

@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("fx")
 @DisabledOnOs(
         OS.WINDOWS) // a directory as the command is what makes the fork fail; Windows resolves commands its own way
-// A buffer's server root is looked for off the FX thread (PERF-01, Pauta 6.0.1); here in place, so a sync has
+// A buffer's server root is looked for off the FX thread (PERF-01, Pauta 6.2.0); here in place, so a sync has
 // opened the document when it returns, as the assertions read it.
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class LspStartFailureFxTest {

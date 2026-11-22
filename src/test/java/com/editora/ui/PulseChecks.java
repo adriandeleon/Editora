@@ -8,7 +8,7 @@ import com.editora.testkit.Await;
 /**
  * {@link Await} for FX tests whose condition reads the scene graph or calls {@code callOnFx}: the check may throw,
  * and {@link #untilOnFx} evaluates it on the FX thread. Like {@code Await}, it re-checks after each FX pulse and
- * never sleeps (QUAL-07, Pauta 6.0.1).
+ * never sleeps (QUAL-07, Pauta 6.2.0).
  */
 final class PulseChecks {
 

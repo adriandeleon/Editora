@@ -30,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * ACC-02 (Pauta 6.0.1): every status-bar segment that does something on a click is a button to a screen reader,
+ * ACC-02 (Pauta 6.2.0): every status-bar segment that does something on a click is a button to a screen reader,
  * which presses it through {@link AccessibleAction#FIRE}, and a new status message is told to the screen reader.
  */
 @Tag("fx")

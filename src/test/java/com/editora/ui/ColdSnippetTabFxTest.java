@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * A Tab pressed in a language whose snippet files are still being read off the FX thread (PERF-01, Pauta 6.0.1)
+ * A Tab pressed in a language whose snippet files are still being read off the FX thread (PERF-01, Pauta 6.2.0)
  * is not lost: it waits for them and expands the trigger when the buffer is as it was; changed meanwhile, it is
  * dropped; with no trigger to expand, it is the Tab it would have been.
  */

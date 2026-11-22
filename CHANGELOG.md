@@ -64,6 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Editora now works toward Pauta 6.2.0** (it was 6.0.1). About and the README name the new edition. In 6.2.0 an icon
+  on a menu row is optional, so menu rows without one are no longer listed as unmet.
 - **Force Push is offered only after a rejected push.** The Git ▸ Remotes ▸ Force Push (with Lease) row and its
   palette command are gone. When a push is rejected because the remote branch has commits yours does not, the
   question offers Pull, then Push (the default) and, in red beside it, Force with Lease, which still refuses to

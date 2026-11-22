@@ -26,7 +26,7 @@ import com.editora.i18n.Messages;
  * and the upcoming fire times. A malformed job renders as a red error row. Self-scrolling, so it hosts directly
  * as the Split/Preview side, like {@link StructuredTree}. Kept in {@code editor} (no {@code ui} dependency).
  *
- * <p>The live preview is a virtualized list (PERF-08, Pauta 6.0.1): a crontab can hold any number of jobs, and
+ * <p>The live preview is a virtualized list (PERF-08, Pauta 6.2.0): a crontab can hold any number of jobs, and
  * only the rows on screen have nodes. {@link #content} still makes a node for every row: it is the picture an
  * export or a print takes, which has to hold them all.
  */

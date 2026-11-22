@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-01 (Pauta 6.0.1), the searches handlers made as the user types or presses a key: each test drives on the FX
+ * PERF-01 (Pauta 6.2.0), the searches handlers made as the user types or presses a key: each test drives on the FX
  * thread, the way an event does, what used to search or parse there — Search Everywhere typed into (the commands, the
  * project's files and symbols), the command palette and a picker filtered, the Structure outline built and filtered,
  * the Settings search, the Git log's filter, Go to Definition without a language server, Go to Symbol, and a save

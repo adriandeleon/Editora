@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
  * Every window after the first is built by {@link MainView} rather than by parsing {@code main.fxml} on the FX thread
- * (PERF-01, Pauta 6.0.1): the two frames must stay the same — the same nodes in the same order with the same ids, style
+ * (PERF-01, Pauta 6.2.0): the two frames must stay the same — the same nodes in the same order with the same ids, style
  * classes and layout, every {@code @FXML} field of the controller filled and every button wired.
  */
 @Tag("fx")

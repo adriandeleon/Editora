@@ -19,7 +19,7 @@ import org.reactfx.Subscription;
  * The breadcrumb's tail for a Markdown document: the headings that enclose the caret, outermost first, each
  * one a link to its line.
  *
- * <p>The headings are parsed off the JavaFX thread on a snapshot (PERF-01, Pauta 6.0.1), the latest ask winning,
+ * <p>The headings are parsed off the JavaFX thread on a snapshot (PERF-01, Pauta 6.2.0), the latest ask winning,
  * and land only on the text they were read from; until then the crumbs show what they showed.
  *
  * <p>Nothing here runs on a keystroke. A caret-line change or an edit only restarts a short pause; the

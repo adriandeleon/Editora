@@ -9,7 +9,7 @@
      - It must NOT use a descendant combinator: a combinator forces JavaFX to walk ancestors and
        defeats the per-node CSS style cache, which makes RichTextFX restyle every visible text segment
        on each scroll pulse — catastrophic scroll lag. The compound form matches by style class alone. */
-/* The palette this sheet's rules name (ICON-08, Pauta 6.0.1): the default editor theme's syntax colours (Primer
+/* The palette this sheet's rules name (ICON-08, Pauta 6.2.0): the default editor theme's syntax colours (Primer
    Light; -primer-ink, -primer-link and -primer-ground are app.css's), the Primer Dark set a Markdown preview forced
    dark gives its code, the eight rainbow hues (CSV columns, bracket depth) and the two ANSI hues no theme role
    has. A syntax palette is the editor theme's own and has no AtlantaFX role, so these are literals, declared once

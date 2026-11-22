@@ -21,7 +21,7 @@ final class SearchEverywhereHost implements SearchEverywherePopup.Ops {
     }
 
     /**
-     * The commands, files and symbols as they are now, to search off the FX thread (PERF-01, Pauta 6.0.1): taken on
+     * The commands, files and symbols as they are now, to search off the FX thread (PERF-01, Pauta 6.2.0): taken on
      * the FX thread, it asks each command once whether it can run and copies the key chords, searches nothing; the
      * index's corpus is its unchanging lists ({@link IndexCoordinator#corpus}).
      */

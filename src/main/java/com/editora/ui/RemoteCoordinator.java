@@ -506,7 +506,7 @@ final class RemoteCoordinator {
      * remote folder in the Project tool window.
      */
     void connect(@Nullable RemoteConnection prefill) {
-        // ~/.ssh/config and what it includes are read off the FX thread first (PERF-01, Pauta 6.0.1); the form opens
+        // ~/.ssh/config and what it includes are read off the FX thread first (PERF-01, Pauta 6.2.0); the form opens
         // with its hosts. A second press meanwhile opens nothing more.
         if (readingSshConfig) {
             return;
@@ -652,7 +652,7 @@ final class RemoteCoordinator {
             }
         };
         // What ~/.ssh/config says of the host typed: read off the FX thread (it stats the config and every file it
-        // includes) once typing pauses, and the latest answer is applied (PERF-01, Pauta 6.0.1).
+        // includes) once typing pauses, and the latest answer is applied (PERF-01, Pauta 6.2.0).
         long[] asked = {0};
         Runnable lookUpHost = () -> {
             String host = hostField.getText();

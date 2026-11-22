@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Env files are parsed where they are read; what the FX thread asks later parses nothing (PERF-01, Pauta 6.0.1). */
+/** Env files are parsed where they are read; what the FX thread asks later parses nothing (PERF-01, Pauta 6.2.0). */
 class HttpEnvironmentsParsedTest {
 
     private static final String PUBLIC =

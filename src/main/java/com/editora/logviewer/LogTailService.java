@@ -81,7 +81,7 @@ public final class LogTailService {
             delivered = new AtomicLong(startOffset);
         }
 
-        /** TEST SEAM — how many polls of this follow have finished (QUAL-07, Pauta 6.0.1: a test waits on them). */
+        /** TEST SEAM — how many polls of this follow have finished (QUAL-07, Pauta 6.2.0: a test waits on them). */
         long pollsForTest() {
             return polls.get();
         }
@@ -115,7 +115,7 @@ public final class LogTailService {
      * Starts following {@code file} from {@code startOffset} — the end of what the buffer already holds —
      * decoding with {@code charset}. Returns a {@link Handle}; events are delivered to {@code listener} on
      * the FX thread. A negative {@code startOffset} follows from the file's end as it is when the follow starts,
-     * measured on the poll thread (PERF-01, Pauta 6.0.1: no stat on the FX thread).
+     * measured on the poll thread (PERF-01, Pauta 6.2.0: no stat on the FX thread).
      */
     public Handle follow(Path file, long startOffset, Charset charset, Listener listener) {
         Handle handle = new Handle(Math.max(0, startOffset));

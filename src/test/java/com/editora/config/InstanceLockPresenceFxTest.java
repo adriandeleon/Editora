@@ -16,7 +16,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Whether another instance is here is never probed on the FX thread (PERF-01, Pauta 6.0.1). */
+/** Whether another instance is here is never probed on the FX thread (PERF-01, Pauta 6.2.0). */
 @Tag("fx")
 class InstanceLockPresenceFxTest {
 

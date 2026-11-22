@@ -283,7 +283,7 @@ public final class UiZoom {
 
     /**
      * {@link #sheet(String)} at {@code atPercent}. Off the FX thread a copy not made yet is made in place. On the
-     * FX thread it is never read or scaled there (PERF-01, Pauta 6.0.1): a copy not made yet answers the 100% sheet
+     * FX thread it is never read or scaled there (PERF-01, Pauta 6.2.0): a copy not made yet answers the 100% sheet
      * for now, is made on {@code ui-zoom-sheets}, and every open window is re-pointed to it when it lands, so a
      * popup first opened while zoomed shows at 100% for a moment rather than not at all.
      */

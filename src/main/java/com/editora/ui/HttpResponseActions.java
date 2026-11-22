@@ -91,7 +91,7 @@ final class HttpResponseActions {
         chooser.setInitialFileName(saveName(ex.url(), ext));
         Path file = buffer.getPath();
         Path dir = file != null ? file.toAbsolutePath().getParent() : ops.projectRoot(); // untitled: the project
-        ChooserStart.set(chooser, dir); // no look at the disk on the FX thread first (PERF-01, Pauta 6.0.1)
+        ChooserStart.set(chooser, dir); // no look at the disk on the FX thread first (PERF-01, Pauta 6.2.0)
         File chosen = ChooserStart.show(chooser, c -> c.showSaveDialog(host.window()));
         if (chosen == null) {
             return;

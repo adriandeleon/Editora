@@ -225,7 +225,7 @@ final class MarkdownLinkUpdater {
     /**
      * FX thread: open buffers — of every window — are snapshotted here and edited here; closed files are rewritten
      * on the worker. An open buffer's links are parsed and rewritten on the worker too, from its snapshot (PERF-01,
-     * Pauta 6.0.1), and the edit applied on the FX thread only to the version it was worked out from: a buffer typed
+     * Pauta 6.2.0), and the edit applied on the FX thread only to the version it was worked out from: a buffer typed
      * into meanwhile has it worked out again, up to {@link #OPEN_TRIES} times, then is reported with the failures.
      */
     private void apply(Plan plan, CompletableFuture<Outcome> run) {

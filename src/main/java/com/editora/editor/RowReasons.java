@@ -28,7 +28,7 @@ import org.jspecify.annotations.Nullable;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * A row of a right-click menu or a drop-down that cannot run now says why (KBD-04 in Pauta 6.0.1), as a menu bar
+ * A row of a right-click menu or a drop-down that cannot run now says why (KBD-04 in Pauta 6.2.0), as a menu bar
  * row does: it stays where it is, grayed, its tooltip says why, a screen reader hears why, the arrow keys reach it,
  * and choosing it (a click, Enter or Space) says why in the status bar instead of running.
  *

@@ -425,7 +425,7 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
 
     /**
      * The name the Markdown parse of a reply is heard by, on its own thread: a reply of up to 200,000 chars is
-     * parsed off the JavaFX thread (PERF-01, Pauta 6.0.1), and only the nodes are built on it.
+     * parsed off the JavaFX thread (PERF-01, Pauta 6.2.0), and only the nodes are built on it.
      */
     static final String PARSE_SITE = "AgentPanel.parse";
 
@@ -693,7 +693,7 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         modeLabel.setText(tr("agent.modeLabel", name == null || name.isEmpty() ? "—" : name));
     }
 
-    /** The plan shows this many entries at most, and says how many it has past them (PERF-08, Pauta 6.0.1). */
+    /** The plan shows this many entries at most, and says how many it has past them (PERF-08, Pauta 6.2.0). */
     static final int MAX_PLAN_ENTRIES = 100;
 
     /** Renders the agent's current plan as a checklist (one line per entry, status glyph prefixed).

@@ -735,7 +735,7 @@ final class PluginCoordinator {
             return;
         }
         // What the question shows (the folders it brings) and the consent's fingerprint (a hash) are read off
-        // the FX thread (PERF-01, Pauta 6.0.1); the install stays busy meanwhile, so a second press waits.
+        // the FX thread (PERF-01, Pauta 6.2.0); the install stays busy meanwhile, so a second press waits.
         com.editora.perf.OffFx.then("plugin-consent", () -> StagedFacts.of(st), facts -> {
             installing = false;
             StagedFacts f = facts.value();
@@ -862,7 +862,7 @@ final class PluginCoordinator {
         if (d == null || d.loadError() != null) {
             return false;
         }
-        // The folders it brings are answered from what the plugin list's scan found (PERF-01, Pauta 6.0.1).
+        // The folders it brings are answered from what the plugin list's scan found (PERF-01, Pauta 6.2.0).
         PluginManager listed = pluginManager;
         String caps = PluginDisclosure.capabilities(
                 d.manifest(),
@@ -1022,7 +1022,7 @@ final class PluginCoordinator {
         String name = PluginDisclosure.clean(d.displayName(), 80);
         removing.add(d.id());
         // Whether it keeps data is looked at off the FX thread, then the question; the folder is removed off it too
-        // (PERF-01, Pauta 6.0.1).
+        // (PERF-01, Pauta 6.2.0).
         com.editora.perf.OffFx.then(
                 "plugin-uninstall-look", () -> Files.isDirectory(d.dir().resolve("data")), data -> {
                     if (!confirm.test(uninstallQuestion(name, d.dir().toString(), data.or(false)))) {
@@ -1209,7 +1209,7 @@ final class PluginCoordinator {
         public void addEditorMenuItem(String label, Consumer<ActiveEditor> action) {
             if (label != null && action != null) {
                 fx(() -> {
-                    // The row is a command too (KBD-01 in Pauta 6.0.1), on the active editor as the row is.
+                    // The row is a command too (KBD-01 in Pauta 6.2.0), on the active editor as the row is.
                     String cid = ownId(desc, "editorMenu." + (contributions.menuItems.size() + 1));
                     EditorMenuContribution item = new EditorMenuContribution(desc.displayName(), label, action, cid);
                     pluginMenuItems.add(item);
@@ -1272,7 +1272,7 @@ final class PluginCoordinator {
             };
             if (javafx.application.Platform.isFxApplicationThread()) {
                 // Asked from a plugin's start or command on the FX thread: made on a thread of its own (PERF-01,
-                // Pauta 6.0.1). A plugin writes into it from its own thread, as it should any file.
+                // Pauta 6.2.0). A plugin writes into it from its own thread, as it should any file.
                 Thread.ofVirtual().name("plugin-data-dir").start(make);
             } else {
                 make.run();

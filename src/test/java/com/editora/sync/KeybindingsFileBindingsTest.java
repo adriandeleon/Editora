@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * The FX thread hands the sync thread a copy of the bindings (memory only); the file is rendered and parsed there
- * (PERF-01, Pauta 6.0.1). The copy, its file and its parse agree with the settings' own.
+ * (PERF-01, Pauta 6.2.0). The copy, its file and its parse agree with the settings' own.
  */
 class KeybindingsFileBindingsTest {
 

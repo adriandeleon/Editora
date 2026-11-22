@@ -71,7 +71,7 @@ public final class CustomAdapters {
         List<String> problems = new ArrayList<>();
         Object root;
         try {
-            // Read through Jackson as JSONC (PLAT-14, Pauta 6.0.1): comments and trailing commas, as VS Code allows.
+            // Read through Jackson as JSONC (PLAT-14, Pauta 6.2.0): comments and trailing commas, as VS Code allows.
             root = text == null || text.isBlank() ? null : MAPPER.readValue(text, Object.class);
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             return new Parsed(List.of(), List.of(String.valueOf(e.getOriginalMessage())));

@@ -458,7 +458,7 @@ final class GitHubCoordinator {
         if (file == null || !RemoteExec.runsFor(file)) {
             return null;
         }
-        // A buffer's path is a file: no need to ask the disk on the FX thread (PERF-01, Pauta 6.0.1), nor the
+        // A buffer's path is a file: no need to ask the disk on the FX thread (PERF-01, Pauta 6.2.0), nor the
         // server, a round trip.
         return file.getParent();
     }

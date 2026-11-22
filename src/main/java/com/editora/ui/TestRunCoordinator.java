@@ -387,7 +387,7 @@ final class TestRunCoordinator implements TestRunHook {
 
     /**
      * The claimed run's line stage: its output is parsed where it is read ({@link #prepareTestOutput}), off the FX
-     * thread (PERF-01, Pauta 6.0.1). Null between runs and for an external run.
+     * thread (PERF-01, Pauta 6.2.0). Null between runs and for an external run.
      */
     private volatile @Nullable TestLineStage stage;
 

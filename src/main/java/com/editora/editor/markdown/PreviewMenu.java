@@ -170,7 +170,7 @@ public final class PreviewMenu {
         boolean markdown = b.isMarkdown();
         boolean math = MathImages.isEnabled();
         java.nio.file.Path file = b.getPath();
-        // Rendered, and its local images read, off the FX thread (PERF-01, Pauta 6.0.1); the clipboard is filled
+        // Rendered, and its local images read, off the FX thread (PERF-01, Pauta 6.2.0); the clipboard is filled
         // when that is done.
         com.editora.perf.OffFx.then(
                 "preview-copy-html",
@@ -199,7 +199,7 @@ public final class PreviewMenu {
         }
         String content = b.getContent();
         boolean math = MathImages.isEnabled();
-        // Parsed and rendered off the FX thread (PERF-01, Pauta 6.0.1); the clipboard is filled when that is done.
+        // Parsed and rendered off the FX thread (PERF-01, Pauta 6.2.0); the clipboard is filled when that is done.
         com.editora.perf.OffFx.then(COPY_HTML_SITE, () -> MarkdownClipboardHtml.toMarkup(content, math), markup -> {
             if (markup.value() != null) {
                 javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();

@@ -3,7 +3,7 @@ package com.editora.ui;
 import com.editora.perf.OffFx;
 
 /**
- * Where a picker's filter runs as the user types: off the JavaFX thread (PERF-01, Pauta 6.0.1: no searching of any
+ * Where a picker's filter runs as the user types: off the JavaFX thread (PERF-01, Pauta 6.2.0: no searching of any
  * size on it). Each picker owns a {@link LatestOnly} made by {@link #latest}: a keystroke supersedes the filter in
  * flight (interrupted, its answer dropped), and the answer of the latest one comes back on the FX thread. The FX
  * thread takes a copy of what is filtered (the rows, the strings they are matched by) and keeps the rows shown until

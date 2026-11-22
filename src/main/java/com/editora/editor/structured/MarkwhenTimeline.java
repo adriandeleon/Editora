@@ -48,7 +48,7 @@ public final class MarkwhenTimeline {
     private static final int MAX_EVENTS = 500;
 
     /**
-     * The most rows the timeline draws, a group's heading row and an event's alike (PERF-08, Pauta 6.0.1): a file of
+     * The most rows the timeline draws, a group's heading row and an event's alike (PERF-08, Pauta 6.2.0): a file of
      * headings over few events is as many rows as a file of events.
      */
     static final int MAX_ROWS = 1000;

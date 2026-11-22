@@ -215,7 +215,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
             show(scope, byProject, null);
             return;
         }
-        // Matched off the FX thread (PERF-01, Pauta 6.0.1), on a copy of each bookmark's file name and label; the tree
+        // Matched off the FX thread (PERF-01, Pauta 6.2.0), on a copy of each bookmark's file name and label; the tree
         // shown stays until the latest filter's answer lands.
         List<String> names = new ArrayList<>();
         List<String> labels = new ArrayList<>();

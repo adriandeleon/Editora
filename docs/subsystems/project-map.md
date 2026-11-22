@@ -709,7 +709,7 @@ is restored and the status bar says so. Each note in it is headed, as its sticky
 (the noted text as the tooltip); pressing the heading opens the file at the note. A folder's note has none.
 A note card is a sheet in the note's accent wash (`-note-paper` and `-note-edge` on `app.css`'s `.root`, chained to the
 theme's accent-subtle and accent-muted) over the opaque ground, with the theme's ink on it: amber means "not durable
-yet", not "a note" (ICON-18, Pauta 6.0.1).
+yet", not "a note" (ICON-18, Pauta 6.2.0).
 
 A code or declaration card carries its own Personal Notes. Selecting text in it brings up a floating bar over
 the selection — the Markdown buffer's (`MarkdownFormatBar.placeY`/`trackMouse`), with one **Add Personal Note**

@@ -115,7 +115,7 @@ class WindowManagerLaunchFxTest {
 
         /**
          * Steps the restore queue until a window exists: a window whose session the launch did not read is read off
-         * the FX thread first and built on its turn after that (PERF-01, Pauta 6.0.1).
+         * the FX thread first and built on its turn after that (PERF-01, Pauta 6.2.0).
          */
         void awaitFirstWindow() throws Exception {
             for (int i = 0; i < 400 && keys().isEmpty(); i++) {
