@@ -30,12 +30,47 @@ Most grammars were obtained from the shiki "tm-grammars" collection:
     https://github.com/shikijs/textmate-grammars-themes
     (packages/tm-grammars/grammars)
 
-The C#, CSS, dotenv, PowerShell, SQL, Scala, and Clojure grammars are from
-tm-grammars 1.32.22; the other grammars from this source are from earlier
+The C#, CSS, dotenv, PowerShell, SQL, Scala, Clojure, and Dart grammars are
+from tm-grammars 1.32.22; the other grammars from this source are from earlier
 releases. The Scala grammar (scala.tmLanguage.json) is shiki's copy of
 scala/vscode-scala-syntax and the Clojure grammar (clojure.tmLanguage.json) of
 the one Microsoft Visual Studio Code ships (from atom/language-clojure), both
 under the MIT License; both are vendored unmodified.
+
+The Dart grammar (dart.tmLanguage.json) is shiki's copy of the one Microsoft
+Visual Studio Code ships (extensions/dart, MIT), which comes from the Dart
+project's dart-lang/dart-syntax-highlight under the BSD 3-Clause License; it is
+vendored unmodified.
+
+    https://github.com/dart-lang/dart-syntax-highlight
+
+    Copyright 2020, the Dart project authors.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are
+    met:
+
+        * Redistributions of source code must retain the above copyright
+          notice, this list of conditions and the following disclaimer.
+        * Redistributions in binary form must reproduce the above
+          copyright notice, this list of conditions and the following
+          disclaimer in the documentation and/or other materials provided
+          with the distribution.
+        * Neither the name of Google LLC nor the names of its
+          contributors may be used to endorse or promote products derived
+          from this software without specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+    OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 These are aggregated by shiki from their respective upstream projects, each
 under its original license (predominantly MIT, with some under other permissive
@@ -163,7 +198,7 @@ crontab, Caddyfile,
 fstab, hosts, .properties, deb822 (Debian control / APT sources), APT
 sources.list, network interfaces, Debian changelog, unified diff/patch,
 Makefile, justfile, Protocol Buffers, GraphQL, Astro, .gitattributes, pip
-requirements, Scala, Clojure.
+requirements, Scala, Clojure, Dart.
 
 ================================================================================
 Bundled fonts
@@ -237,8 +272,8 @@ and java.json, which started from friendly-snippets and was
 largely rewritten for Editora: fixed bodies (class name, package, semicolons),
 arrow switch, records, sealed types, streams, text blocks, virtual threads,
 JUnit 5, and IntelliJ-style alias triggers. The remaining snippet files (xml,
-batchfile, groovy, scala, clojure, json, yaml, ini, global) are original to
-Editora and covered by Editora's own MIT License.
+batchfile, groovy, scala, clojure, dart, json, yaml, ini, global) are original
+to Editora and covered by Editora's own MIT License.
 
 ================================================================================
 Bundled Maven POM schemas
@@ -497,8 +532,8 @@ Simple Icons (browser + file-type glyphs)
     browser picker (com.editora.ui.Icons), the Apache Maven feather glyph in the
     Maven toolbar button (com.editora.ui.Icons.maven), and the per-language
     file-type glyphs in com.editora.ui.FileIcons (Java, Python, JavaScript,
-    TypeScript, Go, PHP, Ruby, C, C++, C#, Kotlin, Apache Groovy, Scala, Clojure,
-    HTML5, CSS, Markdown, YAML,
+    TypeScript, Go, Dart, PHP, Ruby, C, C++, C#, Kotlin, Apache Groovy, Scala,
+    Clojure, HTML5, CSS, Markdown, YAML,
     Bash, Docker, Terraform, Mermaid, …), are the single-path SVG logos from the
     Simple Icons collection,
     released under CC0 1.0 Universal (public domain). The brand logos are

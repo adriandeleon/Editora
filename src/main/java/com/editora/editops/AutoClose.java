@@ -98,6 +98,9 @@ public final class AutoClose {
         if ("clojure".equals(language) && (typed == '\'' || typed == '`')) {
             return Decision.NONE;
         }
+        if ("dart".equals(language) && !hasSelection) {
+            return dart(typed, lineBeforeCaret, prev, next);
+        }
         if (!"python".equals(language) || hasSelection) {
             return decide(typed, prev, next, hasSelection);
         }
@@ -113,6 +116,30 @@ public final class AutoClose {
             }
         }
         return decide(typed, prev, next, hasSelection);
+    }
+
+    /**
+     * Dart: no backtick strings, {@code '''} and {@code """} open multi-line strings, and {@code r} is the one
+     * string prefix (a raw string).
+     */
+    private static Decision dart(char typed, String lineBeforeCaret, char prev, char next) {
+        if (typed == '`') {
+            return Decision.NONE;
+        }
+        if ((typed == '"' || typed == '\'') && next != typed) {
+            if (opensTripleQuote(lineBeforeCaret, typed)) {
+                return new Decision(Action.INSERT_TRIPLE, typed);
+            }
+            int n = lineBeforeCaret.length();
+            boolean rawPrefix = prev == 'r'
+                    && (n < 2
+                            || !(Character.isLetterOrDigit(lineBeforeCaret.charAt(n - 2))
+                                    || lineBeforeCaret.charAt(n - 2) == '_'));
+            if (rawPrefix && !Character.isLetterOrDigit(next)) {
+                return new Decision(Action.INSERT_PAIR, typed);
+            }
+        }
+        return decide(typed, prev, next, false);
     }
 
     /** Whether the line ends in two {@code q} that open an empty string (not the end of a longer quote run). */

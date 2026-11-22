@@ -52,6 +52,7 @@ public final class CustomAdapters {
             "rdbg",
             "php",
             "bashdb",
+            "dart",
             "java",
             "editora-jvm",
             "scala");

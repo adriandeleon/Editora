@@ -293,6 +293,7 @@ public final class GrammarRegistry {
         scopeToResource.put("source.cpp", "cpp");
         scopeToResource.put("source.rust", "rust");
         scopeToResource.put("source.go", "go");
+        scopeToResource.put("source.dart", "dart");
         scopeToResource.put("source.cs", "csharp");
         scopeToResource.put("text.html.markdown", "markdown");
         scopeToResource.put("source.json", "json");
@@ -408,6 +409,7 @@ public final class GrammarRegistry {
         mapExtensions("source.cpp", "cpp", "cc", "cxx", "c++", "hpp", "hh", "hxx", "h++", "ipp", "inl");
         mapExtensions("source.rust", "rs");
         mapExtensions("source.go", "go");
+        mapExtensions("source.dart", "dart");
         mapExtensions("source.cs", "cs", "csx");
         mapExtensions("text.html.markdown", "md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mdx", "rmd", "qmd");
         // a Jupyter notebook is JSON; a VS Code workspace file is JSON with comments (JS review A102)

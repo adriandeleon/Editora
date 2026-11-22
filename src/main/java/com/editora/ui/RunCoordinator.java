@@ -1197,6 +1197,8 @@ final class RunCoordinator {
             runGo(run);
         } else if (ScriptRunCommand.RUST.equals(cfg.type())) {
             runRust(run);
+        } else if (ScriptRunCommand.DART.equals(cfg.type())) {
+            runDart(run);
         } else {
             runNative(run, ScriptRunCommand.CPP.equals(cfg.type()));
         }
@@ -1231,8 +1233,63 @@ final class RunCoordinator {
         switch (language) {
             case ScriptRunCommand.GO -> runGo(run);
             case ScriptRunCommand.RUST -> runRust(run);
+            case ScriptRunCommand.DART -> runDart(run);
             default -> runNative(run, ScriptRunCommand.CPP.equals(language));
         }
+    }
+
+    /** What a Dart Run read off the FX thread: the file's package folder and its {@code pubspec.yaml}. */
+    private record DartRead(@Nullable Path root, @Nullable String pubspec) {}
+
+    /**
+     * A Dart file ({@link com.editora.run.DartRun}): {@code dart run <file>} in its package's folder (the file's
+     * outside one), or for a Flutter app's file {@code flutter run -d <device> -t <file>} in the app's, on the device
+     * Settings → Debugging names (blank: this computer's desktop). The package's folder is trusted first: pub fetches
+     * its packages and runs their build hooks.
+     */
+    private void runDart(CompiledRun run) {
+        Path source = run.source();
+        // The package and its pubspec are read off the FX thread (PERF-01, Pauta 6.2.0).
+        offFx(
+                "run-dart-plan",
+                () -> {
+                    com.editora.perf.BlockingSites.enter("DartRun.plan");
+                    Path root = com.editora.run.DartRun.packageRoot(source, java.nio.file.Files::isRegularFile);
+                    String pubspec = null;
+                    if (root != null) {
+                        try {
+                            pubspec = java.nio.file.Files.readString(root.resolve(com.editora.run.DartRun.PUBSPEC));
+                        } catch (java.io.IOException e) {
+                            pubspec = null; // unreadable: dart says so
+                        }
+                    }
+                    return new DartRead(root, pubspec);
+                },
+                read -> runDartPlanned(run, source, read));
+    }
+
+    private void runDartPlanned(CompiledRun run, Path source, DartRead read) {
+        Path root = read.root();
+        if (root != null
+                && !ops.trustBuild(root, List.of(tr("dialog.trust.item.pubspec", com.editora.run.DartRun.PUBSPEC)))) {
+            return; // not trusted: nothing runs
+        }
+        var s = host.settings();
+        com.editora.run.DartRun.Plan plan = com.editora.run.DartRun.plan(
+                source,
+                root,
+                read.pubspec(),
+                run.args(),
+                s.getDartDebugPath().isBlank() ? "dart" : s.getDartDebugPath(),
+                s.getFlutterDebugPath().isBlank() ? "flutter" : s.getFlutterDebugPath(),
+                com.editora.run.DartRun.device(s.getFlutterDevice()));
+        // Saved off the FX thread first: dart reads the package's files from disk (PERF-01).
+        saveBuffersUnderThen(plan.cwd(), List.of("dart"), () -> {
+            pendingRerun = run.again(); // Rerun reads the package again (a pubspec edited meanwhile)
+            // flutter runs in its app's folder, whatever a configuration names: that is where it finds the app.
+            Path dir = plan.flutter() || run.dir() == null ? plan.cwd() : run.dir();
+            streamRun(run.label(), dir, plan.argv(), run.env(), source);
+        });
     }
 
     /** A C or C++ file: {@link com.editora.dap.NativeBuild}'s plan for it, then the program that made. */

@@ -149,6 +149,7 @@ public final class RunConfigDefaults {
             case "cpp" -> ScriptRunCommand.CPP;
             case "go" -> ScriptRunCommand.GO;
             case "rust" -> ScriptRunCommand.RUST;
+            case "dart" -> ScriptRunCommand.DART;
             default -> ScriptRunCommand.isJvmScript(language) ? language : null;
         };
     }

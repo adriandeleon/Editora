@@ -431,6 +431,8 @@ final class DebugCoordinator {
     private final InstructionBreakpoints instructionBreakpoints = new InstructionBreakpoints(this);
     private final MemoryEdits memoryEdits = new MemoryEdits(this);
 
+    private final DartDebugLaunch dart = new DartDebugLaunch(this); // Dart, and a Flutter app's Dart
+
     /** The build facts a launch asks: looked at off the FX thread first when not known ({@link DebugFacts}). */
     private final DebugFacts facts = new DebugFacts(this::executableFacts, this::sayBusy, this::lookFailed);
 
@@ -1371,6 +1373,7 @@ final class DebugCoordinator {
                         on && s.isBashDebugEnabled(),
                         scope.debugTool("bash", s.getBashDebugPath()),
                         found -> applyGating());
+        dart.configure(on, s, scope, this::applyGating); // dart, and flutter for a Flutter app's file
         // C and C++: the same CodeLLDB as Rust's.
         dap().configureExternal(
                         com.editora.dap.DebugLanguages.CPP,
@@ -5658,6 +5661,10 @@ final class DebugCoordinator {
             debugScriptFile(path, language, fileArgs);
             return;
         }
+        if ("dart".equals(language)) {
+            dart.debug(path, fileArgs, java.util.Map.of(), null, false);
+            return;
+        }
         com.editora.dap.DebugLanguage own = com.editora.dap.DebugLanguages.forLanguage(b.getLanguage());
         if (own != null && com.editora.dap.DebugLanguages.custom().contains(own)) {
             debugCustomFile(b, path, own, fileArgs);
@@ -6560,6 +6567,8 @@ final class DebugCoordinator {
                 debugGo(source, sourceText(source, read.text()), -1, args, extras);
             } else if (com.editora.run.ScriptRunCommand.RUST.equals(type)) {
                 debugRust(source, sourceText(source, read.text()), -1, args, extras);
+            } else if (com.editora.run.ScriptRunCommand.DART.equals(type)) {
+                dart.debug(source, args, extras.env(), extras.cwd(), true);
             } else {
                 debugNative(source, com.editora.run.ScriptRunCommand.CPP.equals(type), args, extras);
             }

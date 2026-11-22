@@ -1527,6 +1527,7 @@ public final class MarkdownRenderer {
             Map.entry("rs", "rs"),
             Map.entry("golang", "go"),
             Map.entry("go", "go"),
+            Map.entry("dart", "dart"),
             Map.entry("bash", "sh"),
             Map.entry("shell", "sh"),
             Map.entry("shellscript", "sh"), // VS Code's language id

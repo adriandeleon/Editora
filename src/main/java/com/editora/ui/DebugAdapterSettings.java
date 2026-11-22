@@ -34,7 +34,7 @@ final class DebugAdapterSettings {
      * @param setPath sets that
      * @param pathLabelKey the picker's prompt for that path
      * @param toolId the tool the Debugging page's status row checks
-     * @param installId what Install fetches for it
+     * @param installId what Install fetches for it; blank when nothing does (an SDK ships it)
      * @param offKey what is said when it is switched off; null with {@code enabled}
      * @param missing what is said when it is on but not found, with the settings and the project's paths
      */
@@ -185,7 +185,19 @@ final class DebugAdapterSettings {
                     "bash-debug",
                     InstallCatalog.BASH_DEBUG_STEP,
                     "status.debug.bashOff",
-                    (s, scope) -> tr("status.debug.bashDebugMissing")));
+                    (s, scope) -> tr("status.debug.bashDebugMissing")),
+            // The SDK ships the adapter (dart debug_adapter): nothing to install apart from the SDK itself.
+            new Binding(
+                    DebugLanguages.DART,
+                    Settings::isDartDebugEnabled,
+                    Settings::setDartDebugEnabled,
+                    Settings::getDartDebugPath,
+                    Settings::setDartDebugPath,
+                    "settings.debug.dartPath",
+                    "dart",
+                    "",
+                    "status.debug.dartOff",
+                    (s, scope) -> tr("status.debug.dartMissing")));
 
     /** Every adapter with settings of its own, in the order the pickers list them. */
     static List<Binding> all() {

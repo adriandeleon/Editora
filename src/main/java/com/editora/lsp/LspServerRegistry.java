@@ -174,6 +174,9 @@ public final class LspServerRegistry {
     /** Markers for a Lua project root (a LuaLS config, else the repo). */
     public static final List<String> LUA_ROOT_MARKERS = List.of(".luarc.json", ".luarc.jsonc", ".git");
 
+    /** Markers for a Dart or Flutter package root (its pubspec.yaml, else the repo). */
+    public static final List<String> DART_ROOT_MARKERS = List.of("pubspec.yaml", ".git");
+
     /** Markers for a Terraform module root (a .terraform dir / lock file, else the repo). */
     public static final List<String> TERRAFORM_ROOT_MARKERS = List.of(".terraform", ".terraform.lock.hcl", ".git");
 
@@ -210,6 +213,9 @@ public final class LspServerRegistry {
     public static final String DEFAULT_KOTLIN_COMMAND = "kotlin-lsp --stdio";
 
     public static final String DEFAULT_LUA_COMMAND = "lua-language-server";
+
+    /** The Dart analysis server, which the Dart SDK (and so Flutter's) ships: {@code dart} is all it needs. */
+    public static final String DEFAULT_DART_COMMAND = "dart language-server --protocol=lsp";
 
     /**
      * The Groovy server (gvy's {@code gls}, a fat jar) has no default command, like the pom.xml server: it is
@@ -289,6 +295,7 @@ public final class LspServerRegistry {
         CSHARP("csharp", DEFAULT_CSHARP_COMMAND, CSHARP_ROOT_MARKERS, Set.of("csharp")),
         TYPST("typst", DEFAULT_TYPST_COMMAND, TYPST_ROOT_MARKERS, Set.of("typst")),
         ASTRO("astro", DEFAULT_ASTRO_COMMAND, ASTRO_ROOT_MARKERS, Set.of("astro")),
+        DART("dart", DEFAULT_DART_COMMAND, DART_ROOT_MARKERS, Set.of("dart")),
         // Maven-aware pom.xml server: JVM lemminx + lemminx-maven. Served language id is the routing-only
         // pseudo id MAVEN_POM_LANGUAGE_ID; the didOpen id is translated back to "xml" (see protocolLanguageId).
         MAVEN_POM(

@@ -432,7 +432,11 @@ public enum ConfigSchema {
                     // v179→180: aiApiKey, aiApiKeyOpenai and aiApiKeyLmstudio are read but never written (SET-13):
                     // the launch moves them to the system keychain or the encrypted keys/secrets.enc. Identity: a
                     // file that still has them is read as before, and the vault takes them.
-                    Map.entry(179, (Migration) ConfigMigrations::identity)),
+                    Map.entry(179, (Migration) ConfigMigrations::identity),
+                    // v180→181: + dartLspEnabled (on), dartLspCommand ("") — the Dart analysis server; +
+                    // dartDebugEnabled (on), dartDebugPath, flutterDebugPath, flutterDevice ("") — Dart and Flutter
+                    // debugging and Run File (a blank device is this computer's desktop). Additive.
+                    Map.entry(180, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

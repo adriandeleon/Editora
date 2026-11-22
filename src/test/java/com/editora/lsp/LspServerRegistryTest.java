@@ -175,6 +175,12 @@ class LspServerRegistryTest {
                 List.of("lua-language-server"),
                 LspServerRegistry.specFor("lua", Map.of()).command());
         assertEquals(
+                List.of("dart", "language-server", "--protocol=lsp"),
+                LspServerRegistry.specFor("dart", Map.of()).command(),
+                "the SDK's analysis server: dart is all it needs");
+        assertEquals("dart", LspServerRegistry.serverIdFor("dart"));
+        assertTrue(LspServerRegistry.specFor("dart", Map.of()).rootMarkers().contains("pubspec.yaml"));
+        assertEquals(
                 List.of("docker-langserver", "--stdio"),
                 LspServerRegistry.specFor("dockerfile", Map.of()).command());
         assertEquals(List.of("sqls"), LspServerRegistry.specFor("sql", Map.of()).command());

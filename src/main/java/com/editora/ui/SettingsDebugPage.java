@@ -239,6 +239,20 @@ final class SettingsDebugPage {
             config.getSettings().setGdbPath(now.strip());
             w.apply();
         });
+        debugFlutterPathField = new TextField();
+        debugFlutterPathField.setPromptText("flutter");
+        w.commitOnEnterOrBlur(debugFlutterPathField, () -> config.getSettings().getFlutterDebugPath(), now -> {
+            config.getSettings().setFlutterDebugPath(now.strip());
+            w.apply();
+        });
+        debugFlutterDeviceField = new TextField();
+        // Blank: this computer's desktop, which the prompt names.
+        debugFlutterDeviceField.setPromptText(com.editora.run.DartRun.device(""));
+        w.commitOnEnterOrBlur(
+                debugFlutterDeviceField, () -> config.getSettings().getFlutterDevice(), now -> {
+                    config.getSettings().setFlutterDevice(now.strip());
+                    w.apply();
+                });
         debugCppCheck = new CheckBox(tr("settings.debug.enableCpp"));
         debugCppCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setCppDebugEnabled(now);
@@ -320,6 +334,12 @@ final class SettingsDebugPage {
 
     /** GDB's path, for its DAP mode. */
     private TextField debugGdbPathField;
+
+    /** {@code flutter}, whose {@code debug_adapter} debugs a Flutter app's file (Dart's card). */
+    private TextField debugFlutterPathField;
+
+    /** The device a Flutter app runs on (Dart's card); blank: this computer's desktop. */
+    private TextField debugFlutterDeviceField;
     /** The Node.js for Run, Debug, npm scripts and code intelligence (Settings.nodePath; blank = automatic). */
     TextField nodePathField;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
@@ -476,16 +496,35 @@ final class SettingsDebugPage {
             }
             // Install fetches what this language's support lacks — the adapter included — keyed on the adapter.
             DebugAdapterSettings.Binding binding = java.util.Objects.requireNonNull(DebugAdapterSettings.of(dbg.id()));
-            ToolStatusRow status =
-                    new ToolStatusRow(binding.toolId()).install(() -> w.installSupport(binding.installId())); // D111
+            ToolStatusRow status = new ToolStatusRow(binding.toolId());
+            if (!binding.installId().isEmpty()) { // (Dart's comes with its SDK: no Install)
+                status.install(() -> w.installSupport(binding.installId())); // D111
+                w.installButtons.put("debug:" + dbg.id(), status.installButton());
+            }
             debugStatusLabels.put(dbg.id(), status);
-            w.installButtons.put("debug:" + dbg.id(), status.installButton());
             if ("python".equals(dbg.id())) { // its field is on the LSP page's Python card
                 w.controlRow(c, Category.DEBUG, tr("settings.git.detected"), null, status.node(), dbg.keywords());
                 continue;
             }
             String title = tr(dbg.commandLabelKey());
             w.toolRows(c, Category.DEBUG, title, null, debugCommandFields.get(dbg.id()), null, status, dbg.keywords());
+            if ("dart".equals(dbg.id())) { // a Flutter app's file: flutter's adapter, on a device
+                UiZoom.prefWidth(debugFlutterPathField, SettingsWindow.PATH_FIELD_WIDTH);
+                w.controlRow(
+                        c,
+                        Category.DEBUG,
+                        tr("settings.debug.flutterPath"),
+                        tr("settings.debug.flutterPath.hint"),
+                        debugFlutterPathField,
+                        "debug dart flutter path sdk debug_adapter app");
+                w.controlRow(
+                        c,
+                        Category.DEBUG,
+                        tr("settings.debug.flutterDevice"),
+                        tr("settings.debug.flutterDevice.hint"),
+                        debugFlutterDeviceField,
+                        "debug run dart flutter device linux macos windows chrome emulator desktop");
+            }
             if ("go".equals(dbg.id())) { // Delve's goroutine list: Go's own, so with Go
                 Card goroutinesCard = w.card(holder, tr("settings.debug.goroutines"));
                 SettingsDependents.bind(debugCheck.selectedProperty(), goroutinesCard.box());
@@ -598,7 +637,7 @@ final class SettingsDebugPage {
             java.util.function.Consumer<java.util.function.BiConsumer<Boolean, String>> detect) {}
 
     /**
-     * The debug adapters with a card of their own (Java, Python, JavaScript, Go, Rust, C#, Ruby, PHP, Bash), in display
+     * The debug adapters with a card of their own (Java, Python, JavaScript, Go, Rust, C#, Ruby, PHP, Bash, Dart), in display
      * order.
      */
     private java.util.List<DebugAdapterUi> debugAdapterUis() {
@@ -740,7 +779,15 @@ final class SettingsDebugPage {
                         v -> config.getSettings().setBashDebugEnabled(v),
                         () -> config.getSettings().isBashDebugEnabled(),
                         v -> config.getSettings().setBashDebugPath(v),
-                        () -> config.getSettings().getBashDebugPath()));
+                        () -> config.getSettings().getBashDebugPath()),
+                externalAdapterUi(
+                        com.editora.dap.DebugLanguages.DART,
+                        "dart",
+                        "debug dart flutter dart debug_adapter sdk path found",
+                        v -> config.getSettings().setDartDebugEnabled(v),
+                        () -> config.getSettings().isDartDebugEnabled(),
+                        v -> config.getSettings().setDartDebugPath(v),
+                        () -> config.getSettings().getDartDebugPath()));
     }
 
     /**
@@ -830,6 +877,8 @@ final class SettingsDebugPage {
         }
         debugBrowserCombo.setValue(browser);
         debugGdbPathField.setText(settings.getGdbPath());
+        debugFlutterPathField.setText(settings.getFlutterDebugPath());
+        debugFlutterDeviceField.setText(settings.getFlutterDevice());
         debugStepTimingCheck.setSelected(settings.isDebugStepTiming());
         if (stepFilters != null) {
             stepFilters.reload();

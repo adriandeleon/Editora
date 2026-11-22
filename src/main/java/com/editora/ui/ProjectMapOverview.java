@@ -40,8 +40,8 @@ final class ProjectMapOverview {
             "vendor", "third_party", "third-party", "thirdparty", "testdata", "fixtures");
     private static final Set<String> TEST_FOLDERS = Set.of("test", "tests", "testing", "__tests__", "spec", "e2e");
     private static final Set<String> DOC_FOLDERS = Set.of("docs", "doc", "documentation", "man");
-    private static final Set<String> MAIN_EXTENSIONS =
-            Set.of("go", "rs", "py", "c", "cc", "cpp", "java", "kt", "scala", "ts", "js", "mjs", "swift", "cs", "rb");
+    private static final Set<String> MAIN_EXTENSIONS = Set.of(
+            "go", "rs", "py", "c", "cc", "cpp", "java", "kt", "scala", "ts", "js", "mjs", "swift", "cs", "rb", "dart");
     private static final Pattern GO_COMMAND = Pattern.compile("(?:^|.*/)cmd/[^/]+/main\\.go");
     private static final Pattern GO_COMMAND_FOLDER = Pattern.compile("(?:^|.*/)cmd/[^/]+");
     private static final Pattern APPLICATION =
@@ -105,6 +105,7 @@ final class ProjectMapOverview {
         markers.put("package.json", "npm");
         markers.put("Cargo.toml", "Cargo");
         markers.put("pyproject.toml", "Python (pyproject)");
+        markers.put("pubspec.yaml", "Dart (pub)");
         return Map.copyOf(markers);
     }
 

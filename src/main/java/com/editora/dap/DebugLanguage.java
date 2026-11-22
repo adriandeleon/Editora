@@ -79,8 +79,24 @@ public record DebugLanguage(
         return new DapServerRegistry.DapServerSpec(id, kind, launchType, adapterId, defaultInterpreter, adapterArgs);
     }
 
-    /** The id of the "stop on uncaught exceptions" filter, or null when the adapter has no caught one either. */
+    /**
+     * The id of the "stop on uncaught exceptions" filter, or null when the adapter has no caught one either: {@code
+     * uncaught}, or the adapter's other filter when it names it otherwise (Dart's {@code Unhandled}).
+     */
     public @Nullable String uncaughtFilter() {
-        return caughtFilter == null ? null : "uncaught";
+        if (caughtFilter == null) {
+            return null;
+        }
+        for (DapModels.ExceptionFilterOption f : exceptionFilters) {
+            if ("uncaught".equals(f.filter())) {
+                return "uncaught";
+            }
+        }
+        for (DapModels.ExceptionFilterOption f : exceptionFilters) {
+            if (!caughtFilter.equals(f.filter())) {
+                return f.filter();
+            }
+        }
+        return "uncaught";
     }
 }

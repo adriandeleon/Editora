@@ -6,7 +6,7 @@ import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Where Run File starts a C, C++, Go or Rust file: the line of its program's {@code main}, or -1 when the file has
+ * Where Run File starts a C, C++, Go, Rust or Dart file: the line of its program's {@code main}, or -1 when the file has
  * none and so builds no program (a header, a library file, a Go package other than {@code main}). Run File on such
  * a file builds it as Debug File does ({@link com.editora.dap.NativeBuild}, {@code go build}, Cargo) and runs the
  * program in the Run console.
@@ -30,7 +30,10 @@ public final class CompiledRunLine {
     private static final Pattern RUST_MAIN =
             Pattern.compile("^(?:pub(?:\\([^)]*\\))?\\s+)?(?:async\\s+)?(?:unsafe\\s+)?fn\\s+main\\s*\\(");
 
-    /** Whether Run File builds and runs files of {@code language} ({@code c}, {@code cpp}, {@code go}, {@code rust}). */
+    /**
+     * Whether Run File builds and runs files of {@code language} ({@code c}, {@code cpp}, {@code go}, {@code rust},
+     * {@code dart}).
+     */
     public static boolean supports(@Nullable String language) {
         return ScriptRunCommand.isCompiled(language);
     }
@@ -47,6 +50,7 @@ public final class CompiledRunLine {
             case ScriptRunCommand.C, ScriptRunCommand.CPP -> header(name) ? -1 : nativeMainLine(text);
             case ScriptRunCommand.GO -> goRunLine(name, text);
             case ScriptRunCommand.RUST -> first(RUST_MAIN, text);
+            case ScriptRunCommand.DART -> DartRun.runLine(text);
             default -> -1;
         };
     }

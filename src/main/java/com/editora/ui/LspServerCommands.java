@@ -37,6 +37,7 @@ final class LspServerCommands {
         "csharp",
         "typst",
         "astro",
+        "dart",
         com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID
     };
 
@@ -87,6 +88,7 @@ final class LspServerCommands {
             case "scala" -> com.editora.lsp.JvmServerCommand.withJdk(s.getScalaLspCommand(), s.getMavenJdkHome());
             case "clojure" -> s.getClojureLspCommand();
             case "lua" -> s.getLuaLspCommand();
+            case "dart" -> s.getDartLspCommand();
             case "dockerfile" -> s.getDockerfileLspCommand();
             case "sql" -> s.getSqlLspCommand();
             case "terraform" -> s.getTerraformLspCommand();
@@ -122,6 +124,7 @@ final class LspServerCommands {
             case "scala" -> s.setScalaLspEnabled(on);
             case "clojure" -> s.setClojureLspEnabled(on);
             case "lua" -> s.setLuaLspEnabled(on);
+            case "dart" -> s.setDartLspEnabled(on);
             case "dockerfile" -> s.setDockerfileLspEnabled(on);
             case "sql" -> s.setSqlLspEnabled(on);
             case "terraform" -> s.setTerraformLspEnabled(on);

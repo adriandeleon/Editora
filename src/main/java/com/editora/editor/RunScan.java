@@ -117,7 +117,8 @@ final class RunScan {
             runnable = true;
             line = 0;
         } else if (in.eligible() && com.editora.run.CompiledRunLine.supports(language)) {
-            // A C, C++, Go or Rust file with a program's main: Run File builds it as Debug File does, then runs it.
+            // A C, C++, Go, Rust or Dart file with a program's main: Run File builds it as Debug File does, then runs
+            // it (a Dart file by dart run, or flutter run for a Flutter app's: DartRun).
             line = com.editora.run.CompiledRunLine.runLine(language, in.name(), text);
             runnable = line >= 0;
         } else if (in.eligible()

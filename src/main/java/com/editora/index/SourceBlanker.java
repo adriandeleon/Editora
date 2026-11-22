@@ -45,6 +45,7 @@ final class SourceBlanker {
         }
         boolean clojure = "clojure".equals(language);
         boolean scala = "scala".equals(language);
+        boolean dart = "dart".equals(language);
         boolean regexLiterals = com.editora.editops.RegexLiterals.in(language);
         char[] out = text.toCharArray();
         String lineComment = clojure ? ";" : style != null && style.hasLine() ? style.line() : null;
@@ -78,7 +79,8 @@ final class SourceBlanker {
                 continue;
             }
             if (c == '"' || c == '\'' || c == '`') {
-                i = blankString(text, out, i, c, clojure); // every Clojure string may span lines
+                // every Clojure string may span lines; Dart's r'…' is raw, so a \ in it escapes nothing
+                i = blankString(text, out, i, c, clojure, dart && isRawPrefix(text, i));
                 continue;
             }
             if (c == '/' && regexLiterals) {
@@ -107,13 +109,20 @@ final class SourceBlanker {
         return next < n && text.charAt(next) == '\'';
     }
 
+    /** Whether the quote at {@code i} follows a lone {@code r}: Dart's raw string ({@code r'C:\'}). */
+    private static boolean isRawPrefix(String text, int i) {
+        return i > 0
+                && text.charAt(i - 1) == 'r'
+                && (i < 2 || !(Character.isLetterOrDigit(text.charAt(i - 2)) || text.charAt(i - 2) == '_'));
+    }
+
     /**
-     * Blanks the string literal opening at {@code start} and returns the index just past it. Handles a
-     * triple-quoted literal (Python's docstring, Java's text block) by looking for the same delimiter
-     * tripled — cheap, and harmless for languages that have no such form, since three quotes in a row
+     * Blanks the string literal opening at {@code start} (raw: a backslash escapes nothing) and returns the
+     * index just past it. Handles a triple-quoted literal (Python's docstring, Java's text block) by looking
+     * for the same delimiter tripled — cheap, and harmless for languages that have no such form, since three quotes in a row
      * would otherwise be read as an empty string followed by a stray opening quote.
      */
-    private static int blankString(String text, char[] out, int start, char quote, boolean multiLine) {
+    private static int blankString(String text, char[] out, int start, char quote, boolean multiLine, boolean raw) {
         int n = text.length();
         String triple = String.valueOf(quote).repeat(3);
         boolean isTriple = text.startsWith(triple, start);
@@ -121,7 +130,7 @@ final class SourceBlanker {
         int i = start + delimLen;
         while (i < n) {
             char c = text.charAt(i);
-            if (c == '\\') {
+            if (c == '\\' && !raw) {
                 i += 2; // an escape consumes the next character, whatever it is
                 continue;
             }

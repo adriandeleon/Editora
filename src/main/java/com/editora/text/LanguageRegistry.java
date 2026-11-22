@@ -132,6 +132,7 @@ public final class LanguageRegistry {
             Map.entry("inl", "cpp"),
             Map.entry("rs", "rust"),
             Map.entry("go", "go"),
+            Map.entry("dart", "dart"),
             Map.entry("kt", "kotlin"),
             Map.entry("kts", "kotlin"),
             Map.entry("groovy", "groovy"),

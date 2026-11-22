@@ -285,6 +285,7 @@ public final class NewFileCatalog {
                             NewFileType.translated("lang.cheader", "header", "h"),
                             NewFileType.named("lang.csharp", "C#", "Program", "cs"),
                             NewFileType.named("lang.go", "Go", "main", "go"),
+                            NewFileType.named("lang.dart", "Dart", "main", "dart"),
                             NewFileType.named("lang.rust", "Rust", "main", "rs"),
                             NewFileType.named("lang.kotlin", "Kotlin", "Main", "kt"),
                             NewFileType.named("lang.scala", "Scala", "Main", "scala")

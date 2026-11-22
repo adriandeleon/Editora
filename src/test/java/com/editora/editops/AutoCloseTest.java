@@ -120,6 +120,29 @@ class AutoCloseTest {
                 AutoClose.decide('\'', "val c = ", (char) 0, false, "scala").action());
     }
 
+    /** Dart: triple quotes open multi-line strings, r'' is a raw string, and a backtick is no string. */
+    @Test
+    void dartQuotes() {
+        assertEquals(
+                Action.INSERT_TRIPLE,
+                AutoClose.decide('\'', "var s = ''", (char) 0, false, "dart").action());
+        assertEquals(
+                Action.INSERT_TRIPLE,
+                AutoClose.decide('"', "var s = \"\"", (char) 0, false, "dart").action());
+        assertEquals(
+                Action.INSERT_PAIR,
+                AutoClose.decide('\'', "var p = r", (char) 0, false, "dart").action());
+        assertEquals(
+                Action.NONE,
+                AutoClose.decide('\'', "var p = bar", (char) 0, false, "dart").action());
+        assertEquals(
+                Action.NONE,
+                AutoClose.decide('`', "var s = ", (char) 0, false, "dart").action());
+        assertEquals(
+                Action.INSERT_PAIR,
+                AutoClose.decide('\'', "var s = ", (char) 0, false, "dart").action());
+    }
+
     @Test
     void aBracketPairsOnlyWhereItsCloserCanSit() {
         assertEquals(Action.NONE, act('(', ' ', 'f', false), "before a word: `(` wraps it, no `()foo`");

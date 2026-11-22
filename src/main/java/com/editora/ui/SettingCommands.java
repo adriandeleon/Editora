@@ -314,6 +314,11 @@ final class SettingCommands {
                         (s, n) -> s.setDebugEvaluationTimeLimit(Integer.parseInt(n))),
                 text(key("settings.debug.gdbPath"), Settings::getGdbPath, (s, v) -> s.setGdbPath(v.strip())),
                 text(
+                        key("settings.debug.flutterPath"),
+                        Settings::getFlutterDebugPath,
+                        (s, v) -> s.setFlutterDebugPath(v.strip())),
+                text(key("settings.debug.flutterDevice"), Settings::getFlutterDevice, Settings::setFlutterDevice),
+                text(
                         key("settings.debug.exceptionTypes"),
                         Settings::getDebugExceptionTypes,
                         Settings::setDebugExceptionTypes));

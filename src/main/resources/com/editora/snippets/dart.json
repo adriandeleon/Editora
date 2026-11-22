@@ -1,0 +1,72 @@
+{
+  "main": {
+    "prefix": "main",
+    "body": ["void main(List<String> args) {", "\t$0", "}"],
+    "description": "Entry point"
+  },
+  "class": {
+    "prefix": "class",
+    "body": ["class ${1:Name} {", "\t$0", "}"],
+    "description": "Class definition"
+  },
+  "data class": {
+    "prefix": "dclass",
+    "body": ["class ${1:Name} {", "\tfinal ${2:String} ${3:field};", "", "\tconst $1(this.$3);", "\t$0", "}"],
+    "description": "Class with a final field and a const constructor"
+  },
+  "enum": {
+    "prefix": "enum",
+    "body": ["enum ${1:Name} { ${2:a}, ${3:b} }"],
+    "description": "Enum"
+  },
+  "function": {
+    "prefix": "fn",
+    "body": ["${1:void} ${2:name}(${3}) {", "\t$0", "}"],
+    "description": "Function"
+  },
+  "async function": {
+    "prefix": "afn",
+    "body": ["Future<${1:void}> ${2:name}(${3}) async {", "\t$0", "}"],
+    "description": "async function"
+  },
+  "if": {
+    "prefix": "if",
+    "body": ["if (${1:condition}) {", "\t$0", "}"],
+    "description": "if statement"
+  },
+  "if else": {
+    "prefix": "ife",
+    "body": ["if (${1:condition}) {", "\t$2", "} else {", "\t$0", "}"],
+    "description": "if / else"
+  },
+  "for": {
+    "prefix": "for",
+    "body": ["for (var ${1:i} = 0; $1 < ${2:count}; $1++) {", "\t$0", "}"],
+    "description": "Indexed for loop"
+  },
+  "for in": {
+    "prefix": "forin",
+    "body": ["for (final ${1:item} in ${2:items}) {", "\t$0", "}"],
+    "description": "for-in loop"
+  },
+  "switch": {
+    "prefix": "switch",
+    "body": ["switch (${1:value}) {", "\tcase ${2:pattern}:", "\t\t$0", "}"],
+    "description": "switch statement"
+  },
+  "try": {
+    "prefix": "try",
+    "body": ["try {", "\t$1", "} on ${2:Exception} catch (e) {", "\t$0", "}"],
+    "description": "try / on / catch"
+  },
+  "test": {
+    "prefix": "test",
+    "body": ["test('${1:description}', () {", "\t$0", "});"],
+    "description": "package:test test case"
+  },
+  "group": {
+    "prefix": "group",
+    "body": ["group('${1:description}', () {", "\t$0", "});"],
+    "description": "package:test group"
+  }
+}

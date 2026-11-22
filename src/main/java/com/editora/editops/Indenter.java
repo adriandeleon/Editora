@@ -272,6 +272,7 @@ public final class Indenter {
                     "csharp",
                     "rust",
                     "go",
+                    "dart",
                     "kotlin",
                     "groovy",
                     "scala",

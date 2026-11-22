@@ -832,6 +832,46 @@ class RunCoordinatorFlowsFxTest {
         assertEquals(2, Files.readAllLines(outside.resolve("go.log")).size(), "Rerun builds it again");
     }
 
+    /** A stand-in for a Dart SDK tool ({@code dart}, {@code flutter}): says what it was run with, and where. */
+    private Path standInDartTool(String name) throws Exception {
+        Path exe = outside.resolve(name);
+        Files.writeString(exe, "#!/bin/sh\necho \"" + name + " $* in $(basename \"$PWD\")\"\n");
+        Files.setPosixFilePermissions(exe, PosixFilePermissions.fromString("rwxr-xr-x"));
+        return exe;
+    }
+
+    /**
+     * Run File on a Dart program runs {@code dart run} in its package's folder with its arguments; on a Flutter app's
+     * file, {@code flutter run} on the device Settings names, the file as the app names it.
+     */
+    @Test
+    void runFileRunsADartProgramUnderDartRunAndAFlutterAppUnderFlutterRun() throws Exception {
+        Path dart = standInDartTool("dart");
+        Path flutter = standInDartTool("flutter");
+        host.settings.setDartDebugPath(dart.toString());
+        host.settings.setFlutterDebugPath(flutter.toString());
+        host.settings.setFlutterDevice("chrome");
+        Files.createDirectories(project.resolve("cli"));
+        Files.writeString(project.resolve("cli/pubspec.yaml"), "name: cli\n");
+        ops.programArgs.put("main.dart", "one 'two three'");
+        open("cli/bin/main.dart", "void main(List<String> args) {}\n", true);
+        FxTestSupport.runOnFx(run::runActiveFile);
+        awaitStatus(tr("status.run.ok"));
+        assertEquals(
+                "dart run " + project.resolve("cli/bin/main.dart").toAbsolutePath() + " one two three in cli\n",
+                console());
+
+        clearLog();
+        Files.createDirectories(project.resolve("app"));
+        Files.writeString(
+                project.resolve("app/pubspec.yaml"), "name: app\ndependencies:\n  flutter:\n    sdk: flutter\n");
+        ops.programArgs.put("main.dart", "");
+        open("app/lib/main.dart", "void main() {}\n", true);
+        FxTestSupport.runOnFx(run::runActiveFile);
+        awaitStatus(tr("status.run.ok"));
+        assertEquals("flutter run -d chrome -t lib/main.dart in app\n", console());
+    }
+
     /**
      * Run File on a lone C file (adl's {@code samples/debug/c/tally.c}): compiled by {@code cc} as Debug File
      * compiles it, then run in the Run console with its output and exit code. A file without {@code main} is not

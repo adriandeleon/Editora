@@ -120,7 +120,9 @@ standard streams, a port passed as `{port}`, or a port it announces, matched by 
 executable from its JSON messages (`DebugCoordinator.debugRustFile`). C# (`dap/DotnetLaunch`) is the same shape on
 netcoredbg, and an adapter Editora installs is found through an `dap/InstalledAdapter` (its install folder, the VS
 Code extension that ships it) and a pinned `InstallCatalog` recipe. Ruby's rdbg is the program itself: its file goes
-after the adapter's command (`startExternal`'s `adapterTail`). PHP's adapter is a `.js` file, run on Node.js. An
+after the adapter's command (`startExternal`'s `adapterTail`). PHP's adapter is a `.js` file, run on Node.js. Dart's file picks one of two profiles (`dap/DartLaunch`: `dart debug_adapter`, or
+`flutter debug_adapter` when its pubspec makes it a Flutter app's), and its F5 is a `DebugCoordinator` part of its own
+(`ui/DartDebugLaunch`). An
 adapter needs no code at all when the user
 declares it in `debug-adapters.json` (`dap/CustomAdapters`): its command, transport, languages and F5 template. Java rides the jdtls session; Python (debugpy) is stdio;
 JavaScript (vscode-js-debug) is a socket. External adapters are never bundled — they're located by

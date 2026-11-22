@@ -886,6 +886,25 @@ final class DoctorCoordinator {
                     return found != null ? base.ok(found) : base.missing("doctor.tip.missing", "rdbg");
                 }));
             }
+            if (s.isDartDebugEnabled()) {
+                String dart = scope.debugTool("dart", s.getDartDebugPath());
+                DoctorCheck check = DoctorCheck.checking("debug.dart", "debug", tr("doctor.label.dartDebug"), "")
+                        .withSettings("debug");
+                specs.add(probe(check, base -> {
+                    String found = com.editora.dap.DapManager.locateExternal(com.editora.dap.DebugLanguages.DART, dart);
+                    return found != null ? base.ok(found) : base.missing("doctor.tip.missing", "dart");
+                }));
+                // Flutter's adapter is wanted only for a Flutter app: without it, Dart debugs on.
+                String flutter = scope.debugTool("flutter", s.getFlutterDebugPath());
+                DoctorCheck flutterCheck = DoctorCheck.checking(
+                                "debug.flutter", "debug", tr("doctor.label.flutterDebug"), "")
+                        .withSettings("debug");
+                specs.add(probe(flutterCheck, base -> {
+                    String found =
+                            com.editora.dap.DapManager.locateExternal(com.editora.dap.DebugLanguages.FLUTTER, flutter);
+                    return found != null ? base.ok(found) : base.optional("doctor.tip.flutterOptional");
+                }));
+            }
             if (s.isBashDebugEnabled()) {
                 String configured = scope.debugTool("bash", s.getBashDebugPath());
                 DoctorCheck check = DoctorCheck.checking("debug.bash", "debug", tr("doctor.label.bashDebug"), "")
