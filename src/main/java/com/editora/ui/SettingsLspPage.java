@@ -117,6 +117,10 @@ final class SettingsLspPage {
         return "server:" + serverId;
     }
 
+    /** The page's "Language" picker: which server's card shows (made by {@link #build}). */
+    @Nullable
+    SettingsLanguagePicker languages;
+
     VBox build() {
         VBox p = w.page(tr("settings.cat.lsp"), tr("settings.lsp.subtitle"));
         Card master = w.card(p, null);
@@ -149,8 +153,10 @@ final class SettingsLspPage {
                 "lsp inlay hints code lens semantic highlighting format on type imports");
         pythonCard(p); // before dependsOn: editable with language servers off, as Run and Debug use it too
         w.dependsOn(p, lspCheck);
+        // One language at a time: 27 server cards on one page were a wall to scroll through.
+        languages = new SettingsLanguagePicker(w, p, tr("settings.lsp.languagePicker.desc"));
         for (LspServerUi srv : lspServerUis()) {
-            Card c = w.card(p, null);
+            Card c = w.card(languages.holder(p, srv.id(), tr("settings.lsp.lang." + srv.id())), null);
             SettingsDependents.bind(lspCheck.selectedProperty(), c.box());
             CheckBox enable = lspEnableChecks.get(srv.id());
             if (enable != null) { // build() makes one per server

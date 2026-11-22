@@ -3193,7 +3193,12 @@ public class SettingsWindow {
                 // pom.xml editing support (lemminx-maven) is an LSP server: say so here, where Maven users look.
                 Hyperlink pomLsp = new Hyperlink(tr("settings.maven.pomLspLink"));
                 pomLsp.setWrapText(true);
-                pomLsp.setOnAction(e -> sidebar.getSelectionModel().select(Category.LSP));
+                pomLsp.setOnAction(e -> {
+                    if (lspPage.languages != null) {
+                        lspPage.languages.show(com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID);
+                    }
+                    sidebar.getSelectionModel().select(Category.LSP);
+                });
                 cardRow(c, Category.BUILD_TOOLS, pomLsp, kw + " pom.xml editing completion lemminx lsp install");
                 UiZoom.prefWidth(mavenArchetypeCatalogField, PATH_FIELD_WIDTH + 120); // the default URL in full
                 cardRow(
@@ -4125,6 +4130,12 @@ public class SettingsWindow {
             }
         }
         sidebar.refresh();
+        // The pages that show one language at a time show every language with a hit while a search runs.
+        for (SettingsLanguagePicker picker : new SettingsLanguagePicker[] {lspPage.languages, debugPage.languages}) {
+            if (picker != null) {
+                picker.searched(found != null);
+            }
+        }
         // No hit anywhere: say so, instead of a blank page beside a fully greyed-out sidebar.
         searchEmpty.setText(
                 found == null

@@ -339,6 +339,10 @@ final class SettingsDebugPage {
     @Nullable
     StepFiltersEditor stepFilters;
 
+    /** The page's "Language" picker: which adapter's cards show (made by {@link #build}). */
+    @Nullable
+    SettingsLanguagePicker languages;
+
     VBox build() {
         VBox p = w.page(tr("settings.cat.debug"), tr("settings.debug.subtitle"));
         Card master = w.card(p, null);
@@ -363,97 +367,12 @@ final class SettingsDebugPage {
         // One card per adapter, titled with the language (Java has no per-adapter enable — it rides
         // the Java LSP server; see DebugCoordinator.debugEffectiveFor).
         w.dependsOn(p, debugCheck);
-        // Where the debugged program runs: Java, Python and JavaScript alike, so not on the Java card (E108).
-        Card programs = w.card(p, tr("settings.debug.programs"));
-        SettingsDependents.bind(debugCheck.selectedProperty(), programs.box());
-        for (CheckBox check : List.of(debugProgramConsoleCheck, debugProgramInTerminalCheck)) {
-            String key = check == debugProgramConsoleCheck ? "programConsole" : "programInTerminal";
-            String words = "debug python javascript program console input stdin terminal tab tty screen keys";
-            w.checkRow(programs, Category.DEBUG, check, tr("settings.debug." + key + ".hint"), words);
-        }
-        Card historyCard = w.card(p, tr("settings.debug.history"));
-        SettingsDependents.bind(debugCheck.selectedProperty(), historyCard.box());
-        w.controlRow(
-                historyCard,
-                Category.DEBUG,
-                tr("settings.debug.historyStops"),
-                tr("settings.debug.historyStops.hint"),
-                debugHistoryCombo,
-                "debug history back forward stops time travel earlier values remember");
-        Card evaluationCard = w.card(p, tr("settings.debug.evaluation"));
-        SettingsDependents.bind(debugCheck.selectedProperty(), evaluationCard.box());
-        w.controlRow(
-                evaluationCard,
-                Category.DEBUG,
-                tr("settings.debug.evaluationTimeLimit"),
-                tr("settings.debug.evaluationTimeLimit.hint"),
-                debugEvaluationLimitCombo,
-                "debug evaluate evaluation expression watch console hover function call time limit timeout hang"
-                        + " stuck slow cancel stop interrupt");
-        Card goroutinesCard = w.card(p, tr("settings.debug.goroutines"));
-        SettingsDependents.bind(debugCheck.selectedProperty(), goroutinesCard.box());
-        w.checkRow(
-                goroutinesCard,
-                Category.DEBUG,
-                debugGoHideRuntimeCheck,
-                tr("settings.debug.goHideRuntime.hint"),
-                "debug go golang goroutines threads runtime system hide gc workers delve");
-        w.controlRow(
-                goroutinesCard,
-                Category.DEBUG,
-                tr("settings.debug.goLabels"),
-                tr("settings.debug.goLabels.hint"),
-                debugGoLabelsField,
-                "debug go golang goroutines threads pprof labels name delve");
-        w.controlRow(
-                goroutinesCard,
-                Category.DEBUG,
-                tr("settings.debug.goFilter"),
-                tr("dialog.debug.goroutineFilterHint"),
-                debugGoFilterField,
-                "debug go golang goroutines threads filter with without label user delve");
-        // Type renderers (IntelliJ's Java Type Renderers): every language's, one list.
-        Card renderersCard = w.card(p, tr("settings.debug.typeRenderers"));
-        SettingsDependents.bind(debugCheck.selectedProperty(), renderersCard.box());
-        typeRenderers = new TypeRenderersEditor(new TypeRenderersEditor.Hooks(
-                () -> config.getSettings().getDebugTypeRenderers(),
-                list -> {
-                    config.getSettings().setDebugTypeRenderers(list);
-                    w.apply();
-                },
-                (owner, initial, isNew) -> TypeRendererDialog.edit(owner, initial, isNew),
-                () -> w.stage));
-        w.cardRow(
-                renderersCard,
-                Category.DEBUG,
-                typeRenderers.node(),
-                "debug type renderers render value children expression toString natvis customize data views show");
-        Label renderersNote = SettingsWindow.note(tr("settings.debug.typeRenderers.hint"));
-        renderersNote.setWrapText(true);
-        UiZoom.maxWidth(renderersNote, 460);
-        w.cardRow(renderersCard, Category.DEBUG, renderersNote, "debug type renderers this self expression");
-        // Don't step into (IntelliJ's stepping filters, VS Code's skipFiles): every language's, one list.
-        Card skipCard = w.card(p, tr("settings.debug.stepFilterList"));
-        SettingsDependents.bind(debugCheck.selectedProperty(), skipCard.box());
-        stepFilters = new StepFiltersEditor(new StepFiltersEditor.Hooks(
-                () -> config.getSettings().getDebugStepFilterList(),
-                list -> {
-                    config.getSettings().setDebugStepFilterList(list);
-                    w.apply();
-                },
-                (owner, initial, isNew) -> StepFilterDialog.edit(owner, initial, isNew),
-                () -> w.stage));
-        w.cardRow(
-                skipCard,
-                Category.DEBUG,
-                stepFilters.node(),
-                "debug don't step into step filters skip files classes modules library stepping");
-        Label skipNote = SettingsWindow.note(tr("settings.debug.stepFilterList.hint"));
-        skipNote.setWrapText(true);
-        UiZoom.maxWidth(skipNote, 460);
-        w.cardRow(skipCard, Category.DEBUG, skipNote, "debug don't step into pattern skip");
+        // One language at a time, under the master switch; the cards every language shares follow. Below those
+        // the picker sat ~1,400 px down the page, where few would look for it.
+        languages = new SettingsLanguagePicker(w, p, tr("settings.debug.languagePicker.desc"));
         for (DebugAdapterUi dbg : debugAdapterUis()) {
-            Card c = w.card(p, tr(dbg.sectionKey()));
+            VBox holder = languages.holder(p, dbg.id(), tr(dbg.sectionKey()));
+            Card c = w.card(holder, tr(dbg.sectionKey()));
             SettingsDependents.bind(debugCheck.selectedProperty(), c.box());
             CheckBox enable = debugEnableChecks.get(dbg.id());
             if (enable != null) {
@@ -567,7 +486,98 @@ final class SettingsDebugPage {
             }
             String title = tr(dbg.commandLabelKey());
             w.toolRows(c, Category.DEBUG, title, null, debugCommandFields.get(dbg.id()), null, status, dbg.keywords());
+            if ("go".equals(dbg.id())) { // Delve's goroutine list: Go's own, so with Go
+                Card goroutinesCard = w.card(holder, tr("settings.debug.goroutines"));
+                SettingsDependents.bind(debugCheck.selectedProperty(), goroutinesCard.box());
+                w.checkRow(
+                        goroutinesCard,
+                        Category.DEBUG,
+                        debugGoHideRuntimeCheck,
+                        tr("settings.debug.goHideRuntime.hint"),
+                        "debug go golang goroutines threads runtime system hide gc workers delve");
+                w.controlRow(
+                        goroutinesCard,
+                        Category.DEBUG,
+                        tr("settings.debug.goLabels"),
+                        tr("settings.debug.goLabels.hint"),
+                        debugGoLabelsField,
+                        "debug go golang goroutines threads pprof labels name delve");
+                w.controlRow(
+                        goroutinesCard,
+                        Category.DEBUG,
+                        tr("settings.debug.goFilter"),
+                        tr("dialog.debug.goroutineFilterHint"),
+                        debugGoFilterField,
+                        "debug go golang goroutines threads filter with without label user delve");
+            }
         }
+        // Where the debugged program runs: Java, Python and JavaScript alike, so not on the Java card (E108).
+        Card programs = w.card(p, tr("settings.debug.programs"));
+        SettingsDependents.bind(debugCheck.selectedProperty(), programs.box());
+        for (CheckBox check : List.of(debugProgramConsoleCheck, debugProgramInTerminalCheck)) {
+            String key = check == debugProgramConsoleCheck ? "programConsole" : "programInTerminal";
+            String words = "debug python javascript program console input stdin terminal tab tty screen keys";
+            w.checkRow(programs, Category.DEBUG, check, tr("settings.debug." + key + ".hint"), words);
+        }
+        Card historyCard = w.card(p, tr("settings.debug.history"));
+        SettingsDependents.bind(debugCheck.selectedProperty(), historyCard.box());
+        w.controlRow(
+                historyCard,
+                Category.DEBUG,
+                tr("settings.debug.historyStops"),
+                tr("settings.debug.historyStops.hint"),
+                debugHistoryCombo,
+                "debug history back forward stops time travel earlier values remember");
+        Card evaluationCard = w.card(p, tr("settings.debug.evaluation"));
+        SettingsDependents.bind(debugCheck.selectedProperty(), evaluationCard.box());
+        w.controlRow(
+                evaluationCard,
+                Category.DEBUG,
+                tr("settings.debug.evaluationTimeLimit"),
+                tr("settings.debug.evaluationTimeLimit.hint"),
+                debugEvaluationLimitCombo,
+                "debug evaluate evaluation expression watch console hover function call time limit timeout hang"
+                        + " stuck slow cancel stop interrupt");
+        // Type renderers (IntelliJ's Java Type Renderers): every language's, one list.
+        Card renderersCard = w.card(p, tr("settings.debug.typeRenderers"));
+        SettingsDependents.bind(debugCheck.selectedProperty(), renderersCard.box());
+        typeRenderers = new TypeRenderersEditor(new TypeRenderersEditor.Hooks(
+                () -> config.getSettings().getDebugTypeRenderers(),
+                list -> {
+                    config.getSettings().setDebugTypeRenderers(list);
+                    w.apply();
+                },
+                (owner, initial, isNew) -> TypeRendererDialog.edit(owner, initial, isNew),
+                () -> w.stage));
+        w.cardRow(
+                renderersCard,
+                Category.DEBUG,
+                typeRenderers.node(),
+                "debug type renderers render value children expression toString natvis customize data views show");
+        Label renderersNote = SettingsWindow.note(tr("settings.debug.typeRenderers.hint"));
+        renderersNote.setWrapText(true);
+        UiZoom.maxWidth(renderersNote, 460);
+        w.cardRow(renderersCard, Category.DEBUG, renderersNote, "debug type renderers this self expression");
+        // Don't step into (IntelliJ's stepping filters, VS Code's skipFiles): every language's, one list.
+        Card skipCard = w.card(p, tr("settings.debug.stepFilterList"));
+        SettingsDependents.bind(debugCheck.selectedProperty(), skipCard.box());
+        stepFilters = new StepFiltersEditor(new StepFiltersEditor.Hooks(
+                () -> config.getSettings().getDebugStepFilterList(),
+                list -> {
+                    config.getSettings().setDebugStepFilterList(list);
+                    w.apply();
+                },
+                (owner, initial, isNew) -> StepFilterDialog.edit(owner, initial, isNew),
+                () -> w.stage));
+        w.cardRow(
+                skipCard,
+                Category.DEBUG,
+                stepFilters.node(),
+                "debug don't step into step filters skip files classes modules library stepping");
+        Label skipNote = SettingsWindow.note(tr("settings.debug.stepFilterList.hint"));
+        skipNote.setWrapText(true);
+        UiZoom.maxWidth(skipNote, 460);
+        w.cardRow(skipCard, Category.DEBUG, skipNote, "debug don't step into pattern skip");
         return p;
     }
 
