@@ -525,7 +525,7 @@ final class RecoveryCoordinator {
             java.util.Collections.newSetFromMap(new IdentityHashMap<>());
 
     /** A recovered text made ready off the FX thread: whether it has a giant line, and its document. */
-    private record Prepared(boolean longLine, com.editora.editor.InitialDocument document) {}
+    private record Prepared(boolean longLine, boolean large, com.editora.editor.InitialDocument document) {}
 
     /** Opens the text in a new tab: bound to {@code path} when given, otherwise untitled. */
     private void restoredAsNew(
@@ -551,10 +551,11 @@ final class RecoveryCoordinator {
         com.editora.perf.OffFx.then(
                 RESTORE_PREPARE_SITE,
                 () -> {
-                    boolean longLine = FileWorkflowCoordinator.textStats(text).maxLineLength()
-                            >= FileWorkflowCoordinator.LONG_LINE_FILE_CHARS;
+                    FileWorkflowCoordinator.TextStats stats = FileWorkflowCoordinator.textStats(text);
+                    boolean longLine = stats.longLined();
                     return new Prepared(
                             longLine,
+                            EditorBuffer.largeFileMode(text.length(), stats.lines()),
                             buffer.prepareInitialContent(LineEndings.apply(text, record.lineEnding()), longLine));
                 },
                 answer -> {
@@ -577,7 +578,7 @@ final class RecoveryCoordinator {
             @Nullable Path path,
             String status) {
         boolean longLine = prepared.longLine();
-        if (longLine || length >= EditorBuffer.LARGE_FILE_BYTES) {
+        if (longLine || prepared.large()) {
             buffer.setLargeFile(true); // before the text goes in, as a load does
         }
         if (longLine) {

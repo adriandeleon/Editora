@@ -1119,4 +1119,31 @@ class ConfigMigrationsTest {
         assertTrue(store.allows("a", "whatever is installed"), "nobody's plugins switch off on the upgrade");
         assertFalse(store.allows("b", "x"));
     }
+
+    /** v177 → v178: the stored old default moves to the new one; a value somebody chose stays. */
+    @Test
+    void raiseLargeFileThresholdMovesOnlyTheOldDefault() throws Exception {
+        ObjectNode out = ConfigMigrations.upgrade(
+                ConfigSchema.SETTINGS,
+                mapper.readTree("{\"schemaVersion\":177,\"largeFileThreshold\":10000,\"fontSize\":17}"),
+                mapper);
+        assertEquals(
+                com.editora.config.Settings.SCHEMA_VERSION,
+                out.get("schemaVersion").asInt());
+        assertEquals(
+                com.editora.config.Settings.DEFAULT_LARGE_FILE_THRESHOLD,
+                out.get("largeFileThreshold").asInt());
+        assertEquals(17, out.get("fontSize").asInt(), "nothing else changes");
+
+        for (int chosen : new int[] {0, 5_000, 20_000, 200_000}) {
+            JsonNode kept = ConfigMigrations.raiseLargeFileThreshold(
+                    mapper.readTree("{\"largeFileThreshold\":" + chosen + "}"));
+            assertEquals(chosen, kept.get("largeFileThreshold").asInt(), "a chosen threshold is kept: " + chosen);
+        }
+        JsonNode twice = ConfigMigrations.raiseLargeFileThreshold(
+                ConfigMigrations.raiseLargeFileThreshold(mapper.readTree("{\"largeFileThreshold\":10000}")));
+        assertEquals(50_000, twice.get("largeFileThreshold").asInt(), "safe to repeat");
+        assertTrue(
+                ConfigMigrations.raiseLargeFileThreshold(mapper.readTree("{}")).isEmpty(), "absent stays absent");
+    }
 }

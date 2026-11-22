@@ -123,7 +123,7 @@ final class WhitespaceOverlay extends Region implements SecondaryPane.Followed, 
     }
 
     /**
-     * Keeps the markers off in large-file mode, whatever the setting says. The 64 KiB long-line profile is
+     * Keeps the markers off in large-file mode, whatever the setting says. The 1 MiB long-line profile is
      * part of that mode, and a marker per whitespace character of such a paragraph is exactly the
      * per-viewport work the mode exists to avoid; the setting is remembered and applies again on leaving it.
      */

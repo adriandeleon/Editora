@@ -6,7 +6,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Pure: whether a file opens in View mode because of its shape, and why. Three shapes are slow or risky to type
- * into: a very large file and one with a 64K-character line both run without undo, and a minified or generated
+ * into: a very large file and one with a 1M-character line both run without undo, and a minified or generated
  * bundle (many long lines) lays out a long paragraph again on every keystroke. Each opens for reading, with
  * Enable Editing one click away, so a stray key in {@code dist/bundle.min.js} neither stalls the window nor
  * lands where it cannot be undone (JS/TS review E104).

@@ -32,7 +32,8 @@ class LongLineWrapSuppressionFxTest {
     void aSettingsReApplyLeavesWrapOffUntilTheUserAsksForItOnThatBuffer() throws Exception {
         FxTestSupport.bootToolkit();
         Path file = dir.resolve("minified.js");
-        String content = "x".repeat(FileWorkflowCoordinator.LONG_LINE_FILE_CHARS + 16);
+        // A line of words past the wrap limit: held off like a giant line, yet cheap enough to wrap when asked to.
+        String content = "word ".repeat(com.editora.editor.WordWrap.MAX_WRAPPED_LINE / 5 + 4);
         Files.writeString(file, content);
         FxWindowFixture fx = FxWindowFixture.create();
         try {
@@ -54,6 +55,9 @@ class LongLineWrapSuppressionFxTest {
             assertTrue(waitUntil(() -> content.equals(buffer.getContent())), "background load did not complete");
             FxTestSupport.drainFx();
             assertFalse(FxTestSupport.callOnFx(() -> buffer.getArea().isWrapText()), "precondition: safe profile");
+            assertFalse(
+                    FxTestSupport.callOnFx(buffer::isLargeFile),
+                    "a line too long to wrap is not too long to edit: undo and highlighting stay");
 
             CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
             FxTestSupport.runOnFx(() -> registry.run("view.toggleMinimap")); // any settings change at all

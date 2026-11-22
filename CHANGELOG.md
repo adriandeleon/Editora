@@ -45,6 +45,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Big files keep more of the editor, from measured limits.** The size limits were set by hand; they are now
+  measured, and most moved up. A file now loses highlighting, the minimap and undo at 200,000 lines (or 16 MB)
+  instead of 5 MB, so a 150,000-line generated source keeps its colours while a 5 MB file of very short lines,
+  which costs more memory, no longer slips through on its byte count. A long file keeps its minimap: from
+  50,000 lines (was 10,000, and a stored 10,000 moves to it) only the language server stays off, unless the
+  language keeps it longer. A line up to 1 MiB (was 64 KiB) keeps undo, and highlighting for the rest of the file; such
+  a line still opens unwrapped, as before. A file whose document would not fit the
+  free memory opens as a read-only slice, now counted by lines as well as size.
 - **Settings ▸ Snippets writes a snippet file whole.** A save, a removal or switching a snippet off or on now
   writes that language's snippet file as plain JSON, so comments in it are not kept (the order of the snippets,
   every trigger, the scope and fields Editora does not use still are). A file with comments still loads, and the
