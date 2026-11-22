@@ -63,6 +63,39 @@ final class DebugSession {
     final java.util.Map<String, com.editora.dap.DapModels.FileBreakpoints> closedBreakpoints =
             new java.util.LinkedHashMap<>();
 
+    /**
+     * Answers still to come for this session (a save, a plan, a scan made off the FX thread), and since when: while
+     * there are any and no session has started, a launch is getting ready (see {@code DebugCoordinator}).
+     */
+    int stepsPending;
+
+    long stepsPendingSince;
+
+    /** One more answer to come. */
+    void stepPending() {
+        if (stepsPending++ == 0) {
+            stepsPendingSince = System.nanoTime();
+        }
+    }
+
+    /** The file of the launch let through last: what a launch still saving or planning is for. */
+    java.nio.file.@Nullable Path launchAskedFile;
+
+    /** One answer came. */
+    void stepAnswered() {
+        stepsPending = Math.max(0, stepsPending - 1);
+    }
+
+    /**
+     * A stop waiting for edited files' line mappings ({@code DebugCoordinator.onStopped}): which one is the latest,
+     * whether one waits, and the exception information that came for it meanwhile (shown with it, not cleared by it).
+     */
+    long stopDeferral;
+
+    boolean stopDeferred;
+
+    com.editora.dap.DapModels.@Nullable ExceptionInfo heldExceptionInfo;
+
     /** The text each file of the session was launched from (see {@link LaunchedLines}). */
     final LaunchedLines launchedLines = new LaunchedLines();
 

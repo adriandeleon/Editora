@@ -75,7 +75,7 @@ final class TestRunOpsHost implements TestRunCoordinator.Ops {
     public void attachDebugger(String className, String host, int port) {
         mc.setStatus(tr("status.testrunner.debugAttaching", port));
         mc.testNavigation.resolveTestClassAnchor(
-                className, a -> mc.debugCoordinator.attachToPort(a, host, port, mc.testRunCoordinator::stop));
+                className, a -> mc.debugCoordinator.attachTestJvm(a, host, port, mc.testRunCoordinator::stop));
     }
 
     @Override

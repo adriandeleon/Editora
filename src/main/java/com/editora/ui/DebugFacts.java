@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Path;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 import com.editora.build.BuildTool;
 import com.editora.config.RunConfiguration;
@@ -30,9 +31,20 @@ final class DebugFacts {
     private final java.util.Set<Object> looking = new java.util.HashSet<>();
 
     DebugFacts(BiConsumer<BuildTool, Path> executableFacts, Runnable busy) {
+        this(executableFacts, busy, why -> {});
+    }
+
+    DebugFacts(BiConsumer<BuildTool, Path> executableFacts, Runnable busy, Consumer<Exception> failed) {
         this.executableFacts = executableFacts;
         this.busy = busy;
+        this.failed = failed;
     }
+
+    /**
+     * Says why a look failed (a remote host gone, a folder that cannot be read). Its launch stops there: what failed
+     * is not known after it either, so looking again started another look, forever, without a word.
+     */
+    private final Consumer<Exception> failed;
 
     /**
      * Whether everything {@code asks} asks of the disk is known now. If not, it is looked at off the FX thread and
@@ -55,7 +67,11 @@ final class DebugFacts {
                 },
                 done -> {
                     looking.remove(who);
-                    again.run();
+                    if (done.failure() != null) {
+                        failed.accept(done.failure());
+                    } else {
+                        again.run();
+                    }
                 });
         return false;
     }
