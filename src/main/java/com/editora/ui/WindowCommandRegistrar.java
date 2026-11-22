@@ -3739,7 +3739,6 @@ final class WindowCommandRegistrar {
         commands.put("git.setUpstream", branches::setUpstream);
         commands.put("git.unsetUpstream", branches::unsetUpstream);
         commands.put("git.pushTo", branches::pushTo);
-        commands.put("git.pushForce", branches::pushForce);
         commands.put("git.pushTags", branches::pushTags);
         commands.put("git.fetchRemote", branches::fetchRemote);
         commands.put("git.remotes", branches::manageRemotes);

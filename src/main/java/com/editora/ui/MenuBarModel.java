@@ -88,7 +88,6 @@ final class MenuBarModel {
             "git.undoLastCommit", // git reset --soft HEAD~1
             "git.revertHunk",
             "git.deleteBranch",
-            "git.pushForce",
             "git.tag.delete",
             "git.stashDrop",
             "macro.deleteSaved");
@@ -531,7 +530,6 @@ final class MenuBarModel {
                                                 "git.pullMerge",
                                                 SEPARATOR,
                                                 "git.pushTo",
-                                                "git.pushForce",
                                                 "git.pushTags",
                                                 "git.fetchRemote",
                                                 "git.toggleAutoFetch",

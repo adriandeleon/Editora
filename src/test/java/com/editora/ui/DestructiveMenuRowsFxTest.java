@@ -188,7 +188,7 @@ class DestructiveMenuRowsFxTest {
                 id -> {}));
         Map<String, ?> rows = FxTestSupport.field(bar, "items");
         Set<String> destructive = MenuBarModel.destructiveCommandIds();
-        assertTrue(destructive.containsAll(List.of("git.discardAll", "git.deleteBranch", "git.pushForce")));
+        assertTrue(destructive.containsAll(List.of("git.discardAll", "git.deleteBranch", "git.tag.delete")));
         for (Map.Entry<String, ?> e : rows.entrySet()) {
             MenuItem item = (MenuItem) FxTestSupport.call(e.getValue(), "item", new Class<?>[0]);
             boolean expected = destructive.contains(e.getKey());

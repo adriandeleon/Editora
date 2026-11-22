@@ -362,7 +362,6 @@ class MenuBarModelTest {
                 "git.discardAll",
                 "git.revertHunk",
                 "git.deleteBranch",
-                "git.pushForce",
                 "git.tag.delete",
                 "git.stashDrop",
                 "macro.deleteSaved")) {

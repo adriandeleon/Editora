@@ -43,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Before, only F5 started such a file, and Run said it was not runnable. Debug: Debug Current File now also works on
   a file that Run File runs.
 
+### Changed
+
+- **Force Push is offered only after a rejected push.** The Git ▸ Remotes ▸ Force Push (with Lease) row and its
+  palette command are gone. When a push is rejected because the remote branch has commits yours does not, the
+  question offers Pull, then Push (the default) and, in red beside it, Force with Lease, which still refuses to
+  overwrite commits you have not fetched.
+
 ### Fixed
 
 - **Debugging a C, C++ or Rust program on CodeLLDB reports the program's own exit code.** The Debug console said
