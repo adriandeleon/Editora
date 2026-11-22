@@ -516,7 +516,11 @@ a `.java` file, and each file of a drag-move (`ProjectPanel.moveThrough`, also U
 for a target package it knows: the edit the
 server answers is applied and saved, and the move is recorded with it, so Undo Last Refactoring moves the
 file back and reverts the edit together. A folder rename is applied but not undoable as one. Saving a Java file
-the server does not have open (a deferred tab) sends `didChangeWatchedFiles` CHANGED. A formatter profile is
+the server does not have open (a deferred tab) sends `didChangeWatchedFiles` CHANGED. A `pom.xml` or Gradle build
+file changed on disk is also sent, once the build files have stayed unchanged for two seconds, in a
+`java/projectConfigurationsUpdate` (`LspFileWatching.buildFilesChanged`), which updates a project even when its build
+file reads as before: jdtls reads a changed pom when it gets to the event and skips one it has seen, so a checkout and
+a pull a second apart left modules on the versions in between, every import of a sibling module red. A formatter profile is
 pushed as a content-addressed copy (`JavaProjectSettings.contentAddressed`), since jdtls reads
 `java.format.settings.url` again only when it changes. `LspManager.holdForInstall` stops a server in every window
 while Doctor's Update swaps its folder, and no window starts it until `releaseAfterInstall`. A project with no formatter

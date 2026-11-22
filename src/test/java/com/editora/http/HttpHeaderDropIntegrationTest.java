@@ -28,6 +28,7 @@ class HttpHeaderDropIntegrationTest {
 
     @BeforeAll
     static void bootFx() {
+        com.editora.i18n.Messages.init("en"); // the warnings are read in English, whichever test ran before
         // HttpClientService.run posts its result via Platform.runLater, so the toolkit must be up.
         try {
             javafx.application.Platform.startup(() -> {});

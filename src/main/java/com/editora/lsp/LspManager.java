@@ -950,6 +950,11 @@ public final class LspManager {
         return watching.reportsChangesTo(file);
     }
 
+    /** What waits for build files to stay unchanged before jdtls updates their projects (tests run it themselves). */
+    void setBuildSettleSchedulerForTest(java.util.function.BiConsumer<Long, Runnable> scheduler) {
+        watching.setBuildSettleSchedulerForTest(scheduler);
+    }
+
     /** See {@link LspFileWatching#watchedRoots}. */
     java.util.Set<Path> watchedRoots() {
         return watching.watchedRoots();

@@ -9,6 +9,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** Response-save extension inference, the value-preserving JSON pretty-printer, and the viewer body. */
 class HttpResponseFormatTest {
 
+    @org.junit.jupiter.api.BeforeAll
+    static void english() {
+        com.editora.i18n.Messages.init("en"); // the views are read in English, whichever test ran before
+    }
+
     @Test
     void extensionForKnownContentTypes() {
         assertEquals(".json", HttpResponseFormat.extensionFor("application/json"));

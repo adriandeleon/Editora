@@ -63,7 +63,8 @@ class JdtLanguageServerProtocolTest {
      */
     @Test
     void everyJavaRequestEditoraSendsIsDeclared() throws Exception {
-        java.util.Set<String> notifications = java.util.Set.of("java/projectConfigurationUpdate");
+        java.util.Set<String> notifications =
+                java.util.Set.of("java/projectConfigurationUpdate", "java/projectConfigurationsUpdate");
         var declared =
                 ServiceEndpoints.getSupportedMethods(JdtLanguageServer.class).keySet();
         java.util.regex.Pattern literal = java.util.regex.Pattern.compile("\"(java/[A-Za-z]+)\"");
