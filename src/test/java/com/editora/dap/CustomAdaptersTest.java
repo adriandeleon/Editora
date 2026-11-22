@@ -118,4 +118,16 @@ class CustomAdaptersTest {
         assertNull(DebugLanguages.byId("x"));
         assertTrue(CustomAdapters.parse(CustomAdapters.EXAMPLE).problems().isEmpty(), "the example reads");
     }
+
+    /** Read through Jackson (PLAT-14): the example file loads, and a launch template's whole numbers are longs. */
+    @Test
+    void theExampleLoadsAndLaunchNumbersAreLongs() {
+        CustomAdapters.Parsed example = CustomAdapters.parse(CustomAdapters.EXAMPLE);
+        assertEquals(List.of(), example.problems());
+        assertEquals(0, example.adapters().size());
+        CustomAdapters.Parsed p = CustomAdapters.parse(
+                "{ \"adapters\": [ { \"type\": \"x\", \"command\": [\"x\"], \"launch\": { \"port\": 9229, \"t\": 1.5 } } ] }");
+        assertEquals(Map.of("port", 9229L, "t", 1.5), p.adapters().getFirst().launch());
+        assertEquals(List.of("no \"adapters\" list"), CustomAdapters.parse("").problems());
+    }
 }

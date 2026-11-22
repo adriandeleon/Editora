@@ -305,9 +305,9 @@ class ConfirmWordsTest {
 
     @Test
     void settingsListQuestionsNameTheEntry() {
-        String lost = SnippetsEditor.commentsLostMessage("for-each");
-        assertEquals(tr("settings.snippet.commentsLost", "for-each"), lost);
-        assertTrue(lost.contains("for-each"));
+        String lost = SnippetsEditor.commentsLostMessage(java.nio.file.Path.of("go.json"));
+        assertEquals(tr("settings.snippet.commentsLost", "go.json"), lost);
+        assertTrue(lost.contains("go.json"), "it names the file whose comments go");
         Confirm.Choice save = SettingsSnippetPages.snippetSaveQuestion(lost);
         assertNull(save.title(), "it has no title of its own");
         assertNull(save.header());
