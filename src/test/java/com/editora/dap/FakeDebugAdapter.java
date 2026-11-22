@@ -107,7 +107,7 @@ public final class FakeDebugAdapter implements AutoCloseable {
 
     /**
      * When set (before the client connects), sessions advertise {@code disassemble}, {@code readMemory} and stepping
-     * by instruction, as CodeLLDB and Delve: the default frame has instruction pointer {@link #LOW_LEVEL_IP}, each
+     * by instruction, and take instruction breakpoints, as CodeLLDB and Delve: the default frame has instruction pointer {@link #LOW_LEVEL_IP}, each
      * instruction is 4 bytes, memory reads as {@code hello} then zeros, and an expression's value has memory reference
      * {@code 0x2000} ({@code noaddress} has none).
      */
@@ -115,6 +115,9 @@ public final class FakeDebugAdapter implements AutoCloseable {
 
     /** The default frame's instruction pointer when {@link #lowLevel}. */
     public static final String LOW_LEVEL_IP = "0x1000";
+
+    /** An instruction breakpoint at this address is answered not verified, with the message {@code no code here}. */
+    public volatile String unsettableInstruction = "";
 
     /**
      * When set (before the client connects), sessions advertise function and data breakpoints, as java-debug, and
@@ -621,6 +624,7 @@ public final class FakeDebugAdapter implements AutoCloseable {
                 capabilities.setSupportsDisassembleRequest(true);
                 capabilities.setSupportsReadMemoryRequest(true);
                 capabilities.setSupportsSteppingGranularity(true);
+                capabilities.setSupportsInstructionBreakpoints(true);
             }
             if (stepInTargets) {
                 capabilities.setSupportsStepInTargetsRequest(true);
@@ -1057,6 +1061,31 @@ public final class FakeDebugAdapter implements AutoCloseable {
 
         /** Every {@code disassemble} request, in arrival order. */
         public final List<org.eclipse.lsp4j.debug.DisassembleArguments> disassembles = new CopyOnWriteArrayList<>();
+
+        /** Every {@code setInstructionBreakpoints} request, in arrival order. */
+        public final List<org.eclipse.lsp4j.debug.SetInstructionBreakpointsArguments> instructionBreakpointSets =
+                new CopyOnWriteArrayList<>();
+
+        @Override
+        public CompletableFuture<org.eclipse.lsp4j.debug.SetInstructionBreakpointsResponse> setInstructionBreakpoints(
+                org.eclipse.lsp4j.debug.SetInstructionBreakpointsArguments args) {
+            instructionBreakpointSets.add(args);
+            record("setInstructionBreakpoints");
+            org.eclipse.lsp4j.debug.InstructionBreakpoint[] asked = args.getBreakpoints();
+            org.eclipse.lsp4j.debug.Breakpoint[] out = new org.eclipse.lsp4j.debug.Breakpoint[asked.length];
+            for (int i = 0; i < asked.length; i++) {
+                out[i] = new org.eclipse.lsp4j.debug.Breakpoint();
+                boolean refused = asked[i].getInstructionReference().equals(unsettableInstruction);
+                out[i].setVerified(!refused);
+                if (refused) {
+                    out[i].setMessage("no code here");
+                }
+            }
+            org.eclipse.lsp4j.debug.SetInstructionBreakpointsResponse response =
+                    new org.eclipse.lsp4j.debug.SetInstructionBreakpointsResponse();
+            response.setBreakpoints(out);
+            return CompletableFuture.completedFuture(response);
+        }
 
         /** Every {@code readMemory} request, in arrival order. */
         public final List<org.eclipse.lsp4j.debug.ReadMemoryArguments> memoryReads = new CopyOnWriteArrayList<>();

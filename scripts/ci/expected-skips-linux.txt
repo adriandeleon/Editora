@@ -82,6 +82,7 @@ com.editora.ui.ValueFormatsProbeFxTest
 com.editora.ui.GoGoroutinesProbeFxTest
 com.editora.ui.PythonTemplatesProbeFxTest
 com.editora.ui.PythonWebProbeFxTest
+com.editora.ui.InstructionBreakpointProbeFxTest
 com.editora.ui.KotlinServerProbeFxTest
 com.editora.ui.MenuShadowCostProbeTest
 com.editora.lsp.LemminxMavenProbeTest

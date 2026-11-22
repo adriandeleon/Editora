@@ -2343,18 +2343,85 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     /**
+     * Whether the adapter takes instruction breakpoints ({@code supportsInstructionBreakpoints}: CodeLLDB, GDB,
+     * Delve).
+     */
+    public boolean supportsInstructionBreakpoints() {
+        Capabilities caps = target().capabilities;
+        return caps != null && Boolean.TRUE.equals(caps.getSupportsInstructionBreakpoints());
+    }
+
+    /**
+     * The instruction breakpoints of the session a request goes to: the addresses last given to
+     * {@link #setInstructionBreakpoints}. Each session (each process) has its own: an address means nothing in
+     * another process, nor in the next run.
+     */
+    public List<String> instructionBreakpoints() {
+        return target().instructionBreakpoints;
+    }
+
+    private volatile List<String> instructionBreakpoints = List.of();
+
+    /**
+     * Sets the instruction breakpoints of the session a request goes to to {@code addresses}, each at its instruction
+     * (offset 0); the answer says which the adapter could set.
+     */
+    public CompletableFuture<List<DapModels.InstructionBreakpoint>> setInstructionBreakpoints(List<String> addresses) {
+        DapClient session = target();
+        if (session != this) {
+            return session.setInstructionBreakpoints(addresses);
+        }
+        List<String> list = List.copyOf(addresses);
+        instructionBreakpoints = list;
+        org.eclipse.lsp4j.debug.InstructionBreakpoint[] wire =
+                new org.eclipse.lsp4j.debug.InstructionBreakpoint[list.size()];
+        for (int i = 0; i < wire.length; i++) {
+            wire[i] = new org.eclipse.lsp4j.debug.InstructionBreakpoint();
+            wire[i].setInstructionReference(list.get(i));
+            wire[i].setOffset(0);
+        }
+        org.eclipse.lsp4j.debug.SetInstructionBreakpointsArguments a =
+                new org.eclipse.lsp4j.debug.SetInstructionBreakpointsArguments();
+        a.setBreakpoints(wire);
+        return timed(server().setInstructionBreakpoints(a))
+                .thenApply(r -> instructionResults(list, r == null ? null : r.getBreakpoints()));
+    }
+
+    /**
+     * What the adapter says of each of {@code addresses}: the breakpoint at the same index of its answer, or verified
+     * when it gave none (an answer without breakpoints set them all). Pure.
+     */
+    static List<DapModels.InstructionBreakpoint> instructionResults(
+            List<String> addresses, org.eclipse.lsp4j.debug.Breakpoint @Nullable [] answer) {
+        List<DapModels.InstructionBreakpoint> out = new ArrayList<>();
+        for (int i = 0; i < addresses.size(); i++) {
+            org.eclipse.lsp4j.debug.Breakpoint b = answer != null && i < answer.length ? answer[i] : null;
+            boolean verified = b == null || b.isVerified();
+            String message = b == null || b.getMessage() == null ? "" : b.getMessage();
+            out.add(new DapModels.InstructionBreakpoint(addresses.get(i), verified, message));
+        }
+        return out;
+    }
+
+    /**
      * {@code count} instructions around {@code memoryReference} (a frame's instruction pointer), from
      * {@code instructionOffset} instructions before or after it, with their symbols and source lines.
      */
     public CompletableFuture<List<DapModels.Instruction>> disassemble(
             String memoryReference, int instructionOffset, int count) {
+        return disassemble(memoryReference, 0, instructionOffset, count);
+    }
+
+    /** As {@link #disassemble(String, int, int)}, from {@code byteOffset} bytes after {@code memoryReference}. */
+    public CompletableFuture<List<DapModels.Instruction>> disassemble(
+            String memoryReference, long byteOffset, int instructionOffset, int count) {
         DapClient session = target();
         if (session != this) {
-            return session.disassemble(memoryReference, instructionOffset, count);
+            return session.disassemble(memoryReference, byteOffset, instructionOffset, count);
         }
         org.eclipse.lsp4j.debug.DisassembleArguments a = new org.eclipse.lsp4j.debug.DisassembleArguments();
         a.setMemoryReference(memoryReference);
-        a.setOffset(0);
+        a.setOffset(Math.toIntExact(byteOffset));
         a.setInstructionOffset(instructionOffset);
         a.setInstructionCount(count);
         a.setResolveSymbols(true);

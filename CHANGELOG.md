@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Instruction breakpoints.** In the Debug window's Disassembly view, click the margin before an instruction's
+  address, press F9, or use the row's right-click menu to put a breakpoint on that one machine instruction. The
+  program stops there, and the Disassembly view opens at it. It works on CodeLLDB, GDB and Delve (C, C++, Rust and
+  Go). The breakpoints last for the debug session, since an address belongs to that run of the program.
+
 - **Run and debug Django, Flask and FastAPI apps.** Run or Debug a Django project's `manage.py` and its development
   server starts (`runserver`); do the same on a Flask or FastAPI app's file and Editora serves it with
   `flask run --reload` or `uvicorn --reload`, from the right folder. Breakpoints in your views stop, and keep
@@ -91,6 +96,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Disassembly view on GDB** now shows the instructions leading up to where the program stopped. GDB used to
+  answer with instructions after it, so the current instruction wasn't in the list.
 - **Debugger review fixes, second round.** A second review of the debugger found these, now fixed:
   - **"Don't step into" and your own code.** A filter such as `kotlin.*`, `java.*` or `scala.*` also matched your own
     `src/main/kotlin`, `src/main/java` or `src/main/scala` folder, so Step Into on your code stepped straight back
