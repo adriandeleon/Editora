@@ -826,6 +826,28 @@ final class RunCoordinator {
         PythonRunLauncher.plan(request, cwd, plan -> streamPython(cfg.name(), cwd, plan, script));
     }
 
+    /**
+     * Runs the development server of the Flask or FastAPI app {@code file} makes ({@code python -m flask},
+     * {@code uvicorn}) in the folder its module is named from, under the interpreter Run File picks for the file.
+     */
+    private void runPythonServer(Path file, com.editora.run.PythonWebApps.Server web) {
+        Path dir = web.folder();
+        com.editora.run.PythonRunPlan.Request request = new com.editora.run.PythonRunPlan.Request(
+                file,
+                ops.projectRoot(),
+                java.util.Objects.requireNonNull(web.module()),
+                true,
+                web.args(),
+                null,
+                "",
+                List.of(),
+                ops.pythonInterpreterChoice(),
+                PythonRunLauncher.setting(file, host.settings()),
+                java.util.Map.of());
+        PythonRunLauncher.plan(
+                request, dir, python -> streamPython(file.getFileName().toString(), dir, python, file));
+    }
+
     /** The first line of {@code script} (at most 512 bytes), or null when it cannot be read. */
     static @Nullable String firstLine(@Nullable Path script) {
         if (script == null) {
@@ -3134,7 +3156,8 @@ final class RunCoordinator {
             @Nullable Path missingShellDir,
             @Nullable List<String> scalaInputs,
             @Nullable String jvmToolName,
-            com.editora.run.ClojureRun.@Nullable Plan clojure) {}
+            com.editora.run.ClojureRun.@Nullable Plan clojure,
+            com.editora.run.PythonWebApps.@Nullable Server web) {}
 
     private FilePlan planFile(
             String language,
@@ -3186,7 +3209,14 @@ final class RunCoordinator {
                 missing,
                 scala,
                 toolName,
-                com.editora.run.JvmScriptRun.clojurePlan(language, path));
+                com.editora.run.JvmScriptRun.clojurePlan(language, path),
+                "python".equals(language) // a web app's file: its development server (manage.py runserver, flask)
+                        ? com.editora.run.PythonWebApps.serve(
+                                path,
+                                content,
+                                List.of(),
+                                d -> java.nio.file.Files.isRegularFile(d.resolve("__init__.py")))
+                        : null);
     }
 
     private void startFileRunNow(EditorBuffer buffer, boolean promptArgs, boolean trace) {
@@ -3315,6 +3345,11 @@ final class RunCoordinator {
             return;
         }
         if (buffer.isPython()) {
+            com.editora.run.PythonWebApps.Server web = com.editora.run.PythonWebApps.withArgs(plan.web(), args);
+            if (web != null && web.module() != null) {
+                runPythonServer(path, web);
+                return;
+            }
             Path dir = path.getParent();
             String target = com.editora.process.ExecTargets.forPath(path).toTargetPath(path);
             PythonRunLauncher.plan(
@@ -3322,7 +3357,7 @@ final class RunCoordinator {
                             path,
                             ops.projectRoot(),
                             target,
-                            args,
+                            web != null ? web.args() : args, // manage.py: runserver
                             firstLine(buffer),
                             ops.pythonInterpreterChoice(),
                             PythonRunLauncher.setting(path, host.settings())),

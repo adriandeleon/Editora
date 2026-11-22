@@ -192,9 +192,9 @@ class ShellRunWindowFxTest {
                     new com.editora.config.RunConfiguration("D", "shell", "deploy.sh", "", "", "", "", "", "", "")));
             assertEquals(tr("status.debug.shellNotDebuggable"), echo(c), "and for a shell configuration");
             FxTestSupport.runOnFx(() -> c.debugCoordinator.debugConfig(
-                    new com.editora.config.RunConfiguration("P", "python", "tool.py", "", "", "", "", "", "", "")));
+                    new com.editora.config.RunConfiguration("P", "make", "all", "", "", "", "", "", "", "")));
             assertEquals(
-                    tr("status.debug.configTypeUnsupported", tr("settings.runConfig.type.python")),
+                    tr("status.debug.configTypeUnsupported", tr("settings.runConfig.type.make")),
                     echo(c),
                     "the type's name, not its id");
         }

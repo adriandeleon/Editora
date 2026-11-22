@@ -322,7 +322,7 @@ final class DebugCoordinator {
      * own, on its own service rather than the Run console's: debugging is not refused because a program runs there,
      * and the sessions of a compound build at the same time. What a step hands back runs as its session's.
      */
-    private BeforeLaunchStep beforeLaunch() {
+    BeforeLaunchStep beforeLaunch() {
         DebugSession session = s();
         BeforeLaunchStep step = session.beforeLaunch;
         if (step == null) {
@@ -336,7 +336,7 @@ final class DebugCoordinator {
     }
 
     /** A before-launch step of the session being handled is running: its Stop stops that step. */
-    private boolean beforeLaunchActive() {
+    boolean beforeLaunchActive() {
         BeforeLaunchStep step = s().beforeLaunch;
         return step != null && step.isActive();
     }
@@ -425,6 +425,9 @@ final class DebugCoordinator {
         Thread.ofVirtual().name(name).start(job);
     }
 
+    /** Python launches: Run's plan for debugpy, and Debug of a Python run configuration. */
+    private final PythonDebugLaunch python = new PythonDebugLaunch(this);
+
     /** The build facts a launch asks: looked at off the FX thread first when not known ({@link DebugFacts}). */
     private final DebugFacts facts = new DebugFacts(this::executableFacts, this::sayBusy, this::lookFailed);
 
@@ -458,8 +461,7 @@ final class DebugCoordinator {
      * {@link DebugPlanning#offFx}, its answer handled as the session being handled now: a launch's plan lands after
      * the user (or a compound's next member) moved focus, and must start the session that asked for it.
      */
-    private <T> void planOffFx(
-            String name, java.util.concurrent.Callable<T> work, Consumer<DebugPlanning.Answer<T>> then) {
+    <T> void planOffFx(String name, java.util.concurrent.Callable<T> work, Consumer<DebugPlanning.Answer<T>> then) {
         DebugSession session = s();
         session.stepPending(); // until it answers (it always does), a launch of this session is getting ready
         Consumer<DebugPlanning.Answer<T>> asked = asThisSession(then);
@@ -1250,7 +1252,7 @@ final class DebugCoordinator {
     }
 
     /** Streams a before-launch build into the Debug console and keeps Stop usable while it runs. */
-    private BeforeLaunchStep.Console beforeLaunchConsole() {
+    BeforeLaunchStep.Console beforeLaunchConsole() {
         return beforeLaunchConsole(true);
     }
 
@@ -4683,7 +4685,8 @@ final class DebugCoordinator {
     // --- debug commands ----------------------------------------------------------------------------
 
     /** Program arguments read as Run reads them; null after saying why when a quote is never closed. */
-    private @Nullable List<String> debugArgs(String text) {
+    @Nullable
+    List<String> debugArgs(String text) {
         try {
             return ProgramArgs.parse(text);
         } catch (ProgramArgs.UnclosedQuoteException e) {
@@ -5615,7 +5618,7 @@ final class DebugCoordinator {
         dap().setVmArgs(""); // no user VM args on a plain debug
         dap().setHostJavaExec("");
         if (b.isPython()) {
-            planPython(path, firstLine(b.getContent()));
+            python.plan(path, PythonDebugLaunch.firstLine(b.getContent()));
         }
         dap().setJsProjectRoot(ops.projectRoot()); // a JavaScript file's Node.js, package root, workspace
         dap().setJsNodeArgs(nodeArgs);
@@ -6024,7 +6027,7 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.saveFirst"));
             return;
         }
-        Path root = pythonRootOf(file);
+        Path root = python.rootOf(file);
         Path cwd = root != null ? root : file.getParent();
         if (cwd == null) {
             return; // a saved file is always in a folder
@@ -6087,7 +6090,7 @@ final class DebugCoordinator {
         ops.openToolWindow();
         nameSession(label);
         dap().setProgramArgs(List.of());
-        planPython(anchor, open == null ? null : firstLine(open.getContent()));
+        python.plan(anchor, open == null ? null : PythonDebugLaunch.firstLine(open.getContent()));
         s().relaunch = () -> debugPythonTests(anchor, cwd, pytestIds, unittestIds, label);
         withClosedBreakpoints(() -> {
             if (pytestIds == null || pytestIds.isEmpty()) {
@@ -6096,45 +6099,6 @@ final class DebugCoordinator {
                 dap().startPythonTest(anchor, pytestIds, fallback, cwd);
             }
         });
-    }
-
-    /**
-     * Hands the next Python launch Run's plan inputs ({@link com.editora.run.PythonRunPlan}) for {@code file}:
-     * its project root, the interpreter picked for the project, the interpreter setting where it runs (a remote
-     * host's {@code python} tool), its first line (a shebang) — and that machine. Debug and Run then start the
-     * same Python with the same {@code PYTHONPATH}, here, on a host, in WSL or in a container.
-     */
-    private void planPython(Path file, @Nullable String firstLine) {
-        Path dir = file.getParent() == null ? file : file.getParent();
-        dap().setPythonPlan(
-                        com.editora.run.PythonRunPlan.Request.file(
-                                file,
-                                pythonRootOf(file),
-                                com.editora.process.ExecTargets.forPath(file).toTargetPath(file),
-                                List.of(),
-                                firstLine,
-                                ops.pythonInterpreterChoice(),
-                                PythonRunLauncher.setting(dir, host.settings())),
-                        PythonRunLauncher.hostFor(dir));
-    }
-
-    private static @Nullable String firstLine(String text) {
-        if (text == null) {
-            return null;
-        }
-        int nl = text.indexOf('\n');
-        return nl < 0 ? text : text.substring(0, nl);
-    }
-
-    /** This window's project root when {@code file} is inside it, else null. */
-    private @Nullable Path pythonRootOf(Path file) {
-        Path root = ops.projectRoot();
-        return root != null
-                        && file.toAbsolutePath()
-                                .normalize()
-                                .startsWith(root.toAbsolutePath().normalize())
-                ? root
-                : null;
     }
 
     /**
@@ -6196,8 +6160,8 @@ final class DebugCoordinator {
      * Debugs a saved {@link RunConfiguration} — its main class, program args, VM args, environment and
      * working directory, and its before-launch step.
      *
-     * <p>Java, Groovy, Kotlin, Clojure, Scala, Node.js and npm, and C, C++, Go and Rust: the other script types run
-     * but do not debug yet.
+     * <p>Java, Groovy, Kotlin, Clojure, Scala, Python, Node.js and npm, and C, C++, Go and Rust: the other script
+     * types run but do not debug yet.
      */
     void debugConfig(RunConfiguration cfg) {
         if (cfg.isDeployed()) {
@@ -6215,6 +6179,10 @@ final class DebugCoordinator {
         }
         if (com.editora.run.ScriptRunCommand.isCompiled(cfg.type())) {
             debugCompiledConfig(cfg); // built and launched as Debug File does its source file
+            return;
+        }
+        if (com.editora.run.ScriptRunCommand.isPython(cfg.type())) {
+            python.debugConfig(cfg); // a script or module, planned as Run plans it
             return;
         }
         if (!cfg.isJava()) {
@@ -6692,7 +6660,7 @@ final class DebugCoordinator {
     }
 
     /** The saved configuration called {@code name} as it is now, else {@code fallback} (it was deleted). */
-    private RunConfiguration currentConfiguration(String name, RunConfiguration fallback) {
+    RunConfiguration currentConfiguration(String name, RunConfiguration fallback) {
         for (RunConfiguration c : ops.runConfigurations()) {
             if (c.name().equals(name)) {
                 return c;

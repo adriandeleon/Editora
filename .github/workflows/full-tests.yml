@@ -342,6 +342,13 @@ jobs:
           "$HOME/.cache/editora/templates-venv/bin/pip" install --quiet jinja2 django
           "$HOME/.cache/editora/templates-venv/bin/python" -c "import jinja2, django; print(jinja2.__version__, django.get_version())"
 
+      # Django, Flask, FastAPI and uvicorn for PythonWebProbeFxTest: an environment its projects link as their .venv.
+      - name: Install Django, Flask, FastAPI and uvicorn
+        run: |
+          python3 -m venv "$HOME/.cache/editora/web-venv"
+          "$HOME/.cache/editora/web-venv/bin/pip" install --quiet django flask fastapi uvicorn
+          "$HOME/.cache/editora/web-venv/bin/python" -c "import django, flask, fastapi, uvicorn; print(django.get_version(), fastapi.__version__, uvicorn.__version__)"
+
       # Go and Delve for GoDebugProbeFxTest. Delve is pinned to the release last checked (go install @latest is what
       # Editora's installer runs). ptrace_scope 0 lets Delve attach to a program it did not start (Ubuntu's 1 allows
       # only a debugger's own children), as a developer does before attaching on such a machine.
@@ -509,7 +516,7 @@ jobs:
       # PythonTemplatesProbeFxTest: on debugpy, a breakpoint on a Jinja template's line (Jinja2 in the requirements) and
       # on a Django template's (a manage.py) stops on it with the template's variables, Template breakpoints Automatic.
       - name: Test compact Java language service and debugging
-        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,CsharpTestDebugProbeFxTest,RubyDebugProbeFxTest,PhpDebugProbeFxTest,BashDebugProbeFxTest,DebugHistoryProbeFxTest#python*+java+javaRecording,SeveralSessionsProbeFxTest,TriggeredBreakpointsProbeFxTest#python+java,LoadedSourcesProbeFxTest#c*+python*,MarkObjectProbeFxTest,DebugSmallWinsProbeFxTest,ThreadDumpProbeFxTest,TypeRenderersProbeFxTest,BreakpointFiltersProbeFxTest,CoreDumpProbeFxTest,DebugTableProbeFxTest,ParallelStacksProbeFxTest,StepBackProbeFxTest,ExceptionBreakpointsProbeFxTest,PythonDataProbeFxTest,StepFiltersProbeFxTest#python+java+go,EvaluationTimeLimitProbeFxTest,WatchSetValueProbeFxTest#python+java+go,ValueFormatsProbeFxTest#java+python+go+gdb+codelldb,GoGoroutinesProbeFxTest,PythonTemplatesProbeFxTest -Dgroups=probe -Dlsp.probe=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,CsharpTestDebugProbeFxTest,RubyDebugProbeFxTest,PhpDebugProbeFxTest,BashDebugProbeFxTest,DebugHistoryProbeFxTest#python*+java+javaRecording,SeveralSessionsProbeFxTest,TriggeredBreakpointsProbeFxTest#python+java,LoadedSourcesProbeFxTest#c*+python*,MarkObjectProbeFxTest,DebugSmallWinsProbeFxTest,ThreadDumpProbeFxTest,TypeRenderersProbeFxTest,BreakpointFiltersProbeFxTest,CoreDumpProbeFxTest,DebugTableProbeFxTest,ParallelStacksProbeFxTest,StepBackProbeFxTest,ExceptionBreakpointsProbeFxTest,PythonDataProbeFxTest,StepFiltersProbeFxTest#python+java+go,EvaluationTimeLimitProbeFxTest,WatchSetValueProbeFxTest#python+java+go,ValueFormatsProbeFxTest#java+python+go+gdb+codelldb,GoGoroutinesProbeFxTest,PythonTemplatesProbeFxTest,PythonWebProbeFxTest -Dgroups=probe -Dlsp.probe=true test
 
   # The Node.js tool chain Editora drives but never ships: typescript-language-server with TypeScript, and
   # vscode-js-debug. Both are user-installed, so the default lanes skip their probes — and a TypeScript release

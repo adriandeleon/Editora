@@ -1509,12 +1509,13 @@ class DebugCoordinatorCommandsFxTest {
         });
         assertEquals(
                 List.of(
-                        tr("status.debug.configTypeUnsupported", tr("settings.runConfig.type.python")),
+                        tr("status.run.configNeedsTarget", "Script"),
                         tr("status.run.configNeedsMainClass", "Blank"),
                         tr("status.run.mainClassIsAFile", "src/main/java/demo/Args.java"),
                         tr("status.run.configNeedsJavaFile")),
                 statuses());
-        assertEquals(List.of("Blank", "File"), edited, "the form is opened at the configuration to put right");
+        assertEquals(
+                List.of("Script", "Blank", "File"), edited, "the form is opened at the configuration to put right");
 
         clearLog();
         buffer(loose.resolve("Loose.java"), "public class Loose {}\n");
