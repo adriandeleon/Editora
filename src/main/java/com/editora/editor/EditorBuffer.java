@@ -1173,6 +1173,12 @@ public class EditorBuffer implements TabContent {
      *  stack above it when both apply to the same selection). */
     private void installFormatBarListeners(CodeArea a) {
         markdownEditing.attach(a, selectionBars::scheduleFormatBar);
+        // Ctrl/Cmd-hover underlines what the Ctrl/Cmd-click below follows; the underline's overlay is built on
+        // the first link shown.
+        DefinitionLinks links = new DefinitionLinks(a, this::probeDefinitionLink, this::definitionLinkOverlay);
+        if (a == area) {
+            definitionLinks = links;
+        }
         a.selectionProperty().addListener((obs, old, now) -> {
             selectionBars.scheduleFormatBar();
             selectionBars.scheduleAiActionsBar();
@@ -1237,6 +1243,100 @@ public class EditorBuffer implements TabContent {
             } catch (RuntimeException ignored) {
                 // hit-test off the text — ignore
             }
+        });
+    }
+
+    /** The site an HTML page's link under a Ctrl/Cmd-hover is looked for on (the page is parsed whole). */
+    public static final String HTML_LINK_HOVER_SITE = "EditorBuffer.htmlLinkHover";
+
+    /** Asks the language server whether the symbol at a 0-based line and UTF-16 column has a definition. */
+    @FunctionalInterface
+    public interface DefinitionProbe {
+        void probe(int line, int column, java.util.function.Consumer<Boolean> found);
+    }
+
+    private @Nullable DefinitionProbe definitionProbe;
+    private @Nullable DefinitionLinkOverlay definitionLinkOverlay;
+    /** The primary view's Ctrl/Cmd-hover links (the split's second view has its own). */
+    private @Nullable DefinitionLinks definitionLinks;
+
+    private DefinitionLinkOverlay definitionLinkOverlay() {
+        if (definitionLinkOverlay == null) {
+            definitionLinkOverlay = attachLazyOverlay(new DefinitionLinkOverlay(area), OverlayLayer.DEFINITION_LINK);
+        }
+        return definitionLinkOverlay;
+    }
+
+    /** TEST SEAM — the Ctrl/Cmd-hover underline's overlay, null until a link has shown. */
+    @Nullable
+    DefinitionLinkOverlay definitionLinkOverlayForTest() {
+        return definitionLinkOverlay;
+    }
+
+    /** TEST SEAM — the primary view's Ctrl/Cmd-hover links. */
+    DefinitionLinks definitionLinksForTest() {
+        return java.util.Objects.requireNonNull(definitionLinks);
+    }
+
+    /** Injects the definition probe behind Ctrl/Cmd-hover links ({@link DefinitionLinks}); null turns it off. */
+    public void setDefinitionProbe(@Nullable DefinitionProbe probe) {
+        this.definitionProbe = probe;
+    }
+
+    /**
+     * Whether a Ctrl/Cmd-click at {@code offset} of {@code a} goes somewhere, for {@link DefinitionLinks}: the same
+     * cases the click handler above follows. An HTML page's {@code href}/{@code src} (worked out off the FX thread,
+     * the page is parsed whole), then, with a live language server, the identifier there if the server knows its
+     * definition. A Markdown link is styled as one already and is left alone.
+     */
+    void probeDefinitionLink(
+            CodeArea a, int offset, java.util.function.Consumer<DefinitionLinks.@Nullable Span> answer) {
+        if (isMarkdown() || largeFile) {
+            answer.accept(null);
+            return;
+        }
+        if (HtmlLinks.isHtml(language)) {
+            long version = docVersion;
+            String text = a.getText();
+            com.editora.perf.OffFx.then(HTML_LINK_HOVER_SITE, () -> HtmlLinks.at(text, offset), found -> {
+                if (docVersion != version || isDisposed()) {
+                    answer.accept(null);
+                    return;
+                }
+                HtmlLinks.Link link = found.ok() ? found.value() : null;
+                if (link != null && link.end() > link.start()) {
+                    answer.accept(new DefinitionLinks.Span(link.start(), link.end(), true));
+                } else {
+                    probeSymbolLink(a, offset, answer);
+                }
+            });
+            return;
+        }
+        probeSymbolLink(a, offset, answer);
+    }
+
+    private void probeSymbolLink(
+            CodeArea a, int offset, java.util.function.Consumer<DefinitionLinks.@Nullable Span> answer) {
+        DefinitionProbe probe = definitionProbe;
+        if (probe == null || !isLspActive() || offset < 0 || offset >= a.getLength()) {
+            answer.accept(null);
+            return;
+        }
+        var pos = a.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+        int line = pos.getMajor();
+        int column = pos.getMinor();
+        int[] word = DefinitionLinks.wordAt(a.getParagraph(line).getText(), column, language);
+        if (word == null) {
+            answer.accept(null);
+            return;
+        }
+        int start = offset - column + word[0];
+        int end = offset - column + word[1];
+        long version = docVersion;
+        sendLspChange(); // the server must see what is under the mouse, not the text of a moment ago
+        probe.probe(line, column, found -> {
+            boolean current = docVersion == version && !isDisposed() && isLspActive();
+            answer.accept(new DefinitionLinks.Span(start, end, current && Boolean.TRUE.equals(found)));
         });
     }
 

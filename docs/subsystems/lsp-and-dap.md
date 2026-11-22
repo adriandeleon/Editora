@@ -887,6 +887,21 @@ server goes through `XmlServer.definition`: lemminx's own answer, unless that is
 `xi:include`) resolved by Editora itself (`XmlServer.includeHref`). Editora's own auto-close and auto-rename tag stay; lemminx's `xml/closeTag` and
 `linkedEditingRange` are not requested.
 
+**Ctrl/Cmd-hover links** (`editor/DefinitionLinks`). Holding the shortcut key alone over a view underlines what a
+Ctrl/Cmd-click there would follow and turns the pointer into a hand, as VS Code and IntelliJ do; the click is still
+`EditorBuffer`'s own Ctrl/Cmd-click filter. Each view has its own node-less `DefinitionLinks` (the mouse and key
+handling); the underline is `DefinitionLinkOverlay`, a mouse-transparent region with a one-pixel bar, attached on the
+first link a buffer shows (the split's second view gets its `SecondaryPane.Followed` twin), so a buffer nobody
+Ctrl-hovers builds nothing. Once the mouse
+rests on a new character for `SETTLE` (60 ms), `EditorBuffer.probeDefinitionLink` answers with a span: an HTML
+`href`/`src` value (found off the FX thread, `HTML_LINK_HOVER_SITE`), else the identifier there when the server
+knows its definition (`setDefinitionProbe`, wired in `LspCoordinator` to a plain `definition` request that does not
+touch the navigation request generation). The answer is kept for its span, a link or not, so moving within a word
+asks nothing more; a press, a drag, an edit, a scroll, a key that is not a modifier, or the key let go drops it, and
+a late answer is dropped by a generation counter. The key filters sit on the scene only while the mouse is over the
+view, so the half of a split without the focus still hears the key. Markdown links are styled as links already and
+are left alone.
+
 **HTML links, markup checks and colours** (`HtmlLspAids`, owned by `LspCoordinator`). The HTML server's definition
 answers only for embedded JavaScript, so Go to Definition and Ctrl/Cmd-click fall back to `HtmlLinkFollow` on an
 `href`/`src` value (`editops.HtmlLinks`): the server's `documentLink` at the caret when it runs

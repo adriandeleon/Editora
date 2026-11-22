@@ -24,6 +24,7 @@ final class OverlayLayer {
     static final int LSP = 110;
     static final int INLINE_VALUES = 120;
     static final int ACE_JUMP = 125;
+    static final int DEFINITION_LINK = 127;
     static final int MINIMAP = 130;
     static final int DIAGNOSTIC_STRIPE = 140;
     static final int MARKDOWN_LINT_STRIPE = 150;

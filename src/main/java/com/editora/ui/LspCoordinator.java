@@ -4562,6 +4562,15 @@ final class LspCoordinator {
                         applied -> {});
             }
         });
+        // Ctrl/Cmd-hover links: is the symbol under the mouse one Ctrl/Cmd-click can follow?
+        buffer.setDefinitionProbe((line, character, found) -> {
+            Path path = lspPath(buffer);
+            if (path != null && lspManager.isManaged(path)) {
+                lspManager.definition(path, line, character, targets -> found.accept(!targets.isEmpty()));
+            } else {
+                found.accept(false);
+            }
+        });
         // Smart-semicolon detection (#746): where does a ';' typed here belong?
         buffer.setLspSmartSemicolonRequester((line, character, cb) -> {
             Path path = lspPath(buffer);

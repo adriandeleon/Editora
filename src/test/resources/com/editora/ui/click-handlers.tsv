@@ -5,6 +5,7 @@
 # (com.editora.editor.Pressable) and needs no line here. A new handler on anything else needs one: a Control
 # (its own role and keys), or the command or key that does the same, or why it is no action (a drag, a raise).
 com/editora/editor/BufferInlays.java	a	addEventFilter	the editor (a CodeArea) or a console: a code lens click; the keyboard runs the lens action through lsp.codeActions
+com/editora/editor/DefinitionLinks.java	view	addEventFilter	the editor (a CodeArea): a press ends the Ctrl/Cmd-hover underline and does nothing else; Ctrl/Cmd-click's jump is lsp.gotoDefinition from the keyboard
 com/editora/editor/completion/BufferCompletion.java	a	addEventFilter	the editor (a CodeArea) or a console: a press dismisses the code-action popup; not an action of its own
 com/editora/editor/completion/CompletionPopup.java	list	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
 com/editora/editor/debug/DebugHover.java	a	addEventFilter	the editor (a CodeArea) or a console: Alt+click Quick Evaluate and hover; debug.quickEvaluate does it from the keyboard
