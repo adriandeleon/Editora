@@ -111,7 +111,10 @@ public final class Shots {
                             String[] kv = arg.split("\\s+", 2);
                             seed.put(kv[0], kv[1]);
                         }
-                        case "settings" -> {
+                        case "settings" -> { // settings <CATEGORY> [language]: a page, and its Language picker's pick
+                            String[] z = arg.split("\\s+");
+                            String category = z[0];
+                            String language = z.length > 1 ? z[1] : null;
                             FxTestSupport.runOnFx(() -> {
                                 for (Window win : Window.getWindows()) {
                                     if (win == stage || !win.isShowing() || win.getScene() == null) continue;
@@ -120,7 +123,7 @@ public final class Shots {
                                             for (int i = 0; i < lv.getItems().size(); i++) {
                                                 Object it = lv.getItems().get(i);
                                                 if (it instanceof Enum<?> e
-                                                        && e.name().equals(arg)) {
+                                                        && e.name().equals(category)) {
                                                     lv.getSelectionModel().select(i);
                                                     lv.scrollTo(Math.max(0, i - 8));
                                                 }
@@ -130,6 +133,24 @@ public final class Shots {
                                 }
                             });
                             settle(900);
+                            if (language != null) {
+                                // The page shows one language's cards at a time: pick it by id (go, rust, csharp, …).
+                                FxTestSupport.runOnFx(() -> {
+                                    for (Window win : Window.getWindows()) {
+                                        if (win == stage || !win.isShowing() || win.getScene() == null) continue;
+                                        for (Node n : win.getScene().getRoot().lookupAll(".combo-box")) {
+                                            if (n instanceof javafx.scene.control.ComboBox<?> cb
+                                                    && cb.isVisible()
+                                                    && cb.getItems().contains(language)) {
+                                                cb.getSelectionModel()
+                                                        .select(cb.getItems().indexOf(language));
+                                                System.out.println("  settings language -> " + language);
+                                            }
+                                        }
+                                    }
+                                });
+                                settle(900);
+                            }
                         }
                         case "winsize" -> {
                             String[] z = arg.split("\\s+");
