@@ -44,8 +44,8 @@ import static com.editora.i18n.Messages.tr;
  * <p>The list works on {@link SnippetManager.Entry} — a snippet as its file holds it, with <em>every</em>
  * trigger — and each action writes one entry ({@link SnippetManager#saveUserEntry} and friends) rather than
  * the whole file. That is what keeps the page and the editor in agreement: an edited bundled snippet is the
- * same snippet under the same name, all its triggers included, and a rename keeps the entry's place, its
- * {@code scope} and the comments around it.
+ * same snippet under the same name, all its triggers included, and a rename keeps the entry's place and its
+ * {@code scope}. The file is written whole, so a write asks first when the file has comments (they are dropped).
  */
 final class SnippetsEditor {
 
@@ -315,20 +315,10 @@ final class SnippetsEditor {
                 return; // only whitespace the commit trims away
             }
             String keep = newName;
-            Runnable save = () -> write(m -> m.saveUserEntry(language, cur.name(), updated), () -> {
+            write(m -> m.saveUserEntry(language, cur.name(), updated), () -> {
                 reloadKeepingForm(list, keep, filter);
                 showClash.run();
             });
-            if (cur.source() == Source.USER && manager != null) { // a USER row comes from the manager
-                // Whether the entry holds comments is read off the FX thread; the question comes when it lands.
-                manager.userEntryHasCommentsLater(language, cur.name(), has -> {
-                    if (!has || hooks.confirm().test(commentsLostMessage(cur.name()))) {
-                        save.run(); // else: comments inside this one entry cannot be kept; the user kept them
-                    }
-                });
-            } else {
-                save.run();
-            }
         };
         // Single-line fields commit on Enter / focus-loss; the body commits on focus-loss (Enter = newline).
         for (TextField tf : List.of(name, prefix, description)) {
@@ -519,6 +509,9 @@ final class SnippetsEditor {
      * Runs one write of the user file on the snippet thread (PERF-01, Pauta 6.0.1); once it is written and the
      * language read again (also there), runs {@code written} on the FX thread. A failure is shown and leaves the
      * page as it was.
+     *
+     * <p>The file is written whole, through Jackson (PLAT-14), so comments in it are dropped. When the file has any,
+     * the user is asked first, once: a file saved from here has none left to ask about. A "no" writes nothing.
      */
     private void write(Write action, Runnable written) {
         SnippetManager m = manager;
@@ -526,18 +519,24 @@ final class SnippetsEditor {
             return; // never write back over a file that could not be parsed
         }
         String lang = language;
-        m.later(action::run, failure -> {
-            if (failure != null) {
-                hooks.warn().accept(tr("settings.snippet.saveFailed", failure.getMessage()));
-            } else {
-                m.whenLoaded(lang, written);
+        m.userFileHasCommentsLater(lang, has -> {
+            if (has && !hooks.confirm().test(commentsLostMessage(m.userFile(lang)))) {
+                m.whenLoaded(lang, written); // kept as it was: the page shows the file again
+                return;
             }
+            m.later(action::run, failure -> {
+                if (failure != null) {
+                    hooks.warn().accept(tr("settings.snippet.saveFailed", failure.getMessage()));
+                } else {
+                    m.whenLoaded(lang, written);
+                }
+            });
         });
     }
 
-    /** What saving the snippet {@code name} loses: the comments inside its entry in the user's file. */
-    static String commentsLostMessage(String name) {
-        return tr("settings.snippet.commentsLost", name);
+    /** What saving from here loses in {@code file}: its comments. */
+    static String commentsLostMessage(java.nio.file.Path file) {
+        return tr("settings.snippet.commentsLost", String.valueOf(file.getFileName()));
     }
 
     /** Marks {@code field} red with {@code why} as its tooltip and accessible help, or clears that when null. */

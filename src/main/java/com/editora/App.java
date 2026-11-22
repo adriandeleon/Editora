@@ -246,8 +246,13 @@ public class App extends Application {
         // packaging/windows/file-associations.properties and packaging/linux/postinst.)
         // The handler lives in the standalone MacOpenFiles class (not nested here) so the FX launcher's
         // reflection over App never eager-loads a com.sun.glass.ui subclass before start() runs.
+        // The same handler takes over macOS's own Quit (the application menu's, Cmd-Q there, the Dock's):
+        // it runs app.quit, as File → Quit does (WIN-13). MacAppMenu adds About and Settings to the
+        // application menu (ABOUT-01, WIN-15).
         if (isMac()) {
             MacOpenFiles.install(windows);
+            String appMenu = com.editora.ui.MacAppMenu.install(windows);
+            java.util.logging.Logger.getLogger(App.class.getName()).fine(() -> "Application menu: " + appMenu);
         }
 
         // Serve launches forwarded by a second process (see SingleInstance). Wired here, after the windows

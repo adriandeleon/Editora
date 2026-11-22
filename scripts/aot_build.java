@@ -312,6 +312,12 @@ public class aot_build {
                 cmd.add("-a");
             }
             cmd.add(imageJava.toString());
+            if (os.contains("mac")) {
+                // Mirrors the macOS launcher's ${glass.mac.option} (pom.xml os-mac profile): ui/MacAppMenu
+                // reaches the application menu through Glass's mac package, which only macOS's JavaFX has, so
+                // the other launchers do not export it (the JVM would warn about a package it cannot find).
+                cmd.add("--add-exports=javafx.graphics/com.sun.glass.ui.mac=com.editora");
+            }
             cmd.addAll(List.of(
                     // Heap and GC MIRROR the shipped launcher (pom.xml dist <javaOptions>). This read
                     // -XX:+UseSerialGC for one release after the launcher moved to G1; AotTrainerOptionsTest
