@@ -34,11 +34,11 @@ release:
     # Tags like v1.0.0-rc1 are published as pre-releases.
     prerelease:
       pattern: '.*-rc.*'
+    # The notes are written, not generated from the commits: the install text (.github/release-notes.md), then
+    # this version's section of CHANGELOG.md, put here by scripts/release/ReleaseNotes.java in release.yml's
+    # release job. The Welcome page's What's New opens this release, so they are what a user reads about it.
     changelog:
-      formatted: ALWAYS
-      format: '- {{commitShortHash}} {{commitTitle}}'
-      contributors:
-        enabled: false
+      external: out/release-notes.md
 
 # Attach every artifact gathered from the build matrix (downloaded under ./artifacts): native installers
 # (.dmg/.msi/.deb/.rpm), the portable Linux builds (.AppImage single-file + .tar.gz extract-and-install),
