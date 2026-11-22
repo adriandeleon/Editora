@@ -1,0 +1,69 @@
+#@ needs Node.js on the PATH and js-debug installed by Editora (~/.editora/plugins/dap/javascript)
+#@ copy shelf.js samples/debug/js/shelf.js
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 800
+set lspSupport false
+set debugSupport true
+set jsDebugPath "${plugins}/dap/javascript/js-debug/src/dapDebugServer.js"
+start
+project ${workspace}/samples/debug/js
+run buffer.closeAll
+run tool.project
+open ${workspace}/samples/debug/js/shelf.js 1
+focuseditor
+open ${workspace}/samples/debug/js/shelf.js 12
+focuseditor
+run debug.toggleBreakpoint
+open ${workspace}/samples/debug/js/shelf.js 13
+focuseditor
+run debug.toggleBreakpoint
+open ${workspace}/samples/debug/js/shelf.js 21
+focuseditor
+run debug.toggleBreakpoint
+open ${workspace}/samples/debug/js/shelf.js 21
+focuseditor
+run debug.addTriggeredBreakpoint
+wait 800
+focusprompt Breakpoint that line 21 waits for
+key ENTER
+wait 800
+open ${workspace}/samples/debug/js/shelf.js 21
+focuseditor
+run debug.addTriggeredBreakpoint
+wait 1000
+settext .status-message
+shot ${out}/docs/debug-triggered-breakpoint${suffix}.png
+focusprompt Breakpoint that line 21 waits for
+key ESCAPE
+wait 500
+open ${workspace}/samples/debug/js/shelf.js 12
+focuseditor
+run debug.moveBreakpointToGroup
+wait 800
+combotext checkout
+click OK
+open ${workspace}/samples/debug/js/shelf.js 13
+focuseditor
+run debug.moveBreakpointToGroup
+wait 800
+combotext checkout
+click OK
+open ${workspace}/samples/debug/js/shelf.js 21
+focuseditor
+run debug.moveBreakpointToGroup
+wait 800
+combotext report
+click OK
+run debug.toggleBreakpointGroup
+wait 800
+focusprompt Group to turn on or off
+key ENTER
+wait 800
+run debug.breakpoints
+wait 1000
+settext .status-message
+shot ${out}/docs/debug-breakpoint-groups${suffix}.png

@@ -1,0 +1,34 @@
+#@ needs CodeLLDB (vadimcn.vscode-lldb) and cargo
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 800
+set lspSupport false
+set debugSupport true
+start
+project ${workspace}/samples/debug/rust
+run buffer.closeAll
+run tool.project
+open ${workspace}/samples/debug/rust/src/shelf.rs 49
+focuseditor
+run debug.toggleBreakpoint
+open ${workspace}/samples/debug/rust/src/main.rs 9
+wait 1500
+run debug.start
+wait 50000
+run debug.continue
+wait 4000
+divider 0 0.48
+divider 2 0.2 0
+divider 2 0.7 1
+open ${workspace}/samples/debug/rust/src/shelf.rs 42
+wait 800
+focussel .debug-vars
+key HOME
+key DOWN - 5
+key RIGHT
+wait 2500
+settext .status-message
+shot ${out}/docs/debug-rust-values${suffix}.png

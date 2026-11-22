@@ -1,0 +1,25 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 800
+set lspSupport false
+set debugSupport true
+start
+project ${workspace}/samples/debug/go
+run buffer.closeAll
+run tool.project
+open ${workspace}/samples/debug/go/shelf.go 39
+focuseditor
+run debug.toggleBreakpoint
+wait 800
+run debug.start
+wait 30000
+divider 0 0.48
+divider 2 0.22 0
+divider 2 0.5 1
+run debug.showDisassembly
+wait 3000
+settext .status-message
+shot ${out}/docs/debug-disassembly${suffix}.png

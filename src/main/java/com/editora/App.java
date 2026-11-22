@@ -181,6 +181,9 @@ public class App extends Application {
         // user theme saved as the active one resolves here. The UI zoom is set before any sheet is named: every
         // window built from here on is built at it (the zoomed copies of its sheets were made by that thread).
         com.editora.editor.UiZoom.init(settings.getUiZoom());
+        // What the OS asks of the theme, read before the first sheet is named: a saved "System" theme is its light
+        // or dark Caret & Ink theme, and Windows' high-contrast mode gives the high-contrast pair (ICON-16, ACC-09).
+        com.editora.ui.SystemTheme.install();
         Application.setUserAgentStylesheet(Themes.userAgentStylesheetFor(settings.getTheme()));
         // Each window is told whether that theme is light or dark as it opens, so the frame and the window
         // buttons JavaFX draws follow the app theme rather than the desktop's. See WindowColorScheme.

@@ -1,0 +1,33 @@
+{
+  "version" : 1,
+  "title" : "How a receipt is priced",
+  "stops" : [ {
+    "file" : "samples/debug/java/src/main/java/com/example/shelf/Shelf.java",
+    "declaration" : "",
+    "startLine" : 40,
+    "endLine" : 63,
+    "title" : "Shelf.checkout",
+    "note" : "Each item on the receipt is priced here: pick its discount, then apply it."
+  }, {
+    "file" : "samples/debug/java/src/main/java/com/example/shelf/Pricing.java",
+    "declaration" : "",
+    "startLine" : 8,
+    "endLine" : 20,
+    "title" : "Pricing.discountFor",
+    "note" : "Bulk items get a percentage off and B- items a flat cut. B-2 gets both, stacked."
+  }, {
+    "file" : "samples/debug/java/src/main/java/com/example/shelf/Pricing.java",
+    "declaration" : "",
+    "startLine" : 22,
+    "endLine" : 30,
+    "title" : "Pricing.apply",
+    "note" : "One switch arm per Discount record; a stacked discount applies both parts in turn."
+  }, {
+    "file" : "samples/debug/java/src/main/java/com/example/shelf/Discount.java",
+    "declaration" : "",
+    "startLine" : 7,
+    "endLine" : 20,
+    "title" : "Discount",
+    "note" : "Sealed, so the switch in Pricing.apply has to handle every kind of discount."
+  } ]
+}

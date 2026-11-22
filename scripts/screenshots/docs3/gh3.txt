@@ -1,0 +1,25 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}
+wait 6000
+run buffer.closeAll
+open ${workspace}/src/main/java/com/editora/ui/Chrome.java 1
+run tool.github
+wait 12000
+choose .choice-box 0 2
+wait 12000
+focussel .git-tree
+key DOWN
+wait 500
+key ENTER
+wait 20000
+run view.closeFocusedToolWindow
+run tool.project
+wait 1500
+settext .status-message
+shot ${out}/docs/github-pr-review${suffix}.png

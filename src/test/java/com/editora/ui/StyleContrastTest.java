@@ -27,6 +27,13 @@ class StyleContrastTest {
 
     private static final String STYLES = "/com/editora/styles/";
 
+    /**
+     * The first-party pairs, each named for its control theme and its editor theme alike: Caret &amp; Ink, and the
+     * high-contrast pair built on it (ACC-09), which every flagship check holds too.
+     */
+    static final List<String> FLAGSHIP =
+            List.of("editora-light", "editora-dark", "high-contrast-light", "high-contrast-dark");
+
     static String read(String path) throws Exception {
         try (var in = StyleContrastTest.class.getResourceAsStream(STYLES + path)) {
             return new String(in.readAllBytes(), StandardCharsets.UTF_8).replaceAll("(?s)/\\*.*?\\*/", "");
@@ -108,7 +115,7 @@ class StyleContrastTest {
     @Test
     void inkOnAnEmphasisFillIsTheThemesOnEmphasisColour() throws Exception {
         // White on the accent is 1.68:1 in Editora Dark; -color-fg-emphasis is the token that tracks it.
-        for (String base : List.of("editora-light", "editora-dark")) {
+        for (String base : FLAGSHIP) {
             Map<String, String> p = palette(base);
             for (String role : List.of("accent", "success", "warning", "danger")) {
                 double ratio = contrast(color(p, "-color-fg-emphasis"), color(p, "-color-" + role + "-emphasis"));
@@ -134,7 +141,7 @@ class StyleContrastTest {
     void theFocusRingIsAtLeastThreeToOneOnEverySurface() throws Exception {
         String app = read("app.css");
         assertTrue(String.join(";", rules(app, ".root")).contains("-focus-ring: -color-accent-emphasis"));
-        for (String base : List.of("editora-light", "editora-dark")) {
+        for (String base : FLAGSHIP) {
             Map<String, String> p = palette(base);
             for (String surface :
                     List.of("-color-bg-default", "-color-bg-subtle", "-color-bg-inset", "-color-bg-overlay")) {
@@ -187,7 +194,7 @@ class StyleContrastTest {
                 assertFalse(body.contains("-color-fg-subtle"), selector + " is set in the ~3:1 subtle role");
             }
         }
-        for (String base : List.of("editora-light", "editora-dark")) {
+        for (String base : FLAGSHIP) {
             Map<String, String> p = palette(base);
             for (String surface : List.of("-color-bg-default", "-color-bg-subtle", "-color-bg-overlay")) {
                 assertTrue(contrast(color(p, "-color-fg-muted"), color(p, surface)) >= 4.5, base + " " + surface);
@@ -216,7 +223,7 @@ class StyleContrastTest {
 
     @Test
     void flagshipLineNumbersReachAa() throws Exception {
-        for (String base : List.of("editora-light", "editora-dark")) {
+        for (String base : FLAGSHIP) {
             String css = read("editor-themes/" + base + ".css");
             String body = rules(css, ".editor-area .lineno").get(0);
             Matcher bg =
@@ -261,7 +268,7 @@ class StyleContrastTest {
         for (String state : List.of(".toggle-switch:selected > .thumb", ".toggle-switch:selected > .thumb-area")) {
             assertTrue(rules(app, state).get(0).contains("-color-accent-emphasis"), state + " is restated");
         }
-        for (String base : List.of("editora-light", "editora-dark")) {
+        for (String base : FLAGSHIP) {
             Map<String, String> p = palette(base);
             for (String card : List.of("-color-bg-default", "-color-bg-subtle")) {
                 assertTrue(contrast(color(p, "-color-fg-muted"), color(p, card)) >= 3, base + " " + card);
@@ -314,7 +321,7 @@ class StyleContrastTest {
             offsets.add(new double[] {Double.parseDouble(stop.group(2)) / 100});
         }
         assertTrue(colors.size() >= 2);
-        for (String editorTheme : List.of("editora-light", "editora-dark")) {
+        for (String editorTheme : FLAGSHIP) {
             assertFalse(
                     read("editor-themes/" + editorTheme + ".css").contains("-state-key"), "set by the app theme only");
         }
@@ -341,7 +348,7 @@ class StyleContrastTest {
     void theModifiedMarkerStandsOutFromItsCard() throws Exception {
         String app = read("app.css");
         assertTrue(rules(app, ".settings-row:modified").get(0).contains("-color-accent-emphasis"));
-        for (String base : List.of("editora-light", "editora-dark")) {
+        for (String base : FLAGSHIP) {
             Map<String, String> p = palette(base);
             assertTrue(contrast(color(p, "-color-accent-emphasis"), color(p, "-color-bg-default")) >= 3, base);
         }
@@ -364,7 +371,7 @@ class StyleContrastTest {
             assertTrue(
                     rule.contains(pill.getValue()[0] + ";") && rule.contains(pill.getValue()[0] + "-bg;"),
                     pill.getKey());
-            for (String name : List.of("editora-light", "editora-dark")) {
+            for (String name : FLAGSHIP) {
                 Map<String, String> p = palette(name);
                 Color ink = color(p, pill.getValue()[1]);
                 Color card = color(p, "-color-bg-default");
@@ -492,7 +499,7 @@ class StyleContrastTest {
      */
     @Test
     void popupInkReadsOnTheOverlayGround() throws Exception {
-        for (String base : List.of("editora-light", "editora-dark")) {
+        for (String base : FLAGSHIP) {
             Map<String, String> p = palette(base);
             double ratio = contrast(color(p, "-color-fg-default"), color(p, "-color-bg-overlay"));
             assertTrue(ratio >= 4.5, base + ": ink on the overlay ground is " + ratio);
@@ -506,7 +513,7 @@ class StyleContrastTest {
      */
     @Test
     void mapRowAndConnectorInkReachesThreeToOneInBothEditoraThemes() throws Exception {
-        for (String theme : List.of("editora-light", "editora-dark")) {
+        for (String theme : FLAGSHIP) {
             Map<String, String> palette = palette(theme);
             Color background = color(palette, "-color-bg-default");
             Color card = color(palette, "-color-bg-subtle");
@@ -527,7 +534,7 @@ class StyleContrastTest {
     /** A faded Map label recedes but keeps 3.5:1 (Map review B19); moved from ProjectMapLayoutReviewFxTest. */
     @Test
     void aFadedMapLabelRecedesButStaysReadableInBothEditoraThemes() throws Exception {
-        for (String theme : List.of("editora-light", "editora-dark")) {
+        for (String theme : FLAGSHIP) {
             Map<String, String> palette = palette(theme);
             Color ground = color(palette, "-color-bg-subtle");
             Color text = color(palette, "-color-fg-default");
@@ -548,7 +555,7 @@ class StyleContrastTest {
     void noteSheetsCarryTheThemesInk() throws Exception {
         String app = read("app.css");
         assertTrue(String.join(";", rules(app, ".root")).contains("-note-paper: -color-accent-subtle"));
-        for (String theme : List.of("editora-light", "editora-dark")) {
+        for (String theme : FLAGSHIP) {
             Map<String, String> p = palette(theme);
             Color sheet = over(color(p, "-color-bg-default"), color(p, "-color-accent-subtle"));
             double ratio = contrast(color(p, "-color-fg-default"), sheet);
@@ -562,7 +569,7 @@ class StyleContrastTest {
      */
     @Test
     void theHeatMeterStandsOffASelectedRow() throws Exception {
-        for (String theme : List.of("editora-light", "editora-dark")) {
+        for (String theme : FLAGSHIP) {
             Map<String, String> p = palette(theme);
             Color raw = color(p, "-color-accent-subtle");
             Color drawn = over(color(p, "-color-bg-subtle"), raw);
@@ -583,6 +590,8 @@ class StyleContrastTest {
         for (String name : List.of(
                 "editora-light",
                 "editora-dark",
+                "high-contrast-light",
+                "high-contrast-dark",
                 "primer-dark",
                 "nord-light",
                 "nord-dark",
@@ -621,6 +630,85 @@ class StyleContrastTest {
         assertTrue(link >= 3, "Primer Light's bookmark is " + link);
     }
 
+    /**
+     * ACC-09: the high-contrast pair's inks and states read at 7:1 (WCAG AAA) on every ground, and the ink on an
+     * emphasis fill too; its palette is tokens the component rules use, no colour set apart from them.
+     */
+    @Test
+    void theHighContrastPairReadsAtSevenToOne() throws Exception {
+        List<String> problems = new ArrayList<>();
+        for (String base : List.of("high-contrast-light", "high-contrast-dark")) {
+            Map<String, String> p = palette(base);
+            for (String ground :
+                    List.of("-color-bg-default", "-color-bg-subtle", "-color-bg-overlay", "-color-bg-inset")) {
+                for (String ink : List.of(
+                        "-color-fg-default",
+                        "-color-fg-muted",
+                        "-color-accent-fg",
+                        "-color-success-fg",
+                        "-color-warning-fg",
+                        "-color-danger-fg",
+                        "-color-border-default")) {
+                    double ratio = contrast(color(p, ink), color(p, ground));
+                    if (ratio < 7) {
+                        problems.add(String.format("%s %s on %s: %.2f", base, ink, ground, ratio));
+                    }
+                }
+            }
+            for (String role : List.of("accent", "success", "warning", "danger")) {
+                double ratio = contrast(color(p, "-color-fg-emphasis"), color(p, "-color-" + role + "-emphasis"));
+                if (ratio < 7) {
+                    problems.add(String.format("%s fg-emphasis on %s-emphasis: %.2f", base, role, ratio));
+                }
+            }
+        }
+        assertTrue(problems.isEmpty(), "high contrast under 7:1:\n" + String.join("\n", problems));
+    }
+
+    /**
+     * ACC-09: the high-contrast editor themes' text, every syntax colour and the line numbers read at 7:1 on the
+     * editor's ground and on the current line's highlight.
+     */
+    @Test
+    void theHighContrastEditorThemesReadAtSevenToOne() throws Exception {
+        List<String> problems = new ArrayList<>();
+        for (String name : List.of(SystemTheme.HIGH_CONTRAST_LIGHT, SystemTheme.HIGH_CONTRAST_DARK)) {
+            String base = name.toLowerCase(java.util.Locale.ROOT).replace(' ', '-');
+            String css = read("editor-themes/" + base + ".css");
+            Color ground = Color.web(fill(css, ".editor-area", "-fx-background-color"));
+            assertEquals(ground, EditorThemes.editorBackgroundFor(name), name + ": the code's ground is the sheet's");
+            List<Color> grounds = List.of(ground, EditorThemes.lineHighlightFor(name));
+            Map<String, Color> inks = new LinkedHashMap<>();
+            inks.put(".editor-area .text", Color.web(fill(css, ".editor-area .text", "-fx-fill")));
+            inks.put(".editor-area .lineno", Color.web(fill(css, ".editor-area .lineno", "-fx-text-fill")));
+            Matcher token = Pattern.compile("(\\.text\\.[a-z-]+)\\s*\\{[^}]*-fx-fill:\\s*(#[0-9a-fA-F]{6})\\b")
+                    .matcher(css);
+            while (token.find()) {
+                if (!token.group(1).equals(".text.invalid")) { // drawn on its own red ground, below
+                    inks.put(token.group(1), Color.web(token.group(2)));
+                }
+            }
+            assertTrue(inks.size() > 20, name + ": " + inks.keySet());
+            for (var ink : inks.entrySet()) {
+                for (Color g : grounds) {
+                    double ratio = contrast(ink.getValue(), g);
+                    if (ratio < 7) {
+                        problems.add(String.format("%s %s on %s: %.2f", name, ink.getKey(), g, ratio));
+                    }
+                }
+            }
+            Matcher invalid = Pattern.compile(
+                            "\\.text\\.invalid\\s*\\{\\s*-fx-fill:\\s*(#[0-9a-fA-F]{6});\\s*-rtfx-background-color:\\s*(#[0-9a-fA-F]{6})")
+                    .matcher(css);
+            assertTrue(invalid.find(), name + ": .text.invalid");
+            double ratio = contrast(Color.web(invalid.group(1)), Color.web(invalid.group(2)));
+            if (ratio < 4.5) {
+                problems.add(String.format("%s invalid: %.2f", name, ratio));
+            }
+        }
+        assertTrue(problems.isEmpty(), "high-contrast editor ink under 7:1:\n" + String.join("\n", problems));
+    }
+
     /** The value of {@code property} in the one rule for {@code selector}. */
     private static String fill(String css, String selector, String property) {
         List<String> bodies = rules(css, selector);
@@ -648,7 +736,7 @@ class StyleContrastTest {
                 List.of(".icon-line.icon-stop", ".run-config-stop .icon-line", ".run-marker.http-running-marker")) {
             assertTrue(String.join(";", rules(app, stop)).contains("-color-fg-default"), stop);
         }
-        for (String base : List.of("editora-light", "editora-dark")) {
+        for (String base : FLAGSHIP) {
             Map<String, String> p = palette(base);
             Color band = over(color(p, "-color-bg-default"), color(p, "-color-warning-subtle"));
             assertTrue(contrast(color(p, "-color-warning-fg"), band) >= 4.5, base + ": the banner's title");

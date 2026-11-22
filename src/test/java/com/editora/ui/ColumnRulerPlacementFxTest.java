@@ -2,9 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Path;
 
-import javafx.embed.swing.SwingFXUtils;
 import javafx.geometry.Bounds;
-import javafx.scene.image.WritableImage;
 import javafx.scene.layout.Region;
 import javafx.scene.shape.Line;
 
@@ -68,11 +66,7 @@ class ColumnRulerPlacementFxTest {
             return; // screenshots are for a human looking at the result; off in a normal run
         }
         e.pulses(20);
-        WritableImage img = FxTestSupport.callOnFx(() -> e.stage().getScene().snapshot(null));
-        javax.imageio.ImageIO.write(
-                SwingFXUtils.fromFXImage(img, null),
-                "png",
-                Path.of(dir, name + ".png").toFile());
+        FxTestSupport.writeShot(e.stage().getScene(), Path.of(dir, name + ".png")); // at 2x (DOCS-18)
     }
 
     @Test
