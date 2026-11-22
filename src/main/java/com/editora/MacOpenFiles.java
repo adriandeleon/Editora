@@ -16,8 +16,11 @@ import java.util.logging.Logger;
  * loads only when {@link #install} actually runs, where a missing {@code --add-exports
  * javafx.graphics/com.sun.glass.ui=com.editora} degrades to a logged no-op instead of a launch crash.
  *
- * <p>{@code java.awt.Desktop.setOpenFileHandler} can't be used because {@code App.main} forces
- * {@code java.awt.headless=true} (the SVG/Java2D guard), under which AWT's {@code Desktop} throws.
+ * <p>The same handler catches macOS's own Quit (WIN-13): see {@link #install}.
+ *
+ * <p>{@code java.awt.Desktop.setOpenFileHandler} (and its quit, about and preferences handlers) can't be used
+ * because {@code App.main} forces {@code java.awt.headless=true} (the SVG/Java2D guard), under which AWT's
+ * {@code Desktop} throws.
  */
 final class MacOpenFiles {
 
@@ -26,10 +29,13 @@ final class MacOpenFiles {
     private MacOpenFiles() {}
 
     /**
-     * Installs the Glass {@code openFiles} handler, forwarding opened files to {@code windows}. Wraps JavaFX's
-     * own event handler ({@link Handler} delegates every other event — quit, activate, preferences, … — to it)
-     * so Cmd-Q and the rest keep working; only {@code openFiles} is augmented. Any failure (internal API
-     * absent, no {@code --add-exports}, non-standard runtime) is logged and ignored — never fatal.
+     * Installs the Glass {@code openFiles} handler, forwarding opened files to {@code windows}, and the quit
+     * handler. Wraps JavaFX's own event handler ({@link Handler} delegates every other event — activate, hide,
+     * preferences, … — to it); {@code openFiles} is augmented, and quit (the application menu's Quit, Cmd-Q
+     * there, the Dock's Quit, a logout) is taken over: it runs {@code app.quit} in the focused window, the
+     * command File → Quit runs, instead of JavaFX's close request to every window in turn (WIN-13). Any
+     * failure (internal API absent, no {@code --add-exports}, non-standard runtime) is logged and ignored —
+     * never fatal, and then the quit stays JavaFX's.
      */
     static void install(com.editora.ui.WindowManager windows) {
         try {
@@ -37,28 +43,31 @@ final class MacOpenFiles {
             if (app == null) {
                 return;
             }
-            app.setEventHandler(new Handler(app.getEventHandler(), files -> {
-                if (files == null || files.length == 0) {
-                    return;
-                }
-                // Through the same parse the command line uses. macOS delivers a launcher argument here as
-                // well as on argv, so `Editora file.java:42` arrived twice: once parsed into a file and a
-                // line, and once as a literal name with the suffix still attached — which opened nothing and
-                // reported a failure for a file that had in fact just opened.
-                java.util.List<com.editora.ui.MainController.OpenTarget> targets = new java.util.ArrayList<>();
-                for (String f : files) {
-                    if (f == null || f.isBlank()) {
-                        continue;
-                    }
-                    com.editora.ui.MainController.OpenTarget target = App.externalTarget(f);
-                    if (target != null) {
-                        targets.add(target);
-                    }
-                }
-                if (!targets.isEmpty()) {
-                    javafx.application.Platform.runLater(() -> windows.openExternalFiles(targets));
-                }
-            }));
+            app.setEventHandler(new Handler(
+                    app.getEventHandler(),
+                    files -> {
+                        if (files == null || files.length == 0) {
+                            return;
+                        }
+                        // Through the same parse the command line uses. macOS delivers a launcher argument here as
+                        // well as on argv, so `Editora file.java:42` arrived twice: once parsed into a file and a
+                        // line, and once as a literal name with the suffix still attached — which opened nothing and
+                        // reported a failure for a file that had in fact just opened.
+                        java.util.List<com.editora.ui.MainController.OpenTarget> targets = new java.util.ArrayList<>();
+                        for (String f : files) {
+                            if (f == null || f.isBlank()) {
+                                continue;
+                            }
+                            com.editora.ui.MainController.OpenTarget target = App.externalTarget(f);
+                            if (target != null) {
+                                targets.add(target);
+                            }
+                        }
+                        if (!targets.isEmpty()) {
+                            javafx.application.Platform.runLater(() -> windows.openExternalFiles(targets));
+                        }
+                    },
+                    () -> windows.runFromApplicationMenu("app.quit")));
         } catch (Throwable t) {
             LOG.log(Level.FINE, "macOS open-files handler unavailable", t);
         }
@@ -66,18 +75,21 @@ final class MacOpenFiles {
 
     /**
      * A Glass {@code Application.EventHandler} that forwards {@code handleOpenFilesAction} to a callback and
-     * <b>delegates every other method to the wrapped handler</b> (JavaFX's own, which drives Cmd-Q, activate,
-     * preferences, …). Overriding the full surface — rather than just {@code handleOpenFilesAction} — is
-     * required because {@code setEventHandler} <em>replaces</em> the handler wholesale, so an un-forwarded
-     * method would silently drop JavaFX's default behavior for that event.
+     * runs {@code onQuit} for {@code handleQuitAction}, and <b>delegates every other method to the wrapped
+     * handler</b> (JavaFX's own, which drives activate, hide, preferences, …). Overriding the full surface —
+     * rather than just {@code handleOpenFilesAction} — is required because {@code setEventHandler}
+     * <em>replaces</em> the handler wholesale, so an un-forwarded method would silently drop JavaFX's default
+     * behavior for that event.
      */
     private static final class Handler extends com.sun.glass.ui.Application.EventHandler {
         private final com.sun.glass.ui.Application.EventHandler delegate;
         private final Consumer<String[]> onOpenFiles;
+        private final Runnable onQuit;
 
-        Handler(com.sun.glass.ui.Application.EventHandler delegate, Consumer<String[]> onOpenFiles) {
+        Handler(com.sun.glass.ui.Application.EventHandler delegate, Consumer<String[]> onOpenFiles, Runnable onQuit) {
             this.delegate = delegate;
             this.onOpenFiles = onOpenFiles;
+            this.onQuit = onQuit;
         }
 
         @Override
@@ -171,9 +183,16 @@ final class MacOpenFiles {
 
         @Override
         public void handleQuitAction(com.sun.glass.ui.Application app, long time) {
-            if (delegate != null) {
-                delegate.handleQuitAction(app, time);
-            }
+            // Not passed on: JavaFX's own handler sends every window a close request, and each asked for
+            // itself. Run on a later pulse, outside this native callback, as the Quit row's command runs.
+            // Glass has already told macOS not to terminate, so a cancelled quit leaves the app running.
+            javafx.application.Platform.runLater(() -> {
+                try {
+                    onQuit.run();
+                } catch (Throwable t) {
+                    LOG.log(Level.WARNING, "quit from the application menu failed", t);
+                }
+            });
         }
 
         @Override
