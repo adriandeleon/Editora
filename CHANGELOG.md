@@ -51,6 +51,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first save of one asks first, naming the file. Edit User Snippets, which opens the file as text, keeps them.
   Settings Sync merges a snippet file changed on two machines the same way.
 
+- **A release's notes are its changelog.** The text of each GitHub release, which What's New on the Welcome page
+  opens, is now this file's section for the version, after a short install guide, instead of a list of commits. A
+  section too long for a release page is shown by its entries' first lines, with a link to the whole of it.
+- **The Linux fat jars are signed too.** Like the `.deb`, `.rpm`, AppImage and tarball, each Linux jar now has an
+  OpenPGP signature beside it (`<file>.asc`), by the key attached to the release as `editora-signing-key.asc`.
+
 ### Fixed
 
 - **Debugging a C, C++ or Rust program on CodeLLDB reports the program's own exit code.** The Debug console said
