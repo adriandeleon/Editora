@@ -18,7 +18,7 @@ import org.jspecify.annotations.Nullable;
  * <p>The checks that decide whether an edit may land (a file still where staging left it, a file the server
  * did not have open unchanged since the request) run on the FX thread, in the same turn as the edit, so no
  * keystroke or save of this window slips in between. Their stats are taken on the workspace worker into this
- * snapshot, and the FX step reads the snapshot (PERF-01, Pauta 6.0.1): on a remote host each stat is a network
+ * snapshot, and the FX step reads the snapshot (PERF-01, Pauta 6.2.0): on a remote host each stat is a network
  * round trip, and a rename touching a few dozen files froze the window. A path the snapshot did not capture is
  * asked of the live disk.
  *

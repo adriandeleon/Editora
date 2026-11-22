@@ -183,7 +183,7 @@ public final class TypeScriptServer {
 
     /**
      * {@link #sdkVersion} by {@code tsserver.js}: read off the FX thread (Trust Project Settings looks before it
-     * asks), answered from memory on it (PERF-01, Pauta 6.0.1).
+     * asks), answered from memory on it (PERF-01, Pauta 6.2.0).
      */
     private static final com.editora.perf.Looked<Path, String> SDK_VERSIONS =
             new com.editora.perf.Looked<>("TypeScriptServer.sdkVersion", TypeScriptServer::sdkVersionNow, "");

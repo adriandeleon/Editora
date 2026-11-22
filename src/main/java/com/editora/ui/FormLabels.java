@@ -15,7 +15,7 @@ import org.jspecify.annotations.Nullable;
 /**
  * Ties a form's labels to the fields they caption, for a screen reader. A form card lays out "Name" above or
  * beside its field; a sighted person reads the pair, but a screen reader on the field hears only "edit" unless the
- * label's {@code labelFor} points at it. ACC-01 (Pauta 6.0.1): every field is named.
+ * label's {@code labelFor} points at it. ACC-01 (Pauta 6.2.0): every field is named.
  *
  * <p>The rule is the layout's own: in a {@link GridPane} a label names the control to its right in the same row;
  * in any other pane, the control that follows it. A label that already names something, and a control that

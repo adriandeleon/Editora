@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-01 (Pauta 6.0.1), the rendering the third audit found on the FX thread: each test drives on the FX thread
+ * PERF-01 (Pauta 6.2.0), the rendering the third audit found on the FX thread: each test drives on the FX thread
  * what used to parse or decode there — the preview's Copy HTML, a LaTeX formula in a rendered document (a cache miss,
  * a warmed formula, a formula that does not parse) and a print preview's page images — and listens to
  * {@link BlockingSites}: every named place is heard off the FX thread, none on it.

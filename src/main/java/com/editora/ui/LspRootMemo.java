@@ -12,7 +12,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The language-server root of a file, as far as it comes from the disk: the marker files up the folders, a build's
- * outermost folder, a site or Python sub-project (PERF-01, Pauta 6.0.1). A look off the FX thread fills it; the FX
+ * outermost folder, a site or Python sub-project (PERF-01, Pauta 6.2.0). A look off the FX thread fills it; the FX
  * thread answers from it. A key nothing looked at yet answers {@code null} on the FX thread ("not known yet") and
  * starts the look, whose answer comes back on the FX thread to {@code onLearned} with the file, so the asker (a
  * buffer's sync) can go on then. A kept answer older than {@link #FRESH_NANOS} is looked at again behind it, so a

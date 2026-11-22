@@ -32,7 +32,7 @@ public final class BuildBeforeLaunch {
         return TOOL_AT.get(root);
     }
 
-    /** The stats: off the FX thread by a launch's plan, answered from memory on it (PERF-01, Pauta 6.0.1). */
+    /** The stats: off the FX thread by a launch's plan, answered from memory on it (PERF-01, Pauta 6.2.0). */
     private static final com.editora.perf.Looked<Path, BuildTool> TOOL_AT =
             new com.editora.perf.Looked<>("BuildBeforeLaunch.toolAt", BuildBeforeLaunch::lookToolAt);
 

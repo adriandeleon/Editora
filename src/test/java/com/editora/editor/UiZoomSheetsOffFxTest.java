@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * A zoomed copy of a stylesheet is never read or scaled on the FX thread (PERF-01, Pauta 6.0.1): asked there for the
+ * A zoomed copy of a stylesheet is never read or scaled on the FX thread (PERF-01, Pauta 6.2.0): asked there for the
  * first time it answers the 100% sheet, and the copy is made on {@code ui-zoom-sheets}.
  */
 @Tag("fx")

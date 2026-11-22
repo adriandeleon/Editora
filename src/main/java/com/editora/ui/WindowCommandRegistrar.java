@@ -2124,7 +2124,7 @@ final class WindowCommandRegistrar {
                         "markdown.setTocMaxLevel", () -> host.editorSettings().promptMarkdownTocLevel(true)));
         MarkdownSettingCommands.register(
                 host.registry(), host.editorSettings(), () -> host.config().getSettings());
-        // The rest of the Settings rows' settings (SET-06, Pauta 6.0.1), one command per page or setting.
+        // The rest of the Settings rows' settings (SET-06, Pauta 6.2.0), one command per page or setting.
         SettingCommands.register(
                 host.registry(), host.editorSettings(), () -> host.config().getSettings(), host::settingsApplied);
         MarkdownSourceCommands.register(host);

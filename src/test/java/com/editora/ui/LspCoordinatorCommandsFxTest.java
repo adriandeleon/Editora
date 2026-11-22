@@ -52,7 +52,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * cannot do it, answers nothing, or answers for a document that has since changed.
  */
 @Tag("fx")
-// The server root, the build-folder and pom looks run off the FX thread (PERF-01, Pauta 6.0.1); here in place, so
+// The server root, the build-folder and pom looks run off the FX thread (PERF-01, Pauta 6.2.0); here in place, so
 // a sync or a publish has done its work when it returns, as the assertions read it.
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class LspCoordinatorCommandsFxTest {
@@ -2826,7 +2826,7 @@ class LspCoordinatorCommandsFxTest {
 
     /**
      * Publishes {@code diagnostics} for {@code file} as a server's reader thread hands them on: whether the path is a
-     * folder is looked at there, off the FX thread (PERF-01, Pauta 6.0.1), then the FX thread takes them.
+     * folder is looked at there, off the FX thread (PERF-01, Pauta 6.2.0), then the FX thread takes them.
      */
     private void publish(java.nio.file.Path file, List<com.editora.text.LspDiagnostic> diagnostics) throws Exception {
         com.editora.lsp.LspManager.isFolder(file);

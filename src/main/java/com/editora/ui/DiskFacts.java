@@ -11,7 +11,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Small facts about the disk that a handler asks again and again on the JavaFX thread (is this a folder, which pom
- * is above it, does this file exist), looked at off the thread (PERF-01, Pauta 6.0.1).
+ * is above it, does this file exist), looked at off the thread (PERF-01, Pauta 6.2.0).
  *
  * <p>{@link #get} answers from memory: the last answer for the key, or {@code null} while it has none, in which case
  * a look starts on a virtual thread named for this memory ({@link com.editora.perf.OffFx}, which names it to

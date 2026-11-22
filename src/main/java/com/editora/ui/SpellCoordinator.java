@@ -310,7 +310,7 @@ final class SpellCoordinator {
 
     /** Re-reads {@code dictionary.txt} (edited by hand, or by another program) and applies it everywhere. */
     void reloadDictionary() {
-        // Read on the config writer's thread; the words apply when it lands (PERF-01, Pauta 6.0.1).
+        // Read on the config writer's thread; the words apply when it lands (PERF-01, Pauta 6.2.0).
         host.config().reloadUserDictionary(changed -> {
             if (changed) {
                 refreshEveryWindow();

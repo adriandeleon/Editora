@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * A buffer's server root is looked for off the FX thread (PERF-01, Pauta 6.0.1): the FX thread answers "not known
+ * A buffer's server root is looked for off the FX thread (PERF-01, Pauta 6.2.0): the FX thread answers "not known
  * yet" for a key nobody looked at, and the asker hears when it lands; a kept answer is given at once.
  */
 @Tag("fx")

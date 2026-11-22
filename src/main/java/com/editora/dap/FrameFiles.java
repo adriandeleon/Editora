@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Whether a stack frame's file is on the disk, looked at off the JavaFX thread (PERF-01, Pauta 6.0.1). A stop's
+ * Whether a stack frame's file is on the disk, looked at off the JavaFX thread (PERF-01, Pauta 6.2.0). A stop's
  * frames are looked at on the adapter's reader thread as they arrive, before the FX thread picks the frame to
  * show; the FX thread answers from what was looked at. A file nothing looked at answers {@code true} there (it
  * may be shown: opening a missing file says so), never hiding a frame, and is looked at behind the answer.

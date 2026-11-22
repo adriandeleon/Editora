@@ -552,7 +552,7 @@ final class LspNavigationRequests {
                 cb.accept(targets);
                 return;
             }
-            // Whether the include's file is there is looked at off the FX thread (PERF-01, Pauta 6.0.1).
+            // Whether the include's file is there is looked at off the FX thread (PERF-01, Pauta 6.2.0).
             com.editora.perf.OffFx.then(
                     "XmlServer.missingInclude",
                     () -> java.util.Optional.ofNullable(XmlServer.missingInclude(s, documentUri, pos)),

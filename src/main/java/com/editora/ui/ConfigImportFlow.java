@@ -200,7 +200,7 @@ final class ConfigImportFlow {
         FileChooser fc = new FileChooser();
         fc.setTitle(tr("dialog.importConfig.title"));
         fc.getExtensionFilters().add(new FileChooser.ExtensionFilter(tr("dialog.importConfig.zipFilter"), "*.zip"));
-        ChooserStart.set(fc, start); // no look at the disk on the FX thread first (PERF-01, Pauta 6.0.1)
+        ChooserStart.set(fc, start); // no look at the disk on the FX thread first (PERF-01, Pauta 6.2.0)
         File f = ChooserStart.show(fc, c -> c.showOpenDialog(owner));
         return f == null ? null : f.toPath();
     }

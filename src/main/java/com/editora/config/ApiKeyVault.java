@@ -19,7 +19,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Where the AI providers' API keys live: the system keychain when one answers, else an encrypted file of their own
- * ({@link EncryptedFileStore}, {@code keys/secrets.enc}); never {@code settings.json} (SET-13, Pauta 6.0.1).
+ * ({@link EncryptedFileStore}, {@code keys/secrets.enc}); never {@code settings.json} (SET-13, Pauta 6.2.0).
  *
  * <p>{@link #open} runs once at startup, off the FX thread (a keychain may prompt). It reads the keys the keychain
  * (or the file) holds and moves any key still in {@code settings.json} — or, once the keychain answers again, in

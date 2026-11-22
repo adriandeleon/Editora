@@ -216,7 +216,7 @@ final class InstallPromptCoordinator {
         String custom = lsp.customServerCommand(pomServer);
         if (custom == null && lsp.pomTrustUnknown(buffer)) {
             // Which offer it is depends on the folder's trust, asked by the pom's root: looked for off the FX
-            // thread (PERF-01, Pauta 6.0.1). Decided when it lands.
+            // thread (PERF-01, Pauta 6.2.0). Decided when it lands.
             lsp.afterRootLearned(buffer, () -> maybeOfferInstall(buffer));
             return true;
         }
@@ -288,7 +288,7 @@ final class InstallPromptCoordinator {
                 .filter(cmd -> !com.editora.doctor.DoctorProbes.known(cmd))
                 .toList();
         if (!unknown.isEmpty()) {
-            // Whether each tool is there is looked at off the FX thread first (PERF-01, Pauta 6.0.1); the banner
+            // Whether each tool is there is looked at off the FX thread first (PERF-01, Pauta 6.2.0); the banner
             // is decided when the look lands, if the script is still the one shown.
             com.editora.perf.OffFx.then(
                     "shell-tools-look",
@@ -432,7 +432,7 @@ final class InstallPromptCoordinator {
             return false;
         }
         ownWebCopyChecked = true;
-        // The copy's package.json files are read off the FX thread (PERF-01, Pauta 6.0.1); the offer shows when
+        // The copy's package.json files are read off the FX thread (PERF-01, Pauta 6.2.0); the offer shows when
         // they answer, if that tab shows no other banner by then.
         java.util.List<String> argv = host.lspCoordinator().serverArgv(id);
         java.nio.file.Path configDir = host.config().getConfigDir();

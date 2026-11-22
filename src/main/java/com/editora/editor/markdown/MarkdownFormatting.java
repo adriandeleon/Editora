@@ -64,7 +64,7 @@ public final class MarkdownFormatting {
 
     /**
      * Formats the whole document. The text is parsed and the edit worked out off the FX thread (PERF-01, Pauta
-     * 6.0.1); {@code done} hears the outcome once it is applied, on the FX thread.
+     * 6.2.0); {@code done} hears the outcome once it is applied, on the FX thread.
      */
     public static void formatDocument(EditorBuffer b, Consumer<Outcome> done) {
         if (!canRun(b)) {

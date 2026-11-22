@@ -19,7 +19,7 @@ import com.editora.i18n.Messages;
  * {@code ScrollPane}) so it hosts directly as the Split/Preview side, like {@link StructuredTree}. Kept in
  * {@code editor} (no {@code ui} dependency).
  *
- * <p>The live preview is a virtualized list of those rows ({@link PreviewList}, PERF-08, Pauta 6.0.1); {@link
+ * <p>The live preview is a virtualized list of those rows ({@link PreviewList}, PERF-08, Pauta 6.2.0); {@link
  * #content} builds them all, for an export or a print.
  */
 public final class FstabPreview {

@@ -1528,7 +1528,7 @@ public class EditorBuffer implements TabContent {
     public static final String COMMENT_SITE = "EditorBuffer.toggleComment";
 
     /**
-     * As {@link #toggleComment()}, the edit worked out off the FX thread (PERF-01, Pauta 6.0.1): the comment rules read
+     * As {@link #toggleComment()}, the edit worked out off the FX thread (PERF-01, Pauta 6.2.0): the comment rules read
      * the whole text in some languages (a shell here-doc, an HTML page's script and style blocks, an INI file's
      * style) and a selection can be the whole document. It is applied when it lands if the text is unchanged;
      * {@code done} then hears null, or, when no edit could be made, what {@code whyNot} says of the text (also worked
@@ -3045,7 +3045,7 @@ public class EditorBuffer implements TabContent {
 
     /**
      * Runs {@code then} once the Run scan of the text has landed: at once when none is in flight. The scan runs off
-     * the FX thread (PERF-01, Pauta 6.0.1), so a Run or Debug command decides from its result by waiting here.
+     * the FX thread (PERF-01, Pauta 6.2.0), so a Run or Debug command decides from its result by waiting here.
      */
     public void whenRunScanned(Runnable then) {
         runGutter.whenRunScanned(then);
@@ -3333,7 +3333,7 @@ public class EditorBuffer implements TabContent {
 
     /**
      * This {@code .http} document's scripts ({@link com.editora.http.HttpScriptLines#mapOf}) for its current text, or
-     * null while they are being worked out: parsed off the FX thread once per document version (PERF-01, Pauta 6.0.1).
+     * null while they are being worked out: parsed off the FX thread once per document version (PERF-01, Pauta 6.2.0).
      * A caller treats null as "may be a script" (a breakpoint is allowed, a Debug Request row offered).
      */
     public com.editora.http.HttpScriptLines.@Nullable Map httpScriptMap() {
@@ -4238,7 +4238,7 @@ public class EditorBuffer implements TabContent {
         if (c == null || !isEditable()) {
             return;
         }
-        // The span that differs is worked out off the FX thread (PERF-01, Pauta 6.0.1); then the caret.
+        // The span that differs is worked out off the FX thread (PERF-01, Pauta 6.2.0); then the caret.
         replaceVisibleTextLater(area, c.text(), applied -> {
             if (applied) {
                 area.moveTo(UndoHistory.clamp(c.caret(), area.getLength()));
@@ -4670,7 +4670,7 @@ public class EditorBuffer implements TabContent {
 
     /**
      * As above; {@code movedThen} hears whether any note was re-anchored or (un)orphaned, so the caller can persist
-     * the self-healed state. The notes are found in the text off the FX thread (PERF-01, Pauta 6.0.1).
+     * the self-healed state. The notes are found in the text off the FX thread (PERF-01, Pauta 6.2.0).
      */
     public void applyNotes(
             List<com.editora.config.PersonalNote> saved, java.util.function.Consumer<Boolean> movedThen) {
@@ -5035,7 +5035,7 @@ public class EditorBuffer implements TabContent {
         IGrammar cached = reg.cachedForLanguageName(resolved);
         applyLanguage(resolved, cached); // bumps languageGen
         if (cached == null && reg.hasGrammarForLanguage(resolved)) {
-            // A grammar not loaded yet is loaded off the FX thread (PERF-01, Pauta 6.0.1), highlighted when it lands.
+            // A grammar not loaded yet is loaded off the FX thread (PERF-01, Pauta 6.2.0), highlighted when it lands.
             long gen = languageGen;
             reg.whenLanguageLoaded(resolved, g -> {
                 if (gen == languageGen && g != null) {
@@ -5592,7 +5592,7 @@ public class EditorBuffer implements TabContent {
     /**
      * The most the FX thread reads each way from the caret for a bracket's partner, and only within the lines on
      * screen ({@link #nearBraceWindow}): painting a pair the user sees is reading the screen, not searching the
-     * document. A partner further off is looked for off the FX thread (PERF-01, Pauta 6.0.1).
+     * document. A partner further off is looked for off the FX thread (PERF-01, Pauta 6.2.0).
      */
     static final int NEAR_BRACE_SCAN = 16_384;
 
@@ -5926,7 +5926,7 @@ public class EditorBuffer implements TabContent {
     public static final String PREPARE_TEXT_SITE = "EditorBuffer.prepareText";
 
     /**
-     * {@link #setContent} for a caller on the FX thread (PERF-01, Pauta 6.0.1): the text's line endings are
+     * {@link #setContent} for a caller on the FX thread (PERF-01, Pauta 6.2.0): the text's line endings are
      * resolved and its fingerprint worked out off the FX thread, and it is installed when that lands, as a load
      * is. {@code then} runs once it is in; it does not run, and nothing is installed, when the buffer was closed or
      * edited meanwhile (its text is the user's then).
@@ -6031,7 +6031,7 @@ public class EditorBuffer implements TabContent {
 
     /**
      * As {@link #reloadContent(InitialDocument)} with the differing span {@code prepared} worked out off the FX thread
-     * (PERF-01, Pauta 6.0.1) against the accessible text it names. When the document is no longer at that version,
+     * (PERF-01, Pauta 6.2.0) against the accessible text it names. When the document is no longer at that version,
      * or is narrowed, the load is installed whole instead ({@link #setInitialContent(InitialDocument)}), which
      * searches nothing either.
      */
@@ -6269,7 +6269,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * {@link #replaceWholeDocument} without searching the text on the FX thread (PERF-01, Pauta 6.0.1): widens now,
+     * {@link #replaceWholeDocument} without searching the text on the FX thread (PERF-01, Pauta 6.2.0): widens now,
      * works out the span that differs off the FX thread and applies it as one undo step when it lands, if the
      * document is unchanged. Text typed meanwhile is never overwritten: {@code text} was decided on the document as
      * it was, so the rewrite is then dropped. {@code done} hears true once applied (or nothing differed), false when
@@ -6385,7 +6385,7 @@ public class EditorBuffer implements TabContent {
     /**
      * Once the edits of a dirty buffer have settled, the baseline's text is no longer the snapshot and would be
      * a second document-sized String for as long as the tab stays modified: keep its fingerprint only. A
-     * fingerprint no worker supplied is worked out off the FX thread first (PERF-01, Pauta 6.0.1); the text is let
+     * fingerprint no worker supplied is worked out off the FX thread first (PERF-01, Pauta 6.2.0); the text is let
      * go when it lands, if the buffer is still dirty then.
      */
     private void sealBaselineIfDirty() {
@@ -6428,7 +6428,7 @@ public class EditorBuffer implements TabContent {
 
     /**
      * Whether the whole text is the saved text, with {@code b}'s length already equal. Without a hash when the
-     * baseline holds its text. Against a sealed baseline the FX thread never hashes (PERF-01, Pauta 6.0.1): it
+     * baseline holds its text. Against a sealed baseline the FX thread never hashes (PERF-01, Pauta 6.2.0): it
      * answers from the last hash made off the thread for this document version, and otherwise says "differs" —
      * the dirty state the cheap checks give, never "clean" for text that differs — and hashes a snapshot off the
      * thread; when that lands for the same version and baseline, the flag is set again from it, so an undo back

@@ -455,7 +455,7 @@ class DebugProgramConsoleFxTest {
     }
 
     /**
-     * PERF-01 (Pauta 6.0.1): a Java debug launch reads the file's main class, the class files and the JDK it
+     * PERF-01 (Pauta 6.2.0): a Java debug launch reads the file's main class, the class files and the JDK it
      * decides by off the FX thread, and the program the adapter hands back is found, started and recorded off it
      * too. Listens to {@link com.editora.perf.BlockingSites} for the whole launch.
      */

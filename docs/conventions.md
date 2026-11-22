@@ -129,7 +129,7 @@ A control that works with the mouse but cannot be reached, seen or named from th
   already shows (a filter's prompt, the tool window's title). A list or tree row drawn from nodes is set with
   `setGraphic(CellNames.read(row))`, so it reads as the words it shows. `NamedControlsSweepFxTest` runs every
   command (as `CommandSweepFxTest` does), opens every tool window and Settings page and reads the menu bar,
-  and fails on a control, a filled row or a menu row with no name (ACC-01, Pauta 6.0.1).
+  and fails on a control, a filled row or a menu row with no name (ACC-01, Pauta 6.2.0).
 - **A label or pane that acts as a button is a `PressableLabel`, `PressableBox` or `PressablePane`**
   (`editor/Pressable`): the `BUTTON` role, a screen reader's `FIRE`, Enter or Space, and a primary click all run
   its action; pass `tabStop` false for a gutter mark a command reaches from the keyboard. A status-bar segment
@@ -144,7 +144,7 @@ A control that works with the mouse but cannot be reached, seen or named from th
   `-color-fg-emphasis`, never `white`. A warning, an error or a success is painted with its token on
   `app.css`'s `.root` — `-state-amber`, `-state-red`, `-state-green`, each with `-bg` (the role's subtle tint),
   `-hover` (its muted tint) and `-emphasis` (its solid fill) — never with the role behind it
-  (`-color-danger-fg`) and never a hex (ICON-07, Pauta 6.0.1). Those three colours mean only "not durable yet" or
+  (`-color-danger-fg`) and never a hex (ICON-07, Pauta 6.2.0). Those three colours mean only "not durable yet" or
   a warning, broken (with breakpoints, a recording and a destructive menu row), and verified (found, added,
   passing, running) (ICON-18): a bookmark, a note, Stop, a deleted line and the Map's heat take the accent or
   the ink. No component rule holds a fixed colour (ICON-08): a colour with no role (a scrim, a shadow, the printed
@@ -181,7 +181,7 @@ A control that works with the mouse but cannot be reached, seen or named from th
   static function that returns the `Confirm.Question` (`DebugPanel.removeAllWatchesQuestion(int)`), asked only
   when something would be lost, from the one method every entry point of the removal shares.
 - **Every dialog that is answered with a button is shown through `Dialogs.showAndWait(dialog)`**, never through
-  its own `showAndWait()` (CONF-12, Pauta 6.0.1), errors and information included. `DialogShownThroughHookTest`, a
+  its own `showAndWait()` (CONF-12, Pauta 6.2.0), errors and information included. `DialogShownThroughHookTest`, a
   guard, reads the source for one that is not, and counts the form dialogs that keep their own call (fields and a
   result of their own, a text prompt). With no hook set the method is `dialog.showAndWait()`. In a test,
   `Dialogs.answerWith(asked -> …)` answers instead and no window opens: the hook is given `Dialogs.Asked` (title,
@@ -209,7 +209,7 @@ A control that works with the mouse but cannot be reached, seen or named from th
   its own reads the words from the value. `ConfirmWordsTest` calls every such function; a new
   one gets a case there, and a test that answers the question through `DialogAnswers` and asserts that only its
   action acts.
-- **A small, frequent removal records an undo instead of asking** (CONF-01, Pauta 6.0.1): one watch, a breakpoint
+- **A small, frequent removal records an undo instead of asking** (CONF-01, Pauta 6.2.0): one watch, a breakpoint
   that carries details, a key binding, a dictionary word. The one method every entry point of the removal shares
   calls `host.removalUndo().removed(removedSentence, restoredSentence, restore)`
   ([`RemovalUndo`](../src/main/java/com/editora/ui/RemovalUndo.java)): the window's status bar says the sentence and
@@ -431,7 +431,7 @@ A feature PR updates `CHANGELOG.md` and `TODO.md` in the same change, not as a f
 A changelog entry goes under `## [Unreleased]`, in `### Added`, `### Changed`, `### Fixed` or
 `### Removed` (`### Deprecated` and `### Security` too, and no headings of our own), and opens with a bold
 one-line summary written for users (`- **…**`); `ChangelogFormatTest` checks the shape (REPO-02, Pauta
-6.0.1). User-facing documentation lives in the separate website repo; **this `docs/` folder is for
+6.2.0). User-facing documentation lives in the separate website repo; **this `docs/` folder is for
 developers**: no page here tells a user how to install or use something, even in one section (DOCS-02).
 A guide explains what is true now; a dated review, measurement or plan goes under
 [`reference/`](reference/README.md) or with its evidence in `artifacts/` (DOCS-14). `README.md` is a short landing page that points at the website: it does not carry a

@@ -1036,7 +1036,7 @@ class PrintPreviewFxTest {
     }
 
     /**
-     * WIN-12 (Pauta 6.0.1): the preview follows the UI zoom like every other window: its bar's text and gaps and
+     * WIN-12 (Pauta 6.2.0): the preview follows the UI zoom like every other window: its bar's text and gaps and
      * its minimum size grow with it, and the page at "100%" is drawn as large as the text around it. What is
      * printed does not: the page's own text is the same size at every UI zoom, on screen and on paper.
      */

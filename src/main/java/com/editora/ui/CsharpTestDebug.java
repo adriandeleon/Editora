@@ -81,7 +81,7 @@ final class CsharpTestDebug {
             return false;
         }
         // The project above the file is found and read, and the test at the caret found in the text, off the FX
-        // thread (PERF-01, Pauta 6.0.1); a C# file that is not in a test project, or a caret in no test, goes on to
+        // thread (PERF-01, Pauta 6.2.0); a C# file that is not in a test project, or a caret in no test, goes on to
         // {@code otherwise}, as a false answer did.
         String text = b.getContent();
         int caret = DebugCoordinator.caretLine(b);

@@ -72,7 +72,7 @@ public class KeyDispatcher {
     /**
      * Told the pending multi-key prefix each time it changes: the sequence typed so far ({@code C-x},
      * {@code C-x v}) when a prefix starts or grows, and {@code ""} when it ends, because the sequence completed,
-     * was undefined or was cancelled. The window's prefix hint listens here (KBD-14 in Pauta 6.0.1).
+     * was undefined or was cancelled. The window's prefix hint listens here (KBD-14 in Pauta 6.2.0).
      */
     private Consumer<String> prefixListener = sequence -> {};
 

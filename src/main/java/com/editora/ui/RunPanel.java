@@ -245,7 +245,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
 
     /**
      * The console line around {@code offset}: its text, read alone, and where it starts. A hover or a click looks at
-     * one line, never at a copy of the whole console (PERF-01, Pauta 6.0.1: it runs on every mouse move). Null past
+     * one line, never at a copy of the whole console (PERF-01, Pauta 6.2.0: it runs on every mouse move). Null past
      * the end.
      */
     record LineAt(String text, int start) {}
@@ -380,7 +380,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     }
 
     /**
-     * As {@link #started}, for a program that is still being started off the FX thread (PERF-01, Pauta 6.0.1): Stop
+     * As {@link #started}, for a program that is still being started off the FX thread (PERF-01, Pauta 6.2.0): Stop
      * already applies, the input waits for {@link #runningAs}, so what is typed follows the command line.
      */
     public void starting(@Nullable String label) {

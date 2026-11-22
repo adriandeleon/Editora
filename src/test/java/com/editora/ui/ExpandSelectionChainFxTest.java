@@ -133,7 +133,7 @@ class ExpandSelectionChainFxTest {
         detection.submit(() -> {}).get(20, java.util.concurrent.TimeUnit.SECONDS);
         FxTestSupport.drainFx();
         com.editora.lsp.LspTestHooks.cacheAvailability(manager, "java", true);
-        // The server's root is looked for off the FX thread (PERF-01, Pauta 6.0.1), and the buffer opens on the server
+        // The server's root is looked for off the FX thread (PERF-01, Pauta 6.2.0), and the buffer opens on the server
         // when it lands; LspRootMemoFxTest and ChecksOffFxThreadFxTest cover that. Here the test waits until every
         // look the open and the window set off has landed, so the buffer sits on the fake for good: this test is
         // about the ladder, not about when a root lands.

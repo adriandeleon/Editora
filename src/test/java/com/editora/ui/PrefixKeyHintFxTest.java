@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * KBD-14 (Pauta 6.0.1): press {@code C-x} in the Emacs keymap and wait, and the window lists the keys that can
+ * KBD-14 (Pauta 6.2.0): press {@code C-x} in the Emacs keymap and wait, and the window lists the keys that can
  * follow, each with what it runs. Driven through a real window and its own key dispatcher.
  */
 @Tag("fx")

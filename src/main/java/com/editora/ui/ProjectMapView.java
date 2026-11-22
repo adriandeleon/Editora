@@ -906,7 +906,7 @@ final class ProjectMapView extends VBox {
             return;
         }
         String rel = current.relativize(normalized).toString().replace('\\', '/');
-        // a folder? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        // a folder? looked at off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then(
                 "map-look", () -> rel.isEmpty() || java.nio.file.Files.isDirectory(normalized), folder -> {
                     if (disposed || root != current) {
@@ -1855,7 +1855,7 @@ final class ProjectMapView extends VBox {
     /**
      * Whether a remembered place is still on disk: looked at off the FX thread as soon as the workspace hands its
      * state over ({@link #bearingsLookAt}), answered from memory when the folder is first shown (PERF-01, Pauta
-     * 6.0.1).
+     * 6.2.0).
      */
     private static final com.editora.perf.Looked<Path, Boolean> BEARINGS_EXIST =
             new com.editora.perf.Looked<>("ProjectMapView.bearingsExists", java.nio.file.Files::exists, Boolean.TRUE);
@@ -3510,7 +3510,7 @@ final class ProjectMapView extends VBox {
                 || !normalized.startsWith(currentRoot)) {
             return false;
         }
-        // a file or a folder? looked at off the FX thread (PERF-01, Pauta 6.0.1); then shown
+        // a file or a folder? looked at off the FX thread (PERF-01, Pauta 6.2.0); then shown
         com.editora.perf.OffFx.then("map-look", () -> !java.nio.file.Files.isDirectory(normalized), isFile -> {
             if (!disposed && root == currentRoot) {
                 showOnMap(from, normalized, isFile.or(true), line, name);
@@ -4046,7 +4046,7 @@ final class ProjectMapView extends VBox {
         chooser.getExtensionFilters()
                 .add(new javafx.stage.FileChooser.ExtensionFilter(
                         extension.toUpperCase(java.util.Locale.ROOT), "*." + extension));
-        ChooserStart.set(chooser, root); // no look at the disk on the FX thread first (PERF-01, Pauta 6.0.1)
+        ChooserStart.set(chooser, root); // no look at the disk on the FX thread first (PERF-01, Pauta 6.2.0)
         javafx.stage.Window owner = getScene() == null ? null : getScene().getWindow();
         return ChooserStart.show(chooser, c -> c.showSaveDialog(owner));
     }

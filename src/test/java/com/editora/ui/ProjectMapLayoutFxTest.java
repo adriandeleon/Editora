@@ -668,7 +668,7 @@ class ProjectMapLayoutFxTest {
     }
 
     // The rows' and connectors' ink on their grounds is StyleContrastTest's arithmetic
-    // (mapRowAndConnectorInkReachesThreeToOneInBothEditoraThemes): it needs no toolkit (ICON-14, Pauta 6.0.1).
+    // (mapRowAndConnectorInkReachesThreeToOneInBothEditoraThemes): it needs no toolkit (ICON-14, Pauta 6.2.0).
 
     // ---- toolbar, breadcrumbs, help and accessibility (U5, U12, U13, U15) ----------------------------
 

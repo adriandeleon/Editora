@@ -85,7 +85,7 @@ final class BashReanalysis {
 
     /**
      * TEST SEAM — whether a pass is waiting: with none, nothing will be re-read, so a test sees "not reopened"
-     * without waiting out the debounce (QUAL-07, Pauta 6.0.1).
+     * without waiting out the debounce (QUAL-07, Pauta 6.2.0).
      */
     synchronized boolean pendingForTest() {
         return scheduled || !pending.isEmpty();

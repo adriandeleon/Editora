@@ -89,7 +89,7 @@ public final class CwdWatcher implements AutoCloseable {
     /** What the shell ran at the last tick, innermost first; null before the first. Read by a close's question. */
     private volatile java.util.@Nullable List<String> programs;
 
-    /** {@link #programs}: the FX thread asks this instead of reading {@code /proc} itself (PERF-01, Pauta 6.0.1). */
+    /** {@link #programs}: the FX thread asks this instead of reading {@code /proc} itself (PERF-01, Pauta 6.2.0). */
     public java.util.@Nullable List<String> programs() {
         return programs;
     }

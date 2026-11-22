@@ -538,7 +538,7 @@ final class GitWindowCoordinator {
                 Path filter = gitLogFilter;
                 String followed = host.gitLogPanel().followedPath(hash);
                 // Which file is the working side, and whether it is there: looked at off the FX thread (PERF-01,
-                // Pauta 6.0.1).
+                // Pauta 6.2.0).
                 com.editora.perf.OffFx.then(
                         "GitWindowCoordinator.compareFileWithWorking",
                         () -> {
@@ -887,7 +887,7 @@ final class GitWindowCoordinator {
                 all, file, searchedFile ? com.editora.git.GitLogQuery.NONE : query, 0, size);
         GitLogPanel.View view = new GitLogPanel.View(
                 file != null ? file.getFileName().toString() : null, branch, all, gitLogSearch, request.graphable());
-        // Two or three stats in .git: off the FX thread (PERF-01, Pauta 6.0.1), landing for this load only.
+        // Two or three stats in .git: off the FX thread (PERF-01, Pauta 6.2.0), landing for this load only.
         Thread.ofVirtual().name("git-log-shallow").start(() -> {
             boolean cut = shallow(root);
             javafx.application.Platform.runLater(() -> {
@@ -1406,7 +1406,7 @@ final class GitWindowCoordinator {
             host.setStatus(tr("status.git.history.noFile"));
             return;
         }
-        // A folder has no file history: looked at off the FX thread (PERF-01, Pauta 6.0.1).
+        // A folder has no file history: looked at off the FX thread (PERF-01, Pauta 6.2.0).
         com.editora.perf.OffFx.then(
                 "GitWindowCoordinator.gitFileHistoryForPath", () -> Files.isDirectory(file), dir -> {
                     if (!Boolean.FALSE.equals(dir.value())) {

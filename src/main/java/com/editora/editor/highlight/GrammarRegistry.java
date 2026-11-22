@@ -183,7 +183,7 @@ public final class GrammarRegistry {
 
     /**
      * The grammar for language {@code name} handed to {@code then} on the FX thread: at once when it is loaded,
-     * else once a thread of its own has loaded it (PERF-01, Pauta 6.0.1: the FX thread never reads, parses or
+     * else once a thread of its own has loaded it (PERF-01, Pauta 6.2.0: the FX thread never reads, parses or
      * compiles a grammar, nor waits for the load lock). {@code then} gets null when none is bundled.
      */
     public void whenLanguageLoaded(@Nullable String name, java.util.function.Consumer<@Nullable IGrammar> then) {
@@ -204,7 +204,7 @@ public final class GrammarRegistry {
 
     /**
      * Loads every bundled grammar once, on a thread of its own, so that a later caller on the FX thread finds the
-     * grammar it asks for loaded (PERF-01, Pauta 6.0.1). Called once after the first window; later calls do nothing.
+     * grammar it asks for loaded (PERF-01, Pauta 6.2.0). Called once after the first window; later calls do nothing.
      */
     public static void warmAllLater() {
         if (!WARMED.compareAndSet(false, true)) {

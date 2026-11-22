@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The dispatcher tells its prefix listener when a multi-key prefix starts, grows and ends, which is what the
- * window's prefix hint shows and hides on (KBD-14 in Pauta 6.0.1).
+ * window's prefix hint shows and hides on (KBD-14 in Pauta 6.2.0).
  */
 class KeyDispatcherPrefixListenerTest {
 

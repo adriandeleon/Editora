@@ -305,7 +305,7 @@ final class SuperMethodWalk {
             }
             Path file = type.file();
             if (declared != null && file != null && !texts.containsKey(file) && readsDisk(type, file)) {
-                // A closed supertype's file is read off the FX thread (PERF-01, Pauta 6.0.1), then the walk goes on.
+                // A closed supertype's file is read off the FX thread (PERF-01, Pauta 6.2.0), then the walk goes on.
                 com.editora.perf.OffFx.then("SuperMethodWalk.textOf", () -> readText(file), read -> {
                     texts.putIfAbsent(file, read.or(java.util.Optional.empty()));
                     visited(type, order, depth, subtype, members, declared, textOf(type));

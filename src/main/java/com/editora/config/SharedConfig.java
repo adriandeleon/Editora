@@ -359,7 +359,7 @@ public class SharedConfig {
      * found at startup.
      *
      * <p>The file is read, parsed and checked on the writer thread, after every write queued before it (PERF-01,
-     * Pauta 6.0.1); the values are applied on the FX thread, field by field, with no JSON there. Until they are,
+     * Pauta 6.2.0); the values are applied on the FX thread, field by field, with no JSON there. Until they are,
      * a save of the settings is held: it would write the old values over the hand edit.
      */
     public void reloadSettings(Consumer<@Nullable List<SettingsFileCheck.Issue>> done) {
@@ -407,7 +407,7 @@ public class SharedConfig {
      * Runs {@code work} on the writer thread after every config write queued so far, and hands its result (or
      * its failure) to {@code done} on the FX thread. For file work that must see those writes on disk — a copy of
      * {@code settings.json} made right after a save — without the FX thread waiting for them (PERF-01, Pauta
-     * 6.0.1).
+     * 6.2.0).
      */
     public <T> void afterWrites(
             FileWork<T> work, java.util.function.BiConsumer<@Nullable T, @Nullable Exception> done) {
@@ -564,7 +564,7 @@ public class SharedConfig {
 
     /**
      * {@code value}'s JSON, for {@code file}. On the writer thread or at load, never the FX thread (PERF-01,
-     * Pauta 6.0.1); named for {@link com.editora.perf.BlockingSites} so a test can tell.
+     * Pauta 6.2.0); named for {@link com.editora.perf.BlockingSites} so a test can tell.
      */
     byte[] serialize(Object value, Path file) {
         com.editora.perf.BlockingSites.enter("json " + file.getFileName());
@@ -729,7 +729,7 @@ public class SharedConfig {
     /**
      * Runs {@code work} on the config writer, after every write queued before it and before any queued after, and
      * waits for its answer: for file work that must not interleave with a store's save (Settings sync writing the
-     * config directory's files). Never on the FX thread (PERF-01, Pauta 6.0.1): it waits.
+     * config directory's files). Never on the FX thread (PERF-01, Pauta 6.2.0): it waits.
      */
     public <T> T callWithWrites(java.util.concurrent.Callable<T> work) throws java.io.IOException {
         if (javafx.application.Platform.isFxApplicationThread()) {
@@ -789,7 +789,7 @@ public class SharedConfig {
             settingsSaveHeld = true; // the file's values are about to replace these; saved once they have
             return;
         }
-        // A copy, serialized on the writer thread (PERF-01, Pauta 6.0.1): the write and the comparison below
+        // A copy, serialized on the writer thread (PERF-01, Pauta 6.2.0): the write and the comparison below
         // share the one serialization.
         Settings snapshot = Snapshots.copy(settings);
         Path file = getSettingsFile();
@@ -1177,7 +1177,7 @@ public class SharedConfig {
      * in-memory store is the defaults loaded in its place, not its content.
      *
      * <p>The store is copied here ({@link Snapshots#copy}); the copy is serialized and written on the writer
-     * thread (PERF-01, Pauta 6.0.1), so the FX thread, where these saves are made (toggle a bookmark or a
+     * thread (PERF-01, Pauta 6.2.0), so the FX thread, where these saves are made (toggle a bookmark or a
      * breakpoint, edit a note, save a macro, trust a folder), neither serializes, hashes, locks nor writes. The
      * in-memory store stays the one the windows read. Writes of one file are made in order, and a later save of
      * it replaces one still queued, so an older state is never written over a newer one.
@@ -1279,7 +1279,7 @@ public class SharedConfig {
 
     /**
      * Hands the agent session history to {@code then} on the FX thread: at once when it is read, else once its
-     * first read, on a thread of its own, is done (PERF-01, Pauta 6.0.1). Calls made meanwhile run in the order
+     * first read, on a thread of its own, is done (PERF-01, Pauta 6.2.0). Calls made meanwhile run in the order
      * they were made.
      */
     public void agentSessions(Consumer<AgentSessionHistory> then) {
@@ -1391,7 +1391,7 @@ public class SharedConfig {
 
     /**
      * As {@link #reloadAbbreviations()}: the file is read on the config writer's thread, after the writes queued
-     * before it (PERF-01, Pauta 6.0.1); the list is replaced, the windows told and {@code then} run on the FX
+     * before it (PERF-01, Pauta 6.2.0); the list is replaced, the windows told and {@code then} run on the FX
      * thread. A change made to the list on the FX thread meanwhile is overwritten, as the file's is the newer.
      */
     public void reloadAbbreviations(Runnable then) {
@@ -1571,7 +1571,7 @@ public class SharedConfig {
 
     /**
      * Adds a word to the user dictionary (lower-cased). The shared set changes at once, so the word stops being
-     * flagged at once; {@code dictionary.txt} is written on the writer thread (PERF-01, Pauta 6.0.1), the word
+     * flagged at once; {@code dictionary.txt} is written on the writer thread (PERF-01, Pauta 6.2.0), the word
      * appended to it.
      */
     public void addUserWord(String word) {

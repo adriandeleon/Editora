@@ -139,7 +139,7 @@ public final class DiagramImages {
             java.util.function.DoubleUnaryOperator sizer,
             @Nullable String surfaceKey) {
         boolean useDark = dark && kind.themeSensitive();
-        // The key is a hash of the whole source: worked out off the FX thread (PERF-01, Pauta 6.0.1). A source seen
+        // The key is a hash of the whole source: worked out off the FX thread (PERF-01, Pauta 6.2.0). A source seen
         // before has its key remembered, so an unchanged diagram is shown from the cache at once.
         String tag = kind.name() + (useDark ? ":d" : ":l");
         String knownKey = KEYS.knownKey(tag, source);

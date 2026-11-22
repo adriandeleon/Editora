@@ -9,7 +9,7 @@ import com.editora.config.SharedConfig;
 
 /**
  * The launch's disk work besides the settings, done on the config-prefetch thread with them (PERF-01, Pauta
- * 6.0.1: before the first window is shown the FX thread may wait once for that thread, and do no file work of
+ * 6.2.0: before the first window is shown the FX thread may wait once for that thread, and do no file work of
  * its own but read the bundled resources the window is built from). Two steps, called by
  * {@link App#loadForFirstWindow} in this order:
  *
@@ -56,7 +56,7 @@ final class StartupPrep {
         // Delete a mcp-endpoint.json left by a crashed run — it advertises a dead port with a live-looking token.
         // Reaped by the stamped pid + start instant, before any MCP server starts this session (#464).
         step("stale MCP endpoint", () -> com.editora.mcp.McpServer.reapStaleEndpoint(configDir));
-        // The login shell's PATH, on a thread of its own: Run, Build and Debug find it built (PERF-01, Pauta 6.0.1).
+        // The login shell's PATH, on a thread of its own: Run, Build and Debug find it built (PERF-01, Pauta 6.2.0).
         step("PATH warm-up", com.editora.process.ProcessRunner::warmAugmentedPathAsync);
         step(
                 "read prompt shim",

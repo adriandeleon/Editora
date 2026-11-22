@@ -600,7 +600,7 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
     private int lookupsAsked;
 
     /**
-     * The dictionary verdict for {@code word} if known; else false for now (PERF-01, Pauta 6.0.1: a Hunspell
+     * The dictionary verdict for {@code word} if known; else false for now (PERF-01, Pauta 6.2.0: a Hunspell
      * lookup is a search, never on the FX thread), and the word is queued for a lookup off the thread that
      * repaints the squiggles when it lands.
      */

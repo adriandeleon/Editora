@@ -39,7 +39,7 @@ final class JavaProjectRoot {
 
     /**
      * For a menu row: whether {@code file} is in a project, or not known yet. A file no look has filled counts as
-     * in one (the row stays offered; the command waits for the look) and is looked at behind (PERF-01, Pauta 6.0.1).
+     * in one (the row stays offered; the command waits for the look) and is looked at behind (PERF-01, Pauta 6.2.0).
      */
     static boolean inProjectOrUnknown(Path file) {
         if (file == null) {

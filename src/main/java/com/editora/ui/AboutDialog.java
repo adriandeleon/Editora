@@ -150,8 +150,8 @@ final class AboutDialog {
     }
 
     /**
-     * The catalog key of the edition's link: "Built to Pauta 6.0.1", or at Partial "Working toward Pauta
-     * 6.0.1", since the app does not meet that edition yet.
+     * The catalog key of the edition's link: "Built to Pauta 6.2.0", or at Partial "Working toward Pauta
+     * 6.2.0", since the app does not meet that edition yet.
      */
     static String editionKey(com.editora.PautaConformance.Conformance conformance) {
         return conformance == com.editora.PautaConformance.Conformance.PARTIAL

@@ -46,7 +46,7 @@ public final class EditorConfig {
      * Every property that applies to {@code file}, merged as {@link #resolveFor} merges them but untyped, keys
      * lower-cased — the tool-specific ones too, such as IntelliJ's {@code ij_java_imports_layout}. Empty when none.
      *
-     * <p>On the JavaFX thread it never touches the disk (PERF-01, Pauta 6.0.1): it answers what a look off the
+     * <p>On the JavaFX thread it never touches the disk (PERF-01, Pauta 6.2.0): it answers what a look off the
      * thread last found for the file ({@link #warm}, a file's load, any earlier ask off the thread), and looks
      * again behind the answer when that is a few seconds old; {@link #addListener listeners} hear, on the FX
      * thread, of a file whose answer changed. A file nothing looked at yet is answered from the parsed configs

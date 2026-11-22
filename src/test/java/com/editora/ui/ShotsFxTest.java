@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Screenshots are written at twice the scene's size (DOCS-18, Pauta 6.0.1): the shared helper every {@code shot()}
+ * Screenshots are written at twice the scene's size (DOCS-18, Pauta 6.2.0): the shared helper every {@code shot()}
  * uses, and the harness the website's screenshots come from, run on its sample script.
  */
 @Tag("fx")

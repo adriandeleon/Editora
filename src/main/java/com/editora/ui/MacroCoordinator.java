@@ -92,7 +92,7 @@ final class MacroCoordinator implements MacroCapture {
 
     /**
      * Whether work a step started still runs off the FX thread (the find bar's search): the next key step waits for
-     * it, as it waits for a prompt or an overlay, so a replay lands where the live keys did (PERF-01, Pauta 6.0.1).
+     * it, as it waits for a prompt or an overlay, so a replay lands where the live keys did (PERF-01, Pauta 6.2.0).
      */
     java.util.function.BooleanSupplier workPending = () -> false;
 

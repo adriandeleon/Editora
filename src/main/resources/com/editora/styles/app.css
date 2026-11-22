@@ -26,7 +26,7 @@
     /* Amber, red and green each have a -bg (the role's subtle tint), a -hover (its muted tint: a hover state, or
        a tint or rule stronger than -bg) and an -emphasis (its solid fill, under -color-fg-emphasis ink). A
        component rule that colours a warning, an error or a success names these, never the role behind them
-       (ICON-07, Pauta 6.0.1); nothing else is amber, red or green (ICON-18): bookmarks, notes, Stop, deleted
+       (ICON-07, Pauta 6.2.0); nothing else is amber, red or green (ICON-18): bookmarks, notes, Stop, deleted
        lines and the Map's heat are accent or neutral. StyleColourGuardTest holds both. */
     -state-amber: -color-warning-fg;
     -state-amber-bg: -color-warning-subtle;

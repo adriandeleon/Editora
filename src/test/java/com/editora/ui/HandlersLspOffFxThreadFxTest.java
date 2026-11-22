@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-01 (Pauta 6.0.1), the language-server handlers: each test drives on the FX thread, the way an event does, what
+ * PERF-01 (Pauta 6.2.0), the language-server handlers: each test drives on the FX thread, the way an event does, what
  * used to diff, parse or encode there — an edit in a buffer synced to a (wired) fake server, the fold regions
  * recomputed when the language or the server's regions change and a fold command asked meanwhile, a Markdown hover —
  * and listens to {@link BlockingSites}: every named place is heard off the FX thread, none on it.

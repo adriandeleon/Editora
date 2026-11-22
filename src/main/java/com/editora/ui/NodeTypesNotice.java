@@ -62,7 +62,7 @@ final class NodeTypesNotice {
             return;
         }
         hinted.add(folder); // asked once per folder, whatever the look finds
-        // Whether @types/node is installed above it is looked at off the FX thread (PERF-01, Pauta 6.0.1).
+        // Whether @types/node is installed above it is looked at off the FX thread (PERF-01, Pauta 6.2.0).
         typesLook.accept(path, typed -> {
             if (!typed) {
                 hint(root, ready.getAsBoolean(), say);
@@ -72,7 +72,7 @@ final class NodeTypesNotice {
 
     /**
      * Looks whether {@code @types/node} is installed above a file and answers on the FX thread: off it (PERF-01,
-     * Pauta 6.0.1); a failed look answers "installed", so nothing is said. TEST SEAM — a test looks in place.
+     * Pauta 6.2.0); a failed look answers "installed", so nothing is said. TEST SEAM — a test looks in place.
      */
     java.util.function.BiConsumer<Path, Consumer<Boolean>> typesLook = (path, then) -> com.editora.perf.OffFx.then(
             "NodeTypesHint.hasNodeTypes",

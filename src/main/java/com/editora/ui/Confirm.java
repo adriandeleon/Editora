@@ -27,7 +27,7 @@ import static com.editora.i18n.Messages.tr;
  * <p>A question that needs more than this (a checkbox, a third answer) builds its own dialog and marks it
  * with {@link Dialogs#destructive}. Its words still come from a static function of its class that returns a
  * {@link Question} or a {@link Choice}, so they are tested with no dialog, and it is shown through
- * {@link Dialogs#showAndWait}, so a test answers it with no dialog either (CONF-12, Pauta 6.0.1).
+ * {@link Dialogs#showAndWait}, so a test answers it with no dialog either (CONF-12, Pauta 6.2.0).
  */
 final class Confirm {
 

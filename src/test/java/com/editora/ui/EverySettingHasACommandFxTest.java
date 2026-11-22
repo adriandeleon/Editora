@@ -39,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Every setting the Settings window shows has a palette command that flips it or prompts for its value (SET-06,
- * Pauta 6.0.1). Nothing here is a list kept by hand: every control of every row is changed, and the settings it
+ * Pauta 6.2.0). Nothing here is a list kept by hand: every control of every row is changed, and the settings it
  * wrote are what the row sets; every setting command is run, each of its pickers answered row by row and each of
  * its prompts with a new value, and the settings it wrote are what the palette sets. A row whose setting no command
  * writes fails the test, so a new row without a command cannot land.

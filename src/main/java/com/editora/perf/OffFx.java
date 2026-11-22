@@ -7,7 +7,7 @@ import java.util.function.Consumer;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Disk work a command needs before it can go on, done off the JavaFX thread (PERF-01, Pauta 6.0.1): a stat, a
+ * Disk work a command needs before it can go on, done off the JavaFX thread (PERF-01, Pauta 6.2.0): a stat, a
  * listing, a read, a move, a delete. The work runs on a virtual thread named for it, and its answer, or the
  * exception it threw, comes back on the FX thread, where the command goes on. A command waiting for its answer
  * shows it is busy the way it already did and refuses a second press itself.

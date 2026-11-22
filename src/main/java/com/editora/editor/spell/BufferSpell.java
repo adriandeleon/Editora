@@ -381,7 +381,7 @@ public final class BufferSpell {
      * "Add to Dictionary" and "Ignore". Empty when the word there is not flagged.
      *
      * <p>Suggestions are computed off the FX thread, and the menu does not wait for them there (PERF-01, Pauta
-     * 6.0.1): it opens with a placeholder row that is replaced in {@code menuItems} (the open menu's own list) when
+     * 6.2.0): it opens with a placeholder row that is replaced in {@code menuItems} (the open menu's own list) when
      * they arrive.
      */
     public List<MenuItem> menuItems(int offset, ObservableList<MenuItem> menuItems) {
@@ -393,7 +393,7 @@ public final class BufferSpell {
         long gen = ++suggestGen;
         SpellChecker c = checker;
         CompletableFuture<List<String>> search = CompletableFuture.supplyAsync(() -> c.suggest(hit.word()), SUGGESTER);
-        // Not waited for on the FX thread (PERF-01, Pauta 6.0.1): what is there already is shown, else the
+        // Not waited for on the FX thread (PERF-01, Pauta 6.2.0): what is there already is shown, else the
         // placeholder row, replaced when the suggestions land.
         List<String> ready;
         try {

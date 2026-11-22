@@ -11,7 +11,7 @@ import java.util.function.Function;
 import org.jspecify.annotations.Nullable;
 
 /**
- * What a look at the disk answered, kept so the FX thread can ask again without looking (PERF-01, Pauta 6.0.1).
+ * What a look at the disk answered, kept so the FX thread can ask again without looking (PERF-01, Pauta 6.2.0).
  *
  * <p>For the small facts a window's set-up and every settings apply ask: is Editora's own copy of a server in
  * place, where is the java-debug plugin, is this configured tool a file. The launch {@linkplain #prepare
@@ -149,7 +149,7 @@ public final class ProbeCache<K, V> {
 
     /**
      * Looks every kept key up again now, on this thread (off the FX thread), keeping the new answers: after an
-     * install, before the FX thread asks again, so it never finds the cache empty (PERF-01, Pauta 6.0.1).
+     * install, before the FX thread asks again, so it never finds the cache empty (PERF-01, Pauta 6.2.0).
      */
     public void reprobeKept() {
         for (K key : List.copyOf(known.keySet())) {

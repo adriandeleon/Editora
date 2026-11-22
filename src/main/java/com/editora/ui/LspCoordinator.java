@@ -108,7 +108,7 @@ final class LspCoordinator {
 
         /**
          * Saves {@code buffer} without waiting: the write runs off the FX thread and {@code then} hears on it whether
-         * it went through (PERF-01, Pauta 6.0.1). This default, for test stand-ins, answers {@link #saveBuffer} at once.
+         * it went through (PERF-01, Pauta 6.2.0). This default, for test stand-ins, answers {@link #saveBuffer} at once.
          */
         default void saveThen(EditorBuffer buffer, Consumer<Boolean> then) {
             then.accept(saveBuffer(buffer));
@@ -802,7 +802,7 @@ final class LspCoordinator {
             return;
         }
         // The package line is scanned from the buffer's text and, for a Maven or Gradle project (jdtls reads its
-        // source folders from the build), the build files looked at: both off the FX thread (PERF-01, Pauta 6.0.1).
+        // source folders from the build), the build files looked at: both off the FX thread (PERF-01, Pauta 6.2.0).
         String text = buffer.text(); // an immutable snapshot
         com.editora.perf.OffFx.then(
                 "LspCoordinator.correctPlainFolderSourceRoot",
@@ -1351,7 +1351,7 @@ final class LspCoordinator {
         if (root == null) {
             return;
         }
-        // The build folder is looked for off the FX thread, per publish (PERF-01, Pauta 6.0.1); the latest
+        // The build folder is looked for off the FX thread, per publish (PERF-01, Pauta 6.2.0); the latest
         // publish's answer for the file wins.
         long mine = ++nonProjectLooks;
         nonProjectLook.put(file, mine);
@@ -1410,7 +1410,7 @@ final class LspCoordinator {
      */
     private void nonProjectImport(Path folder, String message) {
         if (importFailed.add(importKey(LspServerRegistry.JAVA_SERVER_ID, folder))) {
-            // The pom is parsed off the FX thread (PERF-01, Pauta 6.0.1); the failure is said when it lands.
+            // The pom is parsed off the FX thread (PERF-01, Pauta 6.2.0); the failure is said when it lands.
             com.editora.perf.OffFx.then(
                     "JavaImportCheck.unreadablePom",
                     () -> java.util.Optional.ofNullable(JavaImportCheck.unreadablePom(folder.resolve("pom.xml"))),
@@ -1464,7 +1464,7 @@ final class LspCoordinator {
      * or diagnostics, under "Loaded and ready" (eleventh review CO2).
      */
     private void checkModulePoms(Path root) {
-        // The poms are read and parsed off the FX thread (PERF-01, Pauta 6.0.1).
+        // The poms are read and parsed off the FX thread (PERF-01, Pauta 6.2.0).
         com.editora.perf.OffFx.then(
                 "JavaImportCheck.mavenModules",
                 () -> JavaImportCheck.mavenModules(root).stream()
@@ -1778,7 +1778,7 @@ final class LspCoordinator {
      */
     void applySupport() {
         // Which servers run Editora's own copy (a stat or two under the config folder each) is looked at off the
-        // FX thread (PERF-01, Pauta 6.0.1): a command or JDK set since is looked at first, and the support applied
+        // FX thread (PERF-01, Pauta 6.2.0): a command or JDK set since is looked at first, and the support applied
         // when the answers land, never with a command guessed meanwhile.
         if (!launchCommandsKnown()) {
             lookAtLaunchCommands();
@@ -2123,7 +2123,7 @@ final class LspCoordinator {
         if (javafx.application.Platform.isFxApplicationThread()
                 && !LspServerCommands.ownCopyKnown(serverId, command, configDir(), jdk)) {
             // Not looked at yet (a command typed a moment ago): looked at off the FX thread, and the support
-            // applied again when it lands; until then the command as set (PERF-01, Pauta 6.0.1).
+            // applied again when it lands; until then the command as set (PERF-01, Pauta 6.2.0).
             lookAtLaunchCommands();
             return command == null ? "" : command;
         }
@@ -2386,7 +2386,7 @@ final class LspCoordinator {
             return; // the folder's own TypeScript is still being looked for: one question at a time
         }
         // Where the folder's own TypeScript could be is taken here; it is looked for, and its version read, off the
-        // FX thread (PERF-01, Pauta 6.0.1). Then the question.
+        // FX thread (PERF-01, Pauta 6.2.0). Then the question.
         String ts = com.editora.lsp.TypeScriptServer.SERVER_ID;
         boolean tsOn = serverEnabled(ts);
         boolean astroOn = serverEnabled(ASTRO_SERVER_ID);
@@ -2601,7 +2601,7 @@ final class LspCoordinator {
 
     /**
      * Runs {@code then} on the FX thread once a server root for {@code b}'s file lands from its look off the FX
-     * thread (PERF-01, Pauta 6.0.1): for a caller that must not decide on a root not known yet.
+     * thread (PERF-01, Pauta 6.2.0): for a caller that must not decide on a root not known yet.
      */
     void afterRootLearned(EditorBuffer b, Runnable then) {
         Path file = lspPath(b);
@@ -3022,7 +3022,7 @@ final class LspCoordinator {
             lspRootFor(buffer, serverId); // asked now, so a root not known yet is seen here
             if (rootColdAsks != coldBefore) {
                 waitingForRoot.add(buffer);
-                // The server's root is being looked for off the FX thread (PERF-01, Pauta 6.0.1): the buffer
+                // The server's root is being looked for off the FX thread (PERF-01, Pauta 6.2.0): the buffer
                 // syncs again when it lands (rootLearned), as it is, rather than opening under a guessed root.
                 return;
             }
@@ -3163,7 +3163,7 @@ final class LspCoordinator {
         }
         // The rest asks the disk (marker files up the folders): answered from a memory a look off the FX thread
         // fills; a key not looked at yet answers null ("not known yet") and syncs the buffer when it lands
-        // (PERF-01, Pauta 6.0.1).
+        // (PERF-01, Pauta 6.2.0).
         LspRootMemo.Key key = new LspRootMemo.Key(ops.lspProjectRoot(), file, serverId, lspManager.looseRoot());
 
         // Only a loose Java file reads its package line from the text (an immutable snapshot: no copy here).
@@ -3535,7 +3535,7 @@ final class LspCoordinator {
         }
         Path folder = untitledLspFolder;
         if (folder == null) {
-            // The made-up folder is made off the FX thread (PERF-01, Pauta 6.0.1): the buffer is served once it is
+            // The made-up folder is made off the FX thread (PERF-01, Pauta 6.2.0): the buffer is served once it is
             // there, and syncs again then.
             if (!untitledFolderMaking) {
                 untitledFolderMaking = true;
@@ -3788,7 +3788,7 @@ final class LspCoordinator {
         }
         // Maven only: jdtls compiles a Gradle project into Buildship's bin/, which then shows in `git status`;
         // that is for Build Project, run on purpose, to do (re-review CN3, owner decision). The pom is looked for
-        // off the FX thread (PERF-01, Pauta 6.0.1).
+        // off the FX thread (PERF-01, Pauta 6.2.0).
         com.editora.perf.OffFx.then(
                 "LspCoordinator.buildAfterImport",
                 () -> roots.keySet().stream()
@@ -3976,7 +3976,7 @@ final class LspCoordinator {
                 || lspManager.startupError(LspServerRegistry.JAVA_SERVER_ID, root) != null) { // the whole import threw
             return;
         }
-        // The root's pom is parsed off the FX thread (PERF-01, Pauta 6.0.1).
+        // The root's pom is parsed off the FX thread (PERF-01, Pauta 6.2.0).
         com.editora.perf.OffFx.then(
                 "JavaImportCheck.unreadablePom",
                 () -> JavaImportCheck.unreadablePom(root.resolve("pom.xml")) != null,
@@ -4054,7 +4054,7 @@ final class LspCoordinator {
                     problems.forEach((at, listed) -> modelError(at, listed)); // its pom's model failed (CK2, CJ2)
                 }
                 // A source file of a pom-packaging module is never checked (fourteenth CJ3): the poms are read off
-                // the FX thread (PERF-01, Pauta 6.0.1).
+                // the FX thread (PERF-01, Pauta 6.2.0).
                 List<Path> files = new java.util.ArrayList<>();
                 host.forEachBuffer(b -> {
                     Path p = lspPath(b);
@@ -4141,7 +4141,7 @@ final class LspCoordinator {
 
     /**
      * TEST SEAM — how many failed imports are still waiting to be said ({@link #sayOnceReasoned}), so a test can tell
-     * that what one was going to say has been said (QUAL-07, Pauta 6.0.1). FX thread only.
+     * that what one was going to say has been said (QUAL-07, Pauta 6.2.0). FX thread only.
      */
     int reasonedSaysPendingForTest() {
         return reasonedSaysPending;
@@ -4391,7 +4391,7 @@ final class LspCoordinator {
             if (built.isEmpty()) {
                 return;
             }
-            // Whether each root is a Maven project is looked at off the FX thread (PERF-01, Pauta 6.0.1).
+            // Whether each root is a Maven project is looked at off the FX thread (PERF-01, Pauta 6.2.0).
             Map<Path, @Nullable Path> roots = new java.util.LinkedHashMap<>();
             built.forEach(path -> roots.put(path, lspManager.javaSessionRoot(path)));
             boolean wide = projectWideProblems;
@@ -5275,7 +5275,7 @@ final class LspCoordinator {
                         () -> !edits.isEmpty() || bashToolFound("shfmt"), // a no-op edit: shfmt ran
                         logged));
                 // Whether shfmt is there is never guessed: a path nothing has looked at yet is looked at off the FX
-                // thread first, "Formatting…" standing meanwhile (PERF-01, Pauta 6.0.1).
+                // thread first, "Formatting…" standing meanwhile (PERF-01, Pauta 6.2.0).
                 if (edits.isEmpty()
                         && failure == null
                         && BashLspUi.isBash(serverId)

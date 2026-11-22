@@ -42,7 +42,7 @@ final class NewMavenProjectSession {
         Project project = projects.createOrGet(name, root);
         projects.save();
         // The seeding looks at the new folder and writes the project's session: off the FX thread (PERF-01, Pauta
-        // 6.0.1), on the thread a window's session is read on, and the window opens once it is done.
+        // 6.2.0), on the thread a window's session is read on, and the window opens once it is done.
         java.util.concurrent.Executor work =
                 windows != null ? windows.sessionReads : com.editora.process.BlockingTasks.named("maven-seed");
         java.util.concurrent.CompletableFuture<Void> seeded = java.util.concurrent.CompletableFuture.runAsync(

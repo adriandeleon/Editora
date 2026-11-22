@@ -56,7 +56,7 @@ final class TerminalOpsHost implements TerminalCoordinator.Ops {
 
     @Override
     public void openLink(java.nio.file.Path file, int line, int column) {
-        // Folder or file: looked at off the FX thread (PERF-01, Pauta 6.0.1).
+        // Folder or file: looked at off the FX thread (PERF-01, Pauta 6.2.0).
         com.editora.perf.OffFx.then("TerminalOpsHost.openLink", () -> java.nio.file.Files.isDirectory(file), folder -> {
             if (Boolean.TRUE.equals(folder.value())) {
                 mc.openAndNavigate(file, -1); // reveals it in the Project tree

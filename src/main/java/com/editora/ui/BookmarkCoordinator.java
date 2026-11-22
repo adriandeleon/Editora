@@ -189,7 +189,7 @@ final class BookmarkCoordinator {
         if (file == null) {
             return;
         }
-        // a folder or a file: looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        // a folder or a file: looked at off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then("bookmark-look", () -> java.nio.file.Files.isDirectory(file), folder -> {
             if (folder.or(false)) {
                 addFolderBookmark(file);

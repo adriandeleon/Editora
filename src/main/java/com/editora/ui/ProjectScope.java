@@ -25,7 +25,7 @@ import org.jspecify.annotations.Nullable;
  * buffer, and re-reading would be disk I/O on the FX thread for a value that changes only when someone edits
  * it. {@link #reload()} reads it again (an edited file, a Settings change in Project scope, a trust decision).
  *
- * <p>Every read is made off the FX thread (PERF-01, Pauta 6.0.1) and applied when it lands, under a generation
+ * <p>Every read is made off the FX thread (PERF-01, Pauta 6.2.0) and applied when it lands, under a generation
  * guard, so a slower, older read never replaces a newer one. Meanwhile the scope answers the last values it knew
  * of this root: after a {@link #reload()}, those read before it, until the new read lands and the listeners
  * re-apply. A root whose file has never been read here (a window's first ask is normally answered by the read

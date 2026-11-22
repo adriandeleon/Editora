@@ -199,7 +199,7 @@ final class BreakpointGroups {
         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(tr("debug.export.filter"), "*.json"));
         chooser.setInitialFileName(fileName(group));
         Path root = ops.projectRoot();
-        ChooserStart.set(chooser, root); // no look at the disk on the FX thread first (PERF-01, Pauta 6.0.1)
+        ChooserStart.set(chooser, root); // no look at the disk on the FX thread first (PERF-01, Pauta 6.2.0)
         java.io.File chosen = ChooserStart.show(chooser, chooseSave);
         if (chosen == null) {
             return;
@@ -207,7 +207,7 @@ final class BreakpointGroups {
         var breakpoints = exported(entries, root);
         var members = exportedMembers(entries);
         int count = entries.size();
-        // The JSON is made and written off the FX thread (PERF-01, Pauta 6.0.1); the status says how it went.
+        // The JSON is made and written off the FX thread (PERF-01, Pauta 6.2.0); the status says how it went.
         DebugPlanning.offFx(
                 "breakpoints-export",
                 () -> Files.writeString(chosen.toPath(), BreakpointExport.write(breakpoints, members)),
@@ -293,12 +293,12 @@ final class BreakpointGroups {
         chooser.setTitle(tr("command.debug.importBreakpoints"));
         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(tr("debug.export.filter"), "*.json"));
         Path root = ops.projectRoot();
-        ChooserStart.set(chooser, root); // no look at the disk on the FX thread first (PERF-01, Pauta 6.0.1)
+        ChooserStart.set(chooser, root); // no look at the disk on the FX thread first (PERF-01, Pauta 6.2.0)
         java.io.File chosen = ChooserStart.show(chooser, chooseOpen);
         if (chosen == null) {
             return;
         }
-        // Measured, read, parsed and each file looked for off the FX thread (PERF-01, Pauta 6.0.1); set on it.
+        // Measured, read, parsed and each file looked for off the FX thread (PERF-01, Pauta 6.2.0); set on it.
         DebugPlanning.offFx(
                 "breakpoints-import",
                 () -> {

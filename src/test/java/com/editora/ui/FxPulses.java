@@ -6,7 +6,7 @@ import java.util.concurrent.TimeUnit;
 import javafx.animation.AnimationTimer;
 
 /**
- * Waits for the JavaFX toolkit to run pulses (QUAL-07, Pauta 6.0.1: wait on the thing itself, not for a while). A
+ * Waits for the JavaFX toolkit to run pulses (QUAL-07, Pauta 6.2.0: wait on the thing itself, not for a while). A
  * pulse is when the scene applies CSS, lays out and renders, so what a test means by "let the layout settle" is a
  * pulse or two, counted, not a pause.
  */

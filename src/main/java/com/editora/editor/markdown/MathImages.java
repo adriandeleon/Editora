@@ -16,7 +16,7 @@ import org.scilab.forge.jlatexmath.TeXFormula;
 
 /**
  * Renders LaTeX math (the {@code MarkdownMath} nodes of the parse) to JavaFX nodes via JLaTeXMath. The LaTeX parse and
- * the rasterizing never run on the FX thread (PERF-01, Pauta 6.0.1): the threads that parse a document for the preview,
+ * the rasterizing never run on the FX thread (PERF-01, Pauta 6.2.0): the threads that parse a document for the preview,
  * a popup or the agent panel {@linkplain #warm warm} its formulas into a bounded LRU cache keyed by {@code (theme,
  * style, size, latex)}, and a node asked for on the FX thread answers from that cache. A formula the cache does not
  * hold yet shows as an empty image of the same style, rasterized off the thread ({@link #SITE}) and put in when it

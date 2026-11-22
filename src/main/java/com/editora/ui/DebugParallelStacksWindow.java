@@ -40,7 +40,7 @@ import static com.editora.i18n.Messages.tr;
  * the stacks again — pausing a running program for a moment, as Thread Dump does.
  *
  * <p>A graph laid out in two directions is not a list a virtualized control can show, and every frame of it is a Tab
- * stop, so the window draws a named number of boxes and of frames in a box instead (PERF-08, Pauta 6.0.1): the first
+ * stop, so the window draws a named number of boxes and of frames in a box instead (PERF-08, Pauta 6.2.0): the first
  * {@link #MAX_BOXES} boxes, the roots first and each box after the one below it, so what is drawn stays one tree; and
  * in a box its innermost {@link #MAX_BOX_FRAMES} frames, with a row that says how many more there are. The note says
  * how many boxes were left out, and Copy has the whole tree.

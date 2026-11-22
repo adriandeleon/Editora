@@ -544,7 +544,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /**
      * Where the watches are registered and cancelled, in order: a registration is a system call (and with the
-     * polling watcher a listing of the folder), off the FX thread (PERF-01, Pauta 6.0.1).
+     * polling watcher a listing of the folder), off the FX thread (PERF-01, Pauta 6.2.0).
      */
     private final java.util.concurrent.ExecutorService watchPool =
             java.util.concurrent.Executors.newSingleThreadExecutor(
@@ -947,7 +947,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         ProjectMapPreview from = mapView.focusedCard();
         Path anchor = mapView.gotoAnchor(from);
         // where the finder starts, and whether the picked file is there, are looked at off the FX thread (PERF-01,
-        // Pauta 6.0.1)
+        // Pauta 6.2.0)
         com.editora.perf.OffFx.then(
                 "map-goto-look",
                 () -> anchor == null ? root : java.nio.file.Files.isDirectory(anchor) ? anchor : anchor.getParent(),
@@ -1811,7 +1811,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (folder == null || System.currentTimeMillis() - mapNewFileAt > MAP_NEW_FILE_WINDOW_MS) {
             return false;
         }
-        // an opened tab's path is a file: no look at the disk needed (PERF-01, Pauta 6.0.1)
+        // an opened tab's path is a file: no look at the disk needed (PERF-01, Pauta 6.2.0)
         if (!com.editora.config.PathKeys.isAtOrUnder(file, folder)) {
             return false;
         }
@@ -2416,7 +2416,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         java.nio.file.WatchService service = watchService;
         boolean hidden = showHidden;
         // Registering a folder is a call into the system (the polling watcher lists it and stats every entry), and
-        // the Java style's folders are read from the build: made off the FX thread (PERF-01, Pauta 6.0.1), and a
+        // the Java style's folders are read from the build: made off the FX thread (PERF-01, Pauta 6.2.0), and a
         // folder that changed before it landed is listed again. Until it lands the Map treats the new folders as
         // not watched, as it does any folder no watch covers.
         try {
@@ -2980,7 +2980,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /**
      * What the tree hands {@link RenameParticipant#willRename} as its {@code proceed}: answering it starts the move,
-     * which is made off the FX thread (PERF-01, Pauta 6.0.1); {@link #whenMoved} hears when it has landed — the
+     * which is made off the FX thread (PERF-01, Pauta 6.2.0); {@link #whenMoved} hears when it has landed — the
      * file moved and the open tabs following it — or that it was not made.
      */
     public static final class MoveProceed implements Consumer<Boolean> {
@@ -3726,7 +3726,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 return;
             }
             Path target = dir.resolve(name);
-            // made off the FX thread (PERF-01, Pauta 6.0.1); the tree shows it when it is there
+            // made off the FX thread (PERF-01, Pauta 6.2.0); the tree shows it when it is there
             com.editora.perf.OffFx.then(
                     "project-new-folder",
                     () -> {
@@ -3772,7 +3772,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     if (target.equals(path)) {
                         return; // the same name: nothing to do
                     }
-                    // whether the name is taken is looked at off the FX thread (PERF-01, Pauta 6.0.1)
+                    // whether the name is taken is looked at off the FX thread (PERF-01, Pauta 6.2.0)
                     com.editora.perf.OffFx.then(
                             "project-rename-look",
                             () -> Files.exists(target) && !caseOnlyRename(path, target),
@@ -3834,7 +3834,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /**
-     * Renames {@code path} to {@code target} off the FX thread (PERF-01, Pauta 6.0.1); then, on it, the tree and the
+     * Renames {@code path} to {@code target} off the FX thread (PERF-01, Pauta 6.2.0); then, on it, the tree and the
      * open tabs follow, and {@code proceed} hears that it landed.
      */
     private void move(Path path, Path target, MoveProceed proceed) {
@@ -3981,7 +3981,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return;
         }
         moving = true;
-        // What is there, what is a folder and what holds Java are looked at off the FX thread (PERF-01, Pauta 6.0.1).
+        // What is there, what is a folder and what holds Java are looked at off the FX thread (PERF-01, Pauta 6.2.0).
         com.editora.perf.OffFx.then("project-move-look", () -> MovePlan.into(sources, targetDir), looked -> {
             MovePlan plan = looked.value();
             if (plan == null || !plan.targetIsFolder()) {
@@ -4114,7 +4114,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 next.run();
                 return;
             }
-            // the move itself off the FX thread (PERF-01, Pauta 6.0.1); then the tabs follow, then the next one
+            // the move itself off the FX thread (PERF-01, Pauta 6.2.0); then the tabs follow, then the next one
             com.editora.perf.OffFx.then(
                     "project-move",
                     () -> {
@@ -4181,7 +4181,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return;
         }
         moving = true;
-        // Where each item is now is looked at off the FX thread (PERF-01, Pauta 6.0.1).
+        // Where each item is now is looked at off the FX thread (PERF-01, Pauta 6.2.0).
         com.editora.perf.OffFx.then("project-move-look", () -> MovePlan.back(moves), looked -> {
             MovePlan plan = looked.value();
             if (plan == null) {
@@ -4243,7 +4243,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return;
         }
         // Which of them are files, and which would go to the trash, is looked at off the FX thread (PERF-01, Pauta
-        // 6.0.1); then the question. A second Delete meanwhile does nothing.
+        // 6.2.0); then the question. A second Delete meanwhile does nothing.
         deleting = true;
         DeleteOperations operations = deleteOperations;
         com.editora.perf.OffFx.then(
@@ -4304,7 +4304,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return;
         }
         // The check that nothing changed, the deletes and the moves to the trash (which can run `gio trash` and
-        // wait for it) are made off the FX thread (PERF-01, Pauta 6.0.1); what they did is shown back on it.
+        // wait for it) are made off the FX thread (PERF-01, Pauta 6.2.0); what they did is shown back on it.
         deleteWork.execute(() -> {
             DeleteOutcome outcome = deleteNow(files, approval);
             onFx(() -> afterDelete(files, outcome, completion));

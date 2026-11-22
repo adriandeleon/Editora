@@ -9,7 +9,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.http.HttpFile;
 
 /**
- * A {@code .http} buffer's requests, parsed off the FX thread (PERF-01, Pauta 6.0.1) and kept per document version:
+ * A {@code .http} buffer's requests, parsed off the FX thread (PERF-01, Pauta 6.2.0) and kept per document version:
  * the run commands (Run Request, Debug Request, Run All, Run again) ask for them here instead of parsing the file
  * where they are pressed. A version not parsed yet is parsed on a virtual thread and the command goes on when it
  * lands; a second command for the same buffer meanwhile is refused (it finds the buffer busy). FX thread only.

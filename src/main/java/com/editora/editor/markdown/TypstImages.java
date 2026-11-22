@@ -263,7 +263,7 @@ public final class TypstImages {
             @Nullable Path fileDir,
             @Nullable Path root,
             @Nullable String displayName) {
-        // The key is a hash of the whole source: worked out off the FX thread (PERF-01, Pauta 6.0.1). A source seen
+        // The key is a hash of the whole source: worked out off the FX thread (PERF-01, Pauta 6.2.0). A source seen
         // before has its key remembered, so an unchanged page is shown from the cache at once.
         String tag = fileDir + "\u0000" + root;
         String knownKey = KEYS.knownKey(tag, source);

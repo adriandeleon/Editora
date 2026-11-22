@@ -87,7 +87,7 @@ final class LspWorkspaceEdits {
 
     /**
      * Runs {@code next} on the FX thread with a view of the disk for {@code paths}: a {@link WorkspaceFileSnapshot}
-     * taken on the workspace worker first, local or remote (PERF-01, Pauta 6.0.1) — on a remote host every stat is
+     * taken on the workspace worker first, local or remote (PERF-01, Pauta 6.2.0) — on a remote host every stat is
      * a round trip, and a rename touching a few dozen files froze the window for the length of them. No paths, no
      * look.
      */
@@ -882,7 +882,7 @@ final class LspWorkspaceEdits {
         retireDeleted(deletes, targets);
         workspaceExecutor.execute(() -> {
             // The journal's COMMIT line (written and synced to disk) goes first, here, off the FX thread (PERF-01,
-            // Pauta 6.0.1); the staged copies are removed only after it.
+            // Pauta 6.2.0); the staged copies are removed only after it.
             transaction.journal.committed();
             staging.commitRenames(renames);
             staging.commitCreates(creates);
@@ -959,7 +959,7 @@ final class LspWorkspaceEdits {
             }
             saving.add(b);
             boolean dirty = b.isDirty();
-            // Written off the FX thread; what follows a save goes on when it has landed (PERF-01, Pauta 6.0.1).
+            // Written off the FX thread; what follows a save goes on when it has landed (PERF-01, Pauta 6.2.0).
             java.util.function.Consumer<Boolean> landed = saved -> {
                 if (saved && unmanaged && path != null) {
                     written.add(new com.editora.lsp.LspManager.WatchedFile(
@@ -1158,7 +1158,7 @@ final class LspWorkspaceEdits {
             List<com.editora.lsp.WorkspaceEditJournal.Interrupted> found = new java.util.ArrayList<>();
             for (var interrupted : com.editora.lsp.WorkspaceEditJournal.pending(directory)) {
                 if (interrupted.touches(root)) {
-                    interrupted.originals(); // what the question names, looked at here (PERF-01, Pauta 6.0.1)
+                    interrupted.originals(); // what the question names, looked at here (PERF-01, Pauta 6.2.0)
                     found.add(interrupted);
                 } else {
                     com.editora.lsp.WorkspaceEditJournal.release(interrupted); // another project's
@@ -1191,7 +1191,7 @@ final class LspWorkspaceEdits {
                 });
             case KEEP ->
                 workspaceExecutor.execute(
-                        () -> { // looked at and forgotten off the FX thread (PERF-01, Pauta 6.0.1)
+                        () -> { // looked at and forgotten off the FX thread (PERF-01, Pauta 6.2.0)
                             List<Path> left = interrupted.leftovers();
                             interrupted.dismiss();
                             Platform.runLater(() ->

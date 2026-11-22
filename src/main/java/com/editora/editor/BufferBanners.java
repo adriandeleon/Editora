@@ -64,7 +64,7 @@ final class BufferBanners {
 
     /**
      * Whether a local file may be written, when the window has not said: the window injects an answer from memory, as
-     * the file was looked at off the FX thread when it was read (PERF-01, Pauta 6.0.1).
+     * the file was looked at off the FX thread when it was read (PERF-01, Pauta 6.2.0).
      */
     static volatile java.util.function.Predicate<java.nio.file.Path> writableCheck = java.nio.file.Files::isWritable;
 
@@ -90,7 +90,7 @@ final class BufferBanners {
             bar.setReason(viewModeReason);
             Button editButton = bar.enableEditing();
             Label note = bar.note();
-            // answered from what was looked at off the FX thread as the file was read (PERF-01, Pauta 6.0.1)
+            // answered from what was looked at off the FX thread as the file was read (PERF-01, Pauta 6.2.0)
             boolean canEdit = b.path == null || (writableOnDisk != null ? writableOnDisk : writableCheck.test(b.path));
             // A non-writable file offers "Edit as Administrator" when elevation is available (Linux/pkexec),
             // instead of a dead-end "read-only on disk" note. Enabling editing routes the eventual Save

@@ -30,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-01 (Pauta 6.0.1), the Markdown handlers: each test drives on the FX thread, the way a key, a click or a
+ * PERF-01 (Pauta 6.2.0), the Markdown handlers: each test drives on the FX thread, the way a key, a click or a
  * command does, what used to scan or parse the whole document there — typing {@code *}, Enter in a list and in a
  * table, Backspace on an empty item, Tab, the heading and fence commands, the heading crumbs, the table of
  * contents, a footnote, the link commands and Ctrl-click, Format Document, the preview's Copy, the agent's

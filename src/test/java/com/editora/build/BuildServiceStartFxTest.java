@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@link BuildService} starts its build off the FX thread (PERF-01, Pauta 6.0.1): a second press while the first
+ * {@link BuildService} starts its build off the FX thread (PERF-01, Pauta 6.2.0): a second press while the first
  * build is being started starts nothing, a Stop then ends the build once it has started, and the start is
  * reported before the output.
  */

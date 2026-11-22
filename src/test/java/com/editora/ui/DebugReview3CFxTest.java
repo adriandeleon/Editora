@@ -182,7 +182,7 @@ class DebugReview3CFxTest {
             });
             // What the fix is for: the UI's red on the editor theme's ground. After it, each console draws the UI
             // theme's red on the UI theme's ground, a pair StyleContrastTest holds at 4.5:1 in both Editora themes
-            // (lightTintedText…, darkTintedTextStaysAa), so no ratio is computed here (ICON-14, Pauta 6.0.1).
+            // (lightTintedText…, darkTintedTextStaysAa), so no ratio is computed here (ICON-14, Pauta 6.2.0).
             String which = themes[0] + " UI, " + themes[1] + " editor";
             java.util.Map<String, String> ui = StyleContrastTest.palette(
                     themes[0].toLowerCase(java.util.Locale.ROOT).replace(' ', '-'));

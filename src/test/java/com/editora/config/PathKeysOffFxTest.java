@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@link PathKeys#canonical} never resolves a path on the FX thread (PERF-01, Pauta 6.0.1): there it answers what
+ * {@link PathKeys#canonical} never resolves a path on the FX thread (PERF-01, Pauta 6.2.0): there it answers what
  * it knew before the last invalidation, or the plain absolute form, and resolves behind; off it, it resolves now.
  */
 @Tag("fx")

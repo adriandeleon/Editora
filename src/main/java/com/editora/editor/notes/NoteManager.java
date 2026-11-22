@@ -246,7 +246,7 @@ public final class NoteManager implements LineMarks.Carrier {
     /**
      * Replaces the note set from a persisted list (without firing {@code onChanged}). Each note shows at its stored
      * offset at once; finding it in the current text — a search of the document — runs off the FX thread (PERF-01,
-     * Pauta 6.0.1) on a snapshot, and its positions are applied when it lands, if the text is unchanged (worked out
+     * Pauta 6.2.0) on a snapshot, and its positions are applied when it lands, if the text is unchanged (worked out
      * again otherwise). {@code movedThen} hears then whether anything moved or was (un)orphaned, so the controller
      * can persist the self-healed state.
      */

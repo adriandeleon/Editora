@@ -11,7 +11,7 @@ import com.editora.config.SharedConfig;
 
 /**
  * The disk work a window's set-up would otherwise do on the FX thread, done ahead by the launch on its
- * config-prefetch thread, which {@code App.start} waits for once (PERF-01, Pauta 6.0.1). Each piece leaves its
+ * config-prefetch thread, which {@code App.start} waits for once (PERF-01, Pauta 6.2.0). Each piece leaves its
  * answer where the window looks for it: the user's themes in {@link Themes}, the zoomed stylesheets in
  * {@link com.editora.editor.UiZoom}, the recent files and search history in {@link SharedConfig}, and the
  * probes of the language servers', the debugger's and the configured tools' files in their caches.

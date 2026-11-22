@@ -28,7 +28,7 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * The one way a command finds the control it acts on when that control is a row of a right-click menu or a button
- * that only the mouse reached (KBD-01 and MENU-05, Pauta 6.0.1). A control {@linkplain #bind binds} what a command
+ * that only the mouse reached (KBD-01 and MENU-05, Pauta 6.2.0). A control {@linkplain #bind binds} what a command
  * does to a node, kept in the node's own properties (never in a static map, so a closed window is not kept alive),
  * or gives a node the menu a right-click would open there ({@link #menu}), whose rows are {@linkplain #row marked}
  * with their commands. A command then looks from where the keyboard is, up ({@link #find}), and runs the first

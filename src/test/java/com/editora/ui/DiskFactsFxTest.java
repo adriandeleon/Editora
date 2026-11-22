@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@link DiskFacts}: the FX thread answers from memory and never looks itself (PERF-01, Pauta 6.0.1); a look lands
+ * {@link DiskFacts}: the FX thread answers from memory and never looks itself (PERF-01, Pauta 6.2.0); a look lands
  * later and tells the asker; a change on disk is seen once the kept answer is old; a failed look teaches nothing.
  */
 @Tag("fx")

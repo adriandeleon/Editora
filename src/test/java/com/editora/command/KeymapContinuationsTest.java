@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** The keys the prefix hint lists after a pending prefix (KBD-14 in Pauta 6.0.1). */
+/** The keys the prefix hint lists after a pending prefix (KBD-14 in Pauta 6.2.0). */
 class KeymapContinuationsTest {
 
     private KeymapManager keymap;

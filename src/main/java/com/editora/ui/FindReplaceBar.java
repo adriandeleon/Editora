@@ -81,7 +81,7 @@ public class FindReplaceBar extends HBox {
 
     /**
      * Every search, Replace and Replace All runs on {@link #SEARCH_POOL} over a snapshot of the text and lands
-     * on the FX thread (PERF-01, Pauta 6.0.1: no searching of any size there; a search of a 45 MB buffer took a
+     * on the FX thread (PERF-01, Pauta 6.2.0: no searching of any size there; a search of a 45 MB buffer took a
      * third of a second, again after every edit made with the bar open). The latest request wins; a result is
      * applied only to the document version it was found in.
      */
@@ -658,7 +658,7 @@ public class FindReplaceBar extends HBox {
      * matches around it, makes that page the current match list and hands the result to {@code then}.
      *
      * <p>The text is the buffer's shared snapshot, not a fresh {@code area.getText()}, and it is searched off the
-     * FX thread whatever its size (PERF-01, Pauta 6.0.1), the regex compiled there too: {@code then} runs later,
+     * FX thread whatever its size (PERF-01, Pauta 6.2.0), the regex compiled there too: {@code then} runs later,
      * and not at all if the search was superseded by another, the document was edited meanwhile (that edit's own
      * re-search is already on its way) or the bar has moved to another buffer or closed.
      */
@@ -753,7 +753,7 @@ public class FindReplaceBar extends HBox {
         forgetMatches();
         buffer.clearSearchMatches();
         String query = findField.getText();
-        // The preview's text is searched off the FX thread (PERF-01, Pauta 6.0.1): the count lands with the marks.
+        // The preview's text is searched off the FX thread (PERF-01, Pauta 6.2.0): the count lands with the marks.
         preview.search(query, caseSensitive.isSelected(), regex.isSelected(), wholeWord.isSelected(), found -> {
             countLabel.setText(found == 0 ? "" : tr("find.count", preview.current() + 1, found));
             if (found == 0 && !query.isEmpty() && announce) {
@@ -894,7 +894,7 @@ public class FindReplaceBar extends HBox {
             return;
         }
         // The held page answers when it covers the selection; otherwise the selection is checked, and the
-        // replacement worked out, off the FX thread on a snapshot (PERF-01, Pauta 6.0.1).
+        // replacement worked out, off the FX thread on a snapshot (PERF-01, Pauta 6.2.0).
         Boolean held = matchesCurrent(buffer, query) && matches.covers(start) ? matches.indexOf(start, end) >= 0 : null;
         String text = buffer.getVisibleContent();
         long version = buffer.docVersion();
@@ -1005,7 +1005,7 @@ public class FindReplaceBar extends HBox {
 
     /**
      * Replace All: every match and its replacement are worked out off the FX thread on a snapshot (PERF-01, Pauta
-     * 6.0.1) and applied on the FX thread as one undo step, only to the document version they were found in. Text
+     * 6.2.0) and applied on the FX thread as one undo step, only to the document version they were found in. Text
      * typed meanwhile has the edits worked out again on the new text, up to {@code tries} times.
      */
     private void replaceAll(int tries) {

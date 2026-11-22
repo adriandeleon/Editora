@@ -87,7 +87,7 @@ final class CaretProblems {
         return severity + ": " + message + code;
     }
 
-    /** The card lists this many problems at most, and says how many there are past them (PERF-08, Pauta 6.0.1). */
+    /** The card lists this many problems at most, and says how many there are past them (PERF-08, Pauta 6.2.0). */
     static final int MAX_SHOWN = 20;
 
     /** The card's problem section: one wrapped label per problem, or null for none. Plain text, never markup. */

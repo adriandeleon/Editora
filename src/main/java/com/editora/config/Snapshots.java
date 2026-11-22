@@ -29,7 +29,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Deep copies of the config stores, made on the FX thread so the {@code config-writer} thread can serialize a
- * store while the FX thread goes on changing the live one (PERF-01, Pauta 6.0.1: no JSON on the FX thread). A
+ * store while the FX thread goes on changing the live one (PERF-01, Pauta 6.2.0: no JSON on the FX thread). A
  * copy is a walk of the object graph, with no parsing and no text: the store's own classes are copied field by
  * field, collections and maps into new ones of the same kind, records through their canonical constructor, and
  * a JSON tree with {@link JsonNode#deepCopy()}. What cannot change (strings, numbers, enums, paths, time values)

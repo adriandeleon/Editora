@@ -174,7 +174,7 @@ public final class OverlayInput {
         }
         Label titleLabel = new Label(title);
         titleLabel.getStyleClass().add("palette-title");
-        FormLabels.link(body); // each field reads as its caption (ACC-01, Pauta 6.0.1)
+        FormLabels.link(body); // each field reads as its caption (ACC-01, Pauta 6.2.0)
         FormLabels.nameAfterTitle(body, focus, title);
 
         Button ok = new Button(okLabel);

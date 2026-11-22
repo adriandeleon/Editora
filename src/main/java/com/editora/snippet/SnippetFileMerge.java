@@ -11,7 +11,7 @@ import org.jspecify.annotations.Nullable;
 /**
  * A user snippet file as its entries, for merging two machines' copies of it (settings sync): reads the entries of
  * a file's text, and writes another copy's entries into it. Read and written through Jackson as a
- * {@link UserSnippetFile} (PLAT-14, Pauta 6.0.1): a merged file keeps its key order, and loses its comments. Pure.
+ * {@link UserSnippetFile} (PLAT-14, Pauta 6.2.0): a merged file keeps its key order, and loses its comments. Pure.
  */
 public final class SnippetFileMerge {
 

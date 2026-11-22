@@ -446,7 +446,7 @@ final class LspRefactorings {
                 return;
             }
             Path folder = root.resolve(name.replace('.', java.io.File.separatorChar));
-            // made off the FX thread (PERF-01, Pauta 6.0.1); never a folder tree somewhere else (BN2)
+            // made off the FX thread (PERF-01, Pauta 6.2.0); never a folder tree somewhere else (BN2)
             com.editora.perf.OffFx.then(
                     "refactor-new-package",
                     () -> {
@@ -531,7 +531,7 @@ final class LspRefactorings {
             List<JdtlsRefactor.Destination> targets,
             java.util.function.Consumer<JdtlsRefactor.Destination> onChoose) {
         // Which rows name a folder that is there is looked at off the FX thread before the picker shows (PERF-01,
-        // Pauta 6.0.1), not once per row as it is drawn.
+        // Pauta 6.2.0), not once per row as it is drawn.
         com.editora.perf.OffFx.then("refactor-destinations-look", () -> existingDetails(targets), there -> {
             java.util.Set<String> exist = there.or(java.util.Set.of());
             LspCoordinator.pickOne(

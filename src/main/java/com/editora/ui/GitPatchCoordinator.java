@@ -106,7 +106,7 @@ final class GitPatchCoordinator {
         String content = active.getContent();
         String ending = active.getLineEnding();
         String charset = active.getEffectiveCharset();
-        // Whether the tab holds a patch is a parse of its text: off the FX thread (PERF-01, Pauta 6.0.1).
+        // Whether the tab holds a patch is a parse of its text: off the FX thread (PERF-01, Pauta 6.2.0).
         com.editora.perf.OffFx.then(
                 PATCH_CHECK_SITE, () -> isPatch(title, content) ? patchBytes(content, ending, charset) : null, a -> {
                     checkingPatch = false;

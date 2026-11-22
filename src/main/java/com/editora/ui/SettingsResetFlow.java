@@ -113,7 +113,7 @@ final class SettingsResetFlow {
                 now,
                 backup -> { // without the copy there is no reset
                     // The reset works on JSON trees: made on a copy, on the config writer's thread (PERF-01, Pauta
-                    // 6.0.1), and the result put into the live settings here, field by field.
+                    // 6.2.0), and the result put into the live settings here, field by field.
                     Settings copy = com.editora.config.Snapshots.copy(config.getSettings());
                     config.shared()
                             .afterWrites(
@@ -141,7 +141,7 @@ final class SettingsResetFlow {
 
     /** Lets the user pick a reset backup and puts it back (the settings in force are backed up first). */
     void restore(Window owner) {
-        // Listed off the FX thread (PERF-01, Pauta 6.0.1); the choice is offered when the list lands.
+        // Listed off the FX thread (PERF-01, Pauta 6.2.0); the choice is offered when the list lands.
         Path settingsFile = config.getSettingsFile();
         config.shared().afterWrites(() -> backups(settingsFile), (found, e) -> offerBackups(owner, found));
     }
@@ -205,7 +205,7 @@ final class SettingsResetFlow {
     /**
      * Writes the dated copy of the settings in force, then hands it to {@code then}; says why instead when it
      * cannot. The copy is made on the config writer's thread after the save queued here, so it holds the settings
-     * as they are, not as of the last queued write, and the FX thread waits for neither (PERF-01, Pauta 6.0.1).
+     * as they are, not as of the last queued write, and the FX thread waits for neither (PERF-01, Pauta 6.2.0).
      */
     private void backUp(Window owner, LocalDateTime now, Consumer<Path> then) {
         try {

@@ -51,7 +51,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>A parent pom can manage hundreds of dependencies, and the grid that aligns them is not virtualized: the
  * interactive preview builds a row's nodes only when the row is shown, and shows at most {@link #MAX_ROWS} rows at
- * once (PERF-08, Pauta 6.0.1). Past that a line says how many are shown of how many match, and the filter, which
+ * once (PERF-08, Pauta 6.2.0). Past that a line says how many are shown of how many match, and the filter, which
  * reads every row's text, finds the others. The export builds every row.
  *
  * <p>Self-scrolling; hosts as the Split/Preview side like {@link StructuredTree}. Kept in {@code editor}

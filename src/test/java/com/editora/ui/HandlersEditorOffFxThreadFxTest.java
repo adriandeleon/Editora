@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-01 (Pauta 6.0.1), the editor's handlers: each test drives on the FX thread, the way an event does, what used to
+ * PERF-01 (Pauta 6.2.0), the editor's handlers: each test drives on the FX thread, the way an event does, what used to
  * search or parse the user's text there — Select All Occurrences, Jump to Matching Bracket and Mark Sexp, the caret
  * beside a bracket whose partner is off screen, a whole-document rewrite (a diff apply, a history restore, Markdown
  * Format Document, Convert Indentation), text given to a new tab, an edit that replaces the span a personal note sat
@@ -573,7 +573,7 @@ class HandlersEditorOffFxThreadFxTest {
     /**
      * A record logged on the FX thread is written to the session log and the console by the log's own thread; the
      * status bar's size is counted off the FX thread after an edit; a curl command is converted off it, and its new
-     * tab's text is prepared off it too (PERF-01, Pauta 6.0.1).
+     * tab's text is prepared off it too (PERF-01, Pauta 6.2.0).
      */
     @Test
     void aRecordLoggedOnFxTheSizeAfterAnEditAndACurlImportWorkOffTheFxThread() throws Exception {

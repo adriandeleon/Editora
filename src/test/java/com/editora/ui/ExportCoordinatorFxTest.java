@@ -654,7 +654,7 @@ class ExportCoordinatorFxTest {
         });
     }
 
-    /** PERF-01 (Pauta 6.0.1): whether the file the added extension leads to is there is looked at off the FX thread. */
+    /** PERF-01 (Pauta 6.2.0): whether the file the added extension leads to is there is looked at off the FX thread. */
     @Test
     void theFileTheExtensionLeadsToIsLookedAtOffTheFxThread() throws Exception {
         Path typed = temp.resolve("plan");

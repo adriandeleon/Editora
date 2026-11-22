@@ -245,7 +245,7 @@ class MarkdownPreviewFxTest {
 
     @Test
     void aLongDocumentBuildsOnlyTheBlocksOnScreen() throws Exception {
-        // PERF-08 (Pauta 6.0.1): 5,000 blocks, and the scene holds a screenful of them wherever it is scrolled.
+        // PERF-08 (Pauta 6.2.0): 5,000 blocks, and the scene holds a screenful of them wherever it is scrolled.
         StringBuilder md = new StringBuilder();
         for (int i = 0; i < 5000; i++) {
             md.append("Paragraph number ").append(i).append(".\n\n");

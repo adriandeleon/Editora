@@ -252,7 +252,7 @@ public record XmlServerSettings(
     /**
      * Whether the relative catalog {@code file} is there. Off the FX thread it looks; on it it answers the last look
      * (a catalog not looked at yet is left out, as a missing one is) and looks again behind it, telling the listeners
-     * when the answer changed (PERF-01, Pauta 6.0.1).
+     * when the answer changed (PERF-01, Pauta 6.2.0).
      */
     static boolean catalogThere(Path file) {
         boolean fx;

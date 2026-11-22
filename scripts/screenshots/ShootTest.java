@@ -114,10 +114,10 @@ class ShootTest implements AutoCloseable {
     @Test
     void theVersionReadsAsARelease() throws IOException {
         Path info = dir.resolve("build-info.properties");
-        Files.writeString(info, "build.version=0.29.0-SNAPSHOT\npauta.version=6.0.1\n");
+        Files.writeString(info, "build.version=0.29.0-SNAPSHOT\npauta.version=6.2.0\n");
         Shoot.writeReleaseBuildInfo(info, dir.resolve("override"));
         assertEquals(
-                "build.version=0.29.0\npauta.version=6.0.1\n",
+                "build.version=0.29.0\npauta.version=6.2.0\n",
                 Files.readString(dir.resolve("override/com/editora/build-info.properties")));
     }
 

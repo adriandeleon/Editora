@@ -83,7 +83,7 @@ final class MavenProjectCoordinator {
 
     private static final String DEFAULT_VERSION = "1.0-SNAPSHOT";
 
-    /** The new-project form asks for this many of an archetype's own properties at most (PERF-08, Pauta 6.0.1). */
+    /** The new-project form asks for this many of an archetype's own properties at most (PERF-08, Pauta 6.2.0). */
     static final int MAX_ARCHETYPE_FIELDS = 50;
 
     /** The answer to the archetype consent prompt. */
@@ -236,7 +236,7 @@ final class MavenProjectCoordinator {
      * because a brand-new project has nothing to lose; an existing pom does.
      */
     void updateVersions() {
-        // The walk up to the pom stats a folder per level: off the FX thread (PERF-01, Pauta 6.0.1).
+        // The walk up to the pom stats a folder per level: off the FX thread (PERF-01, Pauta 6.2.0).
         Path from = ops.defaultParentDir();
         com.editora.perf.OffFx.then(
                 "MavenProjectCoordinator.nearestPom", () -> Optional.ofNullable(nearestPom(from)), found -> {
@@ -293,7 +293,7 @@ final class MavenProjectCoordinator {
             return;
         }
         // The pom is read (when it is not open), parsed, and its parent looked for off the FX thread (PERF-01,
-        // Pauta 6.0.1). A second press meanwhile cancels, as it does during the lookups.
+        // Pauta 6.2.0). A second press meanwhile cancels, as it does during the lookups.
         com.editora.editor.EditorBuffer open = ops.openBuffer(pomFile);
         String openText = open == null ? null : open.getContent();
         VersionCheck check = new VersionCheck(() -> {});
@@ -550,7 +550,7 @@ final class MavenProjectCoordinator {
     private void applyEdit(Path pomFile, java.util.function.UnaryOperator<String> edit, int count) {
         com.editora.editor.EditorBuffer open = ops.openBuffer(pomFile);
         if (open == null) {
-            // A closed pom is read, edited and replaced off the FX thread (PERF-01, Pauta 6.0.1).
+            // A closed pom is read, edited and replaced off the FX thread (PERF-01, Pauta 6.2.0).
             com.editora.perf.OffFx.then(
                     "maven-update-versions-write",
                     () -> {
@@ -651,7 +651,7 @@ final class MavenProjectCoordinator {
         if (isPomFile(context)) {
             found = Optional.of(context); // the row or tab of a pom.xml names its own pom: nothing to look at
         } else {
-            // Is it a folder, and which pom is above it: looked at off the FX thread (PERF-01, Pauta 6.0.1).
+            // Is it a folder, and which pom is above it: looked at off the FX thread (PERF-01, Pauta 6.2.0).
             // Until the answer lands the submenu is offered (not hidden), and hidden once the look says there is
             // no pom; its rows ask for the pom when picked.
             found = pomAbove.get(context);
@@ -1033,7 +1033,7 @@ final class MavenProjectCoordinator {
     private void showForm(MavenArchetype archetype, Path parentDir) {
         if (descriptorsFromRepository) {
             // The archetype's descriptor (a jar in ~/.m2, and settings.xml for where that is) is read off the FX
-            // thread, then the form is built with its rows (PERF-01, Pauta 6.0.1).
+            // thread, then the form is built with its rows (PERF-01, Pauta 6.2.0).
             ArchetypeDescriptor.warm(
                     Path.of(userHome()), List.of(archetype), () -> showForm(archetype, parentDir, null, null));
             return;
@@ -1132,7 +1132,7 @@ final class MavenProjectCoordinator {
         BooleanProperty valid = new SimpleBooleanProperty(false);
         Path base = parentDir != null ? parentDir : ops.defaultParentDir();
         // Whether the target folder holds something: looked at off the FX thread as the fields change (PERF-01,
-        // Pauta 6.0.1). Until the answer for the folder typed lands, Create is disabled and the form says it is
+        // Pauta 6.2.0). Until the answer for the folder typed lands, Create is disabled and the form says it is
         // checking; the generation looks again off the FX thread before it writes.
         Runnable[] recheck = {() -> {}};
         DiskFacts<Path, Boolean> occupiedFolders = new DiskFacts<Path, Boolean>(
@@ -1237,7 +1237,7 @@ final class MavenProjectCoordinator {
         // common path never opens this section at all.
         advanced.expandedProperty().addListener((o, was, now) -> {
             if (now && releaseCombo.getItems().isEmpty()) {
-                // The walk of the JDK install roots runs off the FX thread (PERF-01, Pauta 6.0.1); the combo is
+                // The walk of the JDK install roots runs off the FX thread (PERF-01, Pauta 6.2.0); the combo is
                 // editable meanwhile, so a release can be typed before the list lands.
                 com.editora.perf.OffFx.then(
                         "MavenProjectCoordinator.javaReleases",
@@ -1426,7 +1426,7 @@ final class MavenProjectCoordinator {
         }
         Path parent = java.util.Objects.requireNonNull(spec.parentDir(), "a valid spec has a folder");
         // The folder made, the pom there read, the scratch folder made and the archetype's descriptor read off the
-        // FX thread (PERF-01, Pauta 6.0.1); the generation starts back on it.
+        // FX thread (PERF-01, Pauta 6.2.0); the generation starts back on it.
         DebugPlanning.offFx(
                 "maven-generate-plan",
                 () -> {
@@ -1647,7 +1647,7 @@ final class MavenProjectCoordinator {
      * because a generated project that exists is worth more than one abandoned half-way through a nicety.
      */
     private void afterGenerate(Path projectDir, MavenProjectSpec spec, MavenProjectExtras extras, boolean module) {
-        // The pom is edited, and read again for its versions, off the FX thread (PERF-01, Pauta 6.0.1).
+        // The pom is edited, and read again for its versions, off the FX thread (PERF-01, Pauta 6.2.0).
         DebugPlanning.offFx(
                 "maven-generate-follow-up",
                 () -> {
@@ -1703,7 +1703,7 @@ final class MavenProjectCoordinator {
                     all, path -> fetchMetadataOrThrow(path, new AtomicBoolean()), lookupPool(), () -> false);
             Map<String, String> dependencyUpgrades = CentralVersions.upgradesOnly(dependencies, latest);
             Map<String, String> pluginUpgrades = CentralVersions.upgradesOnly(plugins, latest);
-            // written here, off the FX thread (PERF-01, Pauta 6.0.1)
+            // written here, off the FX thread (PERF-01, Pauta 6.2.0)
             String failed = dependencyUpgrades.isEmpty() && pluginUpgrades.isEmpty()
                     ? null
                     : editPomNow(
@@ -1832,7 +1832,7 @@ final class MavenProjectCoordinator {
         ops.refreshProjectTree();
         // Look at what the archetype actually wrote rather than guessing from the coordinates: quickstart
         // gives <package>.App, a webapp archetype gives no main at all. Null simply means no run
-        // configuration is seeded. Read off the FX thread (PERF-01, Pauta 6.0.1).
+        // configuration is seeded. Read off the FX thread (PERF-01, Pauta 6.2.0).
         Path pom = projectDir.resolve("pom.xml");
         DebugPlanning.offFx(
                 "maven-generate-follow-up",

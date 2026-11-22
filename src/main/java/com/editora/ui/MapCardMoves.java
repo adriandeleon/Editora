@@ -111,7 +111,7 @@ final class MapCardMoves {
         }
         switch (commandId) {
             case GO_TO_LINE -> showLineBar();
-            // Searched off the FX thread, the caret moved when it lands if nothing moved (PERF-01, Pauta 6.0.1).
+            // Searched off the FX thread, the caret moved when it lands if nothing moved (PERF-01, Pauta 6.2.0).
             case MATCHING_BRACKET ->
                 com.editora.editor.CaretLook.then(
                         MOVE_SITE,
@@ -291,7 +291,7 @@ final class MapCardMoves {
 
     /**
      * Washes the other uses of the name at the caret, once the caret rests. Whether the caret is on a name is read
-     * from its own line's styles here; the uses are searched for off the FX thread (PERF-01, Pauta 6.0.1) and washed
+     * from its own line's styles here; the uses are searched for off the FX thread (PERF-01, Pauta 6.2.0) and washed
      * if the text and the caret are unchanged when they land.
      */
     private void markUses() {

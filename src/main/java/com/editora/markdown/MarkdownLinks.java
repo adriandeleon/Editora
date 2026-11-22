@@ -109,7 +109,7 @@ public final class MarkdownLinks {
     /**
      * Whether column {@code col} of {@code line} is on something written like a link — {@code [text](…)},
      * {@code [text][label]} or a bare {@code [label]} — read from the line alone: a menu offers its link rows
-     * there without searching the document for the label's definition (PERF-01, Pauta 6.0.1). It may say yes
+     * there without searching the document for the label's definition (PERF-01, Pauta 6.2.0). It may say yes
      * where {@link #at} finds no link (an undefined {@code [label]}); never no where it finds one.
      */
     public static boolean looksLikeLinkAt(String line, int col) {

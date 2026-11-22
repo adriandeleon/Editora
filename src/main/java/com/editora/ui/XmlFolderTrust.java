@@ -96,7 +96,7 @@ final class XmlFolderTrust {
 
     /**
      * {@link #pomTrusted}, or null while the pom's root is not known yet (looked for off the FX thread; the buffer
-     * syncs again when it lands, PERF-01, Pauta 6.0.1).
+     * syncs again when it lands, PERF-01, Pauta 6.2.0).
      */
     @Nullable
     Boolean pomTrust(EditorBuffer b) {

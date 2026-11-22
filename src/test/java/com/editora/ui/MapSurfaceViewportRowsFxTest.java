@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * A paint of the Project Map reads the rows on screen, not every listed one (PERF-08, Pauta 6.0.1): a pan over a
+ * A paint of the Project Map reads the rows on screen, not every listed one (PERF-08, Pauta 6.2.0): a pan over a
  * 5,000-file folder made a box for each of its rows per frame.
  */
 @Tag("fx")

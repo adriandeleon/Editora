@@ -16,7 +16,7 @@ import com.editora.perf.BlockingSites;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The disk work Debug plans a launch by, off the FX thread (PERF-01, Pauta 6.0.1): the user's and the project's
+ * The disk work Debug plans a launch by, off the FX thread (PERF-01, Pauta 6.2.0): the user's and the project's
  * {@code debug-adapters.json}, {@code launch.json} and {@code tasks.json}, a configuration's script, folder and
  * environment file, the build roots of a Go, Rust, C# or C/C++ file, a Kotlin program's plan. {@link DebugCoordinator}
  * asks here and goes on with the answer on the FX thread; a failure comes back as the exception, said there.

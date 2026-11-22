@@ -20,7 +20,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Where no stylesheet reaches the probe (a scene without {@code app.css}, or before the first CSS pass) a colour
  * is {@code null} and the painter falls back to something derived from its own ground, never a fixed hue
- * (ICON-08, Pauta 6.0.1).
+ * (ICON-08, Pauta 6.2.0).
  */
 public final class ThemeProbes {
 

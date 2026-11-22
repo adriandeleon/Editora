@@ -36,7 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @Tag("fx")
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
-// A buffer's server root is looked for off the FX thread (PERF-01, Pauta 6.0.1); here in place, so a sync has
+// A buffer's server root is looked for off the FX thread (PERF-01, Pauta 6.2.0); here in place, so a sync has
 // opened the document when it returns, as the assertions read it.
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class LspProjectOverridesFxTest {
@@ -320,7 +320,7 @@ class LspProjectOverridesFxTest {
         int pushed = fakes.get(0).configurations.size();
         host.settings.setLspOnTypeFormatting(false);
         FxTestSupport.runOnFx(coordinator::applyOnTypeFormatting);
-        // jdtls's push reads the project's style on a thread of its own (PERF-01, Pauta 6.0.1): wait for it
+        // jdtls's push reads the project's style on a thread of its own (PERF-01, Pauta 6.2.0): wait for it
         Await.holdsWithin(() -> fakes.get(0).configurations.size() >= pushed + 1, java.time.Duration.ofSeconds(10));
 
         assertEquals(pushed + 1, fakes.get(0).configurations.size(), "a running jdtls is told when it flips");

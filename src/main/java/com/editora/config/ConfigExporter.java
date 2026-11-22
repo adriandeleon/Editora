@@ -221,7 +221,7 @@ public final class ConfigExporter {
 
     /**
      * As {@link #export}, into the zip file {@code zip} (the copy made before an import, for one). The AI provider
-     * API keys are never in it (SET-13, Pauta 6.0.1): the {@code keys/} folder where they are kept without a
+     * API keys are never in it (SET-13, Pauta 6.2.0): the {@code keys/} folder where they are kept without a
      * keychain is left out, and an {@code aiApiKey…} value an older settings file or one of its copies still holds
      * is written blank.
      */

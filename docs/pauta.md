@@ -21,7 +21,7 @@ edition yet.
 ## Kinds of exception
 
 - `pending`: not done yet. Its `link` is an open issue in this repository that names the rule as
-  "MENU-14 (Pauta 6.0.1)". One issue holds the pending rules of one Pauta page.
+  "KBD-07 (Pauta 6.2.0)". One issue holds the pending rules of one Pauta page.
 - `deviation`: a SHOULD the app does differently on purpose. Its `link` is a decision record under
   [`decisions/`](decisions/README.md) that names the rule. A MUST cannot be a deviation.
 - `not-applicable`: the rule reads as applying to every app, but its subject does not exist in Editora. No link.

@@ -79,7 +79,7 @@ A picked file is measured before it is read: Import Breakpoints refuses a file o
 Every thread is named and a daemon: `Thread.ofPlatform().daemon().name(…)` for a platform thread, and a
 virtual thread or a virtual-thread executor is given a name too (`Thread.ofVirtual().name(…)`).
 
-The config and project stores follow the same shape (PERF-01, Pauta 6.0.1). A save made on the FX thread takes a
+The config and project stores follow the same shape (PERF-01, Pauta 6.2.0). A save made on the FX thread takes a
 copy of the store (`config/Snapshots`: field by field, no JSON) and hands it to the `config-writer` thread, which
 serializes, hashes, merges with another process's write (`StoreSync`) and writes it, in order per file, a later
 save replacing one still queued. That covers `ConfigManager.save()`/`saveAsync()`, `SharedConfig.saveSettings()`,
@@ -100,7 +100,7 @@ last values it knew meanwhile, and the user's for a root never read), the agent 
 project's `.editora/settings.json` writes (`project-settings-write`) and the shared run configurations.
 `StoresOffFxThreadFxTest` drives these paths and checks that none of their `BlockingSites` is heard on the FX thread.
 
-The programs Editora starts follow it too (PERF-01, Pauta 6.0.1). `RunService` and `BuildService` start on a virtual
+The programs Editora starts follow it too (PERF-01, Pauta 6.2.0). `RunService` and `BuildService` start on a virtual
 thread per start (`run-start`, `build-start`): the PATH lookup, `BusyExecutable.start` (and its retry sleep), the
 container or WSL target's start and `ProcessRegistry.track`. The press returns at once; `isRunning()` is true from
 it, so a second press starts nothing; a Stop, typed input or End Input meanwhile is kept and applied once the
@@ -128,7 +128,7 @@ look refreshes (`JavaProjectRoot.find`, `JdkToolchain.isGone`, `inheritedJavaExe
 `JavaLaunchPlan.Inputs`, a bare name on PATH, a build wrapper, the trust question's summary; detection warms the
 wrapper and the summary for the tasks tree's header and the Settings row). A window close's question about busy
 terminals answers from each local shell's watcher and the last answer of a remote host; the MCP server binds on
-`mcp-start`. File commands, installs and plugins follow it too (PERF-01, Pauta 6.0.1). `perf/OffFx.then(name, work, then)` runs a
+`mcp-start`. File commands, installs and plugins follow it too (PERF-01, Pauta 6.2.0). `perf/OffFx.then(name, work, then)` runs a
 command's disk work on a virtual thread named for it and hands the answer, or the failure, back on the FX thread
 (`OffFx.runnerForTest` runs it in place); the command keeps a busy flag so a second press starts nothing. That covers
 the Project panel's New Folder, Rename, Move, Undo Move and the delete's look (`MoveProceed`: a rename participant
@@ -152,7 +152,7 @@ read at launch and with the spell dictionary. The safety copy before a bulk edit
 order with every later capture of the file; the edit goes on at once, and the quit drains the worker. `FilesOffFxThreadFxTest` drives a representative set and checks that
 none of their `BlockingSites` is heard on the FX thread.
 
-The checks made as the user types, per buffer sync, per publish and per command follow it too (PERF-01, Pauta 6.0.1).
+The checks made as the user types, per buffer sync, per publish and per command follow it too (PERF-01, Pauta 6.2.0).
 A memo filled off the FX thread answers them, and a look that lands later is applied under a guard; until a fact is
 known the code acts as it did when the fact was absent, never hiding a row or a button. `ui/DiskFacts` is the
 FX-confined memo for a handler's small facts (the New Maven Project form's folder, Find in Files' root, the Map
@@ -203,7 +203,7 @@ click on a path not looked at yet is acted on when the look lands. Outside start
 on the FX thread touches the disk, starts or waits for a process, or parses, hashes or serializes text of the user's
 size.
 
-Nothing searches, hashes or parses a document in place either (PERF-01, Pauta 6.0.1). The dirty check compares
+Nothing searches, hashes or parses a document in place either (PERF-01, Pauta 6.2.0). The dirty check compares
 lengths and, while the saved baseline holds its text, the text itself; against a sealed baseline the SHA-256 runs off
 the thread (`EditorBuffer.textMatchesSaved`, `dirtyHash`, keyed by document version and baseline): until it lands
 the tab keeps the dirty state the cheap check gives, never "clean" for text that differs, and an undo back to the saved
@@ -243,7 +243,7 @@ applied only to the same edit count, worked out again otherwise); the Markdown p
 the FX thread and searches them off it (`PreviewFind.SEARCH_SITE`); the loose-files root a window did not find made by
 the launch is made off the thread (`LspManager.setLooseRoot`).
 
-The handlers follow it too (PERF-01, Pauta 6.0.1): no listener, key or mouse handler, cell factory, timer or
+The handlers follow it too (PERF-01, Pauta 6.2.0): no listener, key or mouse handler, cell factory, timer or
 `runLater` body parses, searches, diffs or encodes the user's data on the FX thread, at any size. Each moved place
 names a `BlockingSites` site, works on a snapshot (text, list or immutable copy) and applies its answer only to the
 same document version, list or caret. A stale answer is worked out again (up to three times) or dropped, and a
@@ -447,7 +447,7 @@ style-only change that still ended a succession — skips the draw and the snaps
   drawn per line, which is at most a column's height of them.
 - Avoid O(document) work on an edit or a scroll.
 - A list the user or the data can grow is a virtualized control, which builds nodes for the rows on screen
-  only (PERF-08, Pauta 6.0.1): the Settings shortcut list (a row per command; a key in its filter builds a
+  only (PERF-08, Pauta 6.2.0): the Settings shortcut list (a row per command; a key in its filter builds a
   row for each place on screen whose shortcut changed, not one per match, and selecting a row rebuilds that
   row and the one that was selected), the pull-request checks card and the live crontab preview are
   `ListView`s. A row with wrapping text binds its labels' maximum width to the list's, or the cell cannot
@@ -463,7 +463,7 @@ style-only change that still ended a succession — skips the draw and the snaps
   finding the others), the merge view (`MergeViewerPane.PAGE_SIZE` conflict cards a page), Parallel Stacks
   (a drawn graph: `MAX_BOXES` boxes, `MAX_BOX_FRAMES` frames a box; Copy has them all), the note card, the
   Welcome page's projects and sites, and the small lists of hover cards, info cards and settings pages.
-- Per keystroke, scroll and tick, other views follow the same rule (PERF-08, Pauta 6.0.1): an editable diff's
+- Per keystroke, scroll and tick, other views follow the same rule (PERF-08, Pauta 6.2.0): an editable diff's
   Result counts its edits and compares with its baseline once typing pauses, a merge result compares its text
   only when a choice is made, Query Replace copies a piece of the document from its offset and searches it off
   the FX thread, a piece twice as long when the answer lies past it (`QueryReplace.piece`, `nextIn`), a snippet or
@@ -496,7 +496,7 @@ style-only change that still ended a succession — skips the draw and the snaps
   whose key is unchanged, in place, and builds the rest. Its column (`BlockColumn`) remembers each block's
   height and measures only blocks that asked for layout. A 5,000-line document went from ~0.6 s of frozen
   UI per typing pause to ~10 ms. See [gotchas.md](gotchas.md#applycss-restyles-everything-below-the-node-it-is-called-on).
-- The column is **virtualized** (PERF-08, Pauta 6.0.1): `BlockColumn` holds a slot per block and builds and
+- The column is **virtualized** (PERF-08, Pauta 6.2.0): `BlockColumn` holds a slot per block and builds and
   puts in the scene only the blocks within `BlockColumn.OVERSCAN` of the viewport; blocks that leave it stay
   built out of the scene up to `BlockColumn.KEEP`. Heights (measured, else lines × the measured height per
   line) sit in a Fenwick tree, so a block's offset and the block at an offset are O(log n) and a scroll pulse
@@ -516,7 +516,7 @@ style-only change that still ended a succession — skips the draw and the snaps
   [`styles/syntax.css`](../src/main/resources/com/editora/styles/syntax.css)).
 - Coalesce adjacent same-style spans (`SpanMerger`) before `setStyleSpans`.
 - `applyCss()` is for a small node measured before the pulse styles it (a card, a row, a label), never for
-  a list, a page or the editor area, and not on every key or scroll (PERF-10, Pauta 6.0.1). To act on
+  a list, a page or the editor area, and not on every key or scroll (PERF-10, Pauta 6.2.0). To act on
   geometry the pulse has not laid out yet, wait for it (`Scene.addPostLayoutPulseListener`, once) instead of
   forcing a pass: `ToolWindowManager` finds the tab header that way, not by styling the editor area. A bar or
   a label that follows the selection or a pan is styled when it is put there or shown, not each time it
@@ -773,7 +773,7 @@ keep the show path free of work the user is not waiting for; measure against the
   before that are kept and handed over at the build. `LazyToolWindowsFxTest` fails when a closed window has
   built its panel, and opens each one to prove it still works. The console fonts follow the same rule: `EditorSettingsCoordinator.applyFontsAndPerBufferView`
   hands the font to the coordinator (`setOutputFont`/`setConsoleFont`), which applies it when the panel exists.
-- **Nothing else the first window does not show is built before it** (PERF-14, Pauta 6.0.1). A picker's
+- **Nothing else the first window does not show is built before it** (PERF-14, Pauta 6.2.0). A picker's
   overlay card (`QuickOpen`, `CommandPalette`, `FileFinder`, `Switcher`, `SearchEverywherePopup`,
   `BranchPopup`, `BuildActionsPopup`) is built by its first `show` (`ensureBuilt`); the setters that reach a
   node before then keep the value for the build. The Settings window makes its stage and every control in
@@ -810,7 +810,7 @@ keep the show path free of work the user is not waiting for; measure against the
   (`config/SessionScan`, handed over by `ConfigManager.setStartupSessionScan` and taken once by
   `WindowSessionCoordinator.openInitialBuffer`, which therefore stats nothing on FX). A window built any other
   way reads and scans inline, with the same rules.
-- **`start()` waits once, and touches no disk of the user's** (PERF-01, Pauta 6.0.1). The prefetch thread
+- **`start()` waits once, and touches no disk of the user's** (PERF-01, Pauta 6.2.0). The prefetch thread
   (`App.loadForFirstWindow`) also claims the config dir before loading it, opens the session log (what was
   logged before is in memory and written first), reads the process ledgers and reaps a crashed run's servers,
   removes a stale MCP endpoint (`StartupPrep`), and reads what the first window's set-up used to read

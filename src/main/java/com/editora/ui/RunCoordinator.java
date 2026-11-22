@@ -405,7 +405,7 @@ final class RunCoordinator {
             beginRunRequest(); // says the Run is busy
             return;
         }
-        // Saved off the FX thread; the rerun goes on when the writes have landed (PERF-01, Pauta 6.0.1).
+        // Saved off the FX thread; the rerun goes on when the writes have landed (PERF-01, Pauta 6.2.0).
         saveThen(scriptAndActive(lastRunScript), () -> {
             if (beginRunRequest()) {
                 rerunLastSaved();
@@ -441,7 +441,7 @@ final class RunCoordinator {
 
     /**
      * Off the FX thread, in a launch's plan: looks at what {@link #trusted} then asks of {@code gate} (the build
-     * tool's wrapper and the trust question's summary), so the FX thread answers from memory (PERF-01, Pauta 6.0.1).
+     * tool's wrapper and the trust question's summary), so the FX thread answers from memory (PERF-01, Pauta 6.2.0).
      */
     private void warmGate(RunTrust.@Nullable Gate gate) {
         if (gate != null) {
@@ -462,7 +462,7 @@ final class RunCoordinator {
     /**
      * Whether everything {@code asks} asks of the disk is known now; if not, it is looked at off the FX thread
      * (the Run busy meanwhile, so a second press starts nothing) and {@code again} runs on the FX thread when it
-     * lands. A command never guesses a build fact and never looks at one on the FX thread (PERF-01, Pauta 6.0.1).
+     * lands. A command never guesses a build fact and never looks at one on the FX thread (PERF-01, Pauta 6.2.0).
      */
     private boolean factsKnown(String name, Runnable asks, Runnable again) {
         if (com.editora.perf.Looked.allKnown(asks)) {
@@ -513,7 +513,7 @@ final class RunCoordinator {
     /**
      * Runs a test command (pytest, unittest) in this console: its lines and exit also go to {@code hooks}, and
      * Rerun repeats it through {@code rerun}; {@code started} runs once it has. The script and the tab in front are
-     * saved first, off the FX thread (PERF-01, Pauta 6.0.1). Nothing runs, having said why, when another program is
+     * saved first, off the FX thread (PERF-01, Pauta 6.2.0). Nothing runs, having said why, when another program is
      * running or a save was refused.
      */
     void runTests(
@@ -613,7 +613,7 @@ final class RunCoordinator {
         boolean elsewhere = !com.editora.process.ExecTargets.runsHere(cwd);
         Path root = configRoot();
         Path projectRoot = ops.projectRoot();
-        // What the configuration names on the disk is looked at off the FX thread (PERF-01, Pauta 6.0.1): the
+        // What the configuration names on the disk is looked at off the FX thread (PERF-01, Pauta 6.2.0): the
         // script, the folder, an env @file, the shebang, the interpreter.
         offFx(
                 "run-config-plan",
@@ -887,7 +887,7 @@ final class RunCoordinator {
                 ? cfg.jdkHome()
                 : elsewhere ? remoteJdkHome(cwd) : host.projectScope().jdkHome(host.settings());
         // The script's head (for the trust question), the tool and the project the launch is planned by are read
-        // off the FX thread (PERF-01, Pauta 6.0.1); the question and the launch are made back on it.
+        // off the FX thread (PERF-01, Pauta 6.2.0); the question and the launch are made back on it.
         offFx(
                 "run-jvm-script-plan",
                 () -> {
@@ -985,7 +985,7 @@ final class RunCoordinator {
             List<String> args,
             java.util.Map<String, String> env,
             String kotlinc) {
-        // The source is read and hashed, and the jar cache looked at, off the FX thread (PERF-01, Pauta 6.0.1).
+        // The source is read and hashed, and the jar cache looked at, off the FX thread (PERF-01, Pauta 6.2.0).
         Path configDir = host.configDir();
         offFx(
                 "kotlin-run-plan",
@@ -1039,7 +1039,7 @@ final class RunCoordinator {
 
     /**
      * Runs {@code work} — the disk work a Run plans its program by — on a virtual thread called {@code thread}
-     * (PERF-01, Pauta 6.0.1), then {@code then} with its answer on the FX thread. Meanwhile the console counts as
+     * (PERF-01, Pauta 6.2.0), then {@code then} with its answer on the FX thread. Meanwhile the console counts as
      * running (a second Run is refused, Stop drops the answer); a failure is said in the status line, as a failed
      * plan was.
      */
@@ -1239,7 +1239,7 @@ final class RunCoordinator {
     private void runNative(CompiledRun run, boolean cpp) {
         Path source = run.source();
         Path programs = builtProgramsDir();
-        // The project's build files are looked for off the FX thread (PERF-01, Pauta 6.0.1).
+        // The project's build files are looked for off the FX thread (PERF-01, Pauta 6.2.0).
         offFx(
                 "run-native-plan",
                 () -> {
@@ -1304,7 +1304,7 @@ final class RunCoordinator {
         if (folder == null) {
             return; // not reached: the source is absolute
         }
-        // The package clause and the module are read off the FX thread (PERF-01, Pauta 6.0.1).
+        // The package clause and the module are read off the FX thread (PERF-01, Pauta 6.2.0).
         offFx(
                 "run-go-plan",
                 () -> {
@@ -1392,7 +1392,7 @@ final class RunCoordinator {
      */
     private void runRust(CompiledRun run) {
         Path source = run.source();
-        // The package, then the file and the package's programs, are read off the FX thread (PERF-01, Pauta 6.0.1).
+        // The package, then the file and the package's programs, are read off the FX thread (PERF-01, Pauta 6.2.0).
         offFx(
                 "run-rust-plan",
                 () -> {
@@ -1500,7 +1500,7 @@ final class RunCoordinator {
     /**
      * Saves those of {@code buffers} that are edited or untitled, one after another, then runs {@code then}: each
      * write runs off the FX thread and the command goes on when it has landed, never in a nested wait (PERF-01,
-     * Pauta 6.0.1). Nothing more runs when a save is refused, cancelled or fails.
+     * Pauta 6.2.0). Nothing more runs when a save is refused, cancelled or fails.
      */
     private void saveThen(List<EditorBuffer> buffers, Runnable then) {
         for (int i = 0; i < buffers.size(); i++) {
@@ -1719,7 +1719,7 @@ final class RunCoordinator {
             runConfigSaved(cfg, null); // no script file to look for: nothing read
             return;
         }
-        // The script's file is looked for off the FX thread (PERF-01, Pauta 6.0.1).
+        // The script's file is looked for off the FX thread (PERF-01, Pauta 6.2.0).
         Path root = configRoot();
         offFx(
                 "run-config-script",
@@ -1728,7 +1728,7 @@ final class RunCoordinator {
     }
 
     private void runConfigSaved(RunConfiguration cfg, @Nullable Path script) {
-        // Saved off the FX thread; the configuration goes on when the writes have landed (PERF-01, Pauta 6.0.1).
+        // Saved off the FX thread; the configuration goes on when the writes have landed (PERF-01, Pauta 6.2.0).
         saveThen(scriptAndActive(script), () -> runConfigScriptSaved(cfg));
     }
 
@@ -1887,7 +1887,7 @@ final class RunCoordinator {
             return;
         }
         // The module, its build files, the launch plan (an env file's read included) and the Gradle build root are
-        // looked for off the FX thread (PERF-01, Pauta 6.0.1).
+        // looked for off the FX thread (PERF-01, Pauta 6.2.0).
         offFx(
                 "deploy-java-plan",
                 () -> {
@@ -2209,7 +2209,7 @@ final class RunCoordinator {
         boolean buildBeforeRun = host.settings().isBuildBeforeRun();
         Path project = ops.projectRoot();
         // Which build tool, its reactor and whether the source is a test are read off the FX thread (PERF-01,
-        // Pauta 6.0.1); the trust question and the step are back on it.
+        // Pauta 6.2.0); the trust question and the step are back on it.
         offFx(
                 "run-build-before-launch-plan",
                 () -> {
@@ -2322,7 +2322,7 @@ final class RunCoordinator {
         List<String> toggles = ops.mavenToggleArgs();
         Path boundary = ops.projectRoot();
         // Planning reads the reactor's poms and makes the classpath file (on a host it asks whether its temp folder
-        // is in view): off the FX thread, here as there (PERF-01, Pauta 6.0.1).
+        // is in view): off the FX thread, here as there (PERF-01, Pauta 6.2.0).
         if (!com.editora.process.ExecTargets.runsHere(root)) {
             host.setStatus(tr("status.run.resolveClasspath", label)); // a host can take a while to answer
         }
@@ -2532,7 +2532,7 @@ final class RunCoordinator {
         }
         justSaved = null;
         // The project, its build files, an env @file and the Maven module are read off the FX thread (PERF-01,
-        // Pauta 6.0.1): one plan for Run and Debug (review D9), working directory, JDK, environment and arguments.
+        // Pauta 6.2.0): one plan for Run and Debug (review D9), working directory, JDK, environment and arguments.
         String settingsJdk = host.projectScope().jdkHome(host.settings());
         Path project = ops.projectRoot();
         offFx(
@@ -2700,7 +2700,7 @@ final class RunCoordinator {
             return;
         }
         Path routing = b.getPath();
-        // The project and its build files are looked for off the FX thread (PERF-01, Pauta 6.0.1).
+        // The project and its build files are looked for off the FX thread (PERF-01, Pauta 6.2.0).
         offFx(
                 "run-main-class-plan",
                 () -> {
@@ -3122,7 +3122,7 @@ final class RunCoordinator {
     private void startFileRun(EditorBuffer buffer, boolean promptArgs, boolean trace) {
         Path early = buffer.getPath();
         if ("scala".equals(buffer.getLanguage()) && early != null && com.editora.process.ExecTargets.runsHere(early)) {
-            // Which build owns the file is a folder walk: off the FX thread (PERF-01, Pauta 6.0.1).
+            // Which build owns the file is a folder walk: off the FX thread (PERF-01, Pauta 6.2.0).
             Path project = ops.projectRoot();
             planner.accept("run-file-scala-owner", () -> {
                 com.editora.perf.BlockingSites.enter("ScalaRun.ownerOf");
@@ -3144,7 +3144,7 @@ final class RunCoordinator {
     }
 
     /**
-     * What Run on a file reads before it starts, off the FX thread (PERF-01, Pauta 6.0.1): the trust question's
+     * What Run on a file reads before it starts, off the FX thread (PERF-01, Pauta 6.2.0): the trust question's
      * project files, the JVM language's tool, the shebang's launch with its interpreter and folder, Scala CLI's
      * inputs.
      */
@@ -3278,7 +3278,7 @@ final class RunCoordinator {
                 : remote ? remoteJdkEnvironment(jdkHome) : JdkToolchain.environment(jdkHome, processPath());
         if (jvmScript && !remote && plan.jvmTool() == null) {
             // Said here, not as the shell's "groovy: command not found" in the Run console.
-            // The tool's name was worked out with the plan, off the FX thread (PERF-01, Pauta 6.0.1).
+            // The tool's name was worked out with the plan, off the FX thread (PERF-01, Pauta 6.2.0).
             host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKeyFor(plan.jvmToolName())));
             return;
         }
@@ -3482,7 +3482,7 @@ final class RunCoordinator {
         String chdir = plan.chdir();
         Path cwd = ready.dir();
         if (chdir != null && !chdir.isBlank() && cwd != null && !com.editora.vfs.Vfs.isRemote(cwd)) {
-            // The shebang's env -C folder is looked for off the FX thread (PERF-01, Pauta 6.0.1).
+            // The shebang's env -C folder is looked for off the FX thread (PERF-01, Pauta 6.2.0).
             Path wanted = cwd.resolve(chdir).normalize();
             com.editora.perf.OffFx.then("run-node-chdir", () -> java.nio.file.Files.isDirectory(wanted), a -> {
                 if (!Boolean.TRUE.equals(a.value())) {

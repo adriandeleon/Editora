@@ -33,7 +33,7 @@ import static com.editora.i18n.Messages.tr;
  * request, and the file's requests as rows. A click on a row, or Enter on it, runs that request; Up and Down move
  * between the rows. Filled by {@link HttpEmptyStateFeed} while it is on show.
  *
- * <p>The rows are a virtualized list (PERF-08, Pauta 6.0.1): an API collection of hundreds of requests builds the
+ * <p>The rows are a virtualized list (PERF-08, Pauta 6.2.0): an API collection of hundreds of requests builds the
  * rows on screen, and a request added near the top of the file rebuilds no row.
  */
 final class HttpEmptyState extends VBox {

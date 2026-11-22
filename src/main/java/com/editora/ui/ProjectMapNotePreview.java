@@ -35,7 +35,7 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * An editable Personal Notes card attached to one Project Canvas file or folder row. A note is a text area, so the card
- * holds the first {@link #MAX_NOTES} notes and says how many there are past them (PERF-08, Pauta 6.0.1); the Notes
+ * holds the first {@link #MAX_NOTES} notes and says how many there are past them (PERF-08, Pauta 6.2.0); the Notes
  * panel lists them all.
  */
 final class ProjectMapNotePreview extends StackPane {

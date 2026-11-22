@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-01 (Pauta 6.0.1): an HTTP run command never parses the {@code .http} file on the FX thread. The parse is made
+ * PERF-01 (Pauta 6.2.0): an HTTP run command never parses the {@code .http} file on the FX thread. The parse is made
  * off it and kept per document version; a second command while it is out is refused; an edit is parsed again.
  */
 @Tag("fx")

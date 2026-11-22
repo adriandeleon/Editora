@@ -350,7 +350,7 @@ final class XmlLspActions {
         public @Nullable Path chooseGrammar(Path xmlFile) {
             FileChooser chooser = new FileChooser();
             chooser.setTitle(tr("dialog.xml.bindTitle", PathDisplay.fileName(xmlFile)));
-            ChooserStart.set(chooser, xmlFile.getParent()); // no look at the folder first (PERF-01, Pauta 6.0.1)
+            ChooserStart.set(chooser, xmlFile.getParent()); // no look at the folder first (PERF-01, Pauta 6.2.0)
             chooser.getExtensionFilters()
                     .addAll(
                             new FileChooser.ExtensionFilter(tr("dialog.xml.grammars"), "*.xsd", "*.dtd", "*.rng"),

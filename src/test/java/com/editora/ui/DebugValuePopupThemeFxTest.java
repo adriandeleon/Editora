@@ -88,7 +88,7 @@ class DebugValuePopupThemeFxTest {
                 Label header = FxTestSupport.field(popup, "textHeader");
                 header.getScene().getRoot().applyCss();
                 // The window's ink, not the editor theme's: StyleContrastTest holds that ink on the overlay ground
-                // reads (popupInkReadsOnTheOverlayGround), so no ratio is computed here (ICON-14, Pauta 6.0.1).
+                // reads (popupInkReadsOnTheOverlayGround), so no ratio is computed here (ICON-14, Pauta 6.2.0).
                 assertEquals(Color.web("#e8eaf3"), header.getTextFill(), "the dark window's -color-fg-default");
                 for (javafx.css.Styleable s = header; s != null; s = s.getStyleableParent()) {
                     assertFalse(

@@ -24,7 +24,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The live preview's column of blocks, virtualized: it knows every block of the document but builds, and puts
- * in the scene, only the blocks in and just around the viewport (PERF-08, Pauta 6.0.1).
+ * in the scene, only the blocks in and just around the viewport (PERF-08, Pauta 6.2.0).
  *
  * <p><b>The model.</b> Each block is a {@link Slot}: its node once built, the height it was measured at, and how
  * many source lines it has. A block not measured yet counts at an estimate: its lines times the height per line

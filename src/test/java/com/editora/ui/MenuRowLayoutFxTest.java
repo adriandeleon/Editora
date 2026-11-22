@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * A right-click or drop-down row measures as a menu bar row does (MENU-18, Pauta 6.0.1): 34 px high, a 22 px icon
+ * A right-click or drop-down row measures as a menu bar row does (MENU-18, Pauta 6.2.0): 34 px high, a 22 px icon
  * column with 8 px to the title, and the chord at least 18 px after the title column; a row without a glyph keeps
  * the column, in a menu where other rows have one and in a menu where none has.
  */

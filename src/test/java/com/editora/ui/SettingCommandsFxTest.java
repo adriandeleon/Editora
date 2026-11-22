@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The palette commands of {@link SettingCommands} (SET-06, Pauta 6.0.1): a page's command lists its settings by
+ * The palette commands of {@link SettingCommands} (SET-06, Pauta 6.2.0): a page's command lists its settings by
  * their Settings rows' names with their values, flips the one picked or asks for its value, keeps what its row
  * would keep, and says what the setting is now.
  */

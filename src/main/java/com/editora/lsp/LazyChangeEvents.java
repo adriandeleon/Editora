@@ -12,7 +12,7 @@ import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The content changes of one {@code didChange}, worked out when they are first read (PERF-01, Pauta 6.0.1). The
+ * The content changes of one {@code didChange}, worked out when they are first read (PERF-01, Pauta 6.2.0). The
  * session queues the notification on the FX thread with this list in it; the writer thread reads it when the
  * notification's turn comes to be encoded, so the whole-document compare, the prefix/suffix diff and the JSON all
  * run there, in wire order. The list holds the two texts it was made from, which the FX thread never changes

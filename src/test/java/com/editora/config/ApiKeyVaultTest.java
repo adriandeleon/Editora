@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * The AI keys move from settings.json to the system keychain (a fake one here: tests never reach the real
  * keychain), or to the encrypted file when there is none or it cannot be trusted with them; settings.json is never
- * written with them again (SET-13, Pauta 6.0.1).
+ * written with them again (SET-13, Pauta 6.2.0).
  */
 class ApiKeyVaultTest {
 

@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * before the range-formatting request. Otherwise the server formats the line it still has — the old one.
  */
 @Tag("fx")
-// A buffer's server root is looked for off the FX thread (PERF-01, Pauta 6.0.1); here in place, so a sync has
+// A buffer's server root is looked for off the FX thread (PERF-01, Pauta 6.2.0); here in place, so a sync has
 // opened the document when it returns, as the assertions read it.
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class LspFormatSyncsFirstFxTest {

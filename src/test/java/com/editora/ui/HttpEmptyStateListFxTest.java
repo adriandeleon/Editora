@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-08 (Pauta 6.0.1): the HTTP client's empty state lists the file's requests in a virtualized list. A file of
+ * PERF-08 (Pauta 6.2.0): the HTTP client's empty state lists the file's requests in a virtualized list. A file of
  * 10,000 requests builds the rows on screen; the arrow keys and Enter run the row the keyboard is on; the caret's row
  * is marked; a blocked file runs nothing.
  */

@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-01 (Pauta 6.0.1) moved a {@code didChange}'s compare, diff and JSON to the session's writer thread. What must
+ * PERF-01 (Pauta 6.2.0) moved a {@code didChange}'s compare, diff and JSON to the session's writer thread. What must
  * not move with them: the order of the changes, the versions the server sees, or one character of the document it
  * holds. A fake server at the other end of a pipe applies every change it is sent, in order, and must end up with
  * exactly the text last synced, at versions that go up by one per change.

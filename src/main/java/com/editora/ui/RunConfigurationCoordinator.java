@@ -442,7 +442,7 @@ final class RunConfigurationCoordinator {
         if (!root.equals(makefileProbedRoot)) {
             makefileProbedRoot = root;
             makefileAtProjectRoot = false;
-            // Looked for off the FX thread, here as on a remote host (PERF-01, Pauta 6.0.1); the toolbar is
+            // Looked for off the FX thread, here as on a remote host (PERF-01, Pauta 6.2.0); the toolbar is
             // refreshed when it lands.
             com.editora.perf.OffFx.then(
                     "makefile-probe", () -> com.editora.run.RunConfigToolbar.hasMakefile(root), a -> {
@@ -577,7 +577,7 @@ final class RunConfigurationCoordinator {
             host.setStatus(tr("status.run.needJavaFile"));
             return;
         }
-        // The main class is looked for off the FX thread (PERF-01, Pauta 6.0.1): the build script's, read from the
+        // The main class is looked for off the FX thread (PERF-01, Pauta 6.2.0): the build script's, read from the
         // disk, else the first main in the file's text, scanned there too.
         Path file = java.util.Objects.requireNonNull(b.getPath());
         String text = b.getContent();
@@ -638,7 +638,7 @@ final class RunConfigurationCoordinator {
             return;
         }
         com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-        // Copies: compared, serialized and written off the FX thread (PERF-01, Pauta 6.0.1) while the window goes on.
+        // Copies: compared, serialized and written off the FX thread (PERF-01, Pauta 6.2.0) while the window goes on.
         List<com.editora.config.RunConfiguration> exported = com.editora.config.Snapshots.copy(configs);
         List<com.editora.config.Deployment> deployments = com.editora.config.Snapshots.copy(
                 host.config().getWorkspaceState().getDeployments());
@@ -730,7 +730,7 @@ final class RunConfigurationCoordinator {
             host.setStatus(tr("status.run.configsNeedProject"));
             return;
         }
-        // Read off the FX thread (PERF-01, Pauta 6.0.1); merged into this window's when it lands.
+        // Read off the FX thread (PERF-01, Pauta 6.2.0); merged into this window's when it lands.
         com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
         sharedFileWork(
                 () -> new SharedRead(
@@ -856,7 +856,7 @@ final class RunConfigurationCoordinator {
         BuildCoordinator gradle = detectedBuildCoordinator(BuildTool.GRADLE);
         BuildCoordinator maven = detectedBuildCoordinator(BuildTool.MAVEN);
         // The project, the Gradle build's run task (and its init script) or the pom's Boot plugin are read off the
-        // FX thread (PERF-01, Pauta 6.0.1); the build starts back on it.
+        // FX thread (PERF-01, Pauta 6.2.0); the build starts back on it.
         DebugPlanning.offFx(
                 "debug-via-build-plan",
                 () -> {

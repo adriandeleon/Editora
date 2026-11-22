@@ -200,7 +200,7 @@ public final class MarkdownFormatBar {
     /** Makes the controls say what the selection already is: lit marker buttons, the line's heading level. */
     private void sync() {
         // The lines of the selection and one either side, read once: the buttons and the Style value used to
-        // copy the whole document once each, on every Shift+arrow and scroll pulse (PERF-08, Pauta 6.0.1).
+        // copy the whole document once each, on every Shift+arrow and scroll pulse (PERF-08, Pauta 6.2.0).
         org.fxmisc.richtext.CodeArea a = buffer.getFocusedArea() != null ? buffer.getFocusedArea() : buffer.getArea();
         var sel = a.getSelection();
         int first = Math.max(

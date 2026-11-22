@@ -84,7 +84,7 @@ final class SettingsKeymapsPage {
     TextField shortcutFilter; // filters the shortcut list
     /**
      * The shortcuts, one row for each command the filter lets through, in a virtualized list (PERF-08, Pauta
-     * 6.0.1): about 450 commands, more with plugins and macros, and only the rows on screen have nodes. The list is
+     * 6.2.0): about 450 commands, more with plugins and macros, and only the rows on screen have nodes. The list is
      * one Tab stop; its own selection is the row the arrow keys are on.
      */
     private @Nullable ListView<Shortcut> shortcutList;
@@ -254,7 +254,7 @@ final class SettingsKeymapsPage {
         }
         String typedChord = com.editora.command.ChordQuery.parse(q);
         String chordShown = typedChord == null ? null : w.shortcutActions.display(typedChord);
-        // Matched off the FX thread (PERF-01, Pauta 6.0.1): a row per command, several hundred; the rows shown stay
+        // Matched off the FX thread (PERF-01, Pauta 6.2.0): a row per command, several hundred; the rows shown stay
         // until the latest filter's answer lands.
         filterSearch.submit(
                 () -> {

@@ -340,7 +340,7 @@ final class SettingsSnippetPages {
             // Save under the new id first: a rename that deleted the old file and then failed to write the
             // new one lost the template. The wizard labels are not in this form, so they are carried over.
             com.editora.template.Template toSave = updated.withLabels(cur.labels());
-            // The row shows the edit at once; the file is written on the template thread (PERF-01, Pauta 6.0.1).
+            // The row shows the edit at once; the file is written on the template thread (PERF-01, Pauta 6.2.0).
             templateUserIds.add(newId); // editing a bundled or plugin template makes it a user override
             loadingTemplate = true;
             try {
@@ -428,7 +428,7 @@ final class SettingsSnippetPages {
             }
         });
 
-        // Read on the template thread (PERF-01, Pauta 6.0.1); the list fills when it lands, then {@code after} runs.
+        // Read on the template thread (PERF-01, Pauta 6.2.0); the list fills when it lands, then {@code after} runs.
         java.util.function.Consumer<Runnable> loadTemplatesThen = after -> readTemplates(merged -> {
             loadingTemplate = true;
             try {
@@ -590,7 +590,7 @@ final class SettingsSnippetPages {
     }
 
     /**
-     * Writes {@code t} to the user's templates folder on the template thread (PERF-01, Pauta 6.0.1), then tells
+     * Writes {@code t} to the user's templates folder on the template thread (PERF-01, Pauta 6.2.0), then tells
      * {@code then} whether it was written; says why when it was not.
      */
     private void saveTemplate(com.editora.template.Template t, java.util.function.Consumer<Boolean> then) {
@@ -667,7 +667,7 @@ final class SettingsSnippetPages {
 
     /**
      * Re-highlights a snippet/template body {@link CodeArea} for {@code languageName} (plain for global/unknown).
-     * The grammar is loaded and the text tokenized off the FX thread on a snapshot (PERF-01, Pauta 6.0.1); the styles
+     * The grammar is loaded and the text tokenized off the FX thread on a snapshot (PERF-01, Pauta 6.2.0); the styles
      * land when the body still holds that text and no later ask superseded this one.
      */
     static void highlightSnippetBody(CodeArea area, String languageName) {
@@ -757,7 +757,7 @@ final class SettingsSnippetPages {
                 }
             } else {
                 switch (e.getCode()) {
-                    // The text is read for a word move only, not on every Ctrl key (PERF-08, Pauta 6.0.1).
+                    // The text is read for a word move only, not on every Ctrl key (PERF-08, Pauta 6.2.0).
                     case F -> consume(e, () -> area.moveTo(nextWordBoundary(area.getText(), caret)));
                     case B -> consume(e, () -> area.moveTo(prevWordBoundary(area.getText(), caret)));
                     default -> {}

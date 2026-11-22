@@ -60,7 +60,7 @@ public final class QueryReplace {
     }
 
     /**
-     * A document read in pieces, so a session reads only as far as its next match (PERF-08, Pauta 6.0.1): an
+     * A document read in pieces, so a session reads only as far as its next match (PERF-08, Pauta 6.2.0): an
      * answer in an interactive session must not copy the whole document each time.
      */
     public interface Source {

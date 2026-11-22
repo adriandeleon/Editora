@@ -122,7 +122,7 @@ final class DiffCoordinator {
 
         /**
          * Saves {@code buffer} without waiting: the write runs off the FX thread and {@code then} hears on it whether
-         * it went through (PERF-01, Pauta 6.0.1). This default, for test stand-ins, answers {@link #saveBuffer} at once.
+         * it went through (PERF-01, Pauta 6.2.0). This default, for test stand-ins, answers {@link #saveBuffer} at once.
          */
         default void saveThen(EditorBuffer buffer, Consumer<Boolean> then) {
             then.accept(saveBuffer(buffer));
@@ -636,7 +636,7 @@ final class DiffCoordinator {
             host.setStatus(tr("status.diff.notInRepo"));
             return;
         }
-        // a folder? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        // a folder? looked at off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then("diff-look", () -> Files.isDirectory(path), folder -> {
             if (folder.or(false)) {
                 diffDirectoryVsRef(path, root, rel, "HEAD", tr("diff.side.head"));
@@ -681,7 +681,7 @@ final class DiffCoordinator {
         String text = buffer.getContent();
         String ending = buffer.getLineEnding();
         String charset = buffer.getEffectiveCharset();
-        // Parsed, and each file's two sides composed, off the FX thread (PERF-01, Pauta 6.0.1).
+        // Parsed, and each file's two sides composed, off the FX thread (PERF-01, Pauta 6.2.0).
         com.editora.perf.OffFx.then(
                 PATCH_PARSE_SITE,
                 () -> {
@@ -870,7 +870,7 @@ final class DiffCoordinator {
      */
     void openPatchFileDiff(
             String title, String headerLeft, String headerRight, String fallback, PatchParser.FilePatch fp) {
-        // The two sides are joined, diffed and numbered on the diff's own thread (PERF-01, Pauta 6.0.1).
+        // The two sides are joined, diffed and numbered on the diff's own thread (PERF-01, Pauta 6.2.0).
         diffService.compute(
                 () -> patchText(fp.oldLines(), fp.oldFinalNewline()),
                 () -> patchText(fp.newLines(), fp.newFinalNewline()),
@@ -999,7 +999,7 @@ final class DiffCoordinator {
     /** Opens a two-directory picker and compares the selected trees. */
     void compareDirectories() {
         Path start = ops.finderStartDir();
-        // the picker's start folder is looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        // the picker's start folder is looked at off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then(
                 "chooser-start",
                 () -> start != null && Files.isDirectory(start),
@@ -1029,7 +1029,7 @@ final class DiffCoordinator {
 
     /** Opens the two arbitrary paths supplied by the standalone {@code --diff-ui} launch. */
     void comparePaths(@Nullable Path left, @Nullable Path right) {
-        // folders or files? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        // folders or files? looked at off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then(
                 "diff-look",
                 () -> new boolean[] {left != null && Files.isDirectory(left), right != null && Files.isDirectory(right)
@@ -1050,7 +1050,7 @@ final class DiffCoordinator {
     void compareFiles(@Nullable Path left, @Nullable Path right) {
         Path leftPath = left == null ? null : left.toAbsolutePath().normalize();
         Path rightPath = right == null ? null : right.toAbsolutePath().normalize();
-        // readable? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        // readable? looked at off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then(
                 "diff-look", () -> new boolean[] {readableFile(leftPath), readableFile(rightPath)}, looked -> {
                     boolean[] ok = looked.or(new boolean[2]);
@@ -1090,7 +1090,7 @@ final class DiffCoordinator {
             host.setStatus(tr("status.diff.unreadableDirectory", ""));
             return;
         }
-        // readable? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        // readable? looked at off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then(
                 "diff-look",
                 () -> new boolean[] {readableDirectory(leftRoot), readableDirectory(rightRoot)},
@@ -1361,7 +1361,7 @@ final class DiffCoordinator {
     }
 
     private void openPathVsRef(Path path, Path root, String rel, String ref, String displayRef) {
-        // a folder? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        // a folder? looked at off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then("diff-look", () -> Files.isDirectory(path), folder -> {
             if (folder.or(false)) {
                 diffDirectoryVsRef(path, root, rel, ref, displayRef);
@@ -1788,7 +1788,7 @@ final class DiffCoordinator {
                 && request.wholeFile()
                 && request.afterText().isEmpty()
                 && ops.openBufferFor(file) == null) {
-            // still there? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+            // still there? looked at off the FX thread (PERF-01, Pauta 6.2.0)
             com.editora.perf.OffFx.then(
                     "diff-look",
                     () -> !Files.exists(file),
@@ -2039,7 +2039,7 @@ final class DiffCoordinator {
             diffCommitFileVsWorkingLooked(root, hash, repoRel, target);
             return;
         }
-        // still there? looked at off the FX thread (PERF-01, Pauta 6.0.1)
+        // still there? looked at off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then("diff-look", () -> Files.isRegularFile(target), there -> {
             if (!there.or(false) && ops.openBufferFor(target) == null) {
                 host.setStatus(tr("status.git.fileGone", repoRel));
@@ -2128,7 +2128,7 @@ final class DiffCoordinator {
             onSnapshot.accept(result);
             byte[] bytes = result.found() ? result.bytes() : new byte[0];
             String opened = openCharset(file);
-            // Sniffed, hashed (a binary blob's digest) or decoded off the FX thread (PERF-01, Pauta 6.0.1).
+            // Sniffed, hashed (a binary blob's digest) or decoded off the FX thread (PERF-01, Pauta 6.2.0).
             submitFileRead(() -> {
                 com.editora.perf.BlockingSites.enter("DiffCoordinator.blobSide");
                 DiffContent side = BinaryDiff.isProbablyBinary(bytes)
@@ -2172,7 +2172,7 @@ final class DiffCoordinator {
             byte[] bytes = patchBytes(
                     patch, request.leftFormat().charset(), request.rightFormat().charset());
             // Staged: a failed write must not empty a patch the Save dialog agreed to replace. Written off the FX
-            // thread (PERF-01, Pauta 6.0.1).
+            // thread (PERF-01, Pauta 6.2.0).
             com.editora.perf.OffFx.run(
                     "diff-patch-write", () -> com.editora.io.StagedExport.write(target, bytes), failure -> {
                         if (failure == null) {
@@ -2244,7 +2244,7 @@ final class DiffCoordinator {
             return;
         }
         // The whole document, not text(): on a narrowed buffer that is only the region, and Apply replaces the
-        // whole document with the resolution. Parsed off the FX thread (PERF-01, Pauta 6.0.1), for this version.
+        // whole document with the resolution. Parsed off the FX thread (PERF-01, Pauta 6.2.0), for this version.
         String text = b.getContent();
         long version = b.docVersion();
         parsingConflicts = true;
@@ -2296,7 +2296,7 @@ final class DiffCoordinator {
                                                 return;
                                             }
                                             // The binary checks and the decoding of the three versions run off the
-                                            // FX thread with the merge (PERF-01, Pauta 6.0.1).
+                                            // FX thread with the merge (PERF-01, Pauta 6.2.0).
                                             submitFileRead(() -> {
                                                 if (BinaryDiff.isProbablyBinary(base.bytes())
                                                         || BinaryDiff.isProbablyBinary(ours.bytes())
@@ -2436,7 +2436,7 @@ final class DiffCoordinator {
             done.accept(applyMergeTo(opened, open, false, sourceText, resolvedText));
             return;
         }
-        // Its tab was closed: the file is read again off the FX thread (PERF-01, Pauta 6.0.1), then applied.
+        // Its tab was closed: the file is read again off the FX thread (PERF-01, Pauta 6.2.0), then applied.
         ops.openBackgroundBufferAsync(
                 path, target -> done.accept(applyMergeTo(opened, target, target != null, sourceText, resolvedText)));
     }

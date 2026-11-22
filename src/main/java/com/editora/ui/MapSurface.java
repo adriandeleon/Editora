@@ -212,7 +212,7 @@ final class MapSurface extends Region {
     /**
      * A probe's colour before any stylesheet has filled it (the first paint of a Map not yet in a scene): a mid grey
      * that is no theme's and reads on light and dark grounds alike. Every colour the Map paints is the theme's,
-     * through a probe (ICON-08, Pauta 6.0.1).
+     * through a probe (ICON-08, Pauta 6.2.0).
      */
     private static final Color UNSTYLED = Color.gray(0.5);
 
@@ -2834,7 +2834,7 @@ final class MapSurface extends Region {
         g.setStroke(color(accentProbe, UNSTYLED));
         // Rows were added column by column, so the two lists are walked together: a column's rows
         // share one parent row and, in a vertical flow, one card edge to route to. Only the rows that can be on
-        // screen are read (PERF-08, Pauta 6.0.1): a pan does not walk a 5,000-row folder.
+        // screen are read (PERF-08, Pauta 6.2.0): a pan does not walk a 5,000-row folder.
         boolean alongX = isVerticalFlow();
         double overscan = CONNECTOR_VIEWPORT_OVERSCAN;
         int next = 0;
@@ -5109,7 +5109,7 @@ final class MapSurface extends Region {
     }
 
     /**
-     * A row listed by name only, with its size and time: read off the FX thread (PERF-01, Pauta 6.0.1). The tooltip
+     * A row listed by name only, with its size and time: read off the FX thread (PERF-01, Pauta 6.2.0). The tooltip
      * shows the path and kind at once and gains the size and time when the look lands, if the row is still hovered.
      */
     private final DiskFacts<ProjectMapModel.Entry, ProjectMapModel.Entry> attributes = new DiskFacts<
@@ -6102,7 +6102,7 @@ final class MapSurface extends Region {
 
     /**
      * The row under {@code (x, y)}, the last drawn one where rows overlap. Only the rows of the columns under the
-     * point that can reach it are read (PERF-08, Pauta 6.0.1): a resting pointer is hit-tested at every paint.
+     * point that can reach it are read (PERF-08, Pauta 6.2.0): a resting pointer is hit-tested at every paint.
      */
     private @Nullable NodeBox hit(double x, double y) {
         boolean alongX = isVerticalFlow();

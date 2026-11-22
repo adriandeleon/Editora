@@ -186,7 +186,7 @@ class SyncMergeTest {
         String theirs = SNIPPET_BASE.replace(
                 "\"main\":", "\"psf\": { \"prefix\": \"psf\", \"body\": [\"public static final\"] },\n  \"main\":");
         SyncMerge.FileResult r = snippets(SNIPPET_BASE, mine, theirs);
-        // Written whole through Jackson (PLAT-14, Pauta 6.0.1): a merged file keeps its order, not its comments.
+        // Written whole through Jackson (PLAT-14, Pauta 6.2.0): a merged file keeps its order, not its comments.
         assertFalse(r.text().contains("// my Java snippets"), r.text());
         assertTrue(r.text().indexOf("\"sout\"") < r.text().indexOf("\"main\""), "this machine's order: " + r.text());
         assertTrue(r.text().contains("\"sout\"")

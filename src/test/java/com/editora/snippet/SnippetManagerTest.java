@@ -582,7 +582,7 @@ class SnippetManagerTest {
     }
 
     /**
-     * PLAT-14 (Pauta 6.0.1): a file with comments and trailing commas loads; a save writes it whole through Jackson —
+     * PLAT-14 (Pauta 6.2.0): a file with comments and trailing commas loads; a save writes it whole through Jackson —
      * the comments go, the order, every trigger, the scope and the fields this editor does not model stay.
      */
     @Test

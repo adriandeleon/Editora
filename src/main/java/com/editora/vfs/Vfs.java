@@ -84,7 +84,7 @@ public final class Vfs {
 
     /**
      * {@link #isWritableOnDisk} by path: looked at off the FX thread as the file is read, answered from memory when
-     * its tab asks on the FX thread (PERF-01, Pauta 6.0.1). A remote file is a round trip to its host.
+     * its tab asks on the FX thread (PERF-01, Pauta 6.2.0). A remote file is a round trip to its host.
      */
     private static final com.editora.perf.Looked<Path, Boolean> WRITABLE =
             new com.editora.perf.Looked<>("Vfs.isWritableOnDisk", Vfs::writableNow, Boolean.TRUE);

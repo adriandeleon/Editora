@@ -440,7 +440,7 @@ final class MainMenuBar {
      * <p>A command whose feature is switched off, or that has nothing to act on, is shown grayed rather
      * than hidden: the point of a menu is to be a stable map, and an entry that vanishes teaches nothing
      * about why. It also says why, with the sentence the Command Palette shows for the same command
-     * ({@link #showAvailability}, KBD-04 in Pauta 6.0.1). The sentences are made once per reason per pass:
+     * ({@link #showAvailability}, KBD-04 in Pauta 6.2.0). The sentences are made once per reason per pass:
      * a feature switched off grays a whole menu with one.
      */
     void refreshEnablement() {
@@ -495,7 +495,7 @@ final class MainMenuBar {
     private static final String REASON_TIP = MainMenuBar.class.getName() + ".reasonTip";
 
     /**
-     * Shows whether a row's command can run now (KBD-04 in Pauta 6.0.1). A row that cannot stays in its menu,
+     * Shows whether a row's command can run now (KBD-04 in Pauta 6.2.0). A row that cannot stays in its menu,
      * grayed, and keeps working as a row: its tooltip says why, a screen reader hears why, and choosing it says
      * why in the status bar ({@link #choose}) instead of running. A disabled row could do none of that: JavaFX
      * gives a disabled node no mouse events, so no tooltip, and the keyboard skips it.

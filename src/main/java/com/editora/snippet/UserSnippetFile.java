@@ -26,7 +26,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * A snippet file ({@code snippets/<lang>.json}, a plugin's, a bundled one) as Jackson reads and writes it (PLAT-14,
- * Pauta 6.0.1): its snippets by name, in file order, and the format version it carries ({@code schemaVersion}, a
+ * Pauta 6.2.0): its snippets by name, in file order, and the format version it carries ({@code schemaVersion}, a
  * number beside the snippets). Each snippet is kept as its JSON value, so one that is not an object (a mistake the
  * snippet loader reports) is written back unchanged; {@link SnippetJson} is the shape of one that is.
  *

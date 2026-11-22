@@ -35,7 +35,7 @@ public final class NoteHighlightOverlay extends Region implements SecondaryPane.
     // or rounded corners) so a multi-line note traces the same shape as the editor's selection; and a small solid
     // corner triangle at each note's start character, the inline "there's a note here" marker, in the accent
     // moved to 3:1 on the editor's ground. The accent, as a note's gutter mark and sheets are: amber means "not
-    // durable yet" (ICON-18, Pauta 6.0.1). Re-read on a theme change (OverlayPalette).
+    // durable yet" (ICON-18, Pauta 6.2.0). Re-read on a theme change (OverlayPalette).
     private Color fill = OverlayPalette.of(Color.WHITE).searchMatch();
     private Color glyph = OverlayPalette.of(Color.WHITE).searchActiveBorder();
     private static final double GLYPH_SIZE = 8.75;

@@ -724,7 +724,7 @@ class PreviewCommandsFxTest {
     }
 
     /**
-     * The project config is stat-ed, read and parsed off the FX thread (PERF-01, Pauta 6.0.1): a buffer whose
+     * The project config is stat-ed, read and parsed off the FX thread (PERF-01, Pauta 6.2.0): a buffer whose
      * config was never looked at is not linted by a guess (the project's own rule choices would be ignored); its
      * lint waits for the look and then follows the config.
      */
@@ -992,7 +992,7 @@ class PreviewCommandsFxTest {
     }
 
     /**
-     * PERF-01 (Pauta 6.0.1): Fix works the fixes out off the FX thread on a copy of the text and applies them only
+     * PERF-01 (Pauta 6.2.0): Fix works the fixes out off the FX thread on a copy of the text and applies them only
      * while the text is the one fixed; text typed meanwhile is fixed again, never overwritten.
      */
     @Test

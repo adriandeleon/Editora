@@ -68,7 +68,7 @@ class AutoRenameTagWindowFxTest {
                                 false,
                                 false));
             });
-            // The paired tag is found by a lex off the FX thread and renamed when it lands (PERF-01, Pauta 6.0.1).
+            // The paired tag is found by a lex off the FX thread and renamed when it lands (PERF-01, Pauta 6.2.0).
             OffFxTracked.awaitIdle();
             assertEquals("<divx>text</divx>", FxTestSupport.callOnFx(buffer::getContent));
         } finally {

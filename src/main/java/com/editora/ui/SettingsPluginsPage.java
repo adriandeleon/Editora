@@ -129,7 +129,7 @@ final class SettingsPluginsPage {
             com.editora.plugin.PluginManager manager = pluginManager;
             if (manager != null && !reload.isDisabled()) {
                 // The list only: what runs is the launch's set until a restart. The folder is read off the FX
-                // thread (PERF-01, Pauta 6.0.1); the button waits for it, so a second press reads nothing twice.
+                // thread (PERF-01, Pauta 6.2.0); the button waits for it, so a second press reads nothing twice.
                 reload.setDisable(true);
                 com.editora.perf.OffFx.run("plugins-reload", manager::discover, failure -> {
                     reload.setDisable(false);

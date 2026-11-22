@@ -713,7 +713,7 @@ final class WindowSessionCoordinator {
             return;
         }
         // Each opens at once, in order, so the first frame shows them; whether one is a new file (a folder that
-        // exists, no file yet) is found out off the FX thread as its read finds it missing (PERF-01, Pauta 6.0.1).
+        // exists, no file yet) is found out off the FX thread as its read finds it missing (PERF-01, Pauta 6.2.0).
         for (OpenTarget t : targets) {
             host.fileWorkflows().openStartupTarget(t.file().toAbsolutePath().normalize());
         }

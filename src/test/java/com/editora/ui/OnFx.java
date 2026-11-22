@@ -7,7 +7,7 @@ import java.util.function.BooleanSupplier;
 import com.editora.testkit.Await;
 
 /**
- * A condition read on the FX thread, for {@link Await} (QUAL-07, Pauta 6.0.1): the test thread asks the FX thread
+ * A condition read on the FX thread, for {@link Await} (QUAL-07, Pauta 6.2.0): the test thread asks the FX thread
  * after each pulse, so FX state is never read from another thread.
  */
 final class OnFx {

@@ -191,7 +191,7 @@ public final class DebugLogWindow {
         if (target != null) {
             String text = area.getText();
             // Staged: a failed write must not empty a log the Save dialog agreed to replace. Off the FX thread
-            // (PERF-01, Pauta 6.0.1).
+            // (PERF-01, Pauta 6.2.0).
             com.editora.perf.OffFx.run(
                     "debug-log-export",
                     () -> com.editora.io.StagedExport.writeString(target.toPath(), text),

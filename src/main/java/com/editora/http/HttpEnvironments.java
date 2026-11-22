@@ -59,7 +59,7 @@ public final class HttpEnvironments {
 
         /**
          * Parses both files now and keeps what they hold: called where they are read, off the FX thread, so the FX
-         * thread's {@link #variables}, {@link #names} and {@link #problems} parse nothing (PERF-01, Pauta 6.0.1).
+         * thread's {@link #variables}, {@link #names} and {@link #problems} parse nothing (PERF-01, Pauta 6.2.0).
          */
         EnvFiles prepare() {
             parsed();

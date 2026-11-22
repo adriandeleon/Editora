@@ -851,7 +851,7 @@ final class PreviewCoordinator {
         }
         csvReformatting = true;
         long version = b.docVersion();
-        // Parsed and reformatted off the FX thread, the span that differs too (PERF-01, Pauta 6.0.1).
+        // Parsed and reformatted off the FX thread, the span that differs too (PERF-01, Pauta 6.2.0).
         com.editora.perf.OffFx.then(CSV_REFORMAT_SITE, () -> csvReformatted(text, align, version), answer -> {
             csvReformatting = false;
             CsvReformat worked = answer.value();

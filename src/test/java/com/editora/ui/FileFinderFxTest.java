@@ -281,7 +281,7 @@ class FileFinderFxTest {
     }
 
     /**
-     * PERF-01 (Pauta 6.0.1): a typed path is looked at off the FX thread. A second Enter while the look is under way
+     * PERF-01 (Pauta 6.2.0): a typed path is looked at off the FX thread. A second Enter while the look is under way
      * starts nothing more, and a look that lands after the path was typed over chooses nothing.
      */
     @Test

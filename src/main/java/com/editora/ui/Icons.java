@@ -308,7 +308,7 @@ final class Icons {
     /** {@link com.editora.perf.BlockingSites} name of the application mark's read and decode, done off FX. */
     static final String EDITORA_ICON_SITE = "Icons.editora";
 
-    /** The application mark, read and decoded once and kept (PERF-01, Pauta 6.0.1); null until then. */
+    /** The application mark, read and decoded once and kept (PERF-01, Pauta 6.2.0); null until then. */
     private static volatile @org.jspecify.annotations.Nullable Image editoraImage;
 
     private static String editoraUrl() {

@@ -223,7 +223,7 @@ final class PythonDataTable {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    /** {@link #parse} off the FX thread (PERF-01, Pauta 6.0.1), then {@code then} with the page on the FX thread. */
+    /** {@link #parse} off the FX thread (PERF-01, Pauta 6.2.0), then {@code then} with the page on the FX thread. */
     static void parseLater(@Nullable String result, java.util.function.Consumer<Page> then) {
         com.editora.perf.OffFx.then("debug-table-page", () -> parse(result), a -> {
             Page page = a.value();

@@ -7,7 +7,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The cache keys of the previews' rendered images, remembered by the source they were worked out for, so the FX
- * thread never hashes a source (PERF-01, Pauta 6.0.1). A key is a SHA-256 of the whole source, worked out on the
+ * thread never hashes a source (PERF-01, Pauta 6.2.0). A key is a SHA-256 of the whole source, worked out on the
  * render executor; the FX thread asks for the key of a source it has seen before and gets it from here, comparing
  * the source to the one remembered (a plain comparison, no hash). A source not seen yet has no key on the FX
  * thread: its node asks the executor, which works the key out, answers from the image cache when it holds that key,

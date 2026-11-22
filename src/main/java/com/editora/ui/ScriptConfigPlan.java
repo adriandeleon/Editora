@@ -12,7 +12,7 @@ import com.editora.run.ShellCommand;
 import org.jspecify.annotations.Nullable;
 
 /**
- * What a script configuration's Run needs from the disk, read off the FX thread (PERF-01, Pauta 6.0.1): the script
+ * What a script configuration's Run needs from the disk, read off the FX thread (PERF-01, Pauta 6.2.0): the script
  * it names and its folder, the configuration's environment with any {@code @file} entry loaded, the script's
  * first line, whether its interpreter is there, the npm project's package manager, and the shell launch its shebang
  * asks for with that launch's folder. {@link RunCoordinator} reads it on the FX thread and says what is wrong or

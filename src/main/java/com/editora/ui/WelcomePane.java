@@ -78,7 +78,7 @@ public final class WelcomePane extends Region implements TabContent {
     /** Digits 1–9 open the first nine entries of the recent lists. */
     static final int NUMBERED_ENTRIES = 9;
 
-    /** A list of the page (projects, remote sites) lists this many rows at most, expanded (PERF-08, Pauta 6.0.1). */
+    /** A list of the page (projects, remote sites) lists this many rows at most, expanded (PERF-08, Pauta 6.2.0). */
     static final int MAX_LISTED = 100;
 
     private final CommandRegistry registry;
@@ -385,7 +385,7 @@ public final class WelcomePane extends Region implements TabContent {
     }
 
     /**
-     * Which recent files and project roots are gone, learnt off the FX thread (PERF-01, Pauta 6.0.1): the page
+     * Which recent files and project roots are gone, learnt off the FX thread (PERF-01, Pauta 6.2.0): the page
      * is built from the last answer (an entry not checked yet is shown), and built again when an answer differs.
      */
     private final RecentFilesCheck fileCheck = new RecentFilesCheck();
@@ -563,7 +563,7 @@ public final class WelcomePane extends Region implements TabContent {
 
     /**
      * Shows the first {@link #COLLAPSED_RECENT_LIMIT} rows, and the rest behind a "Show N more" toggle, at most {@link
-     * #MAX_LISTED} rows in all, with a line that says how many there are past them (PERF-08, Pauta 6.0.1). A row is
+     * #MAX_LISTED} rows in all, with a line that says how many there are past them (PERF-08, Pauta 6.2.0). A row is
      * built when it is first shown, except the first {@link #NUMBERED_ENTRIES}: the number keys open the first nine
      * entries of the page, in page order, so those rows are numbered as they always were.
      */

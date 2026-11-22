@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The Settings window's buttons and links that act are commands (KBD-01, Pauta 6.0.1), found the way the palette
+ * The Settings window's buttons and links that act are commands (KBD-01, Pauta 6.2.0), found the way the palette
  * finds them while the window shows: on the page that is open, never on one that is not, and a row's own button
  * only for the row the keyboard is in.
  */

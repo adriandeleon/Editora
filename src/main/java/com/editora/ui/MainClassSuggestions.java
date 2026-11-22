@@ -8,7 +8,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The main class a new run configuration starts from (Run Configurations → Add), worked out off the FX thread (PERF-01,
- * Pauta 6.0.1): the project's Gradle {@code application} block is read and the file scanned for a {@code main} on a
+ * Pauta 6.2.0): the project's Gradle {@code application} block is read and the file scanned for a {@code main} on a
  * virtual thread. The FX thread answers the last answer for the active file as it was (none while it is not known: the
  * field starts blank, as when nothing is found) and asks again behind it. Opening the Run Configurations window asks
  * first, so an Add finds it known.

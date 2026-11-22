@@ -37,7 +37,7 @@ class CopyHtmlFxTest {
             buffer.getNode();
             return buffer;
         });
-        // A grammar not loaded yet is loaded off the FX thread (PERF-01, Pauta 6.0.1) and applied when it lands.
+        // A grammar not loaded yet is loaded off the FX thread (PERF-01, Pauta 6.2.0) and applied when it lands.
         SettingsRig.awaitFx("a java buffer is syntax-highlighted", b::hasHighlighting);
     }
 

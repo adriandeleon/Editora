@@ -150,7 +150,7 @@ final class BufferCarets {
      * Selects every occurrence of the current selection (or, with none, the word under the caret) as a
      * multi-caret selection — VS Code's {@code selectHighlights} (Ctrl+Shift+L). Case-sensitive literal
      * matching (whole-word when seeded from the caret's word). The document is searched off the FX thread
-     * (PERF-01, Pauta 6.0.1) and the carets placed when that lands, if the text, the caret and the selection are
+     * (PERF-01, Pauta 6.2.0) and the carets placed when that lands, if the text, the caret and the selection are
      * unchanged; {@code placed} then hears the number of carets placed (0 when there's nothing to match). A press
      * while one search is out does nothing.
      */
@@ -199,7 +199,7 @@ final class BufferCarets {
         List<int[]> selections = carets.selections();
         int anchorStart = a.getSelection().getStart();
         // A selection can be the whole document (Select All): its lines are split off the FX thread, and the
-        // carets placed when that lands if nothing moved (PERF-01, Pauta 6.0.1).
+        // carets placed when that lands if nothing moved (PERF-01, Pauta 6.2.0).
         CaretLook.then(
                 SPLIT_SITE,
                 a,

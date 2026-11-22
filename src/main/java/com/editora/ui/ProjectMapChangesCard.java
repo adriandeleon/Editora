@@ -470,7 +470,7 @@ final class ProjectMapChangesCard extends MapFloatingCard {
 
     private void filePicked(GitChanges.@Nullable FileDiff file) {
         hunk = -1;
-        // The lines show at once; their changed words are worked out off the FX thread (PERF-01, Pauta 6.0.1) and
+        // The lines show at once; their changed words are worked out off the FX thread (PERF-01, Pauta 6.2.0) and
         // marked when they land, for the file still picked.
         words = java.util.Map.of();
         long mine = ++wordsGeneration;

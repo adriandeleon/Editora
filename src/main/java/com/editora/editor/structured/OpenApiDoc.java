@@ -21,7 +21,7 @@ import org.jspecify.annotations.Nullable;
  * Self-scrolling (wrapped in a {@code ScrollPane}) so it hosts directly as the Split/Preview side, like
  * {@link StructuredTree}. Kept in {@code editor} (no {@code ui} dependency).
  *
- * <p>The live docs are a virtualized list of those rows ({@link PreviewList}, PERF-08, Pauta 6.0.1): a spec of
+ * <p>The live docs are a virtualized list of those rows ({@link PreviewList}, PERF-08, Pauta 6.2.0): a spec of
  * hundreds of operations and schemas builds the rows on screen. {@link #content} builds them all, for a print.
  */
 public final class OpenApiDoc {

@@ -133,7 +133,7 @@ public final class PreviewSnapshots {
             Platform.runLater(() -> done.accept(null));
             return;
         }
-        // The text is parsed off the FX thread (PERF-01, Pauta 6.0.1): a document of the user's size, and a pom's
+        // The text is parsed off the FX thread (PERF-01, Pauta 6.2.0): a document of the user's size, and a pom's
         // parents and imported BOMs read from the disk. The nodes are built and shot on the FX thread.
         Request asked = request;
         Scene sc = scene;

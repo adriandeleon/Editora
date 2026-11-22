@@ -120,7 +120,7 @@ final class ProjectPanelRig implements AutoCloseable {
             // The confirmed delete's file work in place: these tests read the result as the command returns.
             // ProjectPanelTrashFxTest and CrossWindowDeleteFxTest keep it on its own thread, as the app does.
             panel.deleteWork = Runnable::run;
-            // So are the looks and moves of New Folder, Rename, Move and Undo Move (PERF-01, Pauta 6.0.1);
+            // So are the looks and moves of New Folder, Rename, Move and Undo Move (PERF-01, Pauta 6.2.0);
             // FilesOffFxThreadFxTest runs them where the app does.
             com.editora.perf.OffFx.runnerForTest((name, task) -> task.run());
             panel.watchWork = Runnable::run; // the watches registered in place too: tests read them at once

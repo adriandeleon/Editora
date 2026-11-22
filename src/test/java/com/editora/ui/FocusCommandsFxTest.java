@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * The one walk a panel's command takes to the row or button it stands for ({@link FocusCommands}): from the focus
  * owner up, in a popup below its root, below what a window shows; a disabled, hidden or absent control refused on the
- * status line; a row of several handed to a picker (KBD-01, MENU-05 in Pauta 6.0.1). Each test passes its own windows.
+ * status line; a row of several handed to a picker (KBD-01, MENU-05 in Pauta 6.2.0). Each test passes its own windows.
  */
 @Tag("fx")
 class FocusCommandsFxTest {

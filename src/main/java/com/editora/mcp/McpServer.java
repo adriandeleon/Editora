@@ -137,7 +137,7 @@ public final class McpServer {
     }
 
     /**
-     * The endpoint file's writes and its delete, in the order asked, on a thread of their own (PERF-01, Pauta 6.0.1:
+     * The endpoint file's writes and its delete, in the order asked, on a thread of their own (PERF-01, Pauta 6.2.0:
      * Start, New Token and Stop are asked on the FX thread). One daemon thread, made at the first use.
      */
     private static final java.util.concurrent.ExecutorService ENDPOINT_IO = Executors.newSingleThreadExecutor(r -> {

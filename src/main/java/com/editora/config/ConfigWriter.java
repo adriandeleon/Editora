@@ -136,7 +136,7 @@ public final class ConfigWriter {
 
     /**
      * Set once the app is quitting ({@link #shutdown}, or {@link #quitting()} from the quit path): from then on
-     * the FX thread may wait for the writer (PERF-01, Pauta 6.0.1: the last save at quit). Before that, a wait
+     * the FX thread may wait for the writer (PERF-01, Pauta 6.2.0: the last save at quit). Before that, a wait
      * on the FX thread is a bug, and {@link #flush} says so.
      */
     private volatile boolean quitting;
@@ -317,7 +317,7 @@ public final class ConfigWriter {
 
     /**
      * Blocks until every queued write has been performed (a durable save, an export, or app exit). Not for the
-     * FX thread, except while the app quits (PERF-01, Pauta 6.0.1); a wait there at any other time is logged as
+     * FX thread, except while the app quits (PERF-01, Pauta 6.2.0); a wait there at any other time is logged as
      * the bug it is, and fails an assertion in a test. Called on the writer thread itself it does not wait (it
      * could not end): what it would wait for runs after the task in progress.
      */

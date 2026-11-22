@@ -145,7 +145,7 @@ final class LoadedSourcesPicker {
             return;
         }
         if (file != null) {
-            // Whether the local file is there: looked at off the FX thread (PERF-01, Pauta 6.0.1).
+            // Whether the local file is there: looked at off the FX thread (PERF-01, Pauta 6.2.0).
             com.editora.perf.OffFx.then("LoadedSourcesPicker.open", () -> Files.exists(file), there -> {
                 if (Boolean.TRUE.equals(there.value())) {
                     ops.openPath(file);

@@ -374,7 +374,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         // While the tool window is closed the tree is not rebuilt (#549), so {@code roots} is empty or still
         // the outline of whichever file was active when it was last open. The picker is the keyboard "go to
         // symbol in file" and has to work with the window closed: compute the model for this request.
-        // The model is built off the FX thread (PERF-01, Pauta 6.0.1): this answers what is known for the buffer now
+        // The model is built off the FX thread (PERF-01, Pauta 6.2.0): this answers what is known for the buffer now
         // (nothing at first) and the picker is told to read again when it lands (onHiddenOutlineChanged).
         if (pendingRebuild) {
             EditorBuffer b = buffer;
@@ -414,7 +414,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     private long outlineGeneration;
 
     /**
-     * Builds the outline of {@code b} off the FX thread (PERF-01, Pauta 6.0.1: the document is split into lines, a
+     * Builds the outline of {@code b} off the FX thread (PERF-01, Pauta 6.2.0: the document is split into lines, a
      * Markdown or narrowed document parsed, the doc comments read) from a copy of its text, regions and symbols taken
      * here, and hands it to {@code then} on the FX thread with its docs and syntax colours, sorted — unless a later
      * build was asked for meanwhile. Text changed meanwhile: built again on the new text.
@@ -936,7 +936,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             return;
         }
         int generation = ++narrowedOutlineGeneration;
-        // The text taken here; split, its grammar looked up and analyzed off the FX thread (PERF-01, Pauta 6.0.1).
+        // The text taken here; split, its grammar looked up and analyzed off the FX thread (PERF-01, Pauta 6.2.0).
         String text = b.getContent();
         String language = b.getLanguage();
         boolean markdown = b.isMarkdown();
@@ -1699,7 +1699,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
 
     /**
      * Shows the outline narrowed to the labels {@code query} matches. An outline can hold thousands of rows, so a
-     * typed query is matched off the FX thread (PERF-01, Pauta 6.0.1) on a copy of the labels; the tree shown stays
+     * typed query is matched off the FX thread (PERF-01, Pauta 6.2.0) on a copy of the labels; the tree shown stays
      * until the latest answer lands. {@code reselect} runs with the tree, navigation held (a rebuild keeping the
      * user's row), and {@code after} once it is shown.
      */

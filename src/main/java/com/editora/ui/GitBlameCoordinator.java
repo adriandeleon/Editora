@@ -235,7 +235,7 @@ final class GitBlameCoordinator {
         revisions.put(buffer, revision);
         openTab.accept(buffer);
         buffer.setViewMode(true);
-        // Its text made ready off the FX thread (PERF-01, Pauta 6.0.1), then the jump and the annotations.
+        // Its text made ready off the FX thread (PERF-01, Pauta 6.2.0), then the jump and the annotations.
         buffer.setContentLater(text, () -> {
             buffer.jumpToLine(line); // the same line number: usually close to where the caret line was
             refresh(buffer);

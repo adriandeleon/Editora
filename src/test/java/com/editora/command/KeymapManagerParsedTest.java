@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** A bundled keymap is read and parsed once; a later switch or rebind's base reads nothing (PERF-01, Pauta 6.0.1). */
+/** A bundled keymap is read and parsed once; a later switch or rebind's base reads nothing (PERF-01, Pauta 6.2.0). */
 class KeymapManagerParsedTest {
 
     @AfterEach

@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * A JDK list is filled from a look off the FX thread (PERF-01, Pauta 6.0.1): at once it holds the inherited choice
+ * A JDK list is filled from a look off the FX thread (PERF-01, Pauta 6.2.0): at once it holds the inherited choice
  * and the selected JDK, selected; the look's list then comes in, the selection kept, and a later fill wins.
  */
 @Tag("fx")

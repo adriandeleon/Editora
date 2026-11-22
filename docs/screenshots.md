@@ -1,7 +1,7 @@
 # Screenshots
 
 The website's screenshots, the README's hero and any picture for a bug report are taken from the real
-window, headlessly, at twice the scene's size (DOCS-18, Pauta 6.0.1). Nothing is drawn by hand: after a UI
+window, headlessly, at twice the scene's size (DOCS-18, Pauta 6.2.0). Nothing is drawn by hand: after a UI
 change, run the script again.
 
 ## The pieces

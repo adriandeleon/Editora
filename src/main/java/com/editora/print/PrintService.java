@@ -423,7 +423,7 @@ public final class PrintService {
      * The page images of a print job, decoded when a page needs them, keeping the last two (a page shows at most the
      * end of one chunk and the start of the next). A 4,000-row tree at 2× is some 150 million pixels: decoded all at
      * once that is over half a gigabyte, encoded a few megabytes. The decode runs off the FX thread (PERF-01, Pauta
-     * 6.0.1); which pixel rows are blank (where a page may be cut) is worked out on the prepare thread, one image at
+     * 6.2.0); which pixel rows are blank (where a page may be cut) is worked out on the prepare thread, one image at
      * a time, so laying the pages out decodes nothing.
      */
     public static final class Decoder {

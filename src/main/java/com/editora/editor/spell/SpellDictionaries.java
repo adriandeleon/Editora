@@ -112,7 +112,7 @@ public final class SpellDictionaries {
         com.editora.perf.AfterFirstPaint.run(() -> BUILDER.execute(() -> {
             try {
                 // The bundled technical terms the checker asks as it paints: read here too, off the FX thread
-                // (PERF-01, Pauta 6.0.1), before any word is flagged.
+                // (PERF-01, Pauta 6.2.0), before any word is flagged.
                 TechnicalDictionary.words();
                 Hunspell h = build(langId);
                 CACHE.put(langId, h);

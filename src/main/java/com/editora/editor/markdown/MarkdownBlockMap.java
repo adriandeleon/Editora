@@ -12,7 +12,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * What each line of a Markdown buffer is (prose, a code block, front matter, raw HTML), known without scanning
- * the document on the JavaFX thread (PERF-01, Pauta 6.0.1). Whether a line is code depends on every line above
+ * the document on the JavaFX thread (PERF-01, Pauta 6.2.0). Whether a line is code depends on every line above
  * it, so the editing keys (Enter in a list, Backspace, Tab, {@code *} and smart punctuation, Enter in a table)
  * and the line commands used to scan the document from its start on every press. Now {@link MarkdownBlocks} is
  * scanned off the thread on a snapshot after each edit (one scan in flight; when it lands on a document that

@@ -1391,7 +1391,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    /** The window close asked for again once a Save picked in its question has landed (PERF-01, Pauta 6.0.1). */
+    /** The window close asked for again once a Save picked in its question has landed (PERF-01, Pauta 6.2.0). */
     private void closeAfterSave() {
         if (windowManager != null) {
             windowManager.requestClose(this);
@@ -1809,7 +1809,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         } else {
             // A moved/renamed *directory*: remap every open buffer whose file lived under `old` to the
             // corresponding path under `target` (e.g. drag-moving a folder in the Project tree). Nothing lies under
-            // a renamed file, so no look at the disk on the FX thread tells the two apart (PERF-01, Pauta 6.0.1).
+            // a renamed file, so no look at the disk on the FX thread tells the two apart (PERF-01, Pauta 6.2.0).
             Path oldNorm = old.toAbsolutePath().normalize();
             for (Tab t : editorArea.tabs()) {
                 EditorBuffer b = bufferOf(t);
@@ -3029,7 +3029,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     void applyMcpSupport() {
         boolean on = mcpEnabled();
         if (on && mcpServer == null) {
-            // The loopback socket is bound and the server started off the FX thread (PERF-01, Pauta 6.0.1); the
+            // The loopback socket is bound and the server started off the FX thread (PERF-01, Pauta 6.2.0); the
             // status bar says it runs once it does.
             com.editora.mcp.McpServer s = new com.editora.mcp.McpServer(this, config.getConfigDir());
             mcpServer = s;
@@ -4022,7 +4022,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      *  exist yet (so the link works even before any word is added). Backs the Settings → Spell Check link. */
     void openPersonalDictionary() {
         Path file = config.getDictionaryFile();
-        // made when missing, off the FX thread (PERF-01, Pauta 6.0.1)
+        // made when missing, off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.run(
                 "dictionary-open",
                 () -> {
@@ -4042,7 +4042,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Opens the bundled technical-terms dictionary in a read-only tab so the user can browse what it covers.
      *  It's a classpath resource (inside the jar), so there's no on-disk path to open. */
     void openTechnicalDictionary() {
-        // the bundled list is read off the FX thread (PERF-01, Pauta 6.0.1)
+        // the bundled list is read off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then(
                 "dictionary-open",
                 () -> {
@@ -4065,7 +4065,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void openTechnicalDictionary(String text) {
         EditorBuffer buffer = new EditorBuffer();
         buffer.setDisplayName("technical.txt");
-        buffer.setContentLater(text, () -> {}); // line endings resolved off the FX thread (PERF-01, Pauta 6.0.1)
+        buffer.setContentLater(text, () -> {}); // line endings resolved off the FX thread (PERF-01, Pauta 6.2.0)
         addBuffer(buffer, true);
         buffer.setViewMode(true); // read-only: it's the bundled list, not user-editable
     }
@@ -4327,7 +4327,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     void reopenClosedTab() {
         ClosedTabs.Entry entry = closedTabs.pop();
         if (entry != null && com.editora.vfs.Vfs.isLocal(entry.path())) {
-            // deleted since? looked at off the FX thread (PERF-01, Pauta 6.0.1); then the next one back
+            // deleted since? looked at off the FX thread (PERF-01, Pauta 6.2.0); then the next one back
             com.editora.perf.OffFx.then("reopen-look", () -> Files.exists(entry.path()), there -> {
                 if (there.or(false)) {
                     reopenClosedTab(entry);
@@ -4618,7 +4618,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         fileWorkflows.invalidatePendingWrite(old);
-        // The name is checked and the file moved off the FX thread (PERF-01, Pauta 6.0.1); then every window follows.
+        // The name is checked and the file moved off the FX thread (PERF-01, Pauta 6.2.0); then every window follows.
         com.editora.perf.OffFx.then("rename-file", () -> RenamedFileState.move(old, target), moved -> {
             if (!moved.ok()) {
                 setStatus(tr("status.renameFailed", moved.why()));
@@ -5090,7 +5090,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** VS Code {@code selectHighlights} (Ctrl+Shift+L): a caret at every occurrence of the selection/word. */
     void selectAllOccurrences() {
         withMultiCaret(b -> {
-            b.selectAllOccurrences( // searched off the FX thread (PERF-01, Pauta 6.0.1)
+            b.selectAllOccurrences( // searched off the FX thread (PERF-01, Pauta 6.2.0)
                     n -> setStatus(n == 0 ? tr("status.occurrences.none") : tr("status.occurrences.selected", n)));
         });
     }
@@ -5533,7 +5533,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             setError(tr("status.project.settingsNeedProject"));
             return;
         }
-        // Converted and seeded off the FX thread (PERF-01, Pauta 6.0.1); opened when that is done.
+        // Converted and seeded off the FX thread (PERF-01, Pauta 6.2.0); opened when that is done.
         Path file = com.editora.config.ProjectSettings.fileFor(root);
         String template = tr("project.settings.template");
         com.editora.config.ProjectSettingsFile.later(

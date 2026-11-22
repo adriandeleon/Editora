@@ -12,7 +12,7 @@ import javafx.stage.FileChooser;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Where a file or folder chooser opens, without a look at the disk on the FX thread first (PERF-01, Pauta 6.0.1).
+ * Where a file or folder chooser opens, without a look at the disk on the FX thread first (PERF-01, Pauta 6.2.0).
  *
  * <p>A dialog used to open on the project root or the file's folder only after {@code Files.isDirectory} said it
  * was one. JavaFX checks the folder itself when the dialog is shown, and refuses one that is not there with an

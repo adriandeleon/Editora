@@ -604,7 +604,7 @@ final class SettingsSyncPage {
             return;
         }
         Path dir = settingsSync.syncDir();
-        // made off the FX thread (PERF-01, Pauta 6.0.1)
+        // made off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.run("sync-folder", () -> java.nio.file.Files.createDirectories(dir), failure -> {
             if (failure != null) {
                 showSyncNotice(String.valueOf(failure.getMessage()));

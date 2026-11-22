@@ -138,7 +138,7 @@ final class BashLspUi {
             }
             Path file = declared.file();
             if (file != null && !file.equals(path)) {
-                // another script's line is read off the FX thread (PERF-01, Pauta 6.0.1)
+                // another script's line is read off the FX thread (PERF-01, Pauta 6.2.0)
                 com.editora.perf.OffFx.then(
                         "bash-declaration-read",
                         () -> java.util.Optional.ofNullable(declarationLineIn(file, declared.line())),

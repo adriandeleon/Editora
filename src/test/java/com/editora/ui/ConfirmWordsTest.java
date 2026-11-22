@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The words of every question before a destructive action that builds a dialog of its own come from a static
- * function that needs no dialog and no JavaFX toolkit (CONF-12, Pauta 6.0.1): each one is called here with sample
+ * function that needs no dialog and no JavaFX toolkit (CONF-12, Pauta 6.2.0): each one is called here with sample
  * values. The thing named, the count or the list is in the words, and every button is worded by the catalog with
  * the action's own verb, never OK or Yes.
  */

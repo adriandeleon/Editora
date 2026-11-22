@@ -492,7 +492,7 @@ final class RecoveryCoordinator {
                 // It has unsaved changes of its own (or cannot take text): never overwrite those.
                 restoredAsNew(entry, record, text, null, tr("status.recovery.restoredBeside", record.title()));
             } else if (restoring.add(entry)) {
-                // The span that differs is worked out off the FX thread (PERF-01, Pauta 6.0.1); a second
+                // The span that differs is worked out off the FX thread (PERF-01, Pauta 6.2.0); a second
                 // Restore meanwhile does nothing.
                 open.replaceWholeDocumentLater(text, applied -> {
                     restoring.remove(entry);
@@ -547,7 +547,7 @@ final class RecoveryCoordinator {
         if (record.charset() != null) {
             buffer.setDetectedCharset(record.charset());
         }
-        // Its lines measured and its document built off the FX thread, as a load is (PERF-01, Pauta 6.0.1).
+        // Its lines measured and its document built off the FX thread, as a load is (PERF-01, Pauta 6.2.0).
         com.editora.perf.OffFx.then(
                 RESTORE_PREPARE_SITE,
                 () -> {

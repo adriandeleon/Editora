@@ -109,7 +109,7 @@ public final class DebugAdapterLocator {
      */
     public static Optional<Path> locate(String configuredPath, Path home) {
         // Off the FX thread a fresh look, kept; on it what was last looked at (an install's step look, the launch's
-        // warm-up), so Install's "is java-debug there" and Settings answer from memory (PERF-01, Pauta 6.0.1).
+        // warm-up), so Install's "is java-debug there" and Settings answer from memory (PERF-01, Pauta 6.2.0).
         LocateKey key = new LocateKey(configuredPath == null ? "" : configuredPath, home);
         return onFx() && LOCATED.knows(key) ? LOCATED.get(key) : LOCATED.prepare(key);
     }

@@ -241,7 +241,7 @@ final class IndexCoordinator {
         }
         // The buffer's text is authoritative and already in memory, so this costs no disk read. Its language,
         // too: an extension-less script is shell by its #! line, which its file name does not say. It is scanned
-        // on the index's own thread (PERF-01, Pauta 6.0.1), in order with every other save and walk, and kept
+        // on the index's own thread (PERF-01, Pauta 6.2.0), in order with every other save and walk, and kept
         // only when no project switch or rebuild came meanwhile.
         String language = buffer.getLanguage();
         String text = buffer.getContent();
@@ -495,7 +495,7 @@ final class IndexCoordinator {
             host.setStatus(tr("status.index.building")); // the one in flight answers; a second press starts nothing
             return true;
         }
-        // The buffer's own declarations are scanned off the FX thread (PERF-01, Pauta 6.0.1), on a copy of the text;
+        // The buffer's own declarations are scanned off the FX thread (PERF-01, Pauta 6.2.0), on a copy of the text;
         // the jump is made only when the text and the caret are as they were.
         definitionBusy = true;
         String text = b.getContent();
@@ -842,7 +842,7 @@ final class IndexCoordinator {
             return;
         }
         host.promptText(tr("index.gotoSymbol.title"), tr("index.gotoSymbol.prompt"), "", query -> {
-            // Searched off the FX thread (PERF-01, Pauta 6.0.1) on the index as it is now; the picker opens when the
+            // Searched off the FX thread (PERF-01, Pauta 6.2.0) on the index as it is now; the picker opens when the
             // answer lands.
             Corpus corpus = corpus();
             com.editora.perf.OffFx.then(
@@ -935,7 +935,7 @@ final class IndexCoordinator {
     }
 
     /**
-     * The index as it is now, to search off the FX thread (PERF-01, Pauta 6.0.1): taken on the FX thread, where the
+     * The index as it is now, to search off the FX thread (PERF-01, Pauta 6.2.0): taken on the FX thread, where the
      * index changes, it copies no symbol (see {@link SymbolIndex#freeze}) and the file lists are unchanging already.
      */
     Corpus corpus() {

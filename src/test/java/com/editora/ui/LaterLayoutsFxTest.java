@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Work a debugger view or a theme reload does on text of the user's size runs off the FX thread and lands back on it
- * (PERF-01, Pauta 6.0.1): View As JSON/XML, a data table's page, Reload User Themes.
+ * (PERF-01, Pauta 6.2.0): View As JSON/XML, a data table's page, Reload User Themes.
  */
 @Tag("fx")
 class LaterLayoutsFxTest {

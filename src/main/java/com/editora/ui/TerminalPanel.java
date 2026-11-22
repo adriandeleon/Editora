@@ -1161,7 +1161,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
      * Closes {@code tab} once it may: at once, or after asking when its shell is running something. What the shell
      * runs is asked off the FX thread: on another machine over a slow link, or with the host's one-shot slots busy,
      * that question took up to tens of seconds, and the editor waited on it; on this one it reads {@code /proc} or
-     * asks the OS (PERF-01, Pauta 6.0.1). The tab stays meanwhile.
+     * asks the OS (PERF-01, Pauta 6.2.0). The tab stays meanwhile.
      */
     void requestClose(Tab tab) {
         TerminalView view = views.get(tab);
@@ -1213,7 +1213,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
 
     /**
      * The tabs whose shell or program is running something, as "title (program, …)", for the question a window
-     * close or quit asks. Nothing is read or waited for here (PERF-01, Pauta 6.0.1): a shell on this machine
+     * close or quit asks. Nothing is read or waited for here (PERF-01, Pauta 6.2.0): a shell on this machine
      * answers from its watcher's last tick (off the FX thread, every 750 ms), and one on another machine from the
      * last answer its host gave, which this asks again in the background for the next question. A host never
      * answered yet is not asked about, as one that did not answer in time was not.

@@ -580,7 +580,7 @@ class SettingsListsFxTest {
     }
 
     /**
-     * PERF-08 (Pauta 6.0.1): the list builds a row for what is on screen, however many commands there are, and a
+     * PERF-08 (Pauta 6.2.0): the list builds a row for what is on screen, however many commands there are, and a
      * key typed in the filter builds the rows it leaves on screen, not one for every command that matches.
      */
     @Test

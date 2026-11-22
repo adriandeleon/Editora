@@ -333,7 +333,7 @@ class ExternalRenderFxTest {
     }
 
     /**
-     * PERF-01 (Pauta 6.0.1): a diagram's cache key, a hash of its whole source, is never worked out on the FX thread;
+     * PERF-01 (Pauta 6.2.0): a diagram's cache key, a hash of its whole source, is never worked out on the FX thread;
      * an unchanged diagram is still shown from the cache at once, by the key remembered for its source.
      */
     @Test

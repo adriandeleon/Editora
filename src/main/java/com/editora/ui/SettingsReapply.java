@@ -56,7 +56,7 @@ final class SettingsReapply {
 
     private final MainController window;
     /**
-     * A copy of the settings as this window last re-applied them (field by field, no JSON: PERF-01, Pauta 6.0.1, as
+     * A copy of the settings as this window last re-applied them (field by field, no JSON: PERF-01, Pauta 6.2.0, as
      * this runs on the FX thread per change); null before the first re-apply.
      */
     private @Nullable Settings last;

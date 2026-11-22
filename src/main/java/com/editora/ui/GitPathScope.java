@@ -44,7 +44,7 @@ public enum GitPathScope {
 
     /**
      * {@link #nearestRepository} of a local path: looked at off the FX thread as a file is read ({@link #lookAt}),
-     * answered from memory when a tab's or the Project tree's menu is built (PERF-01, Pauta 6.0.1).
+     * answered from memory when a tab's or the Project tree's menu is built (PERF-01, Pauta 6.2.0).
      */
     private static final com.editora.perf.Looked<Path, Path> NEAREST =
             new com.editora.perf.Looked<>("GitPathScope.nearestRepository", GitPathScope::nearestNow, null);

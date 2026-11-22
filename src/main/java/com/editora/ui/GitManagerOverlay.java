@@ -29,7 +29,7 @@ import static com.editora.i18n.Messages.tr;
  *
  * <p>Each button is also a row of the list's right-click menu, and each is a command's
  * ({@link Action#commandId}): the command acts on the row selected here while the card is up, and on a row picked
- * from a list otherwise (KBD-01 and MENU-05, Pauta 6.0.1).
+ * from a list otherwise (KBD-01 and MENU-05, Pauta 6.2.0).
  *
  * <p>Pure view: the owner supplies the rows and the actions.
  */

@@ -124,7 +124,7 @@ final class SettingsModified {
      * The keys whose value in {@code settings} differs from the default. Pure apart from the shared defaults.
      *
      * <p>Compares the properties' values as {@code settings.json} would write them, read through their accessors,
-     * with no JSON made (PERF-01, Pauta 6.0.1: this runs on the FX thread on every change in Settings). Numbers
+     * with no JSON made (PERF-01, Pauta 6.2.0: this runs on the FX thread on every change in Settings). Numbers
      * compare by value, and a map or an object of the app's own matches when each of its entries matches the
      * default's, as {@link SettingsFileCheck#sameValue} judges two written values.
      */

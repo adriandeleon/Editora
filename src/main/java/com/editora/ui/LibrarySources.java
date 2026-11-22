@@ -178,7 +178,7 @@ final class LibrarySources {
                 int line = buffer.getArea().getCurrentParagraph();
                 buffer.setContentLater(
                         content,
-                        () -> { // made ready off the FX thread (PERF-01, Pauta 6.0.1)
+                        () -> { // made ready off the FX thread (PERF-01, Pauta 6.2.0)
                             buffer.getArea()
                                     .moveTo(
                                             Math.min(
@@ -245,7 +245,7 @@ final class LibrarySources {
                         cb.accept(null);
                         return;
                     }
-                    // Whether its sources jar is there is looked at off the FX thread (PERF-01, Pauta 6.0.1).
+                    // Whether its sources jar is there is looked at off the FX thread (PERF-01, Pauta 6.2.0).
                     com.editora.perf.OffFx.then(
                             "JavaLibrarySources.attached",
                             () -> attachment.look(),

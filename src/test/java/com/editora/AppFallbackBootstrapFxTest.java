@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The start-up fallback (the prefetch failed, or {@code main()} was bypassed) loads on a thread {@code start()} does
- * not wait for (PERF-01, Pauta 6.0.1): the FX thread opens no log, takes no lock, reads no ledger or store. That
+ * not wait for (PERF-01, Pauta 6.2.0): the FX thread opens no log, takes no lock, reads no ledger or store. That
  * thread still claims the instance lock first, before the settings are loaded or anything is written, so a second
  * instance on the same directory is still told apart.
  */

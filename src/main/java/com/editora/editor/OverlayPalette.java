@@ -22,7 +22,7 @@ import org.jspecify.annotations.Nullable;
  * contrast target requires, so it holds on every bundled and user theme and under an editor theme whose ground
  * differs from the app theme's. Where no stylesheet reaches the probes, every seed is the ground's own mid ink:
  * a neutral, no fixed hue (ICON-08). Amber and red mark only warnings and errors, green only a success; a search
- * match and an assignment are the accent (ICON-18, Pauta 6.0.1). Resolved when the editor background or the theme
+ * match and an assignment are the accent (ICON-18, Pauta 6.2.0). Resolved when the editor background or the theme
  * changes, never per paint.
  */
 public final class OverlayPalette {

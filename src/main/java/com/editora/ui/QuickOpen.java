@@ -409,7 +409,7 @@ public class QuickOpen<T> {
 
     /**
      * Shows the rows matching {@code query}: at once for an empty one (the source's own order), else matched off the FX
-     * thread (PERF-01, Pauta 6.0.1) — the list may be thousands long (Loaded Sources, Modules) — on a copy of the rows
+     * thread (PERF-01, Pauta 6.2.0) — the list may be thousands long (Loaded Sources, Modules) — on a copy of the rows
      * and their search keys; the rows shown stay until the latest query's answer lands. {@code keepAt} is the row the
      * cursor goes back to (a row action), or -1 for the usual first row.
      */

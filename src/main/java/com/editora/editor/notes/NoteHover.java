@@ -107,7 +107,7 @@ public final class NoteHover {
                 String body = n.body();
                 double x = e.getScreenX() + UiZoom.px(12);
                 double y = e.getScreenY() + UiZoom.px(16);
-                // The body is parsed off the FX thread (PERF-01, Pauta 6.0.1); the note shows when it lands,
+                // The body is parsed off the FX thread (PERF-01, Pauta 6.2.0); the note shows when it lands,
                 // unless the pointer has left it or moved to another note meanwhile.
                 MarkdownRenderer.parseLater(body, ast -> {
                     if (!id.equals(shownId) || a.getScene() == null) {

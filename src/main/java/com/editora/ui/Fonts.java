@@ -192,7 +192,7 @@ public final class Fonts {
             pending = remaining;
         }
         if (onFx()) {
-            // Never on the FX thread (PERF-01, Pauta 6.0.1): the rest load on fonts-load, and whoever needs them
+            // Never on the FX thread (PERF-01, Pauta 6.2.0): the rest load on fonts-load, and whoever needs them
             // hears it through whenFamiliesLoaded.
             (pending != null ? pending : loadRemainingAsync()).thenRun(Fonts::announceLoaded);
             return;
@@ -248,7 +248,7 @@ public final class Fonts {
         if (family == null) {
             ensureAllLoaded();
         } else if (onFx()) {
-            // A bundled family registered after the first frame: on a thread of its own (PERF-01, Pauta 6.0.1).
+            // A bundled family registered after the first frame: on a thread of its own (PERF-01, Pauta 6.2.0).
             loadFamilyAsync(family).thenRun(Fonts::announceLoaded);
         } else {
             loadFamilies(List.of(family));

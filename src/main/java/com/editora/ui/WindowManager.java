@@ -181,7 +181,7 @@ public class WindowManager {
         // and services. A save that carries a change no other window has applied yet re-applies it there.
         shared.setOnSettingsChanged(this::onSharedSettingsChanged);
         // Who made a change is told at the save, on the FX thread; whether there was one is found on the config
-        // writer's thread after it (PERF-01, Pauta 6.0.1), and handed back here.
+        // writer's thread after it (PERF-01, Pauta 6.2.0), and handed back here.
         shared.setSettingsChanger(this::changerOf);
         // A write of dictionary.txt that kept another process's words brings them into the shared set.
         shared.setOnUserDictionaryChanged(this::broadcastUserDictionaryChanged);
@@ -511,7 +511,7 @@ public class WindowManager {
         primaryArgs = new PrimaryArgs(primary, targets, zen, expert, newFile, simple);
         // Until one window is on screen: normally just the primary, the next one if it failed to build. A window
         // whose session the launch did not read is not built here: it is read off the FX thread first and built
-        // when it lands, by buildNextRestoredWindow (PERF-01, Pauta 6.0.1).
+        // when it lands, by buildNextRestoredWindow (PERF-01, Pauta 6.2.0).
         while (windows.isEmpty() && !pendingRestore.isEmpty() && sessionReady(pendingRestore.peek())) {
             buildRestoredWindow(pendingRestore.poll());
         }
@@ -879,7 +879,7 @@ public class WindowManager {
                 stateFile = projects().stateFile(project);
             }
         }
-        // Its session is read off the FX thread first unless the launch's prefetch read it (PERF-01, Pauta 6.0.1).
+        // Its session is read off the FX thread first unless the launch's prefetch read it (PERF-01, Pauta 6.2.0).
         PendingWindow single = new PendingWindow(key, project, stateFile);
         String windowKey = key;
         Project windowProject = project;
@@ -977,7 +977,7 @@ public class WindowManager {
 
     /**
      * Builds the window for {@code key} once its session (and its project's settings) are read off the FX thread
-     * (PERF-01, Pauta 6.0.1), then hands {@code then} the window and whether this call built it. The command
+     * (PERF-01, Pauta 6.2.0), then hands {@code then} the window and whether this call built it. The command
      * that asked returns at once. A second ask for the same key while its read is under way joins it rather
      * than building a second window: its {@code then} is told {@code false}. A window that was opened another
      * way meanwhile is used as it is. The read waits for the config writes queued before it, so a session just
@@ -1034,7 +1034,7 @@ public class WindowManager {
         boolean built = false;
         if (holder == null && failure != null && config == null && !fallbackRead.contains(key)) {
             // The read threw (rare). The window reads its session as it was built before, reporting what is wrong,
-            // but that read goes off the FX thread too (PERF-01, Pauta 6.0.1): read it again the reporting way on
+            // but that read goes off the FX thread too (PERF-01, Pauta 6.2.0): read it again the reporting way on
             // the session reader, then land here with what it read (or build from the in-place fallback if even
             // that cannot be read).
             java.util.logging.Logger.getLogger(WindowManager.class.getName())
@@ -1074,7 +1074,7 @@ public class WindowManager {
                                 failure);
             }
             // A session not read even the reporting way (both reads threw) is not read here either: buildWindow
-            // refuses, which is logged below, rather than read on the FX thread (PERF-01, Pauta 6.0.1).
+            // refuses, which is logged below, rather than read on the FX thread (PERF-01, Pauta 6.2.0).
             readForBuild = failure == null ? config : null;
             try {
                 buildWindow(key, project, stateFile, targets, false, false, null, false);
@@ -1098,7 +1098,7 @@ public class WindowManager {
     /**
      * The bytes of {@code main.fxml}, read with the first window (the rule allows reading what the first window is
      * built from). Every later window is built by {@link MainView}, the same frame in code, so neither reads nor
-     * parses it on the FX thread (PERF-01, Pauta 6.0.1).
+     * parses it on the FX thread (PERF-01, Pauta 6.2.0).
      */
     private static byte @Nullable [] mainFxmlBytes;
 
@@ -1127,7 +1127,7 @@ public class WindowManager {
 
     /**
      * Reads, once and on a thread of its own, the bundled resources a later window or dialog would otherwise read
-     * on the FX thread (PERF-01, Pauta 6.0.1): the Settings window's table of controls, every bundled grammar (on
+     * on the FX thread (PERF-01, Pauta 6.2.0): the Settings window's table of controls, every bundled grammar (on
      * {@code grammars-warm}), New Maven Project's archetype catalog.
      */
     private static void warmBundledLater() {
@@ -1157,7 +1157,7 @@ public class WindowManager {
     /**
      * The first window is built by {@link MainView} too, not from {@code main.fxml}: for the start-up fallback, whose
      * first window is built in a {@code runLater}, where parsing XML is not one of the reads the rule allows
-     * (PERF-01, Pauta 6.0.1). {@code MainViewFxTest} keeps the two frames equal.
+     * (PERF-01, Pauta 6.2.0). {@code MainViewFxTest} keeps the two frames equal.
      */
     public static void firstFrameFromCode() {
         FIRST_FRAME_BUILT.set(true);
@@ -1496,7 +1496,7 @@ public class WindowManager {
 
     /**
      * The config of a window with a key just made up ({@code untitled:<random>}): a fresh session over a file no
-     * window has written, so nothing is read for it (PERF-01, Pauta 6.0.1).
+     * window has written, so nothing is read for it (PERF-01, Pauta 6.2.0).
      */
     private ConfigManager freshConfig(String key) {
         return new ConfigManager(shared, untitledStateFile(key));
@@ -1916,7 +1916,7 @@ public class WindowManager {
     /**
      * {@code settings.json} was saved in an editor tab: re-reads it into the shared settings and applies it in
      * every window (theme, keymap, view settings, open Settings windows), then hands {@code status} the status
-     * line saying so. The file is read and parsed off the FX thread (PERF-01, Pauta 6.0.1); the rest runs here
+     * line saying so. The file is read and parsed off the FX thread (PERF-01, Pauta 6.2.0); the rest runs here
      * when it lands.
      */
     public void settingsFileSaved(java.util.function.Consumer<String> status) {
@@ -2138,7 +2138,7 @@ public class WindowManager {
      * prefix in any dispatcher self-cancels on the next key, so no explicit reset is needed.
      */
     public void reloadSharedKeymap() {
-        // Every bundled keymap is parsed off the FX thread first (PERF-01, Pauta 6.0.1): at once after the launch's
+        // Every bundled keymap is parsed off the FX thread first (PERF-01, Pauta 6.2.0): at once after the launch's
         // warm-up, else when it lands.
         com.editora.command.KeymapManager.whenParsed(this::reloadSharedKeymapParsed);
     }
@@ -2233,7 +2233,7 @@ public class WindowManager {
                         stateFile != null ? stateFile : new ConfigManager(shared).getWorkspaceStateFile());
             }
             if (config == null) {
-                // Every window the app builds has its session read off the FX thread first (PERF-01, Pauta 6.0.1);
+                // Every window the app builds has its session read off the FX thread first (PERF-01, Pauta 6.2.0);
                 // only a test's own window is built from a read made here.
                 if (!sessionReadInPlaceForTest) {
                     throw new IllegalStateException("the session of window '" + key + "' was not read");
@@ -2244,7 +2244,7 @@ public class WindowManager {
             }
 
             // The first window is built from main.fxml, which start-up may read; every later window from MainView,
-            // its copy in code, so no window after the first parses XML on the FX thread (PERF-01, Pauta 6.0.1).
+            // its copy in code, so no window after the first parses XML on the FX thread (PERF-01, Pauta 6.2.0).
             MainController controller;
             BorderPane root;
             if (FIRST_FRAME_BUILT.compareAndSet(false, true)) {

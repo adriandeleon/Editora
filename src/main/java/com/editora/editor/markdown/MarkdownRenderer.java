@@ -208,7 +208,7 @@ public final class MarkdownRenderer {
 
     /**
      * Rasterizes the formulas of {@code ast} into {@link MathImages}' cache, for the app theme ({@code dark} null) or
-     * the one given, so the FX thread that builds the nodes finds them there (PERF-01, Pauta 6.0.1). Off the FX thread
+     * the one given, so the FX thread that builds the nodes finds them there (PERF-01, Pauta 6.2.0). Off the FX thread
      * only: the threads that parse a document for the preview, a popup or the agent panel call it after the parse.
      */
     public static void warmMath(org.commonmark.node.@Nullable Node ast, @Nullable Boolean dark) {
@@ -244,7 +244,7 @@ public final class MarkdownRenderer {
     public static final String POPUP_PARSE_SITE = "MarkdownRenderer.popupParse";
 
     /**
-     * Parses {@code markdown} for a popup off the FX thread (PERF-01, Pauta 6.0.1) and hands the AST, or null when
+     * Parses {@code markdown} for a popup off the FX thread (PERF-01, Pauta 6.2.0) and hands the AST, or null when
      * it could not be parsed, to {@code onFx} on the FX thread. The caller checks there that its popup still wants
      * it.
      */
@@ -645,7 +645,7 @@ public final class MarkdownRenderer {
     /**
      * As {@link #renderGroup}, for the text alone: pictures, formulas and diagrams are empty regions, so
      * nothing is loaded, rasterized or handed to a tool. Find in the preview reads a block that is not on
-     * screen this way (PERF-08, Pauta 6.0.1). FX thread.
+     * screen this way (PERF-08, Pauta 6.2.0). FX thread.
      */
     static @Nullable Node renderTextOnly(
             org.commonmark.node.Node first, org.commonmark.node.Node last, RenderContext ctx) {
@@ -1400,7 +1400,7 @@ public final class MarkdownRenderer {
         TextFlow flow = new TextFlow();
         flow.getStyleClass().add("md-code-block");
         flow.setMaxWidth(Double.MAX_VALUE);
-        // Only a grammar already loaded is asked for here (PERF-01, Pauta 6.0.1): a cold one is loaded on the
+        // Only a grammar already loaded is asked for here (PERF-01, Pauta 6.2.0): a cold one is loaded on the
         // highlight worker, which then colours the block as it would have.
         IGrammar cached = cachedGrammarForInfo(grammarInfo);
         if (cached != null) {
@@ -2251,7 +2251,7 @@ public final class MarkdownRenderer {
     /**
      * Where a {@code /path} image is: from the filesystem root when it is there, else the nearest folder above the
      * document that holds it. Looked at off the FX thread as the preview plans its blocks, answered from memory as an
-     * image node is built (PERF-01, Pauta 6.0.1). Null when nowhere: the path from the document's folder is kept.
+     * image node is built (PERF-01, Pauta 6.2.0). Null when nowhere: the path from the document's folder is kept.
      */
     private static final com.editora.perf.Looked<Rooted, Path> ROOTED =
             new com.editora.perf.Looked<>("MarkdownRenderer.resolveUrl", rooted -> {
@@ -2296,7 +2296,7 @@ public final class MarkdownRenderer {
             if (path.startsWith("/") && baseDir.getFileSystem() == java.nio.file.FileSystems.getDefault()) {
                 Rooted key = new Rooted(baseDir.toAbsolutePath(), path);
                 if (javafx.application.Platform.isFxApplicationThread() && !ROOTED.knows(key)) {
-                    // Never looked up the folders on the FX thread (PERF-01, Pauta 6.0.1): a note's hover asks
+                    // Never looked up the folders on the FX thread (PERF-01, Pauta 6.2.0): a note's hover asks
                     // here; it shows the path as written, and the next render finds the looked-up one.
                     Thread.ofVirtual().name("markdown-rooted-look").start(() -> ROOTED.lookAgain(key));
                 } else {

@@ -669,7 +669,7 @@ public enum BuildTool {
 
     /**
      * The wrapper lookups: made off the FX thread by detection and by a build's or a launch's plan, answered from
-     * memory on it — the tasks tree's header, the Settings row, a build before a launch (PERF-01, Pauta 6.0.1).
+     * memory on it — the tasks tree's header, the Settings row, a build before a launch (PERF-01, Pauta 6.2.0).
      */
     private static final com.editora.perf.Looked<WrapperKey, Path> WRAPPERS = new com.editora.perf.Looked<>(
             "BuildTool.wrapperFile",
@@ -734,7 +734,7 @@ public enum BuildTool {
 
     /**
      * {@link #npmManager} by folder: looked at off the FX thread by detection, a build's or a launch's plan
-     * ({@code warmTrust} asks {@code NPM.executable}), answered from memory on it (PERF-01, Pauta 6.0.1).
+     * ({@code warmTrust} asks {@code NPM.executable}), answered from memory on it (PERF-01, Pauta 6.2.0).
      */
     private static final com.editora.perf.Looked<NpmKey, NpmPackageManager.Detection> NPM_MANAGERS =
             new com.editora.perf.Looked<>("BuildTool.npmManager", k -> npmManagerNow(k.root(), k.projectRoot()));

@@ -12,7 +12,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Debug's guard for the build facts a launch asks of the disk on the FX thread — a build tool's wrapper, trust
- * summary and executable, the build tool of a folder, a Java file's project root (PERF-01, Pauta 6.0.1). When all are
+ * summary and executable, the build tool of a folder, a Java file's project root (PERF-01, Pauta 6.2.0). When all are
  * known the launch goes on at once; else they are looked at off the FX thread and the launch step runs again when
  * they land. A second launch asked meanwhile is refused (the status says a program is busy), so nothing starts twice.
  * Nothing is guessed, and nothing is looked at on the FX thread. The asks here have no effect but the asking.

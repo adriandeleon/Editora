@@ -12,7 +12,7 @@ import static com.editora.i18n.Messages.tr;
 /**
  * The window's last small removals, taken back one at a time by Edit: Undo Last Removal ({@value #COMMAND}): a watch,
  * a breakpoint that carried a condition, a key binding, a dictionary word. They are removed with no question, because
- * a question on each would be tiresome, so each records here how to put it back (CONF-01, Pauta 6.0.1), and the
+ * a question on each would be tiresome, so each records here how to put it back (CONF-01, Pauta 6.2.0), and the
  * status bar says so.
  *
  * <p>One per editor window, held by its {@link MainController} and emptied when the window closes: an entry's

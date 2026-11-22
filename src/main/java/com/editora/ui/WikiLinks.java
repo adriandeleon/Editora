@@ -112,7 +112,7 @@ final class WikiLinks {
     /**
      * {@code folder}'s files. Off the FX thread it lists the folder now; on it (a preview or command asking) it
      * answers the last listing and lists again behind it, and a folder never listed answers null — unresolved
-     * until the listing lands (PERF-01, Pauta 6.0.1). Following a link lists off the thread first.
+     * until the listing lands (PERF-01, Pauta 6.2.0). Following a link lists off the thread first.
      */
     private static @Nullable List<Path> filesIn(Path folder) {
         boolean fx;

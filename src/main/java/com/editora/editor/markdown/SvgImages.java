@@ -115,7 +115,7 @@ public final class SvgImages {
             String source,
             java.util.function.DoubleUnaryOperator sizer,
             com.editora.editor.structured.ParseErrorView.@Nullable Jump jump) {
-        // The key is a hash of the whole source: worked out off the FX thread (PERF-01, Pauta 6.0.1). A source seen
+        // The key is a hash of the whole source: worked out off the FX thread (PERF-01, Pauta 6.2.0). A source seen
         // before has its key remembered, so an unchanged image is shown from the cache at once.
         String knownKey = KEYS.knownKey("", source);
         Cached hit = knownKey == null ? null : CACHE.get(knownKey);

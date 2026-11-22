@@ -102,7 +102,7 @@ public class KeymapManager {
         warmTheOthers(mac);
     }
 
-    /** Bundled keymap resource → its parsed bindings: read once (PERF-01, Pauta 6.0.1), never again on a switch. */
+    /** Bundled keymap resource → its parsed bindings: read once (PERF-01, Pauta 6.2.0), never again on a switch. */
     private static final Map<String, Map<String, String>> PARSED = new java.util.concurrent.ConcurrentHashMap<>();
 
     private static final java.util.concurrent.atomic.AtomicBoolean WARMING =
@@ -135,7 +135,7 @@ public class KeymapManager {
     /**
      * After the first keymap is read (start-up's, which the rule allows), reads every bundled keymap, both
      * variants, once on a thread of its own, so a later switch, a rebind's base or a {@link #defaults} ask finds
-     * it parsed instead of reading the resource on the FX thread (PERF-01, Pauta 6.0.1).
+     * it parsed instead of reading the resource on the FX thread (PERF-01, Pauta 6.2.0).
      */
     private static void warmTheOthers(boolean mac) {
         if (!WARMING.compareAndSet(false, true)) {
@@ -169,7 +169,7 @@ public class KeymapManager {
     /**
      * Runs {@code then} on the FX thread once every bundled keymap is parsed: now when they are, else when the
      * parse started at launch (or here) lands. A keymap switch, a rebuild of the shared keymap and a rebind wait
-     * through it, so no keymap is read on the FX thread after the first window (PERF-01, Pauta 6.0.1).
+     * through it, so no keymap is read on the FX thread after the first window (PERF-01, Pauta 6.2.0).
      */
     public static void whenParsed(Runnable then) {
         if (ALL_PARSED.isDone()) {

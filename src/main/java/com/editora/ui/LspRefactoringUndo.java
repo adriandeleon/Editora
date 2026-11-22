@@ -97,7 +97,7 @@ final class LspRefactoringUndo {
     }
 
     /**
-     * Lets the tree move the file, and once the move has landed (off the FX thread, PERF-01, Pauta 6.0.1) records
+     * Lets the tree move the file, and once the move has landed (off the FX thread, PERF-01, Pauta 6.2.0) records
      * what it did: with the edit made for it, or as part of the drag.
      */
     private void proceedAndRecord(
@@ -384,7 +384,7 @@ final class LspRefactoringUndo {
         if (group != null && lastApplied != null) {
             group.add(lastApplied);
         }
-        // Saved only now that the move is recorded, off the FX thread and one after another (PERF-01, Pauta 6.0.1).
+        // Saved only now that the move is recorded, off the FX thread and one after another (PERF-01, Pauta 6.2.0).
         java.util.List<EditorBuffer> toSave = new java.util.ArrayList<>();
         for (EditedFile e : files) {
             EditorBuffer b = ops.bufferForPath(e.path());
@@ -545,7 +545,7 @@ final class LspRefactoringUndo {
             return; // the one under way is still checking or applying
         }
         undoLooking = true;
-        // The closed files are read off the FX thread (PERF-01, Pauta 6.0.1), then checked with the open ones.
+        // The closed files are read off the FX thread (PERF-01, Pauta 6.2.0), then checked with the open ones.
         java.util.List<EditedFile> closed = closedFiles(edit);
         com.editora.perf.OffFx.then("refactoring-intact-look", () -> closedFilesIntact(closed), read -> {
             undoLooking = false;
@@ -601,7 +601,7 @@ final class LspRefactoringUndo {
                 }
                 Path[] made = newPackageFolders.remove(edit);
                 if (made != null) {
-                    // Move ▸ New package's folder goes with it (BT4), off the FX thread (PERF-01, Pauta 6.0.1), and
+                    // Move ▸ New package's folder goes with it (BT4), off the FX thread (PERF-01, Pauta 6.2.0), and
                     // jdtls hears it is gone: the next Move still offered the package (fourth review BF4)
                     com.editora.perf.OffFx.then(
                             "refactoring-undo-folders",

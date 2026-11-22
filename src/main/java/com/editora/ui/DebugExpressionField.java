@@ -290,7 +290,7 @@ final class DebugExpressionField {
     static final String HIGHLIGHT_SITE = "DebugExpressionField.highlight";
 
     /**
-     * Highlights the text in the grammar: tokenized off the FX thread (PERF-01, Pauta 6.0.1), the styles applied only
+     * Highlights the text in the grammar: tokenized off the FX thread (PERF-01, Pauta 6.2.0), the styles applied only
      * when no edit and no later ask came meanwhile.
      */
     private void highlight() {

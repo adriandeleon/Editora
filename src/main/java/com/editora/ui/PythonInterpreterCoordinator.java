@@ -263,7 +263,7 @@ final class PythonInterpreterCoordinator {
     private void browse(@Nullable Path from) {
         javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
         chooser.setTitle(tr("python.interpreter.pick.browseTitle"));
-        ChooserStart.set(chooser, from); // no look at the folder first (PERF-01, Pauta 6.0.1)
+        ChooserStart.set(chooser, from); // no look at the folder first (PERF-01, Pauta 6.2.0)
         java.io.File picked = ChooserStart.show(chooser, c -> c.showOpenDialog(host.window()));
         if (picked == null) {
             return;

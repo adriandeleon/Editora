@@ -185,7 +185,7 @@ final class ProjectMapWorkingSets {
 
     /**
      * Whether two saved views are the same view, as they are stored: saving one over the other loses nothing. Pure.
-     * Compared property by property, as they are stored, with no JSON made (PERF-01, Pauta 6.0.1): both ways, so a
+     * Compared property by property, as they are stored, with no JSON made (PERF-01, Pauta 6.2.0): both ways, so a
      * map entry only one of them has counts.
      */
     static boolean sameView(ProjectMapState a, ProjectMapState b) {

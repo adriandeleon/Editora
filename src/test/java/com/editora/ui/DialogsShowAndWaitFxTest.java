@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * {@link Dialogs#showAndWait}, the one place a dialog with buttons is shown, and its hook
  * ({@link Dialogs#answerWith}, {@link DialogAnswers}): with the hook set no window opens, the hook is given what the
- * dialog asks as plain data, and the caller gets the dialog's own button back (CONF-12, Pauta 6.0.1).
+ * dialog asks as plain data, and the caller gets the dialog's own button back (CONF-12, Pauta 6.2.0).
  */
 @Tag("fx")
 class DialogsShowAndWaitFxTest {

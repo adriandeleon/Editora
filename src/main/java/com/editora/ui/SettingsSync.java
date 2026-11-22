@@ -229,7 +229,7 @@ final class SettingsSync {
      * overrides are not what they were.
      */
     void keymapReloaded() {
-        // A copy compared in memory, no JSON on the FX thread (PERF-01, Pauta 6.0.1).
+        // A copy compared in memory, no JSON on the FX thread (PERF-01, Pauta 6.2.0).
         KeybindingsFile.Bindings now = KeybindingsFile.Bindings.of(shared.getSettings());
         if (!Objects.equals(now, keybindingsSeen)) {
             keybindingsSeen = now;
@@ -471,7 +471,7 @@ final class SettingsSync {
 
     /**
      * The config directory's files, written on the config writer (in order with every store's save, so none is
-     * saving at the same moment) while the sync thread waits, never on the FX thread (PERF-01, Pauta 6.0.1). The
+     * saving at the same moment) while the sync thread waits, never on the FX thread (PERF-01, Pauta 6.2.0). The
      * key bindings are not a file here but part of the live {@link Settings}: the FX thread hands over a copy of
      * them (memory only) and later takes the bindings a run brought, which the sync thread rendered, compared and
      * parsed; they are saved with {@code settings.json}.

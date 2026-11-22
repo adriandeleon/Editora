@@ -76,7 +76,7 @@ final class TypstCoordinator {
                 return;
             }
             // A PDF is one file — the destination the caller's Save dialog already confirmed. Moved into place off
-            // the FX thread (PERF-01, Pauta 6.0.1).
+            // the FX thread (PERF-01, Pauta 6.2.0).
             pending.take();
             com.editora.perf.OffFx.then(
                     "typst-export-commit",
@@ -146,13 +146,13 @@ final class TypstCoordinator {
             host.setStatus(tr("status.typst.exportFailed", tr("status.typst.noOutput")));
             return;
         }
-        // looked at off the FX thread before the result was handed over (PERF-01, Pauta 6.0.1)
+        // looked at off the FX thread before the result was handed over (PERF-01, Pauta 6.2.0)
         java.util.List<Path> existing = pending.existingTargets();
         if (!existing.isEmpty() && !confirmReplace.test(existing)) {
             host.setStatus(tr("status.typst.exportCancelled"));
             return;
         }
-        // moved into place off the FX thread (PERF-01, Pauta 6.0.1)
+        // moved into place off the FX thread (PERF-01, Pauta 6.2.0)
         pending.take();
         com.editora.perf.OffFx.then("typst-export-commit", pending::commit, committed -> {
             java.util.List<Path> written = committed.value();

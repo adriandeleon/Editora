@@ -102,7 +102,7 @@ final class AgentOpsHost implements AgentCoordinator.Ops {
 
     @Override
     public void rememberSession(String sessionId, String cwd, String candidateLabel, long updatedAt, String agentId) {
-        // The history's first read runs on a thread of its own (PERF-01, Pauta 6.0.1); the entry lands after it.
+        // The history's first read runs on a thread of its own (PERF-01, Pauta 6.2.0); the entry lands after it.
         mc.config
                 .shared()
                 .agentSessions(history -> history.remember(sessionId, cwd, candidateLabel, updatedAt, agentId));

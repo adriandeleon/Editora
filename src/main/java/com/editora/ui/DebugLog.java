@@ -63,7 +63,7 @@ public final class DebugLog {
 
     /**
      * Where the session file and the console are written: {@code debug-log-writer}, never the thread that logs
-     * (PERF-01, Pauta 6.0.1: a record logged on the FX thread must not write a file there). Heard by
+     * (PERF-01, Pauta 6.2.0: a record logged on the FX thread must not write a file there). Heard by
      * {@link com.editora.perf.BlockingSites} on the writer, once per batch it writes.
      */
     public static final String WRITE_SITE = "DebugLog.write";

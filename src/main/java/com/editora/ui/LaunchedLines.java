@@ -27,7 +27,7 @@ import org.jspecify.annotations.Nullable;
  * adapter in the launched text's numbering, and frame and breakpoint lines come back through the same mapping.
  * A successful hot code replace makes the current text the launched one ({@link #rebaseline}).
  *
- * <p>The mapping is a diff of the whole file, so it is worked out off the JavaFX thread (PERF-01, Pauta 6.0.1) on
+ * <p>The mapping is a diff of the whole file, so it is worked out off the JavaFX thread (PERF-01, Pauta 6.2.0) on
  * a snapshot of the document, keyed by its {@linkplain EditorBuffer#docVersion() version}: {@link #known} answers
  * only for the version the document has now, {@link #latest} answers the last one worked out meanwhile, and a
  * waiter given to either runs on the FX thread once the mapping for the then-current text has landed (worked out

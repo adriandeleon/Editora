@@ -31,7 +31,7 @@ import static com.editora.i18n.Messages.tr;
  * a node of the window it searches, never a popup.
  *
  * <p>Stateless between steps: every search scans a snapshot of the console's current text off the FX thread
- * (PERF-01, Pauta 6.0.1; {@link #SEARCH_SITE}), the latest ask winning and an answer for text that changed
+ * (PERF-01, Pauta 6.2.0; {@link #SEARCH_SITE}), the latest ask winning and an answer for text that changed
  * meanwhile worked out again, so output that arrives while the bar is open is searched too and no stale match
  * index is kept. Typing searches once it pauses. Every match is painted
  * while the bar is open, the active one more strongly, over a console that was given the layer for it
@@ -456,7 +456,7 @@ final class ConsoleFindBar extends HBox {
 
     /**
      * Searches a snapshot of the text off the FX thread and applies the answer to the text it was found in
-     * (PERF-01, Pauta 6.0.1). A later ask supersedes it (a repaint never supersedes a step or a refine, which
+     * (PERF-01, Pauta 6.2.0). A later ask supersedes it (a repaint never supersedes a step or a refine, which
      * paints too); text that changed meanwhile is searched again, up to three times, and then the latest answer is
      * applied anyway, the queued repaint of the newer text following it.
      */

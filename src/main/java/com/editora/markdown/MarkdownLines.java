@@ -77,7 +77,7 @@ public final class MarkdownLines {
 
     /**
      * What a line is, answered without scanning: the editor keeps a map of its document's lines, made off the
-     * JavaFX thread (PERF-01, Pauta 6.0.1), and binds it with {@link #withKinds} around a call made on that
+     * JavaFX thread (PERF-01, Pauta 6.2.0), and binds it with {@link #withKinds} around a call made on that
      * thread, so the helpers here look a line up instead of scanning the document above it.
      */
     @FunctionalInterface

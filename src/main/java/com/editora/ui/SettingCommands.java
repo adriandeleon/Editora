@@ -18,7 +18,7 @@ import org.jspecify.annotations.Nullable;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * The palette commands for the settings whose Settings rows had none (SET-06, Pauta 6.0.1): every setting the
+ * The palette commands for the settings whose Settings rows had none (SET-06, Pauta 6.2.0): every setting the
  * Settings window shows can be flipped, chosen or typed from the palette too. A command here either changes one
  * setting ({@code view.toggleWordWrapProse}) or opens a picker of the settings of one Settings page, each named
  * as its row and showing its value, and then flips the one picked, lists its choices or asks for its value

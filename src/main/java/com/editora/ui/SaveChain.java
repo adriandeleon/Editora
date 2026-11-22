@@ -8,7 +8,7 @@ import com.editora.editor.EditorBuffer;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Saves several buffers one after another without waiting on the FX thread (PERF-01, Pauta 6.0.1): each write runs
+ * Saves several buffers one after another without waiting on the FX thread (PERF-01, Pauta 6.2.0): each write runs
  * where the save path puts it, and the next starts when the one before has landed. What a command that must run on
  * the saved files goes on with, instead of a nested event loop per save.
  */
@@ -41,7 +41,7 @@ final class SaveChain {
 
     /**
      * True when none of {@code buffers} is edited or untitled. Otherwise they are saved one after another off the FX
-     * thread (PERF-01, Pauta 6.0.1) and {@code again} — the command, asked again — runs once every write has landed
+     * thread (PERF-01, Pauta 6.2.0) and {@code again} — the command, asked again — runs once every write has landed
      * and left its buffer clean; a refused save stops it, having said why.
      */
     static boolean savedOrThen(

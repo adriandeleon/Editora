@@ -66,7 +66,7 @@ public final class MarkdownEditing {
 
     /**
      * Runs a pure helper over {@code text} (the text of {@code a}, taken just now) with the block map answering
-     * "is this line code?", so the helper looks lines up instead of scanning the document (PERF-01, Pauta 6.0.1).
+     * "is this line code?", so the helper looks lines up instead of scanning the document (PERF-01, Pauta 6.2.0).
      */
     private <T> T known(CodeArea a, String text, java.util.function.Supplier<T> work) {
         return MarkdownLines.withKinds(text, ls -> blockMap.kindAtOffset(a, ls), work);
@@ -95,7 +95,7 @@ public final class MarkdownEditing {
     private final java.util.Set<String> working = new java.util.HashSet<>();
 
     /**
-     * Works {@code work} out off the JavaFX thread on a snapshot of {@code a} (PERF-01, Pauta 6.0.1) and hands
+     * Works {@code work} out off the JavaFX thread on a snapshot of {@code a} (PERF-01, Pauta 6.2.0) and hands
      * its answer to {@code landed} on the FX thread — only while the document, the anchor and the caret are as
      * they were. When they moved meanwhile it is worked out again on the text as it is then, up to
      * {@link #RETRIES} times; after that {@code landed} gets {@code null}, as for nothing to do. A second ask
@@ -662,7 +662,7 @@ public final class MarkdownEditing {
 
     /**
      * The destination of the link at {@code offset} of {@code a} (Ctrl/Cmd-click), worked out off the JavaFX
-     * thread on a snapshot (PERF-01, Pauta 6.0.1); {@code then} hears it — null for no link — only while the
+     * thread on a snapshot (PERF-01, Pauta 6.2.0); {@code then} hears it — null for no link — only while the
      * document is the one clicked in. A click on text that has changed since is dropped.
      */
     public void linkAt(CodeArea a, int offset, java.util.function.Consumer<@Nullable String> then) {
@@ -687,7 +687,7 @@ public final class MarkdownEditing {
     /**
      * What is under the caret, link-wise, in a snapshot: a wiki link, a Markdown link (a reference resolved
      * against the whole document), whether the caret's line is in a table, and the selected text when it is on
-     * one line. Worked out off the JavaFX thread (PERF-01, Pauta 6.0.1).
+     * one line. Worked out off the JavaFX thread (PERF-01, Pauta 6.2.0).
      */
     record LinkHere(
             MarkdownWiki.@Nullable Link wiki, MarkdownLinks.@Nullable Link link, boolean inTable, String selection) {}
@@ -905,7 +905,7 @@ public final class MarkdownEditing {
      * The clipboard as Markdown: its HTML converted (a table, links, emphasis, lists, headings, code), else —
      * for the explicit command — tab-separated text as a table. {@code then} hears null when there is nothing to
      * convert. The clipboard is read here; it is parsed and converted off the JavaFX thread (PERF-01, Pauta
-     * 6.0.1), and {@code then} inserts it (or pastes the plain text) when it lands.
+     * 6.2.0), and {@code then} inserts it (or pastes the plain text) when it lands.
      *
      * <p>{@code explicit} false is the ordinary paste asking whether to step in, and it does so only for HTML
      * that carries structure ({@link HtmlToMarkdown#hasStructure}), when the plain text beside it is not
@@ -1152,7 +1152,7 @@ public final class MarkdownEditing {
     /**
      * Before a save: regenerates the managed {@code <!-- toc -->} block when the document has one and it is
      * out of date — never inserts one, and never on a read-only or preview-only buffer — then runs {@code then}
-     * (the save). The headings are parsed off the JavaFX thread (PERF-01, Pauta 6.0.1); the block is replaced,
+     * (the save). The headings are parsed off the JavaFX thread (PERF-01, Pauta 6.2.0); the block is replaced,
      * as one undo step with the caret kept, only in the text it was worked out from.
      */
     public void updateTocForSave(Runnable then) {
@@ -1189,7 +1189,7 @@ public final class MarkdownEditing {
      * Regenerates the document's {@code <!-- toc -->} block in place (the caret stays where it was), or
      * inserts a new one at the caret, then tells {@code done} — false when not an editable Markdown buffer, or
      * there is no heading to list. The headings are parsed off the JavaFX thread on a snapshot (PERF-01, Pauta
-     * 6.0.1) and the block lands only in the text it was worked out from.
+     * 6.2.0) and the block lands only in the text it was worked out from.
      */
     public void insertOrUpdateToc(java.util.function.Consumer<Boolean> done) {
         if (!buffer.canFormatMarkdown()) {

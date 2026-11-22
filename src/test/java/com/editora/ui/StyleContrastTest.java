@@ -152,7 +152,7 @@ class StyleContrastTest {
     }
 
     /**
-     * The only selectors whose text may be the ~3:1 subtle ink (ICON-09, Pauta 6.0.1): decorative text a person
+     * The only selectors whose text may be the ~3:1 subtle ink (ICON-09, Pauta 6.2.0): decorative text a person
      * does not read. The test walks every rule of the sheets that colour by role and fails any other that sets a
      * text fill to it, so a readable selector it does not name cannot slip through.
      */

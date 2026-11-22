@@ -3175,7 +3175,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             actions.openText(title, text, how.language);
             return;
         }
-        // Laid out off the FX thread (PERF-01, Pauta 6.0.1): a debuggee's string may be of any size.
+        // Laid out off the FX thread (PERF-01, Pauta 6.2.0): a debuggee's string may be of any size.
         StringViews.layOutLater(
                 text, how == ViewAs.JSON, laidOut -> actions.openText(title, laidOut, how.language), why -> {
                     // Not what it was asked to be: shown as it is, and said why.

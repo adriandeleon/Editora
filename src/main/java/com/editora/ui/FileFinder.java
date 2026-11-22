@@ -300,7 +300,7 @@ public class FileFinder {
 
     /**
      * Shows the entries whose name starts with what is typed after the last separator. A folder can hold tens of
-     * thousands of entries, so they are matched off the FX thread (PERF-01, Pauta 6.0.1) on the listing as read; the
+     * thousands of entries, so they are matched off the FX thread (PERF-01, Pauta 6.2.0) on the listing as read; the
      * rows shown stay until the latest answer lands, and Enter or Tab pressed meanwhile waits for it.
      */
     private void applyFilter(String text) {
@@ -387,7 +387,7 @@ public class FileFinder {
             chosen(target, listing.isDirectory(target)); // listed: known already
             return;
         }
-        // A typed path: whether it is a folder is looked at off the FX thread (PERF-01, Pauta 6.0.1).
+        // A typed path: whether it is a folder is looked at off the FX thread (PERF-01, Pauta 6.2.0).
         choosing = true;
         com.editora.perf.OffFx.then("file-finder-look", () -> Files.isDirectory(target), folder -> {
             choosing = false;

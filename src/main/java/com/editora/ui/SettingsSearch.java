@@ -353,7 +353,7 @@ final class SettingsSearch {
     }
 
     /**
-     * As {@link #filter}, with the scoring off the FX thread (PERF-01, Pauta 6.0.1): the rows' texts and what the
+     * As {@link #filter}, with the scoring off the FX thread (PERF-01, Pauta 6.2.0): the rows' texts and what the
      * row filter says are taken here, scored on a picker thread, and shown when the latest query's answer lands.
      * {@code done} gets the result (null for a blank query) and whether the shortcut list holds a match.
      */

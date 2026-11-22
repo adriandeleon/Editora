@@ -5,7 +5,7 @@ import com.editora.command.Command;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * The commands behind the rows of the Project tree's file menu (KBD-01 and MENU-05, Pauta 6.0.1). Each does to the
+ * The commands behind the rows of the Project tree's file menu (KBD-01 and MENU-05, Pauta 6.2.0). Each does to the
  * selected row what its menu row does to the row right-clicked, which a right-click selects first, so the row and the
  * command run the same {@code ProjectPanel} method on the same file. In the Project Map window the commands act on
  * the Map's selected row while the keyboard is on the Map's rows, as the Map's copy of the menu does.

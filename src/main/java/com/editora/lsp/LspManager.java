@@ -149,7 +149,7 @@ public final class LspManager {
 
     /**
      * TEST SEAM — whether no server start is under way on this manager's start threads, so a test can tell that a
-     * start which was going to happen has happened (QUAL-07, Pauta 6.0.1: tests wait on the thing, not a time).
+     * start which was going to happen has happened (QUAL-07, Pauta 6.2.0: tests wait on the thing, not a time).
      */
     public boolean startsIdleForTest() {
         return startsRunning.get() == 0;
@@ -334,7 +334,7 @@ public final class LspManager {
             return;
         }
         // Not made yet (the launch's thread makes it; a failure there, or another config folder): made off the FX
-        // thread (PERF-01, Pauta 6.0.1). Until it lands a loose file has no shared root.
+        // thread (PERF-01, Pauta 6.2.0). Until it lands a loose file has no shared root.
         looseRoot = null;
         Path asked = next;
         Thread.ofVirtual().name("loose-root").start(() -> {
@@ -1374,7 +1374,7 @@ public final class LspManager {
         String languageId = LspServerRegistry.protocolLanguageId(routeLanguageId, file);
         if (JavaScriptShadow.wanted(file, routeLanguageId) && com.editora.process.ExecTargets.runsHere(file)) {
             // The stand-in must be on disk before jdtls hears of the document: it is written off the FX thread
-            // (PERF-01, Pauta 6.0.1) and the document opened when it is, with the text it has by then.
+            // (PERF-01, Pauta 6.2.0) and the document opened when it is, with the text it has by then.
             scriptOpens.put(uri, text == null ? "" : text);
             SHADOW_WORK.execute(() -> {
                 com.editora.perf.BlockingSites.enter("LspManager.javaScriptShadow");
@@ -1498,7 +1498,7 @@ public final class LspManager {
     /**
      * As {@link #changeDocument(Path, String)}; {@code onUnchanged} also runs, on the FX thread, when the server
      * turns out to hold text equal to {@code text}: that compare is made off the FX thread as the change is sent,
-     * so it can be learned only later (PERF-01, Pauta 6.0.1). It does not run when this returns false.
+     * so it can be learned only later (PERF-01, Pauta 6.2.0). It does not run when this returns false.
      */
     public boolean changeDocument(Path file, String text, Runnable onUnchanged) {
         String key = uri(file);
@@ -1916,7 +1916,7 @@ public final class LspManager {
     }
 
     /** TEST SEAM — whether an idle-eviction timer is pending for {@code (serverId, root)}: with none pending, nothing
-     *  can evict the session, so a test sees "not evicted" without waiting out the grace (QUAL-07, Pauta 6.0.1). */
+     *  can evict the session, so a test sees "not evicted" without waiting out the grace (QUAL-07, Pauta 6.2.0). */
     boolean evictionPendingForTest(String serverId, Path root) {
         return pendingEvictions.containsKey(sessionKey(serverId, root));
     }
@@ -3974,7 +3974,7 @@ public final class LspManager {
     /**
      * Whether {@code file} is a folder. Off the FX thread it looks and keeps the answer; on it it answers what was
      * kept, and "not a folder" for a path no reader thread looked at (a file's diagnostics, which is what a path
-     * the server published for usually is) (PERF-01, Pauta 6.0.1). Every publish is looked at on its reader thread
+     * the server published for usually is) (PERF-01, Pauta 6.2.0). Every publish is looked at on its reader thread
      * before it reaches the FX thread ({@code LspDiagnostics}).
      */
     public static boolean isFolder(Path file) {

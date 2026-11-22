@@ -198,7 +198,7 @@ final class TemplateCoordinator {
         }
         NewFileContent.Rendered rendered = NewFileContent.render(type, plan.baseName(), plan.packageName());
         // The containment on the real path, whether the name is taken, the folder's .editorconfig and the write are
-        // all off the FX thread (PERF-01, Pauta 6.0.1); the file opens when it is there.
+        // all off the FX thread (PERF-01, Pauta 6.2.0); the file opens when it is there.
         com.editora.perf.OffFx.then(
                 "new-file-write",
                 () -> {
@@ -320,7 +320,7 @@ final class TemplateCoordinator {
     }
 
     private void pickTemplate(String title, Predicate<Template> filter, Consumer<Template> onChoose) {
-        // Read on the template thread (PERF-01, Pauta 6.0.1); the picker shows when the list lands.
+        // Read on the template thread (PERF-01, Pauta 6.2.0); the picker shows when the list lands.
         templates().later(TemplateRegistry::load, (loaded, failure) -> {
             if (loaded != null) {
                 pickTemplate(title, filter, onChoose, loaded);
@@ -455,7 +455,7 @@ final class TemplateCoordinator {
             if (browse.isDisabled()) {
                 return;
             }
-            // where it opens (the nearest folder that exists) is looked for off the FX thread (PERF-01, Pauta 6.0.1)
+            // where it opens (the nearest folder that exists) is looked for off the FX thread (PERF-01, Pauta 6.2.0)
             browse.setDisable(true);
             Path candidate = initialDir.get();
             com.editora.perf.OffFx.then("template-folder-look", () -> nearestFolder(candidate), init -> {
@@ -479,7 +479,7 @@ final class TemplateCoordinator {
 
     /**
      * The wizard asks for this many of a template's variables at most; the others keep their defaults, and the form
-     * says so (PERF-08, Pauta 6.0.1).
+     * says so (PERF-08, Pauta 6.2.0).
      */
     static final int MAX_VARIABLE_FIELDS = 50;
 
@@ -1145,7 +1145,7 @@ final class TemplateCoordinator {
      * The chosen JSON opens in the editor. Nothing is created until a row that says so is chosen.
      */
     void editUserTemplates() {
-        // The folders are read on the template thread (PERF-01, Pauta 6.0.1); the picker shows when they land.
+        // The folders are read on the template thread (PERF-01, Pauta 6.2.0); the picker shows when they land.
         templates().later(TemplateCoordinator::readEditData, (data, failure) -> {
             if (data == null) {
                 return;

@@ -176,7 +176,7 @@ final class RunOpsHost implements RunCoordinator.Ops {
     /**
      * Whether a folder holds a pom ({@code [0]}) and Gradle build files ({@code [1]}), as last looked. A launch's
      * plan looks off the FX thread; an FX command that needs a folder no look has filled waits for one first
-     * ({@code Looked.allKnown}), so the FX thread answers from memory (PERF-01, Pauta 6.0.1).
+     * ({@code Looked.allKnown}), so the FX thread answers from memory (PERF-01, Pauta 6.2.0).
      */
     private static final com.editora.perf.Looked<java.nio.file.Path, boolean[]> BUILD_FILES =
             new com.editora.perf.Looked<>("RunOpsHost.buildFiles", RunOpsHost::buildFilesNow);
@@ -216,7 +216,7 @@ final class RunOpsHost implements RunCoordinator.Ops {
             java.util.function.Consumer<List<String>> cb) {
         Thread.ofVirtual().name("editora-maven-cp").start(() -> {
             List<String> result = com.editora.maven.MavenClasspathResolver.resolve(root, jdkHome, executable, scope);
-            // what the launch asks next on the FX thread, looked at here (PERF-01, Pauta 6.0.1)
+            // what the launch asks next on the FX thread, looked at here (PERF-01, Pauta 6.2.0)
             com.editora.run.JdkToolchain.isGone(jdkHome);
             com.editora.run.JdkToolchain.inheritedJavaExecutable(System.getenv());
             Platform.runLater(() -> cb.accept(result));
@@ -267,7 +267,7 @@ final class RunOpsHost implements RunCoordinator.Ops {
 
     @Override
     public void runGradleRunTask(java.nio.file.Path root) {
-        // The build script is read off the FX thread (PERF-01, Pauta 6.0.1): bootRun for Spring Boot.
+        // The build script is read off the FX thread (PERF-01, Pauta 6.2.0): bootRun for Spring Boot.
         DebugPlanning.offFx(
                 "gradle-run-task",
                 () -> com.editora.build.SpringBoot.gradleRunTask(

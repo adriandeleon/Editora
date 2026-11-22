@@ -423,7 +423,7 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
         int selectedLines;
         if (selectedChars > 0) {
             // From the paragraphs the ends are in, not a copy of the selection (a Select All then made every
-            // Shift+arrow copy the document: PERF-08, Pauta 6.0.1). As String.lines(): a selection that ends
+            // Shift+arrow copy the document: PERF-08, Pauta 6.2.0). As String.lines(): a selection that ends
             // just after a line break does not count the line it ends on.
             var sel = area.getSelection();
             var from = area.offsetToPosition(sel.getStart(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);

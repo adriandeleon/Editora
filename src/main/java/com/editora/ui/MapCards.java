@@ -1314,7 +1314,7 @@ final class MapCards {
             card.setInlayHints(text, List.of());
             return;
         }
-        // The card's lines are counted and split off the FX thread (PERF-01, Pauta 6.0.1), then asked for if the card
+        // The card's lines are counted and split off the FX thread (PERF-01, Pauta 6.2.0), then asked for if the card
         // still shows that text.
         com.editora.perf.OffFx.then(CARD_LINES_SITE, () -> text.split("\n", -1), a -> {
             String[] lines = a.value();

@@ -71,7 +71,7 @@ final class SearchEverywherePopup {
     private boolean acceptWhenLanded;
 
     /**
-     * Where the rows come from. The three sources are searched off the FX thread (PERF-01, Pauta 6.0.1): each search
+     * Where the rows come from. The three sources are searched off the FX thread (PERF-01, Pauta 6.2.0): each search
      * asks {@link #sources} on the FX thread for a copy safe on another thread, and calls its three methods on a
      * picker thread with the sigil already stripped off the query.
      */
@@ -380,7 +380,7 @@ final class SearchEverywherePopup {
         boolean commands = scope.kind() == null || scope.kind() == Kind.COMMAND;
         boolean files = corpus && (scope.kind() == null || scope.kind() == Kind.FILE);
         boolean symbols = corpus && (scope.kind() == null || scope.kind() == Kind.SYMBOL);
-        // Searched off the FX thread (PERF-01, Pauta 6.0.1) on a copy of the sources as they are now; the rows shown
+        // Searched off the FX thread (PERF-01, Pauta 6.2.0) on a copy of the sources as they are now; the rows shown
         // stay until the latest query's answer lands.
         Sources sources = ops.sources();
         String query = scope.query();

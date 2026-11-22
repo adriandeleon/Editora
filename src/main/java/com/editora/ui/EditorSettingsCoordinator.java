@@ -150,7 +150,7 @@ final class EditorSettingsCoordinator {
         this.host = host;
         this.spell = new SpellCoordinator(host, this);
         com.editora.editorconfig.EditorConfig.addListener(editorConfigChanged);
-        // A bundled family the FX thread asked for is registered off it (PERF-01, Pauta 6.0.1): apply the fonts
+        // A bundled family the FX thread asked for is registered off it (PERF-01, Pauta 6.2.0): apply the fonts
         // again when it lands. Held weakly, so a closed window is not kept by the font loader.
         java.lang.ref.WeakReference<Runnable> landed = new java.lang.ref.WeakReference<>(fontsLanded);
         Fonts.whenFamiliesLoaded(() -> {
@@ -174,7 +174,7 @@ final class EditorSettingsCoordinator {
 
     /**
      * A look behind an FX answer found a file's {@code .editorconfig} rules changed (or a file nothing had looked
-     * at got its first answer): the open buffers of that file take the new rules (PERF-01, Pauta 6.0.1). Kept in a
+     * at got its first answer): the open buffers of that file take the new rules (PERF-01, Pauta 6.2.0). Kept in a
      * field because {@link com.editora.editorconfig.EditorConfig} holds its listeners weakly.
      */
     private final java.util.function.Consumer<Path> editorConfigChanged = this::editorConfigChanged;
@@ -334,7 +334,7 @@ final class EditorSettingsCoordinator {
         String field = prose ? "wordWrapProse" : "wordWrap";
         if (scope.trusted() && ProjectScopeSettings.valueOf(scope.settings(), "editor." + field) != null) {
             // The project's value governs this window: flipping the user's would change nothing on screen. The
-            // file is written off the FX thread (PERF-01, Pauta 6.0.1); the window re-lays out when it is.
+            // file is written off the FX thread (PERF-01, Pauta 6.2.0); the window re-lays out when it is.
             Path root = scope.root();
             com.editora.config.ProjectSettingsFile.setLater(root, "editor", field, next, failure -> {
                 if (failure != null) {
@@ -516,7 +516,7 @@ final class EditorSettingsCoordinator {
         if (id == null) {
             return;
         }
-        // The keymaps are parsed off the FX thread (PERF-01, Pauta 6.0.1): the switch waits for them.
+        // The keymaps are parsed off the FX thread (PERF-01, Pauta 6.2.0): the switch waits for them.
         com.editora.command.KeymapManager.whenParsed(() -> {
             KeymapLayers.switchKeymap(host.config().getSettings(), id);
             host.config().save();
@@ -717,7 +717,7 @@ final class EditorSettingsCoordinator {
 
     /** Re-scans the user-theme folders (config dir) so newly-added themes appear without a restart. */
     void reloadUserThemes() {
-        // The theme folders are read off the FX thread (PERF-01, Pauta 6.0.1); the pickers change when they land.
+        // The theme folders are read off the FX thread (PERF-01, Pauta 6.2.0); the pickers change when they land.
         UserThemes.reload(host.config().getConfigDir(), () -> {
             if (host.settingsWindow() != null) {
                 host.settingsWindow().syncThemes(); // rebuild the theme/editor-theme combos from the fresh list
@@ -1337,7 +1337,7 @@ final class EditorSettingsCoordinator {
     boolean refreshEditorConfig(EditorBuffer buffer) {
         Path path = buffer.getPath();
         boolean applies = editorConfigEnabled() && path != null && com.editora.vfs.Vfs.isLocal(path);
-        // On the FX thread this is the answer a look off the thread last gave (PERF-01, Pauta 6.0.1); the look
+        // On the FX thread this is the answer a look off the thread last gave (PERF-01, Pauta 6.2.0); the look
         // made again behind it brings a changed .editorconfig to the buffer when it lands.
         com.editora.editorconfig.EditorConfigProperties now = !applies
                 ? com.editora.editorconfig.EditorConfigProperties.EMPTY
@@ -1475,7 +1475,7 @@ final class EditorSettingsCoordinator {
             host.setStatus(tr("status.editorConfig.none"));
             return;
         }
-        // The walk up the folders reads the disk: off the FX thread (PERF-01, Pauta 6.0.1).
+        // The walk up the folders reads the disk: off the FX thread (PERF-01, Pauta 6.2.0).
         com.editora.perf.OffFx.then(
                 "editorconfig-nearest", () -> com.editora.editorconfig.EditorConfig.nearestFile(path), found -> {
                     Path ec = found.value();
@@ -1503,7 +1503,7 @@ final class EditorSettingsCoordinator {
             return;
         }
         // Every open file's rules are looked at afresh off the FX thread (an .editorconfig was just saved, or
-        // the feature switched on), then applied here (PERF-01, Pauta 6.0.1).
+        // the feature switched on), then applied here (PERF-01, Pauta 6.2.0).
         java.util.Map<EditorBuffer, Path> open = new java.util.LinkedHashMap<>();
         for (Tab tab : host.editorArea().tabs()) {
             EditorBuffer buffer = host.bufferOf(tab);

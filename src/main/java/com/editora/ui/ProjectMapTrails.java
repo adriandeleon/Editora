@@ -47,7 +47,7 @@ import static com.editora.i18n.Messages.tr;
  * the trail, change a stop's note, play from a stop. Every change is written at once. Local folders only.
  *
  * <p>Every read, listing and write of a trail file runs on one thread of its own, in the order they were asked for
- * (PERF-01, Pauta 6.0.1), and what it found is applied on the FX thread when it lands. The menu is filled from the
+ * (PERF-01, Pauta 6.2.0), and what it found is applied on the FX thread when it lands. The menu is filled from the
  * trails listed last, with a Loading… row until a first listing has landed, and is filled again when a fresh one
  * lands. The editor's write over a trail checks, on that thread, that the file still holds the trail it showed.
  */
@@ -870,7 +870,7 @@ final class ProjectMapTrails {
             view.onStatus.accept(tr("project.map.status.trail.stopGone", index + 1, target.file()));
             return;
         }
-        // still there? looked at off the FX thread (PERF-01, Pauta 6.0.1); a later stop replaces this one
+        // still there? looked at off the FX thread (PERF-01, Pauta 6.2.0); a later stop replaces this one
         io(() -> Files.isRegularFile(file), there -> {
             if (ticket != generation) {
                 return;

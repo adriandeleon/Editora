@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-01 (Pauta 6.0.1), the work done in place on a document: each test drives on the FX thread, the way an event
+ * PERF-01 (Pauta 6.2.0), the work done in place on a document: each test drives on the FX thread, the way an event
  * does, what used to search, hash or parse the user's text there — a typed edit and its undo back to the saved text
  * (the dirty check's hash), the find bar typed into and its Replace and Replace All, a caret beside a bracket whose
  * partner is far off in a large file, shell completion's scan of the script, the Run scan after an open, Replace in

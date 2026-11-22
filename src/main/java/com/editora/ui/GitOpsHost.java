@@ -131,7 +131,7 @@ final class GitOpsHost implements GitCoordinator.WindowOps {
 
     @Override
     public void saveBeforeGitThen(EditorBuffer buffer, java.util.function.Consumer<Boolean> then) {
-        // The write off the FX thread, its outcome on it: no nested wait (PERF-01, Pauta 6.0.1).
+        // The write off the FX thread, its outcome on it: no nested wait (PERF-01, Pauta 6.2.0).
         mc.fileWorkflows.saveThen(buffer, saved -> then.accept(saved && !buffer.isDirty()));
     }
 

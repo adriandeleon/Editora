@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * ACC-02 (Pauta 6.0.1): a pane, label or canvas the app makes clickable is a button to a screen reader and to the
+ * ACC-02 (Pauta 6.2.0): a pane, label or canvas the app makes clickable is a button to a screen reader and to the
  * keyboard, or something else does what its click does. Read from the source: every click handler in
  * {@code src/main/java} ({@code setOnMouseClicked}, {@code setOnMousePressed}, {@code setOnMouseReleased}, and
  * {@code addEventHandler}/{@code addEventFilter} for {@code MOUSE_CLICKED}, {@code MOUSE_PRESSED} or

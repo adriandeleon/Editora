@@ -1,17 +1,9 @@
 {
   "exceptions": [
     {
-      "rule": "DOCS-04",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/documentation/#docs-04",
-      "kind": "pending",
-      "reason": "The website does not check on every build that its generated pages still match the app.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1557"
-    },
-    {
       "rule": "DOCS-18",
       "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/documentation/#docs-18",
+      "url": "https://pauta-project.dev/6.2.0/documentation/#docs-18",
       "kind": "pending",
       "reason": "The website's screenshots can now be taken by a built-in capture at double resolution, but the published ones have not been retaken with it yet.",
       "link": "https://github.com/adriandeleon/Editora/issues/1557"
@@ -19,7 +11,7 @@
     {
       "rule": "ACC-07",
       "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-07",
+      "url": "https://pauta-project.dev/6.2.0/accessibility/#acc-07",
       "kind": "pending",
       "reason": "The release steps include a pass with a screen reader, but no release has had that pass yet.",
       "link": "https://github.com/adriandeleon/Editora/issues/1561"
@@ -27,7 +19,7 @@
     {
       "rule": "TBAR-03",
       "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/toolbars-and-tooltips/#tbar-03",
+      "url": "https://pauta-project.dev/6.2.0/toolbars-and-tooltips/#tbar-03",
       "kind": "pending",
       "reason": "Some buttons keep words of their own where they say more than their command's title, such as Maximize or Restore on a tool window's header.",
       "link": "https://github.com/adriandeleon/Editora/issues/1564"
@@ -35,23 +27,15 @@
     {
       "rule": "TABS-13",
       "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/tabs-and-panels/#tabs-13",
+      "url": "https://pauta-project.dev/6.2.0/tabs-and-panels/#tabs-13",
       "kind": "pending",
       "reason": "The Terminal command gives an open terminal the keyboard before it hides it, so its stripe button does not run it, and the File Information and External Tools commands are not named after their windows.",
       "link": "https://github.com/adriandeleon/Editora/issues/1565"
     },
     {
-      "rule": "MENU-14",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/menus/#menu-14",
-      "kind": "pending",
-      "reason": "Some menu rows have no icon.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1566"
-    },
-    {
       "rule": "SET-13",
       "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/settings/#set-13",
+      "url": "https://pauta-project.dev/6.2.0/settings/#set-13",
       "kind": "pending",
       "reason": "On a machine with no system keychain, AI API keys are kept in an encrypted file of their own rather than only in memory for the session.",
       "link": "https://github.com/adriandeleon/Editora/issues/1568"
@@ -59,7 +43,7 @@
     {
       "rule": "SET-16",
       "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/settings/#set-16",
+      "url": "https://pauta-project.dev/6.2.0/settings/#set-16",
       "kind": "pending",
       "reason": "Whether plugins need a signed registry can be turned off from Settings and the Command Palette.",
       "link": "https://github.com/adriandeleon/Editora/issues/1568"
@@ -67,7 +51,7 @@
     {
       "rule": "CLI-07",
       "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/command-line/#cli-07",
+      "url": "https://pauta-project.dev/6.2.0/command-line/#cli-07",
       "kind": "pending",
       "reason": "A launch with --disable-plugins starts a second Editora instead of handing over to the one already running.",
       "link": "https://github.com/adriandeleon/Editora/issues/1570"
@@ -75,7 +59,7 @@
     {
       "rule": "CONF-07",
       "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/templates/confirm-dialog/#conf-07",
+      "url": "https://pauta-project.dev/6.2.0/templates/confirm-dialog/#conf-07",
       "kind": "pending",
       "reason": "Editora asks before a few actions that can be undone, such as moving a file to the trash.",
       "link": "https://github.com/adriandeleon/Editora/issues/1575"
@@ -83,7 +67,7 @@
     {
       "rule": "REL-09",
       "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/release/#rel-09",
+      "url": "https://pauta-project.dev/6.2.0/release/#rel-09",
       "kind": "pending",
       "reason": "The Linux app ID is com.editora.Editora rather than one under io.github.",
       "link": "https://github.com/adriandeleon/Editora/issues/1578"
@@ -91,7 +75,7 @@
     {
       "rule": "REL-12",
       "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/release/#rel-12",
+      "url": "https://pauta-project.dev/6.2.0/release/#rel-12",
       "kind": "pending",
       "reason": "Editora cannot be installed with Homebrew yet.",
       "link": "https://github.com/adriandeleon/Editora/issues/1578"
@@ -99,7 +83,7 @@
     {
       "rule": "REL-13",
       "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/release/#rel-13",
+      "url": "https://pauta-project.dev/6.2.0/release/#rel-13",
       "kind": "pending",
       "reason": "Editora cannot be installed with winget yet.",
       "link": "https://github.com/adriandeleon/Editora/issues/1578"
@@ -107,7 +91,7 @@
     {
       "rule": "REL-14",
       "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/release/#rel-14",
+      "url": "https://pauta-project.dev/6.2.0/release/#rel-14",
       "kind": "pending",
       "reason": "No access token for publishing to package managers is set up, since none is used yet.",
       "link": "https://github.com/adriandeleon/Editora/issues/1578"
@@ -115,7 +99,7 @@
     {
       "rule": "REL-17",
       "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/release/#rel-17",
+      "url": "https://pauta-project.dev/6.2.0/release/#rel-17",
       "kind": "pending",
       "reason": "The Windows installer is not signed.",
       "link": "https://github.com/adriandeleon/Editora/issues/1578"

@@ -427,7 +427,7 @@ public final class RunConfigurationsWindow {
                 // An npm configuration names a script: offer the package.json's own, not a file picker.
                 java.nio.file.Path root = projectRoot == null ? null : projectRoot.get();
                 String dir = workingDir.getText();
-                // the package.json is read and parsed off the FX thread (PERF-01, Pauta 6.0.1)
+                // the package.json is read and parsed off the FX thread (PERF-01, Pauta 6.2.0)
                 com.editora.perf.OffFx.then(
                         "run-config-browse",
                         () -> npmScripts(root, dir),
@@ -459,7 +459,7 @@ public final class RunConfigurationsWindow {
             }
             java.io.File chosen = chooser.showOpenDialog(stage);
             if (chosen != null) {
-                // the source is read off the FX thread (PERF-01, Pauta 6.0.1)
+                // the source is read off the FX thread (PERF-01, Pauta 6.2.0)
                 java.nio.file.Path file = chosen.toPath();
                 com.editora.perf.OffFx.then("run-config-browse", () -> readSource(file), source -> {
                     pickMainClass(file, source.or(""), name, mainClass);

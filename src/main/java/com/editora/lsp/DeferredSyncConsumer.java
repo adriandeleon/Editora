@@ -18,7 +18,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The outgoing end of a language-server session: LSP4J's stream writer, except that the messages the session
- * sends are encoded on the writer thread instead of the calling one (PERF-01, Pauta 6.0.1).
+ * sends are encoded on the writer thread instead of the calling one (PERF-01, Pauta 6.2.0).
  *
  * <p>LSP4J turns a message into JSON on the thread that sends it, and most of what a session sends is sent from
  * the FX thread: document sync (the whole document for {@code didOpen}, a full-sync {@code didChange} and a

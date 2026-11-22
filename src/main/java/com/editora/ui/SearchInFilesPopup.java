@@ -272,7 +272,7 @@ final class SearchInFilesPopup {
         Path candidate = rootCandidate(rootField.getText());
         Path root = null;
         if (candidate != null) {
-            // Is the typed root a folder: looked at off the FX thread (PERF-01, Pauta 6.0.1); the search runs again
+            // Is the typed root a folder: looked at off the FX thread (PERF-01, Pauta 6.2.0); the search runs again
             // when the answer lands.
             Boolean directory = rootFolders.get(candidate);
             if (directory == null) {

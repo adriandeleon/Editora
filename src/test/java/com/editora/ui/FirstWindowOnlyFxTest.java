@@ -30,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-14 (Pauta 6.0.1): the code that builds the first window makes only what that window shows. No Settings
+ * PERF-14 (Pauta 6.2.0): the code that builds the first window makes only what that window shows. No Settings
  * window or page, no dialog, no other window, no picker's card and no closed tool window's panel exists when the
  * window has been built; each is made by the code that first opens it.
  *

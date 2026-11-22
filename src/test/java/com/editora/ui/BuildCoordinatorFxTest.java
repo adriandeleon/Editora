@@ -804,7 +804,7 @@ class BuildCoordinatorFxTest {
     }
 
     /**
-     * PERF-01 (Pauta 6.0.1): whether a launch may ask a root's trust and executable at once is worked out without
+     * PERF-01 (Pauta 6.2.0): whether a launch may ask a root's trust and executable at once is worked out without
      * looking at anything on the FX thread; a root no look has filled is not known until a look off the FX thread
      * fills it, after which the FX thread answers from memory.
      */

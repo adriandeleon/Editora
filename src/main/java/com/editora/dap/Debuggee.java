@@ -65,7 +65,7 @@ final class Debuggee {
     /**
      * Starts {@code argv} in {@code dir} with {@code env} over the user's environment (a null value unsets that
      * variable); a folder on a remote host's connection starts the program on that host, as Run does. The start
-     * itself runs off the FX thread (PERF-01, Pauta 6.0.1): the answer completes on the FX thread with the process
+     * itself runs off the FX thread (PERF-01, Pauta 6.2.0): the answer completes on the FX thread with the process
      * id (-1 when it is not known yet, a program on another machine), or fails with why the program could not be
      * started. Its output only comes after that.
      */

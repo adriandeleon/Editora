@@ -158,7 +158,7 @@ public final class JdtlsPaste {
             return null;
         }
         if (onFx()) {
-            // Not looked at on the FX thread (PERF-01, Pauta 6.0.1): a file gone since makes jdtls answer nothing,
+            // Not looked at on the FX thread (PERF-01, Pauta 6.2.0): a file gone since makes jdtls answer nothing,
             // and handlePasteEvent then asks again without it (AL3), as when this check said it was gone.
             return file;
         }

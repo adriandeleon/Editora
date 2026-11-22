@@ -40,7 +40,7 @@ key is a billable credential. Export already leaves the keys out by default. The
   `aiApiKey…` value an older file still has, and Import never writes one into `settings.json`.
 - A Reset to Defaults keeps them (the vault is not touched by it).
 - The encrypted file protects the keys from being copied about with the settings, not from a program running as
-  the same user, which can read the key file beside it; that is what a keychain adds. Pauta 6.0.1's SET-13 asks for
+  the same user, which can read the key file beside it; that is what a keychain adds. Pauta 6.2.0's SET-13 asks for
   memory-only keys where no keychain answers, so the encrypted file stays an exception in `pauta.json`.
 - The bindings are thin and untested on CI for macOS and Windows except through the opt-in probe; the Linux
   binding was checked against a private GNOME Keyring on a private D-Bus session.

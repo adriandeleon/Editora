@@ -144,7 +144,7 @@ record HttpHistoryEntry(
 
     /**
      * As above, with the request's {@link HttpRerunTarget#fingerprint} worked out already: a run's results land on the
-     * FX thread, which hashes nothing (PERF-01, Pauta 6.0.1), so they are hashed off it first.
+     * FX thread, which hashes nothing (PERF-01, Pauta 6.2.0), so they are hashed off it first.
      */
     static HttpHistoryEntry ran(
             HttpExchange exchange,

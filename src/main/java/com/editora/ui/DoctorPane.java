@@ -1048,7 +1048,7 @@ final class DoctorPane extends Region implements TabContent {
 
     /**
      * Whether a row's path exists: looked at by the probe that named it, off the FX thread, and answered from memory
-     * when the row is shown (PERF-01, Pauta 6.0.1).
+     * when the row is shown (PERF-01, Pauta 6.2.0).
      */
     private static final com.editora.perf.Looked<Path, Boolean> EXISTS =
             new com.editora.perf.Looked<>("DoctorPane.pathIn", Files::exists, Boolean.TRUE);

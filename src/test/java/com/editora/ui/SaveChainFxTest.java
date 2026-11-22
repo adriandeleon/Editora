@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * {@link SaveChain#savedOrThen}: a command that must run on saved files goes on now when nothing needs saving, else
- * once every edited or untitled buffer has been saved and left clean (PERF-01, Pauta 6.0.1).
+ * once every edited or untitled buffer has been saved and left clean (PERF-01, Pauta 6.2.0).
  */
 @Tag("fx")
 class SaveChainFxTest {

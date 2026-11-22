@@ -337,7 +337,7 @@ public class CommandPalette {
             selectFirstEnabled();
             return;
         }
-        // Matched off the FX thread (PERF-01, Pauta 6.0.1): several hundred commands, scored by title, keywords and
+        // Matched off the FX thread (PERF-01, Pauta 6.2.0): several hundred commands, scored by title, keywords and
         // other IDEs' names. The rows shown stay until the latest query's answer lands.
         search.submit(
                 () -> {

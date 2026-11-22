@@ -32,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * not started, both offer Trust Folder, and a trust decision restarts the servers it changes.
  */
 @Tag("fx")
-// The server root, the build-folder and pom looks run off the FX thread (PERF-01, Pauta 6.0.1); here in place, so
+// The server root, the build-folder and pom looks run off the FX thread (PERF-01, Pauta 6.2.0); here in place, so
 // a sync or a publish has done its work when it returns, as the assertions read it.
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class UntrustedBuildTrustFxTest {

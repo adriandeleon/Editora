@@ -101,7 +101,7 @@ public final class TemplateRegistry {
 
     /**
      * The one thread template files are read and written on, for every window, in the order asked (PERF-01, Pauta
-     * 6.0.1): every read lists and parses the user's and the plugins' folders, so the commands and the Settings
+     * 6.2.0): every read lists and parses the user's and the plugins' folders, so the commands and the Settings
      * page hand their work here ({@link #later}) and go on when it lands, rather than read on the FX thread.
      */
     private static final java.util.concurrent.ExecutorService FILE_THREAD =

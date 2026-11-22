@@ -17,7 +17,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * What a diff viewer shows for a {@link DiffModel}, worked out where the model is made, off the JavaFX thread
- * (PERF-01, Pauta 6.0.1): the rows on screen (unchanged runs folded to a marker row when context is collapsed), the
+ * (PERF-01, Pauta 6.2.0): the rows on screen (unchanged runs folded to a marker row when context is collapsed), the
  * whole text of each pane joined from them, each row's line number and the changed words as offsets in that text. The
  * viewer only puts these into its text areas.
  *

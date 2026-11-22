@@ -266,7 +266,7 @@ public final class DapManager {
 
     /**
      * TEST SEAM — run on the compile thread once a loose file's classes are compiled and kept, before the launch goes
-     * on to its adapter: a test holds the launch there instead of spinning on the FX thread (QUAL-07, Pauta 6.0.1).
+     * on to its adapter: a test holds the launch there instead of spinning on the FX thread (QUAL-07, Pauta 6.2.0).
      */
     volatile @Nullable Runnable compiledForTest;
     /** Removes {@link #compilationDirectory} on its target ({@code null}: a folder of this machine). */
@@ -648,7 +648,7 @@ public final class DapManager {
             shared.bundlePaths = locateKept();
         } else {
             // A java-debug path not looked at yet (typed in Settings a moment ago): looked for off the FX thread
-            // (PERF-01, Pauta 6.0.1), and the bundles in effect so far kept until it lands; then the owner applies
+            // (PERF-01, Pauta 6.2.0), and the bundles in effect so far kept until it lands; then the owner applies
             // the support again ({@link #setOnJavaDebugLocated}), which pushes the new bundles to jdtls.
             String asked = shared.pluginPath;
             com.editora.perf.OffFx.then(
@@ -1285,7 +1285,7 @@ public final class DapManager {
                 fail(epoch, tr("debug.error.resolveMainClassFailed", msg(err)));
                 return;
             }
-            // The reply's parse and the file's own main are read off the FX thread (PERF-01, Pauta 6.0.1).
+            // The reply's parse and the file's own main are read off the FX thread (PERF-01, Pauta 6.2.0).
             DapPaths paths = pathsFor(file);
             JAVA_LAUNCH_PLAN.execute(() -> {
                 com.editora.perf.BlockingSites.enter("DapManager.ownMainClass");
@@ -1395,7 +1395,7 @@ public final class DapManager {
         }
         Path source = optionSource(file, opt);
         Path dir = cwd == null ? null : pathsFor(file).fromAdapter(cwd);
-        // The source's package clause is read off the FX thread (PERF-01, Pauta 6.0.1).
+        // The source's package clause is read off the FX thread (PERF-01, Pauta 6.2.0).
         Runnable compile = () -> JAVA_LAUNCH_PLAN.execute(() -> {
             com.editora.perf.BlockingSites.enter("DapManager.declaredPackage");
             String pkg = JavaLaunchSupport.declaredPackage(source);
@@ -1480,7 +1480,7 @@ public final class DapManager {
 
     /** {@link JavaSourceRootFix} before a launch from a folder with no build file, then {@code then}. */
     private void correctSourceRoot(Path file, long epoch, Runnable then) {
-        // The file's package clause is read off the FX thread (PERF-01, Pauta 6.0.1).
+        // The file's package clause is read off the FX thread (PERF-01, Pauta 6.2.0).
         JAVA_LAUNCH_PLAN.execute(() -> {
             com.editora.perf.BlockingSites.enter("DapManager.declaredPackage");
             String declared = JavaLaunchSupport.declaredPackage(file);
@@ -1555,7 +1555,7 @@ public final class DapManager {
                 cb.accept(name);
                 return;
             }
-            // The type's position is read from the file off the FX thread (PERF-01, Pauta 6.0.1).
+            // The type's position is read from the file off the FX thread (PERF-01, Pauta 6.2.0).
             JAVA_LAUNCH_PLAN.execute(() -> {
                 com.editora.perf.BlockingSites.enter("DapManager.typeNamePosition");
                 int[] at = JavaLaunchSupport.typeNamePosition(file);
@@ -1622,7 +1622,7 @@ public final class DapManager {
             }
             // What the launch is made of is the session's (read here); what it decides by is on the disk: the
             // class files, and the JDK's release file when the classpath is too long for a command line. Those are
-            // looked at off the FX thread (PERF-01, Pauta 6.0.1), and the launch goes on back on it.
+            // looked at off the FX thread (PERF-01, Pauta 6.2.0), and the launch goes on back on it.
             String javaExec = javaExecFor(file, javaExecOverride, r.javaExec());
             List<String> args = programArgs;
             String vmArgs = JavaLaunchSupport.withPreview(vmArgsFor(targetFor(file)), r.enablePreview());
@@ -1675,7 +1675,7 @@ public final class DapManager {
         });
     }
 
-    /** Where a Java launch reads the disk it decides by: a virtual thread per launch (PERF-01, Pauta 6.0.1). */
+    /** Where a Java launch reads the disk it decides by: a virtual thread per launch (PERF-01, Pauta 6.2.0). */
     private static final java.util.concurrent.Executor JAVA_LAUNCH_PLAN =
             com.editora.process.BlockingTasks.named("java-launch-plan");
 
@@ -5771,7 +5771,7 @@ public final class DapManager {
 
     /**
      * TEST SEAM — makes the last program output {@code millis} older, so a test sees output that has stopped without
-     * waiting for it to (QUAL-07, Pauta 6.0.1).
+     * waiting for it to (QUAL-07, Pauta 6.2.0).
      */
     void ageLastOutputForTest(long millis) {
         OutputStamp last = lastOutput;
@@ -6280,7 +6280,7 @@ public final class DapManager {
                         () -> own.wrapper().awaitExitCode(java.time.Duration.ofSeconds(3)),
                         com.editora.process.BlockingTasks.named("dap-java-exit-code"))
                 .whenComplete((code, e) -> fx(() -> {
-                    // Its folder is removed off the FX thread (PERF-01, Pauta 6.0.1).
+                    // Its folder is removed off the FX thread (PERF-01, Pauta 6.2.0).
                     Thread.ofVirtual()
                             .name("dap-java-exit-wrapper")
                             .start(() -> own.wrapper().delete());

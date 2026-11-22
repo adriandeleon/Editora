@@ -277,7 +277,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
         }
         String replacement = newText == null ? "" : newText;
         // The match is searched for here, on the MCP thread, in the text taken on the FX thread at a version; the
-        // FX thread applies the edit only to that version, else it is searched for again (PERF-01, Pauta 6.0.1).
+        // FX thread applies the edit only to that version, else it is searched for again (PERF-01, Pauta 6.2.0).
         for (int tries = EDIT_TRIES; tries > 0; tries--) {
             Taken taken = mcpOnFx(() -> take(path));
             if (taken.refusal() != null) {

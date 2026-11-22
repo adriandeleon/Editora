@@ -19,7 +19,7 @@ import static com.editora.i18n.Messages.tr;
  * Client's saved responses (bodies and full URLs, where a query may carry a key) and the data plugins keep
  * ({@code plugins/<id>/data/}: a token, a scratchpad's notes). An export is the thing people hand to someone else,
  * so both are off by default, every time. The AI provider API keys are never in an export, so there is nothing to
- * ask about them: they are in the system keychain or an encrypted file the export leaves out (SET-13, Pauta 6.0.1).
+ * ask about them: they are in the system keychain or an encrypted file the export leaves out (SET-13, Pauta 6.2.0).
  */
 final class ExportConfigDialog {
 

@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * The commands of {@link PanelCommands} from a real window's registry, as the palette runs them: with nothing showing
  * that offers a row or button, each says so on the status line and does nothing; the ones that act on the caret's
- * line, the active file or the toolbar do that, or say why not (KBD-01, MENU-05 in Pauta 6.0.1).
+ * line, the active file or the toolbar do that, or say why not (KBD-01, MENU-05 in Pauta 6.2.0).
  */
 @Tag("fx")
 class PanelCommandsWindowFxTest {

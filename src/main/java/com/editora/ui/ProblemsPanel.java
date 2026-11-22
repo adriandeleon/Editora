@@ -371,7 +371,7 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
 
     /**
      * Which paths with problems are folders (a project's own problems): looked at off the FX thread (PERF-01,
-     * Pauta 6.0.1). Until the answer lands a path is grouped by its name, and the tree is rebuilt when it lands.
+     * Pauta 6.2.0). Until the answer lands a path is grouped by its name, and the tree is rebuilt when it lands.
      */
     private final DiskFacts<Path, Boolean> folders = new DiskFacts<Path, Boolean>(
                     "ProblemsPanel.languageOf", java.nio.file.Files::isDirectory)

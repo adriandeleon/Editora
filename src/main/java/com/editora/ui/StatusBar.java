@@ -472,7 +472,7 @@ public final class StatusBar extends HBox {
         // Idle, the line is empty and the button reads as what it opens; with a message, as the message.
         echo.setAccessibleText(line.isBlank() ? tr("statusbar.tip.messageLog") : null);
         if (!line.isBlank()) {
-            echo.announce(); // a screen reader reads the new message out (ACC-02, Pauta 6.0.1)
+            echo.announce(); // a screen reader reads the new message out (ACC-02, Pauta 6.2.0)
         }
         echo.getStyleClass().removeAll("status-echo-warn", "status-echo-error");
         if (severity == MessageLog.Severity.ERROR) {
@@ -997,7 +997,7 @@ public final class StatusBar extends HBox {
             showIndent(buffer, -1);
             return;
         }
-        // The buffer's shared text; scanned here when small, else off the FX thread (PERF-08, Pauta 6.0.1).
+        // The buffer's shared text; scanned here when small, else off the FX thread (PERF-08, Pauta 6.2.0).
         String text = buffer.text();
         if (text.length() <= INLINE_INDENT_CHARS) {
             showIndent(buffer, com.editora.editops.PythonScan.inconsistentTabLine(text));
@@ -1227,7 +1227,7 @@ public final class StatusBar extends HBox {
     }
 
     /**
-     * Where the document's size is counted: off the FX thread, whatever the size (PERF-01, Pauta 6.0.1: a count
+     * Where the document's size is counted: off the FX thread, whatever the size (PERF-01, Pauta 6.2.0: a count
      * over the whole text is a pass over the user's data). Heard by {@link com.editora.perf.BlockingSites}.
      */
     static final String SIZE_SITE = "StatusBar.size";

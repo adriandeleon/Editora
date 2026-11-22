@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * The saved baseline keeps a length and a fingerprint, not a second copy of the document — and the buffer's
  * modified flag behaves exactly as it did when it held the text: an edit back to the saved text is clean. The
- * hashes run off the FX thread (PERF-01, Pauta 6.0.1); these tests run that work in place ({@link OffFx}'s seam),
+ * hashes run off the FX thread (PERF-01, Pauta 6.2.0); these tests run that work in place ({@link OffFx}'s seam),
  * except {@link #anUndoBackToTheSavedTextOfALargeDocumentIsHashedOffTheFxThread}, which runs it as the app does.
  */
 @Tag("fx")

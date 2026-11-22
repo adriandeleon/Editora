@@ -259,7 +259,7 @@ public final class AcpClient {
         try {
             // One write is one queue entry, so a message is never interleaved with another and the wire
             // order is the order of these calls; the encoding and the pipe write both happen on the writer's
-            // thread, never the FX thread a prompt is sent from (PERF-01, Pauta 6.0.1).
+            // thread, never the FX thread a prompt is sent from (PERF-01, Pauta 6.2.0).
             if (out instanceof com.editora.lsp.AsyncPipeWriter queued) {
                 queued.writeDeferred(4096, () -> encode(message));
             } else {

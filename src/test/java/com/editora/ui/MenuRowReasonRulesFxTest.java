@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
- * The rules that pick a grayed row's sentence (KBD-04, Pauta 6.0.1), case by case: a reason key where the row cannot
+ * The rules that pick a grayed row's sentence (KBD-04, Pauta 6.2.0), case by case: a reason key where the row cannot
  * run, null where it can. Pure; the toolkit is booted only because the classes they live in are JavaFX views.
  */
 @Tag("fx")

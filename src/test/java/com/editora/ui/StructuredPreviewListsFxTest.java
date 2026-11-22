@@ -40,7 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PERF-08 (Pauta 6.0.1): the live structured previews are virtualized lists. A file of 5,000 entries builds the rows on
+ * PERF-08 (Pauta 6.2.0): the live structured previews are virtualized lists. A file of 5,000 entries builds the rows on
  * screen, in file order, with the content the preview always had; the picture an export or a print takes still holds
  * every row. The pom preview, a grid that aligns its columns, shows a named number of rows and its filter finds the
  * others.

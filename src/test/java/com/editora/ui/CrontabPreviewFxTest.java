@@ -55,7 +55,7 @@ class CrontabPreviewFxTest {
     }
 
     /**
-     * PERF-08 (Pauta 6.0.1): the live preview is a virtualized list. A crontab of 5,000 jobs builds the rows on
+     * PERF-08 (Pauta 6.2.0): the live preview is a virtualized list. A crontab of 5,000 jobs builds the rows on
      * screen, with the content the preview always had, in file order; the export's picture still holds them all.
      */
     @Test

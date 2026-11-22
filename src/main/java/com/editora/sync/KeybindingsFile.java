@@ -77,7 +77,7 @@ public final class KeybindingsFile {
 
     /**
      * A copy of the user's key bindings, taken on the FX thread in memory only (no JSON there: PERF-01, Pauta
-     * 6.0.1), which the sync thread renders, compares and parses into.
+     * 6.2.0), which the sync thread renders, compares and parses into.
      */
     public record Bindings(
             Map<String, Map<String, List<String>>> shared, Map<String, Map<String, List<String>>> macOnly) {
