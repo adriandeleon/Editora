@@ -7,6 +7,7 @@ import java.util.Map;
 
 import com.editora.http.CapturedResponses;
 import com.editora.http.HttpEnv;
+import com.editora.http.HttpEnvironments;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;

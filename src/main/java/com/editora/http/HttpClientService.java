@@ -22,6 +22,7 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -134,14 +135,31 @@ public final class HttpClientService {
     /** Preserves a file a {@code >>!} redirect is about to replace; see {@link ResponseRedirects.Guard}. */
     private volatile ResponseRedirects.Guard guard = ResponseRedirects.Guard.UNPROTECTED;
 
+    /** Where results and progress are delivered: the JavaFX thread in the editor, the run's worker on the command line. */
+    private final Executor callbacks;
+
+    /** A service whose results post on the JavaFX thread (the editor). */
     public HttpClientService() {
-        this(DEFAULT_MAX_RESPONSE_BYTES, DEFAULT_BODY_DEADLINE);
+        this(Platform::runLater);
+    }
+
+    /**
+     * A service whose results and progress are handed to {@code callbacks}: {@code Runnable::run} delivers them on the
+     * run's worker, which needs no JavaFX toolkit ({@code editora http}, see {@link HttpCli}).
+     */
+    public HttpClientService(Executor callbacks) {
+        this(DEFAULT_MAX_RESPONSE_BYTES, DEFAULT_BODY_DEADLINE, callbacks);
     }
 
     /** Test seam: a small size cap / short body deadline. */
     HttpClientService(int maxResponseBytes, Duration bodyDeadline) {
+        this(maxResponseBytes, bodyDeadline, Platform::runLater);
+    }
+
+    private HttpClientService(int maxResponseBytes, Duration bodyDeadline, Executor callbacks) {
         this.maxResponseBytes = maxResponseBytes;
         this.bodyDeadline = bodyDeadline;
+        this.callbacks = callbacks;
     }
 
     /**
@@ -158,12 +176,17 @@ public final class HttpClientService {
      * with a {@link #CANCELLED} failure, so the viewer can leave its "running" state.
      */
     public static final class Handle {
+        private final Executor callbacks;
         private final AtomicBoolean cancelled = new AtomicBoolean();
         private final CompletableFuture<Void> delivered = new CompletableFuture<>();
         private volatile @Nullable CompletableFuture<?> pending;
         private volatile @Nullable InputStream stream;
         /** The request body of the exchange in flight, whose files a cancel closes (they stay open otherwise). */
         private volatile RequestBodies.@Nullable Content body;
+
+        private Handle(Executor callbacks) {
+            this.callbacks = callbacks;
+        }
 
         public void cancel() {
             if (cancelled.compareAndSet(false, true)) {
@@ -183,13 +206,13 @@ public final class HttpClientService {
             return cancelled.get();
         }
 
-        /** Completes once the result callback has run on the FX thread (also for a cancelled run). */
+        /** Completes once the result callback has run (on the FX thread in the editor), also for a cancelled run. */
         public CompletableFuture<Void> delivered() {
             return delivered;
         }
 
         private void deliver(Runnable callback) {
-            Platform.runLater(() -> {
+            callbacks.execute(() -> {
                 try {
                     callback.run();
                 } finally {
@@ -279,7 +302,7 @@ public final class HttpClientService {
             ResponseScripts scripts,
             Consumer<HttpExchange> onResult) {
         ResponseScripts handlers = scripts == null ? ResponseScripts.OFF : scripts;
-        Handle handle = new Handle();
+        Handle handle = new Handle(callbacks);
         active.add(handle);
         CapturedResponses responses = captured == null ? new CapturedResponses() : captured;
         exec.submit(() -> {
@@ -349,7 +372,7 @@ public final class HttpClientService {
             IntConsumer onStart,
             Consumer<List<HttpExchange>> onResult) {
         ResponseScripts handlers = scripts == null ? ResponseScripts.OFF : scripts;
-        Handle handle = new Handle();
+        Handle handle = new Handle(callbacks);
         active.add(handle);
         CapturedResponses captured = responses == null ? new CapturedResponses() : responses;
         exec.submit(() -> {
@@ -366,7 +389,7 @@ public final class HttpClientService {
                 for (HttpFile.Parsed req : requests) {
                     if (onStart != null) {
                         int index = out.size();
-                        Platform.runLater(() -> onStart.accept(index));
+                        callbacks.execute(() -> onStart.accept(index));
                     }
                     HttpExchange ex = sendOne(handle, req, vars, baseDir, captured, session, approval, handlers);
                     captured.put(req.name(), ex.result());

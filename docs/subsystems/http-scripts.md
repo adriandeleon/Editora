@@ -96,12 +96,30 @@ not attached after `ATTACH_DEADLINE` (30 s) stops the script. The window's debug
   20–22.12, none before (warning + Doctor). Network is allowed and documented.
 - Timeout: `Settings.httpScriptTimeoutSeconds` (10 s); the process tree is killed on timeout or cancel.
 
+## Command line (`editora http`)
+
+`editora http [options] FILE...` (`HttpCli`, dispatched first thing in `App.main` when `http` is the first
+argument) runs each file as Run All does, without a window, modelled on JetBrains' `ijhttp`: `--env`,
+`--env-file`, `--private-env-file`, `-V name=value`, `-P name=value` (masked in output), `-L
+BASIC|HEADERS|VERBOSE`, `--report[=DIR]` (JUnit XML in `DIR/report.xml`), `--no-scripts`, `--node`. Exit 0 when
+every request got a response and every test passed, 1 otherwise, 2 for a usage error (nothing is sent).
+
+- Same engine: `HttpClientService(Runnable::run)` delivers results on the run's worker instead of
+  `Platform.runLater`; env files are found by `HttpEnvironments.forFile` with no project root.
+- Trust differs on purpose: `SecretGate.UNCHECKED` and a `NodeResponseScripts.Trust` that allows everything —
+  typing the command is the consent. Scripts keep the permission model, minimal environment and timeout.
+- No JavaFX: `HttpCli.main` sets `ProcessRunner.HEADLESS_PROPERTY` so `ProcessRunner` never asks JavaFX which
+  thread it is on (that loads the toolkit's native library), and inits `Messages` in English.
+- On Windows the packaged `Editora.exe` is a GUI launcher without a console; use the fat jar there
+  (`java -jar Editora-<version>-<target>.jar http …`).
+
 ## Testing
 
 `ResponseHandlersIntegrationTest` and `PreRequestScriptsIntegrationTest` (127.0.0.1 server + real `node`, skipped
 without it) check what the server receives and what a script may not do; `HttpResponseHandlersFxTest` checks the panel, the coordinator flow, the
 saved history on disk and the trust prompt. Pure tests: `HttpChecksTest`, `HttpScriptsTest`,
-`HttpResponseHandlerParseTest`, `HttpSessionVariablesTest`.
+`HttpResponseHandlerParseTest`, `HttpSessionVariablesTest`. `HttpCliTest` runs the command against a 127.0.0.1
+server (checks only, no Node).
 
 ## Commands behind the rows and buttons
 

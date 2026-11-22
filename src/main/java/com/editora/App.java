@@ -432,6 +432,12 @@ public class App extends Application {
         // send a Host header. Only the HTTP Client takes headers from user content; RestrictedHostHeaderTest keeps
         // every other caller from setting Host.
         com.editora.http.HttpClientService.allowHostHeader();
+        // `editora http FILE...` runs .http files from the command line (like JetBrains' ijhttp) and exits: no window,
+        // no JavaFX toolkit, no single-instance hand-off. Only as the first argument, so `editora -- http` or
+        // `editora ./http` still opens a file named http.
+        if (args.length > 0 && com.editora.http.HttpCli.COMMAND.equals(args[0])) {
+            System.exit(com.editora.http.HttpCli.main(java.util.List.of(args).subList(1, args.length)));
+        }
         com.editora.perf.Startup.mark(com.editora.perf.Startup.MAIN);
         // Capture java.util.logging output + uncaught exceptions in-memory so a packaged build (no
         // visible stderr) can show them via the Debug Log window. Cheap; safe before launch.
@@ -744,6 +750,7 @@ public class App extends Application {
 
                 Usage: editora [options] [FILE[:LINE[:COLUMN]] ...]
                        editora --diff-ui LEFT RIGHT
+                       editora http [options] FILE.http ...   (run requests; see 'editora http --help')
 
                 Options:
                   --config-dir <path>   Use <path> as the config directory (or set EDITORA_CONFIG_DIR)

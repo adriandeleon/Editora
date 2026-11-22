@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Run `.http` files from the command line.** `editora http api.http` runs every request of the file, in order,
+  as Run All does — same cookie jar, chained responses, `# @assert` checks and JavaScript handlers — and prints
+  each response and test, for CI and scripts. Like JetBrains' `ijhttp`: `--env dev`, `--env-file`,
+  `--private-env-file`, `-V name=value` (and `-P` for one masked in the output), `-L HEADERS` or `VERBOSE`,
+  `--report` for a JUnit XML report, `--no-scripts`. It exits 1 when a request fails or a test fails.
+  `editora http --help` lists everything.
 - **A project's own JDK, Maven and Gradle, from its `.sdkmanrc`.** A project with an `.sdkmanrc`
   (`java=21.0.9-tem`, `maven=3.9.11`, `gradle=8.14.3`) now builds, runs, debugs and is analysed by the Java
   language server on that JDK, and builds with that Maven or Gradle when it has no wrapper, instead of the one

@@ -1,4 +1,4 @@
-package com.editora.ui;
+package com.editora.http;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import com.editora.http.HttpEnv;
 import com.editora.perf.BlockingSites;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;

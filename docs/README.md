@@ -76,7 +76,8 @@ architecture and contributor guidance; the exhaustive historical notes are prese
   templates and the dictionary through a Git repository: the round, the base ref, the guards, the
   triggers and which thread writes what.
 - [subsystems/http-scripts.md](subsystems/http-scripts.md) — HTTP Client `@assert`/`@capture` checks,
-  JavaScript response handlers on Node.js (shim protocol, trust, permission model), session variables.
+  JavaScript response handlers on Node.js (shim protocol, trust, permission model), session variables, and the
+  `editora http` command line.
 - [subsystems/java-editing.md](subsystems/java-editing.md) — Java typing/completion pipeline,
   completion sessions, imports, signature help and undo, timing, the limits JDT LS owns, and the tests
   and probes.
