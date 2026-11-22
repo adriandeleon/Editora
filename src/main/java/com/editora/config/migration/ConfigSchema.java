@@ -426,10 +426,13 @@ public enum ConfigSchema {
                     // v177→178: a stored largeFileThreshold of 10,000 (the old default, written into every file)
                     // becomes the new default, 50,000. Any other value was a choice and is kept. Safe to repeat.
                     Map.entry(177, (Migration) ConfigMigrations::raiseLargeFileThreshold),
-                    // v178→179: aiApiKey, aiApiKeyOpenai and aiApiKeyLmstudio are read but never written (SET-13):
+                    // v178→179: the extended window (menu bar in the title bar) became the default (Pauta WIN-03);
+                    // a stored off, the old default, is turned on, as projectSupport was at v88→89.
+                    Map.entry(178, (Migration) ConfigMigrations::extendedWindowOn),
+                    // v179→180: aiApiKey, aiApiKeyOpenai and aiApiKeyLmstudio are read but never written (SET-13):
                     // the launch moves them to the system keychain or the encrypted keys/secrets.enc. Identity: a
                     // file that still has them is read as before, and the vault takes them.
-                    Map.entry(178, (Migration) ConfigMigrations::identity)),
+                    Map.entry(179, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
