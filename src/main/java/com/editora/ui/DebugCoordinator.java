@@ -466,6 +466,7 @@ final class DebugCoordinator {
         DebugPlanning.offFx(name, work, answer -> {
             session.stepAnswered();
             asked.accept(answer);
+            session.launchStepDone(); // nothing more pending: the launch has started, or stopped
         });
     }
 
@@ -1091,7 +1092,7 @@ final class DebugCoordinator {
 
     /** Stops the session being handled: a before-launch build still running is what gets stopped; else the session. */
     private void stopOne() {
-        s().stepsPending = 0; // a launch still saving or planning is not getting ready any more
+        s().launching = false; // a launch still saving or planning is not getting ready any more
         stopChildren(); // a program's subprocesses go with it
         CsharpTestDebug.stopRun(s()); // C#'s Debug Test: the dotnet test run the session attached to
         s().closedBreakpointsRead = null; // a start still reading closed files' breakpoints is not made (review D104)
@@ -2247,6 +2248,7 @@ final class DebugCoordinator {
                     s().dumpForParallel = false;
                 }
                 if (state == DapManager.State.STARTING) {
+                    s().launching = false; // the launch let through has its session
                     s().recordedStops = 0; // the recording breakpoints' limit is per session
                     s().filteredHits.clear(); // and a filtered breakpoint's hit count
                     s().lastExceptionFrames = List.of(); // and the exception an exception breakpoint last showed
@@ -4782,12 +4784,12 @@ final class DebugCoordinator {
                 switch (answer) {
                     case BOTH -> {
                         openSession(); // the launch asked for is the new session's
-                        s().launchAskedFile = path;
+                        launching(path);
                         return true;
                     }
                     case STOP -> {
                         endLiveLaunch(); // retarget to the file asked for
-                        s().launchAskedFile = path;
+                        launching(path);
                         return true;
                     }
                     default -> {
@@ -4796,7 +4798,7 @@ final class DebugCoordinator {
                 }
             }
             default -> {
-                s().launchAskedFile = path; // what it is getting ready, while it saves and plans
+                launching(path); // getting ready while it saves and plans
                 return true; // nothing to end first
             }
         }
@@ -4814,12 +4816,19 @@ final class DebugCoordinator {
         host.setStatus(tr("status.debug.planFailed", file.getFileName(), reason));
     }
 
+    /** {@code path}'s launch is let through: until its last save or plan has answered, it is getting ready. */
+    private void launching(@Nullable Path path) {
+        s().launching = true;
+        s().launchAskedFile = path;
+    }
+
     /**
      * A launch let through is still saving its files or reading its plan: an answer is still to come, not long ago.
      * A second F5 meanwhile launched the program twice.
      */
     private boolean launchAskedRecently() {
-        return s().stepsPending > 0
+        return s().launching
+                && s().stepsPending > 0
                 && dap().state() == DapManager.State.INACTIVE
                 && System.nanoTime() - s().stepsPendingSince < STEPS_PENDING_NANOS;
     }
@@ -5426,8 +5435,12 @@ final class DebugCoordinator {
                 () -> {
                     session.stepAnswered();
                     asked.run();
+                    session.launchStepDone();
                 },
-                session::stepAnswered); // refused, or edited again meanwhile: the launch is not getting ready
+                () -> { // refused, or edited again meanwhile: the launch is not getting ready
+                    session.stepAnswered();
+                    session.launchStepDone();
+                });
         if (!saved) {
             session.stepPending();
         }

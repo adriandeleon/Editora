@@ -81,6 +81,19 @@ final class DebugSession {
     /** The file of the launch let through last: what a launch still saving or planning is for. */
     java.nio.file.@Nullable Path launchAskedFile;
 
+    /**
+     * A launch was let through ({@code DebugCoordinator.clearToStart}) and has not started or stopped yet: only its
+     * saves and plans count as getting ready, not a plan the window reads for something else.
+     */
+    boolean launching;
+
+    /** An answer came and its follow-up ran: with nothing more to come, the launch has started or stopped. */
+    void launchStepDone() {
+        if (stepsPending == 0) {
+            launching = false;
+        }
+    }
+
     /** One answer came. */
     void stepAnswered() {
         stepsPending = Math.max(0, stepsPending - 1);
