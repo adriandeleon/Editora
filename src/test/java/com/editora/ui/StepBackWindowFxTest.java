@@ -33,7 +33,9 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * Ruby's rdbg, an adapter that steps back (from {@code initialize}, or announced later in a {@code capabilities}
  * event, as Delve on rr does) is sent {@code stepBack} and {@code reverseContinue}, and one that cannot shows no such
  * buttons and says why; reached as GDB, Record Execution sends {@code record full} and the backward controls GDB's
- * own commands through its console. {@code StepBackProbeFxTest} drives the real GDB.
+ * own commands through its console. Also the Disassembly view's listing from GDB, whose negative
+ * {@code instructionOffset} lists the wrong instructions: asked from bytes before the address instead.
+ * {@code StepBackProbeFxTest} and {@code InstructionBreakpointProbeFxTest} drive the real GDB.
  */
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -81,6 +83,8 @@ class StepBackWindowFxTest {
         FxTestSupport.runOnFx(manager::stop);
         await("stopped", () -> !call(manager::isActive));
         adapter.stepBack = false;
+        adapter.lowLevel = false;
+        adapter.outOfStepListings = 0;
     }
 
     @AfterAll
@@ -196,6 +200,62 @@ class StepBackWindowFxTest {
         FxTestSupport.drainFx();
         assertFalse(session.requests.contains("stepBack"));
         assertEquals(DapManager.State.SUSPENDED, call(manager::state));
+    }
+
+    /** Starts the C file on the stand-in GDB and stops it, with the Disassembly view shown. */
+    private FakeDebugAdapter.Session stoppedInGdbDisassembly() throws Exception {
+        adapter.lowLevel = true;
+        FxTestSupport.runOnFx(() -> manager.startExternal(
+                cFile, DebugLanguages.GDB, Map.of("type", "gdb", "request", "launch", "program", cFile.toString())));
+        FakeDebugAdapter.Session session = adapter.awaitSession();
+        session.awaitRequest("launch");
+        session.framePath = cFile.toString();
+        session.frameLine = 2;
+        await("running", () -> call(manager::state) == DapManager.State.RUNNING);
+        run("debug.showDisassembly");
+        session.stop(session.mainThread, "breakpoint");
+        await("the stop", () -> call(manager::state) == DapManager.State.SUSPENDED);
+        assertTrue(call(manager::isGdbSession));
+        return session;
+    }
+
+    /** The Disassembly view's rows once it shows {@code rows} of them. */
+    private java.util.List<com.editora.dap.DapModels.Instruction> shownInstructions(int rows) throws Exception {
+        DebugDisassemblyView view = call(() -> debug.panel().disassemblyView());
+        await("the instructions", () -> call(() -> view.list().getItems().size()) == rows);
+        return call(() -> java.util.List.copyOf(view.list().getItems()));
+    }
+
+    @Test
+    void gdbsDisassemblyIsAskedFromBytesBeforeThePointerTryingAgainOutOfStep() throws Exception {
+        adapter.outOfStepListings = 1; // the first listing decodes out of step; a byte further back each time
+        FakeDebugAdapter.Session session = stoppedInGdbDisassembly();
+        java.util.List<com.editora.dap.DapModels.Instruction> shown =
+                shownInstructions(DebugCoordinator.DISASSEMBLY_COUNT);
+        assertEquals(
+                DebugCoordinator.DISASSEMBLY_BEFORE,
+                DebugDisassemblyView.indexOf(shown, FakeDebugAdapter.LOW_LEVEL_IP),
+                "the pointer after the instructions before it");
+        java.util.List<org.eclipse.lsp4j.debug.DisassembleArguments> asked = session.disassembles;
+        assertEquals(5, asked.size(), "out of step, then 161, 162 and 163 bytes back (4-byte instructions), then 164");
+        for (org.eclipse.lsp4j.debug.DisassembleArguments a : asked) {
+            assertEquals(0, a.getInstructionOffset(), "never GDB's negative instruction offset");
+        }
+        assertEquals(
+                -DebugCoordinator.DISASSEMBLY_BEFORE * DapManager.GDB_BYTES_PER_INSTRUCTION,
+                asked.getFirst().getOffset());
+        assertEquals(asked.getFirst().getOffset() - 4, asked.getLast().getOffset());
+    }
+
+    @Test
+    void gdbsDisassemblyNeverInStepStartsAtThePointer() throws Exception {
+        adapter.outOfStepListings = Integer.MAX_VALUE;
+        FakeDebugAdapter.Session session = stoppedInGdbDisassembly();
+        java.util.List<com.editora.dap.DapModels.Instruction> shown =
+                shownInstructions(DebugCoordinator.DISASSEMBLY_COUNT - DebugCoordinator.DISASSEMBLY_BEFORE);
+        assertEquals(0, DebugDisassemblyView.indexOf(shown, FakeDebugAdapter.LOW_LEVEL_IP), "from the pointer on");
+        assertEquals(DapManager.GDB_SYNC_TRIES + 1, session.disassembles.size());
+        assertEquals(0, session.disassembles.getLast().getOffset());
     }
 
     @Test

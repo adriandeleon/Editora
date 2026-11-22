@@ -4859,10 +4859,10 @@ public final class DapManager {
     }
 
     /** Bytes before the instruction GDB is asked to disassemble from, per instruction wanted before it. */
-    static final int GDB_BYTES_PER_INSTRUCTION = 4;
+    public static final int GDB_BYTES_PER_INSTRUCTION = 4;
 
     /** Start bytes tried, one byte further back each time, before GDB's listing is taken from the address on. */
-    static final int GDB_SYNC_TRIES = 8;
+    public static final int GDB_SYNC_TRIES = 8;
 
     /**
      * {@code count} instructions, {@code before} of them before {@code address}, from GDB: GDB (16) counts a negative

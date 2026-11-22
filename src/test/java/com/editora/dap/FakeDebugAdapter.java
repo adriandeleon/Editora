@@ -119,6 +119,15 @@ public final class FakeDebugAdapter implements AutoCloseable {
     /** An instruction breakpoint at this address is answered not verified, with the message {@code no code here}. */
     public volatile String unsettableInstruction = "";
 
+    /** While set, {@code setInstructionBreakpoints} fails, with the message {@code adapter fell over}. */
+    public volatile boolean instructionBreakpointsFail;
+
+    /**
+     * How many more listings asked from a byte offset come back out of step, as x86 decoded from inside an instruction
+     * does: one byte into an instruction, so none of their instructions starts at the address asked about.
+     */
+    public volatile int outOfStepListings;
+
     /**
      * When set (before the client connects), sessions advertise function and data breakpoints, as java-debug, and
      * {@code dataBreakpointInfo} names the field {@code count} of every container {@code demo.Args#count}.
@@ -1071,6 +1080,10 @@ public final class FakeDebugAdapter implements AutoCloseable {
                 org.eclipse.lsp4j.debug.SetInstructionBreakpointsArguments args) {
             instructionBreakpointSets.add(args);
             record("setInstructionBreakpoints");
+            if (instructionBreakpointsFail) {
+                return CompletableFuture.failedFuture(new org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
+                        new org.eclipse.lsp4j.jsonrpc.messages.ResponseError(1, "adapter fell over", null)));
+            }
             org.eclipse.lsp4j.debug.InstructionBreakpoint[] asked = args.getBreakpoints();
             org.eclipse.lsp4j.debug.Breakpoint[] out = new org.eclipse.lsp4j.debug.Breakpoint[asked.length];
             for (int i = 0; i < asked.length; i++) {
@@ -1096,6 +1109,12 @@ public final class FakeDebugAdapter implements AutoCloseable {
             disassembles.add(args);
             record("disassemble");
             long base = Long.decode(args.getMemoryReference());
+            int bytes = args.getOffset() == null ? 0 : args.getOffset();
+            base += bytes;
+            if (bytes != 0 && outOfStepListings > 0) {
+                outOfStepListings--;
+                base += 1 - Math.floorMod(bytes, 4); // one byte into an instruction, however far back
+            }
             int from = args.getInstructionOffset() == null ? 0 : args.getInstructionOffset();
             org.eclipse.lsp4j.debug.DisassembledInstruction[] out =
                     new org.eclipse.lsp4j.debug.DisassembledInstruction[args.getInstructionCount()];

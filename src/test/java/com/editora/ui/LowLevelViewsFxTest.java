@@ -293,6 +293,24 @@ class LowLevelViewsFxTest {
             adapter.unsettableInstruction = "";
         }
 
+        // A request the adapter fails: the status line says so, and the marks stay as they were.
+        adapter.instructionBreakpointsFail = true;
+        try {
+            int sets = session.instructionBreakpointSets.size();
+            assertTrue(call(() -> {
+                view.list().getSelectionModel().clearAndSelect(ipRow + 3);
+                return view.toggleSelected();
+            }));
+            await("its failure", () -> status().contains("adapter fell over"));
+            assertTrue(session.instructionBreakpointSets.size() > sets);
+            assertTrue(
+                    status().startsWith(tr("status.debug.instructionBreakpointFailed", "")
+                            .strip()),
+                    status());
+        } finally {
+            adapter.instructionBreakpointsFail = false;
+        }
+
         // A stop at an instruction breakpoint's address shows the Disassembly view, whatever was shown.
         FxTestSupport.runOnFx(() -> debug.panel().showArea(DebugPanel.AREA_CONSOLE));
         FxTestSupport.runOnFx(manager::resume);
