@@ -1,0 +1,18 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1360 850
+start
+project ${workspace}
+run buffer.closeAll
+open ${workspace}/src/main/java/com/editora/command/KeymapManager.java 1
+open ${workspace}/src/main/java/com/editora/command/ChordFormat.java 65
+wait 6000
+divider 1 0.7
+focuseditor
+key DOWN
+dividers
+settext .status-message
+shot ${out}/hero/editor${suffix}.png

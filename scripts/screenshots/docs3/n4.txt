@@ -1,0 +1,26 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+set mavenJdkHome "${jdk}"
+start
+project ${workspace}/samples/build-tools/npm
+wait 5000
+run buffer.closeAll
+open ${workspace}/samples/build-tools/npm/package.json 1
+run tool.npm
+wait 3000
+settext .status-message
+shot ${out}/docs/package-scripts${suffix}.png
+run view.closeFocusedToolWindow
+project ${workspace}/samples/debug/java
+wait 5000
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/test/java/com/example/shelf/ShelfTest.java 1
+wait 1000
+run test.run
+wait 60000
+settext .status-message
+shot ${out}/docs/test-results${suffix}.png

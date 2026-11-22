@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A System theme that follows your light or dark setting.** Settings ▸ Appearance ▸ Theme (and Set App Theme in
+  the Command Palette) now starts with System: Editora Light while your system is light, Editora Dark while it is
+  dark, and it switches as soon as the system does, without a restart. The editor theme follows it on Automatic,
+  and can be set to System on its own too.
+- **High Contrast Light and High Contrast Dark.** A pair of app and editor themes with black or white grounds, and
+  text, accents, states and syntax colours that read at 7:1 or better. Pick one like any theme; while Windows'
+  high-contrast mode is on, Editora switches to it by itself (the light or the dark one, as the Windows scheme
+  is), and goes back to your theme when the mode ends.
 - **Ctrl/Cmd-hover shows what Ctrl/Cmd-click follows.** Hold Ctrl (Cmd on macOS) over code and the symbol under
   the mouse is underlined, and the pointer becomes a hand, when Go to Definition can take you somewhere from
   there: a symbol the language server resolves, or an HTML page's `href`/`src`. Click to go, as before; let go of

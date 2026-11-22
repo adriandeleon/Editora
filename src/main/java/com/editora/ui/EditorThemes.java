@@ -35,9 +35,15 @@ public final class EditorThemes {
     /** The one theme with no override stylesheet — its colors <em>are</em> the app.css/syntax.css defaults. */
     static final String BARE = "Primer Light";
 
+    /**
+     * The built-in editor themes, each with its own colours. {@link SystemTheme#SYSTEM}, which picks one of them, is
+     * not among them: {@link #names()} lists it first.
+     */
     public static final List<String> NAMES = List.of(
             "Editora Light",
             "Editora Dark",
+            SystemTheme.HIGH_CONTRAST_LIGHT,
+            SystemTheme.HIGH_CONTRAST_DARK,
             "Primer Light",
             "Primer Dark",
             "Nord Light",
@@ -74,6 +80,9 @@ public final class EditorThemes {
             // (keyword→danger, string→success, number→accent) can't express.
             Map.entry("Editora Light", "editora-light"),
             Map.entry("Editora Dark", "editora-dark"),
+            // The high-contrast pair (ACC-09): ink and syntax at 7:1 or better on the editor's ground.
+            Map.entry(SystemTheme.HIGH_CONTRAST_LIGHT, "high-contrast-light"),
+            Map.entry(SystemTheme.HIGH_CONTRAST_DARK, "high-contrast-dark"),
             Map.entry("Primer Dark", "primer-dark"),
             Map.entry("Nord Light", "nord-light"),
             Map.entry("Nord Dark", "nord-dark"),
@@ -106,6 +115,8 @@ public final class EditorThemes {
     private static final Map<String, String> EDITOR_BG = Map.ofEntries(
             Map.entry("Editora Light", "#ffffff"),
             Map.entry("Editora Dark", "#171a24"),
+            Map.entry(SystemTheme.HIGH_CONTRAST_LIGHT, "#ffffff"),
+            Map.entry(SystemTheme.HIGH_CONTRAST_DARK, "#000000"),
             Map.entry("Primer Light", "#ffffff"),
             Map.entry("Primer Dark", "#0d1117"),
             Map.entry("Nord Light", "#eceff4"),
@@ -139,6 +150,8 @@ public final class EditorThemes {
     private static final Map<String, String> EDITOR_FG = Map.ofEntries(
             Map.entry("Editora Light", "#1b1e2a"),
             Map.entry("Editora Dark", "#e8eaf3"),
+            Map.entry(SystemTheme.HIGH_CONTRAST_LIGHT, "#000000"),
+            Map.entry(SystemTheme.HIGH_CONTRAST_DARK, "#ffffff"),
             Map.entry("Primer Light", "#24292f"),
             Map.entry("Primer Dark", "#c9d1d9"),
             Map.entry("Nord Light", "#2e3440"),
@@ -172,6 +185,8 @@ public final class EditorThemes {
     private static final Map<String, String> LINE_HIGHLIGHT = Map.ofEntries(
             Map.entry("Editora Light", "#f0f8f7"),
             Map.entry("Editora Dark", "#1a282f"),
+            Map.entry(SystemTheme.HIGH_CONTRAST_LIGHT, "#f0f0f0"),
+            Map.entry(SystemTheme.HIGH_CONTRAST_DARK, "#1f1f1f"),
             Map.entry("Primer Light", "#dfe7f0"),
             Map.entry("Primer Dark", "#161b22"),
             Map.entry("Nord Light", "#e5e9f0"),
@@ -206,6 +221,8 @@ public final class EditorThemes {
     private static final Map<String, String> MINIMAP_TEXT = Map.ofEntries(
             Map.entry("Editora Light", "#575d6e"),
             Map.entry("Editora Dark", "#9ba1b5"),
+            Map.entry(SystemTheme.HIGH_CONTRAST_LIGHT, "#333333"),
+            Map.entry(SystemTheme.HIGH_CONTRAST_DARK, "#cccccc"),
             Map.entry("Primer Light", "#9aa5b1"),
             Map.entry("Primer Dark", "#9da7b3"),
             Map.entry("Nord Light", "#9aa3b2"),
@@ -240,6 +257,8 @@ public final class EditorThemes {
     private static final Map<String, String> MINIMAP_VIEWPORT = Map.ofEntries(
             Map.entry("Editora Light", "#0e857724"),
             Map.entry("Editora Dark", "#43dec540"),
+            Map.entry(SystemTheme.HIGH_CONTRAST_LIGHT, "#0000c040"),
+            Map.entry(SystemTheme.HIGH_CONTRAST_DARK, "#ffff0050"),
             Map.entry("Primer Light", "#0969da24"),
             Map.entry("Primer Dark", "#58a6ff40"),
             Map.entry("Nord Light", "#5e81ac29"),
@@ -274,10 +293,9 @@ public final class EditorThemes {
     /** All selectable editor-theme names: the built-ins, plus user AtlantaFX themes (adaptive palette) and
      *  user editor-override themes from the config folder. */
     public static List<String> names() {
-        if (UserThemes.controlThemes().isEmpty() && UserThemes.editorThemes().isEmpty()) {
-            return NAMES;
-        }
-        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>(NAMES);
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        out.add(SystemTheme.SYSTEM); // follow the system's light or dark (ICON-16)
+        out.addAll(NAMES);
         out.addAll(UserThemes.controlThemes().keySet()); // an AtlantaFX user theme → its adaptive editor theme
         out.addAll(UserThemes.editorThemes().keySet()); // a hand-authored override theme
         return List.copyOf(out);
@@ -289,15 +307,36 @@ public final class EditorThemes {
         return c != null ? c : UserThemes.editorThemes().get(name);
     }
 
-    /** Normalized name (returns {@link #DEFAULT} for unrecognized input, incl. a since-removed user theme). */
+    /**
+     * Normalized saved name (returns {@link #DEFAULT} for unrecognized input, incl. a since-removed user theme);
+     * {@link SystemTheme#SYSTEM} stays as it is.
+     */
     public static String normalize(String name) {
-        return name != null && (NAMES.contains(name) || userEntry(name) != null) ? name : DEFAULT;
+        return name != null && (SystemTheme.SYSTEM.equals(name) || NAMES.contains(name) || userEntry(name) != null)
+                ? name
+                : DEFAULT;
+    }
+
+    /**
+     * The theme a saved name gives now, normalized: "System" is the light or dark Caret &amp; Ink theme, and while
+     * Windows' high-contrast mode is on every name gives the high-contrast pair ({@link SystemTheme#resolve}).
+     */
+    static String effective(String name) {
+        return normalize(SystemTheme.resolve(name));
+    }
+
+    /** Whether theme {@code name} itself (not resolved) has a dark editor ground: the pickers' Light / Dark groups. */
+    static boolean isDarkTheme(String name) {
+        UserThemes.Entry u = userEntry(normalize(name));
+        Color bg = u != null ? u.background() : Color.web(EDITOR_BG.getOrDefault(normalize(name), "#ffffff"));
+        return bg.getBrightness() < 0.5;
     }
 
     /** The editor theme that matches an AtlantaFX theme name (used until the user picks one manually). */
     public static String defaultFor(String atlantaThemeName) {
         if (atlantaThemeName != null
-                && (NAMES.contains(atlantaThemeName)
+                && (SystemTheme.SYSTEM.equals(atlantaThemeName)
+                        || NAMES.contains(atlantaThemeName)
                         || UserThemes.controlThemes().containsKey(atlantaThemeName))) {
             return atlantaThemeName; // a built-in or a user AtlantaFX theme pairs with the same-named editor theme
         }
@@ -310,7 +349,7 @@ public final class EditorThemes {
      * the shared {@code adaptive.css}; user editor-override themes use their own file.
      */
     public static @Nullable String stylesheetFor(String name) {
-        String norm = normalize(name);
+        String norm = effective(name);
         if (UserThemes.controlThemes().containsKey(norm)) {
             return EditorThemes.class
                     .getResource("/com/editora/styles/editor-themes/adaptive.css")
@@ -331,31 +370,36 @@ public final class EditorThemes {
 
     /** Current-line highlight color for {@code name}. */
     public static Color lineHighlightFor(String name) {
-        UserThemes.Entry u = userEntry(normalize(name));
-        return u != null ? u.lineHighlight() : Color.web(LINE_HIGHLIGHT.getOrDefault(normalize(name), "#dfe7f0"));
+        String norm = effective(name);
+        UserThemes.Entry u = userEntry(norm);
+        return u != null ? u.lineHighlight() : Color.web(LINE_HIGHLIGHT.getOrDefault(norm, "#dfe7f0"));
     }
 
     /** Editor background color for {@code name}. */
     public static Color editorBackgroundFor(String name) {
-        UserThemes.Entry u = userEntry(normalize(name));
-        return u != null ? u.background() : Color.web(EDITOR_BG.getOrDefault(normalize(name), "#ffffff"));
+        String norm = effective(name);
+        UserThemes.Entry u = userEntry(norm);
+        return u != null ? u.background() : Color.web(EDITOR_BG.getOrDefault(norm, "#ffffff"));
     }
 
     /** Editor foreground/text color for {@code name}. */
     public static Color editorForegroundFor(String name) {
-        UserThemes.Entry u = userEntry(normalize(name));
-        return u != null ? u.foreground() : Color.web(EDITOR_FG.getOrDefault(normalize(name), "#24292f"));
+        String norm = effective(name);
+        UserThemes.Entry u = userEntry(norm);
+        return u != null ? u.foreground() : Color.web(EDITOR_FG.getOrDefault(norm, "#24292f"));
     }
 
     /** Minimap block color for {@code name}. */
     public static Color minimapTextFor(String name) {
-        UserThemes.Entry u = userEntry(normalize(name));
-        return u != null ? u.minimapText() : Color.web(MINIMAP_TEXT.getOrDefault(normalize(name), "#9aa5b1"));
+        String norm = effective(name);
+        UserThemes.Entry u = userEntry(norm);
+        return u != null ? u.minimapText() : Color.web(MINIMAP_TEXT.getOrDefault(norm, "#9aa5b1"));
     }
 
     /** Minimap viewport-overlay color for {@code name}. */
     public static Color minimapViewportFor(String name) {
-        UserThemes.Entry u = userEntry(normalize(name));
-        return u != null ? u.minimapViewport() : Color.web(MINIMAP_VIEWPORT.getOrDefault(normalize(name), "#0969da24"));
+        String norm = effective(name);
+        UserThemes.Entry u = userEntry(norm);
+        return u != null ? u.minimapViewport() : Color.web(MINIMAP_VIEWPORT.getOrDefault(norm, "#0969da24"));
     }
 }

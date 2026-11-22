@@ -41,6 +41,11 @@ public final class Themes {
             // editor theme rather than the shared adaptive one (see EditorThemes).
             Map.entry("Editora Light", new String[] {"editora-light", "false", "#ffffff"}),
             Map.entry("Editora Dark", new String[] {"editora-dark", "true", "#1b1e2a"}),
+            // The high-contrast pair (ACC-09): the Caret & Ink pair's component rules over a palette of black, white
+            // and saturated states at 7:1 or better (StyleContrastTest). Followed while Windows' high-contrast mode
+            // is on (SystemTheme), and picked by hand like any theme.
+            Map.entry(SystemTheme.HIGH_CONTRAST_LIGHT, new String[] {"high-contrast-light", "false", "#ffffff"}),
+            Map.entry(SystemTheme.HIGH_CONTRAST_DARK, new String[] {"high-contrast-dark", "true", "#000000"}),
             Map.entry("Army Light", new String[] {"army-light", "false", "#e8eccc"}),
             Map.entry("Army Dark", new String[] {"army-dark", "true", "#1c2214"}),
             Map.entry("Autumn", new String[] {"autumn", "true", "#304c64"}),
@@ -61,9 +66,15 @@ public final class Themes {
             Map.entry("Winter Dark", new String[] {"winter-dark", "true", "#080c18"}),
             Map.entry("Yacht", new String[] {"yacht", "false", "#f2f0ef"}));
 
+    /**
+     * The built-in themes, each a real stylesheet. {@link SystemTheme#SYSTEM}, which picks one of them, is not
+     * among them: {@link #names()} lists it first.
+     */
     public static final List<String> NAMES = List.of(
             "Editora Light",
             "Editora Dark",
+            SystemTheme.HIGH_CONTRAST_LIGHT,
+            SystemTheme.HIGH_CONTRAST_DARK,
             "Primer Light",
             "Primer Dark",
             "Nord Light",
@@ -98,18 +109,27 @@ public final class Themes {
         UserThemes.load(configDir);
     }
 
-    /** All selectable app-theme names: the built-ins plus any user themes in {@code <configDir>/themes/}. */
+    /**
+     * All selectable app-theme names: {@link SystemTheme#SYSTEM} (follow the system, ICON-16), the built-ins, then
+     * any user themes in {@code <configDir>/themes/}.
+     */
     public static List<String> names() {
-        var user = UserThemes.controlThemes().keySet();
-        if (user.isEmpty()) {
-            return NAMES;
-        }
-        List<String> out = new java.util.ArrayList<>(NAMES);
-        out.addAll(user);
+        List<String> out = new java.util.ArrayList<>();
+        out.add(SystemTheme.SYSTEM);
+        out.addAll(NAMES);
+        out.addAll(UserThemes.controlThemes().keySet());
         return out;
     }
 
-    /** Theme instance for a display name, falling back to {@link #DEFAULT} for unknowns. */
+    /** What a theme choice is called on screen: "System" in the UI's language, else the theme's own name. */
+    public static String label(String name) {
+        return SystemTheme.SYSTEM.equals(name) ? com.editora.i18n.Messages.tr("settings.theme.system") : name;
+    }
+
+    /**
+     * Theme instance for a theme's own name, falling back to {@link #DEFAULT} for unknowns. The name is taken as it
+     * is: {@link #stylesheetFor}, {@link #isDark} and {@link #backgroundFor} resolve a saved name first.
+     */
     public static Theme themeFor(String name) {
         String key = name == null ? "" : name;
         String[] bundled = BUNDLED.get(key);
@@ -153,13 +173,20 @@ public final class Themes {
     /** Normalized display name (returns {@link #DEFAULT} for unrecognized input, incl. a since-removed user theme). */
     public static String normalize(String name) {
         return name != null
-                        && (NAMES.contains(name) || UserThemes.controlThemes().containsKey(name))
+                        && (SystemTheme.SYSTEM.equals(name)
+                                || NAMES.contains(name)
+                                || UserThemes.controlThemes().containsKey(name))
                 ? name
                 : DEFAULT;
     }
 
+    /**
+     * The stylesheet URL of the theme saved name {@code name} gives now: resolved first ({@link SystemTheme#resolve}),
+     * so "System" is the light or dark Caret &amp; Ink theme, and Windows' high-contrast mode gives the
+     * high-contrast pair.
+     */
     public static @Nullable String stylesheetFor(String name) {
-        Theme theme = themeFor(name);
+        Theme theme = themeFor(SystemTheme.resolve(name));
         String sheet = theme.getUserAgentStylesheet();
         if (sheet == null) {
             return null;
@@ -217,6 +244,20 @@ public final class Themes {
         WindowColorScheme.apply(isDark(name));
     }
 
+    /**
+     * Follows a change of the OS's appearance ({@link SystemTheme#onChange}): applies app theme {@code appTheme}
+     * again when the change gives it another stylesheet, and answers whether either theme now resolves to another
+     * one, so the caller re-applies the editor theme. FX thread.
+     */
+    public static boolean followSystem(
+            String appTheme, String editorTheme, SystemTheme.Appearance before, SystemTheme.Appearance after) {
+        boolean app = SystemTheme.changes(appTheme, before, after);
+        if (app) {
+            applyAppTheme(appTheme);
+        }
+        return app || SystemTheme.changes(editorTheme, before, after);
+    }
+
     /** The theme in force, so a change of UI zoom can set its sheet again at the new size. */
     private static String appTheme = DEFAULT;
 
@@ -251,7 +292,7 @@ public final class Themes {
      * light→dark flash on startup with a dark theme).
      */
     public static javafx.scene.paint.Color backgroundFor(String name) {
-        String norm = normalize(name);
+        String norm = normalize(SystemTheme.resolve(name));
         String[] bundled = BUNDLED.get(norm);
         if (bundled != null) {
             return javafx.scene.paint.Color.web(bundled[2]);
@@ -260,7 +301,7 @@ public final class Themes {
         if (user != null) {
             return user.background();
         }
-        String hex = switch (normalize(name)) {
+        String hex = switch (norm) {
             case "Primer Dark" -> "#1c2128";
             case "Nord Light" -> "#eceff4";
             case "Nord Dark" -> "#2e3440";

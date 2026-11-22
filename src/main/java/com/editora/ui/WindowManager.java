@@ -163,6 +163,14 @@ public class WindowManager {
                 manager.announceUncaughtError(message);
             }
         });
+        // The OS's light or dark setting and Windows' high-contrast mode (ICON-16, ACC-09): a theme they decide is
+        // applied again when they change. Weak for the same reason; the last manager made holds the hook.
+        SystemTheme.onChange((before, after) -> {
+            WindowManager manager = self.get();
+            if (manager != null) {
+                manager.systemAppearanceChanged(before, after);
+            }
+        });
         // A second Editora process on this config dir (a launch that was not forwarded to the running editor)
         // works from its own in-memory copy of settings, notes, bookmarks, breakpoints, projects and recents.
         // Say so once, after the first window exists, instead of letting one editor silently undo the other.
@@ -1907,6 +1915,22 @@ public class WindowManager {
      */
     public void settingsFileSaved(java.util.function.Consumer<String> status) {
         shared.reloadSettings(issues -> status.accept(applyReloadedSettings(issues)));
+    }
+
+    /**
+     * The OS switched between light and dark, or Windows' high-contrast mode went on or off (ICON-16, ACC-09).
+     * When that changes the theme the app theme or the editor theme gives ("System", or any theme while high
+     * contrast is on), the app theme is applied again and every window re-applies its editor theme.
+     */
+    void systemAppearanceChanged(SystemTheme.Appearance before, SystemTheme.Appearance after) {
+        Settings settings = shared.getSettings();
+        if (!Themes.followSystem(settings.getTheme(), settings.getEditorTheme(), before, after)) {
+            return;
+        }
+        broadcastSettingsApplied(); // no setting changed, so each window re-applies everything, its editor theme too
+        for (Holder h : new ArrayList<>(windows)) {
+            h.controller().settingsWindow().syncThemes(); // the preview follows
+        }
     }
 
     /** Applies settings just re-read everywhere; returns the status line saying so. */

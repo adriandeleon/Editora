@@ -1,0 +1,24 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 1
+run buffer.closeOthers
+wait 1500
+run project.toggleMapView
+wait 3000
+winsize 2000 760
+winpos 0 0
+wait 1000
+clicksel .project-map-preview-button
+wait 800
+focussel .project-map-surface
+key ENTER S
+wait 1500
+wait 2500
+clicksel .project-map-zoom-control 4
+wait 1500
+winshot ${out}/docs/project-map-card${suffix}.png

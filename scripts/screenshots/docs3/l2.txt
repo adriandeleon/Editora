@@ -1,0 +1,62 @@
+#@ needs jdtls on the PATH
+#@ insert samples/debug/java/src/main/java/com/example/shelf/Shelf.java 6 import java.util.Set;
+#@ replace samples/debug/java/src/main/java/com/example/shelf/Shelf.java (?m)^(        double total = 0;)$ => $1\n        String label = total;
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+set lspSupport true
+set debugSupport true
+set javaDebugPluginPath "${javaDebugJar}"
+start
+project ${workspace}/samples/debug/java
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Pricing.java 1
+wait 60000
+run tool.project
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 44
+focuseditor
+key END
+wait 1500
+run lsp.codeActions
+wait 4000
+settext .status-message
+shot ${out}/docs/lsp-code-actions${suffix}.png
+key ESCAPE
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 50
+focuseditor
+key RIGHT - 42
+run lsp.rename
+wait 1500
+settext .status-message
+shot ${out}/docs/lsp-rename${suffix}.png
+key ESCAPE
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 44
+run tool.problems
+wait 3000
+divider 0 0.5
+wait 800
+settext .status-message
+shot ${out}/docs/lsp-problems${suffix}.png
+run view.closeFocusedToolWindow
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 36
+focuseditor
+run lsp.generate
+wait 3000
+settext .status-message
+shot ${out}/docs/lsp-generate${suffix}.png
+key ESCAPE
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 50
+focuseditor
+wait 800
+run debug.toggleBreakpoint
+wait 1500
+run debug.editBreakpoint
+wait 1500
+clicksel .text-field 1
+type item.price() > 1.0
+wait 800
+settext .status-message
+shot ${out}/docs/edit-breakpoint${suffix}.png

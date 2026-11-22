@@ -1,0 +1,46 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+set markdownDefaultViewMode "editor"
+start
+project ${workspace}
+wait 6000
+run buffer.closeAll
+open ${workspace}/samples/markdown/editing.md 14
+focuseditor
+key HOME
+key RIGHT S 13
+wait 1200
+settext .status-message
+shot ${out}/docs/markdown-format-bar${suffix}.png
+key RIGHT
+open ${workspace}/samples/markdown/editing.md 42
+focuseditor
+key END
+key ENTER
+run markdown.insertTable
+wait 1200
+settext .status-message
+shot ${out}/docs/markdown-insert-table${suffix}.png
+key ESCAPE
+run file.save
+wait 500
+run buffer.closeAll
+open ${workspace}/samples/markdown/notes/ideas.md 1
+wait 1000
+run tool.backlinks
+wait 3000
+settext .status-message
+shot ${out}/docs/markdown-backlinks${suffix}.png
+run view.closeFocusedToolWindow
+run buffer.closeAll
+open ${workspace}/samples/markdown/lint.md 6
+wait 3000
+run tool.markdownLint
+wait 3000
+settext .status-message
+shot ${out}/docs/markdown-lint${suffix}.png
+run view.closeFocusedToolWindow

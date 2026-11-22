@@ -1,0 +1,51 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+set mavenJdkHome "${jdk}"
+set aiEnabled true
+set agentSupport true
+set mcpSupport true
+size 1280 760
+start
+project ${workspace}
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 39
+run view.settings
+wait 2500
+settings APPEARANCE
+wait 2500
+winsize 1040 720
+wait 800
+winshot ${out}/features/themes-fonts${suffix}.png
+closewins
+run view.settings
+wait 2500
+settings WORKSPACE
+wait 2500
+winsize 1040 720
+wait 800
+winshot ${out}/features/crash-recovery${suffix}.png
+closewins
+run view.settings
+wait 2500
+settings AGENT
+wait 2500
+winsize 1040 720
+wait 800
+winshot ${out}/features/ai${suffix}.png
+closewins
+run view.settings
+wait 2500
+settings MCP
+wait 2500
+winsize 1040 720
+wait 800
+winshot ${out}/features/mcp${suffix}.png
+closewins
+run tool.project
+run view.doctor
+wait 12000
+settext .status-message
+shot ${out}/features/doctor${suffix}.png
