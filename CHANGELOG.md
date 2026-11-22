@@ -50,6 +50,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (1.12) has Editora start its launcher, `codelldb-launch`, and ends that launcher with SIGTERM once the program has
   exited; its 143 was reported as the program's. The program's code now comes from CodeLLDB's own exit event.
 
+### Security
+
+- **AI API keys are never written to settings.json.** Without a system keychain (a Linux session with no Secret
+  Service, `-Deditora.secretStore=none`, or a keychain that refuses a write) the keys were kept in `settings.json`
+  as plain text. They now go to an encrypted file of their own, `~/.editora/keys/secrets.enc` (AES-256-GCM, under a
+  random key Editora generates in `keys/secrets.key`; the folder and both files are readable by you alone where the
+  file system has permissions). A key an older version left in `settings.json`, or in a backup of it beside it, is
+  moved there on the next launch and blanked; keys typed while the keychain did not answer move into it once it
+  does. Export Configuration and Settings sync never carry the keys, so Export no longer asks about them. A file
+  that does not decrypt is reported in Settings → AI and read as no keys; it is moved aside, never written over,
+  when a key is saved. Saving a key from Settings no longer writes the keychain on the interface thread.
+
 ## [0.28.0] - 2026-11-18
 
 ### Security

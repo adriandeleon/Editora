@@ -5593,36 +5593,32 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     void exportConfig() {
-        // Saved HTTP responses (bodies, URLs) and AI API keys are asked about, off by default. Whether there are
-        // any is a listing of the config folder: made off the FX thread, the question asked when it lands.
+        // Saved HTTP responses (bodies, URLs) and plugin data are asked about, off by default; the AI API keys are
+        // never exported. Whether there are any is a listing of the config folder: made off the FX thread, the
+        // question asked when it lands.
         var shared = config.shared();
         java.util.concurrent.CompletableFuture.supplyAsync(
                         () -> new boolean[] {shared.hasHttpHistory(), shared.hasPluginData()},
                         com.editora.process.BlockingTasks.named("export-config-scan"))
-                .thenAcceptAsync(
-                        found -> exportConfig(found[0], config.shared().hasApiKeys(), found[1]), Platform::runLater);
+                .thenAcceptAsync(found -> exportConfig(found[0], found[1]), Platform::runLater);
     }
 
-    private void exportConfig(boolean askHttp, boolean askKeys, boolean askPluginData) {
-        var choice = askHttp || askKeys || askPluginData
-                ? ExportConfigDialog.ask(stage, askHttp, askKeys, askPluginData)
-                : java.util.Optional.of(new ExportConfigDialog.Choice(false, false, false));
+    private void exportConfig(boolean askHttp, boolean askPluginData) {
+        var choice = askHttp || askPluginData
+                ? ExportConfigDialog.ask(stage, askHttp, askPluginData)
+                : java.util.Optional.of(new ExportConfigDialog.Choice(false, false));
         if (choice.isEmpty()) {
             return;
         }
-        boolean keysLeftOut = askKeys && !choice.get().includeApiKeys();
         BackgroundTasks.Handle task = backgroundTasks.start(tr("dialog.exportConfig.title"));
         // Off the FX thread: the export waits for pending writes and compresses the whole config directory.
         config.shared()
                 .exportConfigAsync(
-                        choice.get().includeHttpHistory(),
-                        choice.get().includeApiKeys(),
-                        choice.get().includePluginData())
+                        choice.get().includeHttpHistory(), choice.get().includePluginData())
                 .whenComplete((zip, failure) -> Platform.runLater(() -> {
                     task.done();
                     String detail = failure == null ? zip.toString() : String.valueOf(failure.getMessage());
-                    String done = keysLeftOut ? "status.config.exportedNoKeys" : "status.config.exported";
-                    setStatus(tr(failure == null ? done : "status.config.exportFailed", detail));
+                    setStatus(tr(failure == null ? "status.config.exported" : "status.config.exportFailed", detail));
                     Alert alert = Dialogs.styled(
                             new Alert(failure == null ? Alert.AlertType.INFORMATION : Alert.AlertType.ERROR));
                     alert.initOwner(stage);

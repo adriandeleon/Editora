@@ -146,6 +146,7 @@ public final class ConfigExporter {
                 || relative.startsWith("jdtls-workspaces/")
                 || relative.startsWith("history/")
                 || relative.startsWith("sync/")
+                || relative.startsWith(com.editora.secrets.EncryptedFileStore.DIR + "/") // the AI keys, encrypted
                 || relative.startsWith("cache/") // rebuilt on demand (the HTTP response-handler runner)
                 || relative.startsWith(ConfigImport.BACKUPS_DIR + "/")) { // copies made before an import
             return false;
@@ -173,8 +174,8 @@ public final class ConfigExporter {
      * {@code destinationDir/<zipName>} and returns the created file. A missing/empty config dir yields a valid
      * empty zip. {@code destinationDir} must exist.
      *
-     * <p>The zip is created <b>owner-only</b>: it contains a copy of {@code settings.json} — and so of the AI
-     * provider's API key — plus the user's private notes, and it lands in their home directory, which is
+     * <p>The zip is created <b>owner-only</b>: it contains a copy of {@code settings.json} and the user's
+     * private notes, and it lands in their home directory, which is
      * world-traversable. Locking down the config dir's own files while writing a world-readable archive of
      * them next door would protect nothing.
      *
@@ -198,24 +199,7 @@ public final class ConfigExporter {
             LocalDateTime now,
             boolean includeHttpHistory)
             throws IOException {
-        return export(configDir, destinationDir, version, userName, now, includeHttpHistory, false);
-    }
-
-    /**
-     * As {@link #export(Path, Path, String, String, LocalDateTime, boolean)}; the AI provider API keys in the
-     * settings file (and its backups) are written blank unless {@code includeApiKeys}. An export is the thing
-     * people hand to someone else, and a key is a billable credential.
-     */
-    public static Path export(
-            Path configDir,
-            Path destinationDir,
-            String version,
-            String userName,
-            LocalDateTime now,
-            boolean includeHttpHistory,
-            boolean includeApiKeys)
-            throws IOException {
-        return export(configDir, destinationDir, version, userName, now, includeHttpHistory, includeApiKeys, true);
+        return export(configDir, destinationDir, version, userName, now, includeHttpHistory, true);
     }
 
     /** As above; the plugins' {@code data/} folders are left out unless {@code includePluginData}. */
@@ -226,26 +210,22 @@ public final class ConfigExporter {
             String userName,
             LocalDateTime now,
             boolean includeHttpHistory,
-            boolean includeApiKeys,
             boolean includePluginData)
             throws IOException {
         return exportTo(
                 configDir,
                 destinationDir.resolve(zipName(configDir, version, userName, now)),
                 includeHttpHistory,
-                includeApiKeys,
                 includePluginData);
     }
 
-    /** As {@link #export}, into the zip file {@code zip} (the copy made before an import, for one). */
-    static Path exportTo(Path configDir, Path zip, boolean includeHttpHistory, boolean includeApiKeys)
-            throws IOException {
-        return exportTo(configDir, zip, includeHttpHistory, includeApiKeys, true);
-    }
-
-    /** As {@link #exportTo(Path, Path, boolean, boolean)}, leaving plugin data out unless asked for. */
-    static Path exportTo(
-            Path configDir, Path zip, boolean includeHttpHistory, boolean includeApiKeys, boolean includePluginData)
+    /**
+     * As {@link #export}, into the zip file {@code zip} (the copy made before an import, for one). The AI provider
+     * API keys are never in it (SET-13, Pauta 6.0.1): the {@code keys/} folder where they are kept without a
+     * keychain is left out, and an {@code aiApiKey…} value an older settings file or one of its copies still holds
+     * is written blank.
+     */
+    static Path exportTo(Path configDir, Path zip, boolean includeHttpHistory, boolean includePluginData)
             throws IOException {
         ConfigWriter.createOwnerOnly(zip); // newOutputStream truncates it and keeps the mode
         boolean complete = false;
@@ -263,9 +243,9 @@ public final class ConfigExporter {
                     }
                     try (InputStream in = Files.newInputStream(file)) {
                         zos.putNextEntry(new ZipEntry(entry));
-                        if (isSettingsCopy(entry)) { // a settings file: no sync-URL secret, no API key unless asked
+                        if (isSettingsCopy(entry)) { // a settings file: no sync-URL secret, no API key
                             String text = withoutSyncCredentials(new String(in.readAllBytes(), StandardCharsets.UTF_8));
-                            zos.write((includeApiKeys ? text : withoutApiKeys(text)).getBytes(StandardCharsets.UTF_8));
+                            zos.write(withoutApiKeys(text).getBytes(StandardCharsets.UTF_8));
                         } else {
                             in.transferTo(zos);
                         }

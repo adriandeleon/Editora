@@ -24,18 +24,21 @@ class LmStudioSettingsTest {
         settings.setAiEndpointFor(AiProvider.LMSTUDIO, "http://localhost:1234");
         settings.setApiKeyFor(AiProvider.LMSTUDIO, "local-token");
         settings.setLmstudioAgentCommand("\"/path with spaces/opencode\" acp");
+        // Each provider keeps its own key; the keys never reach the file (SET-13: the vault keeps them).
+        assertEquals("local-token", settings.getApiKeyFor(AiProvider.LMSTUDIO));
+        assertEquals("cloud-secret", settings.getApiKeyFor(AiProvider.ANTHROPIC));
+        assertEquals("hosted-secret", settings.getApiKeyFor(AiProvider.OPENAI));
+        assertFalse(mapper.writeValueAsString(settings).contains("secret"));
+        assertFalse(mapper.writeValueAsString(settings).contains("local-token"));
         settings = mapper.readValue(mapper.writeValueAsString(settings), Settings.class);
         assertEquals("lmstudio", settings.getAiProvider());
         assertEquals("local-model", settings.getAiModelFor(AiProvider.LMSTUDIO));
         assertEquals("local-small", settings.getAiCompletionModelFor(AiProvider.LMSTUDIO));
         assertEquals("http://localhost:1234", settings.getAiEndpointFor(AiProvider.LMSTUDIO));
-        assertEquals("local-token", settings.getApiKeyFor(AiProvider.LMSTUDIO));
         assertEquals("\"/path with spaces/opencode\" acp", settings.getLmstudioAgentCommand());
         assertEquals("cloud-model", settings.getAiModelFor(AiProvider.ANTHROPIC));
         assertEquals("cloud-small", settings.getAiCompletionModelFor(AiProvider.ANTHROPIC));
         assertEquals("https://cloud.example/v1/messages", settings.getAiEndpointFor(AiProvider.ANTHROPIC));
-        assertEquals("cloud-secret", settings.getApiKeyFor(AiProvider.ANTHROPIC));
-        assertEquals("hosted-secret", settings.getApiKeyFor(AiProvider.OPENAI));
     }
 
     @Test

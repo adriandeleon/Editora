@@ -70,7 +70,7 @@ class TwoWritersTest {
     @Test
     void anIncidentalSaveInOneProcessDoesNotRevertTheOthersSettings() throws Exception {
         a.getSettings().setKeyBindings(bindings("file.save", "C-x s"));
-        a.getSettings().setAiApiKey("sk-user-key-A");
+        a.getSettings().setAiModel("model-of-A");
         a.getSettings().setFontSize(19);
         assertTrue(a.save());
 
@@ -80,14 +80,14 @@ class TwoWritersTest {
         assertTrue(b.save());
 
         String settings = read("settings.json");
-        assertTrue(settings.contains("sk-user-key-A"), settings);
+        assertTrue(settings.contains("model-of-A"), settings);
         assertTrue(settings.contains("C-x s"), settings);
         assertTrue(settings.contains("\"fontSize\" : 19"), settings);
     }
 
     @Test
     void settingsChangedInBothProcessesAreMergedPerKey() throws Exception {
-        a.getSettings().setAiApiKey("sk-user-key-A");
+        a.getSettings().setAiModel("model-of-A");
         a.getSettings().setKeyBindings(bindings("file.save", "C-x s"));
         assertTrue(a.save());
 
@@ -101,7 +101,7 @@ class TwoWritersTest {
         ConfigManager fresh = new ConfigManager(dir);
         fresh.load();
         try {
-            assertEquals("sk-user-key-A", fresh.getSettings().getAiApiKey());
+            assertEquals("model-of-A", fresh.getSettings().getAiModel());
             assertEquals(21, fresh.getSettings().getFontSize());
             assertEquals(
                     Map.of("emacs", Map.of("file.save", List.of("C-x s"), "edit.copy", List.of("C-c c"))),

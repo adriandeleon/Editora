@@ -29,8 +29,9 @@ public final class SettingsFileCheck {
         CHANGED
     }
 
-    /** Keys the file may hold that are bookkeeping, not settings someone edits. */
-    private static final List<String> IGNORED = List.of("schemaVersion");
+    /** Not settings the user set: the version, and the AI keys an older file held, which go to the vault. */
+    private static final List<String> IGNORED =
+            List.of("schemaVersion", "aiApiKey", "aiApiKeyOpenai", "aiApiKeyLmstudio");
 
     private SettingsFileCheck() {}
 
