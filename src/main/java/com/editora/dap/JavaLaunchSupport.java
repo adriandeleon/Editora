@@ -285,18 +285,31 @@ final class JavaLaunchSupport {
      * Which of jdtls's source folders ({@code current}) are wrong for a file whose package puts it under
      * {@code root}: those holding the file below that root, where jdtls would name its class without (part
      * of) its package. A folder above the root is left alone — other files may be in its default package.
-     * Pure.
+     * Compared as real paths: the file may be opened through a symbolic link, while jdtls names real folders
+     * (review B8). Reads the file system (to resolve links).
      */
     static List<Path> wrongSourceRoots(List<Path> current, Path file, Path root) {
         if (current == null || file == null || root == null) {
             return List.of();
         }
-        Path f = file.toAbsolutePath().normalize();
-        Path r = root.toAbsolutePath().normalize();
+        Path f = realPath(file);
+        Path r = realPath(root);
         return current.stream()
                 .map(p -> p.toAbsolutePath().normalize())
-                .filter(p -> !p.equals(r) && p.startsWith(r) && f.startsWith(p))
+                .filter(p -> {
+                    Path real = realPath(p);
+                    return !real.equals(r) && real.startsWith(r) && f.startsWith(real);
+                })
                 .toList();
+    }
+
+    /** {@code p} with its symbolic links resolved; absolute and normalized when it cannot be (not there). */
+    static Path realPath(Path p) {
+        try {
+            return p.toRealPath();
+        } catch (java.io.IOException | RuntimeException e) {
+            return p.toAbsolutePath().normalize();
+        }
     }
 
     /**
