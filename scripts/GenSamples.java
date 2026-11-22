@@ -7,7 +7,7 @@
 /// (It also opens in Editora with a Run ▶ in the gutter — it's a compact source file.)
 ///
 /// Files produced:
-///   samples/perf/large-6mb.java  — just over the 5 MB highlight/minimap cutoff
+///   samples/perf/large-210k.java — just over the 200,000-line large-file cutoff (no highlighting, minimap, undo)
 ///   samples/perf/huge-<N>mb.txt  — just over the 50 MB read-only/capped-load cutoff (N defaults to 60)
 
 import java.io.BufferedWriter;
@@ -26,18 +26,15 @@ void main(String[] args) throws IOException {
     Path out = samples.resolve("perf");
     Files.createDirectories(out);
 
-    // ~6 MB of fold-heavy Java (a class per line) — just over the 5 MB cutoff, so highlighting + the
-    // minimap auto-disable. Size-driven so the file actually crosses the threshold.
-    Path large = out.resolve("large-6mb.java");
-    long largeTarget = 6L * 1024 * 1024;
+    // 210,000 lines of fold-heavy Java (a class per line, ~8 MB) — just over the 200,000-line large-file cutoff,
+    // so highlighting, the minimap and undo auto-disable. Line-driven, as the cutoff is.
+    Path large = out.resolve("large-210k.java");
+    long largeLines = 210_000;
     try (BufferedWriter w = Files.newBufferedWriter(large)) {
         String header = "package perf;\n";
         w.write(header);
-        long written = header.length();
-        for (int i = 0; written < largeTarget; i++) {
-            String cls = "class C" + i + " { int f() { return " + i + "; } }\n";
-            w.write(cls);
-            written += cls.length();
+        for (int i = 0; i < largeLines; i++) {
+            w.write("class C" + i + " { int f() { return " + i + "; } }\n");
         }
     }
 

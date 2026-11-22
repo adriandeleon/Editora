@@ -720,7 +720,7 @@ lists your own keyring.
 ## perf/ — large files (generated, not committed)
 
 Run `java scripts/GenSamples.java` (a JDK 25 compact source file — run it from the repo root) to create
-`samples/perf/` (git-ignored): files crossing the 5 MB highlight/minimap cutoff and the 50 MB
+`samples/perf/` (git-ignored): a file just over the 200,000-line large-file cutoff and one over the 50 MB
 read-only/capped-load cutoff. They are generated rather than committed so they never bloat git history.
 Pass an MB count to scale the huge file, e.g. `java scripts/GenSamples.java 120`.
 

@@ -120,6 +120,12 @@ class ProgramFilesTest {
                 ProgramFiles.kind(Files.write(dir.resolve("g"), elf(List.of(".debug_info", ".go.buildinfo")))),
                 "Go before native: Delve debugs it");
         assertEquals(null, ProgramFiles.kind(Files.write(dir.resolve("stripped"), elf(List.of(".text", ".data")))));
+        assertEquals(
+                ProgramFiles.Kind.NATIVE,
+                ProgramFiles.kind(Files.write(
+                        dir.resolve("glibc"),
+                        elf(List.of(".text", "__libc_freeres_fn", "__llvm_prf_cnts", ".debug_info")))),
+                "an ELF program's own __ sections do not make it a Mach-O one");
         assertEquals(List.of(), List.copyOf(ProgramFiles.sections(dir.resolve("missing"))));
         assertTrue(ProgramFiles.sections(dir.resolve("c")).contains(".debug_line"));
     }

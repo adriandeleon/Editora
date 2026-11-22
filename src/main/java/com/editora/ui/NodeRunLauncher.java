@@ -103,12 +103,42 @@ final class NodeRunLauncher {
 
     private static final Duration VERSION_TIMEOUT = Duration.ofSeconds(10);
 
-    /** Plans {@code spec} off the FX thread; {@code onReady} runs on the FX thread. */
+    /** i18n key: planning the run failed (a lookup threw); the launch says so rather than waiting forever. */
+    static final String PLAN_FAILED = "status.run.nodePlanFailed";
+
+    /**
+     * Plans {@code spec} off the FX thread; {@code onReady} runs on the FX thread — always, with a plan whose {@link
+     * NodeRunPlan#error} is {@link #PLAN_FAILED} when planning failed.
+     */
     static void plan(Spec spec, Consumer<Ready> onReady) {
+        plan(spec, onReady, NodeRunLauncher::planNow);
+    }
+
+    static void plan(Spec spec, Consumer<Ready> onReady, java.util.function.Function<Spec, Ready> planner) {
         Thread.ofVirtual().name("node-run-plan").start(() -> {
-            Ready ready = planNow(spec);
+            Ready ready = planSafely(spec, planner);
             Platform.runLater(() -> onReady.accept(ready));
         });
+    }
+
+    /** {@code planner}'s plan of {@code spec}, or a failed one when it throws. */
+    static Ready planSafely(Spec spec, java.util.function.Function<Spec, Ready> planner) {
+        try {
+            return planner.apply(spec);
+        } catch (RuntimeException | Error e) {
+            if (e instanceof VirtualMachineError vm) {
+                throw vm;
+            }
+            java.util.logging.Logger.getLogger(NodeRunLauncher.class.getName())
+                    .log(java.util.logging.Level.WARNING, "planning the Node.js run failed", e);
+            return new Ready(
+                    new NodeRunPlan(List.of(), Map.of(), null, PLAN_FAILED),
+                    null,
+                    String.valueOf(spec.file()),
+                    null,
+                    TsRunRoute.Kind.PLAIN,
+                    null);
+        }
     }
 
     /** The blocking part of {@link #plan} (disk, PATH, a version probe). Not on the FX thread. */

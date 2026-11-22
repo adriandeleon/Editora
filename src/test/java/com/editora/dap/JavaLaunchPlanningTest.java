@@ -51,6 +51,28 @@ class JavaLaunchPlanningTest {
         assertEquals(List.of(), JavaLaunchSupport.wrongSourceRoots(List.of(dir), file, root), "above: kept");
     }
 
+    /** The file opened through a symbolic link; jdtls names its real folders (review B8). */
+    @Test
+    void aWrongFolderIsFoundThroughASymbolicLink() throws Exception {
+        Path real = Files.createDirectories(dir.resolve("real/src/demo"))
+                .getParent()
+                .getParent();
+        Path link = dir.resolve("link");
+        try {
+            Files.createSymbolicLink(link, real);
+        } catch (java.io.IOException | UnsupportedOperationException e) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false, "no symbolic links here: " + e);
+        }
+        Path file = Files.writeString(link.resolve("src/demo/Main.java"), "package demo;");
+        Path jdtls = real.toRealPath().resolve("src/demo");
+        assertEquals(List.of(jdtls), JavaLaunchSupport.wrongSourceRoots(List.of(jdtls), file, link.resolve("src")));
+        assertEquals(
+                List.of(),
+                JavaLaunchSupport.wrongSourceRoots(
+                        List.of(real.toRealPath().resolve("src")), file, link.resolve("src")),
+                "the right folder, by its real name");
+    }
+
     @Test
     void theClassIsQualifiedByTheDeclaredPackageWhateverJdtlsGuessed() {
         assertEquals("demo.Main", JavaLaunchSupport.qualified("Main", "demo"));

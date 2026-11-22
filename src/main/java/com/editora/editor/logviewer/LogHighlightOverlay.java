@@ -21,7 +21,7 @@ import org.jspecify.annotations.Nullable;
 /**
  * A transparent overlay that tints each visible log line by its severity: a solid colored bar at the
  * left edge for every leveled line, plus a faint full-row wash for WARN/ERROR/FATAL. Unlike TextMate
- * highlighting (disabled on files ≥ 5 MB) this is <em>size-independent</em>, so a multi-GB log opened at
+ * highlighting (disabled in large-file mode) this is <em>size-independent</em>, so a multi-GB log opened at
  * its tail still shows levels.
  *
  * <p>Modeled on {@code SpellCheckOverlay}/{@code SearchHighlightOverlay}: a mouse-transparent
