@@ -8,8 +8,13 @@
 # path and still fail at the first emulator call of the linked app. TerminalImageCheckTest covers the class
 # path on the CI lanes.
 #
-# Runs on pull requests that touch the dependencies, the descriptors or the check itself, by hand (Actions →
-# Terminal image → Run workflow), and on `probe/**` branches.
+# The same image also checks Editora's command line on Windows, the one platform where it needs packaging of its
+# own: the console launcher editora-cli.exe (packaging/windows/editora-cli.properties) runs `editora-cli http` on a
+# real file, and the msi job installs the MSI, checks that it put the install folder on the PATH, runs
+# editora-cli from there and checks that uninstalling takes the entry off again.
+#
+# Runs on pull requests that touch the dependencies, the descriptors, the Windows packaging or the check itself,
+# by hand (Actions → Terminal image → Run workflow), and on `probe/**` branches.
 name: Terminal image
 
 on:
@@ -23,6 +28,7 @@ on:
       - src/main/java/module-info.java
       - src/main/java/com/editora/terminal/**
       - scripts/aot_build.java
+      - packaging/windows/**
       - .github/workflows/terminal-image.yml
 
 permissions:
@@ -87,3 +93,79 @@ jobs:
             -RedirectStandardOutput $out -RedirectStandardError $err -Wait -PassThru -NoNewWindow
           Get-Content $out, $err
           exit $p.ExitCode
+
+      # editora-cli.exe is a console program: the shell waits for it and gets its output and exit status. The
+      # .http file asserts on a local server's answer, so a launcher that starts but cannot send fails too.
+      - name: Check the console launcher (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $cli = 'target\dist\Editora\editora-cli.exe'
+          & $cli --version
+          if ($LASTEXITCODE -ne 0) { throw "editora-cli --version exited $LASTEXITCODE" }
+          $www = Join-Path $env:RUNNER_TEMP 'www'
+          New-Item -ItemType Directory -Force $www | Out-Null
+          Set-Content (Join-Path $www 'user.json') '{"name": "Ada"}'
+          $server = Start-Process python -ArgumentList '-m', 'http.server', '18765', '--bind', '127.0.0.1' `
+            -WorkingDirectory $www -PassThru -NoNewWindow
+          Start-Sleep -Seconds 2
+          $http = Join-Path $env:RUNNER_TEMP 'check.http'
+          Set-Content $http "# @assert status == 200`n# @assert `$.name == `"Ada`"`nGET http://127.0.0.1:18765/user.json`n"
+          & $cli http --no-scripts $http
+          $code = $LASTEXITCODE
+          Stop-Process -Id $server.Id
+          if ($code -ne 0) { throw "editora-cli http exited $code" }
+
+  # The MSI's PATH entry (packaging/windows/msi/os-condition.wxf): installed, usable from a new shell, and gone
+  # again after an uninstall. Only Windows has an installer that needs it.
+  msi:
+    name: MSI (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: liberica
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .mvn/maven.config
+
+      - name: Build the MSI (-Pdist)
+        shell: bash
+        run: ./mvnw -B --no-transfer-progress clean -Pdist -DskipTests package
+
+      - name: Install, run from the PATH, uninstall
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem target\dist\*.msi | Select-Object -First 1
+          if (-not $msi) { throw 'no MSI in target\dist' }
+          $log = Join-Path $env:RUNNER_TEMP 'install.log'
+          $p = Start-Process msiexec -ArgumentList '/i', $msi.FullName, '/qn', '/l*v', $log -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content $log -Tail 80; throw "install exited $($p.ExitCode)" }
+          $dir = Join-Path $env:ProgramFiles 'Editora'
+          if (-not (Test-Path (Join-Path $dir 'editora-cli.exe'))) { throw "no editora-cli.exe in $dir" }
+          $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+          $entries = $machine -split ';' | ForEach-Object { $_.TrimEnd('\') }
+          if ($entries -notcontains $dir) { throw "$dir is not on the machine PATH: $machine" }
+          # A new process with the PATH as a new terminal would read it.
+          $env:Path = $machine + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+          $found = (Get-Command editora-cli -ErrorAction Stop).Source
+          Write-Output "editora-cli is $found"
+          editora-cli --version
+          if ($LASTEXITCODE -ne 0) { throw "editora-cli --version exited $LASTEXITCODE" }
+          editora-cli http --help
+          if ($LASTEXITCODE -ne 0) { throw "editora-cli http --help exited $LASTEXITCODE" }
+          $p = Start-Process msiexec -ArgumentList '/x', $msi.FullName, '/qn' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "uninstall exited $($p.ExitCode)" }
+          $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+          $entries = $machine -split ';' | ForEach-Object { $_.TrimEnd('\') }
+          if ($entries -contains $dir) { throw "$dir is still on the machine PATH after uninstall" }
+          Write-Output 'PATH entry added on install and removed on uninstall'

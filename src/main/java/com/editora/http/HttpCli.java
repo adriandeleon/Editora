@@ -606,6 +606,9 @@ public final class HttpCli {
                 running the command is the consent.
 
                 Exit status: 0 all requests got a response and all tests passed; 1 a request
-                failed or a test failed; 2 a usage error.""";
+                failed or a test failed; 2 a usage error.
+
+                On Windows, run it as editora-cli http ... (the console launcher; Editora.exe
+                has no console).""";
     }
 }

@@ -534,6 +534,18 @@ public class aot_build {
                 // than no installer at all.
                 System.err.println("[aot] no " + assoc + " — MSI will have no file associations");
             }
+            // Put the install folder on the system PATH, so the console launcher (editora-cli.exe, see
+            // packaging/windows/editora-cli.properties) runs from any terminal: jpackage has no option for
+            // it, so the resource dir replaces its os-condition.wxf with one that also carries the PATH entry
+            // (why that file, in its own comment). Only that file is in the folder, so no other resource of
+            // jpackage's is overridden by accident.
+            Path msiResources = Path.of(System.getProperty("user.dir"), "packaging", "windows", "msi");
+            if (Files.isRegularFile(msiResources.resolve("os-condition.wxf"))) {
+                cmd.add("--resource-dir");
+                cmd.add(msiResources.toString());
+            } else {
+                System.err.println("[aot] no " + msiResources + " — the MSI will not put Editora on the PATH");
+            }
         } else if (t.equals("DEB") || t.equals("RPM")) {
             cmd.add("--linux-shortcut");
             // DEB: a resource dir overriding jpackage's generated files (the RPM bundler uses a .spec

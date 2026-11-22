@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Editora's replacement for jpackage's os-condition.wxf (handed to the MSI wrap with dash-dash-resource-dir
+  by scripts/aot_build.java). It does two things:
+
+  1. What jpackage's own file does, kept as is: refuse to install on a Windows older than the one the
+     launcher needs (JpExecutableOSVersion is set by jpackage).
+
+  2. Put the install folder on the system PATH, so `editora-cli http api.http` (the console launcher) and
+     `editora file.txt` (the GUI launcher; Windows ignores case) work from any terminal. jpackage has no
+     option for this, and this fragment is the one jpackage resource whose component group the main
+     feature already installs (FragmentOsCondition), so nothing else of jpackage's MSI is replaced: no
+     copy of main.wxs to keep in step with each JDK.
+
+  The entry is appended (Part="last"), so Editora never shadows a program of the same name, and removed on
+  uninstall (Permanent="no"); an upgrade removes the old product first and adds it again. System="yes"
+  because the MSI installs per machine (aot_build.java passes no per-user option). The registry value
+  under HKMU (HKLM for a per-machine install) is only the component's key path: Windows Installer needs
+  one to tell whether the component is installed. Its GUID must stay the same across releases.
+
+  Written in WiX 3; jpackage converts it when the build machine has WiX 4 or later.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <Condition Message="!(loc.OsConditionMessage)">
+      <![CDATA[Installed OR (VersionNT >= $(var.JpExecutableOSVersion))]]>
+    </Condition>
+    <ComponentGroup Id="FragmentOsCondition">
+      <Component Id="EditoraOnPath" Directory="INSTALLDIR" Guid="{0394FB3E-F8D4-4294-80AC-D15A1FB84024}">
+        <RegistryValue Root="HKMU" Key="Software\Editora\Editora" Name="OnPath" Type="integer" Value="1"
+                       KeyPath="yes"/>
+        <Environment Id="EditoraPathEntry" Name="PATH" Value="[INSTALLDIR]" Action="set" Part="last"
+                     Permanent="no" System="yes"/>
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

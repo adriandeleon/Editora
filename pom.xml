@@ -1931,6 +1931,30 @@
                             </execution>
                         </executions>
                     </plugin>
+                    <!-- The console launcher, editora-cli.exe, beside Editora.exe: why, in
+                         packaging/windows/editora-cli.properties. Merged by execution id into the dist
+                         profile's app-image build (both profiles are active on a Windows -Pdist build), so
+                         only the Windows image gets it: a Linux or macOS launcher already writes to the
+                         terminal. This declares no version: the dist profile does, and without -Pdist this
+                         execution binds nothing (the plugin has no default phase). -->
+                    <plugin>
+                        <groupId>org.panteleyev</groupId>
+                        <artifactId>jpackage-maven-plugin</artifactId>
+                        <version>${jpackage.plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>jpackage-app-image</id>
+                                <configuration>
+                                    <launchers>
+                                        <launcher>
+                                            <name>editora-cli</name>
+                                            <file>${project.basedir}/packaging/windows/editora-cli.properties</file>
+                                        </launcher>
+                                    </launchers>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
                 </plugins>
             </build>
         </profile>

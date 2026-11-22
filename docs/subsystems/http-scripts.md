@@ -110,8 +110,8 @@ every request got a response and every test passed, 1 otherwise, 2 for a usage e
   typing the command is the consent. Scripts keep the permission model, minimal environment and timeout.
 - No JavaFX: `HttpCli.main` sets `ProcessRunner.HEADLESS_PROPERTY` so `ProcessRunner` never asks JavaFX which
   thread it is on (that loads the toolkit's native library), and inits `Messages` in English.
-- On Windows the packaged `Editora.exe` is a GUI launcher without a console; use the fat jar there
-  (`java -jar Editora-<version>-<target>.jar http …`).
+- On Windows `Editora.exe` is a GUI launcher without a console, so the command runs as `editora-cli http …`:
+  the console launcher beside it, which the MSI puts on the PATH (see building-and-packaging.md).
 
 ## Testing
 
