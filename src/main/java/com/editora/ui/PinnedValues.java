@@ -173,7 +173,8 @@ final class PinnedValues {
 
     /**
      * Evaluates every pinned value of the open files in frame {@code frameId} and paints the answers. Called on each
-     * stop and frame change; values that fail paint their error, so a pin out of scope says so.
+     * stop and frame change; values that fail paint their error, so a pin out of scope says so. Past {@link
+     * #MAX_EVALUATED} a file's pins are not evaluated, and it shows none rather than an older stop's.
      */
     void refresh(int frameId) {
         this.frameId = frameId;
@@ -219,6 +220,13 @@ final class PinnedValues {
                         }
                     }));
                 }
+            }
+            if (requests.isEmpty()) {
+                // Over the budget: nothing of this buffer is evaluated at this stop, so the previous stop's values
+                // must not stay painted as if they were this one's.
+                b.setPinnedValues(null);
+                painted.remove(b);
+                continue;
             }
             requests.forEach(Runnable::run);
         }

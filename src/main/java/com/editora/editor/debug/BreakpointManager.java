@@ -713,11 +713,16 @@ public final class BreakpointManager implements LineMarks.Carrier {
     }
 
     private void trackEdit(List<PlainTextChange> changes) {
+        boolean undoing = area.getUndoManager().isPerformingAction();
+        java.util.List<Dropped> older = undoing ? java.util.List.of() : java.util.List.copyOf(dropped);
         LineMarkTracker.Result<Breakpoint> result = LineMarkTracker.apply(byLine, KIND, changes, area);
         if (result.moved()) {
             rememberDropped(byLine, result.marks());
         }
-        NavigableMap<Integer, Breakpoint> revived = revive(result.marks(), changes);
+        NavigableMap<Integer, Breakpoint> revived = revive(result.marks(), changes, undoing);
+        for (Dropped d : older) {
+            d.pasteable = false; // an edit came between: only an undo / a redo may bring these back now
+        }
         if (revived != null) {
             result = new LineMarkTracker.Result<>(revived, true, result.retexted());
         }
@@ -806,21 +811,43 @@ public final class BreakpointManager implements LineMarks.Carrier {
     /**
      * Breakpoints whose line was deleted, newest last. Deleting the line drops the breakpoint — but Undo, or
      * pasting a line that was cut to move it, puts the very same text back, and the breakpoint (with its
-     * condition and log message) belongs to that text. See {@link #revive}.
+     * condition and log message) belongs to that text. See {@link #revive}. A paste brings one back only when it
+     * is the very next edit after the cut ({@link Dropped#pasteable}); later, only an undo or a redo does, so an
+     * unrelated paste of the same text long afterwards does not resurrect an old breakpoint.
      */
-    private final java.util.ArrayDeque<Breakpoint> dropped = new java.util.ArrayDeque<>();
+    private final java.util.ArrayDeque<Dropped> dropped = new java.util.ArrayDeque<>();
 
+    /** A dropped breakpoint, and whether a plain (non-undo) insertion may still bring it back. */
+    private static final class Dropped {
+        final Breakpoint breakpoint;
+        boolean pasteable = true;
+
+        Dropped(Breakpoint breakpoint) {
+            this.breakpoint = breakpoint;
+        }
+    }
+
+    /**
+     * Remembers the breakpoints of {@code before} that the edit removed. Each survivor accounts for exactly one
+     * breakpoint of {@code before}: first the one it is identical to apart from its line, then — for a survivor
+     * whose line text the edit also changed — one equal to it apart from line and text. What is left is what the
+     * edit deleted. (Matching on line text alone used to let one survivor account for every breakpoint with the
+     * same text, so deleting one of two identical lines dropped the other one's settings and id.)
+     */
     private void rememberDropped(NavigableMap<Integer, Breakpoint> before, NavigableMap<Integer, Breakpoint> after) {
         if (after.size() >= before.size()) {
             return;
         }
         List<Breakpoint> left = new ArrayList<>(after.values());
+        List<Breakpoint> unmatched = new ArrayList<>();
         for (Breakpoint was : before.values()) {
-            boolean kept = left.removeIf(now -> now.lineText().equals(was.lineText())
-                    && now.condition().equals(was.condition())
-                    && now.logMessage().equals(was.logMessage()));
-            if (!kept && !was.lineText().isEmpty()) {
-                dropped.addLast(was);
+            if (!removeOne(left, was, true)) {
+                unmatched.add(was);
+            }
+        }
+        for (Breakpoint was : unmatched) {
+            if (!removeOne(left, was, false) && !was.lineText().isEmpty()) {
+                dropped.addLast(new Dropped(was));
                 if (dropped.size() > MAX_DROPPED) {
                     dropped.removeFirst();
                 }
@@ -828,14 +855,29 @@ public final class BreakpointManager implements LineMarks.Carrier {
         }
     }
 
+    private static boolean removeOne(List<Breakpoint> left, Breakpoint was, boolean sameText) {
+        Breakpoint key = sameText ? was.withLine(0) : was.withLine(0).withLineText("");
+        for (var it = left.iterator(); it.hasNext(); ) {
+            Breakpoint now = it.next();
+            Breakpoint nowKey = sameText ? now.withLine(0) : now.withLine(0).withLineText("");
+            if (nowKey.equals(key)) {
+                it.remove();
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Puts back the breakpoints of deleted lines that this edit re-inserted: an insertion whose text contains
      * a dropped breakpoint's line, landing on a line that now reads exactly that. Returns the marks with them
      * added, or {@code null} when nothing came back. Typing never matches — the inserted text itself must
-     * hold the whole line, which only an undo, a redo or a paste does.
+     * hold the whole line, which only an undo, a redo or a paste does; a paste only right after the deletion
+     * ({@code undoing} is whether the edit is an undo or a redo). A revived breakpoint whose id another breakpoint
+     * now has comes back without one, so two never share an id.
      */
     private @Nullable NavigableMap<Integer, Breakpoint> revive(
-            NavigableMap<Integer, Breakpoint> marks, List<PlainTextChange> changes) {
+            NavigableMap<Integer, Breakpoint> marks, List<PlainTextChange> changes, boolean undoing) {
         if (dropped.isEmpty() || changes.size() != 1) {
             return null;
         }
@@ -848,8 +890,9 @@ public final class BreakpointManager implements LineMarks.Carrier {
         int last = Math.min(area.getParagraphs().size() - 1, first + LineMarks.countNewlines(inserted));
         NavigableMap<Integer, Breakpoint> out = null;
         for (var it = dropped.iterator(); it.hasNext(); ) {
-            Breakpoint was = it.next();
-            if (!inserted.contains(was.lineText())) {
+            Dropped entry = it.next();
+            Breakpoint was = entry.breakpoint;
+            if (!(undoing || entry.pasteable) || !inserted.contains(was.lineText())) {
                 continue;
             }
             for (int line = first; line <= last; line++) {
@@ -860,13 +903,26 @@ public final class BreakpointManager implements LineMarks.Carrier {
                     if (out == null) {
                         out = new TreeMap<>(marks);
                     }
-                    out.put(line, was.withLine(line));
+                    Breakpoint back = was.withLine(line);
+                    if (!back.id().isEmpty() && hasId(current, back.id())) {
+                        back = back.withId("");
+                    }
+                    out.put(line, back);
                     it.remove();
                     break;
                 }
             }
         }
         return out;
+    }
+
+    private static boolean hasId(NavigableMap<Integer, Breakpoint> marks, String id) {
+        for (Breakpoint bp : marks.values()) {
+            if (bp.id().equals(id)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void fireChanged() {
