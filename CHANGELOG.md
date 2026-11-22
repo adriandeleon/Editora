@@ -53,6 +53,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   language keeps it longer. A line up to 1 MiB (was 64 KiB) keeps undo, and highlighting for the rest of the file; such
   a line still opens unwrapped, as before. A file whose document would not fit the
   free memory opens as a read-only slice, now counted by lines as well as size.
+- **Settings ▸ Snippets writes a snippet file whole.** A save, a removal or switching a snippet off or on now
+  writes that language's snippet file as plain JSON, so comments in it are not kept (the order of the snippets,
+  every trigger, the scope and fields Editora does not use still are). A file with comments still loads, and the
+  first save of one asks first, naming the file. Edit User Snippets, which opens the file as text, keeps them.
+  Settings Sync merges a snippet file changed on two machines the same way.
+
 - **A release's notes are its changelog.** The text of each GitHub release, which What's New on the Welcome page
   opens, is now this file's section for the version, after a short install guide, instead of a list of commits. A
   section too long for a release page is shown by its entries' first lines, with a link to the whole of it.
