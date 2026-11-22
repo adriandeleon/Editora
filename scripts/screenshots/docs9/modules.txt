@@ -1,0 +1,29 @@
+#@ needs NETCOREDBG=<path to netcoredbg> and the .NET SDK on the PATH
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 800
+set lspSupport false
+set debugSupport true
+set csharpDebugPath "${env:NETCOREDBG}"
+start
+project ${workspace}/samples/debug/csharp
+run buffer.closeAll
+run tool.project
+open ${workspace}/samples/debug/csharp/Program.cs 1
+focuseditor
+open ${workspace}/samples/debug/csharp/Checkout.cs 41
+focuseditor
+run debug.toggleBreakpoint
+wait 500
+open ${workspace}/samples/debug/csharp/Program.cs 1
+focuseditor
+run debug.start
+wait 45000
+divider 0 0.55
+run debug.modules
+wait 2000
+settext .status-message
+shot ${out}/docs/debug-modules${suffix}.png

@@ -2321,10 +2321,14 @@ the focused one. Everything a session's manager hands the FX thread runs as that
 panel's `Actions` are proxies that wrap each call in `inSession` (`inSessionProxy`), and `DapManager.fx()` runs every
 reply through `setCallbackWrapper`. Launch steps that finish later carry the session that started them —
 `BeforeLaunchStep.setContext`, `later()`/`laterIn()`, `startOffFx`, `asThisSession` for the jdtls build, and
-`planOffFx` for every plan read off the FX thread (launch.json and tasks.json reads included) — so a tab clicked
+`planOffFx` for every plan read off the FX thread (launch.json and tasks.json reads included), and `bound`
+for what runs after a save (`savedOrThen`), the Run scan (`whenRunScanned`) or a text scan (`scan`): each runs as
+the session that asked, and not at all once that session is gone — so a tab clicked
 meanwhile, or a compound's next member focused before the first one's plan lands, does not launch into the wrong
-session. `DebugFacts` refuses a second look only for the same session. A Debug Test run's attaches go to the session
-waiting for them (`attachWaiter`), whichever is focused; each session keeps its own queued JVMs (`queuedAttaches`)
+session. `DebugFacts` refuses a second look only for the same session, and a look that fails says why (no endless retry).
+A launch still saving or planning counts as getting ready (`DebugSession.stepsPending`, at most 15 s): F5 again says
+it is starting instead of launching twice. A Debug Test run's own attaches (`attachTestJvm`) go to
+the session waiting for them (`attachWaiter`), whichever is focused, and a refused one releases it; each session keeps its own queued JVMs (`queuedAttaches`)
 and its own closed-file breakpoints (`DebugSession.closedBreakpoints`), and an edit to a closed file's breakpoints
 (Breakpoints list, Map card, import) is sent through `sendClosed` as a session start would: re-anchored, triggered ones
 held back. Debug support off, a file opened mid-session and hot code replace on save act on every session; Thread

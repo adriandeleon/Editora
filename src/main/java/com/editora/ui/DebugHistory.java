@@ -119,17 +119,36 @@ final class DebugHistory {
             return shownFrame < 0 ? null : frames.get(shownFrame);
         }
 
+        /** The frames' keys, worked out once: a stop's frames never change. */
+        private String @Nullable [] frameKeys;
+
         /** The key of frame {@code index} ({@link DebugValueChanges#frameKey}), to find it at other stops. */
         String frameKey(int index) {
-            DapModels.StackFrameInfo f = frames.get(index);
-            return DebugValueChanges.frameKey(
-                    threadId, f.name(), f.file() == null ? null : f.file().toString(), frames.size() - index);
+            return frameKeys()[index];
+        }
+
+        private String[] frameKeys() {
+            String[] keys = frameKeys;
+            if (keys == null) {
+                keys = new String[frames.size()];
+                for (int i = 0; i < keys.length; i++) {
+                    DapModels.StackFrameInfo f = frames.get(i);
+                    keys[i] = DebugValueChanges.frameKey(
+                            threadId,
+                            f.name(),
+                            f.file() == null ? null : f.file().toString(),
+                            frames.size() - i);
+                }
+                frameKeys = keys;
+            }
+            return keys;
         }
 
         /** The index of the frame with key {@code key} at this stop, or -1. */
         int frameIndex(String key) {
-            for (int i = 0; i < frames.size(); i++) {
-                if (frameKey(i).equals(key)) {
+            String[] keys = frameKeys();
+            for (int i = 0; i < keys.length; i++) {
+                if (keys[i].equals(key)) {
                     return i;
                 }
             }
@@ -280,7 +299,14 @@ final class DebugHistory {
      */
     boolean changed(Stop stop, int frame, List<String> path, String value) {
         String key = stop.frameKey(frame);
-        for (Stop s = before(stop); s != null; s = before(s)) {
+        // One walk back from the stop (not a fresh search for each stop before it: a Variables cell of an old stop
+        // asked this, and a long history made each cell's paint quadratic).
+        var back = stops.descendingIterator();
+        while (back.hasNext() && back.next() != stop) {
+            // skip the stops after it
+        }
+        while (back.hasNext()) {
+            Stop s = back.next();
             int i = s.frameIndex(key);
             String then = i < 0 ? null : s.value(i, path);
             if (then != null) {

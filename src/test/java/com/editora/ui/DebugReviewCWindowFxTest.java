@@ -22,6 +22,7 @@ import com.editora.dap.DapClient;
 import com.editora.dap.DapManager;
 import com.editora.dap.FakeDebugAdapter;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.debug.PinManager;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -484,6 +485,44 @@ class DebugReviewCWindowFxTest {
             again.getPinManager().restore(fx.controller.config.getPins().get(DebugCoordinator.key(util)));
             return again.getPinManager().expressions(1);
         }));
+    }
+
+    @Test
+    void aFileLeftOutOfThePinBudgetShowsNoOlderStopsValues() throws Exception {
+        String longer = "a = 1\n".repeat(12);
+        Path first = file("many.py", longer);
+        EditorBuffer many = open(first);
+        Path util = file("util.py", UTIL);
+        EditorBuffer b = open(util);
+        PinnedValues pins = debug.pinnedValues();
+        FxTestSupport.runOnFx(() -> pins.toggle(b, 1, "x"));
+        try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
+            FakeDebugAdapter.Session session = connect(adapter, util);
+            stopAt(session, util, 3, "breakpoint");
+            await(
+                    "the pin painted",
+                    () -> "x = val(x)"
+                            .equals(pinned(b) == null ? null : pinned(b).get(1)));
+            // The first file takes the whole budget: the second is evaluated no more.
+            FxTestSupport.runOnFx(() -> {
+                for (int i = 0; i < PinnedValues.MAX_EVALUATED; i++) {
+                    pins.toggle(many, i / PinManager.MAX_PER_LINE, "v" + i);
+                }
+            });
+            await(
+                    "the budget-filling pins painted",
+                    () -> pinned(many) != null && pinned(many).size() == 10);
+            await("the left-out file still shows the older values", () -> pinned(b) == null);
+            FxTestSupport.runOnFx(manager::resume);
+            session.awaitRequest("continue");
+        } finally {
+            FxTestSupport.runOnFx(() -> {
+                for (int i = 0; i < 10; i++) {
+                    many.getPinManager().clearLine(i);
+                }
+                b.getPinManager().clearLine(1);
+            });
+        }
     }
 
     @Test

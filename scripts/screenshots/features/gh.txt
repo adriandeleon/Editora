@@ -1,0 +1,45 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+set pluginSupport true
+size 1280 760
+start
+project ${workspace}
+run buffer.closeAll
+open ${workspace}/src/main/java/com/editora/ui/ProjectMapView.java 1
+run tool.github
+wait 8000
+click Runs
+wait 8000
+divider 0 0.42
+wait 1000
+settext .status-message
+shot ${out}/features/github${suffix}.png
+run view.closeFocusedToolWindow
+run buffer.closeAll
+open ${workspace}/src/main/java/com/editora/ui/PrintPreview.java 300
+run tool.gitLog
+wait 6000
+divider 0 0.4
+wait 1000
+settext .status-message
+shot ${out}/features/full-ide${suffix}.png
+run view.closeFocusedToolWindow
+run plugins.browse
+wait 8000
+shot ${out}/features/plugins${suffix}.png
+key ESCAPE
+run template.new
+wait 2000
+shot ${out}/features/file-templates${suffix}.png
+key ESCAPE
+run search.everywhere
+wait 1000
+focuslast
+type theme
+wait 4000
+settext .status-message
+shot ${out}/features/search-everywhere${suffix}.png
+key ESCAPE

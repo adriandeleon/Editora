@@ -165,19 +165,31 @@ class LaunchJsonTest {
                 List.of("sh", "-c", "'/opt/my tools/run' 'a b' x"),
                 LaunchJson.taskArgv(LaunchJson.task(tasks, "tool"), false));
         assertEquals(
-                List.of("cmd", "/c", "\"C:\\Program Files\\t.exe\" \"my file.txt\""),
+                List.of("cmd", "/d", "/s", "/c", "\"\"C:\\Program Files\\t.exe\" \"my file.txt\"\""),
                 LaunchJson.taskArgv(LaunchJson.task(tasks, "win"), true));
         assertEquals(
                 List.of("sh", "-c", "npm run build && echo done"),
                 LaunchJson.taskArgv(LaunchJson.task(tasks, "line"), false),
                 "a command alone is a whole command line");
         assertEquals(
-                List.of("cmd", "/c", "npm run build && echo done"),
+                List.of("cmd", "/d", "/s", "/c", "\"npm run build && echo done\""),
                 LaunchJson.taskArgv(LaunchJson.task(tasks, "line"), true));
         assertEquals(
                 List.of("sh", "-c", "$HOME/bin/x y"),
                 LaunchJson.taskArgv(LaunchJson.task(tasks, "home"), false),
                 "a command without spaces still expands");
+        assertEquals(
+                List.of("cmd", "/d", "/s", "/c", "\"\"C:\\My Tools\\gcc.exe\" -o \"out dir\\a.exe\"\""),
+                LaunchJson.taskArgv(
+                        Map.of(
+                                "type",
+                                "shell",
+                                "command",
+                                "C:\\My Tools\\gcc.exe",
+                                "args",
+                                List.of("-o", "out dir\\a.exe")),
+                        true),
+                "a quoted command and a quoted last argument keep their quotes: cmd /s drops only the outer pair");
         assertEquals("plain", LaunchJson.cmdQuote("plain"));
         assertEquals("\"\"", LaunchJson.cmdQuote(""));
         assertEquals("\"a&b\"", LaunchJson.cmdQuote("a&b"));
@@ -200,7 +212,7 @@ class LaunchJsonTest {
                 List.of("sh", "-c", "make all 'it'\"'\"'s' 'a b'"),
                 LaunchJson.taskArgv(LaunchJson.task(tasks, "build"), false));
         assertEquals(
-                List.of("cmd", "/c", "make all it's \"a b\""),
+                List.of("cmd", "/d", "/s", "/c", "\"make all it's \"a b\"\""),
                 LaunchJson.taskArgv(LaunchJson.task(tasks, "build"), true));
         assertEquals(List.of("./run", "x"), LaunchJson.taskArgv(LaunchJson.task(tasks, "run"), false));
         assertEquals(List.of("true"), LaunchJson.taskArgv(LaunchJson.task(tasks, "old"), false), "process by default");

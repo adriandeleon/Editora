@@ -66,15 +66,20 @@ record ValueTable(List<String> columns, List<Row> rows) {
 
     private static final Pattern INDEX = Pattern.compile("\\[?\\d+]?");
 
+    /** Rows an array lists beside its indexed elements that are about the array, not in it. */
+    private static final Set<String> ARRAY_ROWS = Set.of("length");
+
     /**
      * The elements among {@code children}: without the debugger's own rows ({@link #NOT_ELEMENTS}, js-debug's
-     * {@code [[…]]}), and, when some are indexed ({@code 0}, {@code [0]}), only those — an array's {@code length} is
-     * not one.
+     * {@code [[…]]}), and, when they are an array's — every one indexed ({@code 0}, {@code [0]}) but its {@code
+     * length} — only the indexed ones. A mix of keys (a dict with {@code 200} and {@code 'default'}) keeps them all.
      */
     static List<DapModels.VariableInfo> elements(List<DapModels.VariableInfo> children) {
         List<DapModels.VariableInfo> kept = fields(children);
         boolean indexed = kept.stream().anyMatch(v -> INDEX.matcher(v.name()).matches());
-        return indexed
+        boolean array = indexed
+                && kept.stream().allMatch(v -> INDEX.matcher(v.name()).matches() || ARRAY_ROWS.contains(v.name()));
+        return array
                 ? kept.stream().filter(v -> INDEX.matcher(v.name()).matches()).toList()
                 : kept;
     }

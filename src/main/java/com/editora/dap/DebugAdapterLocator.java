@@ -124,7 +124,10 @@ public final class DebugAdapterLocator {
 
     private static Optional<Path> locateNow(String configuredPath, Path home) {
         if (configuredPath != null && !configuredPath.isBlank()) {
-            Path p = Path.of(configuredPath);
+            Path p = configuredPath(configuredPath);
+            if (p == null) {
+                return Optional.empty();
+            }
             if (Files.isRegularFile(p)) {
                 return Optional.of(p); // user pointed at a specific jar (trust it even if oddly named)
             }
@@ -183,6 +186,45 @@ public final class DebugAdapterLocator {
     /** This launch's config folder, or null before it is told. */
     static @Nullable Path editoraConfigDir() {
         return editoraConfigDir;
+    }
+
+    /**
+     * A path typed in Settings as a {@link Path}: stripped, and without the quotes a path copied from Windows'
+     * Explorer comes in ({@code "C:\Tools\x"}); null when it is no path on this system (review B3).
+     */
+    static @Nullable Path configuredPath(String configured) {
+        String p = configured.strip();
+        if (p.length() >= 2 && ((p.startsWith("\"") && p.endsWith("\"")) || (p.startsWith("'") && p.endsWith("'")))) {
+            p = p.substring(1, p.length() - 1).strip();
+        }
+        if (p.isEmpty()) {
+            return null;
+        }
+        try {
+            return Path.of(p);
+        } catch (java.nio.file.InvalidPathException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Where Editora's installer puts adapter {@code folder} ({@code python}, {@code javascript}, {@code rust}): under
+     * {@code configDir} (this launch's config folder, which {@code --config-dir} or {@code EDITORA_CONFIG_DIR} moves)
+     * first, then {@code ~/.editora} and {@code ~/.editora-dev}. Pure construction.
+     */
+    static List<Path> pluginRoots(Path home, @Nullable Path configDir, String folder) {
+        List<Path> roots = new ArrayList<>();
+        if (configDir != null) {
+            roots.add(configDir.resolve("plugins").resolve("dap").resolve(folder));
+        }
+        for (Path root : List.of(
+                home.resolve(".editora").resolve("plugins").resolve("dap").resolve(folder),
+                home.resolve(".editora-dev").resolve("plugins").resolve("dap").resolve(folder))) {
+            if (!roots.contains(root)) {
+                roots.add(root);
+            }
+        }
+        return roots;
     }
 
     /** Collects matching jars across {@code dirs} and returns the newest. */
@@ -273,10 +315,8 @@ public final class DebugAdapterLocator {
     public static Optional<Path> locateCodelldb(@Nullable String configured, Path home) {
         boolean windows = com.editora.Os.isWindows();
         if (configured != null && !configured.isBlank()) {
-            Path p;
-            try {
-                p = Path.of(configured.strip());
-            } catch (java.nio.file.InvalidPathException e) {
+            Path p = configuredPath(configured);
+            if (p == null) {
                 return Optional.empty();
             }
             if (Files.isRegularFile(p)) {
@@ -316,14 +356,7 @@ public final class DebugAdapterLocator {
 
     /** The folders Editora's installer puts CodeLLDB in: this launch's config folder first. Pure construction. */
     static List<Path> codelldbRoots(Path home) {
-        List<Path> roots = new ArrayList<>();
-        Path configDir = editoraConfigDir;
-        if (configDir != null) {
-            roots.add(configDir.resolve("plugins").resolve("dap").resolve("rust"));
-        }
-        roots.add(home.resolve(".editora").resolve("plugins").resolve("dap").resolve("rust"));
-        roots.add(home.resolve(".editora-dev").resolve("plugins").resolve("dap").resolve("rust"));
-        return roots;
+        return pluginRoots(home, editoraConfigDir, "rust");
     }
 
     /** {@code codelldb} (with {@code .exe} on Windows) in extension folder {@code dir}, if it is there. */
@@ -364,8 +397,12 @@ public final class DebugAdapterLocator {
      */
     public static Optional<Path> locateJsDebugServer(String configuredPath, Path home) {
         if (configuredPath != null && !configuredPath.isBlank()) {
-            Path p = Path.of(configuredPath);
-            if (Files.isRegularFile(p) && p.getFileName().toString().equals(JS_DEBUG_ENTRY)) {
+            Path p = configuredPath(configuredPath);
+            if (p == null) {
+                return Optional.empty();
+            }
+            Path name = p.getFileName();
+            if (Files.isRegularFile(p) && name != null && name.toString().equals(JS_DEBUG_ENTRY)) {
                 return Optional.of(p);
             }
             Path root = Files.isDirectory(p) ? p : p.getParent();
@@ -374,11 +411,12 @@ public final class DebugAdapterLocator {
         return findNewestEntry(jsDebugRoots(home));
     }
 
-    /** Common roots that contain a {@code dapDebugServer.js} somewhere beneath them. Pure construction. */
+    /**
+     * Common roots that contain a {@code dapDebugServer.js} somewhere beneath them: Editora's install (this launch's
+     * config folder first), then nvim's mason. Pure construction.
+     */
     static List<Path> jsDebugRoots(Path home) {
-        List<Path> roots = new ArrayList<>();
-        roots.add(home.resolve(".editora").resolve("plugins").resolve("dap").resolve("javascript"));
-        roots.add(home.resolve(".editora-dev").resolve("plugins").resolve("dap").resolve("javascript"));
+        List<Path> roots = new ArrayList<>(pluginRoots(home, editoraConfigDir, "javascript"));
         roots.add(home.resolve(".local")
                 .resolve("share")
                 .resolve("nvim")
@@ -465,20 +503,23 @@ public final class DebugAdapterLocator {
      * Resolves a directory to put on {@code PYTHONPATH} so {@code python -m debugpy.adapter} works, i.e. a
      * dir that contains a {@code debugpy/} package. If {@code configuredPath} is a dir containing
      * {@code debugpy/} it wins; otherwise Editora's {@code plugins/dap/python/} (where
-     * {@code install-debugpy.sh} pip-installs {@code --target}) is checked. Empty when none found — the
-     * caller then relies on the configured/PATH {@code python} importing debugpy directly (probed
-     * separately via {@code python -c "import debugpy"}). Filesystem-touching.
+     * {@code install-debugpy.sh} pip-installs {@code --target}) is checked, this launch's config folder first. Empty
+     * when none found — the caller then relies on the configured/PATH {@code python} importing debugpy directly
+     * (probed separately via {@code python -c "import debugpy"}). Filesystem-touching.
      */
     public static Optional<Path> locateDebugpy(String configuredPath, Path home) {
+        return locateDebugpy(configuredPath, home, editoraConfigDir);
+    }
+
+    /** {@link #locateDebugpy(String, Path)} with {@code configDir} as the config folder Editora installs into. */
+    public static Optional<Path> locateDebugpy(String configuredPath, Path home, @Nullable Path configDir) {
         if (configuredPath != null && !configuredPath.isBlank()) {
-            Path p = Path.of(configuredPath);
-            if (hasDebugpyPackage(p)) {
+            Path p = configuredPath(configuredPath);
+            if (p != null && hasDebugpyPackage(p)) {
                 return Optional.of(p);
             }
         }
-        for (Path dir : List.of(
-                home.resolve(".editora").resolve("plugins").resolve("dap").resolve("python"),
-                home.resolve(".editora-dev").resolve("plugins").resolve("dap").resolve("python"))) {
+        for (Path dir : pluginRoots(home, configDir, "python")) {
             if (hasDebugpyPackage(dir)) {
                 return Optional.of(dir);
             }

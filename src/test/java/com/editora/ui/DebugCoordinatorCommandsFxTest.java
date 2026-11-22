@@ -150,7 +150,19 @@ class DebugCoordinatorCommandsFxTest {
     /** Which tool's gate was asked, from which folder ({@code lein@proj}). */
     private final List<String> trustAsked = new java.util.concurrent.CopyOnWriteArrayList<>();
 
+    /** Saves held back, answered when the test says (null: answered at once, as before). */
+    private List<Runnable> heldSaves;
+
     private final class Ops implements DebugCoordinator.Ops {
+        @Override
+        public void saveThen(EditorBuffer buffer, java.util.function.Consumer<Boolean> then) {
+            if (heldSaves != null) {
+                heldSaves.add(() -> then.accept(saveBuffer(buffer)));
+            } else {
+                then.accept(saveBuffer(buffer));
+            }
+        }
+
         @Override
         public List<String> buildExecutable(com.editora.build.BuildTool tool, Path root) {
             trustAsked.add(tool.id() + "@" + root.getFileName());
@@ -846,6 +858,67 @@ class DebugCoordinatorCommandsFxTest {
         assertTrue(
                 FxTestSupport.callOnFx(() -> both.stream().allMatch(x -> x.dap.isActive())),
                 "both sessions run a program of their own");
+    }
+
+    /**
+     * A compound's members wait for an unsaved file of the project to be saved, and the saves land after the loop
+     * focused the last session: each still starts its own session (review 2026-11-21: the save path had no session).
+     */
+    @Test
+    void aCompoundsSavesThatLandLaterEachStartTheirOwnSession() throws Exception {
+        open("src/main/java/demo/Args.java");
+        EditorBuffer args = FxTestSupport.callOnFx(host::activeBuffer);
+        FxTestSupport.runOnFx(() -> args.getFocusedArea().insertText(0, "// edited\n"));
+        mainClasses("demo.Args");
+        configs.add(config("Server", "java", "demo.Args", ""));
+        configs.add(config("Client", "java", "demo.Args", ""));
+        heldSaves = new ArrayList<>();
+        FxTestSupport.runOnFx(() ->
+                debug.debugRunCompound(new com.editora.config.RunCompound("Both", List.of("Server", "Client"), true)));
+        List<Runnable> saves = heldSaves;
+        heldSaves = null;
+        FxTestSupport.runOnFx(() -> saves.forEach(Runnable::run));
+        session("launch");
+        session("launch");
+        List<DebugSession> both = FxTestSupport.callOnFx(() -> debug.sessions().all());
+        assertEquals(2, both.size());
+        assertTrue(
+                com.editora.testkit.Await.holdsWithin(() -> allActive(both), java.time.Duration.ofSeconds(10)),
+                "both sessions run a program of their own");
+    }
+
+    /** Whether every one of {@code sessions} runs a program, read on the FX thread. */
+    private static boolean allActive(List<DebugSession> sessions) {
+        try {
+            return FxTestSupport.callOnFx(() -> sessions.stream().allMatch(x -> x.dap.isActive()));
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** F5 again while the first launch's plan is still being read: it is getting ready, not launched twice. */
+    @Test
+    void f5AgainWhileTheLaunchIsPlannedSaysItIsStartingAndLaunchesOnce() throws Exception {
+        open("src/main/java/demo/Args.java");
+        mainClasses("demo.Args");
+        List<Runnable> held = new ArrayList<>();
+        DebugPlanning.planner = (name, task) -> held.add(task); // read later, as the planner thread does
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+        int planned = held.size();
+        assertTrue(planned > 0, "the first press is planning");
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+        assertEquals(planned, held.size(), "the second press planned nothing");
+        String said = tr("status.debug.alreadyStarting", "\u0000");
+        assertTrue(
+                statuses().getLast().endsWith(said.substring(said.indexOf('\u0000') + 1)),
+                "it says the launch is getting ready: " + statuses().getLast());
+        DebugPlanning.planner = (name, task) -> task.run();
+        FxTestSupport.runOnFx(() -> {
+            while (!held.isEmpty()) {
+                held.removeFirst().run();
+            }
+        });
+        session("launch");
     }
 
     /** The other unsaved Java files of the project are saved before a launch; other files are not (review B3). */

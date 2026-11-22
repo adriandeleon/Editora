@@ -154,3 +154,6 @@ com.editora.terminal.ShellIntegrationPtyTest#zshReportsItsDirectoryPromptsAndExi
 # Opt-in: writes to the machine's real keychain only with EDITORA_REAL_KEYCHAIN_PROBE=1, which only the macOS and
 # Windows pure-test jobs set (they check that it ran).
 com.editora.secrets.SystemKeychainProbeTest
+
+# Opt-in: drives the real window with the screenshot harness only with -Deditora.test.shots=<dir> (docs/screenshots.md).
+com.editora.ui.ShotsFxTest#theSampleScriptWritesATwiceSizedPngOfTheWindow

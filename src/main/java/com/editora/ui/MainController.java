@@ -1002,7 +1002,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         pane.setCustomizeSource(
                 () -> com.editora.command.KeymapManager.displayName(
                         config.getSettings().getKeymap()),
-                () -> config.getSettings().getTheme());
+                () -> Themes.label(config.getSettings().getTheme()));
         welcomePane = pane;
         return pane;
     }

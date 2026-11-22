@@ -511,7 +511,7 @@ public final class LaunchJson {
 
     /**
      * A {@code tasks.json} task as the command line that runs it: a {@code process} task's command and arguments, a
-     * {@code shell} task's through the shell ({@code sh -c}, or {@code cmd /c} on Windows). Null for any other task
+     * {@code shell} task's through the shell ({@code sh -c}, or {@code cmd /d /s /c "<line>"} on Windows). Null for any other task
      * (a {@code cargo}, {@code npm} or {@code dependsOn} one: VS Code's extensions run those).
      */
     public static @Nullable List<String> taskArgv(Map<String, Object> task, boolean windows) {
@@ -540,7 +540,11 @@ public final class LaunchJson {
                 for (String a : args) {
                     line.append(' ').append(windows ? cmdQuote(a) : shellQuote(a));
                 }
-                return windows ? List.of("cmd", "/c", line.toString()) : List.of("sh", "-c", line.toString());
+                // cmd /c drops the line's first and last quote when it starts with one ("C:\a b\t.exe" "x y"
+                // lost both); /s with the line in a pair of its own quotes drops only that pair (review B4).
+                return windows
+                        ? List.of("cmd", "/d", "/s", "/c", "\"" + line + "\"")
+                        : List.of("sh", "-c", line.toString());
             }
             default -> {
                 return null;

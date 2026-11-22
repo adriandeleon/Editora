@@ -1,0 +1,15 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 900
+start
+project ${workspace}
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 39
+focuseditor
+settext .status-message
+menu Git
+wait 800
+shot ${out}/features/menu-bar${suffix}.png

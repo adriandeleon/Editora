@@ -347,12 +347,8 @@ class SplitViewFxTest {
             return;
         }
         settle();
-        javafx.scene.image.WritableImage img = FxTestSupport.callOnFx(() ->
-                ((Stage) FxTestSupport.field(fx.controller, "stage")).getScene().snapshot(null));
-        javax.imageio.ImageIO.write(
-                javafx.embed.swing.SwingFXUtils.fromFXImage(img, null),
-                "png",
-                Path.of(dir, name + ".png").toFile());
+        Stage stage = FxTestSupport.field(fx.controller, "stage");
+        FxTestSupport.writeShot(stage.getScene(), Path.of(dir, name + ".png")); // at 2x (DOCS-18)
     }
 
     @Test

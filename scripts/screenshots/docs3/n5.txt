@@ -1,0 +1,46 @@
+#@ replace samples/debug/java/src/main/java/com/example/shelf/Shelf.java "Stapler ", 1, 8\.90 => "Stapler", 1, 9.50
+#@ replace samples/debug/java/src/main/java/com/example/shelf/Shelf.java "B-2", "Tape", 4, 1\.20\) => "B-2", "Tape", 4, 1.20),\n                new Item("B-3", "Scissors", 2, 3.25)
+#@ readonly samples/editing/fill.txt
+#@ write samples/editorconfig/notes.txt Release notes, kept to forty columns per\r\nline so the changelog reads well in a\r\nterminal.\r\n\r\n- The checkout loop now stops at the limit.\r\n- Discounts round to the nearest cent.\r\n- Restocking reads the shelf twice a day instead of once.\r\n
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}
+wait 6000
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 25
+focuseditor
+wait 800
+run git.peekChange
+wait 2500
+settext .status-message
+shot ${out}/docs/git-peek-change${suffix}.png
+key ESCAPE
+wait 500
+run git.switchBranch
+wait 3000
+shot ${out}/docs/git-branches${suffix}.png
+focuslast
+key ESCAPE
+wait 500
+clickat 400 500
+wait 500
+run buffer.closeAll
+run tool.project
+open ${workspace}/samples/editing/fill.txt 1
+wait 2000
+settext .status-message
+shot ${out}/docs/view-mode${suffix}.png
+run tool.project
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 40
+open ${workspace}/samples/debug/java/src/test/java/com/example/shelf/ShelfTest.java 20
+wait 800
+run view.splitEditorRight
+wait 1500
+settext .status-message
+shot ${out}/docs/editor-groups${suffix}.png

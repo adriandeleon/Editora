@@ -1,0 +1,39 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}
+wait 8000
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 21
+focuseditor
+key RIGHT - 21
+run edit.selectAllOccurrences
+wait 800
+settext .status-message
+shot ${out}/docs/multiple-cursors${suffix}.png
+key ESCAPE
+run buffer.closeAll
+open ${workspace}/samples/hex/sample.bin 1
+wait 2000
+settext .status-message
+shot ${out}/docs/hex-viewer${suffix}.png
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 39
+run theme.setAppTheme
+wait 1000
+shot ${out}/docs/theme-picker${suffix}.png
+key ESCAPE
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 44
+focuseditor
+run snippets.insert
+wait 1000
+shot ${out}/docs/snippet-picker${suffix}.png
+key ESCAPE
+run template.new
+wait 1000
+shot ${out}/docs/template-picker${suffix}.png
+key ESCAPE

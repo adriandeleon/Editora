@@ -46,6 +46,15 @@ final class SaveChain {
      */
     static boolean savedOrThen(
             List<EditorBuffer> buffers, BiConsumer<EditorBuffer, Consumer<Boolean>> saver, Runnable again) {
+        return savedOrThen(buffers, saver, again, () -> {});
+    }
+
+    /** As above; {@code stopped} runs instead of {@code again} when a save is refused or left its buffer edited. */
+    static boolean savedOrThen(
+            List<EditorBuffer> buffers,
+            BiConsumer<EditorBuffer, Consumer<Boolean>> saver,
+            Runnable again,
+            Runnable stopped) {
         List<EditorBuffer> dirty =
                 buffers.stream().filter(b -> b.isDirty() || b.getPath() == null).toList();
         if (dirty.isEmpty()) {
@@ -54,6 +63,8 @@ final class SaveChain {
         all(dirty, saver, failed -> {
             if (failed == null && dirty.stream().noneMatch(EditorBuffer::isDirty)) {
                 again.run();
+            } else {
+                stopped.run();
             }
         });
         return false;

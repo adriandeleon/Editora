@@ -54,6 +54,43 @@ class InlineValueScopeTest {
         assertTrue(InlineValueScope.sameScope(at, 12, 12));
     }
 
+    @Test
+    void aModuleLevelFrameLeavesAnotherFunctionsHeaderAlone() {
+        IntFunction<String> at = lines(PYTHON);
+        assertFalse(InlineValueScope.sameScope(at, 12, 0), "def work(n): names work's parameter, not module n");
+        assertFalse(InlineValueScope.sameScope(at, 12, 7), "def other(items): is another function's header");
+        IntFunction<String> js = lines("""
+                const data = load();
+                function helper(data) {
+                  return data;
+                }
+                const config = {
+                  data: data,
+                };
+                data.forEach(d => {
+                });
+                helper(data);
+                """);
+        assertFalse(InlineValueScope.sameScope(js, 9, 1), "function helper(data) { is another function's header");
+        assertTrue(InlineValueScope.sameScope(js, 9, 4), "an object literal is module code");
+        assertTrue(InlineValueScope.sameScope(js, 9, 7), "a lambda's call line is module code");
+        assertTrue(InlineValueScope.sameScope(js, 9, 0));
+    }
+
+    @Test
+    void aNestedDefInsideTheFramesFunctionIsNotItsScope() {
+        IntFunction<String> at = lines("""
+                def outer(items):
+                    total = 0
+                    def inner(items):
+                        return items
+                    return inner(items)
+                """);
+        assertTrue(InlineValueScope.sameScope(at, 4, 0), "the frame's own header");
+        assertTrue(InlineValueScope.sameScope(at, 4, 1));
+        assertFalse(InlineValueScope.sameScope(at, 4, 2), "inner's header names inner's parameter");
+    }
+
     private static final String JAVA = """
             class Demo {
                 int total(int[] values,

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A System theme that follows your light or dark setting.** Settings ▸ Appearance ▸ Theme (and Set App Theme in
+  the Command Palette) now starts with System: Editora Light while your system is light, Editora Dark while it is
+  dark, and it switches as soon as the system does, without a restart. The editor theme follows it on Automatic,
+  and can be set to System on its own too.
+- **High Contrast Light and High Contrast Dark.** A pair of app and editor themes with black or white grounds, and
+  text, accents, states and syntax colours that read at 7:1 or better. Pick one like any theme; while Windows'
+  high-contrast mode is on, Editora switches to it by itself (the light or the dark one, as the Windows scheme
+  is), and goes back to your theme when the mode ends.
 - **Ctrl/Cmd-hover shows what Ctrl/Cmd-click follows.** Hold Ctrl (Cmd on macOS) over code and the symbol under
   the mouse is underlined, and the pointer becomes a hand, when Go to Definition can take you somewhere from
   there: a symbol the language server resolves, or an HTML page's `href`/`src`. Click to go, as before; let go of
@@ -50,6 +58,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   question offers Pull, then Push (the default) and, in red beside it, Force with Lease, which still refuses to
   overwrite commits you have not fetched.
 
+- **Big files keep more of the editor, from measured limits.** The size limits were set by hand; they are now
+  measured, and most moved up. A file now loses highlighting, the minimap and undo at 200,000 lines (or 16 MB)
+  instead of 5 MB, so a 150,000-line generated source keeps its colours while a 5 MB file of very short lines,
+  which costs more memory, no longer slips through on its byte count. A long file keeps its minimap: from
+  50,000 lines (was 10,000, and a stored 10,000 moves to it) only the language server stays off, unless the
+  language keeps it longer. A line up to 1 MiB (was 64 KiB) keeps undo, and highlighting for the rest of the file; such
+  a line still opens unwrapped, as before. A file whose document would not fit the
+  free memory opens as a read-only slice, now counted by lines as well as size.
 - **Settings ▸ Snippets writes a snippet file whole.** A save, a removal or switching a snippet off or on now
   writes that language's snippet file as plain JSON, so comments in it are not kept (the order of the snippets,
   every trigger, the scope and fields Editora does not use still are). A file with comments still loads, and the
@@ -64,6 +80,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Debugger review fixes, second round.** A second review of the debugger found these, now fixed:
+  - **"Don't step into" and your own code.** A filter such as `kotlin.*`, `java.*` or `scala.*` also matched your own
+    `src/main/kotlin`, `src/main/java` or `src/main/scala` folder, so Step Into on your code stepped straight back
+    out.
+  - **The right session, after a save.** What a launch does after saving its files, or after the Run scan or a text
+    scan finishes, started in whichever debug session was focused by then: a compound with unsaved files launched
+    into its last session. It now starts the session that asked, and nothing once that session's tab is closed.
+  - **F5 twice no longer launches twice.** Pressing F5 again while the first launch still saves or reads its plan
+    says it is starting.
+  - **Launches say why they stop.** A launch whose project files cannot be read (a remote host gone) says so instead
+    of looking again forever; a plan that fails says why; a file edited while it saved says to debug it again.
+  - **Breakpoints.** Undo after deleting a breakpoint's line brings back that breakpoint, not another on an
+    identical line (two breakpoints with one id); an old deleted breakpoint no longer comes back on an unrelated
+    paste; breakpoints edited in files with no tab while Mute is on are no longer lost on Unmute; a gutter click is
+    not dropped when the text changes again.
+  - **Debug Test** attaches only its own JVMs in its session; run configurations attach where they are started.
+  - **Exceptions.** An exception stop's card and details are no longer lost when the stack goes through a file
+    edited since the launch.
+  - **Finding adapters and programs.** debugpy and js-debug installed by Editora are found with `--config-dir`; a
+    debugger path pasted with quotes works; Attach to Process recognises Linux programs with glibc or LLVM `__`
+    sections; a project opened through a symbolic link gets its Java source folder fixed again.
+  - **Go** no longer deletes the program another window's long Go session runs; a stopped session's program is
+    removed when it ends.
+  - **Values.** Type renderers work with `f"{self.x}"`, `` `${this.x}` `` and C++ `this->x`; inline values no longer
+    show the module's variable on a function's header line; pinned values beyond the 40 evaluated at once are not
+    left showing another frame's; View as Table keeps a Python dict's string keys beside its integer ones, and Load
+    more after a step reloads instead of mixing two stops.
+  - **Smaller ones.** Windows shell tasks with a quoted command and last argument run; a Gradle project naming its own
+    JDK (`.sdkmanrc`) runs and debugs on it; auto template breakpoints no longer read local files for a remote Python
+    session; a Node launch whose planning fails says so; Debug Current File waits for the Run scan of a file just
+    opened; Debug History stays quick on long histories; the session log file is capped.
 - **On macOS, About and Settings are in the application menu, and Quit is Editora's own.** About Editora and
   Settings… open from the application menu, as on other Mac apps. Quit from that menu, Cmd-Q, the Dock or a logout
   now goes through Editora's Quit, which asks once about unsaved work, instead of closing each window in turn.

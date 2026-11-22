@@ -1,0 +1,22 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 22
+run buffer.closeOthers
+run tool.project
+wait 1500
+run tool.terminal
+wait 5000
+type git status --short
+key ENTER
+wait 2500
+type git --no-pager log --oneline --graph -9
+key ENTER
+wait 3000
+divider 0 0.4
+wait 1000
+shot ${out}/docs/terminal${suffix}.png

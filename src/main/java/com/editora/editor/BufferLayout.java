@@ -264,7 +264,7 @@ final class BufferLayout {
 
     private double codePaneControlInset() {
         return UiZoom.px(SCROLLBAR_GUTTER)
-                + ((b.minimapVisible && !b.largeFile && !b.heavyFile) ? Minimap.WIDTH + UiZoom.px(6) : UiZoom.px(10));
+                + ((b.minimapVisible && !b.largeFile) ? Minimap.WIDTH + UiZoom.px(6) : UiZoom.px(10));
     }
 
     /** Keeps every floating editor control clear of the minimap when it toggles (no full view rebuild). */
