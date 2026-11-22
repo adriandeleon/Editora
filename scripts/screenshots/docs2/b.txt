@@ -1,0 +1,47 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 20
+run bookmarks.toggle
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 39
+run bookmarks.toggle
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Pricing.java 1
+run bookmarks.toggle
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 48
+focuseditor
+run notes.add
+wait 1000
+focuslast
+type Check the discount rounding before the release
+click Save
+wait 1000
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 31
+run tool.bookmarks
+wait 1500
+settext .status-message
+shot ${out}/docs/bookmarks${suffix}.png
+run view.closeFocusedToolWindow
+run tool.notes
+wait 1500
+settext .status-message
+shot ${out}/docs/notes${suffix}.png
+run view.closeFocusedToolWindow
+run buffer.closeAll
+open ${workspace}/samples/web/widget.html 1
+run tool.structure
+wait 2500
+settext .status-message
+shot ${out}/docs/html-structure${suffix}.png
+run view.closeFocusedToolWindow
+run buffer.closeAll
+open ${workspace}/samples/spell/code-comment-typos.java 1
+run view.toggleSpellCheck
+wait 3000
+settext .status-message
+shot ${out}/docs/spell-check${suffix}.png

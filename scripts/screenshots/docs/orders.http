@@ -1,0 +1,11 @@
+# The order the docs' HTTP Client screenshot asks for. The runner serves it on 127.0.0.1:8765 (#@ http 8765).
+
+### Fetch an order
+GET http://127.0.0.1:8765/orders/42
+Accept: application/json
+
+### Create an order
+POST http://127.0.0.1:8765/orders
+Content-Type: application/json
+
+{"items": [{"sku": "A-1", "qty": 12}]}

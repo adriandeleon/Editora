@@ -1,0 +1,83 @@
+#@ replace samples/debug/java/src/main/java/com/example/shelf/Shelf.java "Stapler ", 1, 8\.90 => "Stapler", 1, 9.50
+#@ replace samples/debug/java/src/main/java/com/example/shelf/Shelf.java "B-2", "Tape", 4, 1\.20\) => "B-2", "Tape", 4, 1.20),\n                new Item("B-3", "Scissors", 2, 3.25)
+#@ readonly samples/editing/fill.txt
+#@ write samples/editorconfig/notes.txt Release notes, kept to forty columns per\r\nline so the changelog reads well in a\r\nterminal.\r\n\r\n- The checkout loop now stops at the limit.\r\n- Discounts round to the nearest cent.\r\n- Restocking reads the shelf twice a day instead of once.\r\n
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}
+wait 6000
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 39
+wait 1000
+settext .status-message
+run palette.show
+wait 800
+focuslast
+type fold
+wait 1200
+settext .status-message
+shot ${out}/docs/command-palette${suffix}.png
+key ESCAPE
+focuseditor
+run view.foldAll
+wait 1000
+settext .status-message
+shot ${out}/docs/fold-all${suffix}.png
+run view.unfoldAll
+run search.inFiles
+wait 1000
+fieldtext Search in files|discountFor
+click Search
+wait 5000
+settext .status-message
+shot ${out}/docs/find-in-files${suffix}.png
+run view.closeFocusedToolWindow
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 23
+focuseditor
+run macro.startRecording
+wait 500
+key END
+type  // reviewed
+wait 800
+shot ${out}/docs/macro-recording${suffix}.png
+run macro.stopRecording
+wait 800
+run macro.nameAndSave
+wait 800
+focuslast
+type mark-reviewed
+wait 500
+shot ${out}/docs/macro-save${suffix}.png
+key ESCAPE
+run file.save
+wait 800
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 24
+focuseditor
+run git.peekChange
+wait 2000
+settext .status-message
+shot ${out}/docs/git-peek-change${suffix}.png
+key ESCAPE
+run git.switchBranch
+wait 3000
+shot ${out}/docs/git-branches-a${suffix}.png
+winshotp ${out}/docs/git-branches${suffix}.png
+closewins
+run buffer.closeAll
+open ${workspace}/samples/editing/fill.txt 1
+wait 2000
+settext .status-message
+shot ${out}/docs/view-mode${suffix}.png
+run buffer.closeAll
+open ${workspace}/samples/editorconfig/.editorconfig 1
+open ${workspace}/samples/editorconfig/notes.txt 5
+wait 2000
+settext .status-message
+shot ${out}/docs/editorconfig${suffix}.png

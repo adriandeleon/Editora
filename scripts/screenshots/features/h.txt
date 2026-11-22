@@ -1,0 +1,41 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}
+run tool.project
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Main.java 16
+focuseditor
+key END
+key ENTER
+type static int retries = 2;
+run file.save
+wait 1200
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Main.java 21
+focuseditor
+key END
+key ENTER
+type System.out.println("limit " + limit);
+run file.save
+wait 1200
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Main.java 43
+focuseditor
+key END
+key ENTER
+type // the first line the demo prints
+run file.save
+wait 1500
+run tool.fileHistory
+wait 2500
+divider 0 0.4
+wait 800
+focussel .history-panel+.list-view
+key DOWN - 3
+wait 1500
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Main.java 16
+settext .status-message
+shot ${out}/features/local-file-history${suffix}.png

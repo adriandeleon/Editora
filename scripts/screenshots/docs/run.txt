@@ -1,0 +1,27 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}
+open ${workspace}/samples/run/hello.py 1
+run buffer.closeOthers
+run tool.project
+wait 1500
+run run.context
+wait 5000
+divider 0 0.48
+wait 800
+shot ${out}/docs/run-file${suffix}.png
+run view.closeFocusedToolWindow
+run run.editConfigs
+wait 2000
+click Add
+wait 1500
+winsize 820 640
+winshot ${out}/docs/run-configurations${suffix}.png
+closewins
+run view.welcome
+wait 2500
+shot ${out}/docs/welcome${suffix}.png

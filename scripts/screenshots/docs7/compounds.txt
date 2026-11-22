@@ -1,0 +1,22 @@
+#@ write samples/debug/java/.editora/run-configurations.json {\n  "configurations": [\n    { "name": "API server", "type": "java", "mainClass": "com.example.shelf.Main", "args": "--serve 8080" },\n    { "name": "Restock worker", "type": "java", "mainClass": "com.example.shelf.Restocker" },\n    { "name": "Web client", "type": "node", "target": "web/client.js" },\n    { "name": "Price check", "type": "java", "mainClass": "com.example.shelf.Pricing" }\n  ]\n}\n
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 800
+set lspSupport false
+set debugSupport true
+start
+project ${workspace}/samples/debug/java
+run buffer.closeAll
+run run.importConfigs
+wait 800
+run debug.editCompounds
+wait 1500
+fieldtext Server and client|Server and worker
+clicksel .check-box 0
+clicksel .check-box 1
+clicksel .check-box 4
+wait 800
+winshot ${out}/docs/debug-compounds${suffix}.png

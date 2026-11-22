@@ -1,0 +1,41 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+set pluginSupport true
+set mcpSupport true
+set aiEnabled true
+set mavenJdkHome "${jdk}"
+start
+run view.doctor
+wait 9000
+shot ${out}/docs/doctor${suffix}.png
+project ${workspace}
+run view.settings
+wait 2000
+winsize 1100 720
+settings KEYMAPS
+winshot ${out}/docs/settings-keymaps${suffix}.png
+settings AI_GENERAL
+winshot ${out}/docs/settings-ai${suffix}.png
+settings PLUGINS
+retext ^\Q${config}\E/plugins$ => /home/ada/.editora/plugins
+winshot ${out}/docs/settings-plugins${suffix}.png
+settings MCP
+winshot ${out}/docs/settings-mcp${suffix}.png
+settings EXTERNAL_TOOLS
+click Add
+wait 800
+clicksel .text-field 1
+key HOME
+key END S
+type Prettier
+clicksel .text-field 2
+type npx
+clicksel .text-field 3
+type prettier --write $FilePath$
+clicksel .text-field 1
+wait 800
+winshot ${out}/docs/settings-external-tools${suffix}.png

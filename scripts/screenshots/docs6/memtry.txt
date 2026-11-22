@@ -1,0 +1,43 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 800
+set lspSupport false
+set debugSupport true
+start
+project ${workspace}/samples/debug/go
+run buffer.closeAll
+run tool.project
+open ${workspace}/samples/debug/go/shelf.go 39
+focuseditor
+run debug.toggleBreakpoint
+wait 800
+run debug.start
+wait 30000
+divider 0 0.48
+divider 2 0.22 0
+divider 2 0.5 1
+run debug.showMemory
+wait 1000
+fieldtext An address|discount
+focusprompt An address
+key ENTER
+wait 2500
+shot ${out}/try/m1.png
+fieldtext An address|item.Name
+focusprompt An address
+key ENTER
+wait 2500
+shot ${out}/try/m2.png
+fieldtext An address|lines
+focusprompt An address
+key ENTER
+wait 2500
+shot ${out}/try/m3.png
+fieldtext An address|0x4be2b7
+focusprompt An address
+key ENTER
+wait 2500
+shot ${out}/try/m4.png
