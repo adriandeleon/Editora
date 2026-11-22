@@ -28,6 +28,10 @@
              windows=d3d,es2,sw (keep Direct3D), linux=es2,sw. This generic default applies to profile-less
              builds (e.g. plain `mvn test`, which doesn't render anyway). -->
         <prism.pipeline>es2,sw</prism.pipeline>
+        <!-- A harmless option off macOS; the os-mac profile exports Glass's mac package in its place, so
+             ui/MacAppMenu can put About and Settings in the application menu (ABOUT-01, WIN-15). Only macOS's
+             JavaFX has that package: exported elsewhere, the JVM would warn on every launch. -->
+        <glass.mac.option>-Deditora.glassMac=none</glass.mac.option>
         <!-- Personal fork of RichTextFX (adds multiple cursors + column/box selection).
              groupId io.github.adriandeleon, vendored in the in-project m2-repo (see <repositories>).
              Source: https://github.com/adriandeleon/RichTextFX (feat/multi-caret-box-selection). -->
@@ -1047,6 +1051,8 @@
                              Finder "Open With"). Harmless on other OSes. Mirrored in the dist launcher. -->
                         <option>--add-exports</option>
                         <option>javafx.graphics/com.sun.glass.ui=com.editora</option>
+                        <!-- macOS: the application menu's About and Settings (ui/MacAppMenu); see glass.mac.option. -->
+                        <option>${glass.mac.option}</option>
                         <!-- jsvg 2.1.0 ships a broken JPMS boundary: jsvg-javafx's FXPaintBridge reads
                              com.github.weisj.jsvg.logging.impl.LogFactory, which the jsvg module does not
                              export to it. On the CLASSPATH there is no boundary, so the fat jar and every
@@ -1818,6 +1824,8 @@
                 <!-- Metal first (the JavaFX 27 default): fixes the es2/OpenGL RTT glitches on Apple silicon
                      (M-series); es2/sw remain as fallbacks if Metal ever fails to init. -->
                 <prism.pipeline>mtl,es2,sw</prism.pipeline>
+                <!-- Only macOS's JavaFX has this package: ui/MacAppMenu reaches the application menu through it. -->
+                <glass.mac.option>--add-exports=javafx.graphics/com.sun.glass.ui.mac=com.editora</glass.mac.option>
             </properties>
             <!-- macOS "Open With": Editora.app's Info.plist CFBundleDocumentTypes is written by
                  scripts/aot_build.java (fixMacDocumentTypes), NOT jpackage's file-associations. jpackage
@@ -2142,6 +2150,8 @@
                                         <!-- Let App.MacEventHandler reach the internal com.sun.glass.ui
                                              open-files hook (macOS Finder "Open With"). Harmless elsewhere. -->
                                         <javaOption>--add-exports=javafx.graphics/com.sun.glass.ui=com.editora</javaOption>
+                                        <!-- macOS: the application menu's About and Settings (ui/MacAppMenu). -->
+                                        <javaOption>${glass.mac.option}</javaOption>
                                         <!-- jsvg 2.1.0's jsvg-javafx reads a package the jsvg module does not
                                              export to it; without this the SVG preview paints nothing but its
                                              checkerboard in every modular build. See the javafx:run options. -->

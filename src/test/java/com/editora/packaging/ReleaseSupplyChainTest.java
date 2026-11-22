@@ -234,11 +234,101 @@ class ReleaseSupplyChainTest {
                             && sign.contains("overwrite: true"),
                     "the signed " + target + " files must replace the build leg's unsigned ones");
         }
+        for (String script : List.of("sign-linux-packages.sh", "check-linux-signatures.sh")) {
+            String text = read(REPO.resolve(Path.of("scripts", "release", script)));
+            assertTrue(
+                    text.contains("\"$dir\"/*.tar.gz \"$dir\"/*.jar; do"),
+                    script + ": every Linux download, the fat jar included, has a detached signature (REL-16)");
+        }
         String publish = jobs.get("release");
         assertTrue(
                 publish.contains("needs: [build, sign-linux]")
                         && publish.contains("needs.sign-linux.result == 'success'"),
                 "the release must wait for the signed files, and not run without them");
+    }
+
+    /** The text of each {@code - uses: actions/setup-java@} step: up to the job's next step. */
+    private static List<String> setupJavaSteps(String job) {
+        List<String> steps = new ArrayList<>();
+        for (String step : job.split("\n      - ")) {
+            if (step.contains("uses: actions/setup-java@")) {
+                steps.add(step);
+            }
+        }
+        return steps;
+    }
+
+    @Test
+    void everySetupJavaStepUsesTheMavenCacheAndOnlyAJobThatRunsMavenSavesIt() throws IOException {
+        List<String> uncached = new ArrayList<>();
+        List<String> saving = new ArrayList<>();
+        int seen = 0;
+        for (Path workflow : workflows()) {
+            for (var job : jobs(read(workflow)).entrySet()) {
+                boolean runsMaven = job.getValue().contains("./mvnw ");
+                for (String step : setupJavaSteps(job.getValue())) {
+                    seen++;
+                    String where = workflow.getFileName() + ":" + job.getKey();
+                    if (!step.contains("\n          cache: maven\n")) {
+                        uncached.add(where);
+                    }
+                    // A job with no Maven would save an empty ~/.m2 under the key the building jobs share.
+                    if (!runsMaven && !step.contains("\n          cache-read-only: true")) {
+                        saving.add(where);
+                    }
+                }
+            }
+        }
+        assertTrue(seen > 10, "found only " + seen + " setup-java steps — the scan is broken");
+        assertTrue(uncached.isEmpty(), "every setup-java step caches Maven's repository (REL-25): " + uncached);
+        assertTrue(saving.isEmpty(), "a job that runs no Maven only reads the cache (cache-read-only): " + saving);
+    }
+
+    @Test
+    void theReleaseNotesAreTheVersionsChangelogSectionNotTheCommits() throws IOException {
+        String jreleaser = read(REPO.resolve("jreleaser.yml"));
+        assertTrue(
+                jreleaser.contains("\n    changelog:\n      external: out/release-notes.md\n"),
+                "JReleaser must publish the notes ReleaseNotes.java writes (REL-04, DOCS-05)");
+        assertFalse(
+                jreleaser.contains("commitShortHash") || jreleaser.contains("commitTitle"),
+                "the notes are written for the user, not a list of commits (DOCS-05)");
+        for (Path workflow : workflows()) {
+            assertFalse(
+                    read(workflow).contains("generate_release_notes"),
+                    workflow.getFileName() + " asks GitHub to generate the notes from the history (DOCS-05)");
+        }
+        Map<String, String> jobs = jobs(read(WORKFLOWS.resolve("release.yml")));
+        assertTrue(
+                jobs.get("preflight").contains("scripts/release/ReleaseNotes.java"),
+                "the preflight must refuse a tag whose CHANGELOG.md has no section for it");
+        String publish = jobs.get("release");
+        int notes = publish.indexOf("scripts/release/ReleaseNotes.java");
+        int jreleaserStep = publish.indexOf("jreleaser/release-action@");
+        assertTrue(notes >= 0 && notes < jreleaserStep, "the release job writes the notes before JReleaser runs");
+        assertTrue(publish.contains("out/release-notes.md"), "and where jreleaser.yml reads them");
+    }
+
+    @Test
+    void everyBuildLegStartsThePackagedAppBeforeItIsUploaded() throws IOException {
+        String build = jobs(read(WORKFLOWS.resolve("release.yml"))).get("build");
+        int tarball = build.indexOf("- name: Build install tarball (Linux)");
+        int unix = build.indexOf("- name: Smoke-test the packaged app (Linux, macOS)");
+        int windows = build.indexOf("- name: Smoke-test the packaged app (Windows)");
+        int upload = build.indexOf("- name: Upload installer");
+        assertTrue(unix >= 0 && windows >= 0, "every OS's leg must launch the app it packaged (REL-29)");
+        assertTrue(
+                tarball < unix && tarball < windows && unix < upload && windows < upload,
+                "the smoke test runs after the last package is built from the image, and before the upload");
+        String unixStep = build.substring(unix, windows);
+        String windowsStep = build.substring(windows, build.indexOf("\n      - ", windows + 1));
+        assertTrue(unixStep.contains("if: runner.os != 'Windows'"), "the Linux and macOS legs: " + unixStep);
+        assertTrue(windowsStep.contains("if: runner.os == 'Windows'"), "the Windows leg: " + windowsStep);
+        for (String step : List.of(unixStep, windowsStep)) {
+            assertTrue(step.contains("--version") && step.contains("--check-terminal"), step);
+            assertFalse(step.contains("continue-on-error"), "a leg whose app does not start must fail");
+        }
+        assertTrue(windowsStep.contains("editora-cli.exe"), "the Windows console launcher starts too");
     }
 
     @Test

@@ -643,13 +643,13 @@ class SettingsListsFxTest {
         });
     }
 
-    /** The question before a snippet's comments are lost by a save: only its Save answers yes. */
+    /** The question before a snippet file's comments are lost by a save: only its Save answers yes. */
     @Test
     void theSnippetSaveQuestionIsAnsweredWithNoDialog() throws Exception {
         FxTestSupport.runOnFx(() -> {
             rig.show();
             Object pages = FxTestSupport.field(rig.window, "snippetPages");
-            String message = SnippetsEditor.commentsLostMessage("for-each");
+            String message = SnippetsEditor.commentsLostMessage(java.nio.file.Path.of("go.json"));
             java.util.function.BooleanSupplier ask = () ->
                     (boolean) FxTestSupport.call(pages, "confirmSnippetSave", new Class<?>[] {String.class}, message);
             try (DialogAnswers answers = DialogAnswers.pressing(ButtonBar.ButtonData.CANCEL_CLOSE)) {

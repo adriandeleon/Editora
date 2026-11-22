@@ -26,11 +26,21 @@ So: a toolbar with no snapshot badge means you are running a real release build.
 > SHA-pinned actions, the pinned JReleaser and `appimagetool`, the `--license-file` installer wraps
 > and the release-asset check. A dry run is green only if **every build leg trained its cache** (the
 > job summary lists one row per target) **and** the "Verify the expected release assets" step of the
-> `Release` job prints `ok` for all eleven files — in a dry run that step only warns.
+> `Release` job prints `ok` for all nineteen files — in a dry run that step only warns.
 
 1. Set `<version>` in `pom.xml` to the release version (drop the `-SNAPSHOT`).
-2. Update `CHANGELOG.md` (move `[Unreleased]` into a versioned section).
-3. Push a `vX.Y.Z` tag. A `-rcN` suffix (`vX.Y.Z-rcN`) marks a pre-release.
+2. Update `CHANGELOG.md` (rename `## [Unreleased]` to `## [X.Y.Z] - <date>`). That section **is the
+   release's notes** ([Release notes](#release-notes)), and a tag without it stops in the preflight.
+3. **Make a screen-reader pass** on a build of the commit you will tag, on Windows with **Narrator**
+   (Ctrl+Win+Enter) and on macOS with **VoiceOver** (Cmd+F5): open the Command Palette and hear the
+   field and the selected row read; run a command from it; open Settings and move through a page
+   with Tab and Shift+Tab, hearing each control's name and role (a check box says "check box" and
+   whether it is checked, a button the name of its command, never an unnamed "button"). A control that
+   is silent or misnamed is a bug to fix before the tag. Nothing in CI can do this: each build leg's
+   smoke test starts the app with nobody listening. Record the pass in the `checked` list of
+   `src/main/resources/com/editora/pauta.json`: an ACC-07 entry with the Pauta `edition`, the `date`
+   and this `version`.
+4. Push a `vX.Y.Z` tag. A `-rcN` suffix (`vX.Y.Z-rcN`) marks a pre-release.
 
 ```
 git tag vX.Y.Z
@@ -143,6 +153,13 @@ Each runner:
 - builds a per-platform runnable fat jar via `-Pfatjar` (not on macOS);
 - runs the AOT-cache training step (Linux legs wrap it in `xvfb`; the workflow installs
   `xvfb` + GTK/GL libs there).
+- **starts the app it packaged** (the smoke test): once the installers, AppImage and tarball are
+  built, it runs the trained image they all wrap (`target/aot-image`) on its own OS with `--version`
+  and `--check-terminal`, which starts the JVM from the image's own runtime and launcher and opens a
+  shell on a pty (the natives pty4j and JNA unpack at runtime). On Windows it runs `Editora.exe`
+  through `Start-Process` (a GUI-subsystem program) and `editora-cli.exe --version`. A leg whose app
+  does not start fails, so nothing is uploaded and the release never runs. A signed macOS leg also
+  runs the notarized app from the DMG ([macOS signing](#macos-signing-and-notarization)).
 
 Installers and fat jars are renamed to a consistent `Editora-<version>-<target>.<ext>` prefix
 (the version comes from a `Resolve version` step — the tag minus `v`, else the pom version) and
@@ -150,9 +167,29 @@ uploaded as artifacts. The **Sign Linux packages** job then signs both Linux leg
 replaces their artifacts with the signed files ([Linux signing](#linux-signing)).
 
 A final job hands everything to **JReleaser** (`jreleaser.yml`, via `jreleaser/release-action`),
-which creates the GitHub release with all installers + fat jars + `checksums.txt` + a changelog.
+which creates the GitHub release with all installers + fat jars + `checksums_sha256.txt`, and the
+release notes ([Release notes](#release-notes)).
 JReleaser only *orchestrates the release* — it does not build (the existing `dist` profile is
 reused as-is). The experimental `native` profile is opt-in, so the normal build is unaffected.
+
+### Release notes
+
+The text of the GitHub release is the version's `CHANGELOG.md` section, never a list of commits: the
+Welcome page's *What's New* opens this build's release, so it is what a user reads about the version.
+[`scripts/release/ReleaseNotes.java`](../scripts/release/ReleaseNotes.java) writes
+`out/release-notes.md` from the install text in [`.github/release-notes.md`](../.github/release-notes.md)
+and the `## [X.Y.Z]` section, and `jreleaser.yml` publishes that file as it is
+(`changelog.external`). GitHub (and JReleaser) cap a release body at 10,000 characters and Editora's
+sections are longer, so a section that does not fit is shown by its entries' bold leads, one line
+each under its own headings, ending with "… and N more" and a link to the whole section at the tag.
+
+- The **preflight** writes the notes first and puts them in its job summary, so a tag whose
+  changelog still says `[Unreleased]` stops before any build leg starts; the **Release** job writes
+  them again for JReleaser.
+- A dry run and an `-rc` tag take `## [Unreleased]` (`--unreleased`).
+- `ReleaseNotesTest` checks the rules and that every section of the real `CHANGELOG.md` fits;
+  run it with `java scripts/lib/RunTests.java release.ReleaseNotes`. To see what a release will
+  publish: `java scripts/release/ReleaseNotes.java X.Y.Z CHANGELOG.md .github/release-notes.md out/release-notes.md`.
 
 ### The release-asset check
 
@@ -161,14 +198,14 @@ upstream steps are tolerant by design — JReleaser's globs match zero files wit
 `aot_build.java` lets the `.rpm` succeed alone when the `.deb` wrap fails. So immediately before
 JReleaser, the `Release` job runs
 [`scripts/release/CheckRelease.java`](../scripts/release/CheckRelease.java) against the downloaded
-artifacts and, on a tag, **refuses to publish unless all seventeen expected files are present and
-non-empty** (the table above, a `.asc` beside each Linux `.deb`, `.rpm`, `.AppImage` and `.tar.gz`,
+artifacts and, on a tag, **refuses to publish unless all nineteen expected files are present and
+non-empty** (the table above, a `.asc` beside each Linux `.deb`, `.rpm`, `.AppImage`, `.tar.gz` and fat jar,
 and `editora-signing-key.asc`; fat jars are named after the pom version, everything else after the
 tag). It prints the full list with `ok`/`MISSING` per file. The AppImage and tarball steps are
 likewise strict on a tag (a failure fails the linux leg, so *Re-run failed jobs* rebuilds just that
 leg) and best-effort only in a dry run. The experimental Native Image archives are reported but never
 required. If you add or remove a release artifact, change the `EXPECTED` table in that script, the
-Stage step and `jreleaser.yml` together — `test_check_release.py` cross-checks them.
+Stage step and `jreleaser.yml` together — `CheckReleaseTest` cross-checks them.
 
 ### macOS signing and notarization
 
@@ -245,8 +282,8 @@ done, in a job of its own so the key is never on a runner that builds (those run
 resolves). [`scripts/release/sign-linux-packages.sh`](../scripts/release/sign-linux-packages.sh)
 signs the `.rpm` with `rpmsign` and the `.deb` with an origin signature in debsigs' format (an
 `_gpgorigin` member; debsigs itself skips `.xz` members and exits 0), then writes an armoured
-`<file>.asc` beside every `.deb`, `.rpm`, `.AppImage` and `.tar.gz` — the only signature the
-AppImage and the tarball carry, since appimagetool can embed one only while it builds.
+`<file>.asc` beside every `.deb`, `.rpm`, `.AppImage`, `.tar.gz` and fat jar — the only signature the
+AppImage, the tarball and the jar carry, since appimagetool can embed one only while it builds.
 [`check-linux-signatures.sh`](../scripts/release/check-linux-signatures.sh) then checks each one
 against the public key alone, with `gpgv`, `rpmkeys` and `debsig-verify`. The job uploads the
 signed files over the legs' artifacts, so the `Release` job checks, attests and attaches only those,
