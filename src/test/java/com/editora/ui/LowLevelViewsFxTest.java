@@ -187,7 +187,10 @@ class LowLevelViewsFxTest {
         DebugPanel.Actions actions = FxTestSupport.field(debug.panel(), "actions");
         assertTrue(call(actions::canViewMemory));
         FxTestSupport.runOnFx(() -> actions.viewMemory("x"));
-        await("the memory rows", () -> !call(() -> memory.rowList().getItems().isEmpty()));
+        await(
+                "the memory rows", // not those an earlier session left
+                () -> call(() -> !memory.rowList().getItems().isEmpty()
+                        && memory.rowList().getItems().getFirst().startsWith("0x000000002000")));
         assertEquals(DebugPanel.AREA_MEMORY, call(() -> debug.panel().shownArea()));
         assertEquals("x", call(memory::addressText));
         String first = call(() -> memory.rowList().getItems().getFirst());
@@ -325,6 +328,141 @@ class LowLevelViewsFxTest {
         FxTestSupport.runOnFx(manager::stop);
         await("stopped", () -> !call(manager::isActive));
         assertEquals(List.of(), call(manager::instructionBreakpoints));
+    }
+
+    /** Opens Edit Bytes… on row {@code row} of the Memory view and answers it with {@code text}. */
+    private void editRow(DebugMemoryView memory, int row, String text) throws Exception {
+        FxTestSupport.runOnFx(() -> memory.rowList().getSelectionModel().clearAndSelect(row));
+        run(DebugMemoryView.EDIT);
+        await("the Edit Memory prompt", () -> call(() -> OverlayDriver.showing(fx.controller)));
+        FxTestSupport.runOnFx(() -> OverlayDriver.answer(fx.controller, text));
+    }
+
+    @Test
+    void memoryIsChangedFromTheMemoryViewOnlyWhereItDiffers() throws Exception {
+        Path file = root.resolve("shelf.c");
+        FxTestSupport.runOnFx(() -> fx.controller.fileWorkflows.openPath(file));
+        run("debug.start");
+        FakeDebugAdapter.Session session = adapter.awaitSession();
+        session.awaitRequest("launch");
+        await("running", () -> call(manager::state) == DapManager.State.RUNNING);
+        session.stop(1, "breakpoint");
+        await(
+                "stopped",
+                () -> call(manager::state) == DapManager.State.SUSPENDED
+                        && !call(() -> debug.panel().callStack().isEmpty()));
+        assertTrue(call(manager::supportsWriteMemory));
+        DebugMemoryView memory = call(() -> debug.panel().memoryView());
+        DebugPanel.Actions actions = FxTestSupport.field(debug.panel(), "actions");
+        FxTestSupport.runOnFx(() -> actions.viewMemory("x"));
+        await("the memory rows", () -> !call(() -> memory.rowList().getItems().isEmpty()));
+
+        // The row's bytes in hex to start from; quoted text writes only the byte that changed, and the page is read
+        // again (the frame's variables too).
+        FxTestSupport.runOnFx(() -> memory.rowList().getSelectionModel().clearAndSelect(0));
+        run(DebugMemoryView.EDIT);
+        await("the Edit Memory prompt", () -> call(() -> OverlayDriver.showing(fx.controller)));
+        assertEquals(
+                "68 65 6c 6c 6f 00 00 00 00 00 00 00 00 00 00 00", call(() -> OverlayDriver.promptText(fx.controller)));
+        int reads = session.memoryReads.size();
+        long scopes = session.requests.stream().filter("scopes"::equals).count();
+        FxTestSupport.runOnFx(() -> OverlayDriver.answer(fx.controller, "\"J\""));
+        await("written", () -> session.memoryWrites.size() == 1);
+        org.eclipse.lsp4j.debug.WriteMemoryArguments write = session.memoryWrites.getLast();
+        assertEquals("0x2000", write.getMemoryReference());
+        assertEquals(0, (int) write.getOffset());
+        assertEquals("Sg==", write.getData(), "J alone");
+        await(
+                "read again",
+                () -> session.memoryReads.size() > reads
+                        && call(() -> memory.rowList().getItems().getFirst()).endsWith("Jello..........."));
+        assertEquals(tr("status.debug.memoryWritten", 1, "0x2000"), status());
+        await(
+                "the variables again",
+                () -> session.requests.stream().filter("scopes"::equals).count() > scopes);
+        assertEquals(0, call(() -> memory.rowList().getSelectionModel().getSelectedIndex()), "still selected");
+
+        // Hex in another row: from the first byte that differs to the last.
+        editRow(memory, 1, "00 00 ff 00 7f");
+        await("written again", () -> session.memoryWrites.size() == 2);
+        assertEquals(18, (int) session.memoryWrites.getLast().getOffset());
+        assertEquals("/wB/", session.memoryWrites.getLast().getData(), "ff 00 7f");
+        await("read again", () -> call(() -> memory.rowList().getItems().get(1)).contains("00 00 ff 00 7f"));
+
+        // The same bytes: nothing written. Not bytes, and too many: said, nothing written.
+        editRow(memory, 1, "00 00 ff 00 7f");
+        editRow(memory, 1, "zz");
+        await("not bytes", () -> status().equals(tr("status.debug.memoryBadBytes", "zz")));
+        int last = DebugMemoryView.PAGE / DebugMemoryView.ROW - 1;
+        editRow(memory, last, "00".repeat(17));
+        await(
+                "too many",
+                () -> status().equals(
+                                tr("status.debug.memoryTooLong", 17, 16, String.format("0x%x", 0x2000 + last * 16))));
+        assertEquals(2, session.memoryWrites.size());
+
+        // An adapter that writes only some, and one that fails.
+        adapter.writeMemoryPartly = true;
+        try {
+            editRow(memory, 2, "aa bb");
+            await("partly", () -> status().equals(tr("status.debug.memoryWrittenPartly", 1, 2, "0x2020")));
+            await(
+                    "read again",
+                    () -> call(() -> memory.rowList().getItems().get(2)).contains(" aa 00 "));
+        } finally {
+            adapter.writeMemoryPartly = false;
+        }
+        adapter.writeMemoryFails = true;
+        try {
+            editRow(memory, 3, "01");
+            await("its failure", () -> status().contains("Cannot access memory"));
+            assertTrue(status().startsWith(tr("status.debug.memoryWriteFailed", "0x2030", "")), status());
+        } finally {
+            adapter.writeMemoryFails = false;
+        }
+        int writes = session.memoryWrites.size();
+
+        // The view moved to another page while the prompt was open: nothing written.
+        FxTestSupport.runOnFx(() -> memory.rowList().getSelectionModel().clearAndSelect(0));
+        run(DebugMemoryView.EDIT);
+        await("the Edit Memory prompt", () -> call(() -> OverlayDriver.showing(fx.controller)));
+        int pageReads = session.memoryReads.size();
+        FxTestSupport.runOnFx(() -> memory.page(1));
+        await("the next page", () -> session.memoryReads.size() > pageReads);
+        FxTestSupport.runOnFx(() -> OverlayDriver.answer(fx.controller, "01"));
+        await("moved on", () -> status().equals(tr("status.debug.memoryMovedOn")));
+        assertEquals(writes, session.memoryWrites.size());
+
+        // F2 and a double-click open it too; with no row selected the command says so.
+        await("the page shown", () -> !call(() -> memory.rowList().getItems().isEmpty()));
+        FxTestSupport.runOnFx(() -> {
+            memory.rowList().getSelectionModel().clearAndSelect(0);
+            javafx.event.Event.fireEvent(
+                    memory.rowList(),
+                    new javafx.scene.input.KeyEvent(
+                            javafx.scene.input.KeyEvent.KEY_PRESSED,
+                            "",
+                            "",
+                            javafx.scene.input.KeyCode.F2,
+                            false,
+                            false,
+                            false,
+                            false));
+        });
+        await("F2's prompt", () -> call(() -> OverlayDriver.showing(fx.controller)));
+        FxTestSupport.runOnFx(() -> OverlayDriver.dismiss(fx.controller));
+        FxTestSupport.runOnFx(() -> memory.rowList().getSelectionModel().clearSelection());
+        run(DebugMemoryView.EDIT);
+        assertEquals(tr("status.list.selectRow"), status());
+
+        // Once the program runs, there is nothing to change.
+        MemoryEdits edits = FxTestSupport.field(debug, "memoryEdits");
+        FxTestSupport.runOnFx(manager::resume);
+        await("running", () -> call(manager::state) == DapManager.State.RUNNING);
+        FxTestSupport.runOnFx(() -> edits.edit(memory, 0));
+        assertEquals(tr("status.debug.noMemoryWrite"), status());
+        FxTestSupport.runOnFx(manager::stop);
+        await("stopped", () -> !call(manager::isActive));
     }
 
     @Test

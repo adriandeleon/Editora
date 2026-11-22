@@ -20,6 +20,7 @@ final class DebugBuildTestButtonCommands {
         mc.registry.register(Command.of("debug.closeEndedSession", () -> closeEndedSession(mc)));
         mc.registry.register(Command.of("debug.memoryPreviousPage", () -> memoryPage(mc, -1)));
         mc.registry.register(Command.of("debug.memoryNextPage", () -> memoryPage(mc, 1)));
+        mc.registry.register(Command.of(DebugMemoryView.EDIT, () -> memoryEdit(mc)));
         for (BuildCoordinator c : mc.buildCoordinators) {
             if (c.tool().taskLoadLabel().isPresent()) { // Gradle, sbt and Mill: the tools whose tree has the action
                 mc.registry.register(Command.of(c.tool().id() + ".loadAllTasks", () -> loadAllTasks(mc, c)));
@@ -67,6 +68,19 @@ final class DebugBuildTestButtonCommands {
                 mc.setStatus(tr("status.debug.memoryNotShown"));
             } else {
                 memory.page(direction);
+            }
+        });
+    }
+
+    /** Edit Bytes… on the Memory view's selected row, where one is showing. */
+    private static void memoryEdit(MainController mc) {
+        DebugCoordinator debug = mc.debugCoordinator;
+        debug.ifDebug(() -> {
+            DebugMemoryView memory = shownMemoryView(mc);
+            if (memory == null) {
+                mc.setStatus(tr("status.debug.memoryNotShown"));
+            } else if (!memory.editSelected()) {
+                mc.setStatus(tr("status.list.selectRow"));
             }
         });
     }

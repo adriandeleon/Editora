@@ -57,4 +57,11 @@ class InstructionBreakpointWireTest {
         assertEquals(Long.valueOf(0x121), DapManager.parseAddress("0x121"));
         assertNull(DapManager.parseAddress("main+4"));
     }
+
+    @Test
+    void anExpressionWithoutAMemoryReferenceIsAskedForItsAddress() {
+        assertEquals("&(word)", DapManager.addressOf(" word "), "GDB: a C array's value has none");
+        assertNull(DapManager.addressOf("&word"), "already an address");
+        assertNull(DapManager.addressOf(""));
+    }
 }

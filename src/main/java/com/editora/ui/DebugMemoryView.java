@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 
@@ -10,6 +11,8 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
@@ -23,12 +26,16 @@ import static com.editora.i18n.Messages.tr;
 /**
  * The Debug window's Memory view (VS Code's hex editor on a variable, Visual Studio's Memory window): the program's
  * memory as rows of 16 bytes — the address, the bytes in hex, and as text — from an address or an expression (a
- * variable's View Memory). ◀ and ▶ page back and forth; it is read again at every stop.
+ * variable's View Memory). ◀ and ▶ page back and forth; it is read again at every stop. A row's bytes can be changed
+ * (Edit Bytes…: a double-click, F2) where the debugger writes memory.
  */
 final class DebugMemoryView extends VBox {
 
     /** Bytes per row, as hex editors show them. */
     static final int ROW = 16;
+
+    /** The command that edits the selected row's bytes. */
+    static final String EDIT = "debug.memoryEditBytes";
 
     /** Bytes read at a time: one page of the view. */
     static final int PAGE = 256;
@@ -38,6 +45,11 @@ final class DebugMemoryView extends VBox {
     private final Label placeholder = new Label();
     private Consumer<String> onGo = text -> {};
     private IntConsumer onPage = direction -> {};
+    private IntConsumer onEdit = row -> {};
+    private BooleanSupplier writable = () -> false;
+
+    /** What the view shows: null while it says something instead. */
+    private DapModels.@Nullable MemoryBlock block;
 
     DebugMemoryView() {
         getStyleClass().add("debug-memory");
@@ -61,8 +73,24 @@ final class DebugMemoryView extends VBox {
         placeholder.setWrapText(true);
         placeholder.getStyleClass().add("debug-empty-note");
         rows.setPlaceholder(placeholder);
-        // Its right-click menu: Copy, the one thing to do to a row (MENU-05).
-        ListRowCommands.install(rows, ListRowCommands.copyRow(rows, () -> ListRowCommands.selectedText(rows, r -> r)));
+        rows.setOnMouseClicked(e -> {
+            if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
+                editSelected();
+            }
+        });
+        rows.setOnKeyPressed(e -> {
+            if (e.getCode() == KeyCode.F2 && editSelected()) {
+                e.consume();
+            }
+        });
+        // Its right-click menu: what a double-click does, and Copy (MENU-05).
+        ListRowCommands.install(
+                rows,
+                ListRowCommands.enabledWhen(
+                        ListRowCommands.row(rows, EDIT, null, null, this::editSelected),
+                        () -> writable.getAsBoolean(),
+                        "row.unavailable.noMemoryWrite"),
+                ListRowCommands.copyRow(rows, () -> ListRowCommands.selectedText(rows, r -> r)));
         VBox.setVgrow(rows, Priority.ALWAYS);
         UiZoom.spacing(this, 2);
         getChildren().addAll(top, rows);
@@ -84,6 +112,30 @@ final class DebugMemoryView extends VBox {
         onPage.accept(direction);
     }
 
+    /**
+     * What Edit Bytes… asks for: the row to change (its index), when {@code writable} (the debugger writes memory, and
+     * the row's menu has Edit Bytes… enabled).
+     */
+    void setOnEdit(IntConsumer onEdit, BooleanSupplier writable) {
+        this.onEdit = onEdit;
+        this.writable = writable;
+    }
+
+    /** Edit Bytes… on the selected row; false when no row is selected. */
+    boolean editSelected() {
+        int row = rows.getSelectionModel().getSelectedIndex();
+        if (block == null || row < 0 || row * ROW >= block.data().length) {
+            return false;
+        }
+        onEdit.accept(row);
+        return true;
+    }
+
+    /** The bytes shown, or null while the view says something instead. */
+    DapModels.@Nullable MemoryBlock block() {
+        return block;
+    }
+
     /** Puts {@code text} in the address field (a variable's expression, for View Memory). */
     void setAddressText(String text) {
         where.setText(text);
@@ -96,14 +148,21 @@ final class DebugMemoryView extends VBox {
     /** Shows {@code block}. */
     void show(DapModels.MemoryBlock block) {
         List<String> lines = rows(block.address(), block.data(), block.unreadable());
+        int selected = rows.getSelectionModel().getSelectedIndex();
         rows.getItems().setAll(lines);
         if (lines.isEmpty()) {
             setMessage(tr("debugpanel.memory.unreadable", block.address()));
+        } else {
+            this.block = block;
+            if (selected >= 0 && selected < lines.size()) {
+                rows.getSelectionModel().select(selected); // read again after an edit: the row stays selected
+            }
         }
     }
 
     /** Clears the view, saying {@code message} instead. */
     void setMessage(String message) {
+        block = null;
         rows.getItems().clear();
         placeholder.setText(message);
     }
@@ -152,5 +211,73 @@ final class DebugMemoryView extends VBox {
     /** The memory reference typed: an address ({@code 0x…}) as it is, else null (an expression to evaluate). Pure. */
     static @Nullable String literalAddress(String text) {
         return DebugDisassemblyView.parseAddress(text) != null && text.strip().startsWith("0x") ? text.strip() : null;
+    }
+
+    /** The address of byte {@code at} of {@code block}, as its rows show it. Pure. */
+    static String addressOf(DapModels.MemoryBlock block, int at) {
+        Long start = DebugDisassemblyView.parseAddress(block.address());
+        return start != null ? String.format("0x%x", start + at) : block.address() + "+" + at;
+    }
+
+    /** Row {@code row}'s readable bytes of {@code data} in hex, as Edit Bytes… starts from: {@code 48 65 6c 6c 6f}. */
+    static String rowHex(byte[] data, int row) {
+        StringBuilder hex = new StringBuilder();
+        for (int i = row * ROW; i < Math.min(data.length, (row + 1) * ROW); i++) {
+            hex.append(hex.isEmpty() ? "" : " ").append(String.format("%02x", data[i] & 0xff));
+        }
+        return hex.toString();
+    }
+
+    /**
+     * The bytes typed in Edit Bytes…: hex, two digits a byte, spaces optional ({@code 48 65 6c}, {@code 48656c},
+     * {@code 0x48}), or text in double quotes ({@code "Hello"}, its UTF-8 bytes); null when it is neither or empty.
+     * Pure.
+     */
+    static byte @Nullable [] parseBytes(String text) {
+        String t = text.strip();
+        if (t.length() >= 2 && t.startsWith("\"") && t.endsWith("\"")) {
+            byte[] bytes = t.substring(1, t.length() - 1).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            return bytes.length == 0 ? null : bytes;
+        }
+        StringBuilder digits = new StringBuilder();
+        for (String token : t.split("[\\s,]+")) {
+            String d = token.startsWith("0x") || token.startsWith("0X") ? token.substring(2) : token;
+            if (d.isEmpty() && !token.isEmpty()) {
+                return null; // a bare 0x
+            }
+            if (token.length() > 2 && token.length() != 4 && (token.startsWith("0x") || token.startsWith("0X"))) {
+                return null; // 0x is one byte's prefix: 0x123 is no byte
+            }
+            digits.append(d);
+        }
+        if (digits.isEmpty()
+                || digits.length() % 2 != 0
+                || !digits.chars().allMatch(c -> Character.digit(c, 16) >= 0)) {
+            return null;
+        }
+        byte[] out = new byte[digits.length() / 2];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = (byte) Integer.parseInt(digits.substring(2 * i, 2 * i + 2), 16);
+        }
+        return out;
+    }
+
+    /** What Edit Bytes… writes: {@code bytes} at byte {@code at} of the page. */
+    record Edit(int at, byte[] bytes) {}
+
+    /**
+     * What to write for {@code typed} put over {@code data} from byte {@code from}: the bytes from the first that
+     * differs to the last, or null when none does. {@code typed} must fit in {@code data} from there. Pure.
+     */
+    static @Nullable Edit edit(byte[] data, int from, byte[] typed) {
+        int first = -1;
+        int last = -1;
+        for (int i = 0; i < typed.length; i++) {
+            if (data[from + i] != typed[i]) {
+                first = first < 0 ? i : first;
+                last = i;
+            }
+        }
+        return first < 0 ? null : new Edit(from + first, java.util.Arrays.copyOfRange(typed, first, last + 1));
     }
 }
