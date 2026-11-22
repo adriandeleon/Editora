@@ -43,6 +43,11 @@ class ValueTableTest {
                 List.of("\"a\"", "\"b\""),
                 names(ValueTable.elements(List.of(v("len()", "2", 0), v("\"a\"", "1", 0), v("\"b\"", "2", 0)))));
         assertEquals(List.of("[0]", "[1]"), names(ValueTable.elements(List.of(v("[0]", "1", 0), v("[1]", "2", 0)))));
+        // debugpy's dict with an int key and a string key: both are entries
+        assertEquals(
+                List.of("200", "'default'"),
+                names(ValueTable.elements(
+                        List.of(v("200", "'ok'", 0), v("'default'", "'err'", 0), v("len()", "2", 0)))));
     }
 
     @Test
