@@ -67,6 +67,26 @@ class TypeRenderersTest {
     }
 
     @Test
+    void thisAndSelfAreReplacedInAnFStringsOrATemplateLiteralsCode() {
+        assertEquals(
+                "f\"{(p).x} and {{self}}\"", TypeRenderers.substitute("f\"{self.x} and {{self}}\"", "p", "python"));
+        assertEquals("rf'{(p).name!r:>10}'", TypeRenderers.substitute("rf'{self.name!r:>10}'", "p", "python"));
+        assertEquals("elf\"{self.x}\"", TypeRenderers.substitute("elf\"{self.x}\"", "p", "python"), "not an f prefix");
+        assertEquals("\"{self.x}\"", TypeRenderers.substitute("\"{self.x}\"", "p", "python"), "a plain string");
+        assertEquals(
+                "`${(m).amount} ${(m).currency} this`",
+                TypeRenderers.substitute("`${this.amount} ${this.currency} this`", "m", "javascript"));
+        assertEquals("`\\${this}`", TypeRenderers.substitute("`\\${this}`", "m", "javascript"), "an escaped one");
+    }
+
+    @Test
+    void cppsThisIsAPointerToTheValue() {
+        assertEquals("(&(p))->x + (&(p))->y", TypeRenderers.substitute("this->x + this->y", "p", "cpp"));
+        assertEquals("(*(&(v.at(0)))).size()", TypeRenderers.substitute("(*this).size()", "v.at(0)", "cpp"));
+        assertEquals("(p).len()", TypeRenderers.substitute("self.len()", "p", "rust"), "Rust's . reaches through");
+    }
+
+    @Test
     void childrenAreNamedExpressionsOneALine() {
         assertEquals(
                 List.of(
