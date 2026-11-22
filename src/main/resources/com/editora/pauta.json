@@ -13,7 +13,7 @@
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/documentation/#docs-18",
       "kind": "pending",
-      "reason": "Screenshots for the website are not taken by a built-in capture at double resolution.",
+      "reason": "The website's screenshots can now be taken by a built-in capture at double resolution, but the published ones have not been retaken with it yet.",
       "link": "https://github.com/adriandeleon/Editora/issues/1557"
     },
     {
