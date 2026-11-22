@@ -118,6 +118,13 @@ final class DebugTableWindow {
 
     private String shape = "";
 
+    /**
+     * The rows shown are an earlier stop's: the program went on (or stopped again) since they were read. Load More
+     * then starts again from the first rows at the current stop, rather than adding the new stop's rows after the old
+     * stop's.
+     */
+    private boolean stale;
+
     DebugTableWindow(Actions actions) {
         this.actions = actions;
         build();
@@ -169,7 +176,7 @@ final class DebugTableWindow {
         Button asCsv = new Button(tr("valuetable.openAsCsv"));
         asCsv.setOnAction(e -> actions.openText(tr("valuetable.csvTitle", name), model.csv(shownRows()), "csv"));
         refresh.setOnAction(e -> refresh());
-        more.setOnAction(e -> loadData(true));
+        more.setOnAction(e -> loadData(!stale));
         more.setVisible(false);
         more.managedProperty().bind(more.visibleProperty());
         Button close = new Button(tr("threaddump.close"));
@@ -250,6 +257,11 @@ final class DebugTableWindow {
     /** The session moved on (or ended): Refresh needs a paused program. */
     void sessionChanged() {
         refresh.setDisable(!actions.canRefresh() || expression.isBlank());
+        if (data && !rows.isEmpty() && !stale) {
+            stale = true; // a page read now would be another stop's
+            generation++; // and a page still on its way is the old stop's
+            showNote();
+        }
         showMore();
     }
 
@@ -359,6 +371,7 @@ final class DebugTableWindow {
     private void loadData(boolean append) {
         long load = append ? generation : ++generation;
         if (!append) {
+            stale = false;
             rows.clear();
             pending = 0;
             total = -1;
@@ -479,6 +492,9 @@ final class DebugTableWindow {
                             : tr("valuetable.dataCount", rows.size());
             if (width > 0 && dtypes.size() < width) {
                 text += " " + tr("valuetable.firstColumns", dtypes.size(), width);
+            }
+            if (stale) {
+                text += " " + tr("valuetable.dataStale");
             }
             note.setText(text);
             return;

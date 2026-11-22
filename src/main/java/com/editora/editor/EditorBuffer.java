@@ -468,8 +468,25 @@ public class EditorBuffer implements TabContent {
     }
 
     Runnable onViewModeChanged = () -> {};
-    /** Files at/above this size skip syntax highlighting and the minimap to stay responsive. */
-    public static final long LARGE_FILE_BYTES = 5L * 1024 * 1024;
+    /**
+     * Files of at least this many lines open in large-file mode (no highlighting, minimap, undo, …; see
+     * {@link #setLargeFile}). Measured on 2026-11-22: typing and scrolling stay smooth with everything on even at
+     * 400,000 lines, so what this bounds is memory (highlighting keeps about 450 bytes a line) and the first
+     * highlighting pass (about 6 s per 100,000 lines of Java, while every other tab of the language waits for its
+     * colours). Lines, not bytes, set both: 5 MB was 115,000 lines of Java but 315,000 of pretty-printed JSON.
+     */
+    public static final int LARGE_FILE_LINES = 200_000;
+    /**
+     * Files of at least this size open in large-file mode whatever their line count — a backstop for long-lined
+     * files, whose undo memory for a bulk edit (Replace All keeps the text it replaced) has not been measured.
+     * Was the only test, at 5 MB, until 2026-11-22.
+     */
+    public static final long LARGE_FILE_BYTES = 16L * 1024 * 1024;
+
+    /** Whether a document of {@code chars} characters in {@code lines} lines opens in large-file mode. */
+    public static boolean largeFileMode(long chars, int lines) {
+        return lines >= LARGE_FILE_LINES || chars >= LARGE_FILE_BYTES;
+    }
     /** Files at/above this size are opened read-only (and truncated by the loader). */
     public static final long HUGE_FILE_BYTES = 50L * 1024 * 1024;
     /** Whether the minimap is shown; applied to every split pane's minimap. */
@@ -479,10 +496,9 @@ public class EditorBuffer implements TabContent {
     boolean renderingActive = true;
     /** Large-file mode: syntax highlighting and the minimap are disabled regardless of settings. */
     boolean largeFile;
-    /** Intermediate "large source file" tier (below the 5 MB hard mode): the minimap and LSP are
-     *  disabled — but syntax highlighting and editing stay — so a very long single file (e.g. a
-     *  13k-line source) stays responsive. Triggered by line count at load (see {@code setHeavyFile});
-     *  toggleable per-buffer. {@code largeFile} implies the same minimap/LSP suppression. */
+    /** Intermediate "large source file" tier (below large-file mode): the language server is not started —
+     *  highlighting, the minimap and editing stay. Triggered by line count at load (see {@code setHeavyFile});
+     *  toggleable per-buffer. {@code largeFile} implies the same LSP suppression. */
     boolean heavyFile;
     /** Huge-file mode: implies large-file mode plus read-only (no undo, not editable). */
     boolean hugeFile;
@@ -1161,8 +1177,8 @@ public class EditorBuffer implements TabContent {
 
     /**
      * Whether an edit refreshes the preview. Large-file mode stops it — except for a Markdown document that
-     * is "large" only for one very long line (a pasted {@code data:} image passes the 64K-character line
-     * limit at once): its preview used to render once and then silently stay as it was.
+     * is "large" only for one very long line (a pasted {@code data:} image can pass the long-line limit at
+     * once): its preview used to render once and then silently stay as it was.
      */
     boolean previewLive() {
         return !largeFile || (isMarkdown() && area.getLength() <= PREVIEW_LIVE_MAX_CHARS);
@@ -3064,7 +3080,8 @@ public class EditorBuffer implements TabContent {
      *  document open/close + requests; this only gates the editor surface. */
     public void setLspActive(boolean on) {
         boolean was = lspActive;
-        // Large-file mode disables LSP just like syntax highlighting and the minimap: a 5–50 MB document
+        // Large-file mode disables LSP just like syntax highlighting and the minimap: a document of hundreds of
+        // thousands of lines
         // would flood the FX thread with a full-text didOpen and tens/hundreds of thousands of diagnostics
         // to map + render (the Problems tree, minimap + scrollbar stripes), freezing the editor. largeFile
         // is implied by hugeFile (see setReadOnly), so this single guard covers both.
@@ -4776,8 +4793,8 @@ public class EditorBuffer implements TabContent {
      * (too costly) and in full {@link MarkdownViewMode#PREVIEW} (no editor surface to map). It stays on in
      * {@link MarkdownViewMode#SPLIT} — the editor is still visible there. Pure, so it's unit-tested.
      */
-    static boolean minimapEffective(boolean visible, boolean largeFile, boolean heavyFile, MarkdownViewMode mode) {
-        return visible && !largeFile && !heavyFile && mode != MarkdownViewMode.PREVIEW;
+    static boolean minimapEffective(boolean visible, boolean largeFile, MarkdownViewMode mode) {
+        return visible && !largeFile && mode != MarkdownViewMode.PREVIEW;
     }
 
     private final WordWrap wrap = new WordWrap(this::setWordWrap);
@@ -4862,7 +4879,7 @@ public class EditorBuffer implements TabContent {
     /** Show/hide the minimap overview (on every split pane); reclaims its width for the editor when hidden. */
     public void setMinimapVisible(boolean visible) {
         this.minimapVisible = visible;
-        boolean effective = minimapEffective(visible, largeFile, heavyFile, markdownViewMode);
+        boolean effective = minimapEffective(visible, largeFile, markdownViewMode);
         applyMinimap(scrollPane, minimap, effective);
         for (Node child : root.getChildren()) {
             if (child.getProperties().containsKey(OVER_TEXT)) {
@@ -5280,8 +5297,8 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** Intermediate large-file tier: hides the minimap and (with the controller's help) disables LSP,
-     *  while keeping syntax highlighting + editing. Set at load by line count, or toggled per-buffer.
+    /** Intermediate large-file tier: (with the controller's help) disables LSP, while keeping syntax
+     *  highlighting, the minimap and editing. Set at load by line count, or toggled per-buffer.
      *  The controller re-runs its LSP sync after toggling so the session starts/stops accordingly. */
     public void setHeavyFile(boolean heavy) {
         if (this.heavyFile == heavy) {

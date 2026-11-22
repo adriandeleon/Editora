@@ -58,11 +58,16 @@ public final class JavaSourceRootFix {
             List<Path> listed = err == null ? JavaLaunchSupport.sourcePaths(res) : List.of();
             List<Path> wrong = JavaLaunchSupport.wrongSourceRoots(listed, file, root);
             if (wrong.isEmpty()) {
-                then.accept(listed.contains(root));
+                Path realRoot = JavaLaunchSupport.realPath(root); // jdtls names real folders, the file a link's
+                then.accept(listed.stream()
+                        .anyMatch(p -> JavaLaunchSupport.realPath(p).equals(realRoot)));
                 return;
             }
             lsp.executeCommand(
-                    file, "java.project.addToSourcePath", List.of(root.toUri().toString()), (added, e2) -> {
+                    file,
+                    "java.project.addToSourcePath",
+                    List.of(JavaLaunchSupport.realPath(root).toUri().toString()),
+                    (added, e2) -> {
                         if (!current.getAsBoolean()) {
                             return;
                         }

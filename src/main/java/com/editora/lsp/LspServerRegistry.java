@@ -460,7 +460,8 @@ public final class LspServerRegistry {
 
     /**
      * Lines up to which a language keeps its server in the "large source" tier (whose minimap and language
-     * server are otherwise off from {@code Settings.largeFileThreshold}, 10,000 lines by default). Pyright
+     * server are otherwise off from {@code Settings.largeFileThreshold}, 50,000 lines by default since
+     * 2026-11-22, when these overrides equal it; they stay for a user who lowers it). Pyright
      * checks a 10,000-line file in about four seconds, and long generated or vendored Python modules are
      * common, so Python keeps it to 50,000 lines (Python review B10). jdtls reconciles a 12,000-line file in well
      * under a second, and large generated parsers, protobuf classes and legacy classes lost every diagnostic and

@@ -110,13 +110,23 @@ public final class PythonTemplates {
      */
     public static Map<String, Object> decorate(
             Map<String, Object> args, Mode mode, Function<@Nullable Path, Found> found) {
+        return decorate(args, mode, DapPaths.LOCAL, found);
+    }
+
+    /**
+     * As {@link #decorate(Map, Mode, Function)} for an adapter that names files as {@code paths} says: a remote
+     * host's request names its folder by the host's path, which is the file {@code paths} maps it to, never a file of
+     * the same name on this machine (review B7).
+     */
+    public static Map<String, Object> decorate(
+            Map<String, Object> args, Mode mode, DapPaths paths, Function<@Nullable Path, Found> found) {
         if (args == null || !("python".equals(args.get("type")) || "debugpy".equals(args.get("type")))) {
             return args;
         }
         Found use = switch (mode) {
             case OFF -> Found.NONE;
             case ON -> new Found(true, true);
-            case AUTO -> found.apply(folder(args));
+            case AUTO -> found.apply(folder(args, paths));
         };
         if (!use.django() && !use.jinja()) {
             return args;
@@ -131,17 +141,24 @@ public final class PythonTemplates {
         return out;
     }
 
-    /** The folder a request runs in: its {@code cwd}, else its program's; null when it names neither. */
-    static @Nullable Path folder(Map<String, Object> args) {
+    /**
+     * The folder a request runs in, as {@code paths} maps the adapter's names: its {@code cwd}, else its program's;
+     * null when it names neither, or names no file {@code paths} knows.
+     */
+    static @Nullable Path folder(Map<String, Object> args, DapPaths paths) {
         try {
             if (args.get("cwd") instanceof String cwd && !cwd.isBlank()) {
-                return Path.of(cwd);
+                return paths.fromAdapter(cwd);
             }
             if (args.get("program") instanceof String program && !program.isBlank()) {
-                return Path.of(program).toAbsolutePath().getParent();
+                Path p = paths.fromAdapter(program);
+                if (p == null) {
+                    return null;
+                }
+                return (paths == DapPaths.LOCAL ? p.toAbsolutePath() : p).getParent();
             }
         } catch (RuntimeException e) {
-            return null; // not a path here (a remote host's)
+            return null; // not a path here
         }
         return null;
     }

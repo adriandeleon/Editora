@@ -170,8 +170,9 @@ Do not benchmark an agent-instrumented or JaCoCo-instrumented launch.
 The standalone probe creates a real `EditorBuffer`/CodeArea and realizes it in a Stage. It generates
 100 KiB, 1 MiB, 5 MiB and 10 MiB ASCII Java files, reads them from temporary files, and checks exact
 text plus SHA-256 checkpoint sequences across runtimes. The load policy mirrors `FileWorkflowCoordinator`:
-**at least 5 MiB** disables syntax/undo; 10,000-line heavy files suppress minimap/LSP; a 128 KiB line
-uses the segmented, large-file policy. The 50 MiB truncation/read-only cap is outside this workload.
+large-file mode (**200,000 lines or 16 MiB**) disables syntax/undo; none of the generated files reaches it
+(the 10 MiB one is about 145,000 lines), so all of them keep highlighting and undo; heavy files (50,000 lines) suppress LSP; the probe puts its 128 KiB line in the
+segmented, large-file policy directly (production does that from 1 MiB). The 50 MiB truncation/read-only cap is outside this workload.
 This probe does not exercise the controller's asynchronous file-loading/save workflow.
 
 Coverage includes 300 individually undoable character edits, redo, select-all, word/page/caret movement,
