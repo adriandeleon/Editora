@@ -50,6 +50,7 @@ public final class ExceptionFilterCatalog {
             case "Uncaught Exceptions" -> "debug.exceptionFilter.uncaught";
             case "Raised Exceptions" -> "debug.exceptionFilter.raised";
             case "User Uncaught Exceptions" -> "debug.exceptionFilter.userUncaught";
+            case "All Exceptions" -> "debug.exceptionFilter.all"; // Dart's adapters
             default -> null;
         };
         return key == null ? label : com.editora.i18n.Messages.tr(key);

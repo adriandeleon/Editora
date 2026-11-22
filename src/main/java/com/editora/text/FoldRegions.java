@@ -73,6 +73,7 @@ public final class FoldRegions {
                     "cpp",
                     "rust",
                     "go",
+                    "dart",
                     "kotlin",
                     "groovy",
                     "csharp",
@@ -163,6 +164,7 @@ public final class FoldRegions {
             "cpp",
             "rust",
             "go",
+            "dart",
             "kotlin",
             "groovy",
             "scala",
@@ -339,6 +341,8 @@ public final class FoldRegions {
      * @param multiLineDouble a {@code "} string may span lines
      * @param lifetimes       a {@code '} may be a Rust lifetime or loop label rather than a char literal
      * @param regexLiterals   a {@code /} where an operand is expected opens a regular expression (JS/TS)
+     * @param dartStrings     {@code '''} opens a multi-line string too, and an {@code r} right before a quote
+     *                        makes a raw string, where {@code \} escapes nothing (Dart)
      */
     record Syntax(
             boolean slashSlash,
@@ -348,7 +352,8 @@ public final class FoldRegions {
             boolean tripleQuote,
             boolean multiLineDouble,
             boolean lifetimes,
-            boolean regexLiterals) {
+            boolean regexLiterals,
+            boolean dartStrings) {
 
         static Syntax of(String language) {
             String l = language == null ? "" : language;
@@ -362,11 +367,13 @@ public final class FoldRegions {
                             || l.equals("kotlin")
                             || l.equals("groovy")
                             || l.equals("scala")
-                            || l.equals("csharp"),
+                            || l.equals("csharp")
+                            || l.equals("dart"),
                     l.equals("rust") || l.equals("php"),
                     // Rust lifetimes, and Scala 2's 'symbol literals: a quote no quote closes one character later
                     l.equals("rust") || l.equals("scala"),
-                    script);
+                    script,
+                    l.equals("dart"));
         }
 
         /**
@@ -404,6 +411,10 @@ public final class FoldRegions {
                 int close = text.indexOf("\"\"\"", i + 3);
                 return close < 0 ? n - 1 : close + 2;
             }
+            if (quote == '\'' && dartStrings && text.startsWith("'''", i)) {
+                int close = text.indexOf("'''", i + 3);
+                return close < 0 ? n - 1 : close + 2;
+            }
             if (quote == '\'' && lifetimes) {
                 boolean escaped = i + 1 < n && text.charAt(i + 1) == '\\';
                 int close = i + 1 < n ? i + 1 + Character.charCount(text.codePointAt(i + 1)) : n;
@@ -412,7 +423,7 @@ public final class FoldRegions {
                 }
             }
             boolean multiLine = quote == '`' || (quote == '"' && multiLineDouble);
-            boolean escapes = quote != '`' || backtickEscapes;
+            boolean escapes = (quote != '`' || backtickEscapes) && !(dartStrings && rawPrefix(text, i));
             for (int j = i + 1; j < n; j++) {
                 char c = text.charAt(j);
                 if (c == '\\' && escapes) {
@@ -425,6 +436,13 @@ public final class FoldRegions {
             }
             return n - 1;
         }
+    }
+
+    /** Whether the quote at {@code i} follows a lone {@code r} (Dart's raw string {@code r'C:\'}). */
+    private static boolean rawPrefix(String text, int i) {
+        return i > 0
+                && text.charAt(i - 1) == 'r'
+                && (i < 2 || !(Character.isLetterOrDigit(text.charAt(i - 2)) || text.charAt(i - 2) == '_'));
     }
 
     private static int newlinesIn(String text, int from, int to) {

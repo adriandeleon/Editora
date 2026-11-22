@@ -29,7 +29,8 @@ class DapServerRegistryTest {
                         "csharp",
                         "ruby",
                         "php",
-                        "bash"),
+                        "bash",
+                        "dart"),
                 DapServerRegistry.languageIdsForDebug());
     }
 

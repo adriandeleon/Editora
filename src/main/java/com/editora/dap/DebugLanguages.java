@@ -357,8 +357,62 @@ public final class DebugLanguages {
             "debug.error.bashUnavailable",
             new ExternalAdapter(List.of("bashDebug.js"), ExternalAdapter.Transport.STDIO, null));
 
-    private static final List<DebugLanguage> ALL =
-            List.of(JAVA, PYTHON, JAVASCRIPT, GROOVY, KOTLIN, CLOJURE, SCALA, GO, RUST, CPP, CSHARP, RUBY, PHP, BASH);
+    /** The Dart adapters' "stop on every exception, caught or not" filter ({@code Unhandled} is the uncaught one). */
+    public static final String DART_ALL_FILTER = "All";
+
+    /** The exception choices {@code dart debug_adapter} and {@code flutter debug_adapter} declare. */
+    private static final List<DapModels.ExceptionFilterOption> DART_FILTERS =
+            List.of(filter(DART_ALL_FILTER, "All Exceptions", false), filter("Unhandled", "Uncaught Exceptions", true));
+
+    /**
+     * Dart, on the SDK's own adapter ({@code dart debug_adapter}) over its standard streams ({@link DartLaunch}). The
+     * isolate starts paused: the adapter reports that as a stop ({@code entry}), sets the breakpoints, and resumes it
+     * by itself ({@code continued}); its stop at the isolate's exit ({@code exit}) likewise. Neither is shown
+     * ({@code DapManager}). An uncaught exception stops, as in VS Code.
+     */
+    public static final DebugLanguage DART = new DebugLanguage(
+            "dart",
+            "Dart",
+            Set.of("dart"),
+            Kind.EXTERNAL,
+            "dart",
+            "dart",
+            "",
+            List.of(),
+            null,
+            Availability.LOCATED,
+            DART_FILTERS,
+            DART_ALL_FILTER,
+            null,
+            false,
+            "debug.error.dartUnavailable",
+            new ExternalAdapter(List.of("dart", "debug_adapter"), ExternalAdapter.Transport.STDIO, null));
+
+    /**
+     * A Flutter app's Dart, on {@code flutter debug_adapter} ({@link DartLaunch}): it builds the app, runs it on a
+     * device ({@code toolArgs}) and debugs it as Dart's adapter does. Not a language of its own — a Dart file whose
+     * package is a Flutter app — so not among {@link #all}: its session is Dart's (its exception choices, its stops).
+     */
+    public static final DebugLanguage FLUTTER = new DebugLanguage(
+            "flutter",
+            "Flutter",
+            Set.of(),
+            Kind.EXTERNAL,
+            "dart",
+            "dart",
+            "",
+            List.of(),
+            null,
+            Availability.LOCATED,
+            DART_FILTERS,
+            DART_ALL_FILTER,
+            null,
+            false,
+            "debug.error.flutterUnavailable",
+            new ExternalAdapter(List.of("flutter", "debug_adapter"), ExternalAdapter.Transport.STDIO, null));
+
+    private static final List<DebugLanguage> ALL = List.of(
+            JAVA, PYTHON, JAVASCRIPT, GROOVY, KOTLIN, CLOJURE, SCALA, GO, RUST, CPP, CSHARP, RUBY, PHP, BASH, DART);
 
     /**
      * GDB's own DAP mode ({@code gdb -i dap}, GDB 14 and later), over its standard streams: C and C++'s other debugger
@@ -410,6 +464,9 @@ public final class DebugLanguages {
         }
         if (GDB.id().equals(id)) {
             return GDB;
+        }
+        if (FLUTTER.id().equals(id)) {
+            return FLUTTER;
         }
         for (DebugLanguage l : custom) {
             if (l.id().equals(id)) {

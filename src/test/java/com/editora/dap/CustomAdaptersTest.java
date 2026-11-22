@@ -62,6 +62,7 @@ class CustomAdaptersTest {
                 "rdbg",
                 "php",
                 "bashdb",
+                "dart",
                 "pwa-node",
                 "lldb")) {
             CustomAdapters.Parsed p =

@@ -80,7 +80,7 @@ class SettingsLanguagePickerFxTest {
             rig.show();
             Region page = rig.page("LSP");
             SettingsLanguagePicker languages = picker("lspPage");
-            assertEquals(27, languages.combo().getItems().size(), "one entry per server");
+            assertEquals(28, languages.combo().getItems().size(), "one entry per server");
             assertEquals("java", languages.picked(), "the first server is picked");
             assertEquals(List.of("java"), shown(languages));
             assertEquals(

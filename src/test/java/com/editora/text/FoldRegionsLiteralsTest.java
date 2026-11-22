@@ -67,6 +67,15 @@ class FoldRegionsLiteralsTest {
         assertEquals(List.of(new Region(0, 7), new Region(4, 6)), sorted(java, "java"));
     }
 
+    /** Dart: a ''' string spans lines, and in a raw string r'C:\' the backslash escapes nothing. */
+    @Test
+    void dartTripleQuotedAndRawStrings() {
+        String triple = "class A {\n  final s = '''\n  it's {\n  ''';\n  void m() {\n    x();\n  }\n}\n";
+        assertEquals(List.of(new Region(0, 7), new Region(4, 6)), sorted(triple, "dart"));
+        String raw = "void main() {\n  final p = r'C:\\'; final q = '{';\n  if (p.isEmpty) {\n    x();\n  }\n}\n";
+        assertEquals(List.of(new Region(0, 5), new Region(2, 4)), sorted(raw, "dart"));
+    }
+
     @Test
     void cssUrlIsNotALineComment() {
         String css = "@media print {\n  .a { background: url(http://x/a.png); }\n  .b {\n    color: red;\n  }\n}\n";

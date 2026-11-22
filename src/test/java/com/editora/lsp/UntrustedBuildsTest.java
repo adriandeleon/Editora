@@ -24,7 +24,7 @@ class UntrustedBuildsTest {
 
     @Test
     void onlyTheServersThatRunAProjectsBuildAreGated() {
-        for (String id : List.of("java", "kotlin", "scala", "rust", "ruby", "csharp", "clojure")) {
+        for (String id : List.of("java", "kotlin", "scala", "rust", "ruby", "csharp", "clojure", "dart")) {
             assertTrue(UntrustedBuilds.gated(id), id);
         }
         for (String id : List.of("python", "typescript", "go", "xml", "bash", "json", "html", "css", "clangd")) {
@@ -53,6 +53,10 @@ class UntrustedBuildsTest {
         Files.writeString(dir.resolve("deps.edn"), "{}"); // read as data by clojure-lsp: nothing of the folder runs
         assertFalse(UntrustedBuilds.withholds("rust", dir, false), "a loose crate file has nothing to build");
         assertFalse(UntrustedBuilds.withholds("clojure", dir, false));
+        Files.writeString(dir.resolve("pubspec.yaml"), "name: app\n"); // read as data: Dart runs no plugin without one
+        assertFalse(UntrustedBuilds.withholds("dart", dir, false));
+        Files.writeString(dir.resolve("analysis_options.yaml"), "plugins:\n  some_plugin: ^1.0.0\n");
+        assertTrue(UntrustedBuilds.withholds("dart", dir, false), "its analyzer plugins run the folder's code");
         assertFalse(UntrustedBuilds.hasBuild("java", dir));
         assertFalse(UntrustedBuilds.hasBuild("python", dir), "not a gated server");
         assertFalse(UntrustedBuilds.hasBuild("rust", dir.resolve("absent")), "an unreadable folder");

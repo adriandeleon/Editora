@@ -63,6 +63,7 @@ class NoLiteralUiTextTest {
             Map.entry("AB", "the preserve-case glyph of the find bar"),
             Map.entry("ripgrep", "the name of a program"),
             Map.entry("gdb", "the name of a program, as a prompt in its path field"),
+            Map.entry("flutter", "the name of a program, as a prompt in its path field"),
             Map.entry("git", "the name of a program, as a prompt in its path field"),
             Map.entry("gh", "the name of a program, as a prompt in its path field"),
             Map.entry("mmdc", "the name of a program, as a prompt in its path field"),

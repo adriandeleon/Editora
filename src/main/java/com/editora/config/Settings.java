@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 180;
+    public static final int SCHEMA_VERSION = 181;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -992,6 +992,14 @@ public class Settings {
     private boolean bashDebugEnabled = true;
     /** vscode-bash-debug's {@code bashDebug.js} (or its folder); blank = Editora's install, VS Code's extension. */
     private String bashDebugPath = "";
+    /** Dart and Flutter debugging (the SDK's own adapters): on by default, only effective when {@code dart} is found. */
+    private boolean dartDebugEnabled = true;
+    /** {@code dart} (its {@code debug_adapter}); blank = {@code dart} on the PATH. */
+    private String dartDebugPath = "";
+    /** {@code flutter} (its {@code debug_adapter}, for a Flutter app's file); blank = {@code flutter} on the PATH. */
+    private String flutterDebugPath = "";
+    /** The device a Flutter app is run and debugged on ({@code flutter devices}); blank = this computer's desktop. */
+    private String flutterDevice = "";
     /**
      * Language Server Protocol support (code intelligence through each language's server): on by default since
      * 0.27.1. Each server self-gates on being installed, and the install banner offers the missing ones. Off, a new
@@ -1023,6 +1031,7 @@ public class Settings {
     private String scalaLspCommand = "";
     private String clojureLspCommand = "";
     private String luaLspCommand = "";
+    private String dartLspCommand = "";
     private String dockerfileLspCommand = "";
     private String sqlLspCommand = "";
     private String terraformLspCommand = "";
@@ -1084,6 +1093,7 @@ public class Settings {
     private boolean scalaLspEnabled = true;
     private boolean clojureLspEnabled = true;
     private boolean luaLspEnabled = true;
+    private boolean dartLspEnabled = true;
     private boolean dockerfileLspEnabled = true;
     private boolean sqlLspEnabled = true;
     private boolean terraformLspEnabled = true;
@@ -4085,6 +4095,38 @@ public class Settings {
         this.rubyDebugPath = rubyDebugPath == null ? "" : rubyDebugPath;
     }
 
+    public boolean isDartDebugEnabled() {
+        return dartDebugEnabled;
+    }
+
+    public void setDartDebugEnabled(boolean dartDebugEnabled) {
+        this.dartDebugEnabled = dartDebugEnabled;
+    }
+
+    public String getDartDebugPath() {
+        return dartDebugPath == null ? "" : dartDebugPath;
+    }
+
+    public void setDartDebugPath(String dartDebugPath) {
+        this.dartDebugPath = dartDebugPath == null ? "" : dartDebugPath;
+    }
+
+    public String getFlutterDebugPath() {
+        return flutterDebugPath == null ? "" : flutterDebugPath;
+    }
+
+    public void setFlutterDebugPath(String flutterDebugPath) {
+        this.flutterDebugPath = flutterDebugPath == null ? "" : flutterDebugPath;
+    }
+
+    public String getFlutterDevice() {
+        return flutterDevice == null ? "" : flutterDevice;
+    }
+
+    public void setFlutterDevice(String flutterDevice) {
+        this.flutterDevice = flutterDevice == null ? "" : flutterDevice.strip();
+    }
+
     public boolean isBashDebugEnabled() {
         return bashDebugEnabled;
     }
@@ -4549,6 +4591,22 @@ public class Settings {
 
     public void setClojureLspEnabled(boolean clojureLspEnabled) {
         this.clojureLspEnabled = clojureLspEnabled;
+    }
+
+    public String getDartLspCommand() {
+        return dartLspCommand == null ? "" : dartLspCommand;
+    }
+
+    public void setDartLspCommand(String dartLspCommand) {
+        this.dartLspCommand = dartLspCommand == null ? "" : dartLspCommand;
+    }
+
+    public boolean isDartLspEnabled() {
+        return dartLspEnabled;
+    }
+
+    public void setDartLspEnabled(boolean dartLspEnabled) {
+        this.dartLspEnabled = dartLspEnabled;
     }
 
     public String getLuaLspCommand() {

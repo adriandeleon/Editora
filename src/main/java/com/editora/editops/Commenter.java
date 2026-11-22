@@ -48,6 +48,7 @@ public final class Commenter {
                     "csharp",
                     "rust",
                     "go",
+                    "dart",
                     "kotlin",
                     "groovy",
                     "scala",

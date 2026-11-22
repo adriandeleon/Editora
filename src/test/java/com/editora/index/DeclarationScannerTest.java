@@ -539,6 +539,113 @@ class DeclarationScannerTest {
     }
 
     @Nested
+    @DisplayName("dart")
+    class Dart {
+
+        @Test
+        void findsTypesConstructorsMembersAndTopLevelDeclarations() {
+            String src = """
+                    import 'package:flutter/material.dart';
+
+                    typedef Json = Map<String, Object?>;
+                    typedef void Callback(int x);
+                    const pi = 3.14;
+
+                    sealed class Shape {}
+
+                    abstract interface class Drawable {
+                      void draw();
+                    }
+
+                    mixin Logger on Object {}
+
+                    enum Size { small, large }
+
+                    extension StringX on String {
+                      String shout() => toUpperCase();
+                    }
+
+                    extension type const Meters(double value) {}
+
+                    class Point {
+                      static const int max = 64;
+                      final int x;
+                      Point(this.x);
+                      Point.origin() : x = 0;
+                      factory Point.parse(String s) {
+                        return Point(int.parse(s));
+                      }
+                      int get double => x * 2;
+                      set value(int v) {}
+                      @override
+                      String toString() => 'Point($x)';
+                    }
+
+                    Future<void> main() async {
+                      final p = Point(1);
+                      print(p);
+                    }
+                    """;
+            List<Symbol> found = DeclarationScanner.scan(src, "dart");
+            assertEquals(
+                    List.of(
+                            "Json",
+                            "Callback",
+                            "pi",
+                            "Shape",
+                            "Drawable",
+                            "draw",
+                            "Logger",
+                            "Size",
+                            "StringX",
+                            "shout",
+                            "Meters",
+                            "Point",
+                            "max",
+                            "Point",
+                            "origin",
+                            "parse",
+                            "double",
+                            "value",
+                            "toString",
+                            "main"),
+                    found.stream().map(Symbol::name).toList());
+            assertEquals(SymbolKind.INTERFACE, found.get(6).kind(), "a mixin");
+            assertEquals(SymbolKind.ENUM, found.get(7).kind());
+            assertEquals("Point", found.get(14).container(), "a named constructor knows its class");
+            assertEquals(SymbolKind.FUNCTION, found.get(19).kind(), "main is top-level");
+        }
+
+        /** A widget tree is all constructor calls; none of them declares anything. */
+        @Test
+        void constructorCallsInAWidgetTreeAreNotDeclarations() {
+            String src = """
+                    class Home extends StatelessWidget {
+                      const Home({super.key});
+
+                      @override
+                      Widget build(BuildContext context) {
+                        return Column(
+                          children: [
+                            const Text('a'),
+                            Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Text(r'C:\\'),
+                            ),
+                            Builder(builder: (context) {
+                              return SizedBox();
+                            }),
+                          ],
+                        );
+                      }
+                    }
+                    String after() => '';
+                    """;
+            assertEquals(List.of("Home", "Home", "build", "after"), names(src, "dart"));
+        }
+    }
+
+    @Nested
     @DisplayName("clojure")
     class Clojure {
 

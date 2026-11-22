@@ -340,6 +340,68 @@ final class DeclarationRules {
             rule("^\\s*(?:local\\s+)?function\\s+(?<n>[\\w.:]+)", SymbolKind.FUNCTION),
             rule("^\\s*(?<n>[\\w.]+)\\s*=\\s*function", SymbolKind.FUNCTION));
 
+    /** Dart's class modifiers (3.0 class modifiers, {@code abstract}, and {@code augment}). */
+    private static final String DART_CLASS_MODIFIERS =
+            "(?:(?:abstract|base|final|interface|sealed|mixin|augment)\\s+)*";
+
+    /**
+     * A Dart method, getter-less function or top-level function with a return type: {@code Widget build(…) {},
+     * {@code Future<void> main() async {}, {@code int add(int a, int b) => a + b;}. Keyword-less, so the line must
+     * still end like a signature; a leading {@code const}/{@code new} is a constructor call ({@code const Text('a'),}),
+     * never a declaration.
+     */
+    private static final String DART_MEMBER = "^\\s*(?:@" + ID + "(?:\\([^)]*\\))?\\s+)*"
+            + "(?:(?:static|external|abstract)\\s+)*"
+            + "(?!(?:const|new|var|final|late|return|await|yield|throw)\\b)"
+            + TYPE
+            + "(?<n>" + ID + ")\\s*(?:<[^>]*>\\s*)?\\(";
+
+    /** What starts a Dart constructor: the class name, or a capitalised class name and a dot (a named one). */
+    private static final String DART_CTOR_NAME =
+            "^\\s*(?:(?:const|external)\\s+)*(?:[A-Z][\\w$]*\\.(?=[\\w$])|(?=[A-Z]))(?<n>" + ID + ")\\s*\\(";
+
+    private static final List<Rule> DART = List.of(
+            rule("^\\s*" + DART_CLASS_MODIFIERS + "class\\s+(?<n>" + ID + ")", SymbolKind.TYPE, "class"),
+            rule("^\\s*(?:base\\s+)?mixin\\s+(?!class\\b)(?<n>" + ID + ")", SymbolKind.INTERFACE, "mixin"),
+            rule("^\\s*enum\\s+(?<n>" + ID + ")", SymbolKind.ENUM, "enum"),
+            rule("^\\s*extension\\s+type\\s+(?:const\\s+)?(?<n>" + ID + ")", SymbolKind.TYPE, "extension"),
+            // A named extension (`extension StringX on String`); an unnamed one declares nothing to go to.
+            rule("^\\s*extension\\s+(?<n>" + ID + ")\\s*(?:<[^>]*>\\s*)?on\\b", SymbolKind.TYPE, "extension"),
+            // `typedef Json = Map<String, Object?>;` and the older `typedef void Callback(int x);`.
+            rule("^\\s*typedef\\s+(?<n>" + ID + ")\\s*(?:<[^>]*>\\s*)?=", SymbolKind.TYPE, "typedef"),
+            rule("^\\s*typedef\\s+.*?(?<n>" + ID + ")\\s*(?:<[^>]*>\\s*)?\\(", SymbolKind.TYPE, "typedef"),
+            rule(
+                    "^\\s*(?:(?:const|external)\\s+)*factory\\s+(?:[A-Z][\\w$]*\\.(?=[\\w$]))?(?<n>" + ID + ")\\s*\\(",
+                    SymbolKind.METHOD,
+                    "factory"),
+            rule(
+                    "^\\s*(?:(?:static|external|abstract)\\s+)*(?:" + TYPE + ")?get\\s+(?<n>" + ID
+                            + ")\\s*(?:=>|\\{|;|async\\b|sync\\b)",
+                    SymbolKind.METHOD,
+                    "get"),
+            rule(
+                    "^\\s*(?:(?:static|external|abstract)\\s+)*(?:void\\s+)?set\\s+(?<n>" + ID + ")\\s*\\(",
+                    SymbolKind.METHOD,
+                    "set"),
+            // Constructors: a parameter that initialises a field (`this.x`, `super.key`), an initializer list
+            // (`) : x = 0`), a body, or a named/optional parameter list left open on the line (`const Foo({`).
+            // A call never has any of those, so `Text('a'),` in a widget tree is not one.
+            rule(DART_CTOR_NAME + "[{\\[]?\\s*(?:required\\s+)?(?:this|super)\\.", SymbolKind.METHOD, "("),
+            rule(DART_CTOR_NAME + "[^()]*\\)\\s*(?::(?!:)|\\{\\s*$)", SymbolKind.METHOD, "("),
+            rule(DART_CTOR_NAME + "[{\\[]\\s*$", SymbolKind.METHOD, "("),
+            // An arrow body (`String shout() => toUpperCase();`): `) =>` after a typed name is never a call, and the
+            // line ends in the body's own call, which the signature-shape check would read as one.
+            rule(DART_MEMBER + "[^()]*\\)\\s*(?:async\\*?\\s*|sync\\*\\s*)?=>", SymbolKind.METHOD, "=>"),
+            signatureRule(DART_MEMBER, SymbolKind.METHOD),
+            // Static fields, and variables at the top level only: a local `final x = …` looks the same.
+            rule(
+                    "^\\s*static\\s+(?:(?:const|final|late)\\s+)*(?:" + TYPE + ")?(?<n>" + ID + ")\\s*[=;]",
+                    SymbolKind.FIELD,
+                    "static"),
+            rule(
+                    "^(?:(?:const|final|late|var|external)\\s+)+(?:" + TYPE + ")?(?<n>" + ID + ")\\s*[=;]",
+                    SymbolKind.VARIABLE));
+
     /** Language id (as {@code editor/LanguageRegistry} reports it) to its rules. */
     private static final Map<String, List<Rule>> BY_LANGUAGE = Map.ofEntries(
             Map.entry("java", JAVA),
@@ -353,6 +415,7 @@ final class DeclarationRules {
             Map.entry("typescript", JS),
             Map.entry("typescriptreact", JS),
             Map.entry("go", GO),
+            Map.entry("dart", DART),
             Map.entry("rust", RUST),
             Map.entry("c", C),
             Map.entry("cpp", C),

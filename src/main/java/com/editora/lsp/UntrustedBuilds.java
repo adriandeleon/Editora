@@ -17,8 +17,9 @@ import org.jspecify.annotations.Nullable;
  * trusted. Loading a project is not reading it: jdtls imports a Gradle build by running its build scripts (and a
  * Maven one by loading its build extensions), Kotlin's server imports Gradle the same way, Metals runs sbt or Mill or
  * compiles Scala macros, rust-analyzer builds {@code build.rs} scripts and proc macros, Ruby LSP runs Bundler on the
- * project's {@code Gemfile}, csharp-ls evaluates MSBuild projects, and clojure-lsp asks Leiningen, Boot or
- * shadow-cljs for a classpath. Each of those is code from the folder, run with the user's privileges, so it waits for
+ * project's {@code Gemfile}, csharp-ls evaluates MSBuild projects, clojure-lsp asks Leiningen, Boot or
+ * shadow-cljs for a classpath, and Dart's analysis server runs the analyzer plugins an {@code analysis_options.yaml}
+ * names. Each of those is code from the folder, run with the user's privileges, so it waits for
  * the same trust a Run with {@code ./mvnw} does (see {@code config.TrustStore}).
  *
  * <ul>
@@ -57,7 +58,9 @@ public final class UntrustedBuilds {
                     "Directory.Build.props",
                     "Directory.Build.targets"),
             "clojure",
-            List.of("project.clj", "build.boot", "shadow-cljs.edn"));
+            List.of("project.clj", "build.boot", "shadow-cljs.edn"),
+            "dart",
+            List.of("analysis_options.yaml"));
 
     /**
      * How deep below the server's root each one looks for a build: rust-analyzer finds crates one folder down, and a

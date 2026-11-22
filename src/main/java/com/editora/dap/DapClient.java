@@ -430,6 +430,21 @@ public final class DapClient implements IDebugProtocolClient {
         this.terminateOnDisconnect = terminate;
     }
 
+    /**
+     * Whether Stop asks the adapter to {@code terminate} its program, and waits for that (bounded), before the
+     * {@code disconnect}: Flutter's adapter ends {@code flutter run} at once on a disconnect, before it has stopped the
+     * app it ran, which then runs on with no parent (VS Code sends {@code terminate} first, which stops the app).
+     */
+    private volatile boolean terminateFirst;
+
+    /** See {@link #terminateFirst}; call before the session ends. */
+    public void setTerminateFirst(boolean terminateFirst) {
+        this.terminateFirst = terminateFirst;
+    }
+
+    /** How long Stop waits for the adapter's answer to {@code terminate} ({@link #terminateFirst}). */
+    static final long TERMINATE_WAIT_MILLIS = 5_000;
+
     /** The method breakpoints and field watchpoints in force (sent on {@code initialized} and when they change). */
     private volatile List<DapModels.MemberBreakpoint> memberBreakpoints = List.of();
 
@@ -2548,6 +2563,28 @@ public final class DapClient implements IDebugProtocolClient {
      * session end.
      */
     public void disposeInBackground() {
+        IDebugProtocolServer s = server;
+        if (terminateFirst && !disposed && s != null) {
+            terminateFirst = false; // once: the dispose that follows disconnects
+            CompletableFuture<Void> terminated;
+            try {
+                terminated = s.terminate(new org.eclipse.lsp4j.debug.TerminateArguments());
+            } catch (RuntimeException e) {
+                terminated = CompletableFuture.completedFuture(null);
+            }
+            CompletableFuture<Void> answer = terminated;
+            Thread.ofPlatform().daemon().name("dap-terminate").start(() -> {
+                try {
+                    answer.get(TERMINATE_WAIT_MILLIS, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+                    // refused, or not answered in time: disconnect and end it anyway
+                }
+                disposeInBackground();
+            });
+            return;
+        }
         CompletableFuture<Void> disconnect = beginDispose(true);
         if (disconnect != null) {
             Thread.ofPlatform().daemon().name("dap-dispose").start(() -> finishDispose(disconnect));

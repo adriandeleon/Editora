@@ -233,7 +233,7 @@ final class StructureOutline {
         String fileName = src.fileName();
         boolean gradleScript =
                 fileName != null && fileName.toLowerCase(java.util.Locale.ROOT).endsWith(".gradle.kts");
-        for (Symbol s : src.symbols()) {
+        for (Symbol s : "dart".equals(src.language()) ? dartSymbols(src.text()) : src.symbols()) {
             if (shell && !SHELL_NAME.matcher(s.name()).matches()) {
                 continue; // `"${DOCKER[@]}" version` at a line start is tagged as a name: `$` is no function (C13)
             }
@@ -987,10 +987,33 @@ final class StructureOutline {
         return roots;
     }
 
+    /**
+     * Dart's declarations, read by the server-free declaration scanner. The Dart grammar scopes every lower-case
+     * name before {@code (} as {@code entity.name.function} — a call ({@code setState(…)}) as much as a
+     * declaration — and names no class, so its symbols gave an outline of calls with every type left out.
+     */
+    private static List<Symbol> dartSymbols(String text) {
+        List<Symbol> out = new ArrayList<>();
+        for (com.editora.index.Symbol s : com.editora.index.DeclarationScanner.scan(text, "dart")) {
+            String kind = switch (s.kind()) {
+                case MODULE -> "namespace";
+                case INTERFACE -> "interface";
+                case TYPE -> "class";
+                case ENUM -> "enum";
+                case FIELD -> "field";
+                case VARIABLE -> "variable";
+                case METHOD -> "method";
+                case FUNCTION -> "function";
+            };
+            out.add(new Symbol(s.line(), s.name(), kind));
+        }
+        return out;
+    }
+
     /** Languages whose folds are brace-delimited (Allman braces put the signature above the start line). */
     private static boolean isBraceLanguage(String language) {
         return switch (language == null ? "" : language) {
-            case "java", "json", "c", "cpp", "rust", "go", "kotlin", "groovy", "scala", "csharp", "css" -> true;
+            case "java", "json", "c", "cpp", "rust", "go", "dart", "kotlin", "groovy", "scala", "csharp", "css" -> true;
             default -> false;
         };
     }

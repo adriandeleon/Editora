@@ -593,6 +593,7 @@ public final class RunConfigurationsWindow {
             "cpp",
             "go",
             "rust",
+            "dart",
             "make",
             "npm");
 
@@ -615,6 +616,7 @@ public final class RunConfigurationsWindow {
             case "c" -> "c";
             case "cpp" -> "cpp";
             case "go" -> "go";
+            case "dart" -> "dart";
             case "rust" -> "code"; // what a Rust file carries: FileIcons has no glyph of Rust's own
             case "make" -> FileIcons.iconKeyFor("Makefile");
             default -> "generic";

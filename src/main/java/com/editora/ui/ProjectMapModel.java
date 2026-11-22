@@ -1276,6 +1276,7 @@ final class ProjectMapModel {
             "python",
             "ruby",
             "go",
+            "dart",
             "rust",
             "c",
             "cpp",

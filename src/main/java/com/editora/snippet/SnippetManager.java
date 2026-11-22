@@ -70,6 +70,7 @@ public final class SnippetManager {
             "cpp",
             "csharp",
             "css",
+            "dart",
             "dockerfile",
             "go",
             "groovy",

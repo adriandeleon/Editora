@@ -612,6 +612,17 @@ final class SettingsLspPage {
                         v -> config.getSettings().setLuaLspCommand(v),
                         () -> config.getSettings().getLuaLspCommand()),
                 new LspServerUi(
+                        "dart",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_DART_COMMAND,
+                        "settings.lsp.enableDart",
+                        "settings.lsp.dartCommand",
+                        "lsp dart flutter analysis server language server sdk found installed not found command path"
+                                + " executable",
+                        v -> config.getSettings().setDartLspEnabled(v),
+                        () -> config.getSettings().isDartLspEnabled(),
+                        v -> config.getSettings().setDartLspCommand(v),
+                        () -> config.getSettings().getDartLspCommand()),
+                new LspServerUi(
                         "dockerfile",
                         com.editora.lsp.LspServerRegistry.DEFAULT_DOCKERFILE_COMMAND,
                         "settings.lsp.enableDockerfile",

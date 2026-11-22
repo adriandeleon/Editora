@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Dart and Flutter.** Editora now knows Dart: syntax colouring, comments, indenting and folding, the
+  Structure panel and Go to Symbol, snippets, a New File template and its file icon. With the Dart SDK (or
+  Flutter's) installed, Dart's own analysis server gives errors, completion, navigation, rename and formatting
+  (Settings ▸ Language Servers ▸ Dart); in a folder you haven't trusted it waits when the package names analyzer
+  plugins, which run its code. Run File on a Dart file with a `main` runs `dart run` in its package's folder; on a
+  Flutter app's file it runs `flutter run` on this computer's desktop, or on the device named in Settings ▸
+  Debugging ▸ Dart. F5 debugs either on the SDK's own debugger (`dart debug_adapter`, `flutter debug_adapter`):
+  breakpoints, conditions and logpoints, locals, watches and hovers, and stops on uncaught exceptions (or on every
+  exception). Dart run configurations run and debug the same way.
+
 - **Instruction breakpoints.** In the Debug window's Disassembly view, click the margin before an instruction's
   address, press F9, or use the row's right-click menu to put a breakpoint on that one machine instruction. The
   program stops there, and the Disassembly view opens at it. It works on CodeLLDB, GDB and Delve (C, C++, Rust and

@@ -392,6 +392,9 @@ public final class DapManager {
 
     /** The filters chosen for {@code language}, or null when the adapter's defaults apply; none while muted. */
     private @Nullable List<String> filtersFor(String language) {
+        if (DebugLanguages.FLUTTER.id().equals(language)) {
+            language = DebugLanguages.DART.id(); // a Flutter app's session is Dart's: its exception choices, its stops
+        }
         sessionLanguage = language;
         jsSession = "javascript".equals(language);
         reportedConditionErrors.clear();
@@ -2648,6 +2651,7 @@ public final class DapManager {
         if (attach) {
             c.setTerminateOnDisconnect(false); // Stop detaches; the program runs on
         }
+        c.setTerminateFirst(DebugLanguages.FLUTTER.equals(language) && !attach); // else the app outlives Stop
         AdapterStderr stderr = null;
         java.util.concurrent.CompletableFuture<org.eclipse.lsp4j.debug.Capabilities> connected;
         switch (external.transport()) {
@@ -4340,7 +4344,7 @@ public final class DapManager {
             return;
         }
         var next = stoppedThreads.entrySet().iterator().next();
-        presentStop(epoch, c, next.getKey(), next.getValue(), false, false);
+        presentStop(epoch, c, next.getKey(), next.getValue(), false, false, -1);
     }
 
     /** Pauses a running session: targets the current thread if the adapter reports it, else the first. A Java
@@ -4471,7 +4475,7 @@ public final class DapManager {
             return false;
         }
         stoppedThreads.put(threadId, reason == null ? "" : reason);
-        presentStop(sessionEpoch, c, threadId, reason == null ? "" : reason, false, false);
+        presentStop(sessionEpoch, c, threadId, reason == null ? "" : reason, false, false, -1);
         return true;
     }
 
@@ -5652,7 +5656,19 @@ public final class DapManager {
         if (c == null || !isCurrent(epoch, c)) {
             return;
         }
-        presentStop(epoch, c, threadId, reason, true, allThreadsStopped);
+        presentStop(epoch, c, threadId, reason, true, allThreadsStopped, resumesOf(threadId));
+    }
+
+    /**
+     * The {@code continued} events each thread has had, by id ({@link #ALL_THREADS}: those for every thread), counted
+     * as they arrive (on the adapter's reader thread, before the stop they follow has its frames).
+     */
+    private final Map<Integer, Long> resumes = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static final int ALL_THREADS = Integer.MIN_VALUE;
+
+    private long resumesOf(int threadId) {
+        return resumes.getOrDefault(threadId, 0L) + resumes.getOrDefault(ALL_THREADS, 0L);
     }
 
     /**
@@ -5662,10 +5678,21 @@ public final class DapManager {
      * run-to-cursor temp breakpoint that the resumed thread has yet to reach.
      */
     private void presentStop(
-            long epoch, DapClient c, int threadId, String reason, boolean event, boolean allThreadsStopped) {
+            long epoch,
+            DapClient c,
+            int threadId,
+            String reason,
+            boolean event,
+            boolean allThreadsStopped,
+            long resumed) {
         c.stackTrace(threadId)
                 .whenComplete((frames, e) -> fx(warmed(frames), () -> {
                     if (!isCurrent(epoch, c)) {
+                        return;
+                    }
+                    if (event && (resumesOf(threadId) != resumed || passesDartPause(reason))) {
+                        // Resumed before its frames came back — Dart's adapter resumes its own entry stop at once:
+                        // shown now, it would leave a running program looking paused. Or a Dart pause of its own.
                         return;
                     }
                     if (e != null) {
@@ -5737,6 +5764,15 @@ public final class DapManager {
      */
     String adapterExpression(String expression) {
         return DebugLanguages.BASH.id().equals(sessionLanguage) ? ScriptLaunch.bashName(expression) : expression;
+    }
+
+    /**
+     * Whether {@code reason} is a pause Dart's adapter takes and ends itself: the isolate paused as it starts
+     * ({@code entry}: the breakpoints are set, then it resumes) or as it exits ({@code exit}). In a Dart (or Flutter)
+     * session such a stop is not shown: the program runs on, as under any other debugger.
+     */
+    private boolean passesDartPause(@Nullable String reason) {
+        return DebugLanguages.DART.id().equals(sessionLanguage) && ("entry".equals(reason) || "exit".equals(reason));
     }
 
     /** Whether this Bash session has had its first stop (bashdb stops at the script's first line). */
@@ -5837,6 +5873,7 @@ public final class DapManager {
     }
 
     private void onContinued(long epoch, int threadId, boolean allThreads) {
+        resumes.merge(allThreads ? ALL_THREADS : threadId, 1L, Long::sum); // here, before the fx hop (presentStop)
         fx(() -> {
             if (!isCurrent(epoch)) {
                 return;

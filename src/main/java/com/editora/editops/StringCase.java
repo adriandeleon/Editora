@@ -259,6 +259,7 @@ public final class StringCase {
             "csharp",
             "rust",
             "go",
+            "dart",
             "kotlin",
             "groovy",
             "scala",

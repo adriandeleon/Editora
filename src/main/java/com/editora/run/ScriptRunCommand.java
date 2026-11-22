@@ -67,6 +67,12 @@ public final class ScriptRunCommand {
     /** A Rust file of a Cargo package: Cargo builds it, and the program (or test binary) for the file is run. */
     public static final String RUST = "rust";
 
+    /**
+     * A Dart file: run by {@code dart run} in its package's folder, or — a Flutter app's — by {@code flutter run} on a
+     * device ({@link DartRun}), decided at launch.
+     */
+    public static final String DART = "dart";
+
     public static final String JAVA = "java";
 
     private ScriptRunCommand() {}
@@ -84,11 +90,11 @@ public final class ScriptRunCommand {
 
     /**
      * Whether {@code type} names a source file that is built into a program first ({@link #C}, {@link #CPP},
-     * {@link #GO}, {@link #RUST}): its target is that file, and what is built for it is decided where it is
-     * launched, as Debug File decides it.
+     * {@link #GO}, {@link #RUST}), or run by its SDK's tool, which builds it ({@link #DART}): its target is that file,
+     * and what is built and run for it is decided where it is launched, as Debug File decides it.
      */
     public static boolean isCompiled(@Nullable String type) {
-        return C.equals(type) || CPP.equals(type) || GO.equals(type) || RUST.equals(type);
+        return C.equals(type) || CPP.equals(type) || GO.equals(type) || RUST.equals(type) || DART.equals(type);
     }
 
     /**
@@ -222,7 +228,7 @@ public final class ScriptRunCommand {
                 argv.add("node");
                 argv.add(t);
             }
-            case C, CPP, GO, RUST -> {
+            case C, CPP, GO, RUST, DART -> {
                 if (t.isEmpty()) {
                     return List.of();
                 }
@@ -232,6 +238,7 @@ public final class ScriptRunCommand {
                             case C -> List.of("cc");
                             case CPP -> List.of("c++");
                             case GO -> List.of("go", "run");
+                            case DART -> List.of("dart", "run"); // or flutter run: decided at launch
                             default -> List.of("cargo", "run");
                         });
                 argv.add(t);

@@ -1026,7 +1026,7 @@ the child env. The result is cached after the first call.
 
 ### Language profiles and transports
 
-Editora debugs Java, Python, JavaScript (Node), the JVM languages, Go, Rust, C, C++, C#, Ruby and PHP, off by default
+Editora debugs Java, Python, JavaScript (Node), the JVM languages, Go, Rust, C, C++, C#, Ruby, PHP, Bash and Dart (Flutter too), off by default
 (`Settings.debugSupport`). Each language is a [`dap/DebugLanguage`](../../src/main/java/com/editora/dap/DebugLanguage.java)
 profile in [`dap/DebugLanguages`](../../src/main/java/com/editora/dap/DebugLanguages.java): its `Kind` transport, the
 DAP `launch` type, the `initialize` adapter id, the default interpreter + adapter args, the fallback transport, what
@@ -1038,7 +1038,7 @@ debugged on its own host, and its "unavailable" message. [`dap/DapServerRegistry
 (its switch, command or path, install id, off and missing messages) are a binding in
 [`ui/DebugAdapterSettings`](../../src/main/java/com/editora/ui/DebugAdapterSettings.java), which the Debugging
 page, the `debug.toggleAdapter` / `debug.setAdapterPath` pickers and `unavailableMessage` read. `languageIdsForDebug()` =
-`{java, python, javascript, groovy, kotlin, clojure, scala, go, rust, cpp, csharp, ruby, php}` (`c` files are served by `cpp`); `typescript`, `javascriptreact` and `typescriptreact` files are served by the
+`{java, python, javascript, groovy, kotlin, clojure, scala, go, rust, cpp, csharp, ruby, php, bash, dart}` (`c` files are served by `cpp`); `typescript`, `javascriptreact` and `typescriptreact` files are served by the
 `javascript` adapter (`adapterLanguage`): Node 22.18+/23.6+ runs a `.ts` file itself, and a compiled
 project's breakpoints live in its `.ts`/`.tsx` sources.
 
@@ -1057,6 +1057,7 @@ project's breakpoints live in its `.ts`/`.tsx` sources.
 | `ruby` | `EXTERNAL` | rdbg, which is the program itself: `rdbg --command --open --stop-at-load --host=127.0.0.1 --port=0 -- ruby <file>`, the port read from its `Debugger can attach via TCP/IP` line (`ANNOUNCED_PORT`); see **Ruby** below. |
 | `php` | `EXTERNAL` | vscode-php-debug: `node phpDebug.js` over stdio, which starts `php` with Xdebug; see **PHP** below. |
 | `bash` | `EXTERNAL` | vscode-bash-debug: `node bashDebug.js` over stdio, which runs the script under the bashdb it ships; see **Bash** below. |
+| `dart` | `EXTERNAL` | The SDK's own adapter: `dart debug_adapter` over stdio, or `flutter debug_adapter` (`DebugLanguages.FLUTTER`) for a Flutter app's file; see **Dart and Flutter** below. |
 | `scala` | `LANGUAGE_SERVER` | An adapter the language server starts on request ([`HostedDebugAdapter`](../../src/main/java/com/editora/dap/HostedDebugAdapter.java)): Metals' `workspace/executeCommand debug-adapter-start` with `{path, runType: "run", args, jvmOptions, env}` compiles the build target and answers `{name, uri: "tcp://host:port"}`; `DapClient.connect(port, "scala")`, then `launch {name, noDebug: false}`. Metals' adapter runs the program and reports its output. Only for a file of an sbt, Mill, Gradle or Maven build (`ScalaRun.ownerOf`); a script or a Scala CLI project falls back (`DapServerRegistry.fallbackKind`) to `JVM`: `scala-cli run --java-opt <agent> <file> -- args`, the agent in place of `JvmScriptRun.AGENT_ARGUMENT`, and breakpoints bound by file name (Scala packages need not follow folders). |
 
 **External adapters.** A `Kind.EXTERNAL` profile carries an [`ExternalAdapter`](../../src/main/java/com/editora/dap/ExternalAdapter.java):
@@ -1293,6 +1294,55 @@ by name (a watch, a hover: `total` gives `declare -- total="0"`), so `$total` an
 a shell run configuration still is not debugged (`status.debug.shellNotDebuggable`). No exception filters, no attach.
 `BashDebugWindowFxTest` (a stand-in adapter) covers the launch, the first stop passed, the watch and a zsh script;
 `BashDebugProbeFxTest` stops in a loop on the real adapter, reads its variables, steps and runs to the end.
+
+**Dart and Flutter.** The `dart` profile is the Dart SDK's own adapter, `dart debug_adapter` over stdio (`STDIO`);
+`DebugLanguages.FLUTTER` is `flutter debug_adapter`, the same adapter inside the Flutter tool (VS Code's Dart extension
+uses each so). FLUTTER is not a language of its own (no editor languages, not in `all()`, found by `byId` as GDB is):
+a Dart file whose package — the nearest folder up with a `pubspec.yaml` (`run/DartRun.packageRoot`) — names Flutter's
+SDK among its `dependencies` (`DartRun.isFlutter`: `flutter:` then `sdk: flutter`) is a Flutter app's. Its session is
+Dart's (`DapManager.filtersFor` names it `dart`: its exception choices, the stops passed below). `dap/DartLaunch` plans
+F5: `{program: <absolute file>, cwd: <package root, else the file's folder>, args, debugSdkLibraries: false,
+debugExternalPackageLibraries: false}`, plus `toolArgs: ["-d", <device>]` for Flutter (the `flutterDevice` setting;
+blank: this computer's desktop, `linux`, `macos` or `windows`). Without the two `false`s a stop lands in SDK frames.
+[`ui/DartDebugLaunch`](../../src/main/java/com/editora/ui/DartDebugLaunch.java) (a part of `DebugCoordinator`) reads
+the pubspec off the FX thread, asks the package folder's trust first (pub fetches its packages and runs their build
+hooks: `dialog.trust.item.pubspec`), saves the package's other edited Dart files, says `status.debug.flutterMissing`
+when `flutter` is not found, and starts `DapManager.startExternal`; a Dart run configuration goes the same way from
+`debugCompiledConfig` (its variables as `env`, its folder as `cwd`, except Flutter's, which runs in its app's folder).
+Found as configured (`dartDebugPath`, `flutterDebugPath`), else on the PATH; no Install (the SDK ships the adapter).
+Settings → Debugging → Dart has the switch (`dartDebugEnabled`, which covers Flutter), both paths and the device;
+Doctor has a Dart row and an optional Flutter one.
+
+What the adapter does, probed with Dart 3.13.5 (Flutter 3.47.7): its exception filters are `All` ("All Exceptions",
+off) and `Unhandled` ("Uncaught Exceptions", on) — `All` is the caught one, so `DebugLanguage.uncaughtFilter` answers
+the profile's other filter when none is called `uncaught`. It offers conditional breakpoints, logpoints,
+`configurationDone`, delayed stack loading, evaluate for hovers, `restartFrame`, `terminate`, value formatting and the
+clipboard context, but no `restart` (Flutter's announces one later, a `capabilities` event: hot restart, unused).
+`setBreakpoints` answers `verified: false, reason: "pending"` and a `breakpoint` `changed` event verifies it once the
+isolate has loaded the library. The isolate starts paused: the adapter sends `stopped` with reason `entry` (in an SDK
+frame, `_RawReceivePort._handleMessage`), sets the breakpoints, sends `continued` and resumes by itself; at the end a
+`stopped` with reason `exit` comes before `exited`/`terminated`. Neither pause is shown (`DapManager.passesDartPause`).
+And generally: a stop whose thread had a `continued` event before its frames came back is dropped (`resumesOf`:
+counted as the events arrive, on the reader thread) — the `continued` for the entry stop arrives before the answer to
+its `stackTrace`, which used to leave a running program shown paused in an SDK file. At a stop frame 0 is `main` at
+the file's line; the scopes are Locals and Globals (`args`, `i`, `total`); `evaluate` works (context `watch`). Flutter on the Linux desktop
+builds the app first (about ten seconds when the engine is cached), then the same sequence. Stop: Flutter's adapter
+ends `flutter run` at once on a `disconnect`, before that has stopped the app, which then runs on as an orphan, so a
+Flutter session's Stop sends `terminate` first and waits (up to 5 s) for its answer (`DapClient.setTerminateFirst`):
+`flutter run` stops the app (`app.stop`), as VS Code's Stop does.
+
+**Run File for Dart.** A Dart file with a top-level `main` at the start of a line (`DartRun.runLine`: `main(`,
+`void main(`, `Future<void> main(`) is runnable: the `dart` run configuration type is one of the `isCompiled` types, so
+`CompiledRunLine`, `RunScan`, `RunConfigDefaults.typeFor` and the Run configurations form treat it as Go's.
+`RunCoordinator.runDart` reads the pubspec off the FX thread, asks the folder's trust as Debug does, saves the
+package's edited Dart files, and streams `dart run <file> args…` in the package root (else the file's folder), or for
+a Flutter app's file `flutter run -d <device> -t <file relative to the root> --dart-entrypoint-args=<arg>…` in the
+app's folder. It runs the `dart` and `flutter` the Debugging page names, else the PATH's. Rerun reads the package
+again. Debug Test at Caret for `dart test` files is not done: a `_test.dart` file runs and debugs as a program.
+`DartDebugWindowFxTest` (stand-ins for both adapters) covers the launch, the entry stop passed, the breakpoint's
+shown and Flutter's device; `RunCoordinatorFlowsFxTest` covers both Run File command lines; the opt-in
+`DartDebugProbeFxTest` drives the real adapters (its Flutter case needs Linux, `flutter` and a display, builds a
+`flutter create --platforms=linux --no-pub` app and checks Stop ends it).
 
 `CsharpDebugProbeFxTest`, `RubyDebugProbeFxTest` and `PhpDebugProbeFxTest`, opt-in, run in CI with the pinned
 adapters (`setup-dotnet`, the runner's Ruby with the debug gem, `php-xdebug`). `PresetDebugWindowFxTest` drives the
