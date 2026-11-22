@@ -1,22 +1,6 @@
 {
   "exceptions": [
     {
-      "rule": "PAUTA-13",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/conformance/#pauta-13",
-      "kind": "pending",
-      "reason": "The user guide on the website has no page yet that lists this conformance and these exceptions.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1554"
-    },
-    {
-      "rule": "PAUTA-14",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/conformance/#pauta-14",
-      "kind": "pending",
-      "reason": "The website's conformance page is not generated from Editora's own list of exceptions yet.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1554"
-    },
-    {
       "rule": "DOCS-04",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/documentation/#docs-04",
