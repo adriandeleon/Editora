@@ -1,14 +1,6 @@
 {
   "exceptions": [
     {
-      "rule": "PLAT-14",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/platform/#plat-14",
-      "kind": "pending",
-      "reason": "The snippets file is edited as text, to keep your comments, rather than read into typed data.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1555"
-    },
-    {
       "rule": "DOCS-04",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/documentation/#docs-04",
