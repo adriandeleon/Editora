@@ -43,6 +43,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Before, only F5 started such a file, and Run said it was not runnable. Debug: Debug Current File now also works on
   a file that Run File runs.
 
+### Changed
+
+- **Settings ▸ Snippets writes a snippet file whole.** A save, a removal or switching a snippet off or on now
+  writes that language's snippet file as plain JSON, so comments in it are not kept (the order of the snippets,
+  every trigger, the scope and fields Editora does not use still are). A file with comments still loads, and the
+  first save of one asks first, naming the file. Edit User Snippets, which opens the file as text, keeps them.
+  Settings Sync merges a snippet file changed on two machines the same way.
+
 ### Fixed
 
 - **Debugging a C, C++ or Rust program on CodeLLDB reports the program's own exit code.** The Debug console said
