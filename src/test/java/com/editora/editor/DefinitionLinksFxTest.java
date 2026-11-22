@@ -69,6 +69,7 @@ class DefinitionLinksFxTest {
     void holdingTheShortcutOverAResolvableSymbolUnderlinesItUntilTheKeyIsLetGo() throws Exception {
         open((line, column, found) -> found.accept(true));
         int list = TEXT.indexOf("list");
+        onFx(() -> assertNull(buffer.definitionLinkOverlayForTest(), "no overlay until a link shows"));
 
         onFx(() -> move(list + 1, true));
         await(() -> links().shownForTest() != null);
@@ -78,6 +79,9 @@ class DefinitionLinksFxTest {
             assertEquals(list, span.start());
             assertEquals(list + "list".length(), span.end(), "the whole identifier is the link");
             assertEquals(Cursor.HAND, buffer.getArea().getCursor());
+            DefinitionLinkOverlay overlay = buffer.definitionLinkOverlayForTest();
+            assertNotNull(overlay, "the first link attaches the overlay");
+            assertTrue(overlay.showingForTest(buffer.getArea()));
             assertEquals(1, asked.size());
             assertEquals(1, asked.get(0)[0], "asked about the line the mouse is on");
 
@@ -86,6 +90,7 @@ class DefinitionLinksFxTest {
 
             release();
             assertNull(links().shownForTest(), "letting go of the key ends the link");
+            assertFalse(buffer.definitionLinkOverlayForTest().showingForTest(buffer.getArea()));
             assertNotEquals(Cursor.HAND, buffer.getArea().getCursor());
         });
     }
@@ -168,7 +173,7 @@ class DefinitionLinksFxTest {
     }
 
     private DefinitionLinks links() {
-        return (DefinitionLinks) buffer.getNode().lookup(".definition-link-overlay");
+        return buffer.definitionLinksForTest();
     }
 
     /** A mouse move over the middle of the character at {@code offset}, the shortcut key held or not. */

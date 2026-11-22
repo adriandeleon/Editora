@@ -38,6 +38,7 @@ class LazyOverlayFxTest {
     /** Every overlay, stripe and popup a plain buffer does without. */
     private static final List<String> LAZY = List.of(
             "searchOverlay",
+            "definitionLinkOverlay",
             "occurrenceOverlay",
             "logOverlay",
             "lintOverlay",

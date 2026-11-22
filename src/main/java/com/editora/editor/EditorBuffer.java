@@ -1173,6 +1173,12 @@ public class EditorBuffer implements TabContent {
      *  stack above it when both apply to the same selection). */
     private void installFormatBarListeners(CodeArea a) {
         markdownEditing.attach(a, selectionBars::scheduleFormatBar);
+        // Ctrl/Cmd-hover underlines what the Ctrl/Cmd-click below follows; the underline's overlay is built on
+        // the first link shown.
+        DefinitionLinks links = new DefinitionLinks(a, this::probeDefinitionLink, this::definitionLinkOverlay);
+        if (a == area) {
+            definitionLinks = links;
+        }
         a.selectionProperty().addListener((obs, old, now) -> {
             selectionBars.scheduleFormatBar();
             selectionBars.scheduleAiActionsBar();
@@ -1250,6 +1256,27 @@ public class EditorBuffer implements TabContent {
     }
 
     private @Nullable DefinitionProbe definitionProbe;
+    private @Nullable DefinitionLinkOverlay definitionLinkOverlay;
+    /** The primary view's Ctrl/Cmd-hover links (the split's second view has its own). */
+    private @Nullable DefinitionLinks definitionLinks;
+
+    private DefinitionLinkOverlay definitionLinkOverlay() {
+        if (definitionLinkOverlay == null) {
+            definitionLinkOverlay = attachLazyOverlay(new DefinitionLinkOverlay(area), OverlayLayer.DEFINITION_LINK);
+        }
+        return definitionLinkOverlay;
+    }
+
+    /** TEST SEAM — the Ctrl/Cmd-hover underline's overlay, null until a link has shown. */
+    @Nullable
+    DefinitionLinkOverlay definitionLinkOverlayForTest() {
+        return definitionLinkOverlay;
+    }
+
+    /** TEST SEAM — the primary view's Ctrl/Cmd-hover links. */
+    DefinitionLinks definitionLinksForTest() {
+        return java.util.Objects.requireNonNull(definitionLinks);
+    }
 
     /** Injects the definition probe behind Ctrl/Cmd-hover links ({@link DefinitionLinks}); null turns it off. */
     public void setDefinitionProbe(@Nullable DefinitionProbe probe) {
@@ -1736,8 +1763,6 @@ public class EditorBuffer implements TabContent {
         noteOverlay.setSpans(notes::activeSpans, notes::hasActiveSpans); // inert until a note is positioned
         noteOverlay.setActive(true);
         installPointerHovers(area);
-        // Ctrl/Cmd-hover underlines what Ctrl/Cmd-click follows; a region with one hidden bar until then.
-        attachLazyOverlay(new DefinitionLinks(area, this::probeDefinitionLink), OverlayLayer.DEFINITION_LINK);
         AnchorPane.setTopAnchor(minimap, 0d);
         AnchorPane.setBottomAnchor(minimap, 0d);
         AnchorPane.setRightAnchor(minimap, 0d);

@@ -10,7 +10,6 @@ import javafx.scene.Cursor;
 import javafx.scene.Scene;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
-import javafx.scene.layout.Region;
 import javafx.util.Duration;
 
 import com.editora.editops.SelectOccurrences;
@@ -28,10 +27,10 @@ import org.jspecify.annotations.Nullable;
  * is kept, a link or not, so moving within it asks nothing more. A late answer for a word the mouse has left, or one
  * given after the key was let go, is dropped.
  *
- * <p>The overlay is one mouse-transparent region with a one-pixel bar, hidden until there is a link: no canvas,
- * nothing painted per scroll. A split's second view gets its own (see {@link #follower}), driven by its own mouse.
+ * <p>One per view (the split's second view has its own, driven by its own mouse); it holds no node. The underline is
+ * the buffer's {@link DefinitionLinkOverlay}, asked for only when a link first shows.
  */
-public final class DefinitionLinks extends Region implements SecondaryPane.Followed {
+public final class DefinitionLinks {
 
     /** How long the mouse rests on a word before the buffer is asked whether it is a link. */
     static final Duration SETTLE = Duration.millis(60);
@@ -52,7 +51,10 @@ public final class DefinitionLinks extends Region implements SecondaryPane.Follo
 
     private final CodeArea view;
     private final Probe probe;
-    private final Region bar = new Region();
+    private final java.util.function.Supplier<DefinitionLinkOverlay> overlay;
+    /** The overlay the underline was drawn on, once one has been: hiding needs no new one. */
+    private @Nullable DefinitionLinkOverlay drawnOn;
+
     private final PauseTransition settle = new PauseTransition(SETTLE);
 
     /** The underlined link, or null. */
@@ -69,16 +71,10 @@ public final class DefinitionLinks extends Region implements SecondaryPane.Follo
 
     private final EventHandler<KeyEvent> keys = this::onKey;
 
-    public DefinitionLinks(CodeArea view, Probe probe) {
+    DefinitionLinks(CodeArea view, Probe probe, java.util.function.Supplier<DefinitionLinkOverlay> overlay) {
         this.view = view;
         this.probe = probe;
-        getStyleClass().add("definition-link-overlay");
-        bar.getStyleClass().add("definition-link-underline");
-        bar.setManaged(false);
-        bar.setVisible(false);
-        getChildren().add(bar);
-        setMouseTransparent(true);
-        setPickOnBounds(false);
+        this.overlay = overlay;
         settle.setOnFinished(e -> ask());
         view.addEventFilter(MouseEvent.MOUSE_MOVED, this::onMove);
         view.addEventFilter(MouseEvent.MOUSE_ENTERED, e -> enter());
@@ -93,12 +89,6 @@ public final class DefinitionLinks extends Region implements SecondaryPane.Follo
         view.sceneProperty().addListener((o, was, now) -> {
             exit(); // a view taken out of its window (a tab moved or closed) keeps no key filter on the old scene
         });
-    }
-
-    /** A second view's own links, asking the same buffer. */
-    @Override
-    public DefinitionLinks follower(CodeArea secondView) {
-        return new DefinitionLinks(secondView, probe);
     }
 
     /**
@@ -244,21 +234,23 @@ public final class DefinitionLinks extends Region implements SecondaryPane.Follo
     }
 
     private void show(Span span) {
-        Bounds b = underlineBounds(span);
-        if (b == null) {
+        Bounds screen = underlineBounds(span);
+        if (screen == null) {
             return;
         }
+        DefinitionLinkOverlay on = overlay.get();
+        if (!on.show(view, screen)) {
+            return;
+        }
+        drawnOn = on;
         shown = span;
-        double thickness = Math.max(1, Math.round(UiZoom.px(1)));
-        bar.resizeRelocate(b.getMinX(), b.getMaxY() - thickness, b.getWidth(), thickness);
-        bar.setVisible(true);
         if (view.getCursor() != Cursor.HAND) {
             cursorBefore = view.getCursor();
             view.setCursor(Cursor.HAND);
         }
     }
 
-    /** The bounds of {@code span} in this overlay, or null when it is off screen or not on one line. */
+    /** The screen bounds of {@code span}, or null when it is off screen or not on one line. */
     private @Nullable Bounds underlineBounds(Span span) {
         try {
             var start = view.offsetToPosition(span.start(), Bias.Forward);
@@ -266,9 +258,7 @@ public final class DefinitionLinks extends Region implements SecondaryPane.Follo
             if (start.getMajor() != end.getMajor()) {
                 return null; // a link value broken over lines: no single underline fits it
             }
-            Bounds screen =
-                    view.getCharacterBoundsOnScreen(span.start(), span.end()).orElse(null);
-            return screen == null ? null : screenToLocal(screen);
+            return view.getCharacterBoundsOnScreen(span.start(), span.end()).orElse(null);
         } catch (RuntimeException ex) {
             return null;
         }
@@ -279,7 +269,9 @@ public final class DefinitionLinks extends Region implements SecondaryPane.Follo
             return;
         }
         shown = null;
-        bar.setVisible(false);
+        if (drawnOn != null) {
+            drawnOn.hide(view);
+        }
         if (view.getCursor() == Cursor.HAND) {
             view.setCursor(cursorBefore);
         }
@@ -295,10 +287,5 @@ public final class DefinitionLinks extends Region implements SecondaryPane.Follo
             asked = null;
         }
         hide();
-    }
-
-    @Override
-    protected void layoutChildren() {
-        // the bar is placed by show(), not by layout
     }
 }
