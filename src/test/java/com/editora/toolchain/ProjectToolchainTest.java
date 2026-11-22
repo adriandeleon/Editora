@@ -211,8 +211,8 @@ class ProjectToolchainTest {
 
         ProjectToolchain.Resolution fromRc = ProjectToolchain.resolve(
                 Map.of(), Map.of("java", "21.0.9-tem", "maven", "3.9", "gradle", "8.14.3"), installs);
-        assertEquals("/j/21", fromRc.home("jdk"));
-        assertEquals("/j/mvn", fromRc.home("maven"));
+        assertEquals(Path.of("/j/21").toString(), fromRc.home("jdk"));
+        assertEquals(Path.of("/j/mvn").toString(), fromRc.home("maven"));
         assertNull(fromRc.home("gradle"));
         assertEquals(ProjectToolchain.Origin.SDKMANRC, fromRc.jdk().origin());
         assertEquals(
@@ -221,7 +221,7 @@ class ProjectToolchainTest {
 
         ProjectToolchain.Resolution own =
                 ProjectToolchain.resolve(Map.of("jdk", "25"), Map.of("java", "21.0.9-tem"), installs);
-        assertEquals("/j/25", own.home("jdk"));
+        assertEquals(Path.of("/j/25").toString(), own.home("jdk"));
         assertEquals(ProjectToolchain.Origin.PROJECT_SETTINGS, own.jdk().origin());
         assertNull(own.maven()); // the project says nothing about Maven: the user's own applies
 
