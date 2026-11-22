@@ -472,21 +472,14 @@ final class FileWorkflowCoordinator {
      * A paragraph this wide opens the file in long-line mode: no undo, no highlighting, wrap held off, the line laid
      * out in segments. Shorter long lines are left to the highlighter, which leaves a line over 20,000 characters
      * unstyled and shows one in many colours plain (TextMateHighlighter.MAX_TOKENIZED_LINE, MAX_LONG_LINE_TOKENS),
-     * and a bundle of them opens in View mode ({@link com.editora.text.LongLineFiles}) — all keep undo. Was 64 KiB
-     * until measured on 2026-11-22 (JavaFX 27): unwrapped, with those highlighter limits, a caret jump on a
-     * 64K-character line took 10–15 ms, 256K about 50 ms and 1M 100–150 ms, segmented or not. What a long line
-     * cannot afford is wrapping, which {@link #WRAP_HOLD_CHARS} holds off much sooner.
+     * to word wrap, which holds itself off for a line of 10,000 characters or an unbroken run of 2,000
+     * ({@link com.editora.editor.WordWrap#tooCostlyToWrap}), and a bundle of them opens in View mode
+     * ({@link com.editora.text.LongLineFiles}) — all keep undo. Was 64 KiB until measured on 2026-11-22 (JavaFX
+     * 27): unwrapped, with those limits, a caret jump on a 64K-character line took 10–15 ms, 256K about 50 ms and
+     * 1M 100–150 ms, segmented or not. Wrapped is another matter (about the square of the line: 11 s to open one
+     * of 32K), which is why the wrap hold comes so much sooner.
      */
     static final int LONG_LINE_FILE_CHARS = 1024 * 1024;
-
-    /**
-     * A paragraph this wide holds word wrap off for the file (until the user asks for it on that buffer), and
-     * nothing else: laying out a wrapped line costs about the square of its length. Measured on 2026-11-22
-     * (JavaFX 27): opening a file whose one line is wrapped took 0.7 s at 8K characters without a space, 2.8 s at
-     * 16K, 11 s at 32K (prose too) and 36–45 s at 64K, while the same lines unwrapped opened in under 0.1 s.
-     * Many shorter lines are cheap: only the lines on screen are laid out.
-     */
-    static final int WRAP_HOLD_CHARS = 8 * 1024;
 
     /** The file each buffer last loaded, so the first-open View mode is never applied again on a reload. */
     private final Map<EditorBuffer, Path> viewFirstChecked = new java.util.WeakHashMap<>();
@@ -1520,13 +1513,11 @@ final class FileWorkflowCoordinator {
         }
         buffer.setLargeFile(load.large() || load.longLine());
         buffer.setHeavyFile(load.heavy());
-        boolean holdWrap = load.longLine() || load.maxLineLength() >= WRAP_HOLD_CHARS;
-        boolean wrapWanted = buffer.wrap().preferred();
-        buffer.wrap().setSuppressed(holdWrap);
-        if (holdWrap) {
-            // Wrapping a long RichTextFX paragraph costs about the square of its length (WRAP_HOLD_CHARS). The user
-            // can explicitly turn it back on after loading (Toggle Word Wrap on this buffer), but the first
-            // rendered frame must use the safe profile — and so must every later settings re-apply, hence the flag.
+        buffer.wrap().setSuppressed(load.longLine());
+        if (load.longLine()) {
+            // Wrapping a giant RichTextFX paragraph multiplies layout work. The user can explicitly turn it
+            // back on after loading (Toggle Word Wrap on this buffer), but the first rendered frame must use the
+            // safe profile — and so must every later settings re-apply, hence the flag above.
             buffer.setWordWrap(false);
         }
         if (load.truncated() || buffer.isReadOnly()) {
@@ -1607,9 +1598,6 @@ final class FileWorkflowCoordinator {
         }
         if (load.longLine()) {
             return tr("status.longLineFileTier", load.maxLineLength());
-        }
-        if (holdWrap && wrapWanted) {
-            return tr("status.wrapHeld", load.maxLineLength());
         }
         if (load.heavy()
                 && com.editora.lsp.LspServerRegistry.lspAllowedForSize(

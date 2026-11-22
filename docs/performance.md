@@ -547,9 +547,9 @@ one-line JS/JSON and log text, each feature forced on and off):
   the load's peak (450 more per line when highlighted). The old 15 bytes per file byte was right for 70-character
   lines but undercounted short-lined files (JSON needed 24).
 - **Long lines are cheap until they wrap.** Unwrapped, a caret jump took 10–15 ms on a 64K-character line,
-  about 50 ms at 256K and 100–150 ms at 1M. Wrapped, opening one such line took 0.7 s at 8K (no spaces),
-  2.8 s at 16K, 11 s at 32K and 36–45 s at 64K: so word wrap is held off from 8 KiB
-  (`FileWorkflowCoordinator.WRAP_HOLD_CHARS`), and the full long-line profile starts at 1 MiB.
+  about 50 ms at 256K and 100–150 ms at 1M, so the full long-line profile now starts at 1 MiB. Wrapped, opening
+  one such line took 0.7 s at 8K (no spaces), 2.8 s at 16K, 11 s at 32K and 36–45 s at 64K, which is what
+  `WordWrap`'s own hold (a line of 10,000 characters or an unbroken run of 2,000) already prevents.
 - **50 MB stays.** 50 MB of text opened in 2–2.8 s and kept 320 MB; 100 MB took 5–8 s and 644 MB. Both stayed
   editable, but the read-only cap is the margin for a second large file.
 
@@ -591,10 +591,11 @@ version, length and fingerprint (`FileWorkflowCoordinator.CommittedSave` keeps n
 text); on an unchanged document the current snapshot is shared as the new baseline.
 
 Apply the large/heavy/read-only profile before that insertion so disabled features and undo history never
-observe the initial document change. Shape matters as well as byte and line counts: a paragraph at **8 KiB or
-wider** holds word wrap off (wrapping a paragraph costs about the square of its length), and one at **1 MiB or
-wider** enters the long-line safety profile, which also uses the large-file feature guards and installs giant
-paragraphs as bounded, visually identical style segments. The segmentation keeps
+observe the initial document change. Shape matters as well as byte and line counts: a paragraph at **1 MiB or
+wider** enters the long-line safety profile, which forces wrapping off, uses the large-file feature guards, and
+installs giant paragraphs as bounded, visually identical style segments. (Wrapping is held off much sooner, at
+a line of 10,000 characters or an unbroken run of 2,000, by `WordWrap` itself: a wrapped paragraph costs about
+the square of its length.) The segmentation keeps
 the text and paragraph model exact while preventing JavaFX Text from laying out hundreds of thousands of
 characters as one glyph node. This protects minified/generated files that evade a line-count threshold but
 are pathological to lay out as one paragraph. Navigation requested against the shell must remain queued

@@ -32,7 +32,8 @@ class LongLineWrapSuppressionFxTest {
     void aSettingsReApplyLeavesWrapOffUntilTheUserAsksForItOnThatBuffer() throws Exception {
         FxTestSupport.bootToolkit();
         Path file = dir.resolve("minified.js");
-        String content = "x".repeat(FileWorkflowCoordinator.WRAP_HOLD_CHARS + 16);
+        // A line of words past the wrap limit: held off like a giant line, yet cheap enough to wrap when asked to.
+        String content = "word ".repeat(com.editora.editor.WordWrap.MAX_WRAPPED_LINE / 5 + 4);
         Files.writeString(file, content);
         FxWindowFixture fx = FxWindowFixture.create();
         try {

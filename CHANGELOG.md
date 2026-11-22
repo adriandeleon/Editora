@@ -50,8 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of 5 MB, so a 150,000-line generated source keeps its colours while a 5 MB file of very short lines,
   which costs more memory, no longer slips through on its byte count. A long file keeps its minimap: from
   50,000 lines (was 10,000, and a stored 10,000 moves to it) only the language server stays off, unless the
-  language keeps it longer. A line up to 1 MiB (was 64 KiB) keeps undo and highlighting; word wrap is held off
-  from 8 KiB instead, since wrapping is what a long line cannot afford. A file whose document would not fit the
+  language keeps it longer. A line up to 1 MiB (was 64 KiB) keeps undo, and highlighting for the rest of the file; such
+  a line still opens unwrapped, as before. A file whose document would not fit the
   free memory opens as a read-only slice, now counted by lines as well as size.
 - **A release's notes are its changelog.** The text of each GitHub release, which What's New on the Welcome page
   opens, is now this file's section for the version, after a short install guide, instead of a list of commits. A
