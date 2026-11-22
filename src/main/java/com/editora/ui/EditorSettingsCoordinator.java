@@ -695,7 +695,7 @@ final class EditorSettingsCoordinator {
                 tr("palette.theme.appTitle"),
                 tr("palette.theme.prompt"),
                 () -> Themes.names(),
-                name -> name,
+                Themes::label,
                 name -> "",
                 this::applyAppTheme);
         picker.setOverlayHost(host.overlayHost());
@@ -708,7 +708,7 @@ final class EditorSettingsCoordinator {
                 tr("palette.theme.editorTitle"),
                 tr("palette.theme.prompt"),
                 () -> EditorThemes.names(),
-                name -> name,
+                Themes::label,
                 name -> "",
                 this::applyEditorThemeChoice);
         picker.setOverlayHost(host.overlayHost());
@@ -741,7 +741,7 @@ final class EditorSettingsCoordinator {
         if (host.welcomeTab() != null && host.welcomePane() instanceof WelcomePane welcome) {
             welcome.refresh(); // its Customize block names the theme
         }
-        host.setStatus(tr("status.appTheme", name));
+        host.setStatus(tr("status.appTheme", Themes.label(name)));
     }
 
     /** Applies only the editor color theme (marks it user-set so it won't follow the chrome theme). */
@@ -754,7 +754,7 @@ final class EditorSettingsCoordinator {
         if (host.settingsWindow() != null) {
             host.settingsWindow().syncThemes();
         }
-        host.setStatus(tr("status.editorTheme", name));
+        host.setStatus(tr("status.editorTheme", Themes.label(name)));
     }
 
     /** Lets the user override the syntax language/grammar for the active buffer. */

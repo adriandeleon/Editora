@@ -1,0 +1,73 @@
+/* Editor theme: High Contrast Dark (ACC-09). Overrides app.css + syntax.css defaults.
+
+   The editor half of the high-contrast pair: white ink on black, a yellow caret and accent, bright syntax colours. The text, every syntax colour and the line numbers read at
+   7:1 or better on the editor's ground (StyleContrastTest.theHighContrastEditorThemesReadAtSevenToOne). Shapes and
+   weight still tell keywords (bold), comments (italic) and links (underlined) apart for whoever reads no colour.
+   See syntax.css for why token rules use the compound `.text.<class>` selector. */
+
+.editor-area { -fx-background-color: #000000; }
+.editor-area .text { -fx-fill: #ffffff; }
+.editor-area .caret { -fx-stroke: #ffff00; -fx-stroke-width: 2; }
+.editor-area .selection { -fx-fill: #ffff0059; }
+.column-ruler { -fx-stroke: #8c8c8c; }
+
+.minimap { -fx-background-color: #000000; -fx-border-color: #8c8c8c; }
+
+.editor-area .lineno { -fx-background-color: #000000; -fx-text-fill: #d9d9d9; }
+.editor-area .fold-header-line { -fx-background-color: #1a1a1a; }
+.editor-area .fold-gutter { -fx-background-color: #000000; }
+.editor-area .fold-gutter .lineno { -fx-background-color: transparent; }
+.editor-area .fold-chevron { -fx-text-fill: #d9d9d9; }
+.editor-area .fold-chevron:hover { -fx-text-fill: #ffff00; }
+
+.text.keyword    { -fx-fill: #ff9999; -fx-font-weight: bold; }
+.text.string     { -fx-fill: #80d4ff; }
+.text.regexp     { -fx-fill: #80d4ff; -fx-font-style: italic; }
+.text.escape     { -fx-fill: #66ff99; }
+.text.comment    { -fx-fill: #c0c0c0; -fx-font-style: italic; }
+.text.number     { -fx-fill: #ffff66; }
+.text.constant   { -fx-fill: #ffff66; }
+.text.annotation { -fx-fill: #ffb366; }
+.text.type       { -fx-fill: #ffb366; }
+.text.function   { -fx-fill: #e0b3ff; }
+.text.variable   { -fx-fill: #ffffff; }
+.text.operator   { -fx-fill: #ff9999; }
+.text.property   { -fx-fill: #80d4ff; }
+.text.punct      { -fx-fill: #e6e6e6; }
+.text.tag        { -fx-fill: #66ff99; }
+.text.attribute  { -fx-fill: #80d4ff; }
+.text.invalid    { -fx-fill: #000000; -rtfx-background-color: #ff9999; }
+
+.text.heading    { -fx-fill: #ffff00; -fx-font-weight: bold; }
+.text.code       { -fx-fill: #80d4ff; }
+.text.link       { -fx-fill: #ffff00; -fx-underline: true; }
+.text.bold       { -fx-fill: #ffffff; -fx-font-weight: bold; }
+.text.italic     { -fx-fill: #ffffff; -fx-font-style: italic; }
+.text.strikethrough { -fx-fill: #c0c0c0; -fx-strikethrough: true; }
+.text.quote      { -fx-fill: #c0c0c0; }
+.text.md-marker  { -fx-fill: #ff9999; }
+
+/* LSP semantic tokens — mirror this theme's lexical token colors (overlaid on TextMate). */
+.text.sem-parameter { -fx-fill: #ffffff; -fx-font-style: italic; }
+.text.sem-variable  { -fx-fill: #ffffff; }
+.text.sem-property  { -fx-fill: #80d4ff; }
+.text.sem-function  { -fx-fill: #e0b3ff; }
+.text.sem-type      { -fx-fill: #ffb366; }
+.text.sem-macro     { -fx-fill: #ffb366; }
+.text.sem-constant  { -fx-fill: #ffff66; }
+.text.sem-deprecated { -fx-fill: #c0c0c0; -fx-strikethrough: true; }
+
+/* Theme-owned looked-up colours: the editor's ground (the active tab is filled with it) and its selection wash. */
+.root { -editor-surface: #000000; -state-sel: rgba(255, 255, 0, 0.3); }
+
+/* Brace match. */
+.text.brace-match { -rtfx-background-color: #ffff0066; }
+
+/* Project tree: folder accent + file ink, matching this theme. */
+.project-tree { -project-folder-color: #ffff00; -project-file-color: #ffffff; }
+
+/* Gutter markers in this theme's accent; the code-action lightbulb in the ink, red for a fix to an error. */
+.editor-area .fold-gutter .bookmark-marker { -fx-fill: #ffff00; }
+.editor-area .fold-gutter .note-marker { -fx-fill: #ffff00; }
+.editor-area .fold-gutter .bulb-marker { -fx-fill: #c0c0c0; }
+.editor-area .fold-gutter .bulb-marker.fix { -fx-fill: #ff9999; }
