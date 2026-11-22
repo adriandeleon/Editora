@@ -527,9 +527,36 @@ style-only change that still ended a succession — skips the draw and the snaps
 
 ### 5. Preserve the large/huge-file guards
 
-Highlighting + minimap are disabled at **≥ 5 MB**; the file goes read-only with a capped load
-at **≥ 50 MB**. Many overlays check `largeFile`/`hugeFile` and no-op. Keep these guards when
-touching that code, and bound memory (undo history is capped; loads are capped).
+Highlighting, the minimap and undo are disabled at **≥ 200,000 lines** (or ≥ 16 MB, or a line of 1 MiB); the
+file goes read-only with a capped load at **≥ 50 MB**, or when its document would not fit the free heap. Many
+overlays check `largeFile`/`hugeFile` and no-op. Keep these guards when touching that code, and bound memory
+(undo history is capped; loads are capped).
+
+The thresholds were measured on 2026-11-22 (JavaFX 27, JDK 25, `-Xmx2g`; Editora's own Java, generated JSON,
+one-line JS/JSON and log text, each feature forced on and off):
+
+- **Responsiveness does not set the line limit.** With highlighting, the minimap and undo on, typing and scrolling
+  stayed smooth at 400,000 lines (17.5 MB): key dispatch p95 under 12 ms, the edit settled in about 250 ms. What
+  grows is memory and the first highlighting pass. A document keeps about 1 byte per character plus 365 per line,
+  and highlighting about 450 more per line; the first pass takes about 6 s per 100,000 lines of Java (JSON is
+  far cheaper), holding the grammar's lock, so every other tab of the language waits for its colours. Lines,
+  not bytes, set both: 5 MB was 115,000 lines of Java but 315,000 of pretty-printed JSON.
+- **The minimap costs nothing measurable** up to 200,000 lines (three runs each, on and off), so the
+  line-count tier (`Settings.largeFileThreshold`, now 50,000) only stops the language server.
+- **Memory is checked per line too.** `LoadHeapGuard` counts about 8 bytes per character plus 320 per line at
+  the load's peak (450 more per line when highlighted). The old 15 bytes per file byte was right for 70-character
+  lines but undercounted short-lined files (JSON needed 24).
+- **Long lines are cheap until they wrap.** Unwrapped, a caret jump took 10–15 ms on a 64K-character line,
+  about 50 ms at 256K and 100–150 ms at 1M. Wrapped, opening one such line took 0.7 s at 8K (no spaces),
+  2.8 s at 16K, 11 s at 32K and 36–45 s at 64K: so word wrap is held off from 8 KiB
+  (`FileWorkflowCoordinator.WRAP_HOLD_CHARS`), and the full long-line profile starts at 1 MiB.
+- **50 MB stays.** 50 MB of text opened in 2–2.8 s and kept 320 MB; 100 MB took 5–8 s and 644 MB. Both stayed
+  editable, but the read-only cap is the margin for a second large file.
+
+The bench was a scratch `Application` around `EditorBuffer` (timings on the FX thread, pulse gaps from an
+`AnimationTimer`, heap after GC, and the smallest `-Xmx` each file still opened in). Headless Glass and the
+desktop es2 pipeline agreed. A desktop run whose window is not being presented (screen off, hidden workspace)
+stalls every pulse for about 3 s, whatever the file: discard those runs.
 
 Every text-file candidate uses a tab shell while `MainController` stats, reads, binary-sniffs, resolves
 EditorConfig/the charset, and decodes on a virtual thread. File size is not a safe proxy for latency: a
@@ -564,9 +591,10 @@ version, length and fingerprint (`FileWorkflowCoordinator.CommittedSave` keeps n
 text); on an unchanged document the current snapshot is shared as the new baseline.
 
 Apply the large/heavy/read-only profile before that insertion so disabled features and undo history never
-observe the initial document change. Shape matters as well as byte and line counts: a paragraph at **64 KiB
-or wider** enters the long-line safety profile, which forces wrapping off, uses the large-file feature
-guards, and installs giant paragraphs as bounded, visually identical style segments. The segmentation keeps
+observe the initial document change. Shape matters as well as byte and line counts: a paragraph at **8 KiB or
+wider** holds word wrap off (wrapping a paragraph costs about the square of its length), and one at **1 MiB or
+wider** enters the long-line safety profile, which also uses the large-file feature guards and installs giant
+paragraphs as bounded, visually identical style segments. The segmentation keeps
 the text and paragraph model exact while preventing JavaFX Text from laying out hundreds of thousands of
 characters as one glyph node. This protects minified/generated files that evade a line-count threshold but
 are pathological to lay out as one paragraph. Navigation requested against the shell must remain queued
@@ -836,7 +864,7 @@ serialization runs on the prefetch thread for every store a launch reads.
 The dist `<javaOptions>` (mirrored into `javafx:run` so dev == prod) pin heap and GC:
 
 - **`-Xmx2g`** — predictable across the release matrix, and safe for a 50 MB file (the huge-file
-  read cap) with deep undo.
+  read cap); `LoadHeapGuard` opens a document that would not fit what is left as a read-only slice.
 - **`-Xms64m`** — set explicitly, because the default initial heap is 1/64 of physical RAM
   *clamped up to `-Xmx`*: on a big-RAM machine that equals `-Xmx`, so the whole 2 GB heap is
   committed before `main` runs. Measured on Linux with a 4-file session: peak RSS median 908 MB

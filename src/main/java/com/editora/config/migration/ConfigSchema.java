@@ -422,7 +422,10 @@ public enum ConfigSchema {
                     Map.entry(175, (Migration) ConfigMigrations::identity),
                     // v176→177: + bashDebugEnabled (on), bashDebugPath ("") — Bash debugging on vscode-bash-debug.
                     // Additive: absent is the default.
-                    Map.entry(176, (Migration) ConfigMigrations::identity)),
+                    Map.entry(176, (Migration) ConfigMigrations::identity),
+                    // v177→178: a stored largeFileThreshold of 10,000 (the old default, written into every file)
+                    // becomes the new default, 50,000. Any other value was a choice and is kept. Safe to repeat.
+                    Map.entry(177, (Migration) ConfigMigrations::raiseLargeFileThreshold)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

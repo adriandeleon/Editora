@@ -469,12 +469,24 @@ final class FileWorkflowCoordinator {
             Thread.ofVirtual().name("file-load-", 0).factory());
 
     /**
-     * A paragraph this wide makes RichTextFX layout pathological even when the file itself is small, so the file
-     * opens in long-line mode (no undo). Shorter long lines are left to the highlighter, which shows a long line
-     * in many colours plain (TextMateHighlighter.MAX_LONG_LINE_TOKENS), and a bundle of them opens in View mode
-     * ({@link com.editora.text.LongLineFiles}) — both keep undo.
+     * A paragraph this wide opens the file in long-line mode: no undo, no highlighting, wrap held off, the line laid
+     * out in segments. Shorter long lines are left to the highlighter, which leaves a line over 20,000 characters
+     * unstyled and shows one in many colours plain (TextMateHighlighter.MAX_TOKENIZED_LINE, MAX_LONG_LINE_TOKENS),
+     * and a bundle of them opens in View mode ({@link com.editora.text.LongLineFiles}) — all keep undo. Was 64 KiB
+     * until measured on 2026-11-22 (JavaFX 27): unwrapped, with those highlighter limits, a caret jump on a
+     * 64K-character line took 10–15 ms, 256K about 50 ms and 1M 100–150 ms, segmented or not. What a long line
+     * cannot afford is wrapping, which {@link #WRAP_HOLD_CHARS} holds off much sooner.
      */
-    static final int LONG_LINE_FILE_CHARS = 64 * 1024;
+    static final int LONG_LINE_FILE_CHARS = 1024 * 1024;
+
+    /**
+     * A paragraph this wide holds word wrap off for the file (until the user asks for it on that buffer), and
+     * nothing else: laying out a wrapped line costs about the square of its length. Measured on 2026-11-22
+     * (JavaFX 27): opening a file whose one line is wrapped took 0.7 s at 8K characters without a space, 2.8 s at
+     * 16K, 11 s at 32K (prose too) and 36–45 s at 64K, while the same lines unwrapped opened in under 0.1 s.
+     * Many shorter lines are cheap: only the lines on screen are laid out.
+     */
+    static final int WRAP_HOLD_CHARS = 8 * 1024;
 
     /** The file each buffer last loaded, so the first-open View mode is never applied again on a reload. */
     private final Map<EditorBuffer, Path> viewFirstChecked = new java.util.WeakHashMap<>();
@@ -830,7 +842,9 @@ final class FileWorkflowCoordinator {
      * <ul>
      *   <li>≥ {@link EditorBuffer#HUGE_FILE_BYTES}: read at most that many chars (so a multi-GB file
      *       can't exhaust memory) and open read-only;</li>
-     *   <li>≥ {@link EditorBuffer#LARGE_FILE_BYTES}: full read, but highlighting + minimap disabled;</li>
+     *   <li>{@link EditorBuffer#largeFileMode} (by lines, or bytes as a backstop): full read, but highlighting,
+     *       the minimap and undo disabled;</li>
+     *   <li>a document the free heap cannot hold ({@link LoadHeapGuard}): the part that fits, read-only;</li>
      *   <li>otherwise: full read, normal editing.</li>
      * </ul>
      */
@@ -1176,9 +1190,11 @@ final class FileWorkflowCoordinator {
                 return locked; // decrypted later, by the window's encryption feature (never as part of a read)
             }
         }
-        long cap = forDocument && size >= EditorBuffer.LARGE_FILE_BYTES
-                ? heapCap(size)
-                : Math.min(size, EditorBuffer.HUGE_FILE_BYTES);
+        long wanted = Math.min(size, EditorBuffer.HUGE_FILE_BYTES);
+        // Before reading, only the characters are known: a file whose characters alone will not fit is read in
+        // part, so it is never read whole. Its lines are counted after the read (prepareFromBytes).
+        long charsCost = LoadHeapGuard.cost(wanted, 0, false);
+        long cap = forDocument && charsCost >= LoadHeapGuard.CHECK_FROM_COST ? heapCap(wanted, charsCost) : wanted;
         if (size >= EditorBuffer.HUGE_FILE_BYTES || cap < size) {
             boolean binary = sniffBinary && looksBinaryFile(file);
             if (binary) {
@@ -1226,30 +1242,49 @@ final class FileWorkflowCoordinator {
                         null,
                         null);
             }
-            String content = readCapped(file, (int) cap);
-            TextStats stats = textStats(content);
-            return new PreparedLoad(
+            return cappedText(
                     file,
-                    content,
+                    readCapped(file, (int) cap),
                     size,
                     mtime,
-                    stats.lines(),
-                    stats.maxLineLength(),
                     com.editora.editorconfig.EditorConfigCharset.UTF_8,
-                    editorConfig,
-                    false,
-                    true,
-                    false,
-                    stats.longLined(),
-                    true,
-                    false,
-                    0,
-                    false,
-                    null,
-                    null);
+                    editorConfig);
         }
         byte[] bytes = Files.readAllBytes(file);
-        return prepareFromBytes(file, size, mtime, isLog, editorConfig, bytes, sniffBinary);
+        return prepareFromBytes(file, size, mtime, isLog, editorConfig, bytes, sniffBinary, forDocument);
+    }
+
+    /**
+     * A load of only the first part of a file, {@code content}: read-only (a save would truncate the file) and in
+     * large-file mode, with no whole-file bytes to compare a later save with.
+     */
+    private static PreparedLoad cappedText(
+            Path file,
+            String content,
+            long size,
+            long mtime,
+            String charset,
+            com.editora.editorconfig.EditorConfigProperties editorConfig) {
+        TextStats stats = textStats(content);
+        return new PreparedLoad(
+                file,
+                content,
+                size,
+                mtime,
+                stats.lines(),
+                stats.maxLineLength(),
+                charset,
+                editorConfig,
+                false,
+                true,
+                false,
+                stats.longLined(),
+                true,
+                false,
+                0,
+                false,
+                null,
+                null);
     }
 
     /**
@@ -1263,7 +1298,7 @@ final class FileWorkflowCoordinator {
                         ? com.editora.editorconfig.EditorConfig.resolveFor(file.resolveSibling(
                                 com.editora.crypto.EncryptedFiles.innerName(String.valueOf(file.getFileName()))))
                         : com.editora.editorconfig.EditorConfigProperties.EMPTY;
-        return prepareFromBytes(file, plaintext.length, mtime, false, editorConfig, plaintext, true)
+        return prepareFromBytes(file, plaintext.length, mtime, false, editorConfig, plaintext, true, true)
                 .decryptedFrom(size, mtime, fingerprint);
     }
 
@@ -1274,7 +1309,8 @@ final class FileWorkflowCoordinator {
             boolean isLog,
             com.editora.editorconfig.EditorConfigProperties editorConfig,
             byte[] bytes,
-            boolean sniffBinary) {
+            boolean sniffBinary,
+            boolean forDocument) {
         // An encoding the user chose for this file wins over detection and .editorconfig — while the bytes are
         // still valid in it. When they are not, the file opens as it would without the choice, and the FX side
         // (applyPreparedLoad) forgets it.
@@ -1322,13 +1358,21 @@ final class FileWorkflowCoordinator {
                         bytes, declaredCharset(file, bytes, editorConfig));
         String charset = decoded.charset();
         String content = decoded.text();
-        boolean large = size >= EditorBuffer.LARGE_FILE_BYTES;
-        // Intermediate tier: a very long single file (e.g. a 13k-line source) keeps highlighting + editing
-        // but drops the minimap + LSP — the two heaviest features for a huge source — so it stays responsive.
-        int threshold = host.config().getSettings().getLargeFileThreshold();
         TextStats stats = textStats(content);
+        boolean large = EditorBuffer.largeFileMode(size, stats.lines());
+        // Intermediate tier: a long source file keeps highlighting, the minimap and editing but does not start its
+        // language server (unless the language keeps it longer), the heaviest feature for a huge source.
+        int threshold = host.config().getSettings().getLargeFileThreshold();
         boolean longLine = stats.longLined();
         boolean heavy = !large && !longLine && threshold > 0 && stats.lines() >= threshold;
+        if (forDocument) {
+            // Now the lines are known: a document they make too big for the free heap opens as the part that fits.
+            long cost = LoadHeapGuard.cost(content.length(), stats.lines(), !large && !longLine);
+            long allowed = cost >= LoadHeapGuard.CHECK_FROM_COST ? heapCap(content.length(), cost) : content.length();
+            if (allowed < content.length()) {
+                return cappedText(file, content.substring(0, (int) allowed), size, mtime, charset, editorConfig);
+            }
+        }
         return new PreparedLoad(
                 file,
                 content,
@@ -1414,21 +1458,20 @@ final class FileWorkflowCoordinator {
     };
 
     /**
-     * How many bytes of a large file to load (see {@link LoadHeapGuard}): the whole file, capped at the
-     * huge-file limit, when its document fits the free heap — else only what fits, which the caller opens
+     * How many of a document's {@code chars} characters to load when the whole of it costs {@code cost} (see
+     * {@link LoadHeapGuard}): all of them when it fits the free heap — else only what fits, which the caller opens
      * read-only like any other partial load.
      */
-    private long heapCap(long size) {
-        long wanted = Math.min(size, EditorBuffer.HUGE_FILE_BYTES);
+    private long heapCap(long chars, long cost) {
         long[] heap = heapUsage.get();
-        if (LoadHeapGuard.fits(wanted, heap[0], heap[1])) {
-            return wanted;
+        if (LoadHeapGuard.fits(cost, heap[0], heap[1])) {
+            return chars;
         }
         // "Used" counts garbage not collected yet (the previous large load leaves plenty), so collect once
         // before concluding that the file does not fit. Rare, and on the read worker.
         System.gc();
         heap = heapUsage.get();
-        return LoadHeapGuard.cap(wanted, heap[0], heap[1]);
+        return LoadHeapGuard.cap(chars, cost, heap[0], heap[1]);
     }
 
     /**
@@ -1477,11 +1520,13 @@ final class FileWorkflowCoordinator {
         }
         buffer.setLargeFile(load.large() || load.longLine());
         buffer.setHeavyFile(load.heavy());
-        buffer.wrap().setSuppressed(load.longLine());
-        if (load.longLine()) {
-            // Wrapping a giant RichTextFX paragraph multiplies layout work. The user can explicitly turn it
-            // back on after loading (Toggle Word Wrap on this buffer), but the first rendered frame must use the
-            // safe profile — and so must every later settings re-apply, hence the flag above.
+        boolean holdWrap = load.longLine() || load.maxLineLength() >= WRAP_HOLD_CHARS;
+        boolean wrapWanted = buffer.wrap().preferred();
+        buffer.wrap().setSuppressed(holdWrap);
+        if (holdWrap) {
+            // Wrapping a long RichTextFX paragraph costs about the square of its length (WRAP_HOLD_CHARS). The user
+            // can explicitly turn it back on after loading (Toggle Word Wrap on this buffer), but the first
+            // rendered frame must use the safe profile — and so must every later settings re-apply, hence the flag.
             buffer.setWordWrap(false);
         }
         if (load.truncated() || buffer.isReadOnly()) {
@@ -1563,13 +1608,16 @@ final class FileWorkflowCoordinator {
         if (load.longLine()) {
             return tr("status.longLineFileTier", load.maxLineLength());
         }
+        if (holdWrap && wrapWanted) {
+            return tr("status.wrapHeld", load.maxLineLength());
+        }
         if (load.heavy()
                 && com.editora.lsp.LspServerRegistry.lspAllowedForSize(
                         com.editora.text.LanguageRegistry.forFileName(
                                 String.valueOf(load.file().getFileName())),
                         true,
                         textLines(load))) {
-            return tr("status.largeFileTierKeepsLsp", textLines(load)); // a Python file keeps Pyright (B10)
+            return ""; // nothing is off: the language keeps its server for a file this long (B10)
         }
         return load.heavy() ? tr("status.largeFileTier", textLines(load)) : "";
     }
