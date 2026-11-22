@@ -36,8 +36,11 @@ class ShotsFxTest {
         Stage stage = FxTestSupport.callOnFx(() -> {
             Rectangle red = new Rectangle(10, 10, 20, 20);
             red.setFill(Color.RED);
+            Pane pane = new Pane(red);
+            // Its own white ground: a theme another test set as the user-agent stylesheet paints .root otherwise.
+            pane.setStyle("-fx-background-color: white;");
             Stage s = new Stage();
-            s.setScene(new Scene(new Pane(red), 320, 200, Color.WHITE));
+            s.setScene(new Scene(pane, 320, 200, Color.WHITE));
             s.show();
             return s;
         });
