@@ -2357,6 +2357,12 @@ public final class DapClient implements IDebugProtocolClient {
         return caps != null && Boolean.TRUE.equals(caps.getSupportsReadMemoryRequest());
     }
 
+    /** Whether the adapter changes the program's memory ({@code supportsWriteMemoryRequest}: CodeLLDB, GDB, Delve). */
+    public boolean supportsWriteMemory() {
+        Capabilities caps = target().capabilities;
+        return caps != null && Boolean.TRUE.equals(caps.getSupportsWriteMemoryRequest());
+    }
+
     /**
      * Whether the adapter takes instruction breakpoints ({@code supportsInstructionBreakpoints}: CodeLLDB, GDB,
      * Delve).
@@ -2484,6 +2490,30 @@ public final class DapClient implements IDebugProtocolClient {
                     r == null || r.getAddress() == null ? memoryReference : r.getAddress(),
                     bytes,
                     unreadable == null ? 0 : unreadable);
+        });
+    }
+
+    /**
+     * Writes {@code data} to the program's memory at {@code memoryReference} + {@code offset}; the answer is how many
+     * bytes the adapter wrote ({@code bytesWritten}; all of them when it does not say).
+     */
+    public CompletableFuture<Integer> writeMemory(String memoryReference, long offset, byte[] data) {
+        DapClient session = target();
+        if (session != this) {
+            return session.writeMemory(memoryReference, offset, data);
+        }
+        MemoryAddress at = memoryAddress(memoryReference, offset);
+        if (at == null) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException(
+                    com.editora.i18n.Messages.tr("debug.error.memoryOffset", offset, memoryReference)));
+        }
+        org.eclipse.lsp4j.debug.WriteMemoryArguments a = new org.eclipse.lsp4j.debug.WriteMemoryArguments();
+        a.setMemoryReference(at.reference());
+        a.setOffset(at.offset());
+        a.setData(java.util.Base64.getEncoder().encodeToString(data));
+        return timed(server().writeMemory(a)).thenApply(r -> {
+            Integer written = r == null ? null : r.getBytesWritten();
+            return written == null ? data.length : written;
         });
     }
 

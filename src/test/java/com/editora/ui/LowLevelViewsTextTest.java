@@ -6,6 +6,7 @@ import java.util.List;
 import com.editora.dap.DapModels;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
@@ -68,5 +69,34 @@ class LowLevelViewsTextTest {
         assertEquals("0x10", DebugMemoryView.literalAddress(" 0x10 "));
         assertNull(DebugMemoryView.literalAddress("16"), "a number without 0x is an expression");
         assertNull(DebugMemoryView.literalAddress("buffer"));
+    }
+
+    @Test
+    void editBytesReadsHexOrQuotedText() {
+        assertArrayEquals(new byte[] {0x48, 0x65, 0x6c}, DebugMemoryView.parseBytes("48 65 6c"));
+        assertArrayEquals(new byte[] {0x48, 0x65, 0x6c}, DebugMemoryView.parseBytes(" 48656C "));
+        assertArrayEquals(new byte[] {(byte) 0xff, 0x01}, DebugMemoryView.parseBytes("0xff, 0x01"));
+        assertArrayEquals("Hé".getBytes(java.nio.charset.StandardCharsets.UTF_8), DebugMemoryView.parseBytes("\"Hé\""));
+        assertNull(DebugMemoryView.parseBytes(""));
+        assertNull(DebugMemoryView.parseBytes("\"\""), "no bytes");
+        assertNull(DebugMemoryView.parseBytes("486"), "half a byte");
+        assertNull(DebugMemoryView.parseBytes("zz"));
+        assertNull(DebugMemoryView.parseBytes("0x"));
+        assertNull(DebugMemoryView.parseBytes("0x123"), "0x is one byte");
+    }
+
+    @Test
+    void editBytesWritesFromTheFirstChangedByteToTheLast() {
+        byte[] data = new byte[32];
+        data[17] = 7;
+        DebugMemoryView.Edit edit = DebugMemoryView.edit(data, 16, new byte[] {0, 9, 7, 5});
+        assertEquals(17, edit.at());
+        assertArrayEquals(new byte[] {9, 7, 5}, edit.bytes(), "the unchanged byte between them too");
+        assertNull(DebugMemoryView.edit(data, 16, new byte[] {0, 7}), "nothing changed");
+        assertEquals("48 65", DebugMemoryView.rowHex(new byte[] {0x48, 0x65}, 0));
+        assertEquals("", DebugMemoryView.rowHex(new byte[4], 1), "past the bytes read");
+        DapModels.MemoryBlock block = new DapModels.MemoryBlock("0x2000", data, 0);
+        assertEquals("0x2010", DebugMemoryView.addressOf(block, 16));
+        assertEquals("buf+16", DebugMemoryView.addressOf(new DapModels.MemoryBlock("buf", data, 0), 16));
     }
 }

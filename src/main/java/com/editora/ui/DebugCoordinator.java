@@ -429,6 +429,7 @@ final class DebugCoordinator {
     private final PythonDebugLaunch python = new PythonDebugLaunch(this);
 
     private final InstructionBreakpoints instructionBreakpoints = new InstructionBreakpoints(this);
+    private final MemoryEdits memoryEdits = new MemoryEdits(this);
 
     private final DartDebugLaunch dart = new DartDebugLaunch(this); // Dart, and a Flutter app's Dart
 
@@ -735,6 +736,7 @@ final class DebugCoordinator {
             built.disassemblyView().setOnOpenSource(this::openSourceLine);
             instructionBreakpoints.install(built.disassemblyView());
             built.memoryView().setOnGo(this::memoryGo);
+            memoryEdits.install(built.memoryView());
             built.memoryView().setOnPage(direction -> {
                 if (s().memoryReference != null) {
                     s().memoryOffset += (long) direction * DebugMemoryView.PAGE;
@@ -4478,7 +4480,7 @@ final class DebugCoordinator {
     }
 
     /** Reads a page at the Memory view's reference and offset into it. */
-    private void readMemory() {
+    void readMemory() {
         String ref = s().memoryReference;
         if (ref == null || s().panel == null) {
             return;

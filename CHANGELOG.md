@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   breakpoints, conditions and logpoints, locals, watches and hovers, and stops on uncaught exceptions (or on every
   exception). Dart run configurations run and debug the same way.
 
+- **Edit memory in the Memory view.** While the program is paused, double-click a row of the Debug window's Memory
+  view (or press F2, or use its right-click menu's Edit Bytes…) and type new bytes, in hex or as "quoted text". Only
+  the bytes you changed are written, and the view and the Variables view show the new values. It works on CodeLLDB,
+  GDB and Delve (C, C++, Rust and Go). The Memory view also finds a C array's bytes on GDB now, where typing its name
+  said it had no address.
+
 - **Instruction breakpoints.** In the Debug window's Disassembly view, click the margin before an instruction's
   address, press F9, or use the row's right-click menu to put a breakpoint on that one machine instruction. The
   program stops there, and the Disassembly view opens at it. It works on CodeLLDB, GDB and Delve (C, C++, Rust and

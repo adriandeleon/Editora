@@ -49,6 +49,7 @@ com/editora/ui/CsvGridPanel.java	label	setOnMouseClicked	a column header: a doub
 com/editora/ui/CsvGridPanel.java	table	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
 com/editora/ui/DebugDisassemblyView.java	list	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
 com/editora/ui/DebugDisassemblyView.java	mark	setOnMouseClicked	the breakpoint margin: F9 on the selected row and its menu's Toggle Breakpoint do the same
+com/editora/ui/DebugMemoryView.java	rows	setOnMouseClicked	a Control: its own role and keys (F2 on the row and its menu's Edit Bytes… do what the double-click does)
 com/editora/ui/DebugEvaluateWindow.java	tree	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
 com/editora/ui/DebugPanel.java	console	setOnMouseClicked	the editor (a CodeArea) or a console: a stack-trace link in the debug console; the Call Stack list opens the same frames with Enter
 com/editora/ui/DebugPanel.java	stack	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
