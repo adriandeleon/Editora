@@ -882,10 +882,13 @@ public final class Shots {
     /**
      * Lets about {@code ms} of FX pulses go by (60 a second), then drains the FX queue: layout, CSS and Editora's
      * debounced work (pause transitions and timelines) all advance on pulses, so this waits on what the UI itself
-     * counts, not on a sleep.
+     * counts, not on a sleep. It counts in chunks of 300 pulses (5 s), because one {@code PulseChecks.pulses} call
+     * gives up after 10 s: a {@code wait 60000} for a language server would otherwise fail after 10.
      */
     private void settle(int ms) throws Exception {
-        PulseChecks.pulses(Math.max(2, ms * 60 / 1000));
+        for (int left = Math.max(2, ms * 60 / 1000); left > 0; left -= 300) {
+            PulseChecks.pulses(Math.min(300, left));
+        }
         FxTestSupport.drainFx();
     }
 
