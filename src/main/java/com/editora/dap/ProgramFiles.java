@@ -59,7 +59,10 @@ public final class ProgramFiles {
         if (sections.stream().anyMatch(GO_SECTIONS::contains)) {
             return Kind.GO;
         }
-        boolean machO = sections.stream().anyMatch(s -> s.startsWith("__"));
+        // by its magic number, not its section names: glibc's and LLVM's ELF sections start with "__" too
+        // (__libc_freeres_fn, __llvm_prf_cnts), which took such a program for a Mach-O one without its DWARF (review
+        // B5)
+        boolean machO = isMachO(exe);
         Set<String> dwarf = sections;
         if (machO && !sections.contains("__debug_info")) {
             dwarf = dsymSections(exe);
@@ -68,6 +71,20 @@ public final class ProgramFiles {
             return null;
         }
         return isRust(sections) || isRust(dwarf) ? Kind.RUST : Kind.NATIVE;
+    }
+
+    /** Whether {@code exe} starts as a Mach-O program does (32 or 64 bit, either byte order); false when unreadable. */
+    static boolean isMachO(Path exe) {
+        try (FileChannel ch = FileChannel.open(exe, StandardOpenOption.READ)) {
+            ByteBuffer head = read(ch, 0, 4);
+            if (head.remaining() < 4) {
+                return false;
+            }
+            int magic = head.order(ByteOrder.LITTLE_ENDIAN).getInt(0);
+            return magic == 0xfeedfacf || magic == 0xfeedface || magic == 0xcffaedfe || magic == 0xcefaedfe;
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
     }
 
     /** Whether rustc's own sections are among {@code sections} (a Mach-O name is cut to 16 characters). */

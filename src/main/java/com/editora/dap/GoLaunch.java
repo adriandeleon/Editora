@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -235,7 +236,56 @@ public final class GoLaunch {
                 + Long.toUnsignedString(
                         java.util.concurrent.ThreadLocalRandom.current().nextLong(), 36)
                 + (com.editora.Os.isWindows() ? ".exe" : "");
+        IN_USE.add(name);
         return Path.of(System.getProperty("java.io.tmpdir"), name).toString();
+    }
+
+    /**
+     * The file names of the programs {@link #debugBinary} named in this process that a session may still run: {@link
+     * #deleteStaleDebugBinaries} leaves them, however old (another window's session, a long one). Until {@link
+     * #releaseDebugBinary}.
+     */
+    private static final Set<String> IN_USE = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /**
+     * Marks the program a launch request's {@code output} names as in use again (a session started with it, or
+     * restarted with it after its release). Any other value is left alone.
+     */
+    public static void holdDebugBinary(@Nullable Object output) {
+        String name = debugBinaryName(output);
+        if (name != null) {
+            IN_USE.add(name);
+        }
+    }
+
+    /**
+     * The session that ran the program a launch request's {@code output} names has ended: it is no longer in use, and
+     * is deleted on {@code deleter} ({@link #deleteDebugBinary}; Delve leaves it when Stop ends the session) unless a
+     * session holds it again by then (a restart builds it anew).
+     */
+    public static void releaseDebugBinary(@Nullable Object output, java.util.concurrent.Executor deleter) {
+        String name = debugBinaryName(output);
+        if (name != null && output instanceof String path) {
+            IN_USE.remove(name);
+            deleter.execute(() -> {
+                if (!IN_USE.contains(name)) {
+                    deleteDebugBinary(path);
+                }
+            });
+        }
+    }
+
+    /** The file name of {@code output} when it is a program {@link #debugBinary} names, else null. */
+    private static @Nullable String debugBinaryName(@Nullable Object output) {
+        if (!(output instanceof String path)) {
+            return null;
+        }
+        try {
+            Path name = Path.of(path).getFileName();
+            return name != null && name.toString().startsWith(DEBUG_BINARY_PREFIX) ? name.toString() : null;
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /** The prefix of {@link #debugBinary}'s file names. */
@@ -261,22 +311,33 @@ public final class GoLaunch {
     }
 
     /**
-     * Deletes the programs {@link #debugBinary} named in the temporary folder that are over an hour old: those of
-     * sessions that ended without deleting theirs (Editora quit, or crashed). For start-up; never throws.
+     * How old a program {@link #debugBinary} named must be before {@link #deleteStaleDebugBinaries} deletes it: a day,
+     * since another Editora's session may still run one (an hour deleted the program of a session that long).
+     */
+    static final java.time.Duration STALE_DEBUG_BINARY_AGE = java.time.Duration.ofHours(24);
+
+    /**
+     * Deletes the programs {@link #debugBinary} named in the temporary folder that are over {@link
+     * #STALE_DEBUG_BINARY_AGE} old and that no session of this process holds: those of sessions that ended without
+     * deleting theirs (Editora quit, or crashed). For start-up; never throws.
      */
     public static int deleteStaleDebugBinaries() {
         return deleteStaleDebugBinaries(
                 Path.of(System.getProperty("java.io.tmpdir")),
-                java.time.Instant.now().minus(java.time.Duration.ofHours(1)));
+                java.time.Instant.now().minus(STALE_DEBUG_BINARY_AGE));
     }
 
-    /** Deletes {@link #debugBinary}'s programs in {@code dir} last changed before {@code before}; how many it deleted. */
+    /**
+     * Deletes {@link #debugBinary}'s programs in {@code dir} last changed before {@code before}, but for those a session
+     * of this process holds; how many it deleted.
+     */
     static int deleteStaleDebugBinaries(Path dir, java.time.Instant before) {
         int deleted = 0;
         try (java.nio.file.DirectoryStream<Path> files = Files.newDirectoryStream(dir, DEBUG_BINARY_PREFIX + "*")) {
             for (Path f : files) {
                 try {
                     if (Files.isRegularFile(f)
+                            && !IN_USE.contains(String.valueOf(f.getFileName()))
                             && Files.getLastModifiedTime(f).toInstant().isBefore(before)
                             && Files.deleteIfExists(f)) {
                         deleted++;

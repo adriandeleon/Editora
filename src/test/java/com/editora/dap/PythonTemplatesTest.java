@@ -67,10 +67,52 @@ class PythonTemplatesTest {
         Map<String, Object> program = Map.of("type", "python", "request", "launch", "program", "/work/api/app.py");
         assertEquals(
                 Path.of("/work/api/app.py").toAbsolutePath().getParent(),
-                PythonTemplates.folder(program),
+                PythonTemplates.folder(program, DapPaths.LOCAL),
                 "else the program's folder");
         Map<String, Object> go = Map.of("type", "go", "request", "launch");
         assertSame(go, PythonTemplates.decorate(go, Mode.ON, dir -> Found.NONE));
+    }
+
+    /** A remote host's request names the host's folder: it is mapped as its adapter's paths say, never read here. */
+    @Test
+    void aRemoteSessionsFolderIsTheHostsNotAFileOfTheSameNameHere(@org.junit.jupiter.api.io.TempDir Path dir)
+            throws Exception {
+        Path zip = dir.resolve("host.zip");
+        try (java.nio.file.FileSystem host = java.nio.file.FileSystems.newFileSystem(zip, Map.of("create", "true"))) {
+            Path app = java.nio.file.Files.createDirectories(host.getPath("/srv/app"));
+            java.nio.file.Files.writeString(app.resolve("manage.py"), "");
+            DapPaths remote = new DapPaths() {
+                @Override
+                public boolean owns(Path file) {
+                    return file.getFileSystem() == host;
+                }
+
+                @Override
+                public String toAdapter(Path file) {
+                    return file.toString();
+                }
+
+                @Override
+                public Path fromAdapter(String path) {
+                    return host.getPath(path);
+                }
+            };
+            Map<String, Object> launch = Map.of("type", "python", "request", "launch", "cwd", "/srv/app");
+            java.util.List<Path> asked = new java.util.ArrayList<>();
+            PythonTemplates.decorate(launch, Mode.AUTO, remote, d -> {
+                asked.add(d);
+                return Found.NONE;
+            });
+            assertEquals(java.util.List.of(app), asked, "the host's folder, through its connection");
+            assertEquals(Found.NONE, DapManager.templatesIn(app), "not read over the connection at launch");
+            assertSame(
+                    launch,
+                    PythonTemplates.decorate(launch, Mode.AUTO, remote, DapManager::templatesIn),
+                    "a remote launch is sent as it is");
+        }
+        Path local = java.nio.file.Files.createDirectories(dir.resolve("shop"));
+        java.nio.file.Files.writeString(local.resolve("manage.py"), "");
+        assertEquals(new Found(true, false), DapManager.templatesIn(local), "a folder on this machine is read");
     }
 
     @Test
