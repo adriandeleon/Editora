@@ -45,6 +45,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Debugger review fixes, second round.** A second review of the debugger found these, now fixed:
+  - **"Don't step into" and your own code.** A filter such as `kotlin.*`, `java.*` or `scala.*` also matched your own
+    `src/main/kotlin`, `src/main/java` or `src/main/scala` folder, so Step Into on your code stepped straight back
+    out.
+  - **The right session, after a save.** What a launch does after saving its files, or after the Run scan or a text
+    scan finishes, started in whichever debug session was focused by then: a compound with unsaved files launched
+    into its last session. It now starts the session that asked, and nothing once that session's tab is closed.
+  - **F5 twice no longer launches twice.** Pressing F5 again while the first launch still saves or reads its plan
+    says it is starting.
+  - **Launches say why they stop.** A launch whose project files cannot be read (a remote host gone) says so instead
+    of looking again forever; a plan that fails says why; a file edited while it saved says to debug it again.
+  - **Breakpoints.** Undo after deleting a breakpoint's line brings back that breakpoint, not another on an
+    identical line (two breakpoints with one id); an old deleted breakpoint no longer comes back on an unrelated
+    paste; breakpoints edited in files with no tab while Mute is on are no longer lost on Unmute; a gutter click is
+    not dropped when the text changes again.
+  - **Debug Test** attaches only its own JVMs in its session; run configurations attach where they are started.
+  - **Exceptions.** An exception stop's card and details are no longer lost when the stack goes through a file
+    edited since the launch.
+  - **Finding adapters and programs.** debugpy and js-debug installed by Editora are found with `--config-dir`; a
+    debugger path pasted with quotes works; Attach to Process recognises Linux programs with glibc or LLVM `__`
+    sections; a project opened through a symbolic link gets its Java source folder fixed again.
+  - **Go** no longer deletes the program another window's long Go session runs; a stopped session's program is
+    removed when it ends.
+  - **Values.** Type renderers work with `f"{self.x}"`, `` `${this.x}` `` and C++ `this->x`; inline values no longer
+    show the module's variable on a function's header line; pinned values beyond the 40 evaluated at once are not
+    left showing another frame's; View as Table keeps a Python dict's string keys beside its integer ones, and Load
+    more after a step reloads instead of mixing two stops.
+  - **Smaller ones.** Windows shell tasks with a quoted command and last argument run; a Gradle project naming its own
+    JDK (`.sdkmanrc`) runs and debugs on it; auto template breakpoints no longer read local files for a remote Python
+    session; a Node launch whose planning fails says so; Debug Current File waits for the Run scan of a file just
+    opened; Debug History stays quick on long histories; the session log file is capped.
 - **Debugging a C, C++ or Rust program on CodeLLDB reports the program's own exit code.** The Debug console said
   "Process finished with exit code 143" (and the status bar 143) after a program that exited 0. Recent CodeLLDB
   (1.12) has Editora start its launcher, `codelldb-launch`, and ends that launcher with SIGTERM once the program has
