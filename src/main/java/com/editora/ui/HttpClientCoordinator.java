@@ -31,6 +31,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.http.CapturedResponses;
 import com.editora.http.CurlImport;
 import com.editora.http.HttpClientService;
+import com.editora.http.HttpEnvironments;
 import com.editora.http.HttpExchange;
 import com.editora.http.HttpFile;
 import com.editora.http.HttpResult;

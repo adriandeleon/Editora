@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 
 import javafx.application.Platform;
 
+import com.editora.http.HttpEnvironments;
 import org.jspecify.annotations.Nullable;
 
 /**

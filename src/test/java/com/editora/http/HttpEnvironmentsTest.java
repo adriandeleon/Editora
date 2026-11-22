@@ -1,4 +1,4 @@
-package com.editora.ui;
+package com.editora.http;
 
 import java.nio.file.Files;
 import java.nio.file.Path;

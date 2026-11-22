@@ -1,4 +1,4 @@
-package com.editora.ui;
+package com.editora.http;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
 
-import com.editora.http.HttpEnv;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -27,7 +26,7 @@ import static com.editora.i18n.Messages.tr;
  * buffer uses the project root's files, else none. Pure apart from the file-system checks, which are injected for
  * the tests.
  */
-final class HttpEnvironments {
+public final class HttpEnvironments {
 
     /** What marks a version-control working tree's root. {@code .git} is a folder, or a file in a worktree. */
     static final List<String> VCS_MARKERS = List.of(".git", ".hg", ".svn");
@@ -38,13 +37,13 @@ final class HttpEnvironments {
      * Both env files of one folder as read ({@code null} for a file that is absent or unreadable); a {@code null}
      * {@code dir} has none.
      */
-    record EnvFiles(
+    public record EnvFiles(
             @Nullable Path dir,
             @Nullable String publicJson,
             @Nullable String privateJson) {
 
         /** The variables of {@code environment}, merged as JetBrains does (see {@link HttpEnv#merged}). */
-        Map<String, String> variables(String environment) {
+        public Map<String, String> variables(String environment) {
             if (environment == null || environment.isEmpty()) {
                 return Map.of();
             }
@@ -54,7 +53,7 @@ final class HttpEnvironments {
         }
 
         /** The environment names of both files, public first, then private-only ones. */
-        List<String> names() {
+        public List<String> names() {
             return new java.util.ArrayList<>(parsed().names());
         }
 
@@ -109,7 +108,7 @@ final class HttpEnvironments {
          * http-client.private.env.json} could not be read: line 3, column 5: …"), so the user hears about the file
          * instead of every variable in it being reported as undefined. Empty when both files are usable.
          */
-        List<String> problems() {
+        public List<String> problems() {
             return new java.util.ArrayList<>(parsed().problems());
         }
     }
@@ -125,7 +124,7 @@ final class HttpEnvironments {
     private static final Map<String, Parsed> PARSED = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** Reads both env files of {@code dir} (none when {@code dir} is null). */
-    static EnvFiles read(@Nullable Path dir) {
+    public static EnvFiles read(@Nullable Path dir) {
         if (dir == null) {
             return new EnvFiles(null, null, null);
         }
@@ -140,7 +139,7 @@ final class HttpEnvironments {
      * The folder whose env files apply to a buffer: for a saved file, {@link #envDir(Path, Path)} of its folder;
      * for an untitled one ({@code file == null}), the project root, else null.
      */
-    static @Nullable Path forFile(@Nullable Path file, @Nullable Path projectRoot) {
+    public static @Nullable Path forFile(@Nullable Path file, @Nullable Path projectRoot) {
         if (file == null) {
             return projectRoot == null ? null : projectRoot.toAbsolutePath().normalize();
         }
@@ -149,7 +148,7 @@ final class HttpEnvironments {
     }
 
     /** {@link #envDir(Path, Path, Path, Predicate)} against the real file system and the user's home folder. */
-    static @Nullable Path envDir(Path dir, @Nullable Path projectRoot) {
+    public static @Nullable Path envDir(Path dir, @Nullable Path projectRoot) {
         String home = System.getProperty("user.home");
         return envDir(dir, projectRoot, home == null || home.isBlank() ? null : Path.of(home), Files::exists);
     }
@@ -200,7 +199,7 @@ final class HttpEnvironments {
     }
 
     /** The name to select for a file whose remembered choice is {@code remembered}: it, if still offered; else none. */
-    static String choose(String remembered, List<String> names) {
+    public static String choose(String remembered, List<String> names) {
         return remembered != null && !remembered.isEmpty() && names.contains(remembered) ? remembered : "";
     }
 

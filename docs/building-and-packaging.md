@@ -43,6 +43,15 @@ mvn clean -Pdist package
 Produces `target/dist/Editora.app` on macOS; the OS profiles auto-select DMG/MSI/DEB+RPM. There is
 **no cross-building** — jpackage + JavaFX are host-specific, so each platform builds for itself.
 
+**Windows: two launchers and the PATH.** `Editora.exe` is a GUI-subsystem program, so a shell neither waits for
+it nor shows its output. A Windows-activated profile, `windows-cli-launcher`, adds a second launcher, `editora-cli.exe`, the same app
+built as a console program (`packaging/windows/editora-cli.properties`, merged into the `dist` app-image execution
+by its id; declared after `dist`, or Maven runs `aot_build.java` before jpackage) for `editora-cli http …`, `--version` and `--help`. The MSI puts the install folder on the system PATH
+(appended, removed on uninstall) through `packaging/windows/msi/os-condition.wxf`, passed by `aot_build.java` as
+`--resource-dir`: jpackage has no option for it, and that fragment's component group is the one its main feature
+already installs. `WindowsCommandLineTest` pins all three; the Terminal image workflow runs the launcher and
+installs and uninstalls the MSI on `windows-latest`.
+
 **`clean` is mandatory, and the profile enforces it.** An incremental compile can leave a synthetic
 enum-switch class (`KeyDispatcher$1`) out of `target/classes`; jlink then ships an app whose keyboard
 dies on the first keypress (commit b9748039 did). The `dist` profile binds `maven-clean-plugin:clean`

@@ -603,8 +603,14 @@ public final class ProcessRunner {
         return String.join(File.pathSeparator, dirs);
     }
 
+    /** Set ({@code "true"}) by a command that runs without a window ({@code editora http}): no JavaFX is touched. */
+    public static final String HEADLESS_PROPERTY = "editora.noFx";
+
     /** Whether this is the JavaFX application thread; false where the toolkit is not loaded (the CLI, tests). */
     private static boolean onFxThread() {
+        if (Boolean.getBoolean(HEADLESS_PROPERTY)) {
+            return false; // asking JavaFX would load its toolkit and native library, for nothing
+        }
         try {
             return javafx.application.Platform.isFxApplicationThread();
         } catch (RuntimeException | LinkageError e) {

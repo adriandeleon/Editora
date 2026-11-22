@@ -16,6 +16,7 @@ import javafx.application.Platform;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.lsp.CodeAction;
 import com.editora.http.HttpEnv;
+import com.editora.http.HttpEnvironments;
 import com.editora.http.HttpVariableIndex;
 import com.editora.markdown.MarkdownLint;
 import org.jspecify.annotations.Nullable;

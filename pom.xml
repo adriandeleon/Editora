@@ -2335,6 +2335,41 @@
              native libraries share identical filenames, so they collide in one jar. The release CI
              matrix instead runs this profile on each runner to produce one jar per platform
              (see .github/workflows/release.yml). -->
+        <!-- The console launcher, editora-cli.exe, beside Editora.exe in the Windows dist image: why, in
+             packaging/windows/editora-cli.properties. Merged by execution id into the dist profile's app-image
+             build, so a Linux or macOS image (whose launcher already writes to the terminal) has none.
+             A profile of its own, declared AFTER dist, on purpose: Maven injects active profiles in the order
+             they are declared and weaves a profile's plugins in among those already present. Declared in
+             os-windows (before dist), this jpackage plugin came first, and dist's exec (aot-train-and-deliver)
+             then ran ahead of antrun and jpackage, found no image and delivered nothing. Here the plugin is
+             already in place when this merges, so the order stays antrun, jpackage, exec. Without -Pdist the
+             execution has no goal and binds nothing (the plugin has no default phase). -->
+        <profile>
+            <id>windows-cli-launcher</id>
+            <activation><os><family>windows</family></os></activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.panteleyev</groupId>
+                        <artifactId>jpackage-maven-plugin</artifactId>
+                        <version>${jpackage.plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>jpackage-app-image</id>
+                                <configuration>
+                                    <launchers>
+                                        <launcher>
+                                            <name>editora-cli</name>
+                                            <file>${project.basedir}/packaging/windows/editora-cli.properties</file>
+                                        </launcher>
+                                    </launchers>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <profile>
             <id>fatjar</id>
             <build>
