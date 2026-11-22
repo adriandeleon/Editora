@@ -110,15 +110,37 @@ class BreakpointReviveFxTest {
     @Test
     void aLaterUnrelatedPasteDoesNotReviveAnOldBreakpoint() throws Exception {
         EditorBuffer b = buffer();
+        long[] now = {0};
+        com.editora.editor.debug.BreakpointManager.clockForTest(() -> now[0]);
+        try {
+            FxTestSupport.runOnFx(() -> {
+                b.toggleBreakpoint(1);
+                deleteLine(b, 1);
+                var area = b.getArea();
+                area.insertText(area.getAbsolutePosition(0, 4), "!"); // other typing in between
+                area.getUndoManager().preventMerge();
+                now[0] += java.util.concurrent.TimeUnit.MINUTES.toNanos(3); // much later
+                area.insertText(area.getLength(), "foo()\n");
+            });
+            assertEquals(List.of(), lines(b));
+        } finally {
+            com.editora.editor.debug.BreakpointManager.clockForTest(null);
+        }
+    }
+
+    /** A cut, some typing, then the paste: the breakpoint moves with its line (LineMarkManagersFxTest's case). */
+    @Test
+    void aPasteSoonAfterTheCutStillMovesTheBreakpointAfterTyping() throws Exception {
+        EditorBuffer b = buffer();
         FxTestSupport.runOnFx(() -> {
             b.toggleBreakpoint(1);
             deleteLine(b, 1);
             var area = b.getArea();
-            area.insertText(area.getAbsolutePosition(0, 4), "!"); // other typing in between
+            area.insertText(area.getAbsolutePosition(0, 4), "!");
             area.getUndoManager().preventMerge();
             area.insertText(area.getLength(), "foo()\n");
         });
-        assertEquals(List.of(), lines(b));
+        assertEquals(1, lines(b).size(), "pasted back soon after: the breakpoint is on it again");
     }
 
     @Test

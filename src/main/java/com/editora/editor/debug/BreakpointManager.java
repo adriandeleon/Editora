@@ -714,15 +714,11 @@ public final class BreakpointManager implements LineMarks.Carrier {
 
     private void trackEdit(List<PlainTextChange> changes) {
         boolean undoing = area.getUndoManager().isPerformingAction();
-        java.util.List<Dropped> older = undoing ? java.util.List.of() : java.util.List.copyOf(dropped);
         LineMarkTracker.Result<Breakpoint> result = LineMarkTracker.apply(byLine, KIND, changes, area);
         if (result.moved()) {
             rememberDropped(byLine, result.marks());
         }
         NavigableMap<Integer, Breakpoint> revived = revive(result.marks(), changes, undoing);
-        for (Dropped d : older) {
-            d.pasteable = false; // an edit came between: only an undo / a redo may bring these back now
-        }
         if (revived != null) {
             result = new LineMarkTracker.Result<>(revived, true, result.retexted());
         }
@@ -817,13 +813,31 @@ public final class BreakpointManager implements LineMarks.Carrier {
      */
     private final java.util.ArrayDeque<Dropped> dropped = new java.util.ArrayDeque<>();
 
-    /** A dropped breakpoint, and whether a plain (non-undo) insertion may still bring it back. */
+    /**
+     * How long a plain paste (not an undo or a redo) of a dropped breakpoint's line brings it back: a cut, some
+     * typing, then the paste moves it; the same text pasted much later is not that line.
+     */
+    static final long PASTE_REVIVES_NANOS = java.util.concurrent.TimeUnit.MINUTES.toNanos(2);
+
+    /** The clock the paste window is read on. TEST SEAM. */
+    private static java.util.function.LongSupplier clock = System::nanoTime;
+
+    /** TEST SEAM — replaces the clock; {@code null} restores {@link System#nanoTime}. */
+    public static void clockForTest(java.util.function.@Nullable LongSupplier testClock) {
+        clock = testClock != null ? testClock : System::nanoTime;
+    }
+
+    /** A dropped breakpoint, and when: a plain insertion brings it back only for a while ({@link #pasteable}). */
     private static final class Dropped {
         final Breakpoint breakpoint;
-        boolean pasteable = true;
+        final long at = clock.getAsLong();
 
         Dropped(Breakpoint breakpoint) {
             this.breakpoint = breakpoint;
+        }
+
+        boolean pasteable() {
+            return clock.getAsLong() - at < PASTE_REVIVES_NANOS;
         }
     }
 
@@ -892,7 +906,7 @@ public final class BreakpointManager implements LineMarks.Carrier {
         for (var it = dropped.iterator(); it.hasNext(); ) {
             Dropped entry = it.next();
             Breakpoint was = entry.breakpoint;
-            if (!(undoing || entry.pasteable) || !inserted.contains(was.lineText())) {
+            if (!(undoing || entry.pasteable()) || !inserted.contains(was.lineText())) {
                 continue;
             }
             for (int line = first; line <= last; line++) {

@@ -882,14 +882,18 @@ class DebugCoordinatorCommandsFxTest {
         session("launch");
         List<DebugSession> both = FxTestSupport.callOnFx(() -> debug.sessions().all());
         assertEquals(2, both.size());
-        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (!FxTestSupport.callOnFx(() -> both.stream().allMatch(x -> x.dap.isActive()))
-                && System.nanoTime() < until) {
-            Thread.sleep(20);
-        }
         assertTrue(
-                FxTestSupport.callOnFx(() -> both.stream().allMatch(x -> x.dap.isActive())),
+                com.editora.testkit.Await.holdsWithin(() -> allActive(both), java.time.Duration.ofSeconds(10)),
                 "both sessions run a program of their own");
+    }
+
+    /** Whether every one of {@code sessions} runs a program, read on the FX thread. */
+    private static boolean allActive(List<DebugSession> sessions) {
+        try {
+            return FxTestSupport.callOnFx(() -> sessions.stream().allMatch(x -> x.dap.isActive()));
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /** F5 again while the first launch's plan is still being read: it is getting ready, not launched twice. */
