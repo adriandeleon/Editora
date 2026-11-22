@@ -206,6 +206,7 @@ final class LspFileWatching {
             List<org.eclipse.lsp4j.FileEvent> events = eventsUnderRoot(changes, s.root(), s.uris());
             if (!events.isEmpty()) {
                 s.didChangeWatchedFiles(events);
+                buildFilesChanged(s, changes);
                 m.bashReanalysis.changed(s, changes); // the Bash server ignores the notification (Bash review B7)
                 openGrammarsChanged(s, changes);
             }
@@ -214,6 +215,75 @@ final class LspFileWatching {
         if (PythonLibraryWatchers.touchesEnvironment(changes)) {
             m.pythonEnvironmentChanged(); // python -m venv .venv after the server started (review 2, B103)
         }
+    }
+
+    /** How long a Java project's build files stay unchanged before jdtls is made to update their projects. */
+    static final long BUILD_SETTLE_MS = 2000;
+
+    private volatile long buildSettleMs = BUILD_SETTLE_MS;
+
+    /** The build files changed in a burst not yet settled, per Java session. */
+    private final Map<LanguageServerSession, SettlingBuildFiles> settlingBuildFiles = new ConcurrentHashMap<>();
+
+    private static final class SettlingBuildFiles {
+        final java.util.Set<Path> files = new java.util.LinkedHashSet<>();
+        long generation;
+    }
+
+    void setBuildSettleMsForTest(long ms) {
+        buildSettleMs = ms;
+    }
+
+    /**
+     * Build files of a Java session's project changed on disk: once they have stayed unchanged for {@link
+     * #BUILD_SETTLE_MS}, jdtls is made to update their projects ({@code java/projectConfigurationsUpdate}, which
+     * updates even a project whose build file reads as it did). jdtls reads a changed pom when it gets to the event,
+     * and skips one whose contents it has seen before: a checkout and a pull a second apart (main, back to 0.1.0, then
+     * forward to 0.2.3) left the parent and two modules on the versions in between, and every import of a sibling
+     * module red with the build itself fine.
+     */
+    private void buildFilesChanged(LanguageServerSession s, List<WatchedFile> changes) {
+        if (!LspServerRegistry.JAVA_SERVER_ID.equals(s.serverId()) || s.root() == null) {
+            return;
+        }
+        Path root = s.root().toAbsolutePath().normalize();
+        List<Path> build = changes.stream()
+                .filter(c -> c != null && c.file() != null && c.kind() != WatchedKind.DELETED)
+                .map(c -> c.file().toAbsolutePath().normalize())
+                .filter(p -> p.startsWith(root)
+                        && p.getFileName() != null
+                        && JAVA_BUILD_FILES.contains(p.getFileName().toString()))
+                .toList();
+        if (build.isEmpty()) {
+            return;
+        }
+        SettlingBuildFiles settling = settlingBuildFiles.computeIfAbsent(s, k -> new SettlingBuildFiles());
+        long generation;
+        synchronized (settling) {
+            settling.files.addAll(build);
+            generation = ++settling.generation;
+        }
+        CompletableFuture.delayedExecutor(buildSettleMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .execute(() -> buildFilesSettled(s, settling, generation));
+    }
+
+    private void buildFilesSettled(LanguageServerSession s, SettlingBuildFiles settling, long generation) {
+        List<Path> files;
+        synchronized (settling) {
+            if (settling.generation != generation) {
+                return; // changed again since: the later change's wait sends them
+            }
+            files = List.copyOf(settling.files);
+            settling.files.clear();
+        }
+        settlingBuildFiles.remove(s, settling);
+        if (m.isClosed() || s.isDisposed() || files.isEmpty()) {
+            return;
+        }
+        List<org.eclipse.lsp4j.TextDocumentIdentifier> identifiers = files.stream()
+                .map(p -> new org.eclipse.lsp4j.TextDocumentIdentifier(s.uris().toWire(DocumentUris.of(p))))
+                .toList();
+        s.rawNotify("java/projectConfigurationsUpdate", Map.of("identifiers", identifiers));
     }
 
     /**

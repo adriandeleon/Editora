@@ -950,6 +950,11 @@ public final class LspManager {
         return watching.reportsChangesTo(file);
     }
 
+    /** How long build files stay unchanged before jdtls updates their projects (tests shorten it). */
+    void setBuildSettleMsForTest(long ms) {
+        watching.setBuildSettleMsForTest(ms);
+    }
+
     /** See {@link LspFileWatching#watchedRoots}. */
     java.util.Set<Path> watchedRoots() {
         return watching.watchedRoots();
