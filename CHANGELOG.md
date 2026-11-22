@@ -59,6 +59,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The terminal's paste confirmation has a palette command too.** Terminal: Change a Setting… now lists
+  "Confirm a paste of several lines", so it can be turned off and on from the palette as from its Settings row.
+
 - **The menu bar is in the title bar by default on Windows and Linux.** The extended window, until now an
   experimental option, is on for new installs and for existing ones that had left it off (it was off by default,
   so an untouched setting and a deliberate off look the same). The Settings row "Merge the menu bar into the title

@@ -51,15 +51,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("fx")
 class EverySettingHasACommandFxTest {
 
-    /**
-     * Settings a row writes that take no command, and why: only what the rule itself exempts. SET-06 exempts a key
-     * SET-16 keeps out of the UI; a key that switches off a question asked to protect the user is such a key, so
-     * it gets no command, and its row is SET-16's to remove.
-     */
-    private static final Map<String, String> EXEMPT = Map.of(
-            "terminalConfirmMultilinePaste",
-            "SET-16: switches off the question asked before a paste of several lines runs them in the shell");
-
     /** Runs a command once for each AI provider: its model, endpoint and key are the chosen provider's. */
     private static List<Consumer<Settings>> perProvider() {
         return com.editora.ai.AiProvider.ids().stream()
@@ -146,15 +137,12 @@ class EverySettingHasACommandFxTest {
         assertTrue(commandSettings.size() > 200, "the commands were found and run: " + commandSettings.size());
         List<String> missing = new ArrayList<>();
         rowSettings.forEach((setting, row) -> {
-            if (!commandSettings.contains(setting) && !EXEMPT.containsKey(setting)) {
+            if (!commandSettings.contains(setting)) {
                 missing.add(setting + " (" + row + ")");
             }
         });
+        // No exemptions: SET-06 exempts only a key SET-16 keeps out of the UI, and such a key has no row either.
         assertEquals(List.of(), missing, "settings a Settings row writes and no palette command does");
-        for (String setting : EXEMPT.keySet()) {
-            assertTrue(rowSettings.containsKey(setting), setting + " is exempted but no row writes it any more");
-            assertTrue(!commandSettings.contains(setting), setting + " is exempted but a command writes it");
-        }
     }
 
     // ---- the rows ----
