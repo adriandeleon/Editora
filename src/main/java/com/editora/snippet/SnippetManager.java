@@ -19,13 +19,7 @@ import java.util.logging.Logger;
 
 import com.editora.config.ConfigManager;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.json.JsonReadFeature;
-import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
-import com.fasterxml.jackson.core.util.Separators;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectWriter;
-import com.fasterxml.jackson.databind.json.JsonMapper;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -49,6 +43,9 @@ import org.jspecify.annotations.Nullable;
  * {@code body} is a string or an array of lines and {@code scope} is an optional comma-separated list of
  * language ids the snippet is limited to. Like VS Code's own snippet files it is read as JSONC —
  * {@code //} and block comments and trailing commas are accepted. Results are cached until {@link #reload()}.
+ *
+ * <p>A file is read and written through Jackson as {@link UserSnippetFile} and {@link SnippetJson} (PLAT-14, Pauta
+ * 6.0.1). A save from Settings writes the user file whole, so comments in it are not kept.
  */
 public final class SnippetManager {
 
@@ -187,14 +184,6 @@ public final class SnippetManager {
     }
 
     private final ConfigManager config;
-    // Lenient: real-world VS Code snippet files (e.g. friendly-snippets) carry extra fields, and VS Code's own
-    // template for a user snippet file opens with a block of // comments.
-    private final ObjectMapper mapper = JsonMapper.builder()
-            .enable(JsonReadFeature.ALLOW_JAVA_COMMENTS, JsonReadFeature.ALLOW_TRAILING_COMMA)
-            .build();
-    private final ObjectWriter writer = mapper.writer(new DefaultPrettyPrinter()
-            .withSeparators(Separators.createDefaultInstance().withObjectFieldValueSpacing(Separators.Spacing.AFTER)));
-
     /** One entry of one file, as written. A {@code marker} is disabled and has nothing else: it only disables. */
     private record Raw(
             String name, List<String> prefixes, String body, String description, String scope, boolean disabled) {
@@ -493,10 +482,10 @@ public final class SnippetManager {
         });
     }
 
-    /** {@link #userEntryHasComments} on the snippet thread; {@code then} gets the answer on the FX thread. */
-    public void userEntryHasCommentsLater(String language, String name, Consumer<Boolean> then) {
+    /** {@link #userFileHasComments} on the snippet thread; {@code then} gets the answer on the FX thread. */
+    public void userFileHasCommentsLater(String language, Consumer<Boolean> then) {
         fileWork.execute(() -> {
-            boolean has = userEntryHasComments(language, name);
+            boolean has = userFileHasComments(language);
             onFx(() -> then.accept(has));
         });
     }
@@ -687,22 +676,15 @@ public final class SnippetManager {
         return out;
     }
 
-    /** True when {@code language}'s user file holds a comment (which a whole-file rewrite would drop). */
+    /**
+     * True when {@code language}'s user file holds a comment, which saving it from Settings drops: the file is
+     * written whole, through Jackson (PLAT-14, Pauta 6.0.1).
+     */
     public boolean userFileHasComments(String language) {
+        com.editora.perf.BlockingSites.enter("snippets read " + norm(language));
         Path file = userFile(norm(language));
         try {
             return Files.exists(file) && hasComment(Files.readString(file, StandardCharsets.UTF_8));
-        } catch (IOException e) {
-            return false;
-        }
-    }
-
-    /** True when the user's entry called {@code name} holds a comment — the one thing saving that entry drops. */
-    public boolean userEntryHasComments(String language, String name) {
-        try {
-            JsoncObject doc = readUserDocument(norm(language));
-            JsoncObject.Member m = doc.member(name);
-            return m != null && hasComment(doc.valueText(m));
         } catch (IOException e) {
             return false;
         }
@@ -733,8 +715,8 @@ public final class SnippetManager {
     /**
      * Saves one snippet to {@code language}'s user file: replaces the entry called {@code oldName} where it
      * stands (a rename keeps its place, its {@code scope} and any field this model does not carry), or
-     * appends a new one when {@code oldName} is null or not in the file. Only that entry's text is rewritten,
-     * so the rest of the file — comments included — is kept as the user wrote it.
+     * appends a new one when {@code oldName} is null or not in the file. The file is written whole, through
+     * Jackson: comments in it are not kept.
      *
      * @throws IOException when the file exists but cannot be parsed (it is left untouched) or cannot be written
      */
@@ -749,55 +731,31 @@ public final class SnippetManager {
             return;
         }
         String lang = norm(language);
-        JsoncObject doc = readUserDocument(lang);
-        JsoncObject.Member old = oldName == null ? null : doc.member(oldName);
-        if (old == null) {
-            old = doc.member(e.name()); // saving under a name the file already has replaces that entry
+        UserSnippetFile doc = readUserDocument(lang);
+        String old = oldName != null && doc.get(oldName) != null ? oldName : null;
+        if (old == null && doc.get(e.name()) != null) {
+            old = e.name(); // saving under a name the file already has replaces that entry
         }
-        Map<String, Object> before = old == null ? null : valueMap(doc, old);
-        LinkedHashMap<String, Object> value = new LinkedHashMap<>();
-        value.put("prefix", prefixValue(before == null ? null : before.get("prefix"), e.prefixes()));
-        value.put("body", keepShape(before == null ? null : before.get("body"), e.body(), "\n"));
-        if (e.description() != null && !e.description().isBlank()) {
-            value.put(
-                    "description", keepShape(before == null ? null : before.get("description"), e.description(), " "));
-        }
-        if (e.scope() != null && !e.scope().isBlank()) {
-            value.put("scope", e.scope());
-        }
-        if (before != null) {
-            before.forEach((k, v) -> {
-                if (!isModelled(k)) {
-                    value.put(k, v); // anything else a VS Code file carries
-                }
-            });
-        }
-        if (e.disabled()) {
-            value.put("disabled", true);
-        }
-        writeUserDocument(
-                lang,
-                doc.with(
-                        old == null ? null : old.name(),
-                        mapper.writeValueAsString(e.name()),
-                        writer.writeValueAsString(value)));
-    }
-
-    private static boolean isModelled(String key) {
-        return key.equals("prefix")
-                || key.equals("body")
-                || key.equals("description")
-                || key.equals("scope")
-                || key.equals("disabled");
+        SnippetJson before = old == null ? null : SnippetJson.of(doc.get(old));
+        SnippetJson value = before == null ? new SnippetJson() : before.copy(); // keeps what this model does not carry
+        value.prefix = prefixValue(before == null ? null : before.prefix, e.prefixes());
+        value.body = keepShape(before == null ? null : before.body, e.body(), "\n");
+        value.description = e.description() != null && !e.description().isBlank()
+                ? keepShape(before == null ? null : before.description, e.description(), " ")
+                : null;
+        value.scope = e.scope() != null && !e.scope().isBlank() ? e.scope() : null;
+        value.disabled = e.disabled() ? Boolean.TRUE : null;
+        doc.put(old, e.name(), value.toNode());
+        writeUserDocument(lang, doc);
     }
 
     /** Removes the user entry called {@code name} (a bundled snippet of that name shows again). */
     public void removeUserEntry(String language, String name) throws IOException {
         synchronized (fileLock) {
             String lang = norm(language);
-            JsoncObject doc = readUserDocument(lang);
-            if (doc.member(name) != null) {
-                writeUserDocument(lang, doc.without(name));
+            UserSnippetFile doc = readUserDocument(lang);
+            if (doc.remove(name)) {
+                writeUserDocument(lang, doc);
             }
         }
     }
@@ -814,24 +772,24 @@ public final class SnippetManager {
 
     private void setDisabledUnlocked(String language, String name, boolean disabled) throws IOException {
         String lang = norm(language);
-        JsoncObject doc = readUserDocument(lang);
-        JsoncObject.Member m = doc.member(name);
-        Map<String, Object> value = m == null ? new LinkedHashMap<>() : new LinkedHashMap<>(valueMap(doc, m));
+        UserSnippetFile doc = readUserDocument(lang);
+        JsonNode node = doc.get(name);
+        SnippetJson value = SnippetJson.of(node);
         if (disabled) {
-            value.put("disabled", true);
+            value.disabled = Boolean.TRUE;
         } else {
-            value.remove("disabled");
-            if (m == null) {
+            if (node == null) {
                 return;
             }
+            value.disabled = null;
             if (value.isEmpty()) {
-                writeUserDocument(lang, doc.without(name));
+                doc.remove(name);
+                writeUserDocument(lang, doc);
                 return;
             }
         }
-        writeUserDocument(
-                lang,
-                doc.with(m == null ? null : name, mapper.writeValueAsString(name), writer.writeValueAsString(value)));
+        doc.put(name, name, value.toNode());
+        writeUserDocument(lang, doc);
     }
 
     /**
@@ -849,104 +807,54 @@ public final class SnippetManager {
 
     private void saveUserSnippetsUnlocked(String language, List<Snippet> snippets) throws IOException {
         String lang = norm(language);
-        JsoncObject doc = readUserDocument(lang);
+        UserSnippetFile doc = readUserDocument(lang);
         Set<String> keep = new HashSet<>();
         for (Snippet s : snippets) {
             if (s != null && s.name() != null && !s.name().isBlank()) {
                 keep.add(s.name());
             }
         }
-        String text = doc.text;
-        for (JsoncObject.Member m : doc.members) {
-            if (!keep.contains(m.name()) && !isVersionMember(doc, m)) {
-                text = JsoncObject.parse(text, mapper.getFactory()).without(m.name());
-            }
-        }
+        doc.snippets().keySet().removeIf(name -> !keep.contains(name));
         for (Snippet s : snippets) {
             if (s == null || s.name() == null || s.name().isBlank()) {
                 continue;
             }
-            JsoncObject cur = JsoncObject.parse(text, mapper.getFactory());
-            JsoncObject.Member old = cur.member(s.name());
-            Map<String, Object> before = old == null ? null : valueMap(cur, old);
-            LinkedHashMap<String, Object> value = new LinkedHashMap<>();
-            value.put("prefix", mergedPrefix(before == null ? null : before.get("prefix"), s.prefix()));
-            value.put("body", keepShape(before == null ? null : before.get("body"), s.body(), "\n"));
-            if (s.description() != null && !s.description().isBlank()) {
-                value.put(
-                        "description",
-                        keepShape(before == null ? null : before.get("description"), s.description(), " "));
-            }
-            if (before != null) {
-                before.forEach((k, v) -> {
-                    if (!k.equals("prefix") && !k.equals("body") && !k.equals("description")) {
-                        value.put(k, v); // "scope" and anything else a VS Code file carries
-                    }
-                });
-            }
+            JsonNode node = doc.get(s.name());
+            SnippetJson before = node == null ? null : SnippetJson.of(node);
+            SnippetJson value = before == null ? new SnippetJson() : before.copy(); // "scope" and anything else
+            value.prefix = mergedPrefix(before == null ? null : before.prefix, s.prefix());
+            value.body = keepShape(before == null ? null : before.body, s.body(), "\n");
+            value.description = s.description() != null && !s.description().isBlank()
+                    ? keepShape(before == null ? null : before.description, s.description(), " ")
+                    : null;
             if (before != null && value.equals(before)) {
-                continue; // untouched: leave its text exactly as the user wrote it
+                continue; // untouched: its value stays exactly as the file had it
             }
-            text = cur.with(
-                    old == null ? null : s.name(),
-                    mapper.writeValueAsString(s.name()),
-                    writer.writeValueAsString(value));
+            doc.put(s.name(), s.name(), value.toNode());
         }
-        if (text.isBlank()) {
-            text = "{ }\n"; // an empty list still leaves a file, as before
-        }
-        writeUserDocument(lang, text);
+        writeUserDocument(lang, doc);
     }
 
     /**
      * The format of a user snippet file, written into it as the member {@code schemaVersion} beside its
      * snippets. A file without one is version 1, the format before versions were written. To change the format:
-     * raise this and convert an older file's text where it is read.
+     * raise this and convert an older file where it is read.
      */
     public static final int SCHEMA_VERSION = 1;
 
-    /** The version {@code doc} carries: its numeric {@code schemaVersion} member, else the one before versions. */
-    private int versionOf(JsoncObject doc) {
-        JsoncObject.Member m = doc.member(com.editora.config.migration.UserFileVersion.KEY);
-        if (m == null) {
-            return com.editora.config.migration.UserFileVersion.BEFORE_VERSIONS;
-        }
-        String value = doc.valueText(m).strip();
-        return value.matches("\\d{1,9}")
-                ? Integer.parseInt(value)
-                : com.editora.config.migration.UserFileVersion.BEFORE_VERSIONS;
-    }
-
-    /** Whether {@code m} is the file's version marker and not a snippet: a member of that name holding a number. */
-    private static boolean isVersionMember(JsoncObject doc, JsoncObject.Member m) {
-        return com.editora.config.migration.UserFileVersion.KEY.equals(m.name())
-                && doc.valueText(m).strip().matches("\\d+");
-    }
-
-    /** {@code text} with the version marker added when it has none: every file the editor writes carries it. */
-    private String stamped(String text) throws IOException {
-        JsoncObject doc = JsoncObject.parse(text, mapper.getFactory());
-        return doc.member(com.editora.config.migration.UserFileVersion.KEY) != null
-                ? text
-                : doc.with(
-                        null,
-                        mapper.writeValueAsString(com.editora.config.migration.UserFileVersion.KEY),
-                        String.valueOf(SCHEMA_VERSION));
-    }
-
-    private JsoncObject readUserDocument(String lang) throws IOException {
+    private UserSnippetFile readUserDocument(String lang) throws IOException {
         com.editora.perf.BlockingSites.enter("snippets read " + lang);
         Path file = userFile(lang);
         if (!Files.exists(file)) {
-            return JsoncObject.parse("", mapper.getFactory());
+            return UserSnippetFile.parse("");
         }
-        JsoncObject doc;
+        UserSnippetFile doc;
         try {
-            doc = JsoncObject.parse(Files.readString(file, StandardCharsets.UTF_8), mapper.getFactory());
+            doc = UserSnippetFile.parse(Files.readString(file, StandardCharsets.UTF_8));
         } catch (IOException e) {
             throw new IOException(file.getFileName() + " could not be read and was left untouched: " + describe(e), e);
         }
-        if (versionOf(doc) > SCHEMA_VERSION) {
+        if (doc.version() > SCHEMA_VERSION) {
             // A change made here would be written in this build's format over a file it does not understand.
             throw new IOException(
                     file.getFileName() + " was written by a newer version of Editora and was left untouched");
@@ -954,47 +862,16 @@ public final class SnippetManager {
         return doc;
     }
 
-    private Map<String, Object> valueMap(JsoncObject doc, JsoncObject.Member m) {
-        try {
-            JsonNode node = mapper.readTree(doc.valueText(m));
-            if (node != null && node.isObject()) {
-                LinkedHashMap<String, Object> out = new LinkedHashMap<>();
-                node.properties().forEach(e -> out.put(e.getKey(), plainValue(e.getValue())));
-                return out;
-            }
-        } catch (IOException e) {
-            LOG.log(Level.FINE, "Unreadable snippet entry " + m.name(), e);
-        }
-        return new LinkedHashMap<>();
-    }
-
-    /** A JSON value as plain Java (map, list, string, number, boolean, null) — no data binding involved. */
-    private static @Nullable Object plainValue(JsonNode node) {
-        if (node == null || node.isNull()) {
-            return null;
-        }
-        if (node.isObject()) {
-            LinkedHashMap<String, Object> out = new LinkedHashMap<>();
-            node.properties().forEach(e -> out.put(e.getKey(), plainValue(e.getValue())));
-            return out;
-        }
-        if (node.isArray()) {
-            List<Object> out = new ArrayList<>();
-            node.forEach(n -> out.add(plainValue(n)));
-            return out;
-        }
-        if (node.isBoolean()) {
-            return node.booleanValue();
-        }
-        return node.isNumber() ? node.numberValue() : node.asText();
-    }
-
-    private void writeUserDocument(String lang, String text) throws IOException {
+    /** Writes {@code doc} as {@code lang}'s user file, through Jackson, with the version every file the editor writes carries. */
+    private void writeUserDocument(String lang, UserSnippetFile doc) throws IOException {
         com.editora.perf.BlockingSites.enter("snippets write " + lang);
         Path file = userFile(lang);
         Files.createDirectories(file.getParent());
+        if (!doc.hasVersion() && doc.get(com.editora.config.migration.UserFileVersion.KEY) == null) {
+            doc.setVersion((long) SCHEMA_VERSION);
+        }
         Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-        Files.writeString(tmp, stamped(text), StandardCharsets.UTF_8);
+        Files.writeString(tmp, doc.text(), StandardCharsets.UTF_8);
         Files.move(
                 tmp,
                 file,
@@ -1146,10 +1023,10 @@ public final class SnippetManager {
     /** The entries of one file's text. Problems are reported against {@code file} (null = a bundled resource). */
     private List<Raw> parse(String text, @Nullable Path file, Consumer<Problem> problems) {
         List<Raw> out = new ArrayList<>();
-        JsoncObject doc;
+        UserSnippetFile doc;
         try {
-            doc = JsoncObject.parse(text, mapper.getFactory());
-        } catch (JsoncObject.NotAnObjectException e) {
+            doc = UserSnippetFile.parse(text);
+        } catch (UserSnippetFile.NotAnObjectException e) {
             report(problems, file, Problem.Kind.NOT_AN_OBJECT, "", describe(e), 1);
             return out;
         } catch (IOException e) {
@@ -1159,7 +1036,7 @@ public final class SnippetManager {
             report(problems, file, Problem.Kind.SYNTAX, "", describe(e), line);
             return out;
         }
-        int stored = versionOf(doc);
+        int stored = doc.version();
         if (stored > SCHEMA_VERSION) {
             // A newer Editora's file: nothing is loaded from it. The user's own file stays where it is, for
             // that newer Editora, with a copy beside it; a plugin's is only passed over.
@@ -1175,46 +1052,39 @@ public final class SnippetManager {
                     0);
             return out;
         }
-        for (JsoncObject.Member m : doc.members) {
-            if (isVersionMember(doc, m)) {
-                continue; // the file's format version, not a snippet
-            }
-            JsonNode node;
-            try {
-                node = mapper.readTree(doc.valueText(m));
-            } catch (IOException e) {
-                node = null;
-            }
+        doc.snippets().forEach((name, node) -> {
             if (node == null || node.isNull()) {
-                continue; // "name": null — nothing there, as before
+                return; // "name": null — nothing there, as before
             }
             if (!node.isObject()) {
-                report(problems, file, Problem.Kind.BAD_ENTRY, m.name(), "", doc.lineOf(m.keyStart()));
-                continue;
+                report(problems, file, Problem.Kind.BAD_ENTRY, name, "", doc.lineOf(name));
+                return;
             }
-            JsonNode disabled = node.get("disabled");
+            SnippetJson s = SnippetJson.of(node);
             out.add(new Raw(
-                    m.name(),
-                    prefixes(plain(node.get("prefix"))),
-                    joinText(plain(node.get("body")), "\n"),
-                    joinText(plain(node.get("description")), " "),
-                    joinText(plain(node.get("scope")), ","),
-                    disabled != null && disabled.asBoolean(false)));
-        }
+                    name,
+                    prefixes(plain(s.prefix)),
+                    joinText(plain(s.body), "\n"),
+                    joinText(plain(s.description), " "),
+                    joinText(plain(s.scope), ","),
+                    s.isDisabled()));
+        });
         return out;
     }
 
     /** A string, a list of strings, or null — the shapes {@code prefix}/{@code body}/{@code description} take. */
-    private static @Nullable Object plain(JsonNode node) {
-        if (node == null || node.isNull()) {
+    private static @Nullable Object plain(@Nullable Object value) {
+        if (value == null || value instanceof Map<?, ?>) {
             return null;
         }
-        if (node.isArray()) {
+        if (value instanceof List<?> list) {
             List<String> out = new ArrayList<>();
-            node.forEach(n -> out.add(n.isNull() ? "null" : n.asText()));
+            for (Object o : list) {
+                out.add(o instanceof Map<?, ?> || o instanceof List<?> ? "" : String.valueOf(o));
+            }
             return out;
         }
-        return node.isContainerNode() ? null : node.asText();
+        return String.valueOf(value);
     }
 
     private static void report(
@@ -1235,7 +1105,7 @@ public final class SnippetManager {
     }
 
     private static String describe(IOException e) {
-        if (e instanceof JsoncObject.NotAnObjectException) {
+        if (e instanceof UserSnippetFile.NotAnObjectException) {
             return "the file must contain a JSON object";
         }
         if (e instanceof JsonProcessingException j) {

@@ -1,14 +1,6 @@
 {
   "exceptions": [
     {
-      "rule": "PLAT-14",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/platform/#plat-14",
-      "kind": "pending",
-      "reason": "The snippets file is edited as text, to keep your comments, rather than read into typed data.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1555"
-    },
-    {
       "rule": "DOCS-04",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/documentation/#docs-04",
@@ -46,22 +38,6 @@
       "url": "https://pauta-project.dev/6.0.1/window-shell/#win-03",
       "kind": "pending",
       "reason": "On Windows and Linux the menu bar sits below the title bar unless you turn on the extended window setting.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1562"
-    },
-    {
-      "rule": "WIN-13",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/window-shell/#win-13",
-      "kind": "pending",
-      "reason": "Quitting from the macOS menu or Dock closes each window in turn instead of going through Editora's own Quit.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1562"
-    },
-    {
-      "rule": "WIN-15",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/window-shell/#win-15",
-      "kind": "pending",
-      "reason": "On macOS, Settings is not in the application menu.",
       "link": "https://github.com/adriandeleon/Editora/issues/1562"
     },
     {
@@ -121,28 +97,12 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1568"
     },
     {
-      "rule": "CLI-11",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/command-line/#cli-11",
-      "kind": "pending",
-      "reason": "On Windows there is no console launcher, so command-line output does not appear in the terminal that started Editora.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1570"
-    },
-    {
       "rule": "CLI-07",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/command-line/#cli-07",
       "kind": "pending",
       "reason": "A launch with --disable-plugins starts a second Editora instead of handing over to the one already running.",
       "link": "https://github.com/adriandeleon/Editora/issues/1570"
-    },
-    {
-      "rule": "ABOUT-01",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/templates/about/#about-01",
-      "kind": "pending",
-      "reason": "On macOS, About Editora is in the Help menu rather than the application menu.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1574"
     },
     {
       "rule": "CONF-07",

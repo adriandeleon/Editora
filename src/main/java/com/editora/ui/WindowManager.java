@@ -1691,6 +1691,27 @@ public class WindowManager {
     }
 
     /**
+     * Runs a command that macOS's application menu or Dock asked for: Quit (WIN-13), Settings (WIN-15) or About
+     * (ABOUT-01). It runs as that window's own command, in the focused window, else the one built last, so the
+     * system's Quit is {@code app.quit} — one question for the quit, then each window's unsaved files — and not
+     * a close request sent to every window in turn. With no window open, Quit still ends the app.
+     */
+    public void runFromApplicationMenu(String commandId) {
+        Holder target = focusedHolder();
+        if (target != null) {
+            target.controller().registry.run(commandId);
+        } else if ("app.quit".equals(commandId)) {
+            javafx.application.Platform.exit();
+        }
+    }
+
+    /** The chord the shared keymap binds to {@code commandId}, in its display notation, or {@code null}. */
+    @Nullable
+    String chordOf(String commandId) {
+        return DebugPanelText.chordOf(keymap.displayChords()::get, commandId);
+    }
+
+    /**
      * The in-app quit path ({@code app.quit} / the toolbar Quit button / {@code C-x C-c}) ends in
      * {@code Platform.exit()} — which fires <b>no</b> {@code Stage.onCloseRequest}, so the per-window close
      * handler that prompts for unsaved buffers and persists the window's session never runs. Quitting
@@ -1861,6 +1882,7 @@ public class WindowManager {
                 h.controller.settingsWindow().syncAll();
             }
         }
+        MacAppMenu.refresh(); // Settings' chord in macOS's application menu follows the keymap (WIN-15)
         shared.markSettingsApplied();
     }
 

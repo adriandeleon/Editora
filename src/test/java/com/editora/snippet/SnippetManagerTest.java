@@ -581,9 +581,13 @@ class SnippetManagerTest {
         assertEquals(3, told.size(), "after a reload a problem that is still there is said again");
     }
 
-    /** N17: a save rewrites one entry; comments, order and unmodelled fields elsewhere stay. */
+    /**
+     * PLAT-14 (Pauta 6.0.1): a file with comments and trailing commas loads; a save writes it whole through Jackson —
+     * the comments go, the order, every trigger, the scope and the fields this editor does not model stay.
+     */
     @Test
-    void savingOneEntryKeepsTheCommentsAndARenameKeepsScopeAndTriggers(@TempDir Path dir) throws Exception {
+    void savingOneEntryRewritesTheFileThroughJacksonAndARenameKeepsScopeAndTriggers(@TempDir Path dir)
+            throws Exception {
         String original = """
                 {
                   // Place your snippets for go here.
@@ -600,7 +604,8 @@ class SnippetManagerTest {
         Path file = write(dir, "go.json", original);
         SnippetManager m = manager(dir);
         assertTrue(m.userFileHasComments("go"));
-        assertTrue(!m.userEntryHasComments("go", "Function"));
+        assertTrue(m.checkUserFiles().isEmpty(), "a JSONC file loads: " + m.checkUserFiles());
+        assertNotNull(m.byPrefix("go", "zlg"));
         java.util.List<Path> changed = new java.util.ArrayList<>();
         m.setOnUserFilesChanged(() -> changed.add(file));
 
@@ -613,10 +618,14 @@ class SnippetManagerTest {
         m.saveUserEntry("go", "Function", fn.withFields("Func", fn.prefixes(), fn.body(), "a function"));
 
         String text = Files.readString(file);
-        assertTrue(text.contains("// Place your snippets for go here."), text);
-        assertTrue(text.contains("/* logging */") && text.contains("// keep me"), text);
-        assertTrue(text.contains("\"Log\": { \"prefix\": \"zlg\", \"body\": \"fmt.Println($1)\" }"), "untouched entry");
-        assertTrue(text.indexOf("\"Func\"") < text.indexOf("\"Log\""), "the renamed entry kept its place");
+        assertFalse(m.userFileHasComments("go"), "the comments are dropped: " + text);
+        assertFalse(text.contains("Place your snippets") || text.contains("logging"), text);
+        com.fasterxml.jackson.databind.JsonNode tree = new com.fasterxml.jackson.databind.ObjectMapper().readTree(text);
+        assertEquals(
+                java.util.List.of("schemaVersion", "Func", "Log"),
+                iterable(tree.fieldNames()),
+                "plain JSON, the version first, and the renamed entry kept its place: " + text);
+        assertEquals("fmt.Println($1)", tree.path("Log").path("body").asText(), "the untouched entry");
         assertEquals(1, changed.size());
         assertNotNull(m.byPrefix("go", "zfn"));
         assertNotNull(m.byPrefix("go", "zfunc"), "a rename keeps every trigger");
@@ -625,20 +634,84 @@ class SnippetManagerTest {
                 .findFirst()
                 .orElseThrow();
         assertEquals("go", renamed.scope(), "and its scope");
-        assertTrue(text.contains("\"isFileTemplate\": false"), "and the fields this editor does not model");
-        assertTrue(
-                text.contains("\"body\": [ \"func ${1:name}() {\""), "an unchanged body keeps its array form: " + text);
+        assertEquals("a function", renamed.description());
+        assertFalse(tree.path("Func").path("isFileTemplate").asBoolean(true), "and the fields it does not model");
+        assertTrue(tree.path("Func").path("body").isArray(), "an unchanged body keeps its array form: " + text);
+        assertTrue(text.contains("\"Func\": {\n    \"prefix\": [\n      \"zfn\","), "two-space indents: " + text);
+        assertFalse(text.contains("\r"), text);
 
-        // Adding and removing splice too.
+        // Adding and removing write it whole too.
         m.saveUserEntry("go", null, SnippetManager.Entry.user("New", java.util.List.of("znew"), "x\ny", ""));
         m.removeUserEntry("go", "Log");
         text = Files.readString(file);
-        assertTrue(text.contains("// Place your snippets for go here.") && text.contains("/* logging */"), text);
+        assertEquals(
+                java.util.List.of("schemaVersion", "Func", "New"),
+                iterable(new com.fasterxml.jackson.databind.ObjectMapper()
+                        .readTree(text)
+                        .fieldNames()));
         assertNotNull(m.byPrefix("go", "znew"));
         assertNull(m.byPrefix("go", "zlg"));
         assertNull(m.userFileProblem("go"), "still a file that parses: " + text);
         assertTrue(SnippetManager.hasComment("{ \"a\": \"http://x\" } // c"));
         assertTrue(!SnippetManager.hasComment("{ \"a\": \"http://x /* no */\" }"));
+    }
+
+    /** What Jackson writes reads back to the same snippets, the same file text, and the same values. */
+    @Test
+    void aSnippetFileRoundTripsThroughJackson(@TempDir Path dir) throws Exception {
+        Path file = write(dir, "go.json", """
+                {
+                  "schemaVersion": 1,
+                  "A": { "prefix": ["za", "zaa"], "body": ["one", "two"], "description": ["first", "line"] },
+                  "B": { "prefix": "zb", "body": "b\\n$0", "scope": "go,c", "disabled": true, "extra": { "n": 2 } },
+                  "C": "not an object",
+                  "D": { "disabled": true }
+                }
+                """);
+        SnippetManager m = manager(dir);
+        assertEquals(1, m.checkUserFiles().size(), "C is a bad entry: " + m.checkUserFiles());
+        assertEquals(5, m.checkUserFiles().getFirst().line(), "on its line");
+        m.saveUserSnippets("go", m.userSnippets("go"));
+        String once = Files.readString(file);
+        m.reload();
+        m.saveUserSnippets("go", m.userSnippets("go"));
+        assertEquals(once, Files.readString(file), "a second save of the same snippets writes the same text");
+        com.fasterxml.jackson.databind.JsonNode tree = new com.fasterxml.jackson.databind.ObjectMapper().readTree(once);
+        assertEquals("zaa", tree.path("A").path("prefix").path(1).asText(), "every trigger is kept");
+        assertTrue(tree.path("A").path("description").isArray(), "an unchanged description keeps its form");
+        assertEquals("go,c", tree.path("B").path("scope").asText());
+        assertEquals(2, tree.path("B").path("extra").path("n").asInt(), "an unmodelled field");
+        assertTrue(tree.path("B").path("disabled").asBoolean());
+        assertEquals(
+                java.util.List.of("schemaVersion", "A", "B"),
+                iterable(tree.fieldNames()),
+                "the list replaced the file's entries (C and the bare disabled mark were not in it): " + once);
+        assertNotNull(m.byPrefix("go", "za"));
+        assertNull(m.byPrefix("go", "zb"), "still disabled");
+    }
+
+    /** {@code disabled} as a file may write it: a boolean, a string or a number. */
+    @Test
+    void aDisabledMarkIsReadAsItsFileWroteIt(@TempDir Path dir) throws Exception {
+        write(dir, "go.json", """
+                { "A": { "prefix": "za", "body": "a", "disabled": "true" },
+                  "B": { "prefix": "zb", "body": "b", "disabled": 1 },
+                  "C": { "prefix": "zc", "body": "c", "disabled": false } }
+                """);
+        SnippetManager m = manager(dir);
+        assertNull(m.byPrefix("go", "za"));
+        assertNull(m.byPrefix("go", "zb"));
+        assertNotNull(m.byPrefix("go", "zc"));
+        m.setDisabled("go", "C", true);
+        assertNull(m.byPrefix("go", "zc"));
+        m.setDisabled("go", "C", false);
+        assertNotNull(m.byPrefix("go", "zc"));
+    }
+
+    private static java.util.List<String> iterable(java.util.Iterator<String> it) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        it.forEachRemaining(out::add);
+        return out;
     }
 
     @Test
@@ -695,7 +768,7 @@ class SnippetManagerTest {
         m.saveUserEntry("go", null, SnippetManager.Entry.user("New", java.util.List.of("znew"), "x", ""));
         String saved = Files.readString(file);
         assertTrue(saved.contains("\"schemaVersion\": " + SnippetManager.SCHEMA_VERSION), saved);
-        assertTrue(saved.contains("// my own"), "the comment is kept: " + saved);
+        assertFalse(saved.contains("// my own"), "written through Jackson, the comment is not kept: " + saved);
         assertEquals(
                 java.util.List.of("Old", "New"),
                 m.userSnippets("go").stream().map(Snippet::name).toList(),
