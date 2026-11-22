@@ -1,0 +1,24 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}
+open ${workspace}/samples/markdown/gfm.md 1
+run buffer.closeOthers
+run tool.project
+wait 1500
+run view.toggleSplitPreview
+wait 4000
+shot ${out}/docs/markdown-preview${suffix}.png
+run remote.connect
+wait 2000
+shot ${out}/docs/remote-connect${suffix}.png
+key ESCAPE
+closewins
+open ${workspace}/pom.xml 1
+run buffer.closeOthers
+run tool.maven
+wait 5000
+shot ${out}/docs/maven${suffix}.png

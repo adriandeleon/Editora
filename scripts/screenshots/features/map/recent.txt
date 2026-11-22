@@ -1,0 +1,25 @@
+#@ write .github/CODEOWNERS # Editora has one maintainer.\n* @adriandeleon\n
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}
+open ${workspace}/docs/subsystems/project-map.md 1
+run buffer.closeOthers
+wait 1500
+run project.toggleMapView
+wait 3000
+winsize 1360 760
+winpos 0 0
+wait 1000
+clicksel .project-map-preview-button
+wait 800
+menuitem Show recent changes
+wait 8000
+clicksel .project-map-zoom-control 4
+wait 1500
+maphover subsystems/navigation.md
+wait 1500
+winshotp ${out}/map/recent-changes${suffix}.png

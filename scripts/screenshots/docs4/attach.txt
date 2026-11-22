@@ -1,0 +1,19 @@
+#@ needs demo programs waiting for an attach: a Java with -agentlib:jdwp on 5005, node --inspect, python -m debugpy --listen 5678 (start them before the run)
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+set lspSupport false
+set debugSupport true
+start
+project ${workspace}/samples/debug/java
+run buffer.closeAll
+run tool.project
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Main.java 18
+wait 3000
+run debug.attachToProcess
+wait 8000
+settext .status-message
+shot ${out}/docs/debug-attach-to-process${suffix}.png

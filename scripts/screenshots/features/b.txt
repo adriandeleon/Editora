@@ -1,0 +1,60 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}
+run buffer.closeAll
+run tool.project
+open ${workspace}/samples/log/levels.log 1
+wait 2500
+settext .status-message
+shot ${out}/features/log-viewer${suffix}.png
+run tool.project
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 39
+run tool.fileInformation
+wait 2000
+settext .status-message
+shot ${out}/features/file-information${suffix}.png
+run view.closeFocusedToolWindow
+focuseditor
+settext .status-message
+menu Git
+wait 800
+shot ${out}/features/menu-bar${suffix}.png
+key ESCAPE
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Main.java 16
+focuseditor
+key END
+type  // 3 shrinks the receipt
+run file.save
+wait 1200
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Main.java 39
+focuseditor
+key END
+key ENTER
+type // the text the demo prints first
+run file.save
+wait 1200
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Main.java 22
+focuseditor
+key END
+key ENTER
+type System.out.println("limit " + limit);
+run file.save
+wait 1500
+run tool.fileHistory
+wait 2500
+settext .status-message
+shot ${out}/features/local-file-history${suffix}.png
+run view.closeFocusedToolWindow
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 1
+run editor.print
+wait 4000
+windows
+winshot ${out}/features/export-pdf-print${suffix}.png

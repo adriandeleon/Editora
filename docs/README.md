@@ -98,6 +98,8 @@ architecture and contributor guidance; the exhaustive historical notes are prese
 - [testing.md](testing.md) — pure tests, the headless-FX harness (JavaFX's built-in Headless
   platform), the JaCoCo floors.
 - [release.md](release.md) — cutting a release and the CI matrix.
+- [screenshots.md](screenshots.md) — the website's and README's screenshots: the headless 2x harness, the
+  runner and its command scripts, where the pictures go.
 
 ## Detailed reference
 

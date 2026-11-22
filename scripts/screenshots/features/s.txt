@@ -1,0 +1,15 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 60
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 36
+run view.toggleSimpleMode
+wait 1500
+settext .status-message
+shot ${out}/features/simple-ui-mode${suffix}.png

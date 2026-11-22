@@ -1,0 +1,24 @@
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}
+run buffer.closeAll
+run tool.project
+open ${workspace}/samples/csv/people.csv 1
+click Preview
+wait 2500
+settext .status-message
+shot ${out}/features/csv${suffix}.png
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Shelf.java 39
+open ${workspace}/samples/markdown/gfm.md 1
+wait 1000
+focuseditor
+run view.splitEditorRight
+wait 3000
+settext .status-message
+shot ${out}/features/editor-groups${suffix}.png

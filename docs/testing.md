@@ -74,6 +74,10 @@ prototype platform's input/rendering limitations don't apply.
   Export Configuration — which the command sweep runs — never writes a zip into the real home
   directory. A test window must not write outside its temp folders; a new default destination under
   `user.home` needs the same seam.
+- **Screenshots** come from the same fixture: `FxTestSupport.writeShot` writes a scene at 2x (render scale 2
+  and a 2x snapshot transform). A test's `shot()` helper writes only with `-Deditora.test.shots=<dir>`, and the
+  website's screenshot harness (`Shots`, run by `scripts/screenshots/Shoot.java`) is built on it too; see
+  [screenshots.md](screenshots.md).
 - For tests with workers or deferred FX callbacks, own the fixture and any test threads with
   **`AsyncTestScope`**. Use its worker/Future, latch, and FX barriers instead of `Thread.sleep`; the
   scope reports exceptions from its threads and uncaught FX callbacks before closing every owned

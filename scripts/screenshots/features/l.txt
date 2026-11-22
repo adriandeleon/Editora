@@ -1,0 +1,27 @@
+#@ needs jdtls on the PATH (the Java language server; ~60 s to import samples/debug/java)
+#@ replace samples/debug/java/src/main/java/com/example/shelf/Main.java (?m)^(.*receipt\.total\(\).*)$ => $1\n\n        var notes = new ArrayList<String>();\n        notes.add(receipt.lines().getFirst());\n        String label = "receipt";
+set spellCheck false
+set updateCheck false
+set lspInstallPrompts false
+set stickyScroll false
+set lspSupport true
+set codeLens true
+set htmlPreviewBrowser "/usr/bin/true"
+size 1280 760
+start
+project ${workspace}/samples/debug/java
+run buffer.closeAll
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Main.java 26
+wait 60000
+run tool.project
+open ${workspace}/samples/debug/java/src/main/java/com/example/shelf/Main.java 26
+wait 4000
+run tool.problems
+wait 2000
+divider 0 0.6
+wait 2000
+settext .status-message
+focuseditor
+run lsp.codeActions
+wait 3000
+shot ${out}/features/lsp${suffix}.png
