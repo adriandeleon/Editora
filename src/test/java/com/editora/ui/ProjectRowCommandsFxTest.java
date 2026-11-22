@@ -332,6 +332,9 @@ class ProjectRowCommandsFxTest {
                 assertNull(rig.run(f, row), row + " ran");
             }
             assertNull(rig.run(rig.untracked, ProjectRowCommands.Row.GIT_IGNORE), "an untracked file can be ignored");
+            // Delete looks at the files off the FX thread first (PERF-01), then asks.
+            com.editora.testkit.Await.until(
+                    () -> !questions.isEmpty(), "Delete's question", java.time.Duration.ofSeconds(30));
         } finally {
             Confirm.answerWith(null);
         }
