@@ -2,6 +2,7 @@ set spellCheck false
 set updateCheck false
 set lspInstallPrompts false
 set stickyScroll false
+set projectShowHidden false
 set htmlPreviewBrowser "/usr/bin/true"
 size 1360 850
 start
