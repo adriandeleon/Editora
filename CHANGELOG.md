@@ -53,6 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **On macOS, About and Settings are in the application menu, and Quit is Editora's own.** About Editora and
+  Settings… open from the application menu, as on other Mac apps. Quit from that menu, Cmd-Q, the Dock or a logout
+  now goes through Editora's Quit, which asks once about unsaved work, instead of closing each window in turn.
+
 - **Debugging a C, C++ or Rust program on CodeLLDB reports the program's own exit code.** The Debug console said
   "Process finished with exit code 143" (and the status bar 143) after a program that exited 0. Recent CodeLLDB
   (1.12) has Editora start its launcher, `codelldb-launch`, and ends that launcher with SIGTERM once the program has
