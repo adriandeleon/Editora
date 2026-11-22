@@ -50,7 +50,7 @@ jobs:
       # This job runs no Maven, so it only reads the cache (the CI Format job's: the poms alone) and never
       # saves one: an empty ~/.m2 saved under a key the build legs share would leave them downloading again.
       - name: Set up JDK 25
-        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: '25'
@@ -130,7 +130,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up JDK 25
-        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: liberica
           java-version: '25'
@@ -752,7 +752,7 @@ jobs:
       # The expected set lives in scripts/release/CheckRelease.java (unit-tested there).
       # No Maven here either: read the cache, never save one (see the preflight).
       - name: Set up JDK 25
-        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: '25'
