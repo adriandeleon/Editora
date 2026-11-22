@@ -1,3 +1,4 @@
+#@ needs dlv copied to target/screenshots/home/ada/go/bin/dlv, so the card reads "found (/home/ada/go/bin/dlv)"
 set spellCheck false
 set updateCheck false
 set lspInstallPrompts false
@@ -10,9 +11,8 @@ start
 project ${workspace}/samples/debug/go
 run view.settings
 wait 2000
-winsize 1100 1400
-settings DEBUG
-focussel .scroll-pane
-key END
+winsize 1100 1000
+# The page shows one language's cards at a time: the Go card, under the Language picker.
+settings DEBUG go
 wait 1500
-winshot ${out}/docs/debug-settings-go-rust${suffix}.png
+winshot ${out}/docs/debug-settings-go${suffix}.png

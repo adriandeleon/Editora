@@ -1,3 +1,4 @@
+#@ needs CodeLLDB linked as target/screenshots/home/ada/.vscode/extensions/vadimcn.vscode-lldb-1.12.3 (Editora installs it in ~/.editora/plugins/dap/rust/extension)
 set spellCheck false
 set updateCheck false
 set lspInstallPrompts false
@@ -10,9 +11,13 @@ start
 project ${workspace}/samples/debug/go
 run view.settings
 wait 2000
-winsize 1100 1600
-settings DEBUG
-focussel .scroll-pane
-key END
+winsize 1100 1100
+# The Rust, C and C++ card (C and C++ ride Rust's CodeLLDB), under the Language picker.
+settings DEBUG rust
 wait 1500
-winshot ${out}/docs/debug-settings-cpp-csharp${suffix}.png
+winshot ${out}/docs/debug-settings-cpp${suffix}.png
+# The picker open: every language with a debugger, C# picked.
+settings DEBUG csharp
+clicksel .combo-box 0
+wait 800
+winshotp ${out}/docs/debug-settings-languages${suffix}.png

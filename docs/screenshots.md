@@ -62,6 +62,7 @@ One command per line; `#` starts a comment. The ops are listed in `ShotScript.OP
 | `run <command.id>` | run a palette command |
 | `type <text>`, `key <KEY> [S][C][M] [count]` | keys into the focused node (`focuseditor`, `focuslast`, `focussel <css>` first) |
 | `click <button text>`, `clicksel <css> [n]`, `menu <name>`, `menuitem <text>`, `popitem <text>` | press things |
+| `settings <CATEGORY> [language]` | after `run view.settings`: a Settings page (`DEBUG`, `LSP`, …) and, on a page with a Language picker, the language to show (`go`, `rust`, `csharp`) |
 | `wait <ms>` | let that much of the FX thread's pulses go by (for an outside process, such as a language server) |
 | `waitfor <css>` | until a visible node matches, up to 60 s |
 | `settext <css> [text]`, `retext <regex> => <text>` | blank or rewrite text that would date the picture |
