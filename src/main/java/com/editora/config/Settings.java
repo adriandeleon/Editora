@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 177;
+    public static final int SCHEMA_VERSION = 178;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -674,11 +674,13 @@ public class Settings {
     private boolean pomPreview = true;
     /**
      * Draw the menu bar inside the window's own title bar ({@code StageStyle.EXTENDED}), reclaiming a
-     * whole row of chrome. Off by default and <b>experimental</b>: it changes how the window is decorated,
-     * which is the most platform-specific thing an app does, and it is currently gated to Linux — see
-     * {@code ui/ExtendedWindow}. Read once per window at construction, so it applies on restart.
+     * whole row of chrome. On by default (Pauta WIN-03: the family starts with the menu in the title bar on
+     * Windows and Linux); off falls back to a decorated window with the menu bar below the title bar. macOS
+     * ignores it, its menus being in the system menu bar — see {@code ui/ExtendedWindow}. Read once per window
+     * at construction, so it applies on restart. Existing configs that stored the old default are moved to it
+     * by {@code ConfigMigrations.extendedWindowOn} (v177 → v178).
      */
-    private boolean extendedWindow = false;
+    private boolean extendedWindow = true;
     /**
      * Pin the enclosing scope headers above the viewport as you scroll (VS Code's sticky scroll): on by
      * default. Suppressed in large-file mode along with the other per-viewport work.

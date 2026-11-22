@@ -92,6 +92,7 @@ final class FxWindowFixture implements AutoCloseable {
             bootstrap.load();
             SharedConfig shared = bootstrap.shared();
             quietRemoteExecution(shared);
+            quietExtendedWindow(shared);
             quietLanguageServers(shared, fresh);
             isolateExports(shared);
             KeymapManager keymap = new KeymapManager();
@@ -115,6 +116,16 @@ final class FxWindowFixture implements AutoCloseable {
      */
     private static void quietRemoteExecution(SharedConfig shared) {
         shared.getSettings().setRemoteExecution(false);
+    }
+
+    /**
+     * A test window is decorated, the menu bar its first row, as it was before the extended window became the
+     * default (Pauta WIN-03): the tests that look for the menu bar, the tool-window rows or the first row of the
+     * window were written against that. {@code ExtendedWindowDefaultFxTest} builds the default window, and a
+     * test about the extended window turns it on in {@code beforeWindows}.
+     */
+    private static void quietExtendedWindow(SharedConfig shared) {
+        shared.getSettings().setExtendedWindow(false);
     }
 
     /** Whether {@code dir}'s settings file already says whether language servers are on. */
@@ -202,6 +213,7 @@ final class FxWindowFixture implements AutoCloseable {
             bootstrap.load();
             SharedConfig shared = bootstrap.shared();
             quietRemoteExecution(shared);
+            quietExtendedWindow(shared);
             quietLanguageServers(shared, fresh);
             isolateExports(shared);
             beforeWindows.accept(shared);
@@ -248,6 +260,7 @@ final class FxWindowFixture implements AutoCloseable {
             bootstrap.load();
             SharedConfig shared = bootstrap.shared();
             quietRemoteExecution(shared);
+            quietExtendedWindow(shared);
             quietLanguageServers(shared, !savesLanguageServers(dir));
             isolateExports(shared);
             KeymapManager keymap = new KeymapManager();
@@ -275,6 +288,7 @@ final class FxWindowFixture implements AutoCloseable {
             bootstrap.load();
             SharedConfig shared = bootstrap.shared();
             quietRemoteExecution(shared);
+            quietExtendedWindow(shared);
             quietLanguageServers(shared, fresh);
             isolateExports(shared);
             KeymapManager keymap = new KeymapManager();

@@ -1022,6 +1022,27 @@ class ConfigMigrationsTest {
         assertTrue(new com.editora.config.Settings().isRemoteExecution(), "on for a new install too");
     }
 
+    /** Pauta WIN-03: the menu bar in the title bar is the default, for a new install and an existing one. */
+    @Test
+    void theExtendedWindowIsTurnedOnWhereAnEarlierBuildStoredItsOldDefault() throws Exception {
+        JsonNode stored = ConfigMigrations.extendedWindowOn(mapper.readTree("{\"extendedWindow\":false}"));
+        assertTrue(stored.get("extendedWindow").asBoolean());
+
+        JsonNode on = mapper.readTree("{\"extendedWindow\":true}");
+        assertEquals(on.deepCopy(), ConfigMigrations.extendedWindowOn(on), "on stays on");
+        JsonNode absent = ConfigMigrations.extendedWindowOn(mapper.readTree("{\"tabSize\":4}"));
+        assertEquals(mapper.readTree("{\"tabSize\":4}"), absent, "absent is the new default already");
+        assertEquals(stored.deepCopy(), ConfigMigrations.extendedWindowOn(stored), "safe to repeat");
+
+        ObjectNode up = ConfigMigrations.upgrade(
+                ConfigSchema.SETTINGS, mapper.readTree("{\"schemaVersion\":177,\"extendedWindow\":false}"), mapper);
+        assertTrue(up.get("extendedWindow").asBoolean());
+        ObjectNode current = ConfigMigrations.upgrade(
+                ConfigSchema.SETTINGS, mapper.readTree("{\"schemaVersion\":178,\"extendedWindow\":false}"), mapper);
+        assertFalse(current.get("extendedWindow").asBoolean(), "turned off after the move, it stays off");
+        assertTrue(new com.editora.config.Settings().isExtendedWindow(), "on for a new install too");
+    }
+
     @Test
     void upgradingASettingsFileFromV120CarriesRemoteImagesOffIntoTheLoadedSettings() throws Exception {
         ObjectNode up = ConfigMigrations.upgrade(
