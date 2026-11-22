@@ -2037,10 +2037,14 @@ final class HistoryCoordinator {
                                     finishBufferRestore(target, completion, RestoreResult.BUFFER_CHANGED);
                                     return;
                                 }
-                                RestoreResult result = diff.applyToLocal(b, text)
-                                        ? RestoreResult.RESTORED
-                                        : RestoreResult.APPLY_FAILED;
-                                finishBufferRestore(target, completion, result);
+                                // RESTORED once the text is in the editor: the edit lands after an off-FX diff.
+                                diff.applyToLocal(
+                                        b,
+                                        text,
+                                        applied -> finishBufferRestore(
+                                                target,
+                                                completion,
+                                                applied ? RestoreResult.RESTORED : RestoreResult.APPLY_FAILED));
                             }));
         } catch (RuntimeException failure) {
             finishBufferRestore(target, completion, RestoreResult.CONTENT_UNAVAILABLE);
