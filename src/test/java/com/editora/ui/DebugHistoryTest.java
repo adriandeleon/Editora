@@ -124,6 +124,26 @@ class DebugHistoryTest {
     }
 
     @Test
+    void aLongHistoryIsWalkedOncePerValueNotOncePerStopBeforeIt() {
+        DebugHistory h = new DebugHistory();
+        h.setCapacity(20_000);
+        h.newStop("breakpoint", T, 1, IN_WORK, 0);
+        h.record(0, TOTAL, "0", "int", false);
+        DebugHistory.Stop last = null;
+        for (int i = 1; i < 20_000; i++) {
+            last = h.newStop("step", T, 1, IN_WORK, 0); // the value not shown at any of them
+        }
+        DebugHistory.Stop newest = last;
+        // Each Variables cell of an old stop asks this: 100 of them used to take minutes on such a history.
+        org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(10), () -> {
+            for (int cell = 0; cell < 100; cell++) {
+                assertTrue(h.changed(newest, 0, TOTAL, "1"));
+                assertFalse(h.changed(newest, 0, TOTAL, "0"));
+            }
+        });
+    }
+
+    @Test
     void aStopWithoutFramesHasNoneShown() {
         DebugHistory.Stop empty = new DebugHistory.Stop(1, "pause", T, 1, List.of(), 3);
         assertEquals(-1, empty.shownFrame);
