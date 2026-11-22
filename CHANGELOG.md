@@ -48,7 +48,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The terminal's paste confirmation has a palette command too.** Terminal: Change a Setting… now lists
   "Confirm a paste of several lines", so it can be turned off and on from the palette as from its Settings row.
 
+- **Settings ▸ Snippets writes a snippet file whole.** A save, a removal or switching a snippet off or on now
+  writes that language's snippet file as plain JSON, so comments in it are not kept (the order of the snippets,
+  every trigger, the scope and fields Editora does not use still are). A file with comments still loads, and the
+  first save of one asks first, naming the file. Edit User Snippets, which opens the file as text, keeps them.
+  Settings Sync merges a snippet file changed on two machines the same way.
+
+- **A release's notes are its changelog.** The text of each GitHub release, which What's New on the Welcome page
+  opens, is now this file's section for the version, after a short install guide, instead of a list of commits. A
+  section too long for a release page is shown by its entries' first lines, with a link to the whole of it.
+- **The Linux fat jars are signed too.** Like the `.deb`, `.rpm`, AppImage and tarball, each Linux jar now has an
+  OpenPGP signature beside it (`<file>.asc`), by the key attached to the release as `editora-signing-key.asc`.
+
 ### Fixed
+
+- **On macOS, About and Settings are in the application menu, and Quit is Editora's own.** About Editora and
+  Settings… open from the application menu, as on other Mac apps. Quit from that menu, Cmd-Q, the Dock or a logout
+  now goes through Editora's Quit, which asks once about unsaved work, instead of closing each window in turn.
 
 - **Debugging a C, C++ or Rust program on CodeLLDB reports the program's own exit code.** The Debug console said
   "Process finished with exit code 143" (and the status bar 143) after a program that exited 0. Recent CodeLLDB

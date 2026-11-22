@@ -74,7 +74,7 @@ public final class CheckRelease {
      * What the sign-linux job signs. Each Linux download of these formats has its detached
      * {@code .asc} beside it, and the public key is attached as {@link #SIGNING_KEY}.
      */
-    static final List<String> SIGNED = List.of("deb", "rpm", "AppImage", "tar.gz");
+    static final List<String> SIGNED = List.of("deb", "rpm", "AppImage", "tar.gz", "jar");
 
     static final String SIGNING_KEY = "editora-signing-key.asc";
 

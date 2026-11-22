@@ -55,7 +55,7 @@ checked=0
 for dir in "$@"; do
     # Absolute: the deb is unpacked from inside a directory of its own.
     dir="$(cd "$dir" && pwd)"
-    for file in "$dir"/*.deb "$dir"/*.rpm "$dir"/*.AppImage "$dir"/*.tar.gz; do
+    for file in "$dir"/*.deb "$dir"/*.rpm "$dir"/*.AppImage "$dir"/*.tar.gz "$dir"/*.jar; do
         name=$(basename "$file")
         [ -f "$file.asc" ] || fail "$name has no detached signature"
         gpgv --keyring "$work/key.gpg" "$file.asc" "$file" 2> "$work/gpgv.txt" ||
