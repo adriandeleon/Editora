@@ -885,8 +885,10 @@ server goes through `XmlServer.definition`: lemminx's own answer, unless that is
 
 **Ctrl/Cmd-hover links** (`editor/DefinitionLinks`). Holding the shortcut key alone over a view underlines what a
 Ctrl/Cmd-click there would follow and turns the pointer into a hand, as VS Code and IntelliJ do; the click is still
-`EditorBuffer`'s own Ctrl/Cmd-click filter. Each view (the split's second one is a `SecondaryPane.Followed` twin)
-has one mouse-transparent overlay holding a one-pixel bar, so nothing is painted while no link shows. Once the mouse
+`EditorBuffer`'s own Ctrl/Cmd-click filter. Each view has its own node-less `DefinitionLinks` (the mouse and key
+handling); the underline is `DefinitionLinkOverlay`, a mouse-transparent region with a one-pixel bar, attached on the
+first link a buffer shows (the split's second view gets its `SecondaryPane.Followed` twin), so a buffer nobody
+Ctrl-hovers builds nothing. Once the mouse
 rests on a new character for `SETTLE` (60 ms), `EditorBuffer.probeDefinitionLink` answers with a span: an HTML
 `href`/`src` value (found off the FX thread, `HTML_LINK_HOVER_SITE`), else the identifier there when the server
 knows its definition (`setDefinitionProbe`, wired in `LspCoordinator` to a plain `definition` request that does not
