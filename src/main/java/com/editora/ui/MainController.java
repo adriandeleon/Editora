@@ -5122,6 +5122,19 @@ public class MainController implements com.editora.mcp.McpBridge {
             return null;
         }
         String type = runConfigTypeOf(b);
+        if (com.editora.run.ScriptRunCommand.PYTHON.equals(type)) {
+            // A web app's file: its development server (manage.py runserver, flask, uvicorn). Packages looked
+            // for on this machine only.
+            boolean here = com.editora.process.ExecTargets.runsHere(file) && !com.editora.vfs.Vfs.isRemote(file);
+            com.editora.run.PythonWebApps.Server web = com.editora.run.PythonWebApps.serve(
+                    file,
+                    b.getContent(),
+                    com.editora.run.ProgramArgs.tokenize(programArgsFor(file)), // Flask's and uvicorn's go after
+                    d -> here && java.nio.file.Files.isRegularFile(d.resolve("__init__.py")));
+            if (web != null) {
+                return com.editora.run.RunConfigDefaults.forWebApp(web, file, windowProjectRoot());
+            }
+        }
         // (forScript answers null for the types that launch no script file: Java, make, npm.)
         return type == null ? null : com.editora.run.RunConfigDefaults.forScript(type, file, windowProjectRoot());
     }

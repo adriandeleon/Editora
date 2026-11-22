@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Run and debug Django, Flask and FastAPI apps.** Run or Debug a Django project's `manage.py` and its development
+  server starts (`runserver`); do the same on a Flask or FastAPI app's file and Editora serves it with
+  `flask run --reload` or `uvicorn --reload`, from the right folder. Breakpoints in your views stop, and keep
+  stopping after you edit a file and the server reloads: the debugger follows the reloader into each new server
+  process. Add (and Save as Run Configuration) proposes the server as a run configuration, and Python run
+  configurations, scripts and modules alike, can now be debugged, with their interpreter, options and variables.
 - **A System theme that follows your light or dark setting.** Settings ▸ Appearance ▸ Theme (and Set App Theme in
   the Command Palette) now starts with System: Editora Light while your system is light, Editora Dark while it is
   dark, and it switches as soon as the system does, without a restart. The editor theme follows it on Automatic,
