@@ -757,7 +757,7 @@ final class InstallCoordinator {
                     }
                     case "debugpy" ->
                         debugpy = com.editora.dap.DebugAdapterLocator.locateDebugpy(
-                                        "", Path.of(System.getProperty("user.home", "")))
+                                        "", Path.of(System.getProperty("user.home", "")), config)
                                 .isPresent();
                     case "typescript-language-server" -> {
                         ownTs = com.editora.install.TypeScriptServerInstall.ownLauncher(config) != null;

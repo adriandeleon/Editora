@@ -209,6 +209,43 @@ class DebugAdapterLocatorTest {
     }
 
     @Test
+    void debugpyAndJsDebugInstalledIntoThisLaunchsConfigFolderAreFound(@TempDir Path dir) throws IOException {
+        Path home = Files.createDirectories(dir.resolve("home"));
+        Path config = dir.resolve("custom-config");
+        Path python = config.resolve("plugins/dap/python");
+        Files.createDirectories(python.resolve("debugpy"));
+        Path entry = config.resolve("plugins/dap/javascript/js-debug/src/dapDebugServer.js");
+        Files.createDirectories(entry.getParent());
+        Files.writeString(entry, "");
+        assertEquals(Optional.of(python), DebugAdapterLocator.locateDebugpy("", home, config));
+        try {
+            DebugAdapterLocator.setEditoraConfigDir(config);
+            assertEquals(Optional.of(python), DebugAdapterLocator.locateDebugpy("", home));
+            assertEquals(Optional.of(entry), DebugAdapterLocator.locateJsDebugServer("", home));
+        } finally {
+            DebugAdapterLocator.setEditoraConfigDir(null);
+        }
+        assertTrue(DebugAdapterLocator.locateDebugpy("", home).isEmpty());
+        assertTrue(DebugAdapterLocator.locateJsDebugServer("", home).isEmpty());
+    }
+
+    @Test
+    void aConfiguredPathThatIsNoPathIsNotFoundAndQuotesAreDropped(@TempDir Path home) throws IOException {
+        String bad = "a\0b"; // no path on any system
+        assertTrue(DebugAdapterLocator.locate(bad, home.resolve("elsewhere")).isEmpty());
+        assertTrue(DebugAdapterLocator.locateJsDebugServer(bad, home).isEmpty());
+        assertTrue(DebugAdapterLocator.locateDebugpy(bad, home).isEmpty());
+        assertTrue(DebugAdapterLocator.locateCodelldb(bad, home).isEmpty());
+
+        Path custom = home.resolve("custom pythonpath");
+        Files.createDirectories(custom.resolve("debugpy"));
+        assertEquals(Optional.of(custom), DebugAdapterLocator.locateDebugpy(" \"" + custom + "\" ", home));
+        Path jar = home.resolve(J1);
+        Files.writeString(jar, "jar");
+        assertEquals(Optional.of(jar), DebugAdapterLocator.locate("'" + jar + "'", home.resolve("elsewhere")));
+    }
+
+    @Test
     void locateDebugpyEmptyWhenNoPackage(@TempDir Path home) throws IOException {
         // A dir that exists but has no debugpy package, and no editora install → empty (caller falls back
         // to a configured/PATH python importing debugpy directly).
