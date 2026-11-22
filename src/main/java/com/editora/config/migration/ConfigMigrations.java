@@ -575,6 +575,23 @@ public final class ConfigMigrations {
     }
 
     /**
+     * v177 → v178 for a settings file: a stored {@code largeFileThreshold} of 10,000 becomes 50,000.
+     *
+     * <p>10,000 was the default from v44 and was written into every file, so a stored 10,000 cannot be told apart
+     * from one nobody picked. Measured on 2026-11-22, the tier's minimap saving was nothing and the language
+     * servers measured keep 50,000-line files, so the old default only cost features. Other values were chosen
+     * and are kept. Safe to repeat.
+     */
+    static JsonNode raiseLargeFileThreshold(JsonNode input) {
+        if (input instanceof ObjectNode o
+                && o.path("largeFileThreshold").isInt()
+                && o.get("largeFileThreshold").asInt() == 10_000) {
+            o.put("largeFileThreshold", com.editora.config.Settings.DEFAULT_LARGE_FILE_THRESHOLD);
+        }
+        return input;
+    }
+
+    /**
      * v25 → v26 for a workspace file: a stored {@code projectMapFlow} of {@code "RIGHT_TO_LEFT"} becomes
      * {@code "LEFT_TO_RIGHT"}.
      *
@@ -1042,7 +1059,7 @@ public final class ConfigMigrations {
     }
 
     /**
-     * v177→178: turns the extended window (the menu bar in the title bar) on for existing installs, now that it
+     * v178→179: turns the extended window (the menu bar in the title bar) on for existing installs, now that it
      * is the default on Windows and Linux (Pauta WIN-03).
      *
      * <p>Jackson writes every field on save, so every install that ever ran stored the old default,

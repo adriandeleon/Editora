@@ -158,7 +158,7 @@ final class TypeRendering {
             cb.accept(shown, finalRef, finalNamed);
             return;
         }
-        evaluator.evaluate(TypeRenderers.substitute(r.getValue(), expression), frameId, res -> {
+        evaluator.evaluate(TypeRenderers.substitute(r.getValue(), expression, language.get()), frameId, res -> {
             boolean ok = res != null && !res.failed() && res.result() != null;
             cb.accept(ok ? DebugValues.display(TypeRenderers.unquote(res.result())) : shown, finalRef, finalNamed);
         });
@@ -189,7 +189,7 @@ final class TypeRendering {
         };
         for (int i = 0; i < children.size(); i++) {
             TypeRenderers.Child child = children.get(i);
-            String expression = TypeRenderers.substitute(child.expression(), e.expression());
+            String expression = TypeRenderers.substitute(child.expression(), e.expression(), language.get());
             int at = i;
             evaluator.evaluate(expression, e.frameId(), res -> {
                 out[at] = res == null || res.failed()

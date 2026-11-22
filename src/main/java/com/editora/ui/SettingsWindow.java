@@ -1125,7 +1125,8 @@ public class SettingsWindow {
         });
 
         // Line count above which the minimap + LSP auto-disable (highlighting + editing stay); 0 = never.
-        largeFileThresholdSpinner = IntSpinners.editable(0, Settings.MAX_LARGE_FILE_THRESHOLD, 10_000, 1000);
+        largeFileThresholdSpinner =
+                IntSpinners.editable(0, Settings.MAX_LARGE_FILE_THRESHOLD, Settings.DEFAULT_LARGE_FILE_THRESHOLD, 1000);
         UiZoom.prefWidth(largeFileThresholdSpinner, 120);
         largeFileThresholdSpinner.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {

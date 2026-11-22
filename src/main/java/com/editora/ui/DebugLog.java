@@ -50,6 +50,17 @@ public final class DebugLog {
     private static boolean captureSuspendedForTest; // guarded by LOCK; see suspendCaptureForTest
     private static @Nullable PrintWriter file; // optional mirror to <configDir>/editora-session.log
 
+    /** Most characters written to the session file in one session: a record logged in a loop must not fill the disk. */
+    static final long MAX_FILE_CHARS = 8L * 1024 * 1024;
+
+    private static long fileLimit = MAX_FILE_CHARS; // guarded by LOCK; a test lowers it
+    private static long fileWritten; // guarded by LOCK: characters sent to the session file so far
+    private static boolean fileFull; // guarded by LOCK: the limit was reached, the closing note written
+
+    /** The last line of a session file that reached {@link #MAX_FILE_CHARS}. */
+    static final String FILE_FULL_NOTE =
+            "[The session log reached its size limit: later records are only in the in-app log (View: Application Log).]";
+
     /**
      * Where the session file and the console are written: {@code debug-log-writer}, never the thread that logs
      * (PERF-01, Pauta 6.0.1: a record logged on the FX thread must not write a file there). Heard by
@@ -231,17 +242,28 @@ public final class DebugLog {
         com.editora.perf.BlockingSites.enter("DebugLog.attachFile");
         flushWrites(1000); // the writes queued for a file attached before go out before it is replaced
         synchronized (LOCK) {
+            if (file != null) {
+                file.close(); // the file attached before: its queued writes went out above
+                file = null;
+            }
             try {
                 Path path = configDir.resolve(SESSION_FILE);
                 keepPreviousSession(path, configDir.resolve(PREVIOUS_SESSION_FILE));
                 // Owner-only, like everything else in the config dir: this records the user's file paths,
                 // project names and error text. newBufferedWriter truncates and keeps the mode.
                 com.editora.config.ConfigWriter.createOwnerOnly(path);
-                file = new PrintWriter(Files.newBufferedWriter(path, StandardCharsets.UTF_8));
+                PrintWriter out = new PrintWriter(Files.newBufferedWriter(path, StandardCharsets.UTF_8));
+                file = out;
+                fileWritten = 0;
+                fileFull = false;
                 for (String record : RECORDS) {
-                    file.println(record);
+                    String line = toFile(record);
+                    if (line == null) {
+                        break;
+                    }
+                    out.println(line);
                 }
-                file.flush();
+                out.flush();
             } catch (IOException | RuntimeException e) {
                 file = null;
             }
@@ -327,9 +349,42 @@ public final class DebugLog {
             while (RECORDS.size() > MAX_RECORDS) {
                 RECORDS.removeFirst();
             }
-            if (file != null) {
-                enqueue(new Pending(file, record, null)); // written on the writer, in this order
+            String line = file == null ? null : toFile(record);
+            if (line != null) {
+                enqueue(new Pending(file, line, null)); // written on the writer, in this order
             }
+        }
+    }
+
+    /**
+     * What goes to the session file for {@code record}: the record, or — once, when it would take the file past
+     * {@link #fileLimit} — {@link #FILE_FULL_NOTE}; null once the file is full. Counts what it lets through. Under
+     * {@link #LOCK}.
+     */
+    private static @Nullable String toFile(String record) {
+        if (fileFull) {
+            return null;
+        }
+        long size = record.length() + 1L;
+        if (fileWritten + size > fileLimit) {
+            fileFull = true;
+            return FILE_FULL_NOTE;
+        }
+        fileWritten += size;
+        return record;
+    }
+
+    /** TEST SEAM — the session file's limit in characters; {@link #MAX_FILE_CHARS} again with a negative value. */
+    static void setFileLimitForTest(long chars) {
+        synchronized (LOCK) {
+            fileLimit = chars < 0 ? MAX_FILE_CHARS : chars;
+        }
+    }
+
+    /** TEST SEAM — the session file now written to, or null. */
+    static @Nullable PrintWriter fileForTest() {
+        synchronized (LOCK) {
+            return file;
         }
     }
 

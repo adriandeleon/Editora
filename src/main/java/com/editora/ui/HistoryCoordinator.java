@@ -50,6 +50,9 @@ import static com.editora.i18n.Messages.tr;
  */
 final class HistoryCoordinator {
 
+    /** Files larger than this are not captured into local history when a save, delete or overwrite replaces them. */
+    static final long MAX_CAPTURE_BYTES = 5L * 1024 * 1024;
+
     @FunctionalInterface
     interface RevisionContentLoader {
         void load(HistoryRevision revision, Consumer<String> completion);
@@ -1135,7 +1138,7 @@ final class HistoryCoordinator {
         Long previous = lastSavedStamps.put(historyKey(target), stamp(written));
         if (replaced == null
                 || replaced.length == 0 // an empty file has no text to bring back
-                || replaced.length > EditorBuffer.LARGE_FILE_BYTES
+                || replaced.length > MAX_CAPTURE_BYTES
                 || (previous != null && previous >>> 32 == replaced.length && previous == stamp(replaced))) {
             return;
         }
@@ -1874,7 +1877,7 @@ final class HistoryCoordinator {
 
     /**
      * A file as a capture before a delete or an overwrite reads it, off the FX thread: whether it is a regular file,
-     * its bytes (null when it is over {@link EditorBuffer#LARGE_FILE_BYTES}) and its {@code .editorconfig} charset.
+     * its bytes (null when it is over {@link #MAX_CAPTURE_BYTES}) and its {@code .editorconfig} charset.
      */
     record Captured(
             boolean regular,
@@ -1889,7 +1892,7 @@ final class HistoryCoordinator {
             if (!regular) {
                 return new Captured(false, null, null);
             }
-            if (Files.size(file) > EditorBuffer.LARGE_FILE_BYTES) {
+            if (Files.size(file) > MAX_CAPTURE_BYTES) {
                 return new Captured(true, null, null);
             }
             byte[] bytes = Files.readAllBytes(file);
