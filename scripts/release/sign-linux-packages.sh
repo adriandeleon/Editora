@@ -8,8 +8,8 @@
 #   .rpm       embedded (rpmsign): `rpm -K`, and dnf or zypper once the key is imported.
 #   .deb       embedded, as an `_gpgorigin` member, which debsig-verify checks. apt and dpkg
 #              check nothing about a .deb that was downloaded rather than fetched from a repository.
-#   all four   a detached, armoured `<file>.asc`: `gpg --verify <file>.asc <file>`. The only
-#              signature the AppImage and the tarball carry.
+#   all five   a detached, armoured `<file>.asc`: `gpg --verify <file>.asc <file>`. The only
+#              signature the AppImage, the tarball and the fat jar carry.
 #
 # The AppImage has no embedded signature because appimagetool can sign only while it builds, which
 # would put the key on the build runners — and those run whatever Maven resolves from a repository
@@ -95,7 +95,7 @@ for dir in "$@"; do
         sign_deb "$deb"
     done
     # After the embedded signatures, which change the files they are added to.
-    for file in "$dir"/*.deb "$dir"/*.rpm "$dir"/*.AppImage "$dir"/*.tar.gz; do
+    for file in "$dir"/*.deb "$dir"/*.rpm "$dir"/*.AppImage "$dir"/*.tar.gz "$dir"/*.jar; do
         gpg --armor --detach-sign --local-user "$fpr" --output "$file.asc" "$file"
         echo "signed $(basename "$file")"
         signed=$((signed + 1))

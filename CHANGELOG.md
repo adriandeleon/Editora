@@ -43,6 +43,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Before, only F5 started such a file, and Run said it was not runnable. Debug: Debug Current File now also works on
   a file that Run File runs.
 
+### Changed
+
+- **A release's notes are its changelog.** The text of each GitHub release, which What's New on the Welcome page
+  opens, is now this file's section for the version, after a short install guide, instead of a list of commits. A
+  section too long for a release page is shown by its entries' first lines, with a link to the whole of it.
+- **The Linux fat jars are signed too.** Like the `.deb`, `.rpm`, AppImage and tarball, each Linux jar now has an
+  OpenPGP signature beside it (`<file>.asc`), by the key attached to the release as `editora-signing-key.asc`.
+
 ### Fixed
 
 - **Debugger review fixes, second round.** A second review of the debugger found these, now fixed:

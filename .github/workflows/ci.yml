@@ -277,6 +277,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
+          # No Maven here (the scripts run on the source launcher): read the Format job's cache, never save one.
+          cache: maven
+          cache-read-only: true
 
       - name: Check shell syntax
         run: |
