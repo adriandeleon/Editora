@@ -48,6 +48,7 @@ final class DebugDisassemblyView extends VBox {
 
     /** Those of {@link #breakpoints} the adapter could not set. */
     private final Set<Long> unverified = new HashSet<>();
+
     private Consumer<DapModels.Instruction> onToggleBreakpoint = i -> {};
     private BooleanSupplier breakpointsTaken = () -> false;
 
