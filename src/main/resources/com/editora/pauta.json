@@ -85,7 +85,7 @@
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/settings/#set-13",
       "kind": "pending",
-      "reason": "On a machine with no system keychain, AI API keys are kept in the settings file.",
+      "reason": "On a machine with no system keychain, AI API keys are kept in an encrypted file of their own rather than only in memory for the session.",
       "link": "https://github.com/adriandeleon/Editora/issues/1568"
     },
     {
