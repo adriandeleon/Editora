@@ -107,10 +107,12 @@ incremental, and visible-only. See [performance.md](performance.md#the-hot-paths
 
 ### huge / large / heavy file tiers
 
-three size guards in `EditorBuffer`. *huge* (≥ 50 MB): the
-file is read-only with a capped load. *large* (≥ 5 MB): highlighting + minimap are disabled. *heavy*
-(`setHeavyFile`, line-count ≥ `Settings.largeFileThreshold`, default 10000): minimap + LSP are
-disabled but highlighting + editing stay. Overlays check these flags and no-op. See
+three size guards in `EditorBuffer`. *huge* (≥ 50 MB, or more than the free heap holds): the
+file is read-only with a capped load. *large* (≥ 200,000 lines, ≥ 16 MB, or a line of 1 MiB): highlighting,
+the minimap and undo are disabled. *heavy* (`setHeavyFile`, line-count ≥ `Settings.largeFileThreshold`,
+default 50,000): the language server is not started, unless the language keeps it longer; highlighting, the
+minimap and editing stay. Overlays check these flags and
+no-op. See
 [performance.md](performance.md#5-preserve-the-largehuge-file-guards).
 
 ### injected hooks (`setXxxProvider`)

@@ -58,7 +58,72 @@ public final class InlineValueScope {
             return true; // the frame's line is not known: no scope to hold a line against
         }
         int frameHeader = headerOf(lineAt, frameLine);
-        return frameHeader == UNKNOWN || line == frameHeader || headerOf(lineAt, line) == frameHeader;
+        if (frameHeader == UNKNOWN || line == frameHeader) {
+            return true;
+        }
+        if (declaresScope(lineAt.apply(line))) {
+            // Another function's (or class's) own header — "def f(items):" beside a module-level stop, or a def
+            // nested in the frame's function: its names are that function's parameters, not the frame's values.
+            return false;
+        }
+        return headerOf(lineAt, line) == frameHeader;
+    }
+
+    /** First words that declare a function, method or type rather than run code. */
+    private static final Set<String> DECLARES = Set.of(
+            "def",
+            "async",
+            "function",
+            "func",
+            "fn",
+            "fun",
+            "sub",
+            "class",
+            "interface",
+            "enum",
+            "record",
+            "struct",
+            "trait",
+            "impl",
+            "object");
+
+    /** Words that start a statement with a value, never a declaration ({@code return {}). */
+    private static final Set<String> STATEMENT = Set.of("return", "yield", "throw", "new", "await", "else");
+
+    /**
+     * Whether {@code text} is the header of a function, method or type: a scope opener that declares
+     * ({@code def f(items):}, {@code function helper(data) {}, {@code void run(int a) {}) — not a lambda
+     * ({@code items.forEach(n -> {}) or a literal ({@code config = {}), which are code of the scope they stand in.
+     */
+    static boolean declaresScope(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String code = code(text);
+        if (code.isEmpty() || !opensScope(code)) {
+            return false;
+        }
+        int w = 0;
+        while (w < code.length() && Character.isLetter(code.charAt(w))) {
+            w++;
+        }
+        String first = code.substring(0, w);
+        if (DECLARES.contains(first)) {
+            return true;
+        }
+        if (STATEMENT.contains(first)) {
+            return false;
+        }
+        int paren = code.indexOf('(');
+        if (paren <= 0) {
+            return false;
+        }
+        String head = code.substring(0, paren).strip();
+        return head.indexOf('=') < 0
+                && head.indexOf('.') < 0
+                && head.indexOf(' ') > 0
+                && !code.contains("->")
+                && !code.contains("=>");
     }
 
     /**

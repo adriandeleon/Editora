@@ -164,9 +164,28 @@ public final class StepFilters {
         if (!file.isEmpty() && DOTTED.matcher(p).matches()) {
             String core = p.endsWith(".*") ? p.substring(0, p.length() - 2) : p;
             String fragment = "/" + core.replace('.', '/');
-            return file.contains(fragment + "/") || file.contains(fragment + ".");
+            String packages = packagePart(file);
+            return packages.contains(fragment + "/") || packages.contains(fragment + ".");
         }
         return false;
+    }
+
+    /** A JVM source root's folders: {@code src/main/kotlin/}, {@code src/test/java/}, {@code src/scala/}. */
+    private static final Pattern SOURCE_ROOT =
+            Pattern.compile("/src/(?:[^/.]+/)?(?:java|kotlin|scala|groovy|clojure)/", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * The part of {@code file} (with {@code /}) a package is looked for in: after its last JVM source root ({@code
+     * /com/shop/Main.kt} of {@code /p/src/main/kotlin/com/shop/Main.kt}), so that {@code kotlin.*} or {@code java.*}
+     * is not found in the source root's own folders; the whole path when it has none.
+     */
+    static String packagePart(String file) {
+        Matcher m = SOURCE_ROOT.matcher(file);
+        int end = -1;
+        while (m.find()) {
+            end = m.end();
+        }
+        return end < 0 ? file : file.substring(end - 1);
     }
 
     /** Whether a frame is in code any of {@code patterns} filters. */

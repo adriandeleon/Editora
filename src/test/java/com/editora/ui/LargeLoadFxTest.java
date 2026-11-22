@@ -73,23 +73,26 @@ class LargeLoadFxTest {
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             String line = "0123456789 0123456789 0123456789 0123456789 0123456789 0123456789\n";
-            int size = (int) EditorBuffer.LARGE_FILE_BYTES + 4096;
+            int size = 5 * 1024 * 1024 + 4096;
             Path file = Files.writeString(dir.resolve("big.txt"), line.repeat(size / line.length() + 1));
+            long bytes = Files.size(file);
             FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
             long max = 2048L << 20;
 
             workflows.heapUsage = () -> new long[] {max, 64L << 20};
             FileWorkflowCoordinator.PreparedLoad roomy = workflows.prepareLoad(file, false);
             assertFalse(roomy.truncated());
-            assertEquals(Files.size(file), roomy.content().length());
+            assertEquals(bytes, roomy.content().length());
 
-            // 150 MB free: less than the document of a 5 MB file needs once the margin is set aside.
-            workflows.heapUsage = () -> new long[] {max, max - (150L << 20)};
+            // 150 MB free: less than the characters of a 5 MB file need once the margin is set aside, so the file
+            // is read only in part, before its lines are ever counted.
+            long used = max - (150L << 20);
+            workflows.heapUsage = () -> new long[] {max, used};
             FileWorkflowCoordinator.PreparedLoad tight = workflows.prepareLoad(file, false);
             assertTrue(tight.truncated(), "opened through the capped path instead of risking the heap");
             assertTrue(tight.large());
             assertEquals(
-                    ((150L << 20) - LoadHeapGuard.MARGIN_BYTES) / LoadHeapGuard.COST_PER_BYTE,
+                    LoadHeapGuard.cap(bytes, LoadHeapGuard.cost(bytes, 0, false), max, used),
                     tight.content().length());
             assertNull(tight.sourceBytes(), "a slice has no whole-file bytes to compare a later save with");
 
@@ -107,9 +110,38 @@ class LargeLoadFxTest {
                 FxTestSupport.runOnFx(buffer::dispose);
             }
 
-            // A file under the large-file threshold is never capped, whatever the heap looks like.
+            // A small file is never capped, whatever the heap looks like.
             Path small = Files.writeString(dir.resolve("small.txt"), line.repeat(100));
             assertFalse(workflows.prepareLoad(small, false).truncated());
+        }
+    }
+
+    /**
+     * Short lines cost more than their characters: a 2 MB file of 8-character lines is cheap to read but its
+     * 250,000 paragraphs are not, so once its lines are counted it too opens as the part that fits.
+     */
+    @Test
+    void aFileWhoseLinesDoNotFitOpensAsAReadOnlySlice(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            Path file = Files.writeString(dir.resolve("short.json"), "  1234,\n".repeat(250_000));
+            long chars = Files.size(file);
+            FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+            long max = 2048L << 20;
+            long cost = LoadHeapGuard.cost(chars, 250_001, false);
+            assertTrue(LoadHeapGuard.cost(chars, 0, false) < cost / 4, "the characters alone are cheap");
+            long used = max - LoadHeapGuard.MARGIN_BYTES - cost / 2; // room for about half the document
+            workflows.heapUsage = () -> new long[] {max, used};
+
+            FileWorkflowCoordinator.PreparedLoad load = workflows.prepareLoad(file, false);
+            assertTrue(load.truncated(), "opened through the capped path once the lines were counted");
+            assertTrue(load.large());
+            assertTrue(load.content().length() < chars, "only part of it");
+            assertTrue(load.content().length() > LoadHeapGuard.MIN_CAP_BYTES, "but as much as fits");
+            assertNull(load.sourceBytes());
+
+            workflows.heapUsage = () -> new long[] {max, 64L << 20};
+            assertFalse(workflows.prepareLoad(file, false).truncated(), "and the whole of it when there is room");
         }
     }
 }

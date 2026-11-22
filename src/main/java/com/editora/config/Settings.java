@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 178;
+    public static final int SCHEMA_VERSION = 179;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -86,6 +86,8 @@ public class Settings {
     public static final int MAX_HISTORY_AGE_DAYS = 3650;
     public static final int MAX_HISTORY_TOTAL_MB = 10_000;
     public static final int MAX_LARGE_FILE_THRESHOLD = 10_000_000;
+    /** The default of {@link #largeFileThreshold}; settings files stored the old 10,000 (moved by v177 → v178). */
+    public static final int DEFAULT_LARGE_FILE_THRESHOLD = 50_000;
 
     /** Author name used by file templates' {@code ${author}}; blank = the OS user (see getter). */
     private String authorName = "";
@@ -110,10 +112,12 @@ public class Settings {
     private boolean editorThemeUserSet;
 
     private int tabSize = 4;
-    /** Line count above which a file enters the intermediate "large source file" tier: the minimap and
-     *  LSP are auto-disabled (highlighting + editing stay) so a very long single file (e.g. a 13k-line
-     *  source) stays responsive. {@code 0} disables the tier. Distinct from the 5 MB hard large-file mode. */
-    private int largeFileThreshold = 10_000;
+    /** Line count above which a file enters the intermediate "large source file" tier: its language server
+     *  is not started (highlighting, the minimap and editing stay), unless the language keeps it longer
+     *  ({@code LspServerRegistry.heavyFileLspLineLimit}). {@code 0} disables the tier. Distinct from large-file
+     *  mode ({@code EditorBuffer.LARGE_FILE_LINES}). Was 10,000 until measured (2026-11-22): the minimap costs
+     *  nothing measurable up to 200,000 lines, and the servers measured keep 50,000-line files. */
+    private int largeFileThreshold = DEFAULT_LARGE_FILE_THRESHOLD;
     /**
      * Global indent unit for Tab/Enter: {@code "detect"} (per-file auto-detection, default), {@code "space"}
      * (force {@link #tabSize} spaces), or {@code "tab"}. A file's {@code .editorconfig} {@code indent_style}

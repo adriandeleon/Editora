@@ -222,8 +222,8 @@ class JavaLooseLaunchFxTest {
         Map<String, Object> launch = launch();
         assertEquals("demo.Main", launch.get("mainClass"), "the class the file declares, not jdtls's guess");
         assertTrue(holdsClass(launch, "demo.Main"), "compiled with its package's other classes: " + launch);
-        assertEquals(
-                project.resolve("src").toUri().toString(),
+        assertEquals( // the folder's real path, as jdtls reports its own (macOS: /var is /private/var)
+                project.resolve("src").toRealPath().toUri().toString(),
                 arg(args("java.project.addToSourcePath").get(0)));
         assertEquals(
                 file.getParent().toUri().toString(),

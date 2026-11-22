@@ -85,6 +85,7 @@ final class CsharpTestDebug {
         // {@code otherwise}, as a false answer did.
         String text = b.getContent();
         int caret = DebugCoordinator.caretLine(b);
+        DebugSession asked = d.s(); // the answer lands later: it is this session's, whichever is focused then
         com.editora.perf.OffFx.then(
                 "CsharpTestDebug.debugAtCaret",
                 () -> {
@@ -96,12 +97,17 @@ final class CsharpTestDebug {
                     return target == null ? null : new Found(project, target);
                 },
                 found -> {
-                    Found f = found.value();
-                    if (f == null) {
-                        otherwise.run();
-                    } else {
-                        debugInProject(file, f.project(), f.target());
+                    if (!d.sessions().all().contains(asked)) {
+                        return; // its tab was closed meanwhile
                     }
+                    d.inSession(asked, () -> {
+                        Found f = found.value();
+                        if (f == null) {
+                            otherwise.run();
+                        } else {
+                            debugInProject(file, f.project(), f.target());
+                        }
+                    });
                 });
         return true;
     }

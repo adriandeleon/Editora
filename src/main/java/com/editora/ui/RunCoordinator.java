@@ -2892,8 +2892,8 @@ final class RunCoordinator {
 
     /** Global Maven JDK, with a saved configuration's project override taking precedence. */
     private String effectiveMavenJdk(@Nullable Path root, @Nullable RunConfiguration cfg) {
-        if (root == null || !ops.mavenProjectAt(root)) {
-            return "";
+        if (root == null || (!ops.mavenProjectAt(root) && !host.projectScope().projectJdk())) {
+            return ""; // a project that names its own JDK (.sdkmanrc) runs on it, Gradle's too: its build uses it
         }
         return JdkToolchain.effectiveHome(
                 cfg == null ? "" : cfg.jdkHome(), host.projectScope().jdkHome(host.settings()));

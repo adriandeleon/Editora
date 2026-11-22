@@ -228,6 +228,11 @@ public final class DapClient implements IDebugProtocolClient {
         this.paths = paths == null ? DapPaths.LOCAL : paths;
     }
 
+    /** How this session's adapter names files ({@link #setPaths}). */
+    DapPaths paths() {
+        return paths;
+    }
+
     public void setBreakpoints(List<DapModels.FileBreakpoints> breakpoints) {
         this.initialBreakpoints = breakpoints == null ? List.of() : List.copyOf(breakpoints);
     }
