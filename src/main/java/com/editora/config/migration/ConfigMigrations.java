@@ -1058,6 +1058,28 @@ public final class ConfigMigrations {
         return input;
     }
 
+    /**
+     * v178→179: turns the extended window (the menu bar in the title bar) on for existing installs, now that it
+     * is the default on Windows and Linux (Pauta WIN-03).
+     *
+     * <p>Jackson writes every field on save, so every install that ever ran stored the old default,
+     * {@code extendedWindow = false}, and changing the field's default alone would reach only a fresh config
+     * folder. A stored {@code false} cannot be told apart from one the user chose; the setting was experimental
+     * and off by default until now, so nearly every stored {@code false} is the untouched default, and the step
+     * turns it on, as {@link #enableProjectSupport} did. One checkbox (or {@code view.toggleExtendedWindow})
+     * turns it back off. macOS ignores the setting. A config without the key gets the new default; one with
+     * {@code true} is untouched. Safe to repeat.
+     */
+    static JsonNode extendedWindowOn(JsonNode input) {
+        if (input instanceof ObjectNode o) {
+            JsonNode current = o.get("extendedWindow");
+            if (current != null && current.isBoolean() && !current.asBoolean()) {
+                o.put("extendedWindow", true);
+            }
+        }
+        return input;
+    }
+
     /** v121→122: {@code remoteExecution} on (see the step's note in {@link ConfigSchema}). Safe to repeat. */
     static JsonNode remoteExecutionOn(JsonNode input) {
         if (input instanceof ObjectNode o && o.has("remoteExecution")) {

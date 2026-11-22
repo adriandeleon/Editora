@@ -56,6 +56,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The terminal's paste confirmation has a palette command too.** Terminal: Change a Setting… now lists
   "Confirm a paste of several lines", so it can be turned off and on from the palette as from its Settings row.
 
+- **The menu bar is in the title bar by default on Windows and Linux.** The extended window, until now an
+  experimental option, is on for new installs and for existing ones that had left it off (it was off by default,
+  so an untouched setting and a deliberate off look the same). The Settings row "Merge the menu bar into the title
+  bar", or View: Toggle Menu Bar in Title Bar, turns it off for the system title bar with the menu bar below it; it applies
+  after a restart. macOS is unchanged: its menus stay in the system menu bar.
+
 
 - **Big files keep more of the editor, from measured limits.** The size limits were set by hand; they are now
   measured, and most moved up. A file now loses highlighting, the minimap and undo at 200,000 lines (or 16 MB)

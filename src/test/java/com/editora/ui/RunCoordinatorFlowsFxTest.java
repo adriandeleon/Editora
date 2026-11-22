@@ -470,6 +470,10 @@ class RunCoordinatorFlowsFxTest {
         if (expectRunnable) {
             assertTrue(scanned.await(20, TimeUnit.SECONDS), "the editor never found " + name + " runnable");
             assertTrue(FxTestSupport.callOnFx(b::isRunnable));
+        } else {
+            // No runnable change to wait for: land the scan here, or a command waiting on it (whenRunScanned) says
+            // its piece after the test has read the statuses.
+            FxTestSupport.runOnFx(b::settleRunScanForTest);
         }
         return b;
     }
@@ -1074,8 +1078,11 @@ class RunCoordinatorFlowsFxTest {
         FxTestSupport.runOnFx(run::runActiveFileWithTrace);
         assertEquals(List.of(tr("status.run.traceUnsupported", "prompt.zsh", "zsh")), statuses());
         clearLog();
-        open("notes.txt", "x\n", false);
-        FxTestSupport.runOnFx(run::runActiveFileWithTrace);
+        EditorBuffer notes = open("notes.txt", "x\n", false);
+        FxTestSupport.runOnFx(() -> {
+            notes.settleRunScanForTest(); // a scan a settled edit started since: the command would wait for it
+            run.runActiveFileWithTrace();
+        });
         assertEquals(List.of(tr("status.run.traceNotShell")), statuses());
         assertFalse(FxTestSupport.callOnFx(run::consoleInUse));
     }

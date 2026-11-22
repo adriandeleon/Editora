@@ -17,10 +17,9 @@ import javafx.stage.StageStyle;
  * have meant. {@link HeaderBar} reports where those buttons are ({@code leftSystemInset} on macOS,
  * {@code rightSystemInset} on Windows/Linux) and reserves the space itself.
  *
- * <p><b>Experimental, and Linux-only for now.</b> Not because the API is: it is cross-platform. Because
- * a menu bar drawn inside the window is <em>wrong</em> on macOS, where the menu belongs to the system
- * bar at the top of the screen, and because window decoration is the most platform-specific thing an
- * application does — Windows and macOS need device-testing before either is switched on.
+ * <p><b>The default on Windows and Linux</b> (Pauta WIN-03: the family starts with the menu in the title
+ * bar; the setting falls back to a decorated window). Never on macOS, where a menu bar drawn inside the
+ * window is <em>wrong</em>: the menu belongs to the system bar at the top of the screen.
  */
 final class ExtendedWindow {
 
