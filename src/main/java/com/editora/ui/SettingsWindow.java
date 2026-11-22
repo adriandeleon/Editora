@@ -2467,7 +2467,7 @@ public class SettingsWindow {
                 Category.INTERFACE,
                 extendedWindowCheck,
                 tr("settings.extendedWindow.note"),
-                "title bar menu bar merge extended window header chrome row experimental linux");
+                "title bar menu bar merge extended window header chrome row linux windows");
         Card pickers = card(p, tr("settings.section.pickers"));
         checkRow(
                 pickers,

@@ -48,7 +48,7 @@ class FoldLevelsFxTest {
     }
 
     private EditorBuffer addJavaBuffer() throws Exception {
-        return FxTestSupport.callOnFx(() -> {
+        EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
             EditorBuffer b = new EditorBuffer();
             b.setContent(SRC);
             FxTestSupport.call(fx.controller, "addBuffer", new Class[] {EditorBuffer.class, boolean.class}, b, true);
@@ -56,6 +56,9 @@ class FoldLevelsFxTest {
             b.getFoldManager().recompute();
             return b;
         });
+        // The scan runs off the FX thread (PERF-01) and lands later: wait for it, not for the FX queue to drain.
+        OnFx.until(() -> buffer.getFoldManager().scansSettledForTest(), "the fold scan of the Java buffer");
+        return buffer;
     }
 
     private boolean collapsed(EditorBuffer b, int startLine) throws Exception {
