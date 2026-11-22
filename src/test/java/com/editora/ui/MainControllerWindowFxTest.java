@@ -435,8 +435,10 @@ class MainControllerWindowFxTest {
     void deletingAProjectRemovesItsEntryAndSessionButNotItsFolder() throws Exception {
         Path root = Files.createDirectories(dir.resolve("gamma"));
         Path file = Files.writeString(root.resolve("keep.txt"), "kept\n");
+        Path[] stateFile = new Path[1];
         FxTestSupport.runOnFx(() -> {
             Project gamma = fx.shared.projects().createOrGet("gamma", root);
+            stateFile[0] = fx.shared.projects().stateFile(gamma);
             fx.windowManager.openOrFocus(gamma);
             MainController gammaWindow = windowFor(gamma.id());
             assertNotNull(gammaWindow);
@@ -454,8 +456,10 @@ class MainControllerWindowFxTest {
                     () -> FxTestSupport.invokeWith(controller, "deleteProject", Project.class, gamma));
             assertFalse(fx.shared.projects().list().contains(gamma));
             assertNull(windowFor(gamma.id()), "its window was closed first");
-            assertFalse(Files.exists(fx.shared.projects().stateFile(gamma)));
         });
+        // Deleted on the config writer's thread, after any write of the session still queued (PERF-01).
+        com.editora.testkit.Await.until(
+                () -> !Files.exists(stateFile[0]), "its session file deleted", java.time.Duration.ofSeconds(30));
         assertEquals("kept\n", Files.readString(file), "the folder and its files are untouched");
     }
 

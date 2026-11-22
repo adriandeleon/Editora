@@ -428,6 +428,8 @@ final class DebugCoordinator {
     /** Python launches: Run's plan for debugpy, and Debug of a Python run configuration. */
     private final PythonDebugLaunch python = new PythonDebugLaunch(this);
 
+    private final InstructionBreakpoints instructionBreakpoints = new InstructionBreakpoints(this);
+
     /** The build facts a launch asks: looked at off the FX thread first when not known ({@link DebugFacts}). */
     private final DebugFacts facts = new DebugFacts(this::executableFacts, this::sayBusy, this::lookFailed);
 
@@ -729,6 +731,7 @@ final class DebugCoordinator {
             built.setState(dap().state()); // a session may already be running (the window opened mid-session)
             built.setOnAreaShown(area -> refreshLowLevelViews());
             built.disassemblyView().setOnOpenSource(this::openSourceLine);
+            instructionBreakpoints.install(built.disassemblyView());
             built.memoryView().setOnGo(this::memoryGo);
             built.memoryView().setOnPage(direction -> {
                 if (s().memoryReference != null) {
@@ -2428,6 +2431,7 @@ final class DebugCoordinator {
                     return;
                 }
                 removeTemporaryBreakpointHit(reason, frames);
+                instructionBreakpoints.stopped(reason, frames);
                 dap().stopShown(); // a Run to Cursor ends at a stop the user sees
                 if (shown > 0) {
                     // A JDK or library frame jdtls can show is "library code", not "no source" (review 2, B107).
@@ -4425,6 +4429,7 @@ final class DebugCoordinator {
                 dap().disassemble(ip, -DISASSEMBLY_BEFORE, DISASSEMBLY_COUNT, list -> {
                     if (s().shownFrame == frame) {
                         p.disassemblyView().show(list, ip);
+                        instructionBreakpoints.show();
                     }
                 });
             }
@@ -8033,6 +8038,10 @@ final class DebugCoordinator {
 
     /** Toggles a breakpoint on the active buffer's caret line. */
     void toggleBreakpointAtCaret() {
+        if (s().panel != null && s().panel.disassemblyView().hasFocus()) {
+            s().panel.disassemblyView().toggleSelected(); // the selected instruction's (InstructionBreakpoints)
+            return;
+        }
         EditorBuffer b = breakpointBuffer();
         if (b != null) {
             toggleBreakpointOn(b, b.getFocusedArea().getCurrentParagraph());
@@ -9845,7 +9854,7 @@ final class DebugCoordinator {
     }
 
     /** A small breakpoint dot for Toggle Breakpoint in the editor menu (the gutter's red, from CSS). */
-    private static Node breakpointGlyph() {
+    static Node breakpointGlyph() {
         javafx.scene.shape.Circle dot = new javafx.scene.shape.Circle();
         UiZoom.follow(dot, () -> dot.setRadius(UiZoom.px(4)));
         dot.getStyleClass().add("debug-menu-breakpoint");

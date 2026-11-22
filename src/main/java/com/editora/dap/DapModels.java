@@ -167,6 +167,13 @@ public final class DapModels {
             int line) {}
 
     /**
+     * An instruction breakpoint as the adapter took it: the instruction at {@code address} (the Disassembly view's,
+     * {@code 0x0000555555555139}), whether it is {@code verified} (set where an instruction is), and the adapter's
+     * {@code message} when it is not ({@code ""} when none).
+     */
+    public record InstructionBreakpoint(String address, boolean verified, String message) {}
+
+    /**
      * Memory read from the program: {@code data} from {@code address} on; the {@code unreadable} bytes after it could
      * not be read (an unmapped page).
      */

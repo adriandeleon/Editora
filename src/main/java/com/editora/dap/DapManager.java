@@ -4800,6 +4800,41 @@ public final class DapManager {
         return c != null && c.supportsReadMemory();
     }
 
+    /** Whether the stopped session's adapter takes instruction breakpoints (CodeLLDB, GDB, Delve). */
+    public boolean supportsInstructionBreakpoints() {
+        DapClient c = client;
+        return c != null && c.supportsInstructionBreakpoints();
+    }
+
+    /** The shown session's instruction breakpoints: their addresses, as the Disassembly view gave them. */
+    public List<String> instructionBreakpoints() {
+        DapClient c = client;
+        return c == null ? List.of() : c.instructionBreakpoints();
+    }
+
+    /**
+     * Sets the shown session's instruction breakpoints to {@code addresses}; what the adapter made of each goes to
+     * {@code cb} on the FX thread (none when the session ended or the request failed, with why to {@code failed}).
+     */
+    public void setInstructionBreakpoints(
+            List<String> addresses, Consumer<List<DapModels.InstructionBreakpoint>> cb, Consumer<String> failed) {
+        DapClient c = client;
+        if (c == null || !c.supportsInstructionBreakpoints()) {
+            return;
+        }
+        c.setInstructionBreakpoints(addresses)
+                .whenComplete((list, e) -> fx(() -> {
+                    if (client != c) {
+                        return;
+                    }
+                    if (e != null || list == null) {
+                        failed.accept(e == null ? "" : msg(e));
+                    } else {
+                        cb.accept(list);
+                    }
+                }));
+    }
+
     /**
      * {@code count} instructions around {@code memoryReference} from {@code instructionOffset} on (to {@code cb} on the
      * FX thread; empty when the adapter could not, or the session ended).
@@ -4811,12 +4846,93 @@ public final class DapManager {
             cb.accept(List.of());
             return;
         }
+        if (instructionOffset < 0 && isGdbSession()) {
+            disassembleBackOnGdb(c, memoryReference, -instructionOffset, count, 0, cb);
+            return;
+        }
         c.disassemble(memoryReference, instructionOffset, count)
                 .whenComplete((list, e) -> fx(() -> {
                     if (client == c) {
                         cb.accept(e != null || list == null ? List.of() : list);
                     }
                 }));
+    }
+
+    /** Bytes before the instruction GDB is asked to disassemble from, per instruction wanted before it. */
+    public static final int GDB_BYTES_PER_INSTRUCTION = 4;
+
+    /** Start bytes tried, one byte further back each time, before GDB's listing is taken from the address on. */
+    public static final int GDB_SYNC_TRIES = 8;
+
+    /**
+     * {@code count} instructions, {@code before} of them before {@code address}, from GDB: GDB (16) counts a negative
+     * {@code instructionOffset} from the end of a listing forward from the address, so the instructions before it are
+     * listed from bytes before it. x86 instructions vary in length: a start byte inside one decodes wrongly until the
+     * listing falls into step, so a listing that never reaches the address exactly is tried again a byte further back;
+     * after {@link #GDB_SYNC_TRIES}, the listing starts at the address.
+     */
+    private void disassembleBackOnGdb(
+            DapClient c, String address, int before, int count, int attempt, Consumer<List<DapModels.Instruction>> cb) {
+        if (attempt >= GDB_SYNC_TRIES) {
+            c.disassemble(address, 0, count - before)
+                    .whenComplete((list, e) -> fx(() -> {
+                        if (client == c) {
+                            cb.accept(e != null || list == null ? List.of() : list);
+                        }
+                    }));
+            return;
+        }
+        int back = before * GDB_BYTES_PER_INSTRUCTION + attempt;
+        // As many instructions as those bytes could hold (one byte each), then the rest after the address.
+        c.disassemble(address, -back, 0, back + count - before)
+                .whenComplete((list, e) -> fx(() -> {
+                    if (client != c) {
+                        return;
+                    }
+                    List<DapModels.Instruction> around =
+                            e != null || list == null ? null : aroundAddress(list, address, before, count);
+                    if (around != null) {
+                        cb.accept(around);
+                    } else {
+                        disassembleBackOnGdb(c, address, before, count, attempt + 1, cb);
+                    }
+                }));
+    }
+
+    /**
+     * Of {@code listing}, the {@code count} instructions from {@code before} before the one at {@code address}; null
+     * when no instruction of it starts at {@code address} (the listing decoded out of step). Pure.
+     */
+    static @Nullable List<DapModels.Instruction> aroundAddress(
+            List<DapModels.Instruction> listing, String address, int before, int count) {
+        Long wanted = parseAddress(address);
+        int at = -1;
+        for (int i = 0; i < listing.size() && wanted != null; i++) {
+            if (wanted.equals(parseAddress(listing.get(i).address()))) {
+                at = i;
+                break;
+            }
+        }
+        if (at < 0) {
+            return null;
+        }
+        int from = Math.max(0, at - before);
+        return List.copyOf(listing.subList(from, Math.min(listing.size(), from + count)));
+    }
+
+    /** {@code 0x…} or decimal as a number; null when it is neither. Pure. */
+    public static @Nullable Long parseAddress(@Nullable String address) {
+        if (address == null || address.isBlank()) {
+            return null;
+        }
+        String a = address.strip();
+        try {
+            return a.startsWith("0x") || a.startsWith("0X")
+                    ? Long.parseUnsignedLong(a.substring(2), 16)
+                    : Long.parseUnsignedLong(a);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /**

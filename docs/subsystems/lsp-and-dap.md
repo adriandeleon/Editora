@@ -1392,6 +1392,26 @@ instructions. They come from `DapManager.disassemble`: 40 before the instruction
   VS Code's Disassembly view does.
 - Debug: Step Over Instruction and Step Into Instruction do it from anywhere. Debug: Show Disassembly opens the view.
 - It's filled again at every stop and frame change (`DebugCoordinator.refreshLowLevelViews`).
+- GDB (16) answers a negative `instructionOffset` with the end of a listing forward from the address, so for a GDB
+  session `DapManager.disassembleBackOnGdb` asks from 160 bytes before the instruction pointer instead. A start
+  byte inside an x86 instruction decodes out of step until the listing falls into step; a listing with no
+  instruction at the pointer (`aroundAddress` null) is asked again a byte further back, up to 8 times, then from
+  the pointer on.
+
+**Instruction breakpoints.** Where the adapter has `supportsInstructionBreakpoints` (CodeLLDB, GDB 14 and later,
+Delve), a breakpoint can go on one instruction of the Disassembly view, as in VS Code's Disassembly view and
+IntelliJ's ([`ui/InstructionBreakpoints`](../../src/main/java/com/editora/ui/InstructionBreakpoints.java)).
+- It goes on and off by a click in the margin before the address, Toggle Breakpoint (F9) while the list has the
+  keyboard (`toggleBreakpointAtCaret` hands it to the view), or the row's right-click menu. A red dot marks it.
+- Each toggle sends the session's whole set with `setInstructionBreakpoints`, each at its address with offset 0
+  (`DapClient.setInstructionBreakpoints`). The adapter's answer marks one it could not set hollow, and the status
+  line gives its message.
+- They belong to the session (the `DapClient` the request goes to), not to the project: an address is that
+  process's, so they aren't saved and the next run starts with none. A child session has its own.
+- A stop on one shows the Disassembly view at it. DAP's reason for it is `instruction breakpoint`, but CodeLLDB
+  and GDB say `breakpoint`, so a `breakpoint` stop whose top frame is at one of the set's addresses counts too
+  (`atInstructionBreakpoint`).
+- Not done: conditions and hit counts on them (DAP has the fields), and a row for them in the Breakpoints list.
 
 [`ui/DebugMemoryView`](../../src/main/java/com/editora/ui/DebugMemoryView.java) shows the program's memory as rows
 of 16 bytes: address, hex and text (`rows`). It reads a 256-byte page at a time (`DapManager.readMemory`), with ◀ ▶
@@ -1403,7 +1423,8 @@ to move between pages.
   memory.
 
 `DisassemblyMemoryProbeFxTest` drives the real CodeLLDB; `GoDebugProbeFxTest` checks Delve's answers too.
-`LowLevelViewsFxTest` drives both views against `FakeDebugAdapter.lowLevel`.
+`InstructionBreakpointProbeFxTest` stops at an instruction breakpoint on CodeLLDB, GDB and Delve, through the
+window. `LowLevelViewsFxTest` drives both views and instruction breakpoints against `FakeDebugAdapter.lowLevel`.
 
 `GoDebugProbeFxTest`, opt-in, runs in CI's integration job with Go and a pinned Delve. It drives the real Delve
 through `DapManager`: variables, Step Over, goroutines, a test at the caret, and an attach then detach. It also

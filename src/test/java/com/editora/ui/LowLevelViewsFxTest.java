@@ -8,6 +8,7 @@ import java.util.function.BooleanSupplier;
 
 import com.editora.command.CommandRegistry;
 import com.editora.dap.DapManager;
+import com.editora.dap.DapModels;
 import com.editora.dap.FakeDebugAdapter;
 import com.editora.editor.EditorBuffer;
 import com.editora.testkit.Await;
@@ -214,6 +215,118 @@ class LowLevelViewsFxTest {
         assertEquals(tr("debugpanel.disassembly.idle"), placeholder(disassembly.list()), "idle again");
     }
 
+    /** The instruction breakpoints the adapter was last given. */
+    private static List<String> lastSet(FakeDebugAdapter.Session session) {
+        return java.util.Arrays.stream(
+                        session.instructionBreakpointSets.getLast().getBreakpoints())
+                .map(org.eclipse.lsp4j.debug.InstructionBreakpoint::getInstructionReference)
+                .toList();
+    }
+
+    private String status() {
+        return call(() -> {
+            StatusBar bar = FxTestSupport.field(fx.controller, "statusBar");
+            return FxTestSupport.<javafx.scene.control.Label>field(bar, "echo").getText();
+        });
+    }
+
+    @Test
+    void anInstructionBreakpointGoesOnFromTheViewAndItsStopShowsTheView() throws Exception {
+        Path file = root.resolve("shelf.c");
+        FxTestSupport.runOnFx(() -> fx.controller.fileWorkflows.openPath(file));
+        run("debug.start");
+        FakeDebugAdapter.Session session = adapter.awaitSession();
+        session.awaitRequest("launch");
+        session.framePath = file.toString();
+        session.frameLine = 2;
+        await("running", () -> call(manager::state) == DapManager.State.RUNNING);
+        session.stop(1, "breakpoint");
+        await(
+                "stopped",
+                () -> call(manager::state) == DapManager.State.SUSPENDED
+                        && !call(() -> debug.panel().callStack().isEmpty()));
+        run("debug.showDisassembly");
+        DebugDisassemblyView view = call(() -> debug.panel().disassemblyView());
+        await(
+                "the instructions",
+                () -> call(() -> view.list().getItems().size()) == DebugCoordinator.DISASSEMBLY_COUNT);
+        assertTrue(call(manager::supportsInstructionBreakpoints));
+        int ipRow = DebugCoordinator.DISASSEMBLY_BEFORE;
+        String next = call(() -> view.list().getItems().get(ipRow + 1).address());
+
+        // The row's Toggle Breakpoint: on, then off; each time the adapter is given the whole set.
+        assertTrue(call(() -> {
+            view.list().getSelectionModel().clearAndSelect(ipRow + 1);
+            return view.toggleSelected();
+        }));
+        await("set", () -> call(() -> view.hasBreakpoint(next)));
+        assertEquals(List.of(next), lastSet(session));
+        assertEquals(List.of(next), call(manager::instructionBreakpoints));
+        assertTrue(call(view::toggleSelected));
+        await("taken off", () -> !call(() -> view.hasBreakpoint(next)));
+        assertEquals(List.of(), lastSet(session));
+
+        // F9 with the keyboard in the view puts one on the selected instruction, the one the program is at.
+        String ip = call(() -> view.list().getItems().get(ipRow).address());
+        FxTestSupport.runOnFx(() -> {
+            view.list().getSelectionModel().clearAndSelect(ipRow);
+            view.list().requestFocus();
+        });
+        await("the view has the keyboard", () -> call(view::hasFocus));
+        run("debug.toggleBreakpoint");
+        await("F9's", () -> call(() -> view.hasBreakpoint(ip)));
+        assertEquals(List.of(ip), lastSet(session));
+
+        // One the adapter cannot set: marked hollow, and the status line says why.
+        String refused = call(() -> view.list().getItems().get(ipRow + 2).address());
+        adapter.unsettableInstruction = refused;
+        try {
+            assertTrue(call(() -> {
+                view.list().getSelectionModel().clearAndSelect(ipRow + 2);
+                return view.toggleSelected();
+            }));
+            await("its answer", () -> status().contains("no code here"));
+            assertEquals(tr("status.debug.instructionBreakpointNotSet", refused, "no code here"), status());
+            assertEquals(List.of(ip, refused), lastSet(session));
+            assertTrue(call(() -> view.hasBreakpoint(refused)));
+        } finally {
+            adapter.unsettableInstruction = "";
+        }
+
+        // A request the adapter fails: the status line says so, and the marks stay as they were.
+        adapter.instructionBreakpointsFail = true;
+        try {
+            int sets = session.instructionBreakpointSets.size();
+            assertTrue(call(() -> {
+                view.list().getSelectionModel().clearAndSelect(ipRow + 3);
+                return view.toggleSelected();
+            }));
+            await("its failure", () -> status().contains("adapter fell over"));
+            assertTrue(session.instructionBreakpointSets.size() > sets);
+            assertTrue(
+                    status().startsWith(tr("status.debug.instructionBreakpointFailed", "")
+                            .strip()),
+                    status());
+        } finally {
+            adapter.instructionBreakpointsFail = false;
+        }
+
+        // A stop at an instruction breakpoint's address shows the Disassembly view, whatever was shown.
+        FxTestSupport.runOnFx(() -> debug.panel().showArea(DebugPanel.AREA_CONSOLE));
+        FxTestSupport.runOnFx(manager::resume);
+        await("running", () -> call(manager::state) == DapManager.State.RUNNING);
+        session.stop(1, "breakpoint");
+        await(
+                "the view shown at the stop",
+                () -> DebugPanel.AREA_DISASSEMBLY.equals(
+                        call(() -> debug.panel().shownArea())));
+
+        // The next session starts with none: an address is the process's.
+        FxTestSupport.runOnFx(manager::stop);
+        await("stopped", () -> !call(manager::isActive));
+        assertEquals(List.of(), call(manager::instructionBreakpoints));
+    }
+
     @Test
     void anAdapterThatDoesNotDisassembleOrReadMemorySaysSo() throws Exception {
         adapter.lowLevel = false;
@@ -239,11 +352,12 @@ class LowLevelViewsFxTest {
             DebugPanel.Actions actions = FxTestSupport.field(debug.panel(), "actions");
             assertTrue(!call(actions::canViewMemory), "no View Memory on a variable");
             run("debug.stepOverInstruction");
-            assertEquals(tr("status.debug.noInstructionStepping"), call(() -> {
-                StatusBar bar = FxTestSupport.field(fx.controller, "statusBar");
-                return FxTestSupport.<javafx.scene.control.Label>field(bar, "echo")
-                        .getText();
-            }));
+            assertEquals(tr("status.debug.noInstructionStepping"), status());
+            assertTrue(!call(manager::supportsInstructionBreakpoints));
+            InstructionBreakpoints instructions = FxTestSupport.field(debug, "instructionBreakpoints");
+            FxTestSupport.runOnFx(
+                    () -> instructions.toggle(new DapModels.Instruction("0x10", "", "nop", "", null, -1)));
+            assertEquals(tr("status.debug.noInstructionBreakpoints"), status(), "no instruction breakpoints either");
             FxTestSupport.runOnFx(manager::stop);
             await("stopped", () -> !call(manager::isActive));
         } finally {

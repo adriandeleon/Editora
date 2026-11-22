@@ -1,8 +1,13 @@
 package com.editora.ui;
 
 import java.nio.file.Path;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 
 import javafx.geometry.Pos;
 import javafx.scene.control.Label;
@@ -12,7 +17,9 @@ import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.shape.Circle;
 
 import com.editora.dap.DapModels;
 import com.editora.editor.UiZoom;
@@ -25,6 +32,10 @@ import static com.editora.i18n.Messages.tr;
  * instructions around the selected frame's instruction pointer, the one it is at marked, with the source line each
  * run of instructions was compiled from. Double-clicking one opens that line. While it has the keyboard, Step Over
  * and Step Into step one instruction (as VS Code does when its Disassembly view is focused).
+ *
+ * <p>Where the adapter takes them (CodeLLDB, GDB, Delve), an instruction breakpoint goes on an instruction by a click
+ * in the margin before its address, Toggle Breakpoint (F9) or the row's right-click menu: a red dot, hollow while
+ * the adapter could not set it. They are the session's: an address means nothing in the next run.
  */
 final class DebugDisassemblyView extends VBox {
 
@@ -32,6 +43,14 @@ final class DebugDisassemblyView extends VBox {
     private final Label placeholder = new Label();
     private String current = "";
     private BiConsumer<Path, Integer> onOpenSource = (file, line) -> {};
+    /** The instruction breakpoints' addresses, as numbers. */
+    private final Set<Long> breakpoints = new HashSet<>();
+
+    /** Those of {@link #breakpoints} the adapter could not set. */
+    private final Set<Long> unverified = new HashSet<>();
+
+    private Consumer<DapModels.Instruction> onToggleBreakpoint = i -> {};
+    private BooleanSupplier breakpointsTaken = () -> false;
 
     DebugDisassemblyView() {
         getStyleClass().add("debug-disassembly");
@@ -55,6 +74,15 @@ final class DebugDisassemblyView extends VBox {
                             return i != null && i.file() != null;
                         },
                         "row.unavailable.noSourceFile"),
+                ListRowCommands.enabledWhen(
+                        ListRowCommands.row(
+                                list,
+                                "debug.toggleBreakpoint",
+                                null,
+                                DebugCoordinator.breakpointGlyph(),
+                                this::toggleSelected),
+                        () -> breakpointsTaken.getAsBoolean(),
+                        "row.unavailable.noInstructionBreakpoints"),
                 ListRowCommands.copyRow(list, () -> ListRowCommands.selectedText(list, DebugDisassemblyView::rowText)));
         VBox.setVgrow(list, Priority.ALWAYS);
         getChildren().add(list);
@@ -69,6 +97,50 @@ final class DebugDisassemblyView extends VBox {
         }
         onOpenSource.accept(i.file(), i.line());
         return true;
+    }
+
+    /** Toggles the selected instruction's breakpoint, as F9 does in the view; false when none is selected. */
+    boolean toggleSelected() {
+        DapModels.Instruction i = list.getSelectionModel().getSelectedItem();
+        if (i == null) {
+            return false;
+        }
+        onToggleBreakpoint.accept(i); // says so when the adapter takes none
+        return true;
+    }
+
+    /**
+     * What toggling an instruction's breakpoint does ({@code onToggle}), and whether the session's adapter takes
+     * instruction breakpoints ({@code taken}): without, the row is grayed out, and the margin and F9 say so.
+     */
+    void setOnToggleBreakpoint(Consumer<DapModels.Instruction> onToggle, BooleanSupplier taken) {
+        this.onToggleBreakpoint = onToggle;
+        this.breakpointsTaken = taken;
+    }
+
+    /** Marks the instructions at {@code addresses}, hollow those at {@code notSet} (the adapter could not set them). */
+    void setBreakpoints(Collection<String> addresses, Collection<String> notSet) {
+        breakpoints.clear();
+        unverified.clear();
+        for (String a : addresses) {
+            Long n = parseAddress(a);
+            if (n != null) {
+                breakpoints.add(n);
+            }
+        }
+        for (String a : notSet) {
+            Long n = parseAddress(a);
+            if (n != null) {
+                unverified.add(n);
+            }
+        }
+        list.refresh();
+    }
+
+    /** Whether the instruction at {@code address} has a breakpoint marked. */
+    boolean hasBreakpoint(String address) {
+        Long n = parseAddress(address);
+        return n != null && breakpoints.contains(n);
     }
 
     /** An instruction as Copy gives it: its address, its text and its symbol. Pure. */
@@ -118,17 +190,7 @@ final class DebugDisassemblyView extends VBox {
 
     /** {@code 0x…} or decimal as a number; null when it is neither. Pure. */
     static @Nullable Long parseAddress(@Nullable String address) {
-        if (address == null || address.isBlank()) {
-            return null;
-        }
-        String a = address.strip();
-        try {
-            return a.startsWith("0x") || a.startsWith("0X")
-                    ? Long.parseUnsignedLong(a.substring(2), 16)
-                    : Long.parseUnsignedLong(a);
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        return com.editora.dap.DapManager.parseAddress(address);
     }
 
     /**
@@ -159,12 +221,14 @@ final class DebugDisassemblyView extends VBox {
     }
 
     private final class InstructionCell extends ListCell<DapModels.Instruction> {
+        private final Circle dot = new Circle();
+        private final StackPane mark = new StackPane(dot);
         private final Label address = new Label();
         private final Label text = new Label();
         private final Label symbol = new Label();
         private final Label where = new Label();
         private final Region gap = new Region();
-        private final HBox row = UiZoom.spacing(new HBox(address, text, gap, symbol, where), 10);
+        private final HBox row = UiZoom.spacing(new HBox(mark, address, text, gap, symbol, where), 10);
 
         InstructionCell() {
             address.getStyleClass().add("debug-disassembly-address");
@@ -173,6 +237,21 @@ final class DebugDisassemblyView extends VBox {
             where.getStyleClass().add("debug-disassembly-source");
             HBox.setHgrow(gap, Priority.ALWAYS);
             row.setAlignment(Pos.CENTER_LEFT);
+            // The breakpoint margin: a click there toggles the instruction's breakpoint, as the editor's gutter does.
+            mark.getStyleClass().add("debug-disassembly-margin");
+            UiZoom.follow(mark, () -> {
+                dot.setRadius(UiZoom.px(4));
+                mark.setMinWidth(UiZoom.px(12));
+                mark.setPrefWidth(UiZoom.px(12));
+            });
+            dot.getStyleClass().add("debug-disassembly-breakpoint");
+            mark.setOnMouseClicked(e -> {
+                DapModels.Instruction item = getItem();
+                if (e.getButton() == MouseButton.PRIMARY && item != null) {
+                    onToggleBreakpoint.accept(item);
+                    e.consume();
+                }
+            });
         }
 
         @Override
@@ -183,6 +262,12 @@ final class DebugDisassemblyView extends VBox {
                 setGraphic(null);
                 setText(null);
                 return;
+            }
+            Long at = parseAddress(item.address());
+            dot.setVisible(at != null && breakpoints.contains(at));
+            dot.getStyleClass().remove("debug-disassembly-breakpoint-unverified");
+            if (at != null && unverified.contains(at)) {
+                dot.getStyleClass().add("debug-disassembly-breakpoint-unverified");
             }
             address.setText(item.address());
             text.setText(item.text());
