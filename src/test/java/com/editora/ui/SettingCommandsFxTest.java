@@ -92,6 +92,27 @@ class SettingCommandsFxTest {
         assertEquals(before, settings().isTerminalNotifications(), "picked again, it flips back");
     }
 
+    /**
+     * The question before a paste of several lines is a Settings row, so it is a palette setting too: turned off
+     * from the palette as from its row (saved, applied, said), and on again.
+     */
+    @Test
+    void thePasteConfirmationIsTurnedOffAndOnFromThePalette() throws Exception {
+        boolean before = settings().isTerminalConfirmMultilinePaste();
+        String name = tr("settings.terminal.confirmMultilinePaste");
+        FxTestSupport.runOnFx(() -> {
+            registry.run("terminal.changeSetting");
+            assertTrue(OverlayTestKit.pick(scene(), name), "found by the row's name");
+        });
+        assertEquals(!before, settings().isTerminalConfirmMultilinePaste());
+        assertEquals(tr("status.settingChanged", name, tr(before ? "common.off" : "common.on")), echo());
+        FxTestSupport.runOnFx(() -> {
+            registry.run("terminal.changeSetting");
+            OverlayTestKit.pick(scene(), name);
+        });
+        assertEquals(before, settings().isTerminalConfirmMultilinePaste(), "picked again, it flips back");
+    }
+
     @Test
     void aNumberIsKeptInsideItsRangeAndANonNumberIsNotKept() throws Exception {
         String name = tr("settings.terminal.fontSize");

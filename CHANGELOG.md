@@ -43,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Before, only F5 started such a file, and Run said it was not runnable. Debug: Debug Current File now also works on
   a file that Run File runs.
 
+### Changed
+
+- **The terminal's paste confirmation has a palette command too.** Terminal: Change a Setting… now lists
+  "Confirm a paste of several lines", so it can be turned off and on from the palette as from its Settings row.
+
 ### Fixed
 
 - **Debugging a C, C++ or Rust program on CodeLLDB reports the program's own exit code.** The Debug console said
