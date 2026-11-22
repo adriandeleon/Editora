@@ -570,7 +570,7 @@ class GitBranchManagementFxTest {
 
             FxTestSupport.runOnFx(() -> {
                 applyRepo(fx, repo, "(detached)", "");
-                branches.pushForce();
+                branches.forcePush(repo.root, "(detached)", "");
             });
             async.await(refused, "detached HEAD refusal");
         }
@@ -962,7 +962,6 @@ class GitBranchManagementFxTest {
                     "git.setUpstream",
                     "git.unsetUpstream",
                     "git.pushTo",
-                    "git.pushForce",
                     "git.pushTags",
                     "git.fetchRemote",
                     "git.remotes",
@@ -979,6 +978,12 @@ class GitBranchManagementFxTest {
                 });
                 assertEquals(tr("status.notARepo"), said, id + " outside a repository");
             }
+            // Pauta CONF-11: a force push is only the answer to a rejected push, never a command of its own.
+            assertTrue(
+                    FxTestSupport.callOnFx(() -> registry.all().stream()
+                            .noneMatch(c -> c.id().startsWith("git.")
+                                    && c.id().toLowerCase(java.util.Locale.ROOT).contains("force"))),
+                    "no command forces a push directly");
         }
     }
 

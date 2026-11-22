@@ -740,14 +740,6 @@ class ConfirmWordsTest {
                 "dialog.deleteRemoteBranch");
         assertTrue(remoteBranch.message().contains("feature/x")
                 && remoteBranch.message().contains("origin"));
-        Confirm.Question force = GitBranchCoordinator.forcePushQuestion("main", "origin/main");
-        assertQuestion(
-                force,
-                tr("dialog.pushForce.title"),
-                null,
-                tr("dialog.pushForce.confirm", "main", "origin/main"),
-                "dialog.pushForce");
-        assertTrue(force.message().contains("origin/main"));
         assertQuestion(
                 GitBranchCoordinator.removeRemoteQuestion("upstream"),
                 tr("remotes.remove"),

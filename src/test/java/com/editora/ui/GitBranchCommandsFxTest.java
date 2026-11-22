@@ -275,10 +275,7 @@ class GitBranchCommandsFxTest {
                     () -> GitService.isDetached(win.w().git.branchName()));
 
             for (Runnable command : List.<Runnable>of(
-                    win.branches()::setUpstream,
-                    win.branches()::unsetUpstream,
-                    win.branches()::pushForce,
-                    win.branches()::pushTo)) {
+                    win.branches()::setUpstream, win.branches()::unsetUpstream, win.branches()::pushTo)) {
                 win.w().clearStatus();
                 FxTestSupport.runOnFx(command);
                 assertEquals(tr("status.git.detachedNoBranch"), win.w().status());

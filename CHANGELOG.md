@@ -59,6 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Force Push is offered only after a rejected push.** The Git ▸ Remotes ▸ Force Push (with Lease) row and its
+  palette command are gone. When a push is rejected because the remote branch has commits yours does not, the
+  question offers Pull, then Push (the default) and, in red beside it, Force with Lease, which still refuses to
+  overwrite commits you have not fetched.
+
 - **The terminal's paste confirmation has a palette command too.** Terminal: Change a Setting… now lists
   "Confirm a paste of several lines", so it can be turned off and on from the palette as from its Settings row.
 

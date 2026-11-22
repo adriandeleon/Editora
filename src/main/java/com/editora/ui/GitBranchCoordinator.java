@@ -50,7 +50,8 @@ import static com.editora.i18n.Messages.tr;
  *   <li>A merge, rebase or pull that stops on conflicts is not a failure ({@link GitOutcome#CONFLICT}): git's
  *       own message is shown with "resolve them and continue", never the "command failed" dialog.
  *   <li>Nothing is destroyed without the danger-styled confirmation naming what is lost
- *       ({@link GitCoordinator#confirmDestructive}); a force push is always {@code --force-with-lease}.
+ *       ({@link GitCoordinator#confirmDestructive}); a force push is always {@code --force-with-lease}, and is
+ *       offered only as the answer to a rejected push, beside Pull, Then Push (Pauta CONF-11).
  * </ul>
  *
  * <p>Built from {@link GitWindowCoordinator}'s host; everything else it needs comes from the Git engine
@@ -742,15 +743,6 @@ final class GitBranchCoordinator {
                 tr("dialog.deleteRemoteBranch"));
     }
 
-    /** The words of the question before a force push of {@code branch} overwrites {@code target}. */
-    static Confirm.Question forcePushQuestion(String branch, String target) {
-        return new Confirm.Question(
-                tr("dialog.pushForce.title"),
-                null,
-                tr("dialog.pushForce.confirm", branch, target),
-                tr("dialog.pushForce"));
-    }
-
     /** The words of the question before the remote {@code name} is removed. */
     static Confirm.Question removeRemoteQuestion(String name) {
         return new Confirm.Question(
@@ -844,29 +836,9 @@ final class GitBranchCoordinator {
     }
 
     /**
-     * {@code git.pushForce}: replaces the remote branch with the local one — refused on a detached HEAD,
-     * confirmed with the branch and the remote named, and always with a lease.
+     * The forced push itself ({@link GitService#forcePushArgs}), always with a lease. It is reached only as the
+     * answer to a rejected push ({@link #answerRejectedPush}): there is no command that forces a push directly.
      */
-    void pushForce() {
-        Path root = rootOrReport();
-        if (root == null) {
-            return;
-        }
-        String branch = git().branchName();
-        String upstream = nz(git().upstream());
-        if (GitService.isDetached(branch)) {
-            ui().setStatus(tr("status.git.detachedNoBranch"));
-            return;
-        }
-        service().pushRemoteOf(root, branch, remote -> {
-            String target = upstream.isBlank() ? remote + "/" + branch : upstream;
-            if (git().confirmDestructive(forcePushQuestion(branch, target))) {
-                forcePush(root, branch, upstream);
-            }
-        });
-    }
-
-    /** The forced push itself ({@link GitService#forcePushArgs}); the caller has confirmed it. */
     void forcePush(Path root, String branch, String upstream) {
         String[] args = GitService.forcePushArgs(branch, upstream);
         if (root == null || args.length == 0) {
