@@ -329,7 +329,7 @@ public final class SyncEngine {
                 FileSyncTarget.writeOrDelete(clone.resolve(r.path()), r.text());
             }
         }
-        writeIfAbsent(FORMAT_FILE, "{\n  \"formatVersion\" : " + FORMAT_VERSION + "\n}\n");
+        writeIfAbsent(FORMAT_FILE, formatFileText());
         writeIfAbsent(".gitattributes", "* -text\n");
         writeIfAbsent("README.md", README);
         must(git.run("add", "--all"));
@@ -456,6 +456,14 @@ public final class SyncEngine {
         } catch (IOException e) {
             return 0;
         }
+    }
+
+    /** {@value #FORMAT_FILE}'s text: {@code formatVersion}, written through Jackson (PLAT-14, Pauta 6.0.1). */
+    static String formatFileText() throws IOException {
+        return MAPPER.writer(new com.fasterxml.jackson.core.util.DefaultPrettyPrinter()
+                                .withObjectIndenter(new com.fasterxml.jackson.core.util.DefaultIndenter("  ", "\n")))
+                        .writeValueAsString(Map.of("formatVersion", FORMAT_VERSION))
+                + "\n";
     }
 
     private void writeIfAbsent(String name, String text) throws IOException {

@@ -1,27 +1,11 @@
 {
   "exceptions": [
     {
-      "rule": "PLAT-14",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/platform/#plat-14",
-      "kind": "pending",
-      "reason": "The snippets file is edited as text, to keep your comments, rather than read into typed data.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1555"
-    },
-    {
       "rule": "DOCS-04",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/documentation/#docs-04",
       "kind": "pending",
       "reason": "The website does not check on every build that its generated pages still match the app.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1557"
-    },
-    {
-      "rule": "DOCS-05",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/documentation/#docs-05",
-      "kind": "pending",
-      "reason": "The notes on a GitHub release are a list of commits rather than notes written for users.",
       "link": "https://github.com/adriandeleon/Editora/issues/1557"
     },
     {
@@ -37,7 +21,7 @@
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/accessibility/#acc-07",
       "kind": "pending",
-      "reason": "The release steps do not include a pass with a screen reader.",
+      "reason": "The release steps include a pass with a screen reader, but no release has had that pass yet.",
       "link": "https://github.com/adriandeleon/Editora/issues/1561"
     },
     {
@@ -54,22 +38,6 @@
       "url": "https://pauta-project.dev/6.0.1/window-shell/#win-03",
       "kind": "pending",
       "reason": "On Windows and Linux the menu bar sits below the title bar unless you turn on the extended window setting.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1562"
-    },
-    {
-      "rule": "WIN-13",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/window-shell/#win-13",
-      "kind": "pending",
-      "reason": "Quitting from the macOS menu or Dock closes each window in turn instead of going through Editora's own Quit.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1562"
-    },
-    {
-      "rule": "WIN-15",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/window-shell/#win-15",
-      "kind": "pending",
-      "reason": "On macOS, Settings is not in the application menu.",
       "link": "https://github.com/adriandeleon/Editora/issues/1562"
     },
     {
@@ -129,28 +97,12 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1568"
     },
     {
-      "rule": "CLI-11",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/command-line/#cli-11",
-      "kind": "pending",
-      "reason": "On Windows there is no console launcher, so command-line output does not appear in the terminal that started Editora.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1570"
-    },
-    {
       "rule": "CLI-07",
       "level": "MUST",
       "url": "https://pauta-project.dev/6.0.1/command-line/#cli-07",
       "kind": "pending",
       "reason": "A launch with --disable-plugins starts a second Editora instead of handing over to the one already running.",
       "link": "https://github.com/adriandeleon/Editora/issues/1570"
-    },
-    {
-      "rule": "ABOUT-01",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/templates/about/#about-01",
-      "kind": "pending",
-      "reason": "On macOS, About Editora is in the Help menu rather than the application menu.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1574"
     },
     {
       "rule": "CONF-07",
@@ -167,14 +119,6 @@
       "kind": "pending",
       "reason": "The Force Push command can be run directly, without a rejected push first.",
       "link": "https://github.com/adriandeleon/Editora/issues/1575"
-    },
-    {
-      "rule": "REL-04",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/release/#rel-04",
-      "kind": "pending",
-      "reason": "Release notes are not taken from the changelog.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1578"
     },
     {
       "rule": "REL-09",
@@ -209,35 +153,11 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1578"
     },
     {
-      "rule": "REL-16",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/release/#rel-16",
-      "kind": "pending",
-      "reason": "The runnable jar downloads for Linux are not signed like the other Linux downloads.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1578"
-    },
-    {
       "rule": "REL-17",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.0.1/release/#rel-17",
       "kind": "pending",
       "reason": "The Windows installer is not signed.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1578"
-    },
-    {
-      "rule": "REL-25",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.0.1/release/#rel-25",
-      "kind": "pending",
-      "reason": "A few automated build steps download Maven's dependencies again instead of reusing a cache.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1578"
-    },
-    {
-      "rule": "REL-29",
-      "level": "MUST",
-      "url": "https://pauta-project.dev/6.0.1/release/#rel-29",
-      "kind": "pending",
-      "reason": "Before a release, only the macOS build is started as packaged to confirm it launches.",
       "link": "https://github.com/adriandeleon/Editora/issues/1578"
     }
   ]

@@ -528,4 +528,13 @@ class SyncEngineTest {
         assertEquals(SyncReport.Status.CANCELLED, report.status(), report.detail());
         assertEquals("zim\n", b.read("dictionary.txt"));
     }
+
+    /** The repository's format file is written through Jackson (PLAT-14) and read back by {@code formatVersion}. */
+    @Test
+    void theFormatFileIsWrittenThroughJacksonAndReadsBack(@TempDir Path dir) throws IOException {
+        String text = SyncEngine.formatFileText();
+        assertEquals("{\n  \"formatVersion\" : " + SyncEngine.FORMAT_VERSION + "\n}\n", text);
+        Path file = Files.writeString(dir.resolve(SyncEngine.FORMAT_FILE), text);
+        assertEquals(SyncEngine.FORMAT_VERSION, SyncEngine.formatVersion(file));
+    }
 }

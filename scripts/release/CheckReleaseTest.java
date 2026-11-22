@@ -67,6 +67,7 @@ class CheckReleaseTest implements AutoCloseable {
     void theManifestIsTheDocumentedReleaseSet() {
         assertEquals(List.of(
                         "Editora-1.2.3-linux-arm64.jar",
+                        "Editora-1.2.3-linux-arm64.jar.asc",
                         "Editora-1.2.3-linux-arm64.tar.gz",
                         "Editora-1.2.3-linux-arm64.tar.gz.asc",
                         "Editora-1.2.3-linux-x64.AppImage",
@@ -74,6 +75,7 @@ class CheckReleaseTest implements AutoCloseable {
                         "Editora-1.2.3-linux-x64.deb",
                         "Editora-1.2.3-linux-x64.deb.asc",
                         "Editora-1.2.3-linux-x64.jar",
+                        "Editora-1.2.3-linux-x64.jar.asc",
                         "Editora-1.2.3-linux-x64.rpm",
                         "Editora-1.2.3-linux-x64.rpm.asc",
                         "Editora-1.2.3-linux-x64.tar.gz",

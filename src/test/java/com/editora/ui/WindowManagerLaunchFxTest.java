@@ -663,6 +663,95 @@ class WindowManagerLaunchFxTest {
         }
     }
 
+    /**
+     * macOS's application menu, run as macOS (WIN-13, WIN-15, ABOUT-01): the system's Quit (the menu's, the
+     * Dock's), caught by the Glass handler {@code MacOpenFiles} installs, runs the window's own {@code app.quit}
+     * rather than JavaFX's close request to every window; the menu's About and Settings run {@code help.about}
+     * and {@code view.settings}, Settings titled with the keymap's chord. The menu itself is Glass's, which only
+     * macOS's JavaFX has: here the installer says why it added nothing, and nothing breaks.
+     */
+    @Test
+    void theMacApplicationMenuAndTheSystemsQuitRunEditorasOwnCommands() throws Exception {
+        Path config = Files.createDirectories(tmp.resolve("config"));
+        app = new Launched(config, shared -> {});
+        app.launch(null, List.of(), null);
+        MainController global = app.window("");
+        List<String> ran = new java.util.concurrent.CopyOnWriteArrayList<>();
+        FxTestSupport.runOnFx(() -> {
+            // Stand-ins that record instead of quitting the toolkit or opening windows.
+            for (String id : List.of("app.quit", "help.about", "view.settings")) {
+                global.registry.register(com.editora.command.Command.of(id, () -> ran.add(id)));
+            }
+        });
+
+        Class<?> glassClass = Class.forName("com.sun.glass.ui.Application");
+        Class<?> handlerClass = Class.forName("com.sun.glass.ui.Application$EventHandler");
+        Object glass = FxTestSupport.callOnFx(
+                () -> glassClass.getMethod("GetApplication").invoke(null));
+        org.junit.jupiter.api.Assumptions.assumeTrue(glass != null, "no Glass application in this toolkit");
+        Object original = FxTestSupport.callOnFx(
+                () -> glassClass.getMethod("getEventHandler").invoke(glass));
+        java.lang.reflect.Method install =
+                Class.forName("com.editora.MacOpenFiles").getDeclaredMethod("install", WindowManager.class);
+        install.setAccessible(true);
+        com.editora.Os.override(com.editora.Os.Kind.MAC);
+        try {
+            Object installed = FxTestSupport.callOnFx(() -> {
+                install.invoke(null, app.wm);
+                return glassClass.getMethod("getEventHandler").invoke(glass);
+            });
+            java.lang.reflect.Method quit = installed.getClass().getMethod("handleQuitAction", glassClass, long.class);
+            quit.setAccessible(true);
+            FxTestSupport.runOnFx(() -> {
+                try {
+                    quit.invoke(installed, glass, 0L);
+                } catch (ReflectiveOperationException e) {
+                    throw new AssertionError(e);
+                }
+            });
+            FxTestSupport.drainFx();
+            assertEquals(List.of("app.quit"), ran, "macOS's Quit runs File → Quit's command, once");
+            assertEquals(1, app.keys().size(), "and sends no window a close request of its own");
+
+            String done = FxTestSupport.callOnFx(() -> MacAppMenu.install(app.wm));
+            assertTrue(done.startsWith("none ("), "only macOS's JavaFX has the application menu: " + done);
+
+            List<MacAppMenu.Item> items = MacAppMenu.items(app.wm);
+            assertEquals(
+                    List.of("help.about", "view.settings"),
+                    items.stream().map(MacAppMenu.Item::commandId).toList());
+            assertEquals(
+                    com.editora.i18n.Messages.tr("command.help.about"),
+                    items.get(0).title().get());
+            String chord = FxTestSupport.callOnFx(() -> app.wm.chordOf("view.settings"));
+            assertEquals(
+                    MacAppMenu.settingsTitle(com.editora.i18n.Messages.tr("command.view.settings"), chord),
+                    items.get(1).title().get(),
+                    "Settings shows the keymap's chord, written into its title (no key equivalent of its own)");
+            ran.clear();
+            FxTestSupport.runOnFx(() -> items.forEach(item -> app.wm.runFromApplicationMenu(item.commandId())));
+            assertEquals(List.of("help.about", "view.settings"), ran, "About and Settings run the window's commands");
+        } finally {
+            com.editora.Os.override(null);
+            FxTestSupport.runOnFx(() -> {
+                try {
+                    glassClass.getMethod("setEventHandler", handlerClass).invoke(glass, original);
+                } catch (ReflectiveOperationException e) {
+                    throw new AssertionError(e);
+                }
+            });
+        }
+        for (com.editora.Os.Kind other : List.of(com.editora.Os.Kind.LINUX, com.editora.Os.Kind.WINDOWS)) {
+            com.editora.Os.override(other);
+            try {
+                assertEquals(
+                        "none (not macOS)", FxTestSupport.callOnFx(() -> MacAppMenu.install(app.wm)), other.name());
+            } finally {
+                com.editora.Os.override(null);
+            }
+        }
+    }
+
     // --- windows as such -------------------------------------------------------------------------
 
     private static Stage stageOf(Launched app, String key) throws Exception {

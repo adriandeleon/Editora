@@ -56,16 +56,25 @@ public final class CustomAdapters {
             "editora-jvm",
             "scala");
 
+    /** Whole numbers as {@code Long}, as F5's launch templates have always carried them. */
+    private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER =
+            com.fasterxml.jackson.databind.json.JsonMapper.builder()
+                    .enable(
+                            com.fasterxml.jackson.core.json.JsonReadFeature.ALLOW_JAVA_COMMENTS,
+                            com.fasterxml.jackson.core.json.JsonReadFeature.ALLOW_TRAILING_COMMA)
+                    .enable(com.fasterxml.jackson.databind.DeserializationFeature.USE_LONG_FOR_INTS)
+                    .build();
+
     /** {@code text}: {@code {"adapters": [...]}} or a bare array of adapters. */
     public static Parsed parse(String text) {
         List<Adapter> out = new ArrayList<>();
         List<String> problems = new ArrayList<>();
         Object root;
         try {
-            root = LaunchJson.toJava(
-                    com.google.gson.JsonParser.parseString(LaunchJson.withoutCommentsAndTrailingCommas(text)));
-        } catch (RuntimeException e) {
-            return new Parsed(List.of(), List.of(String.valueOf(e.getMessage())));
+            // Read through Jackson as JSONC (PLAT-14, Pauta 6.0.1): comments and trailing commas, as VS Code allows.
+            root = text == null || text.isBlank() ? null : MAPPER.readValue(text, Object.class);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            return new Parsed(List.of(), List.of(String.valueOf(e.getOriginalMessage())));
         }
         Object list = root instanceof Map<?, ?> m ? m.get("adapters") : root;
         if (!(list instanceof List<?> entries)) {
