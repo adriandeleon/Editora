@@ -510,8 +510,14 @@ public final class DapManager {
         shared.pythonTemplates = mode == null ? PythonTemplates.Mode.AUTO : mode;
     }
 
-    /** What the project in {@code dir} uses, read from its files (none for a folder not on this machine). */
+    /**
+     * What the project in {@code dir} uses, read from its files: none for a folder not on this machine's file system (a
+     * remote host's, over SSH — a dozen reads a level there would hold up the launch; Settings' On still applies).
+     */
     static PythonTemplates.Found templatesIn(@Nullable Path dir) {
+        if (dir == null || dir.getFileSystem() != java.nio.file.FileSystems.getDefault()) {
+            return PythonTemplates.Found.NONE;
+        }
         return PythonTemplates.detect(
                 dir,
                 file -> {
@@ -2560,6 +2566,9 @@ public final class DapManager {
         restartAction = () -> startExternal(file, language, launch, tail);
         debugFile = file;
         long epoch = beginSession();
+        // Delve's program for this session (a restart builds it again): kept from another window's clean-up
+        goDebugBinary = launch.get("output");
+        GoLaunch.holdDebugBinary(goDebugBinary);
         postMortem = CoreDumps.isCore(launch);
         setState(State.STARTING);
         List<DapModels.FileBreakpoints> bps = shared.breakpointsSupplier.get();
@@ -4856,6 +4865,7 @@ public final class DapManager {
         killAdapterProgram(); // an adapter that is gone cannot end the program it launched
         releaseCompilationDirectory();
         releaseExitWrapper();
+        releaseGoDebugBinary();
         setState(State.INACTIVE);
     }
 
@@ -5856,6 +5866,7 @@ public final class DapManager {
         killAdapterProgram();
         releaseCompilationDirectory();
         releaseExitWrapper(); // no exited event came for it
+        releaseGoDebugBinary();
         setState(State.INACTIVE);
     }
 
@@ -6216,6 +6227,18 @@ public final class DapManager {
                 }));
     }
 
+    /** The {@code output} of the launch request of the session started last (Delve's program), or null. */
+    private volatile @Nullable Object goDebugBinary;
+
+    /** The session is over: Delve's program it ran is no longer in use, and goes ({@link GoLaunch#releaseDebugBinary}). */
+    private void releaseGoDebugBinary() {
+        Object output = goDebugBinary;
+        goDebugBinary = null;
+        if (output != null) {
+            GoLaunch.releaseDebugBinary(output, com.editora.process.BlockingTasks.named("dap-remove-go-binary"));
+        }
+    }
+
     /** Removes the exit-code wrapper of a session that will not report its exit (stopped, replaced). */
     private void releaseExitWrapper() {
         ExitWrapper old = exitWrapper;
@@ -6308,6 +6331,7 @@ public final class DapManager {
         // its compiled classes: the next launch would overwrite the only reference to them (review D6).
         releaseCompilationDirectory();
         releaseExitWrapper();
+        releaseGoDebugBinary();
         return epoch;
     }
 
@@ -6334,12 +6358,14 @@ public final class DapManager {
             GoGoroutines.Options goroutines = shared.goGoroutines;
             liveGoGoroutines = goroutines;
             PythonTemplates.Mode templates = shared.pythonTemplates;
+            DapPaths paths = candidate.paths(); // a remote host's request names its host's folders
             candidate.setLaunchDecorator( // Don't step into, the evaluation time limit, Go's goroutines, templates
                     args -> PythonTemplates.decorate(
                             GoGoroutines.decorate(
                                     EvaluationLimits.decorate(StepFilters.decorate(language, args, skips), limit),
                                     goroutines),
                             templates,
+                            paths,
                             DapManager::templatesIn));
             candidate.setEvaluationWait(EvaluationLimits.wait(limit));
             candidate.setHexValues(shared.hexValues);
