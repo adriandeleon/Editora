@@ -4208,6 +4208,11 @@ final class LspCoordinator {
 
     /** Notifies the server of a save (didSave) for a managed file + refreshes pull-model diagnostics. */
     void notifyDocumentSaved(EditorBuffer buffer, String savedText) {
+        notifyDocumentSaved(buffer, savedText, false);
+    }
+
+    /** As above; {@code autoSave}: the save was autosave's, so the project recheck waits for a longer lull. */
+    void notifyDocumentSaved(EditorBuffer buffer, String savedText, boolean autoSave) {
         eslint.saved(buffer);
         if (buffer != null && buffer.getPath() != null && untitledLspPaths.containsKey(buffer)) {
             syncBuffer(buffer); // an untitled buffer saved: its file replaces the made-up document (B14)
@@ -4246,6 +4251,7 @@ final class LspCoordinator {
             if ((projectWideProblems || lspManager.otherJavaDocumentOpen(path))
                     && LspServerRegistry.JAVA_SERVER_ID.equals(lspManager.managedServerId(path))) {
                 pendingProjectRecheck.add(path); // one build per session, saves in two projects both checked
+                projectRecheck.setDuration(javafx.util.Duration.millis(recheckDelayMillis(autoSave)));
                 projectRecheck.playFromStart();
             }
         } else if (path != null && path.toString().endsWith(".java") && lspManager.hasJavaSession(path)) {
@@ -4377,8 +4383,23 @@ final class LspCoordinator {
      */
     private final javafx.animation.PauseTransition projectRecheck = projectRecheck();
 
+    /** How long after a save the project recheck waits: a later save starts the wait again. */
+    static final int RECHECK_DELAY_MILLIS = 1200;
+
+    /**
+     * The wait after an autosave. Autosave "after delay" saves at every pause in typing (1 s at least), and each
+     * recheck re-sends every other open Java file to jdtls, or starts a workspace build: while the user is still
+     * typing, these only pile up. The recheck comes once typing has stopped for this long (perf review 2026-11-23 L4).
+     */
+    static final int AUTOSAVE_RECHECK_DELAY_MILLIS = 5000;
+
+    /** Pure: the recheck's wait after a save. */
+    static int recheckDelayMillis(boolean autoSave) {
+        return autoSave ? AUTOSAVE_RECHECK_DELAY_MILLIS : RECHECK_DELAY_MILLIS;
+    }
+
     private javafx.animation.PauseTransition projectRecheck() {
-        var recheck = new javafx.animation.PauseTransition(javafx.util.Duration.millis(1200));
+        var recheck = new javafx.animation.PauseTransition(javafx.util.Duration.millis(RECHECK_DELAY_MILLIS));
         recheck.setOnFinished(e -> {
             List<Path> saved = List.copyOf(pendingProjectRecheck);
             pendingProjectRecheck.clear();

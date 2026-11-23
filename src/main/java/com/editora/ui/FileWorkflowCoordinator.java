@@ -3636,7 +3636,7 @@ final class FileWorkflowCoordinator {
                 cleanUpPastedImages(request);
             }
             host.git().refresh();
-            host.lspCoordinator().notifyDocumentSaved(request.buffer(), request.savedText());
+            host.lspCoordinator().notifyDocumentSaved(request.buffer(), request.savedText(), autoSave);
             if (!autoSave) {
                 host.refreshBuildTools();
                 host.indexCoordinator().onBufferSaved(request.buffer());
