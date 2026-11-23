@@ -358,6 +358,8 @@ final class TestRunCoordinator implements TestRunHook {
         ops.openTestResults();
         startElapsedTimer();
         int gen = ++runGeneration;
+        PendingDebug debug = pendingDebug;
+        pendingDebug = null; // this run is its, or another run took its place: either way it is spent
         if (fileBased) {
             Path dir = workingDir;
             BuildTool t = tool;
@@ -381,6 +383,15 @@ final class TestRunCoordinator implements TestRunHook {
                 seeded = true;
                 poller.execute(() -> seedFromSources(gen, dir));
             }
+        }
+        if (debug != null && debug.args().equals(taskArgs)) {
+            // After the build has said it is running (that status would cover the waiting one, review D14), and with
+            // this run's state reset: the test JVM prints its JDWP banner seconds later.
+            javafx.application.Platform.runLater(() -> {
+                if (gen == runGeneration) {
+                    armDebugger(debug.className(), debug.port());
+                }
+            });
         }
         return true;
     }
@@ -658,7 +669,8 @@ final class TestRunCoordinator implements TestRunHook {
                 if (Files.size(f) > MAX_SEED_FILE_BYTES) {
                     continue;
                 }
-                targets.addAll(JavaTestScanner.scan(Files.readString(f)));
+                targets.addAll(JavaTestScanner.scan(
+                        JavaTestScanner.languageOf(String.valueOf(f.getFileName())), Files.readString(f)));
                 if (targets.size() > MAX_SEED_TESTS) {
                     return;
                 }
@@ -876,13 +888,19 @@ final class TestRunCoordinator implements TestRunHook {
                 host.setStatus(tr("status.testrunner.debugUnsupported"));
                 return;
             }
-            int before = runGeneration;
+            // Armed when the run starts (onTestRunStart): the build is planned off the FX thread (PERF-01), so the
+            // run may start after launch returns — checked here, it never had, and the test JVM waited for a
+            // debugger nothing attached. A run refused (busy, not detected) never starts, and arms nothing.
+            pendingDebug = new PendingDebug(List.copyOf(args), target.className(), port);
             launch.accept(args);
-            if (runGeneration != before) { // the run started (not refused as busy / not detected)
-                armDebugger(target.className(), port);
-            }
         });
     }
+
+    /** A test debug asked for, armed once the build run of {@code args} starts. */
+    private record PendingDebug(List<String> args, String className, int port) {}
+
+    /** The test debug waiting for its run to start, or null. */
+    private @Nullable PendingDebug pendingDebug;
 
     /** The port a Maven test debug forks on (chosen now, polled until it listens); 0 for the banner tools. */
     private int mavenDebugPort(@Nullable BuildTool tool) {
@@ -972,10 +990,10 @@ final class TestRunCoordinator implements TestRunHook {
     }
 
     private void armDebugger(String className, int port) {
-        // Set AFTER the launch: ops.runTest re-enters onTestRunStart synchronously, which resets the
-        // per-run state (including this flag) — arming it beforehand would be wiped before the JVM ever
-        // printed its JDWP banner. Surefire/Gradle fork the test JVM suspended; onTestOutput sees the
-        // banner and attaches — or, for Maven, the port chosen up front is polled until the fork listens.
+        // Called once the run has started (onTestRunStart, then a pulse later): its start resets the per-run state
+        // (including this flag), so arming it before would be wiped before the JVM ever printed its JDWP banner.
+        // Surefire/Gradle fork the test JVM suspended; onTestOutput sees the banner and attaches — or, for Maven,
+        // the port chosen up front is polled until the fork listens.
         awaitingAttachFor = className;
         attachedPorts.clear();
         mavenDebugPort = port;

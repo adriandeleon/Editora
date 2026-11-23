@@ -565,7 +565,10 @@ final class TestNavigationCoordinator {
      */
     void refineTestGutterWithServer(EditorBuffer buffer) {
         Path path = buffer.getPath();
-        if (path == null || !host.lspEnabled() || !host.lspManager().isManaged(path)) {
+        if (path == null
+                || !"java".equals(buffer.getLanguage()) // jdtls knows Java's source roots, not Kotlin's or Groovy's
+                || !host.lspEnabled()
+                || !host.lspManager().isManaged(path)) {
             return;
         }
         Boolean cached = testFileByPath.get(path);
@@ -730,7 +733,7 @@ final class TestNavigationCoordinator {
             host.setStatus(tr("status.testrunner.noSource", node.displayName()));
             return;
         }
-        resolveTestSource(hint, true, file -> {
+        resolveJvmTestSource(hint, true, file -> {
             if (file == null) {
                 host.setStatus(tr("status.testrunner.noSource", node.displayName()));
                 return;
@@ -780,8 +783,31 @@ final class TestNavigationCoordinator {
         if (hint == null) {
             orActive.accept(null);
         } else {
-            resolveTestSource(hint, false, orActive);
+            resolveJvmTestSource(hint, false, orActive);
         }
+    }
+
+    /**
+     * {@link #resolveTestSource} for a JVM test class's {@code .java} hint: when there is no such Java file, the
+     * Kotlin one, then the Groovy one ({@code com/foo/BarTest.kt}); a JVM test class may be written in either.
+     */
+    void resolveJvmTestSource(String javaHint, boolean navigation, java.util.function.Consumer<Path> onResult) {
+        resolveJvmTestSource(javaHint, 0, navigation, onResult);
+    }
+
+    private void resolveJvmTestSource(
+            String javaHint, int next, boolean navigation, java.util.function.Consumer<Path> onResult) {
+        java.util.List<String> exts = com.editora.test.TestSourceLocator.JVM_SOURCE_EXTENSIONS;
+        String hint = !javaHint.endsWith(".java") || next == 0
+                ? javaHint
+                : javaHint.substring(0, javaHint.length() - ".java".length()) + exts.get(next);
+        resolveTestSource(hint, navigation, found -> {
+            if (found == null && javaHint.endsWith(".java") && next + 1 < exts.size()) {
+                resolveJvmTestSource(javaHint, next + 1, navigation, onResult);
+            } else {
+                onResult.accept(found);
+            }
+        });
     }
 
     /** Moves the caret to a test method's declaration in an already-open file (text search; strips param/

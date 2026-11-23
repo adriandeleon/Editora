@@ -31,7 +31,7 @@ final class RunScan {
      *
      * @param eligible the run feature is on and the file is small enough to scan
      * @param httpEligible an {@code .http} file with the HTTP client on
-     * @param testEligible a Java file whose JUnit tests get gutter glyphs
+     * @param testEligible a Java, Kotlin or Groovy file whose JUnit (Spock, Kotest) tests get gutter glyphs
      * @param mainEligible a Java file in a project whose {@code main} methods get gutter glyphs
      * @param name the file's name (a compact source file is recognized by it)
      * @param javaShebang whether the file starts with a {@code java --source N} shebang
@@ -137,7 +137,7 @@ final class RunScan {
         Map<Integer, JavaTestScanner.TestTarget> testLines = pythonTests;
         if (in.testEligible()) {
             Map<Integer, JavaTestScanner.TestTarget> tl = new LinkedHashMap<>();
-            for (JavaTestScanner.TestTarget t : JavaTestScanner.scan(text)) {
+            for (JavaTestScanner.TestTarget t : JavaTestScanner.scan(language, text)) {
                 tl.put(t.line(), t);
             }
             testLines = tl;
