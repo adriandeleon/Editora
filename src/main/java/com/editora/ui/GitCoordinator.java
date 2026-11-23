@@ -654,6 +654,9 @@ final class GitCoordinator {
 
     void shutdown() {
         autoFetch.stop();
+        if (trailingRefresh != null) {
+            trailingRefresh.stop(); // no full refresh for a window that is going away
+        }
         service.shutdown();
     }
 

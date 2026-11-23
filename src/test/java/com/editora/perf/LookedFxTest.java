@@ -426,10 +426,12 @@ class LookedFxTest {
         for (int i = 0; i < 50; i++) {
             assertEquals("a", onFx(() -> looked.get("a")), "the kept answer, while a fresh look runs behind");
         }
-        release.countDown();
-        waitUntil(() -> looks.get() == 2);
-        Thread.sleep(50);
+        waitUntil(() -> looks.get() >= 2); // the one look behind, held
+        for (int i = 0; i < 5; i++) {
+            onFx(() -> null); // let any other look that was started reach the counter
+        }
         assertEquals(2, looks.get(), "fifty stale asks start one look behind, not fifty");
+        release.countDown();
     }
 
     @Test
