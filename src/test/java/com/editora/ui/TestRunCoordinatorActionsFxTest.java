@@ -685,7 +685,9 @@ class TestRunCoordinatorActionsFxTest {
             launched.add(args);
             coordinator.onTestRunStart(BuildTool.MAVEN, dir, args, List.of(), List.of("mvn"));
         }));
-        // The waiting status is set after the launch, which sets the build's own (review D14).
+        // The waiting status is set a pulse after the run starts, once the build has said its own (review D14): the
+        // run may start after the launch returns (its build is planned off the FX thread).
+        FxTestSupport.drainFx();
         assertEquals(List.of(tr("status.testrunner.debugWaiting")), statuses);
         assertEquals("test", launched.get(0).get(0));
         assertEquals("-Dtest=CalcTest#adds", launched.get(0).get(1));
@@ -702,6 +704,32 @@ class TestRunCoordinatorActionsFxTest {
             coordinator.onTestOutput("Listening for transport dt_socket at address: 5005", false);
         });
         assertEquals(List.of("attach demo.CalcTest localhost:5005"), attaches());
+    }
+
+    /** The run a Debug Test asked for may start after the launch returns: it is armed when it does, not missed. */
+    @Test
+    void aDebugRunThatStartsLaterIsStillArmed() throws Exception {
+        JavaTestScanner.TestTarget target = new JavaTestScanner.TestTarget(4, "demo.CalcTest", "adds", false);
+        debugAvailable = true;
+        List<List<String>> launched = new ArrayList<>();
+        FxTestSupport.runOnFx(() -> coordinator.debugSingleTest(BuildTool.GRADLE, target, launched::add));
+        assertEquals(1, launched.size(), "launched; its build not started yet (planned off the FX thread)");
+        FxTestSupport.runOnFx(() ->
+                coordinator.onTestRunStart(BuildTool.GRADLE, dir, launched.getFirst(), List.of(), List.of("gradle")));
+        FxTestSupport.drainFx();
+        FxTestSupport.runOnFx(
+                () -> coordinator.onTestOutput("Listening for transport dt_socket at address: 41234", false));
+        assertEquals(List.of("attach demo.CalcTest localhost:41234"), attaches());
+
+        // Another run that starts in its place is not armed.
+        calls.removeIf(c -> c.startsWith("attach"));
+        FxTestSupport.runOnFx(() -> coordinator.debugSingleTest(BuildTool.GRADLE, target, launched::add));
+        FxTestSupport.runOnFx(
+                () -> coordinator.onTestRunStart(BuildTool.GRADLE, dir, List.of("test"), List.of(), List.of("gradle")));
+        FxTestSupport.drainFx();
+        FxTestSupport.runOnFx(
+                () -> coordinator.onTestOutput("Listening for transport dt_socket at address: 41235", false));
+        assertEquals(List.of(), attaches());
     }
 
     // --- Debug Test on Maven: the chosen port is polled, since Surefire 3 withholds the banner (review D1) ---
