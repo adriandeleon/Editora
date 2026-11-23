@@ -69,7 +69,6 @@ import static com.editora.ui.ProjectMapView.DEFAULT_FLOW;
 import static com.editora.ui.ProjectMapView.TYPE_AHEAD_RESET_MILLIS;
 import static com.editora.ui.ProjectMapView.claimedChords;
 import static com.editora.ui.ProjectMapView.clampInto;
-import static com.editora.ui.ProjectMapView.columnRowsInOrder;
 import static com.editora.ui.ProjectMapView.connectorOpacity;
 import static com.editora.ui.ProjectMapView.fadedInk;
 import static com.editora.ui.ProjectMapView.flowLimitedOffset;
@@ -269,7 +268,19 @@ final class MapSurface extends Region {
     private final Map<ProjectMapModel.ColumnId, ColumnLayout> columnLayouts = new HashMap<>();
     private final Map<ProjectMapModel.ColumnId, String> columnQueries = new HashMap<>();
     private final Map<ProjectMapModel.ColumnId, Boolean> columnShowHidden = new HashMap<>();
-    private final Map<String, Double> measuredLabelWidths = new HashMap<>();
+    /**
+     * Label widths by text, for the current font: kept across listings (perf review S7: an expand used to measure
+     * every label again), and bounded, the least recently used going first.
+     */
+    private final Map<String, Double> measuredLabelWidths = new java.util.LinkedHashMap<>(256, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, Double> eldest) {
+            return size() > MEASURED_LABELS_KEPT;
+        }
+    };
+    /** Each column's rows in order, filters aside, sorted once per listing (perf review S1). */
+    private final MapColumnOrders columnOrders = new MapColumnOrders();
+
     private final AnimationTimer viewportRepaintTimer = new AnimationTimer() {
         @Override
         public void handle(long now) {
@@ -405,10 +416,24 @@ final class MapSurface extends Region {
     private int lastPaintedConnectorCount;
     /** Canvas draws so far: at most one per pulse (Map review D5). */
     private long completedPaints;
-    /** The last world layout and what it was computed from (see {@link #worldLayout}). */
+    /** The last world layout handed out (see {@link #worldLayout}): {@link #cachedGeometry} with its header bands. */
     private @Nullable WorldLayout cachedLayout;
+    /** Per column of {@link #cachedLayout}, how far its card reaches up for its controls ("Compact rows"). */
+    private double @Nullable [] cachedExtensions;
+    /** The last world layout computed, and what it was computed from. */
+    private @Nullable WorldLayout cachedGeometry;
 
     private @Nullable LayoutKey cachedLayoutKey;
+    /** Per column of {@link #cachedGeometry}: whether its controls fit at the zoom it was computed at. */
+    private boolean @Nullable [] cachedGeometryFits;
+    /** Per column of {@link #cachedGeometry}: the header band it was computed with. */
+    private double @Nullable [] cachedGeometryExtensions;
+    /** The columns the last layout was computed from (sorted and filtered), and what they were computed from. */
+    private @Nullable LaidColumns cachedColumns;
+
+    private @Nullable ColumnsKey cachedColumnsKey;
+    /** Column passes (grouping, sorting, filtering every row) so far: a zoom or a hover makes none (perf review S2). */
+    private long columnsComputed;
     /** The world layout the current boxes were projected from; null while the map is empty. */
     private @Nullable WorldLayout projected;
 
@@ -723,7 +748,7 @@ final class MapSurface extends Region {
         Set<ProjectMapModel.ColumnId> newColumnIds = this.entries.stream()
                 .map(entry -> new ProjectMapModel.ColumnId(entry.depth(), entry.parent()))
                 .collect(java.util.stream.Collectors.toSet());
-        measuredLabelWidths.clear();
+        // The label widths stay: they are keyed by the text and the font clears them (perf review S7).
         expandedSnapshot = expanded == null ? Set.of() : Set.copyOf(expanded);
         clearNodeTooltip();
         if (selected == null || !byPath.containsKey(selected)) {
@@ -2499,7 +2524,14 @@ final class MapSurface extends Region {
         reportNarrowed(world.narrowed());
     }
 
-    /** The world layout for the current inputs: the cached one while they are unchanged (Map review D8). */
+    /**
+     * The world layout for the current inputs: the cached one while they are unchanged (Map review D8). It is cached in
+     * two steps (perf review S2). The columns — every row grouped, sorted and filtered — depend on the rows, the
+     * filters and the folding only, so a zoom or a hover never sorts again. The geometry depends on the zoom only
+     * through whether each card's controls fit ({@link #detailControlsFit}), so a zoom step that crosses no card's
+     * threshold reuses it. With "Compact rows" a card's controls grow upward without moving any row, so the column
+     * the pointer is over (and the selection's) changes only those cards' bands, worked out from the geometry.
+     */
     private WorldLayout worldLayout() {
         // Column widths allow for the checkbox label, so it is measured before they are computed (it
         // changes once, when the controls are first styled).
@@ -2511,49 +2543,71 @@ final class MapSurface extends Region {
         }
         boolean narrowing = hideUnmatched && filters != null && filters.active();
         layoutChromeShown = layoutChromeColumns();
+        LaidColumns laid = laidColumns(narrowing);
         Map<ProjectMapModel.ColumnId, javafx.geometry.Point2D> offsets = new HashMap<>();
         columnLayouts.forEach((id, layout) -> {
             if (layout.x != 0 || layout.y != 0) {
                 offsets.put(id, new javafx.geometry.Point2D(layout.x, layout.y));
             }
         });
+        // Bottom to top, a card's band moves the cards above it: there it is part of the geometry.
+        boolean chromeMovesCards = layoutCompactRows && flowDirection == FlowDirection.BOTTOM_TO_TOP;
         LayoutKey key = new LayoutKey(
-                entries,
-                Map.copyOf(columnQueries),
-                Map.copyOf(columnShowHidden),
-                narrowing ? emphasized : null,
+                laid,
                 flowDirection,
-                zoom,
                 outputPaint,
                 offsets,
                 showHiddenLabelWidth,
                 bookmarkedPaths,
                 notedPaths,
                 fontFamily(),
-                compactChains,
                 new LayoutExtras(
-                        layoutCompactRows,
-                        layoutChromeShown,
-                        layoutHideIgnored,
-                        layoutIgnoredVersion,
-                        layoutModuleFolders));
-        WorldLayout cached = cachedLayout;
-        if (cached != null && key.equals(cachedLayoutKey)) {
-            return cached;
+                        layoutCompactRows, chromeMovesCards ? layoutChromeShown : Set.of(), layoutModuleFolders));
+        WorldLayout geometry = cachedGeometry;
+        boolean[] fits = cachedGeometryFits;
+        if (geometry == null || fits == null || !key.equals(cachedLayoutKey) || !layoutFitsMatch(geometry, fits)) {
+            geometry = computeWorldLayout(laid);
+            fits = layoutFits(geometry);
+            cachedGeometry = geometry;
+            cachedGeometryFits = fits;
+            cachedGeometryExtensions = layoutExtensions(geometry);
+            cachedLayoutKey = key;
+            cachedLayout = geometry;
+            cachedExtensions = cachedGeometryExtensions;
+            layoutsComputed++;
+            return geometry;
         }
-        WorldLayout computed = computeWorldLayout(narrowing);
-        cachedLayout = computed;
-        cachedLayoutKey = key;
-        layoutsComputed++;
-        return computed;
+        WorldLayout handed = cachedLayout;
+        double[] handedExtensions = cachedExtensions;
+        if (!layoutCompactRows || chromeMovesCards) {
+            return handed != null ? handed : geometry;
+        }
+        double[] extensions = layoutExtensions(geometry);
+        if (handed != null && java.util.Arrays.equals(extensions, handedExtensions)) {
+            return handed;
+        }
+        double[] laidWith = cachedGeometryExtensions;
+        WorldLayout banded = laidWith == null ? geometry : layoutWithExtensions(geometry, laidWith, extensions);
+        cachedLayout = banded;
+        cachedExtensions = extensions;
+        return banded;
     }
 
-    /**
-     * Lays the columns out in world units. The root is not a column of its own: its children are the first
-     * column, titled with its name (Map review E5). A compacted column hangs from the first folder of its
-     * chain (E4).
-     */
-    private WorldLayout computeWorldLayout(boolean narrowing) {
+    /** The sorted and filtered columns for the current rows and filters: the cached ones while those are unchanged. */
+    private LaidColumns laidColumns(boolean narrowing) {
+        ColumnsKey key = new ColumnsKey(
+                entries,
+                Map.copyOf(columnQueries),
+                Map.copyOf(columnShowHidden),
+                narrowing ? emphasized : null,
+                compactChains,
+                outputPaint,
+                layoutHideIgnored,
+                layoutIgnoredVersion);
+        LaidColumns cached = cachedColumns;
+        if (cached != null && key.equals(cachedColumnsKey)) {
+            return cached;
+        }
         List<ProjectMapModel.Entry> laid = layoutLaidEntries();
         List<ProjectMapModel.Column> columns = ProjectMapModel.columnsById(
                 laid, columnQueries, columnShowHidden, narrowing ? emphasized : null, compactChains);
@@ -2572,6 +2626,81 @@ final class MapSurface extends Region {
                     .computeIfAbsent(columnId(entry), ignored -> new ArrayList<>())
                     .add(entry);
         }
+        LaidColumns computed = new LaidColumns(columns, rowsByColumn, narrowedTotal);
+        cachedColumns = computed;
+        cachedColumnsKey = key;
+        columnsComputed++;
+        return computed;
+    }
+
+    /** Per column of {@code layout}: whether its controls fit at the current zoom, as its header was laid out. */
+    private boolean[] layoutFits(WorldLayout layout) {
+        List<ColumnBox> columns = layout.columns();
+        boolean[] fits = new boolean[columns.size()];
+        for (int index = 0; index < fits.length; index++) {
+            fits[index] = detailControlsFit(columns.get(index).width() * zoom);
+        }
+        return fits;
+    }
+
+    /** Whether every column of {@code layout} would be laid out with the same header at the current zoom. */
+    private boolean layoutFitsMatch(WorldLayout layout, boolean[] fits) {
+        List<ColumnBox> columns = layout.columns();
+        if (columns.size() != fits.length) {
+            return false;
+        }
+        for (int index = 0; index < fits.length; index++) {
+            if (detailControlsFit(columns.get(index).width() * zoom) != fits[index]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Per column of {@code layout}: how far its card reaches up for its controls now ({@link #layoutCardSize}). */
+    private double[] layoutExtensions(WorldLayout layout) {
+        List<ColumnBox> columns = layout.columns();
+        double[] extensions = new double[columns.size()];
+        if (!layoutCompactRows) {
+            return extensions;
+        }
+        for (int index = 0; index < extensions.length; index++) {
+            ColumnBox box = columns.get(index);
+            extensions[index] = layoutHeaderHeight(box.column(), box.width()) - COMPACT_HEADER_HEIGHT;
+        }
+        return extensions;
+    }
+
+    /** {@code geometry} with each card's band changed from {@code from} to {@code to}: its rows stay where they are. */
+    private static WorldLayout layoutWithExtensions(WorldLayout geometry, double[] from, double[] to) {
+        List<ColumnBox> columns = new ArrayList<>(geometry.columns().size());
+        for (int index = 0; index < geometry.columns().size(); index++) {
+            ColumnBox box = geometry.columns().get(index);
+            double change = to[index] - from[index];
+            columns.add(
+                    change == 0
+                            ? box
+                            : new ColumnBox(
+                                    box.column(), box.x(), box.y() - change, box.width(), box.height() + change));
+        }
+        return new WorldLayout(
+                List.copyOf(columns),
+                geometry.rows(),
+                geometry.anchorRows(),
+                geometry.anchorColumns(),
+                geometry.narrowed(),
+                geometry.firstRows());
+    }
+
+    /**
+     * Lays the columns out in world units. The root is not a column of its own: its children are the first
+     * column, titled with its name (Map review E5). A compacted column hangs from the first folder of its
+     * chain (E4).
+     */
+    private WorldLayout computeWorldLayout(LaidColumns laid) {
+        List<ProjectMapModel.Column> columns = laid.columns();
+        int narrowedTotal = laid.narrowed();
+        Map<ProjectMapModel.ColumnId, List<ProjectMapModel.Entry>> rowsByColumn = laid.rowsByColumn();
         List<ColumnBox> columnList = new ArrayList<>(columns.size());
         List<NodeBox> rowList = new ArrayList<>();
         List<Integer> anchorRows = new ArrayList<>(columns.size());
@@ -2952,6 +3081,9 @@ final class MapSurface extends Region {
 
     /** Rows past which a column's width is measured on its longest names only (position 15). */
     private static final int CANVAS_MEASURE_ALL_ROWS = 512;
+
+    /** The most label widths {@link #measuredLabelWidths} keeps. */
+    static final int MEASURED_LABELS_KEPT = 8_192;
 
     /** How many of a long column's longest names are measured for its width. */
     private static final int CANVAS_MEASURED_NAMES = 96;
@@ -5732,12 +5864,17 @@ final class MapSurface extends Region {
      * counts as the first step, so the move starts from where the row would be, not from the top (B16).
      */
     private int selectionStepFromHidden(ProjectMapModel.Entry current, List<ProjectMapModel.Entry> drawn, int delta) {
-        List<ProjectMapModel.Entry> all = selectionSiblings(current);
-        int position = all.indexOf(current);
+        MapColumnOrders.Order order = selectionSiblings(current);
+        List<ProjectMapModel.Entry> all = order.rows();
+        int position = order.indexOf(current);
+        Map<ProjectMapModel.Entry, Integer> drawnAt = HashMap.newHashMap(drawn.size());
+        for (int i = 0; i < drawn.size(); i++) {
+            drawnAt.putIfAbsent(drawn.get(i), i);
+        }
         int anchor = -1;
         if (delta > 0) {
             for (int i = position + 1; i < all.size() && anchor < 0; i++) {
-                anchor = drawn.indexOf(all.get(i));
+                anchor = drawnAt.getOrDefault(all.get(i), -1);
             }
             if (anchor < 0) {
                 return Math.abs(delta) == 1 ? 0 : drawn.size() - 1;
@@ -5745,7 +5882,7 @@ final class MapSurface extends Region {
             return Math.clamp(anchor + delta - 1, 0, drawn.size() - 1);
         }
         for (int i = position - 1; i >= 0 && anchor < 0; i--) {
-            anchor = drawn.indexOf(all.get(i));
+            anchor = drawnAt.getOrDefault(all.get(i), -1);
         }
         if (anchor < 0) {
             return Math.abs(delta) == 1 ? drawn.size() - 1 : 0;
@@ -5753,9 +5890,12 @@ final class MapSurface extends Region {
         return Math.clamp(anchor + delta + 1, 0, drawn.size() - 1);
     }
 
-    /** Every loaded row of {@code entry}'s column, drawn or not, in the order the column shows them. */
-    private List<ProjectMapModel.Entry> selectionSiblings(ProjectMapModel.Entry entry) {
-        return columnRowsInOrder(entries, columnId(entry));
+    /**
+     * Every loaded row of {@code entry}'s column, drawn or not, in the order the column shows them: sorted once per
+     * listing and column, never by grouping every column of the map again (perf review S1).
+     */
+    private MapColumnOrders.Order selectionSiblings(ProjectMapModel.Entry entry) {
+        return columnOrders.of(entries, columnId(entry));
     }
 
     /**
@@ -5770,8 +5910,9 @@ final class MapSurface extends Region {
             return;
         }
         Path target = null;
-        List<ProjectMapModel.Entry> siblings = selectionSiblings(entry);
-        int position = siblings.indexOf(entry);
+        MapColumnOrders.Order order = selectionSiblings(entry);
+        List<ProjectMapModel.Entry> siblings = order.rows();
+        int position = order.indexOf(entry);
         for (int distance = 1; target == null && distance < siblings.size(); distance++) {
             for (int index : new int[] {position + distance, position - distance}) {
                 if (target == null && index >= 0 && index < siblings.size()) {
@@ -6483,11 +6624,9 @@ final class MapSurface extends Region {
         if (!filtered) {
             position = index + 1;
         } else {
-            // Hidden by its column's filter: say so, and where it would stand.
-            List<ProjectMapModel.Entry> all = selectionSiblings(current);
-            int at = all.indexOf(current);
-            position = 1
-                    + (int) drawn.stream().filter(row -> all.indexOf(row) < at).count();
+            // Hidden by its column's filter: say so, and where it would stand. One lookup per drawn row, in an order
+            // sorted once per listing: not an indexOf scan per row of a 50,000-row folder (perf review S1).
+            position = selectionSiblings(current).positionAmong(drawn, current);
         }
         return canvasRowText(current, position, drawn.size(), filtered, false);
     }
@@ -6655,28 +6794,54 @@ final class MapSurface extends Region {
      * when they change), so comparing two keys is cheap while nothing changed.
      */
     private record LayoutKey(
-            List<ProjectMapModel.Entry> entries,
-            Map<ProjectMapModel.ColumnId, String> queries,
-            Map<ProjectMapModel.ColumnId, Boolean> hidden,
-            @Nullable Set<Path> keep,
+            LaidColumns columns,
             FlowDirection flow,
-            double zoom,
             boolean output,
             Map<ProjectMapModel.ColumnId, javafx.geometry.Point2D> offsets,
             double hiddenLabelWidth,
             Set<Path> bookmarks,
             Set<Path> notes,
             String fontFamily,
-            boolean compactChains,
             LayoutExtras layout) {}
 
-    /** What the review 3 layout options add to the layout's inputs: row density, ignored rows, module badges. */
-    private record LayoutExtras(
-            boolean compactRows,
-            Set<ProjectMapModel.ColumnId> chrome,
+    /**
+     * What the review 3 layout options add to the layout's inputs: row density and module badges, and the columns
+     * showing their controls where those move other cards (bottom to top with "Compact rows").
+     */
+    private record LayoutExtras(boolean compactRows, Set<ProjectMapModel.ColumnId> chrome, Set<Path> modules) {}
+
+    /**
+     * Everything the sorted and filtered columns depend on (perf review S2): not the zoom, the flow or the hover.
+     * Lists and sets are the surface's own (replaced, never mutated, when they change), so comparing is cheap.
+     */
+    private record ColumnsKey(
+            List<ProjectMapModel.Entry> entries,
+            Map<ProjectMapModel.ColumnId, String> queries,
+            Map<ProjectMapModel.ColumnId, Boolean> hidden,
+            @Nullable Set<Path> keep,
+            boolean compactChains,
+            boolean output,
             boolean hideIgnored,
-            int ignoredVersion,
-            Set<Path> modules) {}
+            int ignoredVersion) {}
+
+    /**
+     * The columns a layout is made from, and every row of each (filtered or not) for its width. Compared by identity:
+     * a new one is a new column pass, and the geometry is computed again from it.
+     */
+    private record LaidColumns(
+            List<ProjectMapModel.Column> columns,
+            Map<ProjectMapModel.ColumnId, List<ProjectMapModel.Entry>> rowsByColumn,
+            int narrowed) {
+        @Override
+        public boolean equals(@Nullable Object other) {
+            return this == other;
+        }
+
+        @Override
+        public int hashCode() {
+            return System.identityHashCode(this);
+        }
+    }
 
     private record FontKey(String family, FontWeight weight, FontPosture posture, double size) {}
 

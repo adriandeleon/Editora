@@ -42,7 +42,9 @@ final class MapDependencyOverlay {
 
     /**
      * What is around {@code subject} — a file, or a folder when {@code folder} — in the project at {@code root}; none
-     * for the root itself or a path outside it.
+     * for the root itself or a path outside it. Pure, and run off the FX thread (perf review S5): a top-level folder of
+     * a large project walks every edge of every file in it. An interrupted thread (a newer selection superseded this
+     * one) stops early with part of the answer, which nobody reads.
      */
     static MapDependencyOverlay of(ProjectMapDependencies dependencies, Path root, Path subject, boolean folder) {
         Path base = root.toAbsolutePath().normalize();
@@ -67,6 +69,9 @@ final class MapDependencyOverlay {
 
     private static void mark(Map<Path, Integer> marks, Path base, Path subject, Set<String> files, int side) {
         for (String file : files) {
+            if (Thread.currentThread().isInterrupted()) {
+                return; // superseded: the answer is dropped
+            }
             Path path = base.resolve(file).normalize();
             marks.merge(path, side, (a, b) -> a | b);
             for (Path folder = path.getParent();
@@ -76,6 +81,56 @@ final class MapDependencyOverlay {
                     marks.merge(folder, side, (a, b) -> a | b);
                 }
             }
+        }
+    }
+
+    /**
+     * The overlays worked out lately, so going back to a row (an arrow key up and down a column of folders) is a lookup
+     * rather than another walk. Kept for one reading of the imports: a new {@link ProjectMapDependencies} empties it.
+     * Confined to the FX thread.
+     */
+    static final class Recent {
+
+        /** The most overlays kept. */
+        static final int KEPT = 32;
+
+        private record Key(Path root, Path subject, boolean folder) {}
+
+        private @Nullable ProjectMapDependencies readFrom;
+        private final Map<Key, MapDependencyOverlay> known = new java.util.LinkedHashMap<>(KEPT * 2, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<Key, MapDependencyOverlay> eldest) {
+                return size() > KEPT;
+            }
+        };
+
+        /** The overlay worked out for these, or null. */
+        @Nullable
+        MapDependencyOverlay get(ProjectMapDependencies dependencies, Path root, Path subject, boolean folder) {
+            return dependencies == readFrom ? known.get(new Key(root, subject, folder)) : null;
+        }
+
+        void put(
+                ProjectMapDependencies dependencies,
+                Path root,
+                Path subject,
+                boolean folder,
+                MapDependencyOverlay overlay) {
+            if (dependencies != readFrom) {
+                readFrom = dependencies;
+                known.clear();
+            }
+            known.put(new Key(root, subject, folder), overlay);
+        }
+
+        /** Forgets every overlay (a new root). */
+        void clear() {
+            readFrom = null;
+            known.clear();
+        }
+
+        int size() {
+            return known.size();
         }
     }
 

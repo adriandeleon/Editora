@@ -88,4 +88,26 @@ class MapProjectedRowsTest {
                 List.of(rows.visibleRange(0, 1, false, 0, 10)[0], rows.visibleRange(0, 1, false, 0, 10)[1]));
         assertEquals(2, rows.visibleRange(2, 0, false, 0, 10)[0]);
     }
+
+    /** Perf review 2026-11-23 S6: a paint of an unchanged layout clears and projects again without new arrays. */
+    @Test
+    void projectingTheSameRowsAfterAClearReusesTheArrays() {
+        List<MapSurface.NodeBox> world = column(5_000, 10, 20, 28, false);
+        MapProjectedRows rows = new MapProjectedRows();
+        rows.project(world, 1, 0, 0);
+        assertEquals(1, rows.arraysMade);
+        MapSurface.NodeBox first = rows.get(7);
+        for (int frame = 0; frame < 10; frame++) {
+            rows.clear(); // what every projectLayout starts with
+            assertTrue(rows.isEmpty());
+            rows.project(world, 1, -frame, 0);
+            assertEquals(5_000, rows.size());
+        }
+        assertEquals(1, rows.arraysMade, "the arrays stay while the world rows do");
+        assertEquals(-9 + 10, rows.get(7).x(), 1e-9, "each row is projected afresh");
+        assertTrue(first != rows.get(7), "not the box of an older projection");
+        rows.project(column(10, 0, 0, 28, false), 1, 0, 0); // a new layout
+        assertEquals(2, rows.arraysMade);
+        assertEquals(10, rows.size());
+    }
 }
