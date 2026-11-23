@@ -431,8 +431,11 @@ A feature PR updates `CHANGELOG.md` and `TODO.md` in the same change, not as a f
 A changelog entry goes under `## [Unreleased]`, in `### Added`, `### Changed`, `### Fixed` or
 `### Removed` (`### Deprecated` and `### Security` too, and no headings of our own), and opens with a bold
 one-line summary written for users (`- **…**`); `ChangelogFormatTest` checks the shape (REPO-02, Pauta
-6.2.0). User-facing documentation lives in the separate website repo; **this `docs/` folder is for
-developers**: no page here tells a user how to install or use something, even in one section (DOCS-02).
+6.2.0). The user guide lives in [`../user-docs/`](../user-docs/README.md), which the website copies and release
+builds ship (DOCS-02 asks for it in the website repo; `pauta.json` records the exception); feature pages and news
+live in the website repo.
+**This `docs/` folder is for developers**: no page here tells a user how to install or use something, even in one
+section.
 A guide explains what is true now; a dated review, measurement or plan goes under
 [`reference/`](reference/README.md) or with its evidence in `artifacts/` (DOCS-14). `README.md` is a short landing page that points at the website: it does not carry a
 feature catalog, so change it only when its highlights, install, build, command-line or

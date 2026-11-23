@@ -26,6 +26,12 @@ java scripts/screenshots/Shoot.java --theme dark features      # a whole folder,
 java scripts/screenshots/Shoot.java --out ../editora-website/public/screenshots docs features
 ```
 
+The docs pictures belong to this repository (`user-docs/screenshots/docs/`, embedded by the pages in
+[`user-docs/`](../user-docs/README.md)); the features, map and hero pictures belong to the website. Shoot into the
+website as above so its `npm run optimize:shots` crops and compresses them, then copy the changed
+`public/screenshots/docs/*.png` into `user-docs/screenshots/docs/` and commit them here with the page that uses
+them. The website takes them back with `SyncDocs`.
+
 Run it with JDK 25 or newer from any directory; it finds the repository itself. The pictures go to
 `target/screenshots/out/` unless `--out` says otherwise, the harness's stderr to
 `target/screenshots/logs/<script>-<theme>.err`. A failed command prints `FAIL line N: …` and the script goes
@@ -42,7 +48,7 @@ puts them in place:
 
 | Output | Website path | Embedded by |
 | --- | --- | --- |
-| `docs/<name>.png`, `docs/<name>.dark.png` | `public/screenshots/docs/` | `![alt](/screenshots/docs/<name>.png "caption")` in a docs page; the dark twin is picked by theme |
+| `docs/<name>.png`, `docs/<name>.dark.png` | `public/screenshots/docs/`, then `user-docs/screenshots/docs/` here | `![alt](/screenshots/docs/<name>.png "caption")` in a docs page; the dark twin is picked by theme |
 | `features/<slug>.png` (+ `.dark`) | `public/screenshots/features/` | the features gallery |
 | `map/<name>.png` (+ `.dark`) | `public/screenshots/map/` | the Project Map spotlight |
 | `hero/editor.png` (+ `.dark`) | `public/screenshots/hero/` | the README and the home page hero (the website makes the `.jpg`/`.webp`) |

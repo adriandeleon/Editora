@@ -704,6 +704,7 @@ final class MenuBarModel {
                                 "palette.show",
                                 SEPARATOR,
                                 "help.documentation",
+                                "help.onlineDocumentation", // the website's copy of the same pages
                                 "help.keyboardShortcuts",
                                 "view.welcome",
                                 "help.checkForUpdates",

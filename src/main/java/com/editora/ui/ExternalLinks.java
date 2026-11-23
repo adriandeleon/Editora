@@ -292,11 +292,18 @@ final class ExternalLinks {
             return; // nothing was asked for (an item with no URL) — not a refusal worth reporting
         }
         // Classifying a local link stats it and resolves its real path: off the FX thread (PERF-01, Pauta 6.2.0).
-        looked("link-classify", () -> classify(link, documentFile, projectRoot, anchor != null), target -> {
+        // A link into this version's docs opens the copy the build carries, when it has one: that may start the
+        // local docs server, which is why it happens here too (com.editora.web.AppDocs).
+        looked("link-classify", () -> localDocs(classify(link, documentFile, projectRoot, anchor != null)), target -> {
             if (target != null) {
                 dispatch(target, browser, editor, anchor, status);
             }
         });
+    }
+
+    /** A browser target into this version's docs, pointed at the bundled copy when the build has one. */
+    private static @Nullable Target localDocs(@Nullable Target target) {
+        return target instanceof Browser(String url) ? new Browser(com.editora.web.AppDocs.localize(url)) : target;
     }
 
     private static void dispatch(
