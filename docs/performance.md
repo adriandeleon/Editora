@@ -821,7 +821,10 @@ keep the show path free of work the user is not waiting for; measure against the
 - **`start()` waits once, and touches no disk of the user's** (PERF-01, Pauta 6.2.0). The prefetch thread
   (`App.loadForFirstWindow`) also claims the config dir before loading it, opens the session log (what was
   logged before is in memory and written first), reads the process ledgers and reaps a crashed run's servers,
-  removes a stale MCP endpoint (`StartupPrep`), and reads what the first window's set-up used to read
+  removes a stale MCP endpoint (`StartupPrep`), asks the keychain for the AI keys on a thread of its own
+  (`config-prefetch-keys`, joined before the plugins are discovered) while it parses the message catalog, the
+  bundled tables and what reads neither the settings nor the shared config (`FirstWindowPrep.prepareApart`),
+  and reads what the first window's set-up used to read
   (`ui/FirstWindowPrep`): the user's themes, the zoomed copies of the window's sheets (`UiZoom.prepare`), the
   recent files and search history, the build information (`AppInfo.load`), the first window's project settings
   (handed over by `ConfigManager.setStartupProjectSettings`), the bundled XML schemas and the loose-files root,
@@ -832,7 +835,8 @@ keep the show path free of work the user is not waiting for; measure against the
   (`InstallOpsHost.reapplyToolSupport`). The fallback in `takeBootstrap` runs the same `loadForFirstWindow`
   inline. Restored windows after the first have their sessions (and project settings) read on a
   `window-session-read` thread while the first one paints; a window's turn waits for its read without blocking.
-  The window icons are read once (`AppIcons`); the Welcome page checks its recent files and project folders
+  The window icons are read once (`AppIcons`), decoded on a thread of their own that `start()` starts before it
+  waits for the prefetch (`AppIcons.readAhead`); the Welcome page checks its recent files and project folders
   off the thread (`RecentFilesCheck`); `--diff-ui`'s operands, the run configuration's main class and the
   `.gitignore` walk of a window joining a shared Java server are looked at on threads of their own. The places
   name themselves to `perf/BlockingSites`, which `StartupOffFxThreadFxTest` listens to through a real launch.

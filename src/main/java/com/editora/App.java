@@ -66,6 +66,8 @@ public class App extends Application {
         // One shared resolver, so this can never disagree with the single-instance claim in main() about
         // which directory (and therefore which instance) this launch belongs to.
         java.nio.file.Path configDir = ConfigManager.configDirFor(configDirArg(rawArgs), devFlag(rawArgs));
+        // The window icons are decoded on a thread of their own while this one waits for the config (startup R3).
+        com.editora.ui.WindowManager.readAppIconsAhead();
         Bootstrap boot = takeBootstrap(configDir);
         if (boot != null) {
             startWith(stage, rawArgs, boot);

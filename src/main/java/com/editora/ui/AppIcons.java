@@ -24,9 +24,28 @@ final class AppIcons {
 
     private AppIcons() {}
 
-    /** The icon of {@code size} pixels, or {@code null} when it is not bundled. FX thread. */
+    /** The icon of {@code size} pixels, or {@code null} when it is not bundled. Any thread; read once. */
     static @Nullable Image icon(int size) {
         return IMAGES.computeIfAbsent(size, AppIcons::read).orElse(null);
+    }
+
+    /**
+     * Reads and decodes the window icons on a thread of their own, for the first window: {@code App.start} starts it
+     * while it waits for the config prefetch, and the window then finds them read (a window asking first waits for
+     * the one being read). About 30 ms of PNG decoding, the 512 and 256 pixel icons most of it, that the first
+     * window's build did on the FX thread (startup R3). The toolkit must be running.
+     */
+    static void readAhead() {
+        Thread.ofVirtual().name("app-icons").start(() -> {
+            for (int size : WINDOW_SIZES) {
+                icon(size);
+            }
+        });
+    }
+
+    /** Forgets the icons read, so a test sees them read again. */
+    static void forgetForTest() {
+        IMAGES.clear();
     }
 
     private static Optional<Image> read(int size) {
