@@ -640,6 +640,51 @@ public final class GitService {
     /** Invalidates a computed/queued UI refresh when the owning window context is cleared. */
     public void invalidateRefreshes() {
         refreshGen.incrementAndGet();
+        diffRefreshGen.incrementAndGet();
+    }
+
+    /** The generation of {@link #refreshDiff}: its own, so a diff-only refresh never supersedes a full one. */
+    private final AtomicLong diffRefreshGen = new AtomicLong();
+
+    /**
+     * {@link #refresh} without the {@code git status}: the gutter diff of {@code diffFile} against HEAD and the
+     * operation in progress, for a caller that keeps the status it was last given (a tab switch or a save a moment
+     * after a full refresh, F2 of perf review 2026-11-23). {@code onResult} gets, on the FX thread, the root and
+     * that diff, or {@code null} when {@code contextPath} is not in {@code expectedRoot} — then a full refresh is
+     * what is wanted. A newer call supersedes it, as with {@link #refresh}.
+     */
+    public void refreshDiff(
+            Path contextPath, Path expectedRoot, @Nullable Path diffFile, Consumer<@Nullable RepoState> onResult) {
+        long gen = diffRefreshGen.incrementAndGet();
+        submit(exec, () -> {
+            if (gen != diffRefreshGen.get()) {
+                return;
+            }
+            RepoState state = null;
+            if (gitAvailable(contextPath)) {
+                Path root = lookupRoot(contextPath).root();
+                if (root != null && root.equals(expectedRoot)) {
+                    GitDiff diff = diffFile != null ? diffHead(root, diffFile) : GitDiff.EMPTY;
+                    state = new RepoState(
+                            root,
+                            diffFile,
+                            GitStatus.NOT_A_REPO, // the caller's own status is put in its place
+                            diff.changes(),
+                            diff.hunks(),
+                            "",
+                            operationIn(root),
+                            diff.hunkList());
+                }
+            }
+            RepoState answer = state;
+            if (gen == diffRefreshGen.get()) {
+                Platform.runLater(() -> {
+                    if (gen == diffRefreshGen.get()) {
+                        onResult.accept(answer);
+                    }
+                });
+            }
+        });
     }
 
     /**

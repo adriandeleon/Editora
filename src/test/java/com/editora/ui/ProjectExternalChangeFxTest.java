@@ -70,11 +70,20 @@ class ProjectExternalChangeFxTest {
         });
         assertEquals(1, fired.get(), "a self-change does not fire the hook");
 
-        // ...but an outside change landing in that same window still does (Map review A2).
+        // ...but an outside change landing in that same window still does (Map review A2) — once the throttle
+        // that holds back a second external flush within two seconds ends (F2: a build's bursts of created and
+        // deleted files no longer run git status four times a second); never dropped.
         FxTestSupport.runOnFx(() -> {
             queue(panel, root.resolve("made-by-a-build.txt"));
             fireWatchDebounce(panel);
         });
+        assertEquals(1, fired.get(), "held back by the throttle");
+        PauseTransition throttle = FxTestSupport.field(panel, "externalThrottle");
+        assertEquals(
+                javafx.animation.Animation.Status.RUNNING,
+                FxTestSupport.callOnFx(throttle::getStatus),
+                "with a flush at the end of the throttle");
+        FxTestSupport.runOnFx(() -> throttle.getOnFinished().handle(new ActionEvent()));
         assertEquals(2, fired.get(), "an outside change right after a self-change fires the hook");
 
         FxTestSupport.runOnFx(panel::dispose);

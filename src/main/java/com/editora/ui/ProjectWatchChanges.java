@@ -46,6 +46,60 @@ final class ProjectWatchChanges {
         }
     }
 
+    /**
+     * Whether the external changes of a flush should be passed on to Git, build tools and diffs now: an overflow
+     * at once, anything else at most once per {@code throttleMs} — a build creating and deleting files in an
+     * expanded folder flushed four times a second, each a whole-repository {@code git status} (F2, perf review
+     * 2026-11-23). What is held back is flushed when the throttle ends, so the last change is never dropped.
+     */
+    static boolean flushNow(boolean unknown, long sinceLastMs, long throttleMs) {
+        return unknown || sinceLastMs >= throttleMs;
+    }
+
+    /**
+     * Whether {@code changes} may change what {@code git status} says in the repository at {@code root}: false only
+     * when the batch named everything ({@code complete}) and every change is a file the root's {@code .gitignore}
+     * rules ignore, or lies in a folder they ignore (a build's {@code target/}). A {@code .gitignore} itself always
+     * counts. Conservative: no rules, a path outside the root or a batch that could not name everything count.
+     */
+    static boolean mayChangeGitStatus(
+            List<FsChange> changes, boolean complete, @Nullable Path root, com.editora.search.GitignoreFilter ignore) {
+        if (!complete || root == null || ignore.isEmpty() || changes.isEmpty()) {
+            return true;
+        }
+        Path top = root.toAbsolutePath().normalize();
+        for (FsChange change : changes) {
+            if (!ignoredForGit(change.path(), top, ignore)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean ignoredForGit(Path path, Path top, com.editora.search.GitignoreFilter ignore) {
+        Path abs = path.toAbsolutePath().normalize();
+        if (!abs.startsWith(top) || abs.equals(top)) {
+            return false;
+        }
+        Path rel = top.relativize(abs);
+        int names = rel.getNameCount();
+        if (".gitignore".equals(String.valueOf(rel.getFileName()))) {
+            return false;
+        }
+        StringBuilder sofar = new StringBuilder();
+        for (int i = 0; i < names; i++) {
+            if (i > 0) {
+                sofar.append('/');
+            }
+            sofar.append(rel.getName(i));
+            boolean last = i == names - 1;
+            if (ignore.ignored(sofar.toString(), !last)) {
+                return true; // a folder above it is ignored (git never looks inside), or the file itself is
+            }
+        }
+        return false;
+    }
+
     private final Set<FsChange> changes = new LinkedHashSet<>();
     private final Set<Path> unknownDirs = new LinkedHashSet<>();
     private boolean overflow;
