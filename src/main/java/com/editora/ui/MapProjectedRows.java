@@ -14,6 +14,9 @@ import java.util.RandomAccess;
 final class MapProjectedRows extends AbstractList<MapSurface.NodeBox> implements RandomAccess {
 
     private List<MapSurface.NodeBox> world = List.of();
+    /** The rows {@link #boxes} and {@link #madeIn} were made for: kept over a {@link #clear()} (perf review S6). */
+    private List<MapSurface.NodeBox> sizedFor = List.of();
+
     private MapSurface.NodeBox[] boxes = new MapSurface.NodeBox[0];
     /** Per row, the projection its box was made in; a box of an older one is made again. */
     private int[] madeIn = new int[0];
@@ -27,12 +30,17 @@ final class MapProjectedRows extends AbstractList<MapSurface.NodeBox> implements
     /** Boxes made since this list was created (tests: a paint makes only the rows it shows). */
     long made;
 
+    /** Row arrays made since this list was created (tests: projecting the same rows again makes none). */
+    long arraysMade;
+
     /** Projects {@code rows} (world units) with {@code zoom} and the offsets. No row is projected here. */
     void project(List<MapSurface.NodeBox> rows, double zoom, double offsetX, double offsetY) {
-        if (rows != world) {
-            world = rows;
+        world = rows;
+        if (rows != sizedFor) {
+            sizedFor = rows;
             boxes = new MapSurface.NodeBox[rows.size()];
             madeIn = new int[rows.size()];
+            arraysMade++;
         }
         this.zoom = zoom;
         this.offsetX = offsetX;
@@ -43,10 +51,17 @@ final class MapProjectedRows extends AbstractList<MapSurface.NodeBox> implements
         }
     }
 
-    /** No rows (an empty map). */
+    /**
+     * No rows (an empty map, or between two projections). The row arrays stay, so projecting the same world rows
+     * again — every paint of an unchanged layout — reuses them instead of allocating two row-sized arrays per frame.
+     */
     @Override
     public void clear() {
-        project(List.of(), zoom, offsetX, offsetY);
+        world = List.of();
+        projection = projection == Integer.MAX_VALUE ? 1 : projection + 1;
+        if (projection == 1) {
+            java.util.Arrays.fill(madeIn, 0);
+        }
     }
 
     @Override
