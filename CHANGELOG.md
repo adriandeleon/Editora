@@ -129,6 +129,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A closed window no longer lingers in memory after a late GitHub check.** With the GitHub CLI installed, a window
+  closed while Editora was still asking `gh` whether it is signed in got the answer afterwards: the closed window
+  showed its GitHub tool window and saved its settings, and that save could keep the whole window (about 20 MB) in
+  memory. The answer is now dropped once the window has closed.
+
 - **Folding no longer stops on a very long XML or HTML tag.** A tag (or a stray `<name` in text) with a couple of
   thousand characters before its `>` made the fold scan run out of stack, and that file then had no folding at all.
 
