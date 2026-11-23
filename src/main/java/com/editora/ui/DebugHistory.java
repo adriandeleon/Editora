@@ -28,10 +28,10 @@ final class DebugHistory {
     static final int MAX_ROWS = 2_000;
 
     /**
-     * One row a frame showed: its path of names from the top-level node (a scope, Watches) down, its value and type,
-     * and whether it had children (expanded at that stop or not).
+     * One row a frame showed: its path of names from the top-level node (a scope, Watches) down, its value (as much of
+     * it as {@link KeptValue} keeps) and type, and whether it had children (expanded at that stop or not).
      */
-    record Row(List<String> path, String value, String type, boolean expandable) {
+    record Row(List<String> path, KeptValue kept, String type, boolean expandable) {
 
         Row {
             path = List.copyOf(path);
@@ -39,6 +39,11 @@ final class DebugHistory {
 
         String name() {
             return path.getLast();
+        }
+
+        /** The value as it is shown: a long one's first {@link KeptValue#MAX_KEPT} characters and "…". */
+        String value() {
+            return kept.text();
         }
     }
 
@@ -91,12 +96,19 @@ final class DebugHistory {
             return r != null && !r.isEmpty();
         }
 
-        /** The value frame {@code index} showed at {@code path}, or null. */
+        /** The value frame {@code index} showed at {@code path}, as it is shown, or null. */
         @Nullable
         String value(int index, List<String> path) {
+            KeptValue kept = kept(index, path);
+            return kept == null ? null : kept.text();
+        }
+
+        /** The value frame {@code index} showed at {@code path}, as kept, or null. */
+        @Nullable
+        KeptValue kept(int index, List<String> path) {
             Map<List<String>, Row> r = rows.get(index);
             Row row = r == null ? null : r.get(path);
-            return row == null ? null : row.value();
+            return row == null ? null : row.kept();
         }
 
         @Nullable
@@ -223,7 +235,10 @@ final class DebugHistory {
         }
         LinkedHashMap<List<String>, Row> rows = stop.rows.computeIfAbsent(frame, k -> new LinkedHashMap<>());
         if (rows.size() < MAX_ROWS || rows.containsKey(path)) {
-            rows.put(List.copyOf(path), new Row(path, value, type, expandable));
+            Row before = rows.get(path);
+            // A row repainted with the same value keeps what was kept: no new copy, no new hash of a long value.
+            KeptValue kept = before != null && before.kept().same(value) ? before.kept() : KeptValue.of(value);
+            rows.put(List.copyOf(path), new Row(path, kept, type, expandable));
         }
     }
 
@@ -308,9 +323,9 @@ final class DebugHistory {
         while (back.hasNext()) {
             Stop s = back.next();
             int i = s.frameIndex(key);
-            String then = i < 0 ? null : s.value(i, path);
+            KeptValue then = i < 0 ? null : s.kept(i, path);
             if (then != null) {
-                return !then.equals(value);
+                return !then.same(value);
             }
         }
         return false;
@@ -322,12 +337,12 @@ final class DebugHistory {
      */
     List<Seen> valueHistory(String frameKey, List<String> path) {
         List<Seen> out = new ArrayList<>();
-        String before = null;
+        KeptValue before = null;
         for (Stop s : stops) {
             int i = s.frameIndex(frameKey);
-            String value = i < 0 ? null : s.value(i, path);
+            KeptValue value = i < 0 ? null : s.kept(i, path);
             if (value != null) {
-                out.add(new Seen(s.number, s.time, value, before != null && !before.equals(value)));
+                out.add(new Seen(s.number, s.time, value.text(), before != null && !before.same(value)));
                 before = value;
             }
         }
