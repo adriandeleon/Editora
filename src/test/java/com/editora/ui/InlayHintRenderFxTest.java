@@ -57,6 +57,26 @@ class InlayHintRenderFxTest {
         assertEquals(TEXT, FxTestSupport.callOnFx(() -> b.getArea().getSelectedText()));
     }
 
+    /**
+     * Every typing pause asks the server for the hints again, and most answers are what is shown: such an answer
+     * does not refresh the areas, which re-laid out every line that has a hint (perf review 2026-11-23 L2).
+     */
+    @Test
+    void theSameHintsAgainRefreshNothing() throws Exception {
+        EditorBuffer b = buffer();
+        int[] changes = FxTestSupport.callOnFx(() -> {
+            b.setInlayHints(List.of(new EditorBuffer.InlayHint(0, 5, "overwrite:")));
+            int[] count = {0};
+            b.getArea().inlayFactoryProperty().addListener((o, was, now) -> count[0]++);
+            b.setInlayHints(List.of(new EditorBuffer.InlayHint(0, 5, "overwrite:")));
+            int same = count[0];
+            b.setInlayHints(List.of(new EditorBuffer.InlayHint(0, 5, "other:")));
+            return new int[] {same, count[0]};
+        });
+        assertEquals(0, changes[0], "an equal answer leaves the areas alone");
+        assertTrue(changes[1] > 0, "a different one refreshes them");
+    }
+
     @Test
     void clearingRemovesThem() throws Exception {
         EditorBuffer b = buffer();

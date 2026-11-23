@@ -735,7 +735,7 @@ final class LspRefactorings {
             return;
         }
         CodeArea area = b.getFocusedArea();
-        lspManager.changeDocument(path, b.text()); // sync latest text before the request
+        LspCoordinator.syncText(lspManager, b, path); // sync latest text before the request
         int line = area.getCurrentParagraph();
         int col = area.getCaretColumn();
         if (lspManager.supportsPrepareRename(path)) {

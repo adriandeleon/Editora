@@ -212,7 +212,7 @@ final class LspNavigation {
     /** Sends the tab's latest text before a request (a library tab is read-only: nothing to send). */
     void syncForRequest(NavOrigin origin) {
         if (origin.libraryUri() == null) {
-            lspManager.changeDocument(origin.anchor(), origin.buffer().text());
+            LspCoordinator.syncText(lspManager, origin.buffer(), origin.anchor());
         }
     }
 
@@ -396,7 +396,7 @@ final class LspNavigation {
         long requestGeneration = ++navigationRequestGeneration;
         String text = b.text();
         int caret = area.getCaretPosition();
-        lspManager.changeDocument(originPath, text); // sync latest text before the request
+        LspCoordinator.syncText(lspManager, b, originPath); // sync latest text before the request
         lspManager.definition(originPath, area.getCurrentParagraph(), area.getCaretColumn(), answered -> {
             if (navigationRequestCurrent(b, originPath, originVersion, requestGeneration)) {
                 InstantiatedType.checkDefinition(lspManager, originPath, text, caret, answered, targets -> {

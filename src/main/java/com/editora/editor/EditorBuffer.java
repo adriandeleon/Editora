@@ -2793,6 +2793,11 @@ public class EditorBuffer implements TabContent {
         lspChangeListener.accept(documentTextSnapshot());
     }
 
+    /** Whether {@link #sendLspChange} has a sink: the buffer was wired to the language servers. */
+    public boolean sendsLspChanges() {
+        return lspChangeListener != null;
+    }
+
     /** Injects the debounced pull-diagnostics request (fired on the same pulse as didChange); null disables. */
     public void setLspDiagnosticsRequester(Runnable requester) {
         this.lspDiagnosticsRequester = requester;

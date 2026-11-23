@@ -937,6 +937,31 @@ class LspCoordinatorCommandsFxTest {
                 "no build: it would write bin/");
     }
 
+    /**
+     * Autosave "after delay" saves at every pause in typing; the recheck that re-sends every other open Java file (or
+     * builds) waits for a longer lull after one, and a save the user makes rechecks as soon as before (L4).
+     */
+    @Test
+    void anAutosavesRecheckWaitsForALongerLull() throws Exception {
+        java.nio.file.Files.writeString(fx.root.resolve("build.gradle"), "plugins { id 'java' }\n");
+        fx.open("B.java", "class B {}\n");
+        EditorBuffer a = fx.open("A.java", SOURCE);
+        fx.run(() -> fx.coordinator.notifyDocumentSaved(a, SOURCE, true));
+        FxTestSupport.runOnFx(() -> {
+            var recheck = FxTestSupport.<javafx.animation.PauseTransition>field(fx.coordinator, "projectRecheck");
+            assertEquals(javafx.animation.Animation.Status.RUNNING, recheck.getStatus(), "a recheck still follows");
+            assertEquals(
+                    LspCoordinator.AUTOSAVE_RECHECK_DELAY_MILLIS,
+                    recheck.getDuration().toMillis());
+        });
+        fx.run(() -> fx.coordinator.notifyDocumentSaved(a, SOURCE, false));
+        FxTestSupport.runOnFx(() -> assertEquals(
+                LspCoordinator.RECHECK_DELAY_MILLIS,
+                FxTestSupport.<javafx.animation.PauseTransition>field(fx.coordinator, "projectRecheck")
+                        .getDuration()
+                        .toMillis()));
+    }
+
     @Test
     void aMavenProjectsSourceRootIsLeftToItsBuild() throws Exception {
         java.nio.file.Files.writeString(fx.root.resolve("pom.xml"), "<project/>");

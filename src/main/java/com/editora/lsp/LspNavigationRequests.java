@@ -592,28 +592,63 @@ final class LspNavigationRequests {
                 Platform.runLater(() -> onError.accept(why));
                 return;
             }
-            List<Target> targets = new ArrayList<>();
-            if (error == null && result != null) {
-                if (result.isLeft()) {
-                    for (Location l : result.getLeft()) {
-                        var range = l.getRange(); // a non-conforming server can omit the (spec-required) range
-                        if (range != null) {
-                            addDefinitionTarget(targets, s.uris(), l.getUri(), range.getStart());
-                        }
+            List<Target> targets = error == null ? targetsOf(s, result) : List.of();
+            Platform.runLater(() -> cb.accept(targets));
+        });
+    }
+
+    /** The targets a location answer names (an answer of none, or null, names none). */
+    private static List<Target> targetsOf(
+            LanguageServerSession s, @Nullable Either<List<? extends Location>, List<? extends LocationLink>> result) {
+        List<Target> targets = new ArrayList<>();
+        if (result != null) {
+            if (result.isLeft()) {
+                for (Location l : result.getLeft()) {
+                    var range = l.getRange(); // a non-conforming server can omit the (spec-required) range
+                    if (range != null) {
+                        addDefinitionTarget(targets, s.uris(), l.getUri(), range.getStart());
                     }
-                } else if (result.getRight() != null) {
-                    for (LocationLink ll : result.getRight()) {
-                        var range = ll.getTargetSelectionRange() != null
-                                ? ll.getTargetSelectionRange()
-                                : ll.getTargetRange();
-                        if (range != null) {
-                            addDefinitionTarget(targets, s.uris(), ll.getTargetUri(), range.getStart());
-                        }
+                }
+            } else if (result.getRight() != null) {
+                for (LocationLink ll : result.getRight()) {
+                    var range =
+                            ll.getTargetSelectionRange() != null ? ll.getTargetSelectionRange() : ll.getTargetRange();
+                    if (range != null) {
+                        addDefinitionTarget(targets, s.uris(), ll.getTargetUri(), range.getStart());
                     }
                 }
             }
-            Platform.runLater(() -> cb.accept(targets));
-        });
+        }
+        return targets;
+    }
+
+    /**
+     * Whether the symbol at {@code line}/{@code character} has a definition to go to — the Ctrl/Cmd-hover link
+     * probe, answered on the FX thread. One probe per document is in flight: the mouse moving on to another word
+     * cancels the last ({@code $/cancelRequest}), whose answer would only be dropped (perf review 2026-11-23 L6);
+     * a cancelled probe's {@code found} is never called.
+     */
+    public void definitionProbe(Path file, int line, int character, Consumer<Boolean> found) {
+        LanguageServerSession s = m.sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> found.accept(false));
+            return;
+        }
+        String uri = LspManager.uri(file);
+        Position at = new Position(line, character);
+        LocationRequest request = XmlServerSettings.isLemminx(s.serverId())
+                ? (session, u, pos) -> XmlServer.definition(session, u, pos, link -> {})
+                : LanguageServerSession::definition;
+        m.latest.issue(
+                uri,
+                "ctrlHoverDefinition",
+                LspManager.stamp(s, uri, at),
+                true,
+                () -> request.run(s, uri, at),
+                (result, error) -> {
+                    boolean any = error == null && !targetsOf(s, result).isEmpty();
+                    Platform.runLater(() -> found.accept(any));
+                });
     }
 
     public void references(Path file, int line, int character, Consumer<List<Target>> cb) {

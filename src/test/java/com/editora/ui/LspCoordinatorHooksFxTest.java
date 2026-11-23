@@ -155,6 +155,14 @@ class LspCoordinatorHooksFxTest {
             super.setLspChangeListener(listener);
         }
 
+        DefinitionProbe definitionProbe;
+
+        @Override
+        public void setDefinitionProbe(DefinitionProbe probe) {
+            definitionProbe = probe;
+            super.setDefinitionProbe(probe);
+        }
+
         @Override
         public void setCodeLensHandler(BiConsumer<Integer, List<EditorBuffer.CodeLens>> handler) {
             codeLens = handler;
@@ -340,6 +348,68 @@ class LspCoordinatorHooksFxTest {
         assertFalse(shown.isEmpty(), "the marks were not put back");
         assertTrue(shown.stream().allMatch(List.of(diagnostic)::equals), "what was put back: " + shown);
         assertTrue(fx.server().changed.isEmpty(), "an unchanged document is not re-sent");
+    }
+
+    /**
+     * A request that syncs the text itself (signature help at a typed {@code (}, Copy Qualified Name, code
+     * actions…) goes through the buffer, which records the version it sent: the typing pause that follows
+     * then sends nothing, so it does not mistake its own text for a net-zero edit and put the pre-edit marks
+     * back on lines the edit moved (perf review 2026-11-23 L5, the #417 symptom).
+     */
+    @Test
+    void aRequestsOwnSyncIsNotTakenForANetZeroEdit() throws Exception {
+        List<List<com.editora.text.LspDiagnostic>> shown = new java.util.concurrent.CopyOnWriteArrayList<>();
+        HookedBuffer buffer = fx.open("C.java", SOURCE, FxTestSupport.callOnFx(() -> new HookedBuffer() {
+            @Override
+            public void setLspDiagnostics(List<com.editora.text.LspDiagnostic> diagnostics) {
+                shown.add(diagnostics);
+                super.setLspDiagnostics(diagnostics);
+            }
+        }));
+        FxTestSupport.runOnFx(() -> fx.coordinator.wireBuffer(buffer));
+        var diagnostic = new com.editora.text.LspDiagnostic(
+                1, 9, 1, 11, com.editora.text.LspDiagnostic.Severity.ERROR, "x", null, null);
+        FxTestSupport.runOnFx(() -> fx.coordinator.onDiagnostics(buffer.getPath(), List.of(diagnostic)));
+        int sentBefore = fx.server().changed.size();
+        shown.clear();
+
+        fx.run(() -> {
+            buffer.getArea().insertText(0, "// moved\n"); // every mark now sits a line lower
+            fx.coordinator.copyQualifiedName(); // syncs the text before asking
+            buffer.sendLspChange(); // the typing pause
+        });
+
+        assertFalse(shown.contains(List.of(diagnostic)), "the pre-edit marks were put back: " + shown);
+        assertEquals(sentBefore + 1, fx.server().changed.size(), "the edit is sent once");
+    }
+
+    /**
+     * Holding Ctrl/Cmd and moving across code asks for a definition per word: the answer for a word the mouse has
+     * left is never used, so asking about the next one cancels it rather than leaving a slow server to compute it
+     * (perf review 2026-11-23 L6).
+     */
+    @Test
+    void aCtrlHoverProbeForTheNextWordCancelsTheLast() throws Exception {
+        HookedBuffer buffer = wired("D.java");
+        FakeLanguageServer server = fx.server();
+        server.holdDefinitions = true;
+        List<Boolean> answers = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        fx.run(() -> buffer.definitionProbe.probe(0, 6, answers::add)); // "A"
+        fx.run(() -> buffer.definitionProbe.probe(1, 9, answers::add)); // "go"
+
+        assertEquals(2, server.definitions.size(), "each word is asked about");
+        assertTrue(server.held.get(0).isCancelled(), "the first word's question was withdrawn");
+        assertFalse(server.held.get(1).isDone(), "the word under the mouse is still asked");
+        server.holdDefinitions = false;
+        fx.run(() -> buffer.definitionProbe.probe(1, 9, answers::add)); // the same word again: the same question
+        assertEquals(2, server.definitions.size(), "an identical probe joins the one on its way");
+        @SuppressWarnings("unchecked")
+        var second = (java.util.concurrent.CompletableFuture<Object>) server.held.get(1);
+        second.complete(org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(
+                List.of(new Location(buffer.getPath().toUri().toString(), range(1, 9, 11)))));
+        fx.settle();
+        assertEquals(List.of(true), answers, "only the current word's answer arrives");
     }
 
     /** The marks put back include the faded tags ("os is not accessed"), which the Problems list leaves out:

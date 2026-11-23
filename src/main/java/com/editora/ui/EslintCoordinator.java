@@ -43,8 +43,14 @@ import static com.editora.i18n.Messages.tr;
  */
 final class EslintCoordinator {
 
-    /** How long typing must pause before the file is checked again. */
-    static final Duration EDIT_PAUSE = Duration.millis(800);
+    /**
+     * How long typing must pause before the file is checked again. Each check starts a Node.js and ESLint afresh
+     * (0.5–3 s of CPU), so not at every short pause; a save checks at once (perf review 2026-11-23 L3).
+     */
+    static final Duration EDIT_PAUSE = Duration.millis(2000);
+
+    /** Where each folder's ESLint configuration and installed copy were last found, shared by every window. */
+    private static final com.editora.jstools.EslintSetups SETUPS = new com.editora.jstools.EslintSetups();
 
     /** Two runs at a time across all windows: a restored session's JS tabs do not start a Node.js each at once. */
     private static final ExecutorService RUNS = java.util.concurrent.Executors.newFixedThreadPool(2, r -> {
@@ -117,7 +123,7 @@ final class EslintCoordinator {
     /** A new buffer: checked when first shown (focused), after a pause in typing, and on save ({@link #saved}). */
     void wire(EditorBuffer buffer) {
         PauseTransition pause = new PauseTransition(EDIT_PAUSE);
-        pause.setOnFinished(e -> check(buffer));
+        pause.setOnFinished(e -> check(buffer, true)); // the setup found a moment ago stands
         buffer.getArea().plainTextChanges().subscribe(change -> {
             State st = states.get(buffer);
             if (st != null && st.requested) {
@@ -140,14 +146,14 @@ final class EslintCoordinator {
     private void shown(EditorBuffer buffer) {
         State st = states.get(buffer);
         if (st == null || !st.requested) {
-            check(buffer);
+            check(buffer, false);
         }
     }
 
     /** {@code buffer} was saved (explicitly or by autosave): checked now. */
     void saved(@Nullable EditorBuffer buffer) {
         if (buffer != null && JsTools.applies(buffer.getPath())) {
-            check(buffer);
+            check(buffer, false); // a saved package.json or configuration may have changed what is found
         }
     }
 
@@ -170,8 +176,11 @@ final class EslintCoordinator {
                 && com.editora.process.ExecTargets.runsHere(path);
     }
 
-    /** Checks {@code buffer}'s text now, stopping a run still going for it. */
-    private void check(EditorBuffer buffer) {
+    /**
+     * Checks {@code buffer}'s text now, stopping a run still going for it. {@code reuseSetup}: a recently found
+     * configuration and ESLint may stand ({@link com.editora.jstools.EslintSetups}); otherwise they are looked for.
+     */
+    private void check(EditorBuffer buffer, boolean reuseSetup) {
         if (appliedSignature == null) {
             appliedSignature = signature(); // what a later settings or trust change is compared with
         }
@@ -189,27 +198,30 @@ final class EslintCoordinator {
         long version = buffer.docVersion();
         String text = buffer.getContent();
         Path file = java.util.Objects.requireNonNull(buffer.getPath());
-        Inputs in = inputs();
+        Inputs in = inputs(reuseSetup);
         CompletableFuture.supplyAsync(() -> lint(file, text, in, false, cancel), RUNS)
                 .exceptionally(t -> new Run(Kind.FAILED, null, "ESLint: " + t.getMessage(), null))
                 .thenAccept(run -> Platform.runLater(() -> landed(buffer, st, cancel, version, text, run)));
     }
 
-    /** What a run needs from the FX thread: the project, the Node.js setting, a copy of the trust list. */
-    record Inputs(@Nullable Path project, String nodeSetting, TrustStore trust) {}
+    /**
+     * What a run needs from the FX thread: the project, the Node.js setting, a copy of the trust list, and whether
+     * a recently found setup may stand.
+     */
+    record Inputs(@Nullable Path project, String nodeSetting, TrustStore trust, boolean reuseSetup) {}
 
-    private Inputs inputs() {
+    private Inputs inputs(boolean reuseSetup) {
         TrustStore copy = new TrustStore();
         ConfigManager config = ops.config();
         if (config != null) {
             copy.roots.putAll(config.getTrustStore().roots);
         }
-        return new Inputs(ops.lspProjectRoot(), host.settings().getNodePath(), copy);
+        return new Inputs(ops.lspProjectRoot(), host.settings().getNodePath(), copy, reuseSetup);
     }
 
     /** Finds and runs ESLint for {@code file}. Off the FX thread. */
     static Run lint(Path file, String text, Inputs in, boolean fix, ProcessRunner.@Nullable Cancellation cancel) {
-        JsTools.EslintSetup setup = JsTools.eslint(file, JsTools.Lookup.local(in.project()));
+        JsTools.EslintSetup setup = SETUPS.get(file, in.project(), in.reuseSetup());
         Path dir = setup.dir().orElse(null);
         if (setup.config().isEmpty() || dir == null) {
             return Run.of(Kind.NO_CONFIG, null);
@@ -325,7 +337,7 @@ final class EslintCoordinator {
             State st = states.get(b);
             hideOwnNotice(b);
             if ((st != null && st.requested) || b == host.activeBuffer()) {
-                check(b);
+                check(b, false);
             }
         });
     }
@@ -471,7 +483,7 @@ final class EslintCoordinator {
         long version = buffer.docVersion();
         String text = buffer.getContent();
         Path file = java.util.Objects.requireNonNull(buffer.getPath());
-        Inputs in = inputs();
+        Inputs in = inputs(false);
         if (!quiet) {
             host.setStatus(tr("status.eslint.fixing"));
         }

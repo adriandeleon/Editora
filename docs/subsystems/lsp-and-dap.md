@@ -592,6 +592,9 @@ A Java save while another Java file of the project is open (or Problems shows th
 quiet recheck. Problems over the whole project, or a Maven project, gets an incremental `java/buildWorkspace`; other
 projects get each other open Java document re-sent unchanged (`LanguageServerSession.revalidateOtherJavaDocuments`),
 which jdtls reconciles at once. A build would compile a Gradle project into Buildship's `bin/` (re-review CN3).
+The recheck comes 1.2 s after the last save, or 5 s after the last autosave: autosave "after delay" saves at each
+pause in typing, and a recheck per pause would re-send every open Java file while the user is still typing
+(`LspCoordinator.recheckDelayMillis`, perf review 2026-11-23 L4).
 
 m2e skips a pom.xml that does not parse at the first import with a `ProjectStatus` of OK, and jdtls then calls each
 source file "a non-project file" (syntax only). A file under `src/main/java` or `src/test/java` of a root with a build
