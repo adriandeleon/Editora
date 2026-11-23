@@ -1,5 +1,6 @@
 package com.editora.lsp;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.lsp4j.DocumentSymbol;
@@ -184,5 +185,133 @@ class DocumentSymbolMapperTest {
         assertFalse(LspDocumentSymbols.documentSymbolProvider(caps));
         caps.setDocumentSymbolProvider(true);
         assertTrue(LspDocumentSymbols.documentSymbolProvider(caps));
+    }
+
+    /** A range with ends a server left out, which the constructor would refuse. */
+    private static Range partial(Position start, Position end) {
+        Range r = new Range();
+        if (start != null) {
+            r.setStart(start);
+        }
+        if (end != null) {
+            r.setEnd(end);
+        }
+        return r;
+    }
+
+    /** The members a hierarchical answer gives, with the broken entries a server may send left out. */
+    @Test
+    void membersKeepEveryChildAndSkipBrokenSymbols() {
+        DocumentSymbol field = new DocumentSymbol(
+                "count",
+                SymbolKind.Field,
+                new Range(new Position(3, 4), new Position(3, 20)),
+                new Range(new Position(3, 8), new Position(3, 13)));
+        DocumentSymbol noSelection = new DocumentSymbol();
+        noSelection.setName("run");
+        noSelection.setKind(SymbolKind.Method);
+        noSelection.setRange(new Range(new Position(5, 4), new Position(7, 5)));
+        DocumentSymbol noName = new DocumentSymbol();
+        noName.setRange(range(8, 9));
+        List<DocumentSymbol> children = new ArrayList<>();
+        children.add(field);
+        children.add(null);
+        children.add(noSelection);
+        children.add(noName);
+        DocumentSymbol type = new DocumentSymbol();
+        type.setName("Foo");
+        type.setKind(SymbolKind.Class);
+        type.setRange(partial(new Position(-2, 0), null));
+        type.setSelectionRange(partial(null, null));
+        type.setChildren(children);
+        DocumentSymbol noRange = new DocumentSymbol();
+        noRange.setName("broken");
+        DocumentSymbol noStart = new DocumentSymbol();
+        noStart.setName("broken");
+        noStart.setRange(partial(null, new Position(1, 0)));
+        List<Either<SymbolInformation, DocumentSymbol>> raw = new ArrayList<>();
+        raw.add(null);
+        raw.add(Either.forLeft(
+                new SymbolInformation("flat", SymbolKind.Variable, new Location("file:///a", range(1, 1)))));
+        raw.add(Either.forRight(type));
+        raw.add(Either.forRight(noRange));
+        raw.add(Either.forRight(noStart));
+
+        List<MemberSpan> members = DocumentSymbolMapper.members(raw);
+
+        assertEquals(1, members.size(), "a flat answer and broken symbols give no member");
+        MemberSpan foo = members.get(0);
+        assertEquals("Foo", foo.name());
+        assertEquals(0, foo.startLine(), "a negative line is the first");
+        assertEquals(0, foo.endLine(), "no end: it ends where it starts");
+        assertEquals(Integer.MAX_VALUE, foo.endColumn());
+        assertEquals(0, foo.nameLine(), "a selection without a start falls back to the range");
+        assertEquals(
+                List.of("count", "run"),
+                foo.children().stream().map(MemberSpan::name).toList());
+        MemberSpan count = foo.children().get(0);
+        assertEquals(3, count.nameLine());
+        assertEquals(8, count.nameColumn());
+        assertEquals(4, count.startColumn());
+        assertEquals(20, count.endColumn());
+        assertEquals(4, foo.children().get(1).nameColumn(), "no selection range: the range's start");
+        assertEquals(List.of(), DocumentSymbolMapper.members(null));
+    }
+
+    @Test
+    void aSymbolWithoutRangesIsListedAtTheFirstLine() {
+        DocumentSymbol bare = new DocumentSymbol();
+        bare.setName("bare");
+        DocumentSymbol noEnd = new DocumentSymbol();
+        noEnd.setName("noEnd");
+        noEnd.setRange(partial(new Position(4, 0), null));
+        noEnd.setSelectionRange(partial(null, null));
+        DocumentSymbol nameless = new DocumentSymbol();
+        List<Either<SymbolInformation, DocumentSymbol>> raw = new ArrayList<>();
+        raw.add(Either.forRight(bare));
+        raw.add(Either.forRight(noEnd));
+        raw.add(Either.forRight(nameless));
+        raw.add(Either.forLeft(null));
+
+        List<SymbolNode> out = DocumentSymbolMapper.map(raw);
+
+        assertEquals(
+                List.of("bare", "noEnd"), out.stream().map(SymbolNode::name).toList());
+        assertEquals(0, out.get(0).line());
+        assertEquals("other", out.get(0).kind());
+        assertEquals("", out.get(0).detail());
+        assertEquals(0, out.get(1).line(), "a selection without a start");
+        assertEquals(0, out.get(1).endLine());
+        assertTrue(DocumentSymbolMapper.descendInto(null));
+    }
+
+    @Test
+    void flatSymbolsWithoutALocationAreLeftOut() {
+        SymbolInformation noLocation = new SymbolInformation();
+        noLocation.setName("lost");
+        noLocation.setKind(SymbolKind.Function);
+        SymbolInformation noRange = new SymbolInformation();
+        noRange.setName("lost too");
+        noRange.setLocation(new Location());
+        SymbolInformation noName = new SymbolInformation();
+        noName.setLocation(new Location("file:///a", range(1, 2)));
+        SymbolInformation same1 =
+                new SymbolInformation("x", SymbolKind.Constant, new Location("file:///a", range(3, 3)));
+        SymbolInformation same2 =
+                new SymbolInformation("x", SymbolKind.Constant, new Location("file:///a", range(5, 5)));
+        SymbolInformation twin =
+                new SymbolInformation("f", SymbolKind.Function, new Location("file:///a", range(6, 9)));
+        SymbolInformation twinAgain =
+                new SymbolInformation("f", SymbolKind.Function, new Location("file:///a", range(6, 9)));
+
+        List<SymbolNode> out =
+                DocumentSymbolMapper.nest(List.of(noLocation, noRange, noName, same1, same2, twin, twinAgain));
+
+        assertEquals(
+                List.of("x", "f", "f"),
+                out.stream().map(SymbolNode::name).toList(),
+                "a constant once; two functions over the same range are siblings, not nested");
+        assertFalse(DocumentSymbolMapper.reassignment("function", true));
+        assertFalse(DocumentSymbolMapper.reassignment("variable", false));
     }
 }

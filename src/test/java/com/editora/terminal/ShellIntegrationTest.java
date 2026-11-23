@@ -104,4 +104,40 @@ class ShellIntegrationTest {
         org.junit.jupiter.api.Assertions.assertTrue(ShellIntegration.isThisMachine("localhost"));
         org.junit.jupiter.api.Assertions.assertFalse(ShellIntegration.isThisMachine("some-other-host.example"));
     }
+
+    @Test
+    void aCwdReportWithoutAPathIsNotOne() {
+        org.junit.jupiter.api.Assertions.assertNull(ShellIntegration.parseCwdUrl("file://hostonly"));
+        org.junit.jupiter.api.Assertions.assertNull(ShellIntegration.parseCwdUrl("file:relative/dir"));
+        org.junit.jupiter.api.Assertions.assertNull(ShellIntegration.parseCwdUrl("  "));
+        org.junit.jupiter.api.Assertions.assertNull(ShellIntegration.parseCwdUrl("http://box/home"));
+        assertEquals(new ShellIntegration.CwdReport("", "/tmp"), ShellIntegration.parseCwdUrl("file:/tmp"));
+        assertEquals("/srv", ShellIntegration.pathOfCwdUrl("  /srv  "));
+    }
+
+    @Test
+    void aMalformedEscapeIsKeptAsItIs() {
+        assertEquals("/a%", ShellIntegration.percentDecode("/a%"));
+        assertEquals("/a%4", ShellIntegration.percentDecode("/a%4"));
+        assertEquals("/a%zz/b", ShellIntegration.percentDecode("/a%zz/b"));
+        assertEquals("/a%4g/b", ShellIntegration.percentDecode("/a%4g/b"));
+        assertEquals("/A/é/%", ShellIntegration.percentDecode("/%41/é/%"));
+        assertEquals("/é", ShellIntegration.percentDecode("/%C3%A9"));
+    }
+
+    @Test
+    void thisMachinesOwnNameLongOrShortIsThisMachine() throws Exception {
+        org.junit.jupiter.api.Assertions.assertTrue(ShellIntegration.isThisMachine(null));
+        String env = System.getenv("HOSTNAME");
+        String own = env != null && !env.isBlank()
+                ? env.strip()
+                : java.net.InetAddress.getLocalHost().getHostName();
+        org.junit.jupiter.api.Assumptions.assumeFalse(own.isEmpty(), "this machine has no name");
+        String shortOwn = own.contains(".") ? own.substring(0, own.indexOf('.')) : own;
+        org.junit.jupiter.api.Assertions.assertTrue(ShellIntegration.isThisMachine(own));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                ShellIntegration.isThisMachine(own.toUpperCase(java.util.Locale.ROOT)));
+        org.junit.jupiter.api.Assertions.assertTrue(ShellIntegration.isThisMachine(shortOwn + ".elsewhere.example"));
+        org.junit.jupiter.api.Assertions.assertFalse(ShellIntegration.isThisMachine("not-" + shortOwn));
+    }
 }

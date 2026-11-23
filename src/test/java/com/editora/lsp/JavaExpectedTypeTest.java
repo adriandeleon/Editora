@@ -229,4 +229,132 @@ class JavaExpectedTypeTest {
         String b = "foo(a, /* it's */ b";
         assertEquals(1, JavaExpectedType.argumentIndex(b, b.length()));
     }
+
+    @Test
+    void keywordsAndOtherBracketsBeforeAParenthesisAskNothing() {
+        assertNull(inBody("synchronized (|"));
+        assertNull(inBody("switch (|"));
+        assertNull(inBody("try (|"));
+        assertNull(inBody("int x = (|"), "a parenthesized expression is no call");
+        assertNull(at("a, |"), "a comma outside any bracket");
+        assertNull(inBody("int x = 1; a, |"), "a comma after the statement's end");
+        assertNull(inBody("int[] a = new int[] {1, |"));
+        assertNull(at("=|"), "an equals sign with nothing before it");
+        assertNull(at("x = y + |"), "after an operator");
+    }
+
+    @Test
+    void anAssignmentThatNamesNoVariableExpectsNothing() {
+        assertNull(at("int f() {\n    return x = |"), "return is no type");
+        assertNull(inBody("a.b = |"), "a field of another object");
+        assertEquals(
+                new Expected(Source.ASSIGNMENT, "int", false),
+                at("int[][] grid;\nvoid f() {\n    grid[0][1] = |"),
+                "each index strips one dimension");
+        assertEquals(
+                new Expected(Source.ASSIGNMENT, "String", false),
+                at("String name;\nvoid f() {\n    var other = 1;\n    name = |"));
+        assertNull(at("var v;\nvoid f() {\n    v = |"), "var states no type");
+    }
+
+    @Test
+    void returnOutsideAMethodExpectsNothing() {
+        assertNull(at("return |"), "no enclosing block");
+        assertNull(at("class A {\n    static {\n        return |"), "a static initializer");
+        assertNull(at("class A {\n    int[] x = {\n        return |"), "an initializer's braces");
+        assertEquals(
+                "int",
+                at("int f(int a) {\n    try {\n        do {\n            return |")
+                        .type(),
+                "past try and do blocks");
+        assertEquals(
+                "long",
+                at("long f(int a) {\n    switch (a) {\n        case 1 -> {\n            return |")
+                        .type(),
+                "past a switch rule");
+    }
+
+    @Test
+    void aMethodReferenceOrLabelIsNoConditional() {
+        assertNull(inBody("Runnable r = Foo::|"));
+        assertNull(inBody("Runnable r = Foo:|:"));
+        assertEquals("String", inBody("String q = a == b ? x : |").type(), "a comparison is inside the condition");
+        assertEquals("String", inBody("String q = a != b ? x : |").type());
+        assertEquals(Source.ARGUMENT, inBody("label(a, ok ? x : |").source());
+        assertEquals("String", inBody("String q = list[0] == 1 ? x : |").type());
+        assertNull(at("{ ok ? x : |"), "a conditional at a block's start expects nothing");
+    }
+
+    @Test
+    void aQualifierIsReadBackOverCallsIndexesAndLiterals() {
+        assertEquals("String", inBody("String t = \"abc\".|").type(), "a string literal");
+        assertEquals("String", inBody("String t = rows[0].|").type(), "an index");
+        assertEquals("String", inBody("String t = .|").type(), "nothing before the dot");
+        assertNull(at("String t = f(x)).|"), "an unmatched parenthesis ends the qualifier");
+        assertEquals(new Expected(Source.DECLARATION, "Outer.Inner", false), inBody("Outer.Inner o = new pkg.Inn|"));
+        assertNull(inBody("var t = x..|"), "two dots");
+    }
+
+    @Test
+    void literalsAndCommentsAreBlankedUpToTheCaret() {
+        String unclosedBlock = "f(a /* (";
+        assertEquals("f(a     ", JavaExpectedType.blankLiterals(unclosedBlock, unclosedBlock.length()));
+        String unclosedLine = "f(a // (";
+        assertEquals("f(a     ", JavaExpectedType.blankLiterals(unclosedLine, unclosedLine.length()));
+        String textBlock = "f(\"\"\"\n(";
+        assertEquals("f(\"\"\"\n ", JavaExpectedType.blankLiterals(textBlock, textBlock.length()));
+        String escaped = "f('\\'', \"a\\\"b\", c";
+        assertEquals("f('  ', \"    \", c", JavaExpectedType.blankLiterals(escaped, escaped.length()));
+        String open = "f(\"ab\ng(";
+        assertEquals("f(\"  \ng(", JavaExpectedType.blankLiterals(open, open.length()), "a string ends at its line");
+        assertEquals("abc", JavaExpectedType.blankLiterals("abc", 99));
+        assertEquals("\"x\"", JavaExpectedType.blankLiterals("\"x\"", -1), "nothing before the caret");
+    }
+
+    @Test
+    void theArgumentIndexStopsAtOtherBrackets() {
+        String index = "a[1, ";
+        assertNull(JavaExpectedType.argumentIndex(index, index.length()), "an index");
+        String block = "{ x, ";
+        assertNull(JavaExpectedType.argumentIndex(block, block.length()), "an initializer");
+        String nested = "f(a[1], {2}, ";
+        assertEquals(2, JavaExpectedType.argumentIndex(nested, nested.length()));
+        String quote = "f(a, \"open";
+        assertNull(JavaExpectedType.argumentIndex(quote, quote.length()), "inside an unclosed string");
+        String chars = "f('a', ";
+        assertEquals(1, JavaExpectedType.argumentIndex(chars, chars.length()));
+        assertNull(JavaExpectedType.argumentIndex("", 0));
+    }
+
+    @Test
+    void typeVariablesStayUnboundWhereTheShapesDiffer() {
+        assertEquals(List.of("Object"), JavaExpectedType.bindTypeVariables(List.of("T"), "List<String", " "));
+        assertEquals(List.of("Object"), JavaExpectedType.bindTypeVariables(List.of("T"), "List<? extends Number>"));
+        assertEquals(
+                List.of("Object"),
+                JavaExpectedType.bindTypeVariables(List.of("T"), "List<? extends Number>", "List<T>"),
+                "a wildcard binds nothing");
+        assertEquals(
+                List.of("Object"),
+                JavaExpectedType.bindTypeVariables(List.of("T"), "Map<String, Integer>", "List<T>"),
+                "a different number of arguments");
+        assertEquals(
+                List.of("Object[]"),
+                JavaExpectedType.bindTypeVariables(List.of("T[]"), "String", "T[]"),
+                "an array return into a plain target");
+        assertEquals(
+                List.of("List<Integer>"),
+                JavaExpectedType.bindTypeVariables(List.of("List<V>"), "Map<String, List<Integer>>", "Map<K, List<V>>"),
+                "nested arguments");
+        assertEquals(List.of("Object"), JavaExpectedType.bindTypeVariables(List.of("T"), "Map<K, V", "Map<K, V>"));
+    }
+
+    @Test
+    void parameterLabelsThatNameNoTypeGiveNone() {
+        assertEquals(List.of(), JavaExpectedType.parameterTypes(""));
+        assertEquals(List.of(), JavaExpectedType.parameterTypes("return x"));
+        assertEquals(List.of("T", "T[]"), JavaExpectedType.parameterTypes("@SafeVarargs T... xs"));
+        assertNull(JavaExpectedType.declaredTarget("    foo(", 8), "no declaration on the line");
+        assertTrue(JavaExpectedType.isTypeVariable("K2[]"));
+    }
 }

@@ -460,4 +460,25 @@ class MarkdownTableTest {
                 "> |     | a   |\n> | --- | --- |\n> | ‸    | 1   |",
                 at(MarkdownTable.addColumnLeft("> | a |\n> |---|\n> | 1 |", 16)));
     }
+
+    @Test
+    void everyWideBlockTakesTwoColumnsAndMarksTakeNone() {
+        int[] wide = {
+            0x1100, 0x115F, 0x2E80, 0xA4CF, 0xAC00, 0xD7A3, 0xF900, 0xFAFF, 0xFE30, 0xFE4F, 0xFF00, 0xFF60, 0xFFE0,
+            0xFFE6, 0x1F300, 0x1FAFF, 0x20000, 0x3FFFD
+        };
+        for (int cp : wide) {
+            assertEquals(2, MarkdownTable.displayWidth(new String(Character.toChars(cp))), Integer.toHexString(cp));
+        }
+        int[] narrow = {
+            0x41, 0x10FF, 0x1160, 0x2E7F, 0xA4D0, 0xABFF, 0xD7A4, 0xF8FF, 0xFB00, 0xFE19, 0xFE50, 0xFEFE, 0xFF61,
+            0xFFDF, 0xFFE7, 0x1F2FF, 0x1FB00, 0x1FFFF, 0x3FFFE
+        };
+        for (int cp : narrow) {
+            assertEquals(1, MarkdownTable.displayWidth(new String(Character.toChars(cp))), Integer.toHexString(cp));
+        }
+        assertEquals(1, MarkdownTable.displayWidth("a⃝"), "an enclosing mark");
+        assertEquals(2, MarkdownTable.displayWidth("a‍b"), "a joiner");
+        assertEquals(1, MarkdownTable.displayWidth("a️"), "a variation selector");
+    }
 }

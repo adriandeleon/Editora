@@ -700,7 +700,7 @@ final class TemplateCoordinator {
     }
 
     /** The typed location as an absolute folder, or null when it is blank or relative. */
-    private static @Nullable Path projectParent(String typed) {
+    static @Nullable Path projectParent(String typed) {
         String s = typed == null ? "" : typed.strip();
         if (s.isEmpty() || !isAbsoluteInput(s)) {
             return null;

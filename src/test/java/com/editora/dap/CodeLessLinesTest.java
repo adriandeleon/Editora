@@ -111,4 +111,56 @@ class CodeLessLinesTest {
         assertTrue(CodeLessLines.isCodeLess(c, 2, "cpp"));
         assertFalse(CodeLessLines.isCodeLess(c, 3, "c"));
     }
+
+    @Test
+    void outOfRangeLinesAndOtherLanguagesHaveCode() {
+        assertFalse(CodeLessLines.isCodeLess(null, 0, "java"));
+        assertFalse(CodeLessLines.isCodeLess("// x", -1, "java"));
+        assertFalse(CodeLessLines.isCodeLess("// x", 1, "java"));
+        assertFalse(CodeLessLines.isCodeLess("// x", 0, null), "no language: nothing is known to be a comment");
+        assertTrue(CodeLessLines.isCodeLess("  ", 0, null));
+        assertTrue(CodeLessLines.isCodeLess("# x", 0, "ruby"));
+        assertFalse(CodeLessLines.isCodeLess("#[attr]", 0, "php"));
+    }
+
+    @Test
+    void stringsThatSpanLinesKeepTheirLinesAsCode() {
+        String go = String.join("\n", "s := `a \\", "// in a raw string", "`", "// after it");
+        assertFalse(CodeLessLines.isCodeLess(go, 1, "go"), "a raw string's backslash escapes nothing");
+        assertTrue(CodeLessLines.isCodeLess(go, 3, "go"));
+        String js = String.join("\n", "const t = `a \\` still", "// in the template", "`; /* c */", "  /* x */ // y");
+        assertFalse(CodeLessLines.isCodeLess(js, 1, "javascript"));
+        assertTrue(CodeLessLines.isCodeLess(js, 3, "typescript"));
+        String rust = String.join("\n", "let s = \"a", "// in the string", "\";", "// after");
+        assertFalse(CodeLessLines.isCodeLess(rust, 1, "rust"));
+        assertTrue(CodeLessLines.isCodeLess(rust, 3, "rust"));
+        String c = String.join("\n", "char q = '\"'; /* open", "*/", "x = a / b; /* not a regex", "*/");
+        assertTrue(CodeLessLines.isCodeLess(c, 1, "c"));
+        assertTrue(CodeLessLines.isCodeLess(c, 3, "c"));
+    }
+
+    @Test
+    void aJavaScriptRegularExpressionIsNoCommentAndADivisionIsNoRegularExpression() {
+        String js = String.join(
+                "\n",
+                "const r = /\\/*[/]x/g; /* open", // a regex holding /* and an escaped slash: the comment is the real
+                // one
+                "*/",
+                "return /a/.test(s); /* open",
+                "*/",
+                "const half = total / 2; /* open",
+                "*/",
+                "const q = a /",
+                "  b; /* open",
+                "*/",
+                "if (x) //",
+                "// after",
+                "const w = x\t/ y; /* open",
+                "*/",
+                "f(/[/*]/) /* open",
+                "*/");
+        for (int line : new int[] {1, 3, 5, 8, 10, 12, 14}) {
+            assertTrue(CodeLessLines.isCodeLess(js, line, "javascript"), "line " + line);
+        }
+    }
 }

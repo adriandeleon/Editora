@@ -370,4 +370,129 @@ class XmlServerTest {
                 open::contains);
         assertEquals(List.of(new LspManager.WatchedFile(xsd, LspManager.WatchedKind.CHANGED)), picked);
     }
+
+    // --- Go to Definition against an in-process server ---------------------------------------------------------
+
+    private record Served(LanguageServerSession session, FakeLanguageServer fake, String uri) {}
+
+    private static Served served(Path file, String text) {
+        var caps = new org.eclipse.lsp4j.ServerCapabilities();
+        caps.setDocumentLinkProvider(new org.eclipse.lsp4j.DocumentLinkOptions(false));
+        var spec = new LspServerRegistry.ServerSpec(XmlServer.SERVER_ID, List.of("lemminx"), List.of());
+        var session = new LanguageServerSession(spec, file.getParent(), d -> {}, (type, message) -> {});
+        var fake = new FakeLanguageServer();
+        session.attachForTest(fake, caps);
+        String uri = DocumentUris.of(file);
+        session.didOpen(uri, "xml", text);
+        return new Served(session, fake, uri);
+    }
+
+    private static List<? extends org.eclipse.lsp4j.Location> definitionAt(Served s, Position pos, List<String> missing)
+            throws Exception {
+        var found = XmlServer.definition(s.session(), s.uri(), pos, missing::add)
+                .get(30, java.util.concurrent.TimeUnit.SECONDS);
+        assertTrue(found.isLeft(), "answered as locations");
+        return found.getLeft();
+    }
+
+    private static Range range(int line, int from, int to) {
+        return new Range(new Position(line, from), new Position(line, to));
+    }
+
+    @Test
+    void aLinkToTheElementsOtherTagFallsToTheGrammarDeclaration(@TempDir Path dir) throws Exception {
+        Served s = served(dir.resolve("doc.xml"), "<root>\n</root>\n");
+        s.fake().definitionLinksResponse =
+                List.of(new org.eclipse.lsp4j.LocationLink(s.uri(), range(1, 0, 7), range(1, 2, 6)));
+        var declared = new org.eclipse.lsp4j.Location("file:///schemas/doc.xsd", range(3, 0, 0));
+        s.fake().typeDefinitionResponse = List.of(declared);
+
+        assertEquals(List.of(declared), definitionAt(s, new Position(0, 2), new ArrayList<>()));
+        assertEquals(1, s.fake().typeDefinitions.size());
+    }
+
+    @Test
+    void aLinkElsewhereOrWithoutASelectionRangeIsTheAnswer(@TempDir Path dir) throws Exception {
+        Served s = served(dir.resolve("doc.xml"), "<root>\n</root>\n");
+        var elsewhere = new org.eclipse.lsp4j.LocationLink();
+        elsewhere.setTargetUri("file:///schemas/doc.xsd");
+        elsewhere.setTargetRange(range(4, 0, 9));
+        s.fake().definitionLinksResponse = new ArrayList<>(java.util.Arrays.asList(elsewhere, null));
+
+        var found = XmlServer.definition(s.session(), s.uri(), new Position(0, 2), m -> {})
+                .get(30, java.util.concurrent.TimeUnit.SECONDS);
+
+        assertTrue(found.isRight(), "the server's own answer stands");
+        assertEquals(elsewhere, found.getRight().get(0));
+        assertTrue(s.fake().typeDefinitions.isEmpty());
+    }
+
+    @Test
+    void aLocationWithoutARangeIsNotTheOtherTag(@TempDir Path dir) throws Exception {
+        Served s = served(dir.resolve("doc.xml"), "<root>\n</root>\n");
+        var noRange = new org.eclipse.lsp4j.Location();
+        noRange.setUri(s.uri());
+        var noUri = new org.eclipse.lsp4j.Location();
+        noUri.setRange(range(1, 2, 6));
+        s.fake().definitionResponse = new ArrayList<>(java.util.Arrays.asList(noRange, noUri, null));
+
+        assertEquals(3, definitionAt(s, new Position(0, 2), new ArrayList<>()).size());
+        assertTrue(s.fake().typeDefinitions.isEmpty(), "a target in no known document is no paired tag");
+    }
+
+    @Test
+    void aLinkInAQuotedValueToAMissingFileIsNamed(@TempDir Path dir) throws Exception {
+        String text = "<?xml-model href=\"missing.rng\"?>\n<root/>\n";
+        Served s = served(dir.resolve("doc.xml"), text);
+        s.fake().documentLinkResponse =
+                List.of(new DocumentLink(range(0, 18, 29), DocumentUris.of(dir.resolve("missing.rng"))));
+        List<String> missing = new ArrayList<>();
+
+        assertEquals(List.of(), definitionAt(s, new Position(0, 20), missing));
+        assertEquals(List.of("missing.rng"), missing);
+        assertTrue(s.fake().typeDefinitions.isEmpty(), "the link in the value is asked first and ends the search");
+    }
+
+    @Test
+    void aLinkToAnExistingFileOpensItsStart(@TempDir Path dir) throws Exception {
+        Path schema = Files.writeString(dir.resolve("doc.xsd"), "<xs:schema/>");
+        String text = "<root xsi:noNamespaceSchemaLocation=\"doc.xsd\">\n</root>\n";
+        Served s = served(dir.resolve("doc.xml"), text);
+        s.fake().documentLinkResponse = List.of(new DocumentLink(range(0, 37, 44), DocumentUris.of(schema)));
+
+        var found = definitionAt(s, new Position(0, 40), new ArrayList<>());
+
+        assertEquals(1, found.size());
+        assertEquals(DocumentUris.of(schema), found.get(0).getUri());
+        assertEquals(range(0, 0, 0), found.get(0).getRange());
+
+        List<String> missing = new ArrayList<>();
+        assertEquals(List.of(), definitionAt(s, new Position(1, 3), missing), "on a tag name no link is asked first");
+        assertEquals(List.of(), missing);
+    }
+
+    @Test
+    void aStylesheetIncludeIsFollowedWhenNothingElseAnswers(@TempDir Path dir) throws Exception {
+        Path lib = Files.writeString(dir.resolve("lib.xsl"), "<xsl:stylesheet/>");
+        String text = "<xsl:stylesheet xmlns:xsl=\"http://www.w3.org/1999/XSL/Transform\">\n"
+                + "  <xsl:include href=\"lib.xsl\"/>\n</xsl:stylesheet>\n";
+        Served s = served(dir.resolve("main.xsl"), text);
+
+        var found = definitionAt(s, new Position(1, 22), new ArrayList<>());
+
+        assertEquals(1, found.size());
+        assertEquals(lib, Path.of(java.net.URI.create(found.get(0).getUri())));
+        assertNull(XmlServer.missingInclude(s.session(), s.uri(), new Position(1, 22)), "it exists");
+    }
+
+    @Test
+    void aMissingIncludeIsNamedForTheMessage(@TempDir Path dir) throws Exception {
+        String text = "<xsl:stylesheet xmlns:xsl=\"http://www.w3.org/1999/XSL/Transform\">\n"
+                + "  <xsl:include href=\"gone.xsl\"/>\n</xsl:stylesheet>\n";
+        Served s = served(dir.resolve("main.xsl"), text);
+        assertEquals("gone.xsl", XmlServer.missingInclude(s.session(), s.uri(), new Position(1, 22)));
+        assertNull(XmlServer.missingInclude(s.session(), s.uri(), new Position(0, 2)), "not on an include");
+        assertNull(XmlServer.missingInclude(s.session(), "file:///not/open.xsl", new Position(0, 2)));
+        assertEquals(List.of(), definitionAt(s, new Position(1, 22), new ArrayList<>()));
+    }
 }

@@ -171,4 +171,24 @@ class TerminalPalettesTest {
             }
         }
     }
+
+    @Test
+    void aPaletteNeedsSixteenColours() {
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class, () -> new TerminalPalette(Color.BLACK, Color.WHITE, new Color[8]));
+    }
+
+    @Test
+    void aMissingOrUnknownColourIsTheFallbackAndTrueColourIsItself() {
+        TerminalPalette palette = TerminalPalettes.EDITORA_LIGHT;
+        assertEquals(Color.PINK, palette.resolve(null, Color.PINK));
+        assertEquals(
+                Color.rgb(12, 34, 56),
+                palette.resolve(com.jediterm.terminal.TerminalColor.rgb(12, 34, 56), Color.PINK));
+        assertEquals(
+                Color.PINK,
+                palette.resolve(new com.jediterm.terminal.TerminalColor(() -> null), Color.PINK),
+                "a colour that resolves to nothing");
+        assertEquals(Color.rgb(238, 238, 238), palette.resolve(indexed(255), Color.BLACK), "the lightest grey");
+    }
 }

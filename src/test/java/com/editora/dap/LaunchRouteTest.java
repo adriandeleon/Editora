@@ -274,4 +274,116 @@ class LaunchRouteTest {
         assertSame(LaunchRoute.Kind.UNSUPPORTED, neither.kind());
         assertEquals("a browser launch without a url or file", neither.reason());
     }
+
+    @Test
+    void everyAdapterTypeIsRoutedAndTheOnesEditoraCannotRunSayWhy() {
+        Map<String, LaunchRoute.Kind> kinds = Map.of(
+                "codelldb", LaunchRoute.Kind.CODELLDB,
+                "pwa-node", LaunchRoute.Kind.JS_DEBUG,
+                "pwa-msedge", LaunchRoute.Kind.BROWSER,
+                "coreclr", LaunchRoute.Kind.NETCOREDBG,
+                "debugpy", LaunchRoute.Kind.DEBUGPY);
+        kinds.forEach((type, kind) -> assertEquals(
+                kind,
+                LaunchRoute.of(Map.of("type", type, "request", "attach"), Map.of())
+                        .kind(),
+                type));
+        for (Map<String, Object> body : List.<Map<String, Object>>of(
+                Map.of("type", "go", "mode", "remote"),
+                Map.of("type", "chrome", "request", "launch"),
+                Map.of("type", "rdbg", "request", "attach", "debugPort", "/tmp/rdbg.sock"),
+                Map.of("type", "rdbg", "request", "launch"),
+                Map.of("type", "php", "request", "attach"),
+                Map.of("type", "bashdb", "request", "attach"),
+                Map.of("type", "dotnet"),
+                Map.of("type", "java", "request", "attach"),
+                Map.of("request", "launch"),
+                Map.of("type", 3))) {
+            LaunchRoute.Route route = LaunchRoute.of(body, Map.of());
+            assertEquals(LaunchRoute.Kind.UNSUPPORTED, route.kind(), body.toString());
+            assertFalse(route.reason().isBlank(), body.toString());
+        }
+        assertEquals(
+                LaunchRoute.Kind.RDBG,
+                LaunchRoute.of(Map.of("type", "rdbg", "request", "attach", "debugPort", 12345), Map.of())
+                        .kind());
+        assertEquals(
+                LaunchRoute.Kind.BROWSER,
+                LaunchRoute.of(Map.of("type", "chrome", "file", "/a.html"), Map.of())
+                        .kind());
+        assertEquals(
+                DebugLanguages.RUST,
+                LaunchRoute.of(Map.of("type", "lldb", "sourceLanguages", List.of("rust")), Map.of())
+                        .profile());
+    }
+
+    @Test
+    void rdbgsTailAndPortInTheirOtherForms() {
+        assertEquals(
+                List.of("--", "bundle", "exec", "rake", "spec", "a", "b"),
+                LaunchRoute.rdbgTail(
+                        Map.of("command", "rake", "useBundler", true, "script", "spec", "args", " a  b ")));
+        assertEquals(
+                List.of("--", "bundle", "exec", "ruby", "x.rb"),
+                LaunchRoute.rdbgTail(
+                        Map.of("command", "bundle exec ruby", "useBundler", true, "script", "x.rb", "args", " ")));
+        assertEquals(12345, LaunchRoute.rdbgPort(Map.of("debugPort", "[::1]:12345")));
+        assertEquals(-1, LaunchRoute.rdbgPort(Map.of("debugPort", "other:12345")));
+        assertEquals(-1, LaunchRoute.rdbgPort(Map.of("debugPort", 70000)));
+        assertEquals(-1, LaunchRoute.rdbgPort(Map.of()));
+    }
+
+    @Test
+    void gdbAndCodeLldbRequestsFromCppdbgsFields() {
+        Map<String, Object> attach = LaunchRoute.gdbRequest(Map.of("processId", " 42 ", "program", "/bin/app"), true);
+        assertEquals(42L, attach.get("pid"));
+        assertEquals("/bin/app", attach.get("program"));
+        assertEquals("x", LaunchRoute.gdbRequest(Map.of("pid", "x"), true).get("pid"), "not a number: as written");
+        assertEquals(0L, LaunchRoute.gdbRequest(Map.of(), true).get("pid"));
+        assertEquals(
+                List.of(),
+                LaunchRoute.gdbRequest(Map.of("pid", List.of()), true).get("pid"));
+        Map<String, Object> launch = LaunchRoute.gdbRequest(Map.of("program", "/a", "stopOnEntry", true), false);
+        assertEquals(true, launch.get("stopAtBeginningOfMainSubprogram"));
+        assertFalse(launch.containsKey("args"));
+        assertFalse(launch.containsKey("cwd"));
+        assertFalse(launch.containsKey("env"));
+        assertEquals(
+                true,
+                LaunchRoute.gdbRequest(Map.of("stopAtBeginningOfMainSubprogram", true), false)
+                        .get("stopAtBeginningOfMainSubprogram"));
+        Map<String, Object> lldb = LaunchRoute.codelldbFromCppdbg(Map.of("program", "/a"), false);
+        assertFalse(lldb.containsKey("args"));
+        assertFalse(lldb.containsKey("env"));
+        assertEquals(false, lldb.get("stopOnEntry"));
+        java.util.Map<String, Object> env = new java.util.HashMap<>();
+        env.put("A", null);
+        java.util.Map<String, Object> unnamed = new java.util.HashMap<>();
+        unnamed.put("value", "v");
+        java.util.Map<String, Object> noValue = new java.util.HashMap<>();
+        noValue.put("name", "B");
+        noValue.put("value", null);
+        assertEquals(
+                Map.of("A", "", "B", ""),
+                LaunchRoute.environment(Map.of("env", env, "environment", List.of(unnamed, noValue, "x"))));
+    }
+
+    @Test
+    void cargoExecutablesAndJavaConfigurationsInTheirEdgeCases() {
+        RustLaunch.Artifact bin =
+                new RustLaunch.Artifact("app", List.of("bin"), Path.of("/s/main.rs"), Path.of("/t/app"), false);
+        RustLaunch.Artifact lib =
+                new RustLaunch.Artifact("app", List.of("lib"), Path.of("/s/lib.rs"), Path.of("/t/lib"), false);
+        assertEquals(Path.of("/t/app"), LaunchRoute.cargoExecutable(List.of(bin, lib), false, null, "bin"));
+        assertNull(LaunchRoute.cargoExecutable(List.of(bin, lib), false, null, null), "two left");
+        com.editora.config.RunConfiguration config =
+                LaunchRoute.javaRunConfiguration("x", Map.of("cwd", " ", "javaExec", "java", "args", 3), Path.of("/w"));
+        assertEquals(Path.of("/w").toString(), config.workingDir());
+        assertEquals("", config.jdkHome(), "a bare java names no JDK folder");
+        assertEquals("", config.args());
+        assertEquals(
+                "",
+                LaunchRoute.javaRunConfiguration("x", Map.of("javaExec", "/java"), Path.of("/w"))
+                        .jdkHome());
+    }
 }

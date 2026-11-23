@@ -779,7 +779,7 @@ final class DiffCoordinator {
     }
 
     /** The left and right file names of a patch section; {@code fallback} when it names neither. */
-    private static String[] patchNames(PatchParser.FilePatch fp, String fallback) {
+    static String[] patchNames(PatchParser.FilePatch fp, String fallback) {
         String oldLabel = cleanPatchLabel(fp.oldPath());
         String newLabel = cleanPatchLabel(fp.newPath());
         String leftName = !oldLabel.isEmpty() ? oldLabel : (!newLabel.isEmpty() ? newLabel : fallback);

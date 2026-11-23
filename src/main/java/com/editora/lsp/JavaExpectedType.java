@@ -563,12 +563,12 @@ public final class JavaExpectedType {
                 return null;
             }
             String header = text.substring(statementStart(text, open), open).strip();
-            if (header.endsWith("->")) {
-                return null;
-            }
-            if (INNER_BLOCK.matcher(header).matches()) {
+            if (INNER_BLOCK.matcher(header).matches()) { // a switch rule's block (`case 1 -> {`), not a lambda's
                 from = open;
                 continue;
+            }
+            if (header.endsWith("->")) {
+                return null;
             }
             Matcher m = METHOD.matcher(header);
             if (!m.matches()) {

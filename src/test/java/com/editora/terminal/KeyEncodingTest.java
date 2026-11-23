@@ -287,4 +287,145 @@ class KeyEncodingTest {
         // Nothing to prefix, and inventing a byte would send a keystroke the user never made.
         assertNull(KeyEncoding.metaBase(pressedWithText(KeyCode.SHIFT, "", false, true)));
     }
+
+    /** A lookup that only knows {@code key} without modifiers. */
+    private static KeyEncoding.CodeLookup onlyPlain(byte[] plain) {
+        return (vk, mods) -> mods == 0 ? plain : null;
+    }
+
+    @Test
+    void aModifiedKeyTheEmulatorDoesNotKnowFallsBackToThePlainKeyWithMeta() {
+        byte[] plain = {0x1b, '[', 'H'};
+        assertArrayEquals(
+                new byte[] {0x1b, 0x1b, '[', 'H'},
+                KeyEncoding.encodePressed(
+                        pressed(KeyCode.HOME, false, false, true, false), onlyPlain(plain), true, false),
+                "Alt as Meta prefixes ESC");
+        assertArrayEquals(
+                plain,
+                KeyEncoding.encodePressed(
+                        pressed(KeyCode.HOME, false, false, true, false), onlyPlain(plain), false, false),
+                "Alt not as Meta sends the plain key");
+        assertArrayEquals(
+                plain,
+                KeyEncoding.encodePressed(
+                        pressed(KeyCode.HOME, false, true, false, false), onlyPlain(plain), true, false));
+    }
+
+    @Test
+    void aKeyTheEmulatorDoesNotKnowAtAllUsesTheLiteralBytes() {
+        KeyEncoding.CodeLookup none = (vk, mods) -> null;
+        assertArrayEquals(
+                new byte[] {0x09},
+                KeyEncoding.encodePressed(pressed(KeyCode.TAB, false, false, false, false), none, true));
+        assertArrayEquals(
+                new byte[] {0x1b, '[', 'Z'},
+                KeyEncoding.encodePressed(pressed(KeyCode.TAB, true, false, false, false), none, true));
+        assertArrayEquals(
+                new byte[] {0x1b, 0x1b},
+                KeyEncoding.encodePressed(pressed(KeyCode.ESCAPE, false, false, true, false), none, true),
+                "Meta-Escape");
+        assertArrayEquals(
+                new byte[] {0x0d},
+                KeyEncoding.encodePressed(pressed(KeyCode.ENTER, false, false, false, false), none, true));
+        assertArrayEquals(
+                new byte[] {0x7f},
+                KeyEncoding.encodePressed(pressed(KeyCode.BACK_SPACE, false, false, false, false), none, true));
+        assertNull(
+                KeyEncoding.encodePressed(pressed(KeyCode.PAGE_UP, false, false, false, false), none, true),
+                "no mapping and no literal: the key is left alone");
+    }
+
+    @Test
+    void controlChordsCoverTheDigitRowAndPunctuation() {
+        KeyEncoding.CodeLookup none = (vk, mods) -> null;
+        Object[][] cases = {
+            {KeyCode.SPACE, 0x00},
+            {KeyCode.DIGIT2, 0x00},
+            {KeyCode.DIGIT3, 0x1b},
+            {KeyCode.DIGIT4, 0x1c},
+            {KeyCode.DIGIT5, 0x1d},
+            {KeyCode.DIGIT6, 0x1e},
+            {KeyCode.DIGIT7, 0x1f},
+            {KeyCode.DIGIT8, 0x7f},
+            {KeyCode.OPEN_BRACKET, 0x1b},
+            {KeyCode.BACK_SLASH, 0x1c},
+            {KeyCode.CLOSE_BRACKET, 0x1d},
+            {KeyCode.MINUS, 0x1f},
+            {KeyCode.SLASH, 0x1f},
+            {KeyCode.Z, 0x1a}
+        };
+        for (Object[] c : cases) {
+            KeyCode code = (KeyCode) c[0];
+            assertArrayEquals(
+                    new byte[] {(byte) (int) (Integer) c[1]},
+                    KeyEncoding.encodePressed(pressed(code, false, true, false, false), none, true),
+                    code.toString());
+        }
+        assertNull(KeyEncoding.controlByte(KeyCode.DIGIT1));
+        assertNull(
+                KeyEncoding.encodePressed(pressed(KeyCode.DIGIT1, false, true, false, false), none, true),
+                "Ctrl+1 has no control form");
+        assertNull(
+                KeyEncoding.encodePressed(pressed(KeyCode.A, false, true, false, true), none, true),
+                "Ctrl+Meta is not a control byte");
+    }
+
+    @Test
+    void ctrlAltIsMetaPrefixesTheControlByteOnlyWhenAsked() {
+        KeyEncoding.CodeLookup none = (vk, mods) -> null;
+        assertArrayEquals(
+                new byte[] {0x1b, 0x05},
+                KeyEncoding.encodePressed(pressed(KeyCode.E, false, true, true, false), none, true, true));
+        assertNull(
+                KeyEncoding.encodePressed(pressed(KeyCode.E, false, true, true, false), none, true, false),
+                "Ctrl+Alt is AltGr unless told otherwise");
+        assertNull(KeyEncoding.encodePressed(pressed(KeyCode.DIGIT1, false, true, true, false), none, true, true));
+        assertNull(KeyEncoding.encodePressed(pressed(KeyCode.E, false, true, true, true), none, true, true));
+    }
+
+    @Test
+    void metaUsesTheKeysOwnCharacterWhenTheTextIsNotPlain() {
+        KeyEncoding.CodeLookup none = (vk, mods) -> null;
+        assertArrayEquals(
+                new byte[] {0x1b, 'F'},
+                KeyEncoding.encodePressed(pressedWithText(KeyCode.F, "\u0192", true, true), none, true),
+                "Shift asks for the upper case");
+        assertArrayEquals(
+                new byte[] {0x1b, '1'},
+                KeyEncoding.encodePressed(pressedWithText(KeyCode.DIGIT1, "", false, true), none, true));
+        assertNull(
+                KeyEncoding.encodePressed(pressedWithText(KeyCode.UNDEFINED, "", false, true), none, true),
+                "a key with no character");
+        assertNull(
+                KeyEncoding.encodePressed(pressedWithText(KeyCode.F, "f", false, true), none, false),
+                "Alt is not Meta: the typed event sends the character");
+        assertNull(KeyEncoding.encodePressed(pressed(KeyCode.F, false, false, true, true), none, true));
+        assertArrayEquals(new byte[] {'x'}, KeyEncoding.metaBase(pressedWithText(KeyCode.F, "x", false, true)));
+        assertNull(KeyEncoding.metaBase(pressedWithText(KeyCode.UNDEFINED, "ab", false, true)));
+    }
+
+    @Test
+    void typedCharactersFromChordsAreDropped() {
+        assertNull(KeyEncoding.encodeTyped(typed("", false, false, false), true));
+        assertNull(KeyEncoding.encodeTyped(typed(KeyEvent.CHAR_UNDEFINED, false, false, false), true));
+        assertNull(KeyEncoding.encodeTyped(typed("\u007f", false, false, false), true), "DEL came from the press");
+        assertNull(KeyEncoding.encodeTyped(typed("\u0001", false, false, false), true));
+        assertArrayEquals(
+                "\u0001x".getBytes(StandardCharsets.UTF_8),
+                KeyEncoding.encodeTyped(typed("\u0001x", false, false, false), true),
+                "two characters are text");
+        assertNull(KeyEncoding.encodeTyped(typed("a", true, false, false), true), "Ctrl");
+        assertNull(KeyEncoding.encodeTyped(typed("a", false, false, true), true), "Meta");
+        assertArrayEquals(
+                "@".getBytes(StandardCharsets.UTF_8),
+                KeyEncoding.encodeTyped(typed("@", true, true, false), true, false),
+                "AltGr composes");
+        assertNull(KeyEncoding.encodeTyped(typed("@", true, true, false), true, true), "Ctrl+Alt as Meta was sent");
+        assertNull(KeyEncoding.encodeTyped(typed("a", false, true, false), true), "Alt as Meta was sent by the press");
+        assertArrayEquals(
+                "\u00e5".getBytes(StandardCharsets.UTF_8),
+                KeyEncoding.encodeTyped(typed("\u00e5", false, true, false), false),
+                "Alt composing");
+    }
 }

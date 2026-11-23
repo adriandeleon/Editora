@@ -196,4 +196,150 @@ class MarkdownLinkRewriteTest {
         assertEquals(null, MarkdownLinkRewrite.wikiAt(text, 2));
         assertEquals("[[note#part]]", MarkdownLinkAt.destination(text, open + 3));
     }
+
+    private static List<String> destinations(String text) {
+        return MarkdownLinkRewrite.links(text).stream()
+                .map(l -> l.kind() + ":" + l.destination())
+                .toList();
+    }
+
+    @Test
+    void nothingToScan() {
+        assertEquals(List.of(), MarkdownLinkRewrite.links(null));
+        assertEquals(List.of(), MarkdownLinkRewrite.links(""));
+        assertEquals(List.of(), MarkdownLinkRewrite.links("[[note]]", false), "wiki links only when asked for");
+    }
+
+    @Test
+    void aWikiLinkThatIsADefinedReferenceIsNotAWikiLink() {
+        assertEquals(List.of("DEFINITION:x.md"), destinations("[[Some  Note]]\n\n[some note]: x.md\n"));
+        assertEquals(List.of("WIKI:other", "DEFINITION:x.md"), destinations("[[other]]\n\n[note]: x.md\n"));
+    }
+
+    @Test
+    void wikiLinkShapesThatAreNotWikiLinks() {
+        assertEquals(
+                List.of("INLINE:u"),
+                destinations("\\[[a]] [[ ]] [[a[b]] word[[c]] [[d]](u) `[[e]]` [[open\n"),
+                "[[d]](u) is an inline link whose text is in brackets");
+        assertEquals(
+                List.of("WIKI:a", "WIKI:b#h", "WIKI:c", "WIKI_EMBED:d"),
+                destinations("| [[a\\|label]] | [[ b # h ]] | \\![[c]] ![[d]] |\n"));
+    }
+
+    @Test
+    void wikiLinkLinesAndLabels() {
+        List<MarkdownLinkRewrite.Link> links = MarkdownLinkRewrite.links("x\n[[a#top]] [[b]]\n");
+        assertEquals(1, links.get(0).line());
+        assertEquals("a", links.get(0).path());
+        assertEquals("top", links.get(0).fragment());
+        assertEquals("", links.get(1).fragment());
+        assertTrue(links.get(1).isWiki());
+    }
+
+    @Test
+    void htmlInsideACodeSpanOrWithAnEmptyTargetIsNoLink() {
+        assertEquals(List.of(), destinations("`<img src=\"a.png\">` <img src=\" \"> <a href=''>x</a>\n"));
+        assertEquals(List.of("HTML:a.png"), destinations("<video src='a.png'></video>\n"));
+    }
+
+    @Test
+    void definitionShapes() {
+        assertEquals(List.of(), destinations("    [a]: indented.md\n"), "four spaces is code");
+        assertEquals(List.of("DEFINITION:three.md"), destinations("   [a]: three.md\n"));
+        assertEquals(List.of(), destinations("[]: empty-label.md\n[a]:\n[a] : spaced.md\n[a]: \n"));
+        assertEquals(List.of("DEFINITION:my file.md"), destinations("[a]: <my file.md> \"T\"\n"));
+        assertEquals(List.of(), destinations("[a]: <>\n[b]: <a<b>\n[c]: <open\n"));
+    }
+
+    @Test
+    void inlineDestinationShapes() {
+        assertEquals(
+                List.of("INLINE:a(1).md", "INLINE:b\\).md", "INLINE:c.md", "INLINE:d.md"),
+                destinations("[a](a(1).md) [b](b\\).md) [c](c.md 'T') [d](d.md (T))\n"));
+        assertEquals(List.of(), destinations("[a]( ) [b](  \n"), "no destination");
+        assertEquals(List.of(), destinations("[a](x.md \n"), "nothing after the destination");
+        assertEquals(List.of(), destinations("no opening](x.md) and a\\](y.md)\n"));
+        assertEquals(List.of("INLINE:z.md"), destinations("[a [b] c](z.md)\n"));
+        assertEquals(List.of("INLINE:q.md"), destinations("[`]`](q.md)\n"));
+    }
+
+    @Test
+    void theCaretOutsideAnyText() {
+        assertEquals(null, MarkdownLinkRewrite.wikiAt(null, 0));
+        assertEquals(null, MarkdownLinkRewrite.wikiAt("[[a]]", -1));
+        assertEquals(null, MarkdownLinkRewrite.wikiAt("[[a]]", 6));
+        assertEquals(null, MarkdownLinkRewrite.wikiAt("plain text", 2));
+        assertEquals(null, MarkdownLinkRewrite.wikiAt("[[a]]\nplain", 8));
+        assertEquals("a", MarkdownLinkRewrite.wikiAt("[[a]]", 5).destination());
+    }
+
+    @Test
+    void rewriteWithoutEnoughToGoOn() {
+        String text = "[a](old.md)";
+        assertEquals(
+                0,
+                MarkdownLinkRewrite.rewrite(text, null, p("a.md"), p("old.md"), p("new.md"))
+                        .count());
+        assertEquals(
+                0,
+                MarkdownLinkRewrite.rewrite(null, p("a.md"), p("a.md"), p("old.md"), p("new.md"))
+                        .count());
+        Path root = ROOT.getRoot();
+        assertSame(
+                text,
+                MarkdownLinkRewrite.rewrite(text, root, root, p("old.md"), p("new.md"))
+                        .text());
+    }
+
+    @Test
+    void aLinkToTheDocumentsOwnFolderBecomesDot() {
+        MarkdownLinkRewrite.Result r = MarkdownLinkRewrite.rewrite(
+                "[up](sub/) [b](<sub>)", p("a.md"), p("sub/a.md"), p("a.md"), p("sub/a.md"));
+        assertEquals("[up](./) [b](<.>)", r.text());
+        assertEquals(2, r.count());
+    }
+
+    @Test
+    void aDotSlashAndATrailingSeparatorAreKept() {
+        assertEquals(
+                "[a](./media/)", renamed("[a](./img/)", "a.md", "img", "media").text());
+        assertEquals(
+                "[a](<media/x.png#h>)",
+                renamed("[a](<img/x.png#h>)", "a.md", "img", "media").text());
+        assertEquals(
+                "[a](new%23.md)",
+                renamed("[a](old%23.md)", "a.md", "old#.md", "new#.md").text());
+        assertSame("[a](%20)", renamed("[a](%20)", "a.md", "old.md", "new.md").text());
+    }
+
+    @Test
+    void relativeSchemeAndEncodingDetails() {
+        assertFalse(MarkdownLinkRewrite.isRelative(""));
+        assertFalse(MarkdownLinkRewrite.isRelative("?q=1"));
+        assertFalse(MarkdownLinkRewrite.isRelative("\\\\server\\x"));
+        assertFalse(MarkdownLinkRewrite.isRelative("svn+ssh.x-1:path"));
+        assertTrue(MarkdownLinkRewrite.isRelative(":odd"));
+        assertTrue(MarkdownLinkRewrite.isRelative("1a:b"), "a scheme starts with a letter");
+        assertTrue(MarkdownLinkRewrite.isRelative("plain"));
+        assertEquals(3, MarkdownLinkRewrite.suffixStart("abc?x#y"));
+        assertEquals("%zz %2 😀", MarkdownLinkRewrite.decode("%zz %2 😀"));
+        assertEquals("%25%23%3F%3C%3E", MarkdownLinkRewrite.encode("%#?<>"));
+        assertEquals("%29a%28", MarkdownLinkRewrite.encode(")a("));
+        assertEquals("a%28b", MarkdownLinkRewrite.encode("a(b"));
+    }
+
+    @Test
+    void wikiLinksWrittenWithAFolderOrAnExtensionOrToNothing() {
+        WikiTargets before = new WikiTargets(ROOT, List.of(p("a.md"), p("docs/b.md"), p("docs/c.png")));
+        MarkdownLinkRewrite.Result r = MarkdownLinkRewrite.rewrite(
+                "[[docs/b.md]] [[/docs/b]] [[#local]] [[docs/c.png]]",
+                p("a.md"),
+                p("a.md"),
+                p("docs"),
+                p("notes"),
+                before);
+        assertEquals("[[notes/b.md]] [[notes/b]] [[#local]] [[notes/c.png]]", r.text());
+        assertEquals(3, r.count());
+    }
 }
