@@ -104,7 +104,7 @@ final class XmlLspActions {
             return null;
         }
         String text = b.text();
-        lsp.changeDocument(path, text); // what the user sees is what is validated or bound
+        LspCoordinator.syncText(lsp, b, path); // what the user sees is what is validated or bound
         return new Active(path, text);
     }
 

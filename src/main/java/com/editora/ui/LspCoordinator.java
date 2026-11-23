@@ -2786,7 +2786,7 @@ final class LspCoordinator {
         }
         int[] window = paddedWindow(buffer.visibleLineWindow(), CODE_LENS_WINDOW_PAD, buffer.lineCount());
         long version = buffer.docVersion();
-        lspManager.changeDocument(path, buffer.text()); // the counts are for the text on screen
+        syncText(buffer, path); // the counts are for the text on screen
         lspManager.requestCodeLens(path, window[0], window[1], spans -> {
             if (buffer != host.activeBuffer() || buffer.docVersion() != version) {
                 return;
@@ -4291,7 +4291,7 @@ final class LspCoordinator {
                 return;
             }
             String before = buffer.getContent();
-            lspManager.changeDocument(path, buffer.text()); // the formatter must see what Organize Imports left
+            syncText(buffer, path); // the formatter must see what Organize Imports left
             lspManager.formatDocument(path, formatRequestIndent(buffer), edits -> {
                 if (!edits.isEmpty() && buffer.getContent().equals(before) && !buffer.isDisposed()) {
                     buffer.applyLspEdits(edits);
@@ -4306,7 +4306,7 @@ final class LspCoordinator {
                 formatThenSave.run();
                 return;
             }
-            lspManager.changeDocument(path, buffer.text()); // after a clean-up, Organize Imports sees its result
+            syncText(buffer, path); // after a clean-up, Organize Imports sees its result
             CodeArea area = buffer.getArea();
             int last = Math.max(0, area.getParagraphs().size() - 1);
             lspManager.organizeImportsQuietly(
@@ -4337,7 +4337,7 @@ final class LspCoordinator {
             host.setStatus(tr("status.lsp.cleanupNoneChosen"));
             return;
         }
-        lspManager.changeDocument(path, b.text());
+        syncText(b, path);
         lspManager.cleanUpJava(
                 path,
                 outcome -> host.setStatus(tr(
@@ -4418,6 +4418,25 @@ final class LspCoordinator {
                     });
         });
         return recheck;
+    }
+
+    /**
+     * Sends {@code buffer}'s text to its server before a request, through the buffer when it is wired, so the
+     * version sent is recorded: the typing pause after it then sends nothing. A direct {@code changeDocument}
+     * left the record behind, and the pause, sending the same text again, took it for a net-zero edit and put the
+     * pre-edit marks back on lines the edit had moved (perf review 2026-11-23 L5, the #417 symptom).
+     */
+    static void syncText(LspManager manager, EditorBuffer buffer, Path path) {
+        if (buffer.sendsLspChanges()) {
+            buffer.sendLspChange(); // nothing when this version went out already
+        } else {
+            manager.changeDocument(path, buffer.text());
+        }
+    }
+
+    /** As {@link #syncText(LspManager, EditorBuffer, Path)} with this window's manager. */
+    void syncText(EditorBuffer buffer, Path path) {
+        syncText(lspManager, buffer, path);
     }
 
     /** Wires every LSP hook onto a freshly-added buffer (didChange/diagnostics/completion/format/nav), then
@@ -4796,7 +4815,7 @@ final class LspCoordinator {
         CodeArea area = b.getFocusedArea();
         int lastLine = Math.max(0, area.getParagraphs().size() - 1);
         int lastChar = area.getParagraph(lastLine).length();
-        lspManager.changeDocument(path, b.text()); // the server organizes the text it has
+        syncText(b, path); // the server organizes the text it has
         lspManager.organizeImportsAny(path, lastLine, lastChar, outcome -> {
             if (outcome == LspManager.OrganizeOutcome.FAILED) {
                 host.setError(tr("status.lsp.importsFailed"));
@@ -4823,7 +4842,7 @@ final class LspCoordinator {
             return;
         }
         CodeArea area = b.getFocusedArea();
-        lspManager.changeDocument(path, b.text());
+        syncText(b, path);
         lspManager.fullyQualifiedName(path, area.getCurrentParagraph(), area.getCaretColumn(), name -> {
             if (name == null) {
                 host.setStatus(tr("status.lsp.noQualifiedName"));
@@ -5247,7 +5266,7 @@ final class LspCoordinator {
         // can leave the server's copy ~300 ms behind, and formatting the STALE server text yields edits whose
         // offsets don't line up with the document on screen (#667). Redundant when already current, but a
         // full-text didChange is cheap next to the formatting round-trip itself.
-        lspManager.changeDocument(path, buffer.text());
+        syncText(buffer, path);
         // The server computes whole-document edits (line/col based) against the text as it is NOW. If the
         // user edits during the async round-trip, those offsets no longer line up — and applyLspEdits only
         // clamps + swallows, so a stale format silently corrupts the file (every line mis-formatted/shifted).
@@ -5400,7 +5419,7 @@ final class LspCoordinator {
         }
         String serverId = lspManager.managedServerId(path);
         CodeArea area = b.getFocusedArea();
-        lspManager.changeDocument(path, b.text()); // sync latest text before the request
+        syncText(b, path); // sync latest text before the request
         var sel = area.getSelection();
         boolean hasSelection = sel.getLength() > 0;
         var start = area.offsetToPosition(

@@ -241,7 +241,7 @@ final class JsFormatCoordinator {
         }
         var area = buffer.getArea();
         int last = Math.max(0, area.getParagraphs().size() - 1);
-        lspManager.changeDocument(served, buffer.text());
+        LspCoordinator.syncText(lspManager, buffer, served);
         lspManager.organizeImportsAny(served, last, area.getParagraph(last).length(), outcome -> fixThenRest.run());
     }
 
@@ -257,7 +257,7 @@ final class JsFormatCoordinator {
             return;
         }
         String before = buffer.getContent();
-        lspManager.changeDocument(served, buffer.text()); // the formatter sees what the fixes left
+        LspCoordinator.syncText(lspManager, buffer, served); // the formatter sees what the fixes left
         lspManager.formatDocument(served, lsp.formatRequestIndent(buffer), edits -> {
             if (!edits.isEmpty() && !buffer.isDisposed() && buffer.getContent().equals(before)) {
                 buffer.applyLspEdits(edits);

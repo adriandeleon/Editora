@@ -342,6 +342,39 @@ class LspCoordinatorHooksFxTest {
         assertTrue(fx.server().changed.isEmpty(), "an unchanged document is not re-sent");
     }
 
+    /**
+     * A request that syncs the text itself (signature help at a typed {@code (}, Copy Qualified Name, code
+     * actions…) goes through the buffer, which records the version it sent: the typing pause that follows
+     * then sends nothing, so it does not mistake its own text for a net-zero edit and put the pre-edit marks
+     * back on lines the edit moved (perf review 2026-11-23 L5, the #417 symptom).
+     */
+    @Test
+    void aRequestsOwnSyncIsNotTakenForANetZeroEdit() throws Exception {
+        List<List<com.editora.text.LspDiagnostic>> shown = new java.util.concurrent.CopyOnWriteArrayList<>();
+        HookedBuffer buffer = fx.open("C.java", SOURCE, FxTestSupport.callOnFx(() -> new HookedBuffer() {
+            @Override
+            public void setLspDiagnostics(List<com.editora.text.LspDiagnostic> diagnostics) {
+                shown.add(diagnostics);
+                super.setLspDiagnostics(diagnostics);
+            }
+        }));
+        FxTestSupport.runOnFx(() -> fx.coordinator.wireBuffer(buffer));
+        var diagnostic = new com.editora.text.LspDiagnostic(
+                1, 9, 1, 11, com.editora.text.LspDiagnostic.Severity.ERROR, "x", null, null);
+        FxTestSupport.runOnFx(() -> fx.coordinator.onDiagnostics(buffer.getPath(), List.of(diagnostic)));
+        int sentBefore = fx.server().changed.size();
+        shown.clear();
+
+        fx.run(() -> {
+            buffer.getArea().insertText(0, "// moved\n"); // every mark now sits a line lower
+            fx.coordinator.copyQualifiedName(); // syncs the text before asking
+            buffer.sendLspChange(); // the typing pause
+        });
+
+        assertFalse(shown.contains(List.of(diagnostic)), "the pre-edit marks were put back: " + shown);
+        assertEquals(sentBefore + 1, fx.server().changed.size(), "the edit is sent once");
+    }
+
     /** The marks put back include the faded tags ("os is not accessed"), which the Problems list leaves out:
      *  restoring the Problems list un-faded every unused import (Python review 2, C105). */
     @Test
