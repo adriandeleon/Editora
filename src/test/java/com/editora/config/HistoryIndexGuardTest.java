@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -54,12 +55,15 @@ class HistoryIndexGuardTest {
         Files.writeString(dir.resolve(".index.json-123.tmp"), "");
         Files.writeString(dir.resolve("index.json.tmp"), "");
         Files.createDirectories(dir.resolve("blobs"));
-        assertFalse(HistoryIndexGuard.backupPresent(index));
-        for (String name : new String[] {"index.json.v3.bak", "index.json.corrupt.bak", "index.json.corrupt.bak.2"}) {
+        assertTrue(HistoryIndexGuard.backupNames(index).isEmpty());
+        for (String name : new String[] {
+            "index.json.v3.bak", "index.json.corrupt.bak", "index.json.corrupt.bak.2", "index.json.lost.bak"
+        }) {
             Path backup = Files.writeString(dir.resolve(name), "");
-            assertTrue(HistoryIndexGuard.backupPresent(index), name);
+            assertEquals(java.util.Set.of(name), HistoryIndexGuard.backupNames(index), name);
             Files.delete(backup);
         }
-        assertFalse(HistoryIndexGuard.backupPresent(dir.resolve("nowhere").resolve("index.json")));
+        assertTrue(HistoryIndexGuard.backupNames(dir.resolve("nowhere").resolve("index.json"))
+                .isEmpty());
     }
 }

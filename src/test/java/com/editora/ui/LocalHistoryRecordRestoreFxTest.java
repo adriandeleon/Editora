@@ -509,9 +509,9 @@ class LocalHistoryRecordRestoreFxTest {
                 return true;
             });
             // Another process holds the configuration: bodies cannot be collected now.
-            java.lang.reflect.Field intact = win.w().fx.shared.getClass().getDeclaredField("historyIndexIntact");
+            java.lang.reflect.Field intact = win.w().fx.shared.getClass().getDeclaredField("historyLossUnmarked");
             intact.setAccessible(true);
-            intact.setBoolean(win.w().fx.shared, false);
+            intact.setBoolean(win.w().fx.shared, true);
 
             FxTestSupport.runOnFx(() -> win.history().purgeFile(PathKeys.normalizedKey(origin)));
 
@@ -523,7 +523,7 @@ class LocalHistoryRecordRestoreFxTest {
             assertEquals(tr("status.history.purgedPending", 1), win.w().status());
             assertEquals(List.of(), FxTestSupport.callOnFx(() -> revisions(win, origin)));
 
-            intact.setBoolean(win.w().fx.shared, true);
+            intact.setBoolean(win.w().fx.shared, false);
             FxTestSupport.runOnFx(() -> win.history().purgeFile(PathKeys.normalizedKey(copy)));
             assertEquals(
                     tr("dialog.history.purgeFile.confirm", 1, "copy.env"), questions.get(1), "nothing shares it now");

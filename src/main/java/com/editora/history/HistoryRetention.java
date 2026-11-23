@@ -136,6 +136,8 @@ public final class HistoryRetention {
      *       first. One large file saved a few times therefore cannot push every other file's history out.
      *   <li><b>Oldest first.</b> If the project is still over, the globally-oldest revisions go, across all
      *       files.
+     *       Not when the revisions neither step evicts (below) are over the limit by themselves: then this
+     *       step could only empty every file's history down to its newest revision, and does not run.
      * </ol>
      *
      * Never evicted by either step: a file's newest revision (so no file loses its whole history) and a
@@ -168,7 +170,15 @@ public final class HistoryRetention {
             files.add(file);
         }
         capLargeFiles(files, project, maxTotalBytes);
-        evictOldest(files, project, maxTotalBytes);
+        // Step two only while it can reach the limit. When what is never evicted — each file's newest revision,
+        // labels, pre-delete copies — is itself over it, oldest-first would take every other revision of every
+        // file and still not get there; each later save would then evict the revision it replaced. A few large
+        // files saved once wiped the history of the whole project that way, for as long as their newest
+        // revisions were kept. The limit is a soft one; the fair-share step above still holds large files to
+        // their share.
+        if (keptRegardless(out) <= maxTotalBytes) {
+            evictOldest(files, project, maxTotalBytes);
+        }
         return out;
     }
 
@@ -228,6 +238,19 @@ public final class HistoryRetention {
             int index = oldestEvictable(list, cursor);
             return index < 1 ? null : list.get(index).timestamp();
         }
+    }
+
+    /** What the budget can never evict ({@link #oldestEvictable}): each file's newest row and protected rows. */
+    private static long keptRegardless(Map<String, List<HistoryRevision>> bucket) {
+        Usage kept = new Usage();
+        for (List<HistoryRevision> list : bucket.values()) {
+            for (int i = 0; i < list.size(); i++) {
+                if (i == 0 || isProtected(list.get(i))) {
+                    kept.add(list.get(i));
+                }
+            }
+        }
+        return kept.total;
     }
 
     /** Step one of {@link #enforceProjectBudget}: files above an equal share shed their own oldest rows. */
@@ -539,7 +562,7 @@ public final class HistoryRetention {
     }
 
     /** All sha256 hashes still referenced by any revision in any project (the blobs to keep). */
-    public static Set<String> liveHashes(Map<String, Map<String, List<HistoryRevision>>> byProject) {
+    static Set<String> liveHashes(Map<String, Map<String, List<HistoryRevision>>> byProject) {
         Set<String> live = new HashSet<>();
         if (byProject == null) {
             return live;
