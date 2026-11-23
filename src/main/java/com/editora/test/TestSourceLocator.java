@@ -27,6 +27,9 @@ public final class TestSourceLocator {
         };
     }
 
+    /** The JVM source extensions a test class's file may have, Java's first ({@link #pathHint} gives Java's). */
+    public static final java.util.List<String> JVM_SOURCE_EXTENSIONS = java.util.List.of(".java", ".kt", ".groovy");
+
     /**
      * The source file's path below a source root, {@code com/foo/BarTest.java} — what distinguishes this
      * class from a same-named one in another package or module. {@code null} when {@link #fileHint} is.
@@ -40,9 +43,12 @@ public final class TestSourceLocator {
         return dot <= 0 ? file : className.substring(0, dot).replace('.', '/') + "/" + file;
     }
 
-    /** A Java file under a {@code test}/{@code tests} directory of the project (root-relative, '/'-separated). */
+    /**
+     * A Java, Kotlin or Groovy file under a {@code test}/{@code tests} directory of the project (root-relative,
+     * '/'-separated).
+     */
     public static boolean isTestSourcePath(String rel) {
-        if (rel == null || !rel.endsWith(".java")) {
+        if (rel == null || com.editora.test.JavaTestScanner.languageOf(rel) == null) {
             return false;
         }
         String dirs = "/" + rel.substring(0, rel.lastIndexOf('/') + 1);

@@ -9,7 +9,8 @@ import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Finds JUnit test methods + the enclosing top-level test class in Java source text, for the editor's gutter
+ * Finds JUnit test methods + the enclosing top-level test class in Java, Kotlin or Groovy source text (Spock features,
+ * Kotest spec classes too: {@link #scan(String, String)}), for the editor's gutter
  * ▶ Run markers. A lightweight, length-preserving blank-comments-and-literals pass + brace-depth walk — no
  * real parser (the {@code editor/CompactSource} / {@code run/MakefileTargets} heuristic style; the blanker is
  * duplicated here because the pure {@code test} package must not depend on {@code editor}). Recognizes JUnit 5
@@ -54,6 +55,63 @@ public final class JavaTestScanner {
     private static final Pattern METHOD =
             Pattern.compile("^\\s*(?:[\\p{L}_$][\\p{L}\\p{N}_$.<>\\[\\],?\\s]*?\\s+)(" + ID + ")\\s*\\(");
 
+    /** The JVM languages whose test files are scanned: Java, Kotlin and Groovy (their JUnit tests run through the build). */
+    public static boolean supports(@Nullable String language) {
+        return "java".equals(language) || "kotlin".equals(language) || "groovy".equals(language);
+    }
+
+    /** {@link #scan(String)} for a file of {@code language} ({@link #supports}); nothing for any other. */
+    public static List<TestTarget> scan(@Nullable String language, String source) {
+        if ("kotlin".equals(language)) {
+            return scan(source, Dialect.KOTLIN);
+        }
+        if ("groovy".equals(language)) {
+            return scan(source, Dialect.GROOVY);
+        }
+        return "java".equals(language) ? scan(source) : List.of();
+    }
+
+    /** The language of a source file by its name's extension ({@code .kt}, {@code .groovy}), for {@link #scan(String, String)}. */
+    public static @Nullable String languageOf(@Nullable String fileName) {
+        if (fileName == null) {
+            return null;
+        }
+        if (fileName.endsWith(".java")) {
+            return "java";
+        }
+        if (fileName.endsWith(".kt")) {
+            return "kotlin";
+        }
+        return fileName.endsWith(".groovy") ? "groovy" : null;
+    }
+
+    /** How a language writes what the walk looks for. */
+    private enum Dialect {
+        /** {@code void name(}, {@code package a.b;}. */
+        JAVA,
+        /**
+         * {@code fun name(} or {@code fun `a name`(}; {@code package a.b} without a semicolon; {@code object}s; a Kotest
+         * spec class ({@code : StringSpec(…)}) is a test class as a whole (its tests are strings, run with their class).
+         */
+        KOTLIN,
+        /** {@code void name(} or {@code def name(}; a Spock {@code Specification}'s {@code def "a feature"()}. */
+        GROOVY
+    }
+
+    private static final Pattern KOTLIN_PACKAGE = Pattern.compile("^\\s*package\\s+([\\p{L}\\p{N}_$.]+)");
+    private static final Pattern KOTLIN_TYPE_DECL =
+            Pattern.compile("(?<![\\p{L}\\p{N}_$])(?:class|interface|object)\\s+(" + ID + ")");
+    private static final Pattern KOTLIN_FUN =
+            Pattern.compile("(?<![\\p{L}\\p{N}_$])fun\\s+(?:<[^>]*>\\s*)?(`[^`]+`|" + ID + ")\\s*\\(");
+    private static final Pattern KOTEST_SPEC = Pattern.compile(
+            ":\\s*(?:io\\.kotest\\.core\\.spec\\.style\\.)?(?:StringSpec|FunSpec|DescribeSpec|ShouldSpec|BehaviorSpec"
+                    + "|WordSpec|FreeSpec|FeatureSpec|ExpectSpec|AnnotationSpec)\\b");
+    private static final Pattern GROOVY_PACKAGE = Pattern.compile("^\\s*package\\s+([\\p{L}\\p{N}_$.]+)\\s*;?");
+    private static final Pattern GROOVY_TYPE_DECL =
+            Pattern.compile("(?<![\\p{L}\\p{N}_$])(?:class|interface|enum|trait|record)\\s+(" + ID + ")");
+    private static final Pattern SPOCK_SPEC = Pattern.compile("extends\\s+(?:spock\\.lang\\.)?Specification\\b");
+    private static final Pattern SPOCK_FEATURE = Pattern.compile("^\\s*def\\s+([\"'])(.+?)\\1\\s*\\(");
+
     /** A type whose body is being walked: its binary name, where it is declared, and its body's brace depth. */
     private static final class Frame {
         final String binaryName;
@@ -61,6 +119,8 @@ public final class JavaTestScanner {
         final int bodyDepth;
         boolean entered;
         boolean hasTests;
+        /** A Spock specification: its {@code def "…"()} features are its tests. */
+        boolean spock;
 
         Frame(String binaryName, int line, int bodyDepth) {
             this.binaryName = binaryName;
@@ -76,10 +136,20 @@ public final class JavaTestScanner {
      * under and the one a Surefire or Gradle filter needs.
      */
     public static List<TestTarget> scan(String source) {
+        return scan(source, Dialect.JAVA);
+    }
+
+    private static List<TestTarget> scan(String source, Dialect dialect) {
         if (source == null || source.isBlank()) {
             return List.of();
         }
         String[] lines = blank(source).split("\n", -1);
+        String[] raw = source.split("\n", -1); // a Spock feature's name is a string, which the blanked text hides
+        Pattern packagePattern =
+                dialect == Dialect.KOTLIN ? KOTLIN_PACKAGE : dialect == Dialect.GROOVY ? GROOVY_PACKAGE : PACKAGE;
+        Pattern typeDecl =
+                dialect == Dialect.KOTLIN ? KOTLIN_TYPE_DECL : dialect == Dialect.GROOVY ? GROOVY_TYPE_DECL : TYPE_DECL;
+        List<Frame> specs = new ArrayList<>();
 
         String pkg = "";
         boolean pendingAnno = false;
@@ -95,16 +165,21 @@ public final class JavaTestScanner {
             String trimmed = line.strip();
 
             if (pkg.isEmpty()) {
-                Matcher pm = PACKAGE.matcher(line);
+                Matcher pm = packagePattern.matcher(line);
                 if (pm.find()) {
                     pkg = pm.group(1);
                 }
             }
             Frame top = stack.peek();
             if (outer == null && depth == 0) {
-                Matcher tm = TYPE_DECL.matcher(line);
+                Matcher tm = typeDecl.matcher(line);
                 if (tm.find()) {
                     outer = new Frame(fqcn(pkg, tm.group(1)), li, 1);
+                    outer.spock = dialect == Dialect.GROOVY
+                            && SPOCK_SPEC.matcher(line).find();
+                    if (dialect == Dialect.KOTLIN && KOTEST_SPEC.matcher(line).find()) {
+                        specs.add(outer); // its tests are strings in its constructor: it runs as a whole
+                    }
                     stack.push(outer);
                 }
             } else if (top != null && top.entered && depth == top.bodyDepth) {
@@ -116,19 +191,31 @@ public final class JavaTestScanner {
                     pendingDynamic = !"Test".equals(am.group(1)); // parameterized family → dynamic case ids
                 }
                 boolean method = false;
-                if (pendingAnno) {
-                    String afterAnno = LEADING_ANNOTATIONS.matcher(trimmed).replaceFirst("");
-                    Matcher mm = METHOD.matcher(afterAnno);
-                    if (mm.find()) {
-                        methods.add(new TestTarget(li, top.binaryName, mm.group(1), pendingDynamic));
-                        stack.forEach(f -> f.hasTests = true);
-                        pendingAnno = false;
-                        method = true;
+                String name = null;
+                if (top.spock && li < raw.length) {
+                    Matcher fm = SPOCK_FEATURE.matcher(raw[li]);
+                    if (fm.find()) {
+                        name = fm.group(2); // a feature: a test without an annotation
                     }
                 }
-                Matcher tm = method ? null : TYPE_DECL.matcher(line);
+                if (name == null && pendingAnno) {
+                    String afterAnno = LEADING_ANNOTATIONS.matcher(trimmed).replaceFirst("");
+                    Matcher mm = (dialect == Dialect.KOTLIN ? KOTLIN_FUN : METHOD).matcher(afterAnno);
+                    if (mm.find()) {
+                        name = mm.group(1).replace("`", "");
+                    }
+                }
+                if (name != null) {
+                    methods.add(new TestTarget(li, top.binaryName, name, pendingDynamic));
+                    stack.forEach(f -> f.hasTests = true);
+                    pendingAnno = false;
+                    method = true;
+                }
+                Matcher tm = method ? null : typeDecl.matcher(line);
                 if (tm != null && tm.find()) {
                     Frame inner = new Frame(top.binaryName + "$" + tm.group(1), li, depth + 1);
+                    inner.spock = dialect == Dialect.GROOVY
+                            && SPOCK_SPEC.matcher(line).find();
                     nested.add(inner);
                     stack.push(inner);
                     pendingAnno = false; // an annotation on the class is not one on its first method
@@ -150,8 +237,14 @@ public final class JavaTestScanner {
             }
         }
 
-        if (methods.isEmpty() || outer == null) {
+        if (outer == null) {
             return List.of();
+        }
+        if (methods.isEmpty()) {
+            // A Kotest spec: its class is the target (its tests are strings, not methods).
+            return specs.contains(outer)
+                    ? List.of(new TestTarget(outer.line, outer.binaryName, null, false))
+                    : List.of();
         }
         List<TestTarget> out = new ArrayList<>(methods);
         for (Frame f : nested) {
