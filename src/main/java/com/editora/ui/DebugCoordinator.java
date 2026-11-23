@@ -2230,6 +2230,46 @@ final class DebugCoordinator {
         return new DapManager.Listener() {
             @Override
             public void onState(DapManager.State state) {
+                DebugSession session = s();
+                if (state == DapManager.State.SUSPENDED
+                        && (session.suspendHeld || session.uiState != DapManager.State.SUSPENDED)) {
+                    // A new stop: shown once onStopped knows it is one the user sees (showSuspended). Filters, token
+                    // logpoints, exception checks and a dump's pause decide quietly, and the window does not go
+                    // Suspended and back for each of them (perf review 2026-11-23, D4).
+                    session.suspendHeld = true;
+                    return;
+                }
+                if (session.suspendHeld) {
+                    session.suspendHeld = false;
+                    if (state == DapManager.State.RUNNING) {
+                        quietlyResumed(); // the window still shows the run the stop interrupted
+                        return;
+                    }
+                }
+                showState(state);
+            }
+
+            /** The stop held by {@link #onState} is the user's: the window shows it as suspended now. */
+            private void showSuspended() {
+                if (s().suspendHeld) {
+                    s().suspendHeld = false;
+                    showState(DapManager.State.SUSPENDED);
+                }
+            }
+
+            /** A held stop went on without being shown: what a run after a stop resets, and nothing on screen. */
+            private void quietlyResumed() {
+                timeRun(DapManager.State.RUNNING);
+                s().stopException = null;
+                s().stopDeferred = false;
+                s().heldExceptionInfo = null;
+            }
+
+            private void showState(DapManager.State state) {
+                if (state == DapManager.State.SUSPENDED && s().uiState != DapManager.State.SUSPENDED) {
+                    s().suspendsShown++;
+                }
+                s().uiState = state;
                 closeSmartStepPicker(state); // review E108
                 timeRun(state);
                 if (state != DapManager.State.SUSPENDED) {
@@ -2367,6 +2407,7 @@ final class DebugCoordinator {
                 long deferral = ++s().stopDeferral; // a newer stop, or the program going on, makes this one stale
                 if (!framesKnown(stopFrames, () -> {
                     if (deferral == s().stopDeferral && dap().state() == DapManager.State.SUSPENDED) {
+                        showSuspended();
                         s().stopDeferred = false;
                         onStopped(threadId, reason, stopFrames);
                         DapModels.ExceptionInfo held = s().heldExceptionInfo;
@@ -2376,6 +2417,7 @@ final class DebugCoordinator {
                         }
                     }
                 })) {
+                    showSuspended(); // as it was: the window says Suspended while the mappings are worked out
                     s().stopDeferred = true;
                     return; // shown once the edited files' line mappings are known
                 }
@@ -2394,22 +2436,6 @@ final class DebugCoordinator {
                     return; // a step into code the user does not step into: out of it again
                 }
                 oldCodeHintFrom(stopFrames); // B209: the stack after a replace names the old-code frames
-                panel().setStopReason(reason);
-                panel().setStoppedThread(threadId); // Debug History keys this stop's frames by it
-                // The frame that threw: its line is drawn red while it is the one shown (review C13).
-                // A core dump's crash is shown where the program's own code was, below the runtime's frames that
-                // raised the signal (Go's runtime.raise, libc's abort).
-                List<Path> ownCode = dap().isPostMortem() ? ownCodeRoots() : List.of();
-                int crashed = ownCode.isEmpty()
-                        ? firstFrameWithSource(frames, DebugCoordinator.this::showsOnStop)
-                        : ownFrame(frames, DebugCoordinator.this::showsOnStop, ownCode);
-                s().exceptionFrameId = "exception".equals(reason) && !frames.isEmpty()
-                        ? frames.get(crashed).id()
-                        : -1;
-                // Selects the first frame that has source to show → selectFrame highlights + loads vars. A step
-                // that went into library code shows that code (B5): the user asked to go there.
-                int shown =
-                        ownCode.isEmpty() ? frameToShow(reason, frames, DebugCoordinator.this::showsOnStop) : crashed;
                 // A recording breakpoint: the stop is kept in Debug History and the program goes on, so the editor
                 // is not taken to it (recordAndContinue).
                 boolean recording = recordingHit(reason, frames);
@@ -2426,13 +2452,31 @@ final class DebugCoordinator {
                 }
                 s().quietStop = recording || logMessage != null || dumpStop ? s().stopSerial : -1;
                 if (logMessage != null) {
-                    logAndContinue(threadId, logMessage, frames);
+                    logAndContinue(threadId, logMessage, frames); // the window never shows it Suspended
                     return;
                 }
                 if (dumpStop) {
                     stacks.dumpAndContinue();
                     return;
                 }
+                // Shown (a recording breakpoint's too: Debug History keeps it through the Call Stack).
+                showSuspended();
+                panel().setStopReason(reason);
+                panel().setStoppedThread(threadId); // Debug History keys this stop's frames by it
+                // The frame that threw: its line is drawn red while it is the one shown (review C13).
+                // A core dump's crash is shown where the program's own code was, below the runtime's frames that
+                // raised the signal (Go's runtime.raise, libc's abort).
+                List<Path> ownCode = dap().isPostMortem() ? ownCodeRoots() : List.of();
+                int crashed = ownCode.isEmpty()
+                        ? firstFrameWithSource(frames, DebugCoordinator.this::showsOnStop)
+                        : ownFrame(frames, DebugCoordinator.this::showsOnStop, ownCode);
+                s().exceptionFrameId = "exception".equals(reason) && !frames.isEmpty()
+                        ? frames.get(crashed).id()
+                        : -1;
+                // Selects the first frame that has source to show → selectFrame highlights + loads vars. A step
+                // that went into library code shows that code (B5): the user asked to go there.
+                int shown =
+                        ownCode.isEmpty() ? frameToShow(reason, frames, DebugCoordinator.this::showsOnStop) : crashed;
                 if (dumpWanted) {
                     stacks.takeThreadDump(s(), false, null);
                 }
@@ -3184,15 +3228,11 @@ final class DebugCoordinator {
         DapModels.StackFrameInfo top = frames.getFirst();
         List<String> expressions = LogpointTokens.expressions(message);
         Map<String, String> values = new LinkedHashMap<>();
-        Runnable write = () -> dap.threads(threads -> {
+        Runnable write = () -> dap.threadName(threadId, name -> {
             if (serial != session.stopSerial || dap.state() != DapManager.State.SUSPENDED) {
                 return;
             }
-            String threadName = threads.stream()
-                    .filter(t -> t.id() == threadId)
-                    .map(DapModels.ThreadInfo::name)
-                    .findFirst()
-                    .orElse(String.valueOf(threadId));
+            String threadName = name.isEmpty() ? String.valueOf(threadId) : name;
             LogpointTokens.Stop stop = new LogpointTokens.Stop(
                     DebugPanelText.frameName(top.name()),
                     frames.size() > 1 ? DebugPanelText.frameName(frames.get(1).name()) : "",
@@ -3361,12 +3401,7 @@ final class DebugCoordinator {
             instance.run();
             return true;
         }
-        session.dap.threads(threads -> {
-            String name = threads.stream()
-                    .filter(t -> t.id() == threadId)
-                    .map(DapModels.ThreadInfo::name)
-                    .findFirst()
-                    .orElse("");
+        session.dap.threadName(threadId, name -> {
             if (StopFilterCheck.matches(f.thread(), List.of(DebugPanelText.threadName(name), name))) {
                 instance.run();
             } else {

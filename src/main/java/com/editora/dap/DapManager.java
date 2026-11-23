@@ -5,6 +5,7 @@ import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -4509,9 +4510,34 @@ public final class DapManager {
         c.threads()
                 .whenComplete((list, e) -> fx(() -> {
                     if (client == c) {
+                        if (list != null) {
+                            threadNames.clear();
+                            list.forEach(t -> threadNames.put(t.id(), t.name()));
+                        }
                         cb.accept(list == null ? List.of() : list);
                     }
                 }));
+    }
+
+    /** The threads' names from the last {@code threads} reply, until a thread starts or ends (FX thread). */
+    private final Map<Integer, String> threadNames = new HashMap<>();
+
+    /**
+     * The name of thread {@code threadId} (callback on the FX thread; "" when the adapter does not list it): from the
+     * last listing when it named the thread and no thread started or ended since, else asked for. A token logpoint in a
+     * loop asked for every thread at each hit (perf review 2026-11-23, D4).
+     */
+    public void threadName(int threadId, Consumer<String> cb) {
+        String known = client == null ? null : threadNames.get(threadId);
+        if (known != null) {
+            cb.accept(known);
+            return;
+        }
+        threads(list -> cb.accept(list.stream()
+                .filter(t -> t.id() == threadId)
+                .map(DapModels.ThreadInfo::name)
+                .findFirst()
+                .orElse("")));
     }
 
     /** Whether the live session's adapter lists the sources its debuggee loaded (js-debug does). */
@@ -6625,6 +6651,7 @@ public final class DapManager {
             stoppedThreads.clear();
             allSuspended = false;
             resumedSinceSuspendAll.clear();
+            threadNames.clear(); // the next session's thread ids are its own
         }
         this.state = s;
         listener.onState(s);
@@ -6769,6 +6796,7 @@ public final class DapManager {
             @Override
             public void onThreadsChanged() {
                 fx(() -> {
+                    threadNames.clear(); // a thread started or ended: names are asked for again
                     if (isCurrent(epoch)) {
                         listener.onThreadsChanged();
                     }

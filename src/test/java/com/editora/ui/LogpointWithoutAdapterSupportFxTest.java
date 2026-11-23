@@ -138,8 +138,14 @@ class LogpointWithoutAdapterSupportFxTest {
         adapter.logPoints = false;
         FakeDebugAdapter.Session session = start();
         DebugPanel panel = call(debug::panel);
+        int shown = call(() -> debug.s().suspendsShown);
         session.stop(1, "breakpoint");
         await("logged and continued", () -> continues(session) == 1);
+        assertEquals(
+                shown,
+                call(() -> debug.s().suspendsShown),
+                "the window never showed the logpoint's stop as Suspended (perf review D4)");
+        assertEquals(DapManager.State.RUNNING, call(() -> debug.s().uiState));
         await("the message in the console", () -> console().contains("x is val(x), then "));
         assertTrue(
                 console().contains("Cannot evaluate: bad x"), "a failed value logs the debugger's error: " + console());
@@ -157,6 +163,7 @@ class LogpointWithoutAdapterSupportFxTest {
                 () -> call(manager::state) == DapManager.State.SUSPENDED
                         && call(() -> !debug.panel().callStack().isEmpty()));
         assertEquals(1, continues(session));
+        assertEquals(shown + 1, call(() -> debug.s().suspendsShown), "the step's stop is shown");
         stopSession();
 
         // An adapter that logs logpoints itself is left to: a stop there is the adapter's own, and stays.
