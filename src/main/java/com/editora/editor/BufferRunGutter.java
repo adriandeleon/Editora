@@ -329,7 +329,7 @@ final class BufferRunGutter {
         RunScan.Inputs in = new RunScan.Inputs(
                 runFeatureEnabled && small,
                 b.httpFeatureEnabled && small && b.isHttpFile(),
-                testGutterEnabled && small && "java".equals(b.language),
+                testGutterEnabled && small && com.editora.test.JavaTestScanner.supports(b.language),
                 mainGutterEnabled && small && "java".equals(b.language),
                 b.language,
                 b.path != null ? b.path.getFileName().toString() : b.displayName,

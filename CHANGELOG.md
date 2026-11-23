@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Kotlin and Groovy tests at the caret.** Kotlin and Groovy test files in a Gradle or Maven project get the blue ▶ on
+  each test, Run Test at Caret and Debug Test at Caret, as Java's have: JUnit tests (Kotlin's `` `named like this` ``
+  ones too), Spock features (`def "adds two numbers"()`) and Kotest specs (run as a whole). Debugging one stops at
+  your breakpoints in the Kotlin or Groovy source, and Test Results opens the test's file.
+
 - **Lua debugging.** Press F5 on a Lua script to debug it: breakpoints (with conditions), locals, upvalues and
   globals, watches and hovers, stepping, changing a variable's value, and a stop where an error is raised. The script's
   output appears in the Debug console. It runs on Local Lua Debugger, which Settings ▸ Debugging ▸ Lua installs (it
@@ -141,6 +146,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OpenPGP signature beside it (`<file>.asc`), by the key attached to the release as `editora-signing-key.asc`.
 
 ### Fixed
+
+- **Debug Test on Maven and Gradle attaches again.** Debugging a test from the editor or Test Results started the
+  test with its JVM waiting for the debugger, but the debugger never attached, since the build started a moment later
+  than Editora checked. It attaches now.
 
 - **A closed window no longer lingers in memory after a late GitHub check.** With the GitHub CLI installed, a window
   closed while Editora was still asking `gh` whether it is signed in got the answer afterwards: the closed window

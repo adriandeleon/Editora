@@ -62,13 +62,23 @@ final class TestRunOpsHost implements TestRunCoordinator.Ops {
     public boolean debugAvailable() {
         // Already folds in the master gate; a remote file's tests are debugged on its host.
         EditorBuffer active = mc.activeBuffer();
-        return mc.debugCoordinator.debugEffectiveFor("java", active == null ? null : active.getPath());
+        Path file = active == null ? null : active.getPath();
+        return mc.debugCoordinator.debugEffectiveFor(testDebugLanguage(file), file);
     }
 
     @Override
     public String debugUnavailableMessage() {
-        return mc.debugCoordinator.unavailableMessage(
-                "java", mc.activeBuffer() == null ? null : mc.activeBuffer().getPath());
+        Path file = mc.activeBuffer() == null ? null : mc.activeBuffer().getPath();
+        return mc.debugCoordinator.unavailableMessage(testDebugLanguage(file), file);
+    }
+
+    /**
+     * The debugger a test of {@code file} attaches with: Editora's JVM adapter for a Kotlin or Groovy test (as
+     * {@link DebugCoordinator#attachToPort} routes it), java-debug through jdtls for any other.
+     */
+    static String testDebugLanguage(@Nullable Path file) {
+        String jvm = file == null ? null : DebugCoordinator.jvmAdapterLanguage(file);
+        return jvm != null ? jvm : "java";
     }
 
     @Override
