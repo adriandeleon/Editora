@@ -31,7 +31,20 @@ So: a toolbar with no snapshot badge means you are running a real release build.
 1. Set `<version>` in `pom.xml` to the release version (drop the `-SNAPSHOT`).
 2. Update `CHANGELOG.md` (rename `## [Unreleased]` to `## [X.Y.Z] - <date>`). That section **is the
    release's notes** ([Release notes](#release-notes)), and a tag without it stops in the preflight.
-3. **Make a screen-reader pass** on a build of the commit you will tag, on Windows with **Narrator**
+3. **Run a performance review against the previous release**, on the commit you will tag, on one machine
+   with both builds measured interleaved (A, B, A, B…) so machine load hits both sides alike:
+   - **Everything but startup**: `scripts/perf-ab.sh v<previous version> 3`. It builds the tag in a worktree
+     beside the main checkout and measures, headless, heap of an empty window and per open tab; FX-thread time,
+     CPU and *rendered frames* per keystroke, newline and highlight edits (frames, not just FX busy time: a
+     regression can hide in the render pass); scrolling, Find, idle CPU, save, and opening a large file. It
+     prints a before/after table of medians and marks anything more than 10 % worse.
+   - **Startup**: `scripts/measure-startup.sh -n 7` on each build (median time to first paint; needs a display).
+
+   Any metric more than **10 % worse** than the previous release is a regression: find its cause
+   (a JFR recording or `EDITORA_PERF_SAMPLE=1` usually names it) and fix it before the tag, or record
+   in the release PR why it is accepted. Put the before/after table in the release PR. See
+   [Performance](performance.md#release-ab-review) for the harness and the rules the review checks against.
+4. **Make a screen-reader pass** on a build of the commit you will tag, on Windows with **Narrator**
    (Ctrl+Win+Enter) and on macOS with **VoiceOver** (Cmd+F5): open the Command Palette and hear the
    field and the selected row read; run a command from it; open Settings and move through a page
    with Tab and Shift+Tab, hearing each control's name and role (a check box says "check box" and
@@ -40,7 +53,7 @@ So: a toolbar with no snapshot badge means you are running a real release build.
    smoke test starts the app with nobody listening. Record the pass in the `checked` list of
    `src/main/resources/com/editora/pauta.json`: an ACC-07 entry with the Pauta `edition`, the `date`
    and this `version`.
-4. Push a `vX.Y.Z` tag. A `-rcN` suffix (`vX.Y.Z-rcN`) marks a pre-release.
+5. Push a `vX.Y.Z` tag. A `-rcN` suffix (`vX.Y.Z-rcN`) marks a pre-release.
 
 ```
 git tag vX.Y.Z
