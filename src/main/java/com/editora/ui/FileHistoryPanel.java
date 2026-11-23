@@ -431,6 +431,14 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
      * hides it is cleared. Asked for before the revision's file is the one listed (Recent Changes opens the
      * file first), it is selected as soon as a list containing it arrives.
      */
+    /**
+     * In the folder view, selects {@code revision}'s row and brings it into view; asked for before the folder
+     * tree lists it, it is selected once it does.
+     */
+    public void selectInFolder(HistoryRevision revision) {
+        selectRevision(revision);
+    }
+
     public void selectRevision(HistoryRevision revision) {
         if (revision == null) {
             return;

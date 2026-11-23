@@ -276,6 +276,14 @@ public class SharedConfig {
         return mayCollectHistoryBlobs();
     }
 
+    /**
+     * What, if anything, keeps the bodies {@code sha256s} on disk after a purge removed their rows: the first
+     * reason that applies, or {@link HistoryPurgeHold#NONE} when the next collection deletes them.
+     */
+    public HistoryPurgeHold historyPurgeHold(java.util.Collection<String> sha256s) {
+        return mayCollectHistoryBlobs() ? HistoryPurgeHold.NONE : HistoryPurgeHold.OTHER_PROCESS;
+    }
+
     /** The app-wide local-history worker. Sharing it coordinates blob publication and GC across windows. */
     public HistoryService historyService() {
         return historyService;

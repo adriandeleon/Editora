@@ -50,6 +50,21 @@ public record HistoryRevision(
     /** Captured just before the file was deleted (so it can be recovered from folder history). */
     public static final String REASON_DELETE = "DELETE";
 
+    /** Captured before an AI agent overwrote the file. */
+    public static final String REASON_AGENT = "AGENT";
+
+    /** Captured before an HTTP response was written over the file ({@code >>!}). */
+    public static final String REASON_HTTP = "HTTP";
+
+    /** Captured before a Local History restore wrote an older revision over the file. */
+    public static final String REASON_RESTORE = "RESTORE";
+
+    /** The unsaved text, captured before Revert File or Reopen with Encoding replaced it. */
+    public static final String REASON_REVERT = "REVERT";
+
+    /** Captured before a Markdown link update rewrote the file. */
+    public static final String REASON_LINK_UPDATE = "LINK_UPDATE";
+
     public HistoryRevision {
         path = path == null ? "" : path;
         sha256 = sha256 == null ? "" : sha256;
