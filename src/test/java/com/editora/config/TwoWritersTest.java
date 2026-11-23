@@ -40,11 +40,15 @@ class TwoWritersTest {
     @BeforeEach
     void startBoth() {
         sharedA = new SharedConfig(dir, false);
+        // Results the writer works out are handed back where they are made: with Platform.runLater (once another
+        // test in this JVM started JavaFX) they would land after the asserts that read them.
+        sharedA.setFxThreadForTest(Runnable::run);
         assertTrue(sharedA.claimInstance());
         a = new ConfigManager(sharedA);
         a.load();
         assertTrue(a.save());
         sharedB = new SharedConfig(dir, false);
+        sharedB.setFxThreadForTest(Runnable::run);
         assertFalse(sharedB.claimInstance(), "the second process on the directory");
         b = new ConfigManager(sharedB);
         b.load();

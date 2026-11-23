@@ -208,4 +208,27 @@ class DartDebugWindowFxTest {
         assertEquals(Map.of("MODE", "test"), launch.get("env"));
         assertEquals(List.of("a"), launch.get("args"));
     }
+
+    @Test
+    void debugTestAtCaretRunsTheTestThereOnTheTestMode() throws Exception {
+        Path tests = Files.createDirectories(cli.resolve("test"));
+        Path file = Files.writeString(
+                tests.resolve("calc_test.dart"),
+                "import 'package:test/test.dart';\n\nvoid main() {\n  group('calc', () {\n    test('adds', () {\n"
+                        + "      expect(1 + 2, 3);\n    });\n  });\n}\n");
+        EditorBuffer b = open(file);
+        FxTestSupport.runOnFx(() -> b.getFocusedArea().moveTo(5, 0));
+        run("test.debugAtCaret");
+        FakeDebugAdapter.Session session = adapter.awaitSession();
+        session.awaitRequest("launch");
+        Map<String, Object> launch = session.launchArgs;
+        assertEquals(file.toString(), launch.get("program"));
+        assertEquals(cli.toString(), launch.get("cwd"));
+        assertEquals(List.of("--name", "^calc adds$"), launch.get("toolArgs"));
+        assertEquals("dart", call(manager::sessionLanguage));
+
+        // Not a test file: Debug Test at Caret leaves it to the others (here, nothing to debug at the caret).
+        EditorBuffer program = open(cli.resolve("bin/main.dart"));
+        assertFalse(call(() -> debug.debugDartTestAtCaret(program)));
+    }
 }

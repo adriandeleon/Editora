@@ -361,14 +361,29 @@ class LspSharedServerFxTest {
         a.openDocument(f, project, "java", "class A {}");
         b.openDocument(f, project, "java", "class A {}");
 
+        // The fake server has no process to exit, so nothing held the clean: it could delete the empty workspace
+        // and end its wait before this test looked. Its Eclipse lock held, as a jdtls still exiting holds it, the
+        // clean waits until the lock is let go.
+        Path workspace;
+        try (var dirs = Files.list(base)) {
+            workspace = dirs.filter(Files::isDirectory).findFirst().orElseThrow();
+        }
+        Path lockFile = Files.createDirectories(workspace.resolve(".metadata")).resolve(".lock");
         var cleaned = new CompletableFuture<Boolean>();
-        var waited = new CompletableFuture<Boolean>();
-        Platform.runLater(() -> {
-            a.cleanJavaWorkspace(f, cleaned::complete);
-            waited.complete(LspManager.pendingExitForTest("java", project) != null);
-        });
-        assertTrue(waited.get(10, TimeUnit.SECONDS), "every start on the project waits for the clean (re-review CN1)");
-        assertTrue(cleaned.get(10, TimeUnit.SECONDS), "deleted");
+        try (var channel = java.nio.channels.FileChannel.open(
+                        lockFile, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.WRITE);
+                var lock = channel.lock()) {
+            var waited = new CompletableFuture<Boolean>();
+            Platform.runLater(() -> {
+                a.cleanJavaWorkspace(f, cleaned::complete);
+                waited.complete(LspManager.pendingExitForTest("java", project) != null);
+            });
+            assertTrue(
+                    waited.get(10, TimeUnit.SECONDS), "every start on the project waits for the clean (re-review CN1)");
+            assertFalse(cleaned.isDone(), "not deleted while the server holds it");
+        }
+        assertTrue(cleaned.get(10, TimeUnit.SECONDS), "deleted once the lock is let go");
+        assertFalse(Files.exists(workspace), "the workspace is gone");
         awaitFx(() -> LspManager.pendingExitForTest("java", project) == null, "the wait to end with the clean");
     }
 

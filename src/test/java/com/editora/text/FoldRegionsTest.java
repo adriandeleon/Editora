@@ -114,6 +114,28 @@ class FoldRegionsTest {
     }
 
     @Test
+    void aLongTagDoesNotOverflowTheStack() {
+        // The tag pattern recursed once per character of a tag: some two thousand unquoted characters before the `>`
+        // threw StackOverflowError, so the buffer never folded.
+        String unquoted = "<root>\n<a " + "x".repeat(200_000) + ">\n</a>\n</root>\n";
+        assertTrue(hasRegion(FoldRegions.detect(unquoted, "xml"), 0, 3));
+        assertTrue(hasRegion(FoldRegions.detect(unquoted, "html"), 1, 2));
+        String attributes = "<root>\n<a " + "b=\"c\" d='e' f=/g ".repeat(50_000) + "/>\n</root>\n";
+        List<Region> regions = FoldRegions.detect(attributes, "xml");
+        assertTrue(hasRegion(regions, 0, 2), "the many-attribute tag is self-closing: only the root folds");
+        assertEquals(1, regions.size());
+    }
+
+    @Test
+    void aTagEndsAtItsFirstUnquotedCloseAndASlashBeforeItSelfCloses() {
+        String xml = "<root>\n<a href=/x/y q=\"/>\" r='>'>\n</a>\n<b//>\n<c/>\n</root>\n";
+        List<Region> regions = FoldRegions.detect(xml, "xml");
+        assertTrue(hasRegion(regions, 1, 2), "the slashes and quoted > stay inside the tag");
+        assertTrue(hasRegion(regions, 0, 5), "<b//> and <c/> close themselves");
+        assertEquals(2, regions.size());
+    }
+
+    @Test
     void markdownHeadingsFoldTheirSections() {
         String md = "# Title\n\nintro\n\n## Section\n\nbody\n";
         List<Region> regions = FoldRegions.detect(md, "markdown");
