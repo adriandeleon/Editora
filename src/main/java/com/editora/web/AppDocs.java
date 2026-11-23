@@ -76,7 +76,7 @@ public final class AppDocs {
     }
 
     /** The version the bundled guide was built for, or null when the build has none. */
-    static @Nullable String bundledVersion() {
+    public static @Nullable String bundledVersion() {
         if (!manifestRead) {
             synchronized (LOCK) {
                 if (!manifestRead) {
@@ -116,6 +116,11 @@ public final class AppDocs {
         }
         int p = ensureStarted();
         return p <= 0 ? url : toLocal(url, p);
+    }
+
+    /** Whether {@code url} is a page of this version's docs on the website, the links {@link #localize} serves. */
+    public static boolean isThisVersionsDocs(@Nullable String url) {
+        return isThisVersionsDocs(url, AppInfo.docsUrl());
     }
 
     /**

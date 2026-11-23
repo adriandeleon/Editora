@@ -147,11 +147,19 @@ Release builds carry the user guide as HTML, so **Help ▸ Documentation** works
 the version that is running. The source is [`user-docs/`](../user-docs/README.md); the HTML is made by the
 website's own Astro build, so it is the website's pages exactly, styles, search and all.
 
-- **Rendering.** In `editora-website`: `npm ci`, then
-  `node scripts/build-app-docs.mjs --editora <Editora checkout> --out <Editora checkout>/.docs-site`. It runs the
-  generators against that checkout (the guide, the command pages, the Pauta page), builds only this version's
-  docs with no analytics (`EDITORA_APP_DOCS=1`), copies the pages, the styles and the pictures they use, and
-  indexes them with Pagefind. About 35 s and 60 MB, most of it the 1,600 command pages and the screenshots.
+- **Rendering.** A local build does it itself. Its `render-app-docs` step (`scripts/RenderAppDocs.java`,
+  `generate-resources`) runs the website's `scripts/build-app-docs.mjs` into `.docs-site/` when the copy is stale:
+  the contents of `user-docs/` or `pauta.json`, the version in `pom.xml` or the website checkout's commit changed
+  (a fingerprint in `.docs-site.stamp`). About 20–35 s when it renders, a second when it doesn't. It needs an
+  `editora-website` checkout (`-Deditora.website.dir`, else `$EDITORA_WEBSITE`, else the first `editora-website`
+  folder beside this checkout or beside one of its parents) with `npm ci` done, and Node on the PATH; without
+  them it prints one line and the build has whatever copy it had. It never fails the build and is skipped on CI.
+  Command titles come from the sources but are not in the fingerprint, so a string change alone does not
+  re-render: `-Ddocs.render=force` does; `-Ddocs.render=skip` turns the step off. By hand, in `editora-website`:
+  `node scripts/build-app-docs.mjs --editora <Editora checkout> --out <Editora checkout>/.docs-site`. The script
+  runs the generators against that checkout (the guide, the command pages, the Pauta page), builds only this
+  version's docs with no analytics (`EDITORA_APP_DOCS=1`), copies the pages, the styles and the pictures they
+  use, and indexes them with Pagefind. About 60 MB, most of it the 1,600 command pages and the screenshots.
 - **Packaging.** `pom.xml` copies `${docs.site.dir}` (default `.docs-site/`, git-ignored, outside `target/` because
   `-Pdist` runs `clean`) into the jar at `com/editora/docs-site/`. No folder, no copy: a local build without it
   behaves as before and every docs link goes to the website. The release workflow's `docs-site` job renders it
@@ -165,6 +173,9 @@ website's own Astro build, so it is the website's pages exactly, styles, search 
   its index either. A path the copy lacks (News, Features, an older version) is redirected to the website.
   **Help ▸ Online Documentation** opens the website's copy directly.
 - The copy is used only when its `app-docs.json` names this build's release version.
+- **Development builds say so.** When a `-SNAPSHOT` build sends a docs link to the website because it has no copy,
+  or a copy for another version, the status bar says why and points here (`status.docs.notBundled`,
+  `status.docs.otherVersion`). `clean` keeps `.docs-site/`, which lives outside `target/`.
 
 ## Licences in the artifacts
 

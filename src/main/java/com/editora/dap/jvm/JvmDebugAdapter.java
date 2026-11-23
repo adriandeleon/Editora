@@ -42,6 +42,7 @@ import com.sun.jdi.event.ClassPrepareEvent;
 import com.sun.jdi.event.Event;
 import com.sun.jdi.event.EventSet;
 import com.sun.jdi.event.ExceptionEvent;
+import com.sun.jdi.event.MethodExitEvent;
 import com.sun.jdi.event.StepEvent;
 import com.sun.jdi.event.VMDeathEvent;
 import com.sun.jdi.event.VMDisconnectEvent;
@@ -51,6 +52,7 @@ import com.sun.jdi.request.ClassPrepareRequest;
 import com.sun.jdi.request.EventRequest;
 import com.sun.jdi.request.EventRequestManager;
 import com.sun.jdi.request.ExceptionRequest;
+import com.sun.jdi.request.MethodExitRequest;
 import com.sun.jdi.request.StepRequest;
 import org.eclipse.lsp4j.debug.Breakpoint;
 import org.eclipse.lsp4j.debug.BreakpointEventArguments;
@@ -212,6 +214,22 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
     private record FrameHandle(ThreadReference thread, int index) {}
 
     private record LocalsHandle(FrameHandle frame) {}
+
+    /**
+     * The method a Step Over or Step Out started in, watched for its own exit on that thread: {@code depth} is the
+     * thread's frame count there (a recursive call of the same method exits deeper, and is not it).
+     */
+    private record ReturnWatch(
+            ThreadReference thread, com.sun.jdi.Method method, int depth, MethodExitRequest request) {}
+
+    /** The watch of the step under way, or null. */
+    private volatile @Nullable ReturnWatch returnWatch;
+
+    /** What the stepped-from method returned, shown first in its caller's Locals at the step's stop, or null. */
+    private record ReturnValue(
+            ThreadReference thread, String method, @Nullable Value value) {}
+
+    private volatile @Nullable ReturnValue lastReturn;
 
     private record ObjectHandle(ObjectReference object) {}
 
@@ -614,23 +632,72 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
             return true; // resumed once bound: onJdi waits
         }
         if (event instanceof BreakpointEvent hit) {
+            endStepWatch(); // a step stopped short: what its method returns later is not this stop's
             stopped(hit.thread(), StoppedEventArgumentsReason.BREAKPOINT, null);
             return false;
         }
+        if (event instanceof MethodExitEvent exit) {
+            noteReturn(exit);
+            return true;
+        }
         if (event instanceof StepEvent step) {
-            onJdi(() -> vm().eventRequestManager().deleteEventRequest(step.request()));
+            onJdi(() -> {
+                vm().eventRequestManager().deleteEventRequest(step.request());
+                clearReturnWatch();
+            });
             stopped(step.thread(), StoppedEventArgumentsReason.STEP, null);
             return false;
         }
         if (event instanceof ExceptionEvent thrown) {
             String text = exceptionText(thrown.exception());
             if (shouldStopOn(thrown)) {
+                endStepWatch();
                 stopped(thrown.thread(), StoppedEventArgumentsReason.EXCEPTION, text);
                 return false;
             }
             return true;
         }
         return true;
+    }
+
+    /** Keeps the return value of the watched method when {@code exit} is its own exit (not a recursive call's). */
+    private void noteReturn(MethodExitEvent exit) {
+        ReturnWatch watch = returnWatch;
+        if (watch == null || exit.request() != watch.request() || !exit.method().equals(watch.method())) {
+            return;
+        }
+        try {
+            if (exit.thread().frameCount() == watch.depth()) {
+                boolean none = "void".equals(exit.method().returnTypeName())
+                        || exit.method().isConstructor();
+                lastReturn = none
+                        ? null
+                        : new ReturnValue(exit.thread(), exit.method().name(), exit.returnValue());
+            }
+        } catch (IncompatibleThreadStateException | RuntimeException e) {
+            LOG.log(Level.FINEST, "return value unreadable", e);
+        }
+    }
+
+    /** At a stop that is not the step's own: no return value, and no watch left to find one later. Event thread. */
+    private void endStepWatch() {
+        lastReturn = null;
+        if (returnWatch != null) {
+            onJdi(this::clearReturnWatch);
+        }
+    }
+
+    /** Drops the step's return watch (its request too). JDI thread. */
+    private void clearReturnWatch() {
+        ReturnWatch watch = returnWatch;
+        returnWatch = null;
+        if (watch != null) {
+            try {
+                vm().eventRequestManager().deleteEventRequest(watch.request());
+            } catch (RuntimeException e) {
+                LOG.log(Level.FINEST, "return watch already gone", e);
+            }
+        }
     }
 
     /** Runs {@code work} on the JDI thread and waits for it (handles touch state the requests also touch). */
@@ -1047,6 +1114,11 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                 erm.deleteEventRequest(old);
             }
         }
+        clearReturnWatch();
+        lastReturn = null;
+        if (depth != StepRequest.STEP_INTO) {
+            watchReturn(erm, thread); // a step that leaves the method shows what it returned
+        }
         StepRequest step = erm.createStepRequest(thread, StepRequest.STEP_LINE, depth);
         for (String pattern : stepFilters) {
             step.addClassExclusionFilter(pattern);
@@ -1059,7 +1131,32 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
 
     private void resume() {
         handles.clear();
+        if (returnWatch == null) {
+            lastReturn = null; // a step keeps its watch's value until it stops; any other run forgets it
+        }
         vm().resume();
+    }
+
+    /**
+     * Watches {@code thread}'s top method for its own exit, as IntelliJ shows a returned value after a step (only
+     * the method being stepped from: watching every call a line makes would slow each step down). Its class is the
+     * filter, so other classes' returns cost nothing. JDI thread, the thread suspended.
+     */
+    private void watchReturn(EventRequestManager erm, ThreadReference thread) {
+        if (!vm().canGetMethodReturnValues()) {
+            return;
+        }
+        try {
+            com.sun.jdi.Method method = thread.frame(0).location().method();
+            MethodExitRequest exit = erm.createMethodExitRequest();
+            exit.addThreadFilter(thread);
+            exit.addClassFilter(method.declaringType());
+            exit.setSuspendPolicy(EventRequest.SUSPEND_EVENT_THREAD); // the frame count is read at the event
+            exit.enable();
+            returnWatch = new ReturnWatch(thread, method, thread.frameCount(), exit);
+        } catch (IncompatibleThreadStateException | RuntimeException e) {
+            LOG.log(Level.FINEST, "no return watch", e);
+        }
     }
 
     // --- inspection --------------------------------------------------------------------------------
@@ -1195,6 +1292,12 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
             if (h instanceof LocalsHandle locals) {
                 com.sun.jdi.StackFrame frame =
                         locals.frame().thread().frame(locals.frame().index());
+                ReturnValue returned = lastReturn;
+                if (returned != null
+                        && locals.frame().index() == 0
+                        && returned.thread().equals(locals.frame().thread())) {
+                    out.add(variable("(return) " + returned.method() + "()", returned.value())); // as debugpy names it
+                }
                 ObjectReference self = frame.thisObject();
                 if (self != null) {
                     out.add(variable("this", self));

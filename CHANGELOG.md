@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   condition and a hit count (Edit Breakpoint… on its row), as a line breakpoint can, where the debugger takes them
   (CodeLLDB, GDB, Delve). The Breakpoints list shows the session's instruction breakpoints too: Enter opens the
   Disassembly view at one, Alt+D removes it.
+- **Return values after a step.** When a step leaves a function, the Variables view shows what it returned, first
+  in the caller's locals as `(return) name`. It works in Python, and in Kotlin, Groovy and Clojure on Editora's own
+  JVM debugger, for the function you step out of (JavaScript's debugger shows its own "Return value").
 - **Jest and Vitest.** In a package that tests with Jest or Vitest, Debug Test at Caret now debugs the test (or
   `describe`) at the caret under that runner, alone, with breakpoints in your test and the code it calls, TypeScript
   and `.tsx` files included. F5 on a test file debugs all of its tests, and Run File on it runs them with the runner
