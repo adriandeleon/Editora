@@ -1491,7 +1491,9 @@ It mirrors more of IntelliJ's Local History:
   deleted file it opens the folder view with that revision selected.
 - A **folder view**: right-click a folder in the Project tree and choose *Show
   Local History* to list every file under it that has history, with **deleted
-  files struck through and badged**, and a filter over the file names.
+  files struck through and badged**, and a filter that matches a file's name or
+  a revision's label, reason or time. F2 (or the row's menu) sets a revision's
+  label, and Delete on a file row deletes that file's history after asking.
   Selecting a revision shows its diff, and Enter or **Restore** puts it back,
   recreating a deleted file; a file that still exists asks before it is
   overwritten, and a file open in any window is restored into its tab there.
