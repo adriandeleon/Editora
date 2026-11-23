@@ -76,6 +76,11 @@ final class BufferTodos {
     /** Pushes a scan result to the overlay, the stripe and the minimap; the first non-empty one attaches the
      *  overlay and the stripe (an empty result for a buffer that never had them leaves them unbuilt). */
     private void applyTodoMarks(java.util.List<TodoMark> marks) {
+        if (marks.equals(todoMarks)) {
+            // The same marks (a mark is a value: offsets, line and line text): an edit away from every TODO, or
+            // one that moved none of them. Nothing to lay out, repaint or refresh (perf review 2026-11-23 E8).
+            return;
+        }
         if (!marks.isEmpty() || b.todoOverlay != null) {
             b.todoOverlay().setMarks(marks);
         }
@@ -99,8 +104,9 @@ final class BufferTodos {
         return todoMarks;
     }
 
-    /** Called on the FX thread after every TODO re-scan of this buffer is applied (on load, after debounced
-     *  edits, and when the patterns or the on/off setting change), whether or not the marks changed. */
+    /** Called on the FX thread when a TODO re-scan of this buffer (on load, after debounced edits, and when the
+     *  patterns or the on/off setting change) found marks other than those shown; an unchanged result is not
+     *  pushed anywhere (perf review 2026-11-23 E8). */
     void setOnTodoMarksChanged(Runnable callback) {
         this.onTodoMarksChanged = callback;
     }
