@@ -213,6 +213,10 @@ final class LspDiagnostics {
             // cost the FX thread a queued task, a search of the tabs and a path resolution to learn that.
             return;
         }
+        // The FX side keys the file by its canonical path: resolved here, off the FX thread, so that ask is answered
+        // from memory. Asked first on the FX thread, each file a build publishes started a resolving thread of its
+        // own and a hop back (perf review 2026-11-23 L1).
+        com.editora.config.PathKeys.canonical(file);
         // Only an open document is tracked: successive publishes for any other file are applied in the
         // order they were queued, and one entry per file a server ever mentioned was never released.
         long generation = sourceUri == null ? 0 : nextDiagnosticGeneration(sourceUri);
