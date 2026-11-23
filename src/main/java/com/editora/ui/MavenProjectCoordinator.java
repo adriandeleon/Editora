@@ -155,6 +155,15 @@ final class MavenProjectCoordinator {
         /** Re-lists the project tree after files land on disk. */
         void refreshProjectTree();
 
+        /**
+         * Records {@code text}, a closed file's content as read from disk, in Local History before it is
+         * rewritten, and tells {@code completion} whether that copy is durable (also true when Local History is
+         * off and nothing needs keeping). Update Versions writes a closed {@code pom.xml} only after a true.
+         */
+        default void recordBeforeReplace(Path file, String text, java.util.function.Consumer<Boolean> completion) {
+            completion.accept(true);
+        }
+
         /** Opens the Maven actions popup for the project whose {@code pom.xml} folder is {@code root}. */
         default void showActionsAt(@Nullable Path root) {}
 
@@ -550,42 +559,7 @@ final class MavenProjectCoordinator {
     private void applyEdit(Path pomFile, java.util.function.UnaryOperator<String> edit, int count) {
         com.editora.editor.EditorBuffer open = ops.openBuffer(pomFile);
         if (open == null) {
-            // A closed pom is read, edited and replaced off the FX thread (PERF-01, Pauta 6.2.0).
-            com.editora.perf.OffFx.then(
-                    "maven-update-versions-write",
-                    () -> {
-                        String pom = read(pomFile);
-                        if (pom == null) {
-                            return "noPom";
-                        }
-                        String out = edit.apply(pom);
-                        if (out.equals(pom)) {
-                            return "upToDate";
-                        }
-                        // Only a closed pom is written on disk, where there is no undo history to belong to anyway.
-                        return com.editora.io.AtomicFileWrite.replaceIfUnchanged(
-                                        pomFile,
-                                        pom.getBytes(StandardCharsets.UTF_8),
-                                        out.getBytes(StandardCharsets.UTF_8),
-                                        () -> true)
-                                ? "updated"
-                                : "changedOnDisk";
-                    },
-                    a -> {
-                        String outcome = a.value();
-                        if (outcome == null) {
-                            host.setError(tr("status.mavenProject.pomEditFailed", a.why()));
-                        } else if (outcome.equals("noPom")) {
-                            host.setError(tr("status.mavenVersions.noPom"));
-                        } else if (outcome.equals("upToDate")) {
-                            host.setStatus(tr("status.mavenVersions.upToDate"));
-                        } else if (outcome.equals("changedOnDisk")) {
-                            host.setError(tr("status.mavenVersions.changedOnDisk"));
-                        } else {
-                            ops.openPath(pomFile);
-                            host.setStatus(tr("status.mavenVersions.updated", count));
-                        }
-                    });
+            updateClosedPom(pomFile, edit, count);
             return;
         }
         String pom = pomText(pomFile, open);
@@ -610,21 +584,84 @@ final class MavenProjectCoordinator {
                 // One replacement, so the whole update is a single undo step rather than one per artifact —
                 // and the buffer goes dirty, so it is the user who decides to save it.
                 open.replaceWholeDocumentLater(out, applied -> {}); // the span that differs, worked out off FX
-            } else {
-                // Only a closed pom is written on disk, where there is no undo history to belong to anyway.
-                if (!com.editora.io.AtomicFileWrite.replaceIfUnchanged(
-                        pomFile,
-                        pom.getBytes(StandardCharsets.UTF_8),
-                        out.getBytes(StandardCharsets.UTF_8),
-                        () -> true)) {
-                    host.setError(tr("status.mavenVersions.changedOnDisk"));
-                    return;
-                }
-                ops.openPath(pomFile);
             }
             host.setStatus(tr("status.mavenVersions.updated", count));
         } catch (Exception e) {
             host.setError(tr("status.mavenProject.pomEditFailed", String.valueOf(e.getMessage())));
+        }
+    }
+
+    /** What reading a closed pom and applying the update to it found, off the FX thread. */
+    private record ClosedPomEdit(
+            String outcome,
+            @Nullable String before,
+            @Nullable String after) {}
+
+    /**
+     * Update Versions on a pom that is not open. It is read and edited off the FX thread (PERF-01, Pauta 6.2.0);
+     * the text it had is then copied into Local History — there is no undo history for a closed file, and the
+     * old versions may be in no commit — and only once that copy is durable is the file replaced, atomically and
+     * only if it still holds the bytes the update was computed from.
+     */
+    private void updateClosedPom(Path pomFile, java.util.function.UnaryOperator<String> edit, int count) {
+        com.editora.perf.OffFx.then(
+                "maven-update-versions-read",
+                () -> {
+                    String pom = read(pomFile);
+                    if (pom == null) {
+                        return new ClosedPomEdit("noPom", null, null);
+                    }
+                    String out = edit.apply(pom);
+                    return out.equals(pom)
+                            ? new ClosedPomEdit("upToDate", null, null)
+                            : new ClosedPomEdit("edit", pom, out);
+                },
+                a -> {
+                    ClosedPomEdit computed = a.value();
+                    String before = computed == null ? null : computed.before();
+                    String after = computed == null ? null : computed.after();
+                    if (computed == null || before == null || after == null) {
+                        reportClosedPom(pomFile, computed == null ? null : computed.outcome(), a.why(), count);
+                        return;
+                    }
+                    ops.recordBeforeReplace(
+                            pomFile,
+                            before,
+                            kept -> com.editora.perf.OffFx.onFx(() -> {
+                                if (!Boolean.TRUE.equals(kept)) {
+                                    host.setError(tr("status.mavenVersions.historyFailed"));
+                                    return;
+                                }
+                                writeClosedPom(pomFile, before, after, count);
+                            }));
+                });
+    }
+
+    private void writeClosedPom(Path pomFile, String before, String after, int count) {
+        com.editora.perf.OffFx.then(
+                "maven-update-versions-write",
+                () -> com.editora.io.AtomicFileWrite.replaceIfUnchanged(
+                                pomFile,
+                                before.getBytes(StandardCharsets.UTF_8),
+                                after.getBytes(StandardCharsets.UTF_8),
+                                () -> true)
+                        ? "updated"
+                        : "changedOnDisk",
+                a -> reportClosedPom(pomFile, a.value(), a.why(), count));
+    }
+
+    private void reportClosedPom(Path pomFile, @Nullable String outcome, String why, int count) {
+        if (outcome == null) {
+            host.setError(tr("status.mavenProject.pomEditFailed", why));
+        } else if (outcome.equals("noPom")) {
+            host.setError(tr("status.mavenVersions.noPom"));
+        } else if (outcome.equals("upToDate")) {
+            host.setStatus(tr("status.mavenVersions.upToDate"));
+        } else if (outcome.equals("changedOnDisk")) {
+            host.setError(tr("status.mavenVersions.changedOnDisk"));
+        } else {
+            ops.openPath(pomFile);
+            host.setStatus(tr("status.mavenVersions.updated", count));
         }
     }
 
