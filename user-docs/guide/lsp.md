@@ -1120,7 +1120,7 @@ A project's own **ESLint** checks JavaScript and TypeScript files (`.js`,
 `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts` and `.cts`) when the project has an ESLint
 configuration (`eslint.config.*`, an `.eslintrc*` file, or an `eslintConfig`
 key in `package.json`) and ESLint installed in `node_modules`. It checks a
-file when its tab is shown, 0.8 s after you stop typing, and on save. Its
+file when its tab is shown, 2 s after you stop typing, and on save. Its
 problems join the TypeScript server's in the squiggles, the problem counter and
 the Problems window, with **eslint** as their source. ESLint runs from its
 configuration's folder, on the project's Node.js, and only from the project's
