@@ -3214,7 +3214,8 @@ final class RunCoordinator {
             @Nullable List<String> scalaInputs,
             @Nullable String jvmToolName,
             com.editora.run.ClojureRun.@Nullable Plan clojure,
-            com.editora.run.PythonWebApps.@Nullable Server web) {}
+            com.editora.run.PythonWebApps.@Nullable Server web,
+            com.editora.run.PhpApps.@Nullable Plan php) {}
 
     private FilePlan planFile(
             String language,
@@ -3273,7 +3274,22 @@ final class RunCoordinator {
                                 content,
                                 List.of(),
                                 d -> java.nio.file.Files.isRegularFile(d.resolve("__init__.py")))
-                        : null);
+                        : null,
+                "php".equals(language) ? phpPlan(path, content, project) : null);
+    }
+
+    /**
+     * A PHP file's run ({@link com.editora.run.PhpApps}): a script, a web app's server, its PHPUnit tests. A file on
+     * a host runs as a script there, by the host's {@code php}.
+     */
+    private static com.editora.run.PhpApps.Plan phpPlan(Path path, String content, @Nullable Path project) {
+        if (!com.editora.process.ExecTargets.runsHere(path)) {
+            String target = com.editora.process.ExecTargets.forPath(path).toTargetPath(path);
+            Path dir = path.getParent() == null ? path : path.getParent();
+            return new com.editora.run.PhpApps.Plan(
+                    com.editora.run.PhpApps.Kind.SCRIPT, List.of("php", target), true, dir, null, null);
+        }
+        return com.editora.run.PhpApps.plan(path, content, List.of(), null, project, "php", PhpDebugLaunch.lookups());
     }
 
     private void startFileRunNow(EditorBuffer buffer, boolean promptArgs, boolean trace) {
@@ -3319,6 +3335,7 @@ final class RunCoordinator {
         boolean jvmScript = com.editora.run.JvmScriptRun.supports(buffer.getLanguage());
         boolean javaSource = !buffer.isPython()
                 && !buffer.isShell()
+                && !"php".equals(buffer.getLanguage())
                 && !com.editora.run.NodeRunPlan.isNodeLanguage(buffer.getLanguage())
                 && !com.editora.run.CompiledRunLine.supports(buffer.getLanguage())
                 && !jvmScript;
@@ -3395,6 +3412,10 @@ final class RunCoordinator {
         }
         if (com.editora.run.NodeRunPlan.isNodeLanguage(buffer.getLanguage())) {
             launchNode(path, args);
+            return;
+        }
+        if (plan.php() != null) {
+            launchPhp(path, plan.php(), args);
             return;
         }
         if (com.editora.run.CompiledRunLine.supports(buffer.getLanguage())) {
@@ -3502,6 +3523,21 @@ final class RunCoordinator {
                 buildRunCommand(buffer, path, javaExecutable, args, shell),
                 env,
                 path);
+    }
+
+    /** Run File on a PHP file as {@link com.editora.run.PhpApps} planned it: a script, a web app's server, PHPUnit. */
+    private void launchPhp(Path path, com.editora.run.PhpApps.Plan plan, List<String> args) {
+        String missing = PhpDebugLaunch.missingMessage(plan);
+        if (missing != null) {
+            host.setStatus(missing);
+            return;
+        }
+        List<String> argv = new ArrayList<>(plan.command());
+        argv.addAll(args);
+        streamRun(path.getFileName().toString(), plan.cwd(), argv, java.util.Map.of(), path);
+        if (plan.url() != null) {
+            host.setStatus(tr("status.run.phpServing", plan.url()));
+        }
     }
 
     /**

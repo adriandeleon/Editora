@@ -57,6 +57,7 @@ com.editora.ui.CsharpDebugProbeFxTest
 com.editora.ui.CsharpTestDebugProbeFxTest
 com.editora.ui.RubyDebugProbeFxTest
 com.editora.ui.PhpDebugProbeFxTest
+com.editora.ui.PhpWebProbeFxTest
 com.editora.ui.BashDebugProbeFxTest
 com.editora.ui.LuaDebugProbeFxTest
 com.editora.ui.JvmLanguageTestsProbeFxTest

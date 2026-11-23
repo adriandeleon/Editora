@@ -1272,13 +1272,35 @@ configured (`Settings.rubyDebugPath`), else on the PATH, else in the user's gem 
 stdio. `InstalledAdapter.PHP_DEBUG` finds it as configured (`Settings.phpDebugPath`: the file or its unpacked
 `.vsix`), else in Editora's install (`plugins/dap/php/extension/out/phpDebug.js`), else in VS Code's
 `xdebug.php-debug-*`. Settings → Debugging → PHP's Install fetches the pinned `.vsix` (1.40.2, one for every
-platform). F5 sends `ScriptLaunch.phpLaunch`: the file as `program`, `port: 0` (the adapter listens on a free port),
-and `runtimeArgs` telling Xdebug to debug and connect there (`-dxdebug.mode=debug`,
-`-dxdebug.start_with_request=yes`, `-dxdebug.client_port=${port}`, which the adapter fills in). The adapter starts
-`php` itself and passes its output on as output events. PHP needs the Xdebug extension (`php-xdebug`). Its exception
-filters (`Exception`, `Error`, `Warning`, `Notice`, `Deprecated`, `*`) are off by default. PHP has no attach: Xdebug
-connects to a listening adapter, which a launch.json `php` configuration without a `program` ("Listen for Xdebug")
-starts.
+platform). PHP needs the Xdebug extension (`php-xdebug`). Its exception filters (`Exception`, `Error`, `Warning`,
+`Notice`, `Deprecated`, `*`) are off by default.
+
+What a PHP file runs as is [`run/PhpApps`](../../src/main/java/com/editora/run/PhpApps.java)'s plan, the same for Run
+File (`RunCoordinator.launchPhp`) and F5 ([`ui/PhpDebugLaunch`](../../src/main/java/com/editora/ui/PhpDebugLaunch.java),
+planned off the FX thread): a script (`php file`); a document root's `index.php`, or a class file under a folder with
+`public/index.php`, on PHP's built-in server (`php -S 127.0.0.1:8000 -t public`, the first free port from 8000); a
+Laravel app (its `artisan`, `public/index.php` or a class file of it) as `artisan serve` serves it — `php -S` in
+`public/` with the app's own `server.php` or the framework's `resources/server.php` router — run directly, because
+`artisan serve`'s server is a child process the adapter's Stop does not end and that the `-d` switches do not reach;
+a PHPUnit test file (`*Test.php` with a `TestCase` class) under `vendor/bin/phpunit`, else `phpunit` on the PATH, in
+the folder of its `phpunit.xml` or `composer.json`. [`run/PhpRunLines`](../../src/main/java/com/editora/run/PhpRunLines.java)
+puts the ▶ on those, and on a script with a statement outside its declarations; a file of classes, a configuration
+file's `return [...]` and a helpers file's `function_exists` guard have none.
+
+F5 sends `ScriptLaunch.phpCommand`: no `program`; the planned command as `runtimeExecutable` and `runtimeArgs`, with
+`port: 0` (the adapter listens on a free port) and Xdebug told to debug and connect there twice — as `-d` switches
+after `php` (`-dxdebug.mode=debug`, `-dxdebug.start_with_request=yes`, `-dxdebug.client_port=${port}`), and as
+`XDEBUG_MODE`, `XDEBUG_SESSION` and `XDEBUG_CONFIG` in `env` (the adapter fills `${port}` into both), which reach a
+PHP the command starts itself: a PHPUnit runner that is a shell wrapper or a `.bat` (a runner whose first line is not
+`<?php` or a `php` shebang runs as itself, with the environment alone). Each script or request is an Xdebug connection,
+a thread of the one session; the adapter ends the server on Stop. Debug Test at Caret narrows a test file to the test
+at the caret ([`run/PhpUnitTests`](../../src/main/java/com/editora/run/PhpUnitTests.java): a `test…` method, or one
+marked `#[Test]` or `@test`) with `--filter '/::name(?: .*)?$/'`, which takes its data sets and not `nameMore`.
+
+PHP has no attach: Xdebug connects to a listening adapter. Debug: Listen for Xdebug (`debug.listenXdebug`) starts one
+on Xdebug's port 9003 (`ScriptLaunch.phpListen`), beside a running session, as a launch.json `php` configuration
+without a `program` ("Listen for Xdebug") does. `PhpWebProbeFxTest` (opt-in) drives each of these with the real PHP,
+Xdebug, PHPUnit and vscode-php-debug.
 
 **Bash.** The `bash` profile (a shell file: `editorLanguages` `shell`) is bashdb through vscode-bash-debug (rogalmic,
 MIT), `bashDebug.js` on Node.js over stdio; its `.vsix` ships bashdb 5.0 (`extension/bashdb_dir`), which runs on Bash

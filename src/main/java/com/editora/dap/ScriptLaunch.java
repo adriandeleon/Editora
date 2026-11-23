@@ -220,6 +220,54 @@ public final class ScriptLaunch {
             "-dxdebug.client_host=127.0.0.1",
             "-dxdebug.client_port=${port}");
 
+    /**
+     * Xdebug's settings as environment variables, which reach every PHP the launch starts — a PHPUnit runner's
+     * wrapper's, a server's — where the {@code -d} switches reach only the first: debug mode, a session started for
+     * every script and request, and the adapter's port ({@code ${port}}).
+     */
+    public static final Map<String, String> XDEBUG_ENV = Map.of(
+            "XDEBUG_MODE", "debug",
+            "XDEBUG_SESSION", "editora",
+            "XDEBUG_CONFIG", "client_host=127.0.0.1 client_port=${port}");
+
+    /** The port Xdebug connects to by default (Xdebug 3), where Listen for Xdebug waits. */
+    public static final int XDEBUG_PORT = 9003;
+
+    /**
+     * vscode-php-debug's {@code launch} for {@code command} ({@code php …}, or a PHPUnit runner) in {@code cwd}: with
+     * Xdebug's switches after {@code php} when {@code php} says the program is PHP itself, and its settings in the
+     * environment for any PHP it starts. Each script run or request served is a thread of the session.
+     */
+    public static Map<String, Object> phpCommand(List<String> command, boolean php, Path cwd) {
+        List<String> runtimeArgs = new ArrayList<>();
+        if (php) {
+            runtimeArgs.addAll(XDEBUG_ARGS);
+        }
+        runtimeArgs.addAll(command.subList(1, command.size()));
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("type", DebugLanguages.PHP.launchType());
+        m.put("request", "launch");
+        m.put("port", 0);
+        m.put("runtimeExecutable", command.getFirst());
+        m.put("runtimeArgs", List.copyOf(runtimeArgs));
+        m.put("cwd", cwd.toString());
+        m.put("env", XDEBUG_ENV);
+        return m;
+    }
+
+    /**
+     * VS Code's "Listen for Xdebug": vscode-php-debug waits on {@code port} for Xdebug to connect from a PHP the user
+     * starts — a web server's request, a script run with {@code XDEBUG_SESSION} — until the session is stopped.
+     */
+    public static Map<String, Object> phpListen(int port) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("type", DebugLanguages.PHP.launchType());
+        m.put("request", "launch");
+        m.put("name", "Listen for Xdebug");
+        m.put("port", port);
+        return m;
+    }
+
     /** vscode-php-debug's {@code launch} for {@code program}: {@code php} with Xdebug on, in {@code cwd}. */
     public static Map<String, Object> phpLaunch(Path program, List<String> args, Path cwd) {
         return ExternalAdapter.launchRequest(

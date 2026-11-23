@@ -432,6 +432,7 @@ final class DebugCoordinator {
     private final MemoryEdits memoryEdits = new MemoryEdits(this);
 
     private final DartDebugLaunch dart = new DartDebugLaunch(this); // Dart, and a Flutter app's Dart
+    final PhpDebugLaunch php = new PhpDebugLaunch(this); // PHP files, web apps, PHPUnit tests, Listen for Xdebug
 
     /** The build facts a launch asks: looked at off the FX thread first when not known ({@link DebugFacts}). */
     private final DebugFacts facts = new DebugFacts(this::executableFacts, this::sayBusy, this::lookFailed);
@@ -3729,7 +3730,7 @@ final class DebugCoordinator {
     }
 
     /** Starts {@code request} on external adapter {@code profile}, anchored at {@code anchor}; Restart repeats it. */
-    private void startExternalSession(
+    void startExternalSession(
             Path anchor, com.editora.dap.DebugLanguage profile, java.util.Map<String, Object> request, String label) {
         ops.openToolWindow();
         nameSession(label);
@@ -3825,7 +3826,7 @@ final class DebugCoordinator {
      * The session a launch asked for now goes into: the one being handled when it is free, else a new one beside it,
      * shown from now on — a configuration started while another session runs is debugged next to it, as in VS Code.
      */
-    private DebugSession sessionForLaunch() {
+    DebugSession sessionForLaunch() {
         return sessionLive() ? openSession() : s();
     }
 
@@ -5391,8 +5392,8 @@ final class DebugCoordinator {
     }
 
     /**
-     * Debugs a Ruby, PHP or Bash script {@code path} in its folder: under rdbg, by {@code php} with Xdebug, or under the
-     * bashdb vscode-bash-debug ships ({@link com.editora.dap.ScriptLaunch#plan}).
+     * Debugs a Ruby, Bash or Lua script {@code path} in its folder: under rdbg, the bashdb vscode-bash-debug ships, or
+     * Local Lua Debugger ({@link com.editora.dap.ScriptLaunch#plan}); a PHP file goes to {@link PhpDebugLaunch}.
      */
     private void debugScriptFile(Path path, String language, List<String> args) {
         Path cwd = path.toAbsolutePath().getParent();
@@ -5640,7 +5641,11 @@ final class DebugCoordinator {
             debugCsharpFile(path, fileArgs);
             return;
         }
-        if (java.util.Set.of("ruby", "php", "bash", "lua").contains(language)) {
+        if ("php".equals(language)) {
+            php.debug(path, b.getContent(), fileArgs); // a script, a web app's server, a PHPUnit test file
+            return;
+        }
+        if (java.util.Set.of("ruby", "bash", "lua").contains(language)) {
             debugScriptFile(path, language, fileArgs);
             return;
         }
