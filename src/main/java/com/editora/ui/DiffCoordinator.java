@@ -203,7 +203,7 @@ final class DiffCoordinator {
             Path root, String repoRel, Path file, java.util.function.BinaryOperator<String> edit, Runnable staged) {
         String ecCharset = ops.editorConfigCharset(file);
         String openCharset = openCharset(file);
-        git.service().showBlob(root, ":" + repoRel, index -> {
+        git.service().showBlob(root, ":0:" + repoRel, index -> {
             if (index.truncated() || !index.found()) {
                 host.setStatus(tr("status.diff.hunkStale", repoRel));
                 return;
@@ -2112,7 +2112,7 @@ final class DiffCoordinator {
             @Nullable String path,
             Path file,
             java.util.concurrent.atomic.AtomicReference<GitService.BlobResult> snapshot) {
-        return blobSide(root, ":" + path, file, snapshot::set);
+        return blobSide(root, ":0:" + path, file, snapshot::set);
     }
 
     private DiffSide blobSide(Path root, String spec, Path file, Consumer<GitService.BlobResult> onSnapshot) {

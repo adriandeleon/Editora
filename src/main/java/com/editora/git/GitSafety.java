@@ -57,7 +57,8 @@ public final class GitSafety {
      */
     public static final String LITERAL_PATHSPECS = "--literal-pathspecs";
 
-    private static final Set<String> DIFF_COMMANDS = Set.of("diff", "show", "log", "diff-tree", "diff-index");
+    private static final Set<String> DIFF_COMMANDS =
+            Set.of("diff", "show", "log", "diff-tree", "diff-index", "format-patch");
     private static final Pattern VERSION = Pattern.compile("(\\d+)\\.(\\d+)");
 
     /** {@code -c} overrides for the current platform; see the class comment. */
@@ -139,6 +140,10 @@ public final class GitSafety {
         // terminal a vi simply waits, holding the lane until the mutation ceiling. ":" is git's own "no
         // editor": the prepared message is used as it is. The environment variable outranks core.editor.
         env.put("GIT_EDITOR", ":");
+        // gpg hands GPG_TTY to the agent as the terminal to ask for a passphrase on: launched from a shell, a
+        // commit with commit.gpgsign=true put pinentry-curses in that shell and waited there. Without it a GUI
+        // pinentry still asks, and a terminal-only one fails with git's "gpg failed to sign the data".
+        env.put("GPG_TTY", null);
         String all = inherited == null ? null : inherited.get("LC_ALL");
         if (all != null && !all.isEmpty()) {
             env.put("LC_ALL", "");
@@ -180,6 +185,26 @@ public final class GitSafety {
         return java.util.Collections.unmodifiableMap(env);
     }
 
+    /**
+     * Environment of a clone, fetch, pull or push the <em>user</em> asked for: {@link #userEnv}, plus ssh in
+     * batch mode ({@code -o BatchMode=yes}) unless the user chose an ssh command of their own — the same rule
+     * as {@link #autoFetchEnv}. Editora has no terminal to answer ssh on: launched from a shell, a host-key
+     * question or a key passphrase was asked in that shell and the push waited there, up to the network
+     * ceiling. In batch mode ssh fails at once, and git's stderr ("Host key verification failed.",
+     * "Permission denied (publickey)") is what the user is shown. A key in ssh-agent (or the macOS keychain)
+     * still works; askpass and credential helpers for HTTPS are untouched. Pure.
+     */
+    static Map<String, String> userNetworkEnv(
+            Map<String, String> userEnv, Map<String, String> inherited, boolean userSshCommand) {
+        Map<String, String> env = new java.util.LinkedHashMap<>(userEnv);
+        boolean exported =
+                inherited != null && (notBlank(inherited.get("GIT_SSH_COMMAND")) || notBlank(inherited.get("GIT_SSH")));
+        if (!userSshCommand && !exported) {
+            env.put("GIT_SSH_COMMAND", "ssh -o BatchMode=yes");
+        }
+        return java.util.Collections.unmodifiableMap(env);
+    }
+
     private static boolean notBlank(@Nullable String value) {
         return value != null && !value.isBlank();
     }
@@ -195,26 +220,58 @@ public final class GitSafety {
                 "-c", "protocol.ext.allow=never");
     }
 
-    /** {@code gitCommand} + the config overrides + {@code args}, with diff commands made driver-free. */
+    /**
+     * Git's global options that take their value as the <em>next</em> argument ({@code -c core.quotePath=false},
+     * {@code -C dir}). That value is not the subcommand.
+     */
+    private static final Set<String> GLOBAL_OPTIONS_WITH_VALUE =
+            Set.of("-c", "-C", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env");
+
+    /**
+     * Options that make the text of a diff the same whatever the repository's configuration says, for every diff
+     * Editora parses or hands back to {@code git apply}: no colour codes ({@code color.diff=always}), and the
+     * {@code a/} and {@code b/} prefixes ({@code diff.noprefix}, {@code diff.mnemonicPrefix} change them).
+     */
+    static final List<String> PARSEABLE_DIFF = List.of("--no-color", "--src-prefix=a/", "--dst-prefix=b/");
+
+    /**
+     * {@code gitCommand} + the config overrides + {@code args}, with diff commands made driver-free and their
+     * output parseable ({@link #PARSEABLE_DIFF}). The flags go right after the subcommand, which is the first
+     * argument that is neither a global option nor the value of one ({@link #GLOBAL_OPTIONS_WITH_VALUE}).
+     */
     static List<String> backgroundArgv(List<String> gitCommand, String... args) {
-        List<String> argv = new ArrayList<>(gitCommand.size() + BACKGROUND_CONFIG.size() + args.length + 2);
+        List<String> argv = new ArrayList<>(gitCommand.size() + BACKGROUND_CONFIG.size() + args.length + 5);
         argv.addAll(gitCommand);
         argv.addAll(BACKGROUND_CONFIG);
-        boolean subcommandSeen = false;
-        for (String arg : args) {
+        int subcommand = subcommandIndex(args);
+        for (int i = 0; i < args.length; i++) {
+            String arg = args[i];
             argv.add(arg);
-            if (subcommandSeen || arg.startsWith("-")) {
+            if (i != subcommand) {
                 continue;
             }
-            subcommandSeen = true;
             if (DIFF_COMMANDS.contains(arg)) {
                 argv.add("--no-ext-diff");
                 argv.add("--no-textconv");
+                argv.addAll(PARSEABLE_DIFF);
             } else if ("blame".equals(arg)) {
                 argv.add("--no-textconv");
             }
         }
         return argv;
+    }
+
+    /** The index of git's subcommand in {@code args} (after any global options and their values), or -1. Pure. */
+    static int subcommandIndex(String... args) {
+        for (int i = 0; i < args.length; i++) {
+            String arg = args[i];
+            if (GLOBAL_OPTIONS_WITH_VALUE.contains(arg)) {
+                i++; // its value
+            } else if (!arg.startsWith("-")) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**

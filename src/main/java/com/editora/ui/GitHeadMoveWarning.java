@@ -19,15 +19,19 @@ final class GitHeadMoveWarning {
     /**
      * Whether a reset must be confirmed. Hard always is (it also discards uncommitted changes). Soft and
      * mixed keep the files, so they ask only when commits would be left on no other branch or tag — reachable
-     * through the reflog alone — and not for the everyday "undo my last, already pushed, commit".
+     * through the reflog alone — and not for the everyday "undo my last, already pushed, commit". When Git
+     * could not be asked ({@link LeftBehind#known()} false) nobody knows that nothing is stranded, so it asks.
      */
     static boolean resetNeedsConfirmation(String mode, LeftBehind left) {
-        return "hard".equals(mode) || (left.known() && left.unreferenced() > 0);
+        return "hard".equals(mode) || !left.known() || left.unreferenced() > 0;
     }
 
-    /** Whether checking out a commit must be confirmed: only when it abandons commits no ref reaches. */
+    /**
+     * Whether checking out a commit must be confirmed: when it abandons commits no ref reaches, or when Git
+     * could not say whether it does.
+     */
     static boolean checkoutNeedsConfirmation(LeftBehind left) {
-        return left.known() && left.unreferenced() > 0;
+        return !left.known() || left.unreferenced() > 0;
     }
 
     static String resetPrompt(String mode, String shortHash, String branch, Path root, LeftBehind left) {
@@ -39,15 +43,21 @@ final class GitHeadMoveWarning {
     }
 
     static String checkoutPrompt(String shortHash, LeftBehind left) {
-        return tr("dialog.gitCheckout.strandConfirm", shortHash, left.unreferenced());
+        return left.known()
+                ? tr("dialog.gitCheckout.strandConfirm", shortHash, left.unreferenced())
+                : tr("dialog.gitCheckout.strandUnknown", shortHash);
     }
 
     /**
      * How many commits leave {@code branch}, how many of those its upstream does not have, and — when there
-     * are any — how many no other branch or tag has. Empty when nothing leaves or Git could not be asked.
+     * are any — how many no other branch or tag has. Empty when nothing leaves; when Git could not be asked,
+     * a sentence that says so without claiming a count.
      */
     static String commitsLeaving(LeftBehind left, String branch) {
-        if (!left.known() || left.leaving() <= 0) {
+        if (!left.known()) {
+            return tr("dialog.gitReset.commitsUnknown", branch);
+        }
+        if (left.leaving() <= 0) {
             return "";
         }
         StringBuilder text = new StringBuilder(tr("dialog.gitReset.commitsLeaving", left.leaving(), branch));

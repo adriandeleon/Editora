@@ -129,11 +129,6 @@ public final class GitService {
             this(root, null, status, changes, hunks, "");
         }
 
-        /** This state with {@code operation} as the merge / rebase / cherry-pick / revert in progress. */
-        public RepoState withOperation(GitOperation operation) {
-            return new RepoState(root, diffFile, status, changes, hunks, refusal, operation);
-        }
-
         /**
          * "There is a repository here, but git will not work in it": {@link #isRepo()} is false, as for
          * {@link #NONE}, and {@link #refusal()} carries git's own reason for the UI to show.
@@ -556,13 +551,26 @@ public final class GitService {
         if (onFxThread()) {
             // Never probed (a command given before the first refresh's lane task): a probe is a process, never
             // started or waited for here (PERF-01, Pauta 6.2.0). Taken as there until the probe, started now, says.
-            Thread.ofVirtual().name("git-version-probe").start(() -> probeVersion(command));
+            // One probe at a time: every call before the first answer would otherwise start another process.
+            if (probeInFlight.compareAndSet(false, true)) {
+                Thread.ofVirtual().name("git-version-probe").start(() -> {
+                    try {
+                        probeVersion(command);
+                    } finally {
+                        probeInFlight.set(false);
+                    }
+                });
+            }
             return true;
         }
         probeVersion(command);
         Availability probed = gitAvailable;
         return probed != null && probed.available();
     }
+
+    /** Whether a {@code git --version} probe started from the JavaFX thread is still running. */
+    private final java.util.concurrent.atomic.AtomicBoolean probeInFlight =
+            new java.util.concurrent.atomic.AtomicBoolean();
 
     private static boolean onFxThread() {
         try {
@@ -1723,23 +1731,11 @@ public final class GitService {
         return first > last || first < 1 ? null : new int[] {first - 1, last - 1};
     }
 
-    private static final Pattern HUNK = Pattern.compile("^@@ -(\\d+)(?:,(\\d+))? \\+(\\d+)(?:,(\\d+))? @@");
-
     /** A {@code git diff -U0}'s hunks as {@code {oldStart, oldCount, newStart, newCount}}, in order. Pure. */
     static List<int[]> diffHunks(String diff) {
-        List<int[]> hunks = new ArrayList<>();
-        for (String line : diff.split("\n")) {
-            Matcher m = HUNK.matcher(line);
-            if (m.find()) {
-                hunks.add(new int[] {
-                    Integer.parseInt(m.group(1)),
-                    m.group(2) == null ? 1 : Integer.parseInt(m.group(2)),
-                    Integer.parseInt(m.group(3)),
-                    m.group(4) == null ? 1 : Integer.parseInt(m.group(4))
-                });
-            }
-        }
-        return hunks;
+        return DiffParser.parseHunks(diff).stream()
+                .map(h -> new int[] {h.oldStart(), h.oldCount(), h.newStart(), h.newCount()})
+                .toList();
     }
 
     /**
@@ -2214,10 +2210,7 @@ public final class GitService {
                     global.ok() ? global.out() : "", gitPath(root).replace('\\', '/'));
             String path;
             if (isLocal(root)) {
-                Path config = Files.createTempFile("editora-git-global", ".config");
-                config.toFile().deleteOnExit();
-                Files.writeString(config, text);
-                path = config.toString();
+                path = localGlobalConfigCopy(text).toString();
             } else {
                 path = hostGlobalConfigCopy(root, text);
             }
@@ -2226,6 +2219,48 @@ public final class GitService {
             return env;
         } catch (IOException | RuntimeException e) {
             return READ_ENV; // blame then fails the way it does in a terminal
+        }
+    }
+
+    /** Local copies of the global configuration by content digest; read and written only under the lock of {@link #localGlobalConfigCopy}. */
+    private static final Map<String, Path> LOCAL_GLOBAL_COPIES = new java.util.HashMap<>();
+
+    /**
+     * A file holding {@code text}, this machine's global config without {@code blame.ignoreRevsFile}: one per
+     * distinct content, written the first time a blame needs it and reused after that. The global
+     * configuration can hold tokens ({@code http.extraHeader}, credentials in a URL), so the file is readable
+     * by its owner only, and deleted when Editora exits.
+     */
+    static synchronized Path localGlobalConfigCopy(String text) throws IOException {
+        String digest = digest(text);
+        Path known = LOCAL_GLOBAL_COPIES.get(digest);
+        if (known != null && Files.isRegularFile(known)) {
+            return known;
+        }
+        Path config;
+        if (java.nio.file.FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+            config = Files.createTempFile(
+                    "editora-git-global-",
+                    ".config",
+                    java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
+                            java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")));
+        } else {
+            config = Files.createTempFile("editora-git-global-", ".config"); // the user's own temp folder
+        }
+        config.toFile().deleteOnExit();
+        Files.writeString(config, text);
+        LOCAL_GLOBAL_COPIES.put(digest, config);
+        return config;
+    }
+
+    /** The first 16 hex digits of {@code text}'s SHA-256. */
+    private static String digest(String text) throws IOException {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest, 0, 8);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IOException(e);
         }
     }
 
@@ -2240,15 +2275,7 @@ public final class GitService {
         if (cache == null) {
             throw new IOException("no cache folder on " + target.id());
         }
-        String name;
-        try {
-            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
-                    .digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            name = "git-global-" + java.util.HexFormat.of().formatHex(digest, 0, 8) + ".config";
-        } catch (java.security.NoSuchAlgorithmException e) {
-            throw new IOException(e);
-        }
-        return cache.putText(name, text);
+        return cache.putText("git-global-" + digest(text) + ".config", text);
     }
 
     private @Nullable BlameKey blameKey(Path root, Path file, BlameOptions options, BlameIgnoreRevs.Plan plan) {
@@ -2500,11 +2527,22 @@ public final class GitService {
     }
 
     /**
+     * Stands for "where this branch's push goes" in an argv handed to {@link #runNetwork}; it is always followed
+     * by {@code refs/heads/<branch>}. When the command's turn comes the two are replaced, from the repository's
+     * configuration, by the push remote and an explicit {@code refs/heads/<branch>:refs/heads/<branch>} — or,
+     * for an ordinary push that git's own configuration already sends to the same-named branch, by nothing at
+     * all ({@link #resolvePush}).
+     */
+    public static final String PUSH_UPSTREAM = "<push-upstream>";
+
+    /**
      * The {@code git push} argv for the current branch. A brand-new branch has no upstream, so a bare
      * {@code git push} fails; in that case we push with {@code --set-upstream <remote> refs/heads/<branch>}
-     * so the first push "just works" (matching {@code push.autoSetupRemote}). Subsequent pushes (an upstream
-     * is already tracked) use a plain {@code push}. A blank/unknown branch name also falls back to a plain
-     * {@code push} — we never emit {@code --set-upstream} with an empty branch.
+     * so the first push "just works" (matching {@code push.autoSetupRemote}). A tracked branch gets
+     * {@link #PUSH_UPSTREAM}: a plain {@code push} when its upstream has its own name, but never a push onto a
+     * branch of another name ({@code feat} tracking {@code origin/main}) — see {@link #resolvePush}. A
+     * blank/unknown branch name falls back to a plain {@code push} — we never emit {@code --set-upstream} with
+     * an empty branch.
      *
      * <p>The branch is named by its full ref: a branch name is repository data, and a bare one that starts
      * with {@code -} would be read as an option (and one that is also a tag name would be ambiguous). A ref
@@ -2519,7 +2557,13 @@ public final class GitService {
         // rejects as a bad refname. A plain `push` lets git give its own clearer "detached HEAD" message.
         boolean haveBranch = branch != null && !branch.isBlank() && !branch.startsWith("(");
         String ref = "refs/heads/" + branch;
-        if (noUpstream && haveBranch && GitSafety.isSafeRevision(ref) && GitSafety.isSafeRevision(remote)) {
+        if (!haveBranch || !GitSafety.isSafeRevision(ref)) {
+            return new String[] {"push"};
+        }
+        if (!noUpstream) {
+            return new String[] {"push", PUSH_UPSTREAM, ref};
+        }
+        if (GitSafety.isSafeRevision(remote)) {
             return new String[] {"push", "--set-upstream", remote, ref};
         }
         return new String[] {"push"};
@@ -2530,12 +2574,21 @@ public final class GitService {
         return branch == null || branch.isBlank() || branch.startsWith("(");
     }
 
+    /** Git's option that refuses a forced push replacing remote commits never integrated locally (2.30+). */
+    static final String FORCE_IF_INCLUDES = "--force-if-includes";
+
     /**
      * The argv of a forced push of the current branch — always {@code --force-with-lease}, never a bare
      * {@code --force}: the remote branch is replaced only if it is still where this repository last saw it,
-     * so commits someone else pushed in the meantime are not silently destroyed. A tracked branch pushes to
-     * its upstream; an untracked one is pushed, and tracked, like a first {@link #pushArgs push}. Empty for a
-     * detached HEAD or an unusable name: there is no branch to force. Pure — unit-tested.
+     * so commits someone else pushed in the meantime are not silently destroyed. The lease alone trusts the
+     * remote-tracking branch, which a fetch (the automatic one included) moves to the remote's tip without
+     * anyone looking at it; {@code --force-if-includes} also requires that tip to have been part of this branch
+     * at some point, and is dropped for a git older than 2.30 ({@link #resolvePush}).
+     *
+     * <p>The destination is always explicit ({@link #PUSH_UPSTREAM} for a tracked branch): with no refspec,
+     * {@code push.default=matching} or a {@code remote.<name>.push} refspec would force other branches too.
+     * An untracked branch is pushed, and tracked, like a first {@link #pushArgs push}. Empty for a detached
+     * HEAD or an unusable name: there is no branch to force. Pure — unit-tested.
      */
     public static String[] forcePushArgs(String branch, String upstream, String remote) {
         String ref = "refs/heads/" + branch;
@@ -2543,17 +2596,97 @@ public final class GitService {
             return new String[0];
         }
         if (upstream != null && !upstream.isBlank()) {
-            return new String[] {"push", "--force-with-lease"};
+            return new String[] {"push", "--force-with-lease", FORCE_IF_INCLUDES, PUSH_UPSTREAM, ref};
         }
         if (!GitSafety.isSafeRevision(remote)) {
             return new String[0];
         }
-        return new String[] {"push", "--force-with-lease", "--set-upstream", remote, ref};
+        return new String[] {"push", "--force-with-lease", FORCE_IF_INCLUDES, "--set-upstream", remote, ref};
     }
 
     /** {@link #forcePushArgs(String, String, String)} with the remote left to {@link #runNetwork}. */
     public static String[] forcePushArgs(String branch, String upstream) {
         return forcePushArgs(branch, upstream, PUSH_REMOTE);
+    }
+
+    /**
+     * {@code args} with {@link #PUSH_REMOTE} and {@link #PUSH_UPSTREAM} resolved against the repository's
+     * configuration ({@code git config --list -z}) and remote names, and {@link #FORCE_IF_INCLUDES} dropped
+     * unless the git that runs it has it. Pure — unit-tested.
+     *
+     * <p>{@link #PUSH_UPSTREAM} {@code refs/heads/<b>} goes to the push remote ({@link #pushRemote}) and to the
+     * branch of the same name there, never to another one:
+     * <ul>
+     *   <li>an ordinary push whose upstream has the branch's name, or whose remote has push refspecs of its own
+     *       ({@code remote.<name>.push}, a Gerrit {@code HEAD:refs/for/main}), or that goes to another remote
+     *       than the upstream's (a triangular workflow) stays a plain {@code push}: git's own configuration
+     *       decides, as in a terminal;</li>
+     *   <li>an ordinary push of {@code feat} tracking {@code origin/main} — which fails under
+     *       {@code push.default=simple} and lands on {@code main} under {@code upstream} — pushes {@code feat}
+     *       to {@code origin/feat} and tracks it ({@code --set-upstream});</li>
+     *   <li>a forced push always names the remote and {@code refs/heads/<b>:refs/heads/<b>}, also tracking it
+     *       when the upstream had another name.</li>
+     * </ul>
+     */
+    static String[] resolvePush(
+            String[] args, String configListZ, List<String> remotes, boolean forceIfIncludesSupported) {
+        List<String> out = new ArrayList<>(Arrays.asList(args));
+        if (!forceIfIncludesSupported) {
+            out.remove(FORCE_IF_INCLUDES);
+        }
+        int at = out.indexOf(PUSH_REMOTE);
+        if (at >= 0) {
+            String branch = at + 1 < out.size() && out.get(at + 1).startsWith("refs/heads/")
+                    ? out.get(at + 1).substring("refs/heads/".length())
+                    : "";
+            out.set(at, pushRemote(configListZ, branch, remotes));
+        }
+        at = out.indexOf(PUSH_UPSTREAM);
+        if (at >= 0) {
+            String ref = at + 1 < out.size() ? out.get(at + 1) : "";
+            String branch = ref.startsWith("refs/heads/") ? ref.substring("refs/heads/".length()) : "";
+            String remote = pushRemote(configListZ, branch, remotes);
+            Map<String, String> config = lastValues(configListZ, "branch." + branch + ".", "remote." + remote + ".");
+            String merge = config.getOrDefault("branch." + branch + ".merge", "");
+            String branchRemote = config.getOrDefault("branch." + branch + ".remote", "");
+            boolean sameRemote = remote.equals(branchRemote);
+            boolean sameName = merge.equals(ref);
+            boolean force = out.contains("--force-with-lease");
+            if (!force && (sameName || !sameRemote || config.containsKey("remote." + remote + ".push"))) {
+                out.remove(at + 1);
+                out.remove(at);
+            } else {
+                List<String> target = new ArrayList<>();
+                if (sameRemote && !sameName && !out.contains("--set-upstream")) {
+                    target.add("--set-upstream");
+                }
+                target.add(remote);
+                target.add(ref + ":" + ref);
+                out.remove(at + 1);
+                out.remove(at);
+                out.addAll(at, target);
+            }
+        }
+        return out.toArray(String[]::new);
+    }
+
+    /** The last value of each key in {@code configListZ} that starts with one of {@code prefixes}. Pure. */
+    private static Map<String, String> lastValues(String configListZ, String... prefixes) {
+        Map<String, String> values = new java.util.HashMap<>();
+        for (String record : configListZ == null ? new String[0] : configListZ.split("\u0000", -1)) {
+            int newline = record.indexOf('\n');
+            if (newline < 0) {
+                continue;
+            }
+            String key = record.substring(0, newline);
+            for (String prefix : prefixes) {
+                // Section and variable names are lower-cased by git; the subsection (branch, remote) is not.
+                if (key.length() > prefix.length() && key.startsWith(prefix)) {
+                    values.put(key, record.substring(newline + 1).strip());
+                }
+            }
+        }
+        return values;
     }
 
     /**
@@ -2675,17 +2808,13 @@ public final class GitService {
     }
 
     /**
-     * {@code args} with {@link #PUSH_REMOTE} replaced by the remote the configuration names for the branch
-     * being pushed (the {@code refs/heads/<branch>} that follows it). Runs on the network lane.
+     * {@code args} with {@link #PUSH_REMOTE} and {@link #PUSH_UPSTREAM} resolved from the repository's
+     * configuration ({@link #resolvePush}). Runs on the network lane.
      */
     private String[] withPushRemote(Path root, String... args) {
-        int at = Arrays.asList(args).indexOf(PUSH_REMOTE);
-        if (at < 0) {
+        List<String> list = Arrays.asList(args);
+        if (!list.contains(PUSH_REMOTE) && !list.contains(PUSH_UPSTREAM) && !list.contains(FORCE_IF_INCLUDES)) {
             return args;
-        }
-        String branch = "";
-        if (at + 1 < args.length && args[at + 1].startsWith("refs/heads/")) {
-            branch = args[at + 1].substring("refs/heads/".length());
         }
         ProcessRunner.Result config = git(root, QUICK, "config", "--list", "-z");
         ProcessRunner.Result remotes = git(root, QUICK, "remote");
@@ -2696,9 +2825,17 @@ public final class GitService {
                         .filter(n -> !n.isEmpty())
                         .toList()
                 : List.of();
-        String[] resolved = args.clone();
-        resolved[at] = pushRemote(config.ok() ? config.out() : "", branch, names);
-        return resolved;
+        return resolvePush(
+                args, config.ok() ? config.out() : "", names, GitSafety.versionAtLeast(versionOf(root), 2, 30));
+    }
+
+    /** The {@code git --version} output of the git that serves {@code dir} ("" when not yet probed). */
+    private static String versionOf(Path dir) {
+        if (isLocal(dir)) {
+            return gitVersion;
+        }
+        RemoteGit known = REMOTE.get(ExecTargets.forPath(dir).id());
+        return known == null ? "" : known.version();
     }
 
     // --- branches --------------------------------------------------------------------------------
@@ -2792,7 +2929,7 @@ public final class GitService {
         });
     }
 
-    private static LeftBehind leftBehindNow(Path root, String target, boolean movesBranch) {
+    static LeftBehind leftBehindNow(Path root, String target, boolean movesBranch) {
         String notTarget = "^" + target;
         Integer leaving = revCount(root, "HEAD", notTarget);
         if (leaving == null) {
@@ -2820,10 +2957,12 @@ public final class GitService {
 
     /** {@code git rev-list --count <revisions>}, or {@code null} when it fails (an unknown revision, no upstream). */
     private static @Nullable Integer revCount(Path root, String... revisions) {
-        String[] args = new String[revisions.length + 2];
+        // "--" ends the revisions: a target that is also a file name is otherwise "ambiguous argument".
+        String[] args = new String[revisions.length + 3];
         args[0] = "rev-list";
         args[1] = "--count";
         System.arraycopy(revisions, 0, args, 2, revisions.length);
+        args[args.length - 1] = "--";
         ProcessRunner.Result r = git(root, QUICK, args);
         if (!r.ok()) {
             return null;
@@ -3486,29 +3625,30 @@ public final class GitService {
      */
     public void applyPatch(
             Path root, byte[] patch, boolean cached, boolean threeWay, Consumer<ProcessRunner.Result> onResult) {
-        submit(exec, () -> {
-            List<String> base = new ArrayList<>();
-            base.add("apply");
-            if (threeWay) {
-                base.add("--3way");
-            }
-            if (cached) {
-                base.add("--cached");
-            }
-            List<String> check = new ArrayList<>(base);
-            check.add("--check");
-            byte[] input = patch == null ? new byte[0] : patch;
-            ProcessRunner.Result posted = !gitAvailable(root) || root == null
-                    ? NOT_INSTALLED
-                    : userCommand(localCommands, () -> {
-                        if (threeWay) {
-                            return gitWithInput(root, input, base, userEnv(root));
-                        }
-                        ProcessRunner.Result checked = gitWithInput(root, input, check, userEnv(root));
-                        return checked.ok() ? gitWithInput(root, input, base, userEnv(root)) : checked;
-                    });
-            Platform.runLater(() -> onResult.accept(posted));
-        });
+        List<String> base = new ArrayList<>();
+        base.add("apply");
+        if (threeWay) {
+            base.add("--3way");
+        }
+        if (cached) {
+            base.add("--cached");
+        }
+        List<String> check = new ArrayList<>(base);
+        check.add("--check");
+        byte[] input = patch == null ? new byte[0] : patch.clone();
+        // A mutation like any other: it waits for the working tree and keeps its place behind a pull.
+        runWorktreeJob(
+                exec,
+                localCommands,
+                root,
+                lane -> {
+                    if (threeWay) {
+                        return gitWithInput(root, input, base, userEnv(root));
+                    }
+                    ProcessRunner.Result checked = gitWithInput(root, input, check, userEnv(root));
+                    return checked.ok() ? gitWithInput(root, input, base, userEnv(root)) : checked;
+                },
+                onResult);
     }
 
     /** A patch read from git: its bytes, or why there are none. */
@@ -3579,11 +3719,7 @@ public final class GitService {
     public void stageBlob(
             Path root, String path, BlobResult expectedBlob, byte[] newBlob, Consumer<ProcessRunner.Result> onResult) {
         byte[] body = newBlob == null ? new byte[0] : newBlob.clone();
-        submit(exec, () -> {
-            ProcessRunner.Result result =
-                    userCommand(localCommands, () -> stageBlobNow(root, path, expectedBlob, body));
-            Platform.runLater(() -> onResult.accept(result));
-        });
+        runWorktreeJob(exec, localCommands, root, lane -> stageBlobNow(root, path, expectedBlob, body), onResult);
     }
 
     /**
@@ -3594,11 +3730,7 @@ public final class GitService {
      */
     public void removeIndexEntry(
             Path root, String path, BlobResult expectedBlob, Consumer<ProcessRunner.Result> onResult) {
-        submit(exec, () -> {
-            ProcessRunner.Result result =
-                    userCommand(localCommands, () -> stageBlobNow(root, path, expectedBlob, null));
-            Platform.runLater(() -> onResult.accept(result));
-        });
+        runWorktreeJob(exec, localCommands, root, lane -> stageBlobNow(root, path, expectedBlob, null), onResult);
     }
 
     private static final Pattern OBJECT_ID = Pattern.compile("[0-9a-f]{40,64}");
@@ -3799,8 +3931,9 @@ public final class GitService {
         }
     }
 
-    private static BlobResult indexBlobNow(Path root, String path) {
-        return blobNow(root, ":" + (path == null ? "" : path));
+    static BlobResult indexBlobNow(Path root, String path) {
+        // ":0:" names the stage-0 entry outright: ":" + a path that starts with "1:" read as stage 1.
+        return blobNow(root, ":0:" + (path == null ? "" : path));
     }
 
     /** {@code git show <spec>} as raw bytes; a spec that could be read as an option is "not found". */
@@ -3856,20 +3989,33 @@ public final class GitService {
             List<String[]> commands,
             @Nullable Supplier<String> refusal,
             Consumer<ProcessRunner.Result> onResult) {
+        runWorktreeJob(lane, running, root, onLane -> runCommands(onLane, root, timeout, commands, refusal), onResult);
+    }
+
+    /**
+     * {@link #runWorktreeMutation} for a job that is not a list of commands (a checked patch, a hunk written
+     * into the index): it waits for the working tree and keeps its place among the other mutations the same
+     * way. {@code job} is given the lane counter it runs under.
+     */
+    private void runWorktreeJob(
+            ExecutorService lane,
+            AtomicInteger running,
+            Path root,
+            java.util.function.Function<AtomicInteger, ProcessRunner.Result> job,
+            Consumer<ProcessRunner.Result> onResult) {
         if (lane == networkExec) {
-            submitNetworkInRequestOrder(
-                    () -> mutateWorktree(running, root, timeout, commands, refusal, onResult, false));
+            submitNetworkInRequestOrder(() -> mutateWorktree(running, root, job, onResult, false));
             return;
         }
         submit(lane, () -> {
             if (parkedMutations.get() == 0 && worktreeLock.tryLock()) {
-                mutateWorktree(running, root, timeout, commands, refusal, onResult, true);
+                mutateWorktree(running, root, job, onResult, true);
                 return;
             }
             parkedMutations.incrementAndGet();
             boolean queued = submit(networkExec, () -> {
                 try {
-                    mutateWorktree(networkCommands, root, timeout, commands, refusal, onResult, false);
+                    mutateWorktree(networkCommands, root, job, onResult, false);
                 } finally {
                     parkedMutations.decrementAndGet();
                 }
@@ -3881,16 +4027,13 @@ public final class GitService {
     }
 
     /**
-     * Runs {@code commands} holding {@link #worktreeLock} ({@code locked}: the caller already took it).
-     * {@code refusal} (may be null) is asked first, with the working tree held: a non-null answer is the
-     * reason nothing is run, and becomes the failed result's {@code err}.
+     * Runs {@code job} holding {@link #worktreeLock} ({@code locked}: the caller already took it) and posts its
+     * result on the FX thread.
      */
     private void mutateWorktree(
             AtomicInteger running,
             Path root,
-            Duration timeout,
-            List<String[]> commands,
-            @Nullable Supplier<String> refusal,
+            java.util.function.Function<AtomicInteger, ProcessRunner.Result> job,
             Consumer<ProcessRunner.Result> onResult,
             boolean locked) {
         ProcessRunner.Result result;
@@ -3909,26 +4052,7 @@ public final class GitService {
             } else if (!gitAvailable(root) || root == null) {
                 result = NOT_INSTALLED;
             } else {
-                result = userCommand(running, () -> {
-                    String refused = refusal == null ? null : refusal.get();
-                    if (refused != null) {
-                        return new ProcessRunner.Result(1, "", refused);
-                    }
-                    ProcessRunner.Result combined = new ProcessRunner.Result(0, "", "");
-                    for (String[] command : commands) {
-                        // The network lane's commands (pull) are the slow ones: watched as they run.
-                        ProcessRunner.Result current = running == networkCommands
-                                ? gitStreamed(root, timeout, withProgress(command))
-                                : gitLogged(root, timeout, command);
-                        if (combined.ok()) {
-                            combined = current;
-                        }
-                        if (current.cancelled()) {
-                            return current; // the user stopped the job: its remaining commands do not run
-                        }
-                    }
-                    return combined;
-                });
+                result = userCommand(running, () -> job.apply(running));
             }
         } finally {
             if (held) {
@@ -3937,6 +4061,36 @@ public final class GitService {
         }
         ProcessRunner.Result posted = result;
         Platform.runLater(() -> onResult.accept(posted));
+    }
+
+    /**
+     * {@code commands} one after another; {@code refusal} (may be null) is asked first, with the working tree
+     * held: a non-null answer is the reason nothing is run, and becomes the failed result's {@code err}.
+     */
+    private ProcessRunner.Result runCommands(
+            AtomicInteger running,
+            Path root,
+            Duration timeout,
+            List<String[]> commands,
+            @Nullable Supplier<String> refusal) {
+        String refused = refusal == null ? null : refusal.get();
+        if (refused != null) {
+            return new ProcessRunner.Result(1, "", refused);
+        }
+        ProcessRunner.Result combined = new ProcessRunner.Result(0, "", "");
+        for (String[] command : commands) {
+            // The network lane's commands (pull) are the slow ones: watched as they run.
+            ProcessRunner.Result current = running == networkCommands
+                    ? gitStreamed(root, timeout, withProgress(command))
+                    : gitLogged(root, timeout, command);
+            if (combined.ok()) {
+                combined = current;
+            }
+            if (current.cancelled()) {
+                return current; // the user stopped the job: its remaining commands do not run
+            }
+        }
+        return combined;
     }
 
     // --- internals -------------------------------------------------------------------------------
@@ -4148,10 +4302,10 @@ public final class GitService {
         // huge tree, otherwise holds this lane — and every status and gutter read queued on it — for up to
         // the mutation ceiling with no way to stop it.
         ProcessRunner.Cancellation cancel = new ProcessRunner.Cancellation();
-        localCommand = cancel;
+        localCommand = new Running(cancel, System.nanoTime());
         ProcessRunner.Result r;
         try {
-            r = ProcessRunner.runLiveInUserLocale(dir, timeout, argv, userEnv(dir), null, cancel);
+            r = ProcessRunner.runLiveInUserLocale(dir, timeout, withoutTerminal(dir, argv), userEnv(dir), null, cancel);
         } finally {
             localCommand = null;
         }
@@ -4186,12 +4340,13 @@ public final class GitService {
         long startNanos = System.nanoTime();
         List<String> argv = gitArgv(dir, args);
         CommandLog log = commandLog;
+        Map<String, String> env = networkEnv(dir);
         ProcessRunner.Cancellation cancel = new ProcessRunner.Cancellation();
-        streamedCommand = cancel;
+        streamedCommand = new Running(cancel, System.nanoTime());
         ProcessRunner.Result r;
         try {
             log.started(argv);
-            r = ProcessRunner.runLiveInUserLocale(dir, timeout, argv, userEnv(dir), log::progress, cancel);
+            r = ProcessRunner.runLiveInUserLocale(dir, timeout, withoutTerminal(dir, argv), env, log::progress, cancel);
         } finally {
             streamedCommand = null;
         }
@@ -4200,8 +4355,11 @@ public final class GitService {
         return r;
     }
 
+    /** A running user command: its cancellation handle and when it started ({@link System#nanoTime}). */
+    private record Running(ProcessRunner.Cancellation cancel, long startedNanos) {}
+
     /** The streamed network command now running — the lane runs one at a time — or null. */
-    private volatile ProcessRunner.@Nullable Cancellation streamedCommand;
+    private volatile @Nullable Running streamedCommand;
 
     /**
      * Stops the clone, fetch, pull or push that is running; its caller gets a
@@ -4209,12 +4367,68 @@ public final class GitService {
      * first, on which it removes its lock files and a partial clone. Commands still queued behind it run.
      */
     public boolean cancelNetworkCommand() {
-        ProcessRunner.Cancellation cancel = streamedCommand;
-        if (cancel == null) {
+        Running running = streamedCommand;
+        if (running == null) {
             return false;
         }
-        cancel.cancel();
+        running.cancel().cancel();
         return true;
+    }
+
+    /**
+     * The environment of a clone, fetch, pull or push: the user's, with ssh in batch mode unless the user has
+     * an ssh command of their own ({@link GitSafety#userNetworkEnv}). Asked on the network lane.
+     */
+    private static Map<String, String> networkEnv(@Nullable Path dir) {
+        if (dir == null) {
+            return userEnv(null);
+        }
+        boolean ownSsh = git(dir, QUICK, "config", "--get", "core.sshCommand").ok();
+        Map<String, String> inherited = isLocal(dir)
+                ? System.getenv()
+                : (hostExportsSsh(dir) ? Map.of("GIT_SSH_COMMAND", "(the host's)") : Map.of());
+        return GitSafety.userNetworkEnv(userEnv(dir), inherited, ownSsh);
+    }
+
+    /** {@code setsid} on this machine, or null (Windows, macOS, or a Linux without util-linux). */
+    private static final @Nullable String SETSID = findSetsid();
+
+    private static @Nullable String findSetsid() {
+        if (com.editora.Os.isWindows()) {
+            return null;
+        }
+        for (String candidate : List.of("/usr/bin/setsid", "/bin/setsid")) {
+            Path p = Path.of(candidate);
+            if (Files.isRegularFile(p) && Files.isExecutable(p)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * {@code argv} started in a session of its own, with no controlling terminal, where this machine can do
+     * that ({@code setsid}). Launched from a shell, Editora's children otherwise shared that shell's terminal,
+     * and anything they ran that opens {@code /dev/tty} — ssh asking about a host key or a passphrase,
+     * pinentry-curses — asked there, where nobody was looking, while the command hung. Without a terminal
+     * those programs fail (or use their GUI askpass) and git reports why. The child is never a process-group
+     * leader, so {@code setsid} does not fork: the pid, the exit code and cancellation are git's own. Without
+     * {@code setsid} (macOS, Windows) ssh's batch mode ({@link #networkEnv}) and the missing {@code GPG_TTY}
+     * ({@link GitSafety#userEnv}) cover the common prompts. A remote host's command is left as it is.
+     */
+    static List<String> withoutTerminal(@Nullable Path dir, List<String> argv) {
+        return inNewSession(isLocal(dir) ? SETSID : null, argv);
+    }
+
+    /** {@link #withoutTerminal(Path, List)} with the {@code setsid} to use (null: none). Pure. */
+    static List<String> inNewSession(@Nullable String setsid, List<String> argv) {
+        if (setsid == null) {
+            return argv;
+        }
+        List<String> out = new ArrayList<>(argv.size() + 1);
+        out.add(setsid);
+        out.addAll(argv);
+        return out;
     }
 
     /**
@@ -4227,27 +4441,33 @@ public final class GitService {
     }
 
     /** The local user command (commit, checkout, reset, stash, …) now running, or null. */
-    private volatile ProcessRunner.@Nullable Cancellation localCommand;
+    private volatile @Nullable Running localCommand;
 
     /**
-     * Stops the user command that is running: the clone, fetch, pull or push if there is one
-     * ({@link #cancelNetworkCommand}), otherwise the local command — a commit waiting in a hook, a long
-     * checkout, reset or stash. Its caller gets a {@link ProcessRunner.Result#cancelled() cancelled} result,
-     * and the rest of a multi-command job is not started. False when nothing is running. Git is sent SIGTERM
-     * first, on which it removes its lock files; a checkout stopped half-way leaves the files it had already
-     * written, exactly as Ctrl-C in a terminal does. Background reads are not user commands and are never
-     * the target.
+     * Stops the user command that is running. When a network command (clone, fetch, pull, push) and a local
+     * one (a commit waiting in a hook, a long checkout, reset or stash) both run, the one started <em>last</em>
+     * is stopped: it is the one the user just asked for and is waiting on — a commit stuck in its hook while
+     * an earlier push is still uploading, say. Pressing Stop again stops the other. Its caller gets a
+     * {@link ProcessRunner.Result#cancelled() cancelled} result, and the rest of a multi-command job is not
+     * started. False when nothing is running. Git is sent SIGTERM first, on which it removes its lock files; a
+     * checkout stopped half-way leaves the files it had already written, exactly as Ctrl-C in a terminal does.
+     * Background reads are not user commands and are never the target.
      */
     public boolean cancelRunningCommand() {
-        if (cancelNetworkCommand()) {
-            return true;
-        }
-        ProcessRunner.Cancellation cancel = localCommand;
-        if (cancel == null) {
+        Running target = newerOf(streamedCommand, localCommand);
+        if (target == null) {
             return false;
         }
-        cancel.cancel();
+        target.cancel().cancel();
         return true;
+    }
+
+    /** The more recently started of two running commands, either of which may be null. Pure. */
+    private static @Nullable Running newerOf(@Nullable Running a, @Nullable Running b) {
+        if (a == null || b == null) {
+            return a == null ? b : a;
+        }
+        return b.startedNanos() - a.startedNanos() > 0 ? b : a;
     }
 
     /** The {@code err} of a read whose output was larger than the process runner captures. */
@@ -4272,7 +4492,8 @@ public final class GitService {
         long startNanos = System.nanoTime();
         List<String> argv = new ArrayList<>(commandFor(dir));
         argv.addAll(args);
-        ProcessRunner.Result result = ProcessRunner.runWithInputInUserLocale(dir, MUTATION, argv, environment, stdin);
+        ProcessRunner.Result result =
+                ProcessRunner.runWithInputInUserLocale(dir, MUTATION, withoutTerminal(dir, argv), environment, stdin);
         commandLog.record(new CommandLog.Entry(
                 argv, result.exit(), result.out(), result.err(), (System.nanoTime() - startNanos) / 1_000_000L));
         return result;
