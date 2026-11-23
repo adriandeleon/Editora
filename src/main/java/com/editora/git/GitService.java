@@ -4183,7 +4183,19 @@ public final class GitService {
         return lookupRoot(contextPath).root();
     }
 
-    private RootLookup lookupRoot(Path contextPath) {
+    /**
+     * {@code path} as an instance of this thread's own when it is on a remote filesystem. An SFTP path keeps an
+     * unsynchronised attribute-cache counter per instance (MINA's {@code SftpPathImpl.cacheAttributes}): the
+     * buffer's path, stat-ed here on the lane while the file loader stat-ed the very same instance, broke that
+     * counter, and the open failed with "cacheAttributes(boolean) not properly nested" — the tab closed and
+     * the window had no repository. A local path has no such state and is returned as it is.
+     */
+    static Path ownInstance(Path path) {
+        return onThisFileSystem(path) ? path : path.getFileSystem().getPath(path.toString());
+    }
+
+    private RootLookup lookupRoot(Path given) {
+        Path contextPath = ownInstance(given);
         Path dir = Files.isDirectory(contextPath) ? contextPath : contextPath.getParent();
         if (dir == null) {
             return RootLookup.NOT_A_REPO;
