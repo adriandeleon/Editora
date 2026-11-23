@@ -1,7 +1,8 @@
 # Developer documentation
 
-Guides for working **on** Editora. User-facing documentation lives in the separate website
-repository; this folder is for contributors.
+Guides for working **on** Editora. The user guide lives in [`../user-docs/`](../user-docs/README.md) (the
+website copies it, and release builds ship it for Help ▸ Documentation); feature pages and news live in the
+separate website repository. This folder is for contributors.
 
 The root [`AGENTS.md`](../AGENTS.md) is the concise operational guide. These pages hold the durable
 architecture and contributor guidance; the exhaustive historical notes are preserved in

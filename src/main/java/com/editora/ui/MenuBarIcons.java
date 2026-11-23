@@ -125,6 +125,7 @@ final class MenuBarIcons {
         add("run.rerun", Icons::refresh);
         add("help.checkForUpdates", Icons::refresh);
         add("help.documentation", Icons::about);
+        add("help.onlineDocumentation", Icons::about);
         add("help.reportProblem", Icons::github); // it opens a GitHub issue
         add("help.pauta", Icons::check); // what the app meets, and what it does not yet
         add("git.fetch", Icons::refresh);

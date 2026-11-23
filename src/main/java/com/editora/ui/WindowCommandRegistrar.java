@@ -281,6 +281,8 @@ final class WindowCommandRegistrar {
 
         void openDocumentation();
 
+        void openOnlineDocumentation();
+
         void onSplitVertical();
 
         void onSplitHorizontal();
@@ -1954,6 +1956,7 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("file.clearRecent", host::onClearRecent));
         host.registry().register(Command.of("help.about", host::onAbout));
         host.registry().register(Command.of("help.documentation", host::openDocumentation));
+        host.registry().register(Command.of("help.onlineDocumentation", host::openOnlineDocumentation));
         host.registry().register(Command.of("help.checkForUpdates", host::checkForUpdatesNow));
         host.registry().register(Command.of("update.openDownloadPage", host::openUpdateDownloadPage));
         host.registry()

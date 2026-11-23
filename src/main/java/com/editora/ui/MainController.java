@@ -3486,7 +3486,15 @@ public class MainController implements com.editora.mcp.McpBridge {
      * whatever is current, which for a snapshot build would describe features it does not have.
      */
     void openDocumentation() {
+        // The link opener sends it to the copy bundled with this build when there is one (AppDocs).
         openExternalUrl(com.editora.AppInfo.docsUrl());
+    }
+
+    /** {@code help.onlineDocumentation}: this version's docs on the website, even when the build carries a copy. */
+    void openOnlineDocumentation() {
+        if (hostServices != null) {
+            hostServices.showDocument(com.editora.AppInfo.docsUrl());
+        }
     }
 
     /** command id -> the chord to show for it, in the active keymap's notation (see KeymapManager.displayChords). */

@@ -141,6 +141,31 @@ classpath via the non-`Application` `com.editora.Launcher` main class. The profi
 is impossible (JavaFX's macOS/Linux x64 and arm64 natives share filenames and collide), so the
 release CI builds one fat jar per runner.
 
+## Bundled user guide
+
+Release builds carry the user guide as HTML, so **Help ▸ Documentation** works offline and shows the docs of
+the version that is running. The source is [`user-docs/`](../user-docs/README.md); the HTML is made by the
+website's own Astro build, so it is the website's pages exactly, styles, search and all.
+
+- **Rendering.** In `editora-website`: `npm ci`, then
+  `node scripts/build-app-docs.mjs --editora <Editora checkout> --out <Editora checkout>/.docs-site`. It runs the
+  generators against that checkout (the guide, the command pages, the Pauta page), builds only this version's
+  docs with no analytics (`EDITORA_APP_DOCS=1`), copies the pages, the styles and the pictures they use, and
+  indexes them with Pagefind. About 35 s and 60 MB, most of it the 1,600 command pages and the screenshots.
+- **Packaging.** `pom.xml` copies `${docs.site.dir}` (default `.docs-site/`, git-ignored, outside `target/` because
+  `-Pdist` runs `clean`) into the jar at `com/editora/docs-site/`. No folder, no copy: a local build without it
+  behaves as before and every docs link goes to the website. The release workflow's `docs-site` job renders it
+  once from the website's `master` and every build leg downloads it before `-Pdist`, so the installers and the
+  fat jar carry it. The experimental Native Image build does not.
+- **Serving.** `com.editora.web.AppDocs` serves the copy from `127.0.0.1` (port 47831 when free, so the page keeps
+  its theme between runs, any free port otherwise) with the JDK's HTTP server, started on the first docs link.
+  The link opener (`ExternalLinks`) turns every link into this version's docs (Help, the palette's per-command
+  help, Settings' *Help for*, Pauta Conformance) into the local address, off the FX thread. The pages use
+  absolute paths, which is why they are served rather than opened as `file:` pages, where search could not load
+  its index either. A path the copy lacks (News, Features, an older version) is redirected to the website.
+  **Help ▸ Online Documentation** opens the website's copy directly.
+- The copy is used only when its `app-docs.json` names this build's release version.
+
 ## Licences in the artifacts
 
 Every build carries the licence material; nothing has to be added by hand.
