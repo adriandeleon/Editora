@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Autos.** When the program stops, the Debug window's Variables view now has an **Autos** list at its end: open it
+  to see the values of the variables and fields used on the line it stopped at and the line before, as Visual Studio
+  shows them. It stays open from stop to stop once you open it, and works with every debugger Editora runs.
 - **Kotlin and Groovy tests at the caret.** Kotlin and Groovy test files in a Gradle or Maven project get the blue ▶ on
   each test, Run Test at Caret and Debug Test at Caret, as Java's have: JUnit tests (Kotlin's `` `named like this` ``
   ones too), Spock features (`def "adds two numbers"()`) and Kotest specs (run as a whole). Debugging one stops at

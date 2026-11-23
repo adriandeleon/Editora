@@ -140,6 +140,13 @@ class TriggeredBreakpointsProbeFxTest {
             FxTestSupport.runOnFx(() -> ((CommandRegistry) FxTestSupport.field(c, "registry")).run("debug.start"));
             awaitStop(dap, debug, trigger);
             awaitRow(debug, "i", "1");
+            // The stop arms the waiting breakpoint after the tab's load: resumed before it is sent, the loop never
+            // stops there (CI, 2026-11-23). The trigger is marked hit in the same FX step that sends the waiting
+            // breakpoint (DebugCoordinator.armBy), so seeing it marked means the send has gone out.
+            await(
+                    "the waiting breakpoint sent",
+                    30,
+                    () -> call(() -> !debug.s().hitTriggers.isEmpty()));
             for (int i = 2; i <= 3; i++) {
                 FxTestSupport.runOnFx(dap::resume);
                 awaitStop(dap, debug, waiting);
