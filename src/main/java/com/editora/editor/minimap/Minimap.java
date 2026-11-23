@@ -490,9 +490,9 @@ public final class Minimap extends Region {
     }
 
     /** The drag handlers, on the canvas (each one {@link CanvasGuards#released} puts in place gets them too). */
-    private void wire(Canvas c) {
-        c.addEventHandler(MouseEvent.MOUSE_PRESSED, this::beginDrag);
-        c.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::continueDrag);
+    private void wire(Canvas canvas) {
+        canvas.addEventHandler(MouseEvent.MOUSE_PRESSED, this::beginDrag);
+        canvas.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::continueDrag);
     }
 
     /** Copies the cached content pixels into {@link MinimapRetention} before the image is dropped. */

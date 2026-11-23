@@ -1,5 +1,6 @@
 package com.editora.editor;
 
+import java.time.Duration;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javafx.geometry.Insets;
@@ -8,6 +9,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 
+import com.editora.testkit.Await;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -78,9 +80,8 @@ class AfterLayoutPaintFxTest {
                 // Nothing moves: the checks wait for pulses that come anyway, and ask for none.
                 assertTrue(EditorFx.callFx(paints[0]::armedForTest), "the checks after the paint are due");
                 int before = pulses.get();
-                Thread.sleep(300);
-                assertTrue(
-                        pulses.get() - before <= 1,
+                assertFalse(
+                        Await.holdsWithin(() -> pulses.get() - before > 1, Duration.ofMillis(300)),
                         "no pulses asked for after a paint: " + (pulses.get() - before) + " ran");
             }
             if (EditorFx.callFx(paints[0]::listeningForTest)) {
@@ -108,8 +109,7 @@ class AfterLayoutPaintFxTest {
         long end = System.nanoTime() + 3_000_000_000L;
         while (System.nanoTime() < end) {
             int before = pulses.get();
-            Thread.sleep(300);
-            if (pulses.get() == before) {
+            if (!Await.holdsWithin(() -> pulses.get() != before, Duration.ofMillis(300))) {
                 return true;
             }
         }
