@@ -50,6 +50,14 @@ import org.jspecify.annotations.Nullable;
  */
 public final class MarkdownPreview {
 
+    private static final java.util.concurrent.atomic.AtomicLong SURFACES = new java.util.concurrent.atomic.AtomicLong();
+
+    /**
+     * This preview's Mermaid surface: a fence's key is this plus its source line, so a newer render of a fence
+     * being typed in drops the one still queued for it (perf review P1).
+     */
+    private final String diagramSurface = "md-preview-" + SURFACES.incrementAndGet() + ":";
+
     /** One top-level unit of a parsed document: a block, or a {@code <details>} with the blocks it folds. */
     record Unit(
             org.commonmark.node.Node first,
@@ -1017,7 +1025,8 @@ public final class MarkdownPreview {
                 dark,
                 plan.footnotes(),
                 new MarkdownRenderer.Live(
-                        this::taskClicked, this::enlarge, PreviewPrefs.hideFrontMatter(), remoteGranted, diagrams));
+                        this::taskClicked, this::enlarge, PreviewPrefs.hideFrontMatter(), remoteGranted, diagrams),
+                fenceLine -> diagramSurface + fenceLine);
         showRemoteBar(plan.remoteImages()
                 && !remoteGranted
                 && PreviewImageLoader.remotePolicy() == PreviewImageLoader.RemotePolicy.ASK);

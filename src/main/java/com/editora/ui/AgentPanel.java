@@ -135,6 +135,17 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     private int settledLength;
     /** How many of {@link #streamBlocks}' children those final blocks are. */
     private int settledBlocks;
+    /** How many lines of {@link #currentAgentMarkdown} those final blocks hold: where the tail's lines start. */
+    private int settledLines;
+
+    private static final java.util.concurrent.atomic.AtomicLong MESSAGES = new java.util.concurrent.atomic.AtomicLong();
+
+    /**
+     * The Mermaid surface of the message streaming now (perf review P1): a fence's key is this plus its line in
+     * the message, so each render of it — the tail at every tick, the settled block, the finished reply — drops
+     * the one still queued for it instead of each running {@code mmdc}.
+     */
+    private String diagramSurface = "";
 
     private int wholeRenders;
     private int tailRenders;
@@ -311,6 +322,7 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     public void appendChunk(String text) {
         if (currentAgentWrapper == null) {
             currentAgentWrapper = new VBox();
+            diagramSurface = "agent-" + MESSAGES.incrementAndGet() + ":";
             account(currentAgentWrapper, 0); // accounted at its final size when it is finalized
             transcriptBox.getChildren().add(currentAgentWrapper);
             trimIfNeeded();
@@ -477,10 +489,11 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
             }
             String md = currentAgentMarkdown.toString();
             boolean math = MathImages.isEnabled();
+            String surface = diagramSurface;
             finalParses++;
             com.editora.perf.OffFx.then(PARSE_SITE, () -> parsed(md, math), answer -> {
                 finalParses--;
-                wrapper.getChildren().setAll(rendered(md, answer.value()));
+                wrapper.getChildren().setAll(rendered(md, answer.value(), surface, 0, false));
                 wholeRenders++;
             });
             account(wrapper, md.length());
@@ -509,11 +522,13 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         javafx.scene.layout.Pane blocks = complete ? null : streamBlocks;
         if (blocks != null) {
             int from = settledLength;
+            int fromLine = settledLines;
             streamParse.submit(
                     () -> {
                         int end = AgentStreamSplit.settledEnd(md, from);
                         return new TailParse(
                                 end,
+                                fromLine + newlines(md, from, end),
                                 end > from ? parsed(md.substring(from, end), math) : null,
                                 end < md.length() ? parsed(md.substring(end), math) : null);
                     },
@@ -528,27 +543,56 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
             if (currentAgentWrapper != wrapper) {
                 return; // finalized meanwhile: its own whole render lands instead
             }
-            Node rendered = rendered(md, doc);
+            Node rendered = rendered(md, doc, diagramSurface, 0, true);
             wrapper.getChildren().setAll(rendered);
             wholeRenders++;
             streamBlocks = blocksOf(rendered);
             settledLength = 0;
             settledBlocks = 0;
+            settledLines = 0;
         });
     }
 
-    /** The streaming tail parsed off the thread: where the settled part ends, and the parses either side of it. */
+    /**
+     * The streaming tail parsed off the thread: where the settled part ends (and on which line of the message),
+     * and the parses either side of it.
+     */
     private record TailParse(
-            int end, org.commonmark.node.@Nullable Node settled, org.commonmark.node.@Nullable Node tail) {}
+            int end,
+            int endLine,
+            org.commonmark.node.@Nullable Node settled,
+            org.commonmark.node.@Nullable Node tail) {}
 
-    /** Builds the nodes of a parsed message; falls back to a plain wrapped label (the parse or render threw). */
-    private Node rendered(String md, org.commonmark.node.@Nullable Node doc) {
+    /** How many newlines {@code s[from, to)} holds. */
+    static int newlines(CharSequence s, int from, int to) {
+        int n = 0;
+        for (int i = from; i < to; i++) {
+            if (s.charAt(i) == '\n') {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /**
+     * Builds the nodes of a parsed message; falls back to a plain wrapped label (the parse or render threw).
+     * {@code md} starts on line {@code firstLine} of the message whose diagrams are keyed by {@code surface};
+     * while {@code streaming}, a code fence not closed yet is plain code (perf review P1, P5).
+     */
+    private Node rendered(
+            String md, org.commonmark.node.@Nullable Node doc, String surface, int firstLine, boolean streaming) {
         Node rendered;
         try {
             if (doc == null) {
                 throw new IllegalStateException("not parsed");
             }
-            rendered = MarkdownRenderer.renderDocument(doc, null, onOpenLink, MarkdownRenderer.ImagePolicy.DATA_ONLY);
+            rendered = MarkdownRenderer.renderDocument(
+                    doc,
+                    null,
+                    onOpenLink,
+                    MarkdownRenderer.ImagePolicy.DATA_ONLY,
+                    line -> surface + (firstLine + line),
+                    streaming);
         } catch (RuntimeException ex) {
             Label fallback = new Label(md);
             fallback.setWrapText(true);
@@ -584,8 +628,10 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         }
         List<Node> blocks = stream.getChildren();
         int end = parse.end();
-        List<Node> settled = end > from ? renderBlocks(md.substring(from, end), parse.settled()) : List.of();
-        List<Node> tail = end < md.length() ? renderBlocks(md.substring(end), parse.tail()) : List.of();
+        int fromLine = settledLines;
+        List<Node> settled = end > from ? renderBlocks(md.substring(from, end), parse.settled(), fromLine) : List.of();
+        List<Node> tail =
+                end < md.length() ? renderBlocks(md.substring(end), parse.tail(), parse.endLine()) : List.of();
         if (settled == null || tail == null) {
             streamBlocks = null;
             renderThrottle.request();
@@ -594,6 +640,7 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         blocks.subList(settledBlocks, blocks.size()).clear(); // the previous tail
         blocks.addAll(settled);
         settledLength = end;
+        settledLines = parse.endLine();
         settledBlocks = blocks.size();
         blocks.addAll(tail);
         tailRenders++;
@@ -601,8 +648,8 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     }
 
     /** The top-level block nodes of {@code md}, detached from their own container; null if not block-shaped. */
-    private @Nullable List<Node> renderBlocks(String md, org.commonmark.node.@Nullable Node doc) {
-        javafx.scene.layout.Pane rendered = blocksOf(rendered(md, doc));
+    private @Nullable List<Node> renderBlocks(String md, org.commonmark.node.@Nullable Node doc, int firstLine) {
+        javafx.scene.layout.Pane rendered = blocksOf(rendered(md, doc, diagramSurface, firstLine, true));
         if (rendered == null) {
             return null;
         }

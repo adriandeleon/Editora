@@ -254,7 +254,10 @@ public final class MermaidImages {
         }
         EXEC.submit(() -> {
             if (superseded(surfaceKey, gen)) {
-                return; // a newer pulse for this surface has arrived — skip the ~4 s Chromium spawn (#458)
+                // A newer pulse for this surface has arrived — skip the ~4 s Chromium spawn (#458). Its host was
+                // nearly always replaced by the newer one; one still on screen is drawn after all.
+                Platform.runLater(() -> drawIfStillShown(host, source, sizer, useDark));
+                return;
             }
             String key = key(source, useDark);
             KEYS.remember(tag, source, key);
@@ -273,6 +276,43 @@ public final class MermaidImages {
                 LATEST.remove(surfaceKey, gen); // this render was the latest: nothing left to supersede
             }
         });
+    }
+
+    /**
+     * A render dropped because a newer one for its surface key arrived, for a host that is still on screen (or
+     * comes back to it) waiting for it: two fences took the same key — one moved to the line the other was on
+     * while its render waited. It is rendered without a key, so it can neither be dropped nor drop another.
+     */
+    private static void drawIfStillShown(
+            StackPane host, String source, java.util.function.DoubleUnaryOperator sizer, boolean useDark) {
+        if (!waiting(host)) {
+            return;
+        }
+        if (host.getScene() != null) {
+            fill(host, source, sizer, null, useDark);
+            return;
+        }
+        javafx.beans.value.ChangeListener<javafx.scene.Scene> shown = new javafx.beans.value.ChangeListener<>() {
+            @Override
+            public void changed(
+                    javafx.beans.value.ObservableValue<? extends javafx.scene.Scene> o,
+                    javafx.scene.@Nullable Scene was,
+                    javafx.scene.@Nullable Scene now) {
+                if (now != null) {
+                    host.sceneProperty().removeListener(this);
+                    if (waiting(host)) {
+                        fill(host, source, sizer, null, useDark);
+                    }
+                }
+            }
+        };
+        host.sceneProperty().addListener(shown); // a replaced host is never shown again: it goes with its listener
+    }
+
+    /** Whether {@code host} still shows the "rendering" placeholder. */
+    private static boolean waiting(StackPane host) {
+        return host.getChildren().size() == 1
+                && host.getChildren().get(0).getStyleClass().contains("mermaid-placeholder");
     }
 
     /** Runs mmdc for {@code source} on the calling thread and turns the outcome into a cache entry. */
