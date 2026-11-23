@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Autos.** When the program stops, the Debug window's Variables view now has an **Autos** list at its end: open it
+  to see the values of the variables and fields used on the line it stopped at and the line before, as Visual Studio
+  shows them. It stays open from stop to stop once you open it, and works with every debugger Editora runs.
+
 - **Lua debugging.** Press F5 on a Lua script to debug it: breakpoints (with conditions), locals, upvalues and
   globals, watches and hovers, stepping, changing a variable's value, and a stop where an error is raised. The script's
   output appears in the Debug console. It runs on Local Lua Debugger, which Settings ▸ Debugging ▸ Lua installs (it

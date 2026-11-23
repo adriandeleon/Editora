@@ -547,7 +547,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         /** The exception of an exception stop and its message (review C13). */
         EXCEPTION,
         /** What the evaluate field at the top of Variables evaluated: the first row, until the program moves on. */
-        RESULT
+        RESULT,
+        /** A value of the Autos: an expression of the stop's line or the one before, evaluated (not a watch). */
+        AUTO
     }
 
     /** A variables-tree row; {@code ref > 0} means expandable, {@code parentRef} is the DAP container
@@ -1239,7 +1241,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 add.getStyleClass().add("debug-add-watch");
                 flow.getChildren().add(add);
             }
-            case VARIABLE, WATCH, RESULT -> {
+            case VARIABLE, WATCH, RESULT, AUTO -> {
                 // Name, value and type in the editor's syntax token colours (.text.<class> from the active
                 // editor theme), so a value reads like the code it came from.
                 Text name = new Text(row.kind() == Kind.RESULT ? DebugPanelText.oneLine(row.name(), 120) : row.name());
@@ -2243,7 +2245,113 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             item.setExpanded(was != null ? was : !scopes.get(i).expensive());
             restoreSelection(item);
         }
+        loadAutos(root, scopeExpanded(old, tr("debugpanel.autos")));
     }
+
+    /**
+     * The Autos of the frame shown ({@link com.editora.dap.AutoExpressions}, as Visual Studio's): its line and the one
+     * before are read off the FX thread (PERF-01); a node goes last in the tree — while {@code root} is still the tree
+     * shown — and its variables and member chains are evaluated as watches are once it is open, keeping those the
+     * adapter could evaluate.
+     */
+    private void loadAutos(TreeItem<VarRow> root, @Nullable Boolean wasExpanded) {
+        DapModels.StackFrameInfo frame = allFrames.stream()
+                .filter(f -> f.id() == selectedFrameId)
+                .findFirst()
+                .orElse(allFrames.isEmpty() ? null : allFrames.getFirst());
+        java.nio.file.Path file = frame == null ? null : frame.file();
+        if (frame == null
+                || file == null
+                || frame.line() < 0
+                || file.getFileSystem() != java.nio.file.FileSystems.getDefault()) {
+            return; // code without a file here (a sourceReference, a host's file): no Autos
+        }
+        int line = frame.line();
+        int frameId = frame.id();
+        String language = actions.language();
+        com.editora.perf.OffFx.then(
+                "debug-autos",
+                () -> {
+                    if (java.nio.file.Files.size(file) > AUTOS_MAX_FILE) {
+                        return List.<String>of();
+                    }
+                    String[] lines =
+                            com.editora.dap.AutoExpressions.linesAround(java.nio.file.Files.readString(file), line);
+                    return com.editora.dap.AutoExpressions.of(language, lines[0], lines[1]);
+                },
+                a -> {
+                    List<String> exprs = a.value();
+                    if (exprs == null || exprs.isEmpty() || variables.getRoot() != root || viewing != null) {
+                        return; // another stop, or an earlier one is shown
+                    }
+                    TreeItem<VarRow> node =
+                            new TreeItem<>(new VarRow(tr("debugpanel.autos"), "", "", 0, 0, Kind.SCOPE));
+                    // Last and closed until asked for: its values are evaluated only once it is open (each is an
+                    // evaluate request), and it stays open from stop to stop once it is (remembered as a scope is).
+                    TreeItem<VarRow> pending = new TreeItem<>(new VarRow("…", "", "", 0, 0, Kind.AUTO));
+                    node.getChildren().add(pending);
+                    root.getChildren().add(node);
+                    Runnable evaluate = () -> evaluateAutos(root, node, pending, exprs, frameId);
+                    if (Boolean.TRUE.equals(wasExpanded)) {
+                        node.setExpanded(true);
+                        evaluate.run();
+                    } else {
+                        node.expandedProperty().addListener(new javafx.beans.value.ChangeListener<>() {
+                            @Override
+                            public void changed(
+                                    javafx.beans.value.ObservableValue<? extends Boolean> o, Boolean was, Boolean now) {
+                                if (now) {
+                                    node.expandedProperty().removeListener(this);
+                                    evaluate.run();
+                                }
+                            }
+                        });
+                    }
+                });
+    }
+
+    /** Evaluates the Autos' {@code exprs} into {@code node}, in their order on the lines, dropping what fails. */
+    private void evaluateAutos(
+            TreeItem<VarRow> root, TreeItem<VarRow> node, TreeItem<VarRow> pending, List<String> exprs, int frameId) {
+        int[] answered = {0};
+        for (String expr : exprs) {
+            actions.evaluateWatch(expr, frameId, r -> {
+                if (variables.getRoot() != root) {
+                    return; // another stop
+                }
+                if (++answered[0] == exprs.size()) {
+                    node.getChildren().remove(pending);
+                }
+                if (r.failed()) {
+                    return; // not a value here (a type, a module): left out
+                }
+                int index = 0; // answers come in any order: each goes where its expression is
+                while (index < node.getChildren().size()
+                        && node.getChildren().get(index) != pending
+                        && exprs.indexOf(
+                                        node.getChildren().get(index).getValue().name())
+                                < exprs.indexOf(expr)) {
+                    index++;
+                }
+                TreeItem<VarRow> row = lazyItem(new VarRow(
+                        expr,
+                        r.result(),
+                        r.type() == null ? "" : r.type(),
+                        r.variablesReference(),
+                        0,
+                        Kind.AUTO,
+                        r.namedVariables(),
+                        r.indexedVariables(),
+                        false));
+                node.getChildren().add(index, row);
+                noteValue(row);
+                restoreState(row);
+            });
+        }
+    }
+
+    /** A source file larger than this has no Autos (its two lines are not worth reading it whole). */
+    private static final long AUTOS_MAX_FILE = 4L * 1024 * 1024;
 
     /** Whether the scope called {@code name} was expanded in the tree being replaced, or null if not there. */
     private static @Nullable Boolean scopeExpanded(@Nullable TreeItem<VarRow> oldRoot, String name) {
@@ -2302,7 +2410,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         if (row == null || !item.isExpanded() || item.isLeaf()) {
             return;
         }
-        if (row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH || row.kind() == Kind.RESULT) {
+        if (row.kind() == Kind.VARIABLE
+                || row.kind() == Kind.WATCH
+                || row.kind() == Kind.RESULT
+                || row.kind() == Kind.AUTO) {
             out.add(pathOf(item));
         }
         for (TreeItem<VarRow> child : item.getChildren()) {
@@ -2480,7 +2591,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 && (row.kind() == Kind.VARIABLE
                         || row.kind() == Kind.WATCH
                         || row.kind() == Kind.EXCEPTION
-                        || row.kind() == Kind.RESULT)) {
+                        || row.kind() == Kind.RESULT
+                        || row.kind() == Kind.AUTO)) {
             // Review C7: a value could not be copied at all, and Add Watch started from an empty prompt.
             javafx.scene.control.MenuItem copyValue = new javafx.scene.control.MenuItem(tr("debugpanel.copyValue"));
             com.editora.editor.MenuChords.tag(copyValue, "debug.copySelectedValue");
@@ -2569,7 +2681,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     menu.getItems().add(showAsMenu(variables.getSelectionModel().getSelectedItem()));
                 }
                 if (row.ref() > 0
-                        && (row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH || row.kind() == Kind.RESULT)) {
+                        && (row.kind() == Kind.VARIABLE
+                                || row.kind() == Kind.WATCH
+                                || row.kind() == Kind.RESULT
+                                || row.kind() == Kind.AUTO)) {
                     // IntelliJ's and Visual Studio's table view of a collection: its elements as rows.
                     String expression = row.kind() == Kind.VARIABLE
                             ? expression(variables.getSelectionModel().getSelectedItem())
@@ -3019,7 +3134,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         VarRow r = item.getValue();
         String e = switch (r.kind()) {
             case VARIABLE -> expression(item);
-            case WATCH, RESULT -> r.name();
+            case WATCH, RESULT, AUTO -> r.name();
             default -> null;
         };
         return e == null || e.isBlank() ? null : actions.language() + "\0" + e;
@@ -3049,7 +3164,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     /** {@code row} as shown: its value in the radix chosen for it, when it is a whole number. */
     VarRow shown(@Nullable TreeItem<VarRow> item, VarRow row) {
-        if (row.failed() || (row.kind() != Kind.VARIABLE && row.kind() != Kind.WATCH && row.kind() != Kind.RESULT)) {
+        if (row.failed()
+                || (row.kind() != Kind.VARIABLE
+                        && row.kind() != Kind.WATCH
+                        && row.kind() != Kind.RESULT
+                        && row.kind() != Kind.AUTO)) {
             return row;
         }
         com.editora.dap.NumberViews.Radix radix = radixFor(item);
@@ -3203,7 +3322,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         java.util.LinkedList<String> parts = new java.util.LinkedList<>();
         for (TreeItem<VarRow> i = item; i != null && i.getValue() != null; i = i.getParent()) {
             VarRow r = i.getValue();
-            if (r.kind() != Kind.VARIABLE && r.kind() != Kind.WATCH && r.kind() != Kind.RESULT) {
+            if (r.kind() != Kind.VARIABLE
+                    && r.kind() != Kind.WATCH
+                    && r.kind() != Kind.RESULT
+                    && r.kind() != Kind.AUTO) {
                 break;
             }
             parts.addFirst(r.name());
@@ -3582,7 +3704,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** Whether {@code row} has a real value to compare: not a placeholder, a failed watch or a row not loaded. */
     private static boolean comparable(@Nullable VarRow row) {
         return row != null
-                && (row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH)
+                && (row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH || row.kind() == Kind.AUTO)
                 && !row.failed()
                 && row.note() == null
                 && !row.value().isEmpty()
@@ -3698,7 +3820,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
         VarRow row = item.getValue();
         return row != null
-                && (row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH || row.kind() == Kind.RESULT)
+                && (row.kind() == Kind.VARIABLE
+                        || row.kind() == Kind.WATCH
+                        || row.kind() == Kind.RESULT
+                        || row.kind() == Kind.AUTO)
                 && row.ref() > 0
                 && row.indexed() > DebugValues.PAGE_SIZE
                 && item.isExpanded()
@@ -4247,7 +4372,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     /** The variables menu at an earlier stop: copy, and Show Value History, as nothing there can be changed. */
     private void historyVarsMenu(javafx.scene.control.ContextMenu menu, @Nullable VarRow row) {
-        if (row == null || !(row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH)) {
+        if (row == null || !(row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH || row.kind() == Kind.AUTO)) {
             javafx.scene.control.MenuItem live = new javafx.scene.control.MenuItem(tr("debugpanel.history.live"));
             com.editora.editor.MenuChords.tag(live, "debug.historyLive");
             live.setOnAction(e -> leaveHistory());
