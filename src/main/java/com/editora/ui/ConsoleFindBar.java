@@ -87,6 +87,15 @@ final class ConsoleFindBar extends HBox {
     /** Counts the changes heard to the text searched while the bar is open: an answer for older text is redone. */
     private long changes;
 
+    /** The matches already found, kept current as the console changes, so a repaint searches only what is new. */
+    private final ConsoleKnownMatches known = new ConsoleKnownMatches();
+
+    /** The changes made since the latest search took its snapshot, replayed onto its answer when it lands. */
+    private List<int[]> inflight = new ArrayList<>();
+
+    /** Whether a change since the latest snapshot could not say what it was (a plain text control). */
+    private boolean inflightBlind;
+
     /** Where the match the find is on starts, or -1: output that arrives can take the selection off it. */
     private int activeStart = -1;
 
@@ -123,6 +132,16 @@ final class ConsoleFindBar extends HBox {
             return text().length();
         }
 
+        /** The text from {@code from} to its end, copying only that. */
+        default String textFrom(int from) {
+            return text().substring(from);
+        }
+
+        /** Where the line holding {@code offset} starts. */
+        default int lineStart(int offset) {
+            return text().lastIndexOf('\n', offset - 1) + 1;
+        }
+
         int selectionStart();
 
         void select(int start, int end);
@@ -132,8 +151,11 @@ final class ConsoleFindBar extends HBox {
         /** Paints every one of {@code matches}, {@code active} more strongly; none clears them. */
         default void paint(List<int[]> matches, int active) {}
 
-        /** Calls {@code changed} whenever the text changes; the returned action stops that. */
-        default Runnable watch(Runnable changed) {
+        /**
+         * Calls {@code changed} whenever the text changes, with {@code {position, removed, inserted}} lengths or
+         * null when it cannot say what changed; the returned action stops that.
+         */
+        default Runnable watch(java.util.function.Consumer<int @Nullable []> changed) {
             return () -> {};
         }
 
@@ -155,6 +177,18 @@ final class ConsoleFindBar extends HBox {
                 @Override
                 public int length() {
                     return area.getLength();
+                }
+
+                @Override
+                public String textFrom(int from) {
+                    return area.getText(from, area.getLength());
+                }
+
+                @Override
+                public int lineStart(int offset) {
+                    int paragraph = area.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                            .getMajor();
+                    return area.getAbsolutePosition(paragraph, 0);
                 }
 
                 @Override
@@ -182,8 +216,16 @@ final class ConsoleFindBar extends HBox {
                 }
 
                 @Override
-                public Runnable watch(Runnable changed) {
-                    return area.multiPlainChanges().subscribe(change -> changed.run())::unsubscribe;
+                public Runnable watch(java.util.function.Consumer<int @Nullable []> changed) {
+                    return area.multiPlainChanges().subscribe(list -> {
+                        for (var c : list) {
+                            changed.accept(new int[] {
+                                c.getPosition(),
+                                c.getRemoved().length(),
+                                c.getInserted().length()
+                            });
+                        }
+                    })::unsubscribe;
                 }
             };
         }
@@ -225,8 +267,8 @@ final class ConsoleFindBar extends HBox {
                 }
 
                 @Override
-                public Runnable watch(Runnable changed) {
-                    javafx.beans.value.ChangeListener<String> listener = (o, was, now) -> changed.run();
+                public Runnable watch(java.util.function.Consumer<int @Nullable []> changed) {
+                    javafx.beans.value.ChangeListener<String> listener = (o, was, now) -> changed.accept(null);
                     control.textProperty().addListener(listener);
                     return () -> control.textProperty().removeListener(listener);
                 }
@@ -237,6 +279,11 @@ final class ConsoleFindBar extends HBox {
     /** @param target the console searched — a supplier, so a panel showing another buffer retargets the bar */
     ConsoleFindBar(Supplier<@Nullable CodeArea> target) {
         this(() -> Target.of(target.get()), true);
+    }
+
+    /** TEST SEAM — a bar over any {@link Target}. */
+    static ConsoleFindBar overTarget(Supplier<@Nullable Target> target) {
+        return new ConsoleFindBar(target, true);
     }
 
     /** A bar over a log shown in a plain text control (the Debug Log window's text area). */
@@ -340,10 +387,18 @@ final class ConsoleFindBar extends HBox {
     /** Follows {@code text} for output that arrives while the bar is open: its matches are painted too. */
     private void watch(@Nullable Target text) {
         unwatch.run();
+        known.forget();
         unwatch = text == null
                 ? () -> {}
-                : text.watch(() -> {
+                : text.watch(change -> {
                     changes++;
+                    if (change == null) {
+                        known.forget();
+                        inflightBlind = true;
+                    } else {
+                        known.changed(change[0], change[1], change[2]);
+                        inflight.add(change);
+                    }
                     repaintSoon();
                 });
     }
@@ -357,8 +412,8 @@ final class ConsoleFindBar extends HBox {
         javafx.application.Platform.runLater(() -> {
             repaintQueued = false;
             Target text = target.get();
-            if (text == null || !isShowing()) {
-                return;
+            if (text == null || !isShowing() || query.getText().isEmpty()) {
+                return; // nothing to find: nothing is painted, and the console is not copied at every drain
             }
             search(Ask.REPAINT, 0);
         });
@@ -468,12 +523,25 @@ final class ConsoleFindBar extends HBox {
         if (ask == Ask.REPAINT && pending != null && pending != Ask.REPAINT) {
             return; // the step or refine under way paints when it lands
         }
-        String text = area.text();
         String needle = query.getText();
         boolean caseSensitive = matchCase.isSelected();
         int selectionStart = area.selectionStart();
         long mine = ++generation;
         long version = changes;
+        inflight = new ArrayList<>();
+        inflightBlind = false;
+        if (needle.isEmpty()) {
+            pending = null;
+            apply(ask, area, List.of(), area.length(), selectionStart);
+            return;
+        }
+        Object source = area.source();
+        if (ask == Ask.REPAINT && known.knows(source, needle, caseSensitive)) {
+            repaintAppended(area, needle, caseSensitive, mine);
+            return;
+        }
+        String text = area.text();
+        List<int[]> changedSince = inflight;
         pending = ask;
         com.editora.perf.OffFx.then(SEARCH_SITE, () -> matches(text, needle, caseSensitive), answer -> {
             Target now = target.get();
@@ -481,15 +549,68 @@ final class ConsoleFindBar extends HBox {
                 return; // superseded, or the bar now searches another console
             }
             pending = null;
-            if (version != changes && tries < 3) {
+            List<int[]> found = answer.or(List.of());
+            boolean blind = inflightBlind;
+            if (!blind) {
+                known.set(source, needle, caseSensitive, found, text.length(), found.size() >= MAX_MATCHES);
+                known.replay(changedSince);
+            }
+            if (version != changes && tries < 3 && (blind || ask != Ask.REPAINT)) {
                 search(ask, tries + 1);
                 return;
             }
             if (ask == Ask.REFINE && !isShowing()) {
                 return;
             }
-            apply(ask, area, answer.or(List.of()), text.length(), selectionStart);
+            if (ask == Ask.REPAINT && !blind && found.size() < MAX_MATCHES) {
+                found = known.before(known.end()); // as the text is now; the queued repaint searches the rest
+            }
+            apply(ask, area, found, text.length(), selectionStart);
         });
+    }
+
+    /**
+     * A repaint that searches only the text after the last line already searched (perf review P6): the matches
+     * before it are known, kept current as output was appended and its oldest lines cut. A query never spans a
+     * line, so the line that was still growing is searched again from its start.
+     */
+    private void repaintAppended(Target area, String needle, boolean caseSensitive, long mine) {
+        int from = area.lineStart(Math.min(known.end(), area.length()));
+        List<int[]> before = known.before(from);
+        String tail = area.textFrom(from);
+        int end = from + tail.length();
+        Object source = area.source();
+        List<int[]> changedSince = inflight;
+        pending = Ask.REPAINT;
+        com.editora.perf.OffFx.then(
+                SEARCH_SITE,
+                () -> {
+                    List<int[]> all = new ArrayList<>(before);
+                    for (int[] m : matches(tail, needle, caseSensitive)) {
+                        if (all.size() >= MAX_MATCHES) {
+                            break;
+                        }
+                        all.add(new int[] {m[0] + from, m[1] + from});
+                    }
+                    return all;
+                },
+                answer -> {
+                    Target now = target.get();
+                    if (mine != generation || now == null || now.source() != source) {
+                        return;
+                    }
+                    pending = null;
+                    List<int[]> found = answer.or(List.of());
+                    if (inflightBlind) {
+                        known.forget(); // the text was replaced meanwhile: the queued repaint searches it all
+                        return;
+                    }
+                    known.set(source, needle, caseSensitive, found, end, found.size() >= MAX_MATCHES);
+                    known.replay(changedSince);
+                    // In the text as it is now: the matches still standing, the rest painted by the queued repaint.
+                    List<int[]> current = found.size() >= MAX_MATCHES ? found : known.before(known.end());
+                    apply(Ask.REPAINT, area, current, area.length(), area.selectionStart());
+                });
     }
 
     private void apply(Ask ask, Target area, List<int[]> matches, int length, int selectionStart) {
