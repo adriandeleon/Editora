@@ -2486,6 +2486,9 @@ public final class DapManager {
         if (DebugLanguages.LUA.equals(language)) {
             return InstalledAdapter.LUA_DEBUG;
         }
+        if (DebugLanguages.FIREFOX.equals(language)) {
+            return InstalledAdapter.FIREFOX_DEBUG;
+        }
         return DebugLanguages.PHP.equals(language) ? InstalledAdapter.PHP_DEBUG : null;
     }
 

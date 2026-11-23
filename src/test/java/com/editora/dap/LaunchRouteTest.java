@@ -80,9 +80,14 @@ class LaunchRouteTest {
                 LaunchRoute.Kind.UNSUPPORTED,
                 LaunchRoute.of(config("type", "java", "request", "attach"), none)
                         .kind());
-        LaunchRoute.Route firefox = LaunchRoute.of(config("type", "firefox"), none);
-        assertEquals(LaunchRoute.Kind.UNSUPPORTED, firefox.kind());
-        assertEquals("type \"firefox\"", firefox.reason());
+        LaunchRoute.Route firefox = LaunchRoute.of(config("type", "firefox", "request", "launch"), none);
+        assertEquals(LaunchRoute.Kind.FIREFOX, firefox.kind(), "vscode-firefox-debug");
+        assertSame(DebugLanguages.FIREFOX, firefox.profile());
+        assertTrue(LaunchRoute.of(config("type", "firefox", "request", "attach"), none)
+                .attach());
+        LaunchRoute.Route safari = LaunchRoute.of(config("type", "safari"), none);
+        assertEquals(LaunchRoute.Kind.UNSUPPORTED, safari.kind());
+        assertEquals("type \"safari\"", safari.reason());
         assertEquals(
                 "a configuration without a type", LaunchRoute.of(config(), none).reason());
         DebugLanguage mine = ExternalAdapterTest.profile(

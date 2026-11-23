@@ -637,7 +637,8 @@ final class SettingsDebugPage {
             java.util.function.Consumer<java.util.function.BiConsumer<Boolean, String>> detect) {}
 
     /**
-     * The debug adapters with a card of their own (Java, Python, JavaScript, Go, Rust, C#, Ruby, PHP, Bash, Dart, Lua), in display
+     * The debug adapters with a card of their own (Java, Python, JavaScript, Go, Rust, C#, Ruby, PHP, Bash, Dart, Lua,
+     * Firefox), in display
      * order.
      */
     private java.util.List<DebugAdapterUi> debugAdapterUis() {
@@ -795,7 +796,15 @@ final class SettingsDebugPage {
                         v -> config.getSettings().setLuaDebugEnabled(v),
                         () -> config.getSettings().isLuaDebugEnabled(),
                         v -> config.getSettings().setLuaDebugPath(v),
-                        () -> config.getSettings().getLuaDebugPath()));
+                        () -> config.getSettings().getLuaDebugPath()),
+                externalAdapterUi(
+                        com.editora.dap.DebugLanguages.FIREFOX,
+                        "adapter.bundle.js",
+                        "debug firefox browser vscode-firefox-debug mozilla web node path found install",
+                        v -> config.getSettings().setFirefoxDebugEnabled(v),
+                        () -> config.getSettings().isFirefoxDebugEnabled(),
+                        v -> config.getSettings().setFirefoxDebugPath(v),
+                        () -> config.getSettings().getFirefoxDebugPath()));
     }
 
     /**

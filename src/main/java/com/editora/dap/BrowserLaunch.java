@@ -52,10 +52,12 @@ public final class BrowserLaunch {
     private static final Set<String> TYPES = Set.of("chrome", CHROME, "msedge", EDGE);
 
     /**
-     * The browsers js-debug can drive (they speak the Chrome DevTools Protocol), by {@link com.editora.web.Browsers}
-     * id, in the order one is chosen when the user has not picked one.
+     * The browsers Editora debugs in, by {@link com.editora.web.Browsers} id, in the order one is chosen when the user
+     * has not picked one: those js-debug drives (they speak the Chrome DevTools Protocol), then Firefox, on its own
+     * adapter ({@link FirefoxLaunch}).
      */
-    public static final List<String> BROWSER_IDS = List.of("chrome", "edge", "chromium", "brave", "vivaldi");
+    public static final List<String> BROWSER_IDS =
+            List.of("chrome", "edge", "chromium", "brave", "vivaldi", FirefoxLaunch.TYPE);
 
     /** Whether {@code type} (a launch.json configuration's) is a browser's. */
     public static boolean isBrowserType(@Nullable String type) {
@@ -67,24 +69,36 @@ public final class BrowserLaunch {
         return "msedge".equals(type) || EDGE.equals(type) ? EDGE : CHROME;
     }
 
-    /** js-debug's type for the browser {@code browserId}, or null for one js-debug cannot drive (Firefox, Safari). */
+    /**
+     * The debugger's type for the browser {@code browserId}: js-debug's for a Chromium browser, {@link
+     * FirefoxLaunch#TYPE} for Firefox, null for one neither can drive (Safari).
+     */
     public static @Nullable String typeFor(String browserId) {
         if (!BROWSER_IDS.contains(browserId)) {
             return null;
+        }
+        if (FirefoxLaunch.TYPE.equals(browserId)) {
+            return FirefoxLaunch.TYPE;
         }
         return "edge".equals(browserId) ? EDGE : CHROME;
     }
 
     /**
      * The browser to debug in among {@code found} (detected ids): {@code chosen} when it is found and debuggable,
-     * else {@code preview} (the HTML preview's browser) when it is, else the first of {@link #BROWSER_IDS} found;
-     * null when none is.
+     * else {@code preview} (the HTML preview's browser) when js-debug drives it, else the first of {@link #BROWSER_IDS}
+     * found; null when none is. Firefox, whose debugger is installed apart, is debugged in when it is chosen, or is the
+     * only one found — not merely because it shows the preview.
      */
     public static @Nullable String pick(List<String> found, @Nullable String chosen, @Nullable String preview) {
-        for (String id : java.util.Arrays.asList(chosen, preview)) {
-            if (id != null && !id.isBlank() && typeFor(id) != null && found.contains(id)) {
-                return id;
-            }
+        if (chosen != null && !chosen.isBlank() && typeFor(chosen) != null && found.contains(chosen)) {
+            return chosen;
+        }
+        if (preview != null
+                && !preview.isBlank()
+                && typeFor(preview) != null
+                && !FirefoxLaunch.TYPE.equals(preview)
+                && found.contains(preview)) {
+            return preview;
         }
         for (String id : BROWSER_IDS) {
             if (found.contains(id)) {

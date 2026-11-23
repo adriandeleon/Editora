@@ -24,7 +24,7 @@ class BrowserLaunchTest {
         assertEquals(BrowserLaunch.CHROME, BrowserLaunch.typeFor("chrome"));
         assertEquals(BrowserLaunch.CHROME, BrowserLaunch.typeFor("brave"));
         assertEquals(BrowserLaunch.EDGE, BrowserLaunch.typeFor("edge"));
-        assertNull(BrowserLaunch.typeFor("firefox"));
+        assertEquals(FirefoxLaunch.TYPE, BrowserLaunch.typeFor("firefox"), "on its own adapter");
         assertNull(BrowserLaunch.typeFor("safari"));
         assertTrue(BrowserLaunch.isBrowserType("msedge"));
         assertTrue(BrowserLaunch.isBrowserType("pwa-chrome"));
@@ -38,9 +38,15 @@ class BrowserLaunchTest {
         List<String> found = List.of("firefox", "brave", "edge", "chrome");
         assertEquals("brave", BrowserLaunch.pick(found, "brave", "chrome"));
         assertEquals("chrome", BrowserLaunch.pick(found, "vivaldi", "chrome"), "the chosen one is gone");
-        assertEquals("chrome", BrowserLaunch.pick(found, "", "firefox"), "Firefox cannot be debugged: Chrome first");
+        assertEquals(
+                "chrome",
+                BrowserLaunch.pick(found, "", "firefox"),
+                "the preview's Firefox is not picked by itself: Chrome first");
         assertEquals("edge", BrowserLaunch.pick(List.of("edge", "firefox"), null, null));
-        assertNull(BrowserLaunch.pick(List.of("firefox", "safari", "default"), null, null));
+        assertEquals(
+                "firefox", BrowserLaunch.pick(List.of("firefox", "safari", "default"), null, null), "the only one");
+        assertEquals("firefox", BrowserLaunch.pick(found, "firefox", "chrome"), "chosen");
+        assertNull(BrowserLaunch.pick(List.of("safari", "default"), null, null));
     }
 
     @Test

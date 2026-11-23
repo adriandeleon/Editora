@@ -1681,7 +1681,8 @@ sources) plays js-debug's handshake over real sockets in the default suite; the 
 
 **Debugging in a browser** ([`dap/BrowserLaunch`](../../src/main/java/com/editora/dap/BrowserLaunch.java)). The same
 vscode-js-debug debugs a web page in Chrome, Edge or another Chromium browser (Chromium, Brave, Vivaldi: the
-browsers that speak the DevTools protocol; Firefox and Safari do not). `DapManager.startBrowser` starts js-debug as
+browsers that speak the DevTools protocol; Safari does not; Firefox runs on its own adapter, below).
+`DapManager.startBrowser` starts js-debug as
 for Node.js (`startJsRequest`, shared with `startJsAttach`) and sends it a `pwa-chrome` or `pwa-msedge` `launch` or
 `attach`; each page is a child session, as a Node.js worker is. A launch names the browser's own program
 (`Browsers.executable`: the binary on PATH, the `.app`'s `Contents/MacOS` program, the Windows `.exe`; `stable`, which
@@ -1699,7 +1700,24 @@ instead of ending as a session whose program ran and finished, with nothing said
 launch of a CI job fail now and then with no message; `BrowserDebugProbeFxTest` starts the browser once before its
 tests and prints how long that took.
 
-Entry points in `DebugCoordinator`:
+**Firefox** ([`dap/FirefoxLaunch`](../../src/main/java/com/editora/dap/FirefoxLaunch.java)) is debugged on
+vscode-firefox-debug (firefox-devtools, MIT; `dist/adapter.bundle.js` on Node.js over stdio), the profile
+`DebugLanguages.FIREFOX`: not in `all()` (a browser, not a language), with the JavaScript profile's editor languages so a
+page's files' breakpoints go to it, found as `InstalledAdapter.FIREFOX_DEBUG` (`Settings.firefoxDebugPath`, schema
+183; Editora's install `plugins/dap/firefox`, `InstallCatalog.FIREFOX_DEBUG_STEP`, the 2.15.0 `.vsix` from Open VSX;
+VS Code's `firefox-devtools.vscode-firefox-debug-*`). It is in `BrowserLaunch.BROWSER_IDS` last: `pick` takes it when
+Settings names it or it is the only browser found, never because the HTML preview shows pages in it (its debugger is a
+separate install). Its requests differ from js-debug's: `file` for a `file:` page (the adapter maps those itself),
+`url` and `webRoot` otherwise — the adapter refuses a `webRoot` without a `url` — `pathMappings` of whole URLs
+(`http://127.0.0.1:<port>/<token>/` → the site), `firefoxExecutable`, and Editora's profile as `profileDir` with
+`keepProfileChanges` (made on first use, kept). Its exception filters are the adapter's: `all`, `uncaught`, and
+`debugger` statements, on by default as `debugger;` stops in Chrome. Attach to Browser attaches to Firefox's debugger
+server (`-start-debugger-server`, port 6000) when Firefox is the chosen browser; a launch.json `firefox` configuration
+is `LaunchRoute.Kind.FIREFOX` (`FirefoxLaunch.configured`). Probed with Firefox 160: a stop by `file:` and through a
+served site, the profile kept, no Firefox left after Stop; `FirefoxDebugProbeFxTest` drives F5, launch.json and attach.
+
+The entry points are [`ui/BrowserDebugLaunch`](../../src/main/java/com/editora/ui/BrowserDebugLaunch.java), a part of
+`DebugCoordinator`:
 - *Debug: Debug in Browser…* (`debug.browser`): a picker of the active HTML file, the URLs debugged before in this
   project (`WorkspaceState.debugBrowserUrls`, schema 36, most recent first) and *Another page…*, which asks for a URL
   (`BrowserLaunch.url` adds `http://` to `localhost:5173`); a URL maps to files through `webRoot`, the project.

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Debugging in Firefox.** Choose Firefox under **Debug web pages in** on **Settings → Debugging** and F5 on an HTML
+  file, **Debug in Browser…** and **Attach to Browser…** debug the page in Firefox, as VS Code's Debugger for Firefox
+  does, with breakpoints in its scripts, stepping, values and the console. A launch.json `firefox` configuration
+  launches or attaches. The Firefox debugger (vscode-firefox-debug) installs from its card on the same page.
 - **PHP web apps and PHPUnit.** Run File and Debug File now run a PHP file as what it is: a script, a web app's
   `index.php` on PHP's built-in web server, a Laravel app as `artisan serve` serves it, or a PHPUnit test file's tests.
   Debugging a web app stops at your breakpoints on each request, and F5 in any class file of the app serves it. Debug
