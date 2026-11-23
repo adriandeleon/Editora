@@ -12,6 +12,7 @@ import javafx.scene.control.TreeView;
 import com.editora.command.CommandRegistry;
 import com.editora.config.SharedConfig;
 import com.editora.dap.DapManager;
+import com.editora.dap.DapModels;
 import com.editora.dap.DebugAdapterLocator;
 import com.editora.editor.EditorBuffer;
 import com.editora.testkit.Await;
@@ -140,6 +141,16 @@ class TriggeredBreakpointsProbeFxTest {
             FxTestSupport.runOnFx(() -> ((CommandRegistry) FxTestSupport.field(c, "registry")).run("debug.start"));
             awaitStop(dap, debug, trigger);
             awaitRow(debug, "i", "1");
+            // The stop arms the waiting breakpoint after the tab's load: resumed before it is sent, the loop never
+            // stops there (CI, 2026-11-23). Both lines sent first, as a person reading the stop gives it time to.
+            await(
+                    "the waiting breakpoint sent",
+                    30,
+                    () -> call(() -> {
+                        DapModels.FileBreakpoints sent =
+                                debug.s().sentBreakpoints.get(file);
+                        return sent != null && sent.breakpoints().size() == 2;
+                    }));
             for (int i = 2; i <= 3; i++) {
                 FxTestSupport.runOnFx(dap::resume);
                 awaitStop(dap, debug, waiting);
