@@ -70,7 +70,7 @@ class NodeDebugConfigsTest {
         assertTrue(NodeDebugConfigs.debuggableRuntime(List.of("/p/node_modules/.bin/tsx")));
         assertTrue(NodeDebugConfigs.debuggableRuntime(List.of("C:\\p\\node_modules\\.bin\\tsx.cmd")));
         assertTrue(NodeDebugConfigs.debuggableRuntime(List.of("ts-node")));
-        assertFalse(NodeDebugConfigs.debuggableRuntime(List.of("deno", "run")));
+        assertTrue(NodeDebugConfigs.debuggableRuntime(List.of("deno", "run")), "Deno, on an inspector port");
         assertFalse(NodeDebugConfigs.debuggableRuntime(List.of("/usr/local/bin/bun")));
         assertFalse(NodeDebugConfigs.debuggableRuntime(List.of()));
     }

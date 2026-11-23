@@ -170,6 +170,23 @@ class JsLaunchTest {
     }
 
     @Test
+    void aTestFilesDebugArgumentsNameTheTestForNodeAndTheOutermostOneForDeno() {
+        String src = """
+                Deno.test("outer", async (t) => {
+                  await t.step("inner", () => {});
+                });
+                """;
+        assertEquals(
+                List.of("--test-name-pattern", "outer", com.editora.run.DenoRun.FILTER_ARG + "outer"),
+                JsLaunch.testArgsAt(src, 0));
+        assertEquals(
+                List.of("--test-name-pattern", "outer", com.editora.run.DenoRun.FILTER_ARG + "outer"),
+                JsLaunch.testArgsAt(src, 1),
+                "Node's nearest name above (t.step is no test() call); Deno's top-level test");
+        assertEquals(List.of(), JsLaunch.testArgsAt("const a = 1;\n", 0));
+    }
+
+    @Test
     void theCompiledFileJsDebugRunsInsteadOfATypeScriptSourceIsFound() {
         Path src = Path.of("/p/src/main.ts");
         Path cwd = Path.of("/p");

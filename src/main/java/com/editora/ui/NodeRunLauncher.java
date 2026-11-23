@@ -145,6 +145,16 @@ final class NodeRunLauncher {
     static Ready planNow(Spec spec) {
         Path file = spec.file();
         boolean here = ExecTargets.runsHere(file);
+        String firstLine = RunCoordinator.firstLine(file);
+        if (here
+                && (spec.configured() == null || spec.configured().isBlank())
+                && (firstLine == null || !firstLine.startsWith("#!"))) {
+            // A file of a Deno project runs under Deno: its shebang or a configuration's Interpreter says otherwise.
+            java.util.Optional<Path> deno = com.editora.run.DenoRun.root(file, spec.projectRoot());
+            if (deno.isPresent()) {
+                return denoReady(spec, deno.get());
+            }
+        }
         Path dir = spec.workingDir() != null
                 ? spec.workingDir()
                 : here
@@ -159,7 +169,6 @@ final class NodeRunLauncher {
                         ExecTargets.remoteTool(file, "node"),
                         () -> hostNvmNodes(dir != null ? dir : file.getParent()));
         String name = file.getFileName() == null ? "" : file.getFileName().toString();
-        String firstLine = RunCoordinator.firstLine(file);
         String version = null;
         Path runFile = file;
         String notice = null;
@@ -199,7 +208,7 @@ final class NodeRunLauncher {
                 runtime,
                 spec.configured() != null && !spec.configured().isBlank(),
                 version,
-                spec.nodeOptions(),
+                com.editora.run.DenoRun.withoutFilter(spec.nodeOptions()), // a Deno test's name is not Node's
                 spec.test(),
                 noColor != null && !noColor.isEmpty(),
                 spec.userEnv(),
@@ -210,6 +219,38 @@ final class NodeRunLauncher {
             notice = notice == null ? pin : pin + "\n" + notice;
         }
         return new Ready(plan, dir, target, notice, route, source(runtime));
+    }
+
+    /**
+     * {@code spec} in the Deno project at {@code root} ({@link com.editora.run.DenoRun}): {@code deno run}, or
+     * {@code deno test} for a test file, a Node test run ({@code --test}) or a Deno test's name carried in its Node
+     * arguments; from {@code root}, with colours as Node's runs have them.
+     */
+    static Ready denoReady(Spec spec, Path root) {
+        Path file = spec.file();
+        String name = file.getFileName() == null ? "" : file.getFileName().toString();
+        String filter = com.editora.run.DenoRun.filterOf(spec.nodeOptions());
+        boolean test = spec.test()
+                || spec.nodeOptions().contains("--test")
+                || filter != null
+                || com.editora.run.DenoRun.isTestFile(name);
+        String target = file.toString();
+        List<String> argv =
+                com.editora.run.DenoRun.argv(com.editora.run.DenoRun.executable(), test, filter, target, spec.args());
+        Map<String, String> env = new java.util.LinkedHashMap<>();
+        String noColor = System.getenv("NO_COLOR");
+        if ((noColor == null || noColor.isEmpty()) && !spec.userEnv().containsKey("NO_COLOR")) {
+            env.put("FORCE_COLOR", "1"); // the Run console draws colours; Deno reads this as Node does
+        }
+        env.putAll(spec.userEnv());
+        String config = Files.isRegularFile(root.resolve("deno.json")) ? "deno.json" : "deno.jsonc";
+        return new Ready(
+                new NodeRunPlan(argv, java.util.Collections.unmodifiableMap(env), null, null),
+                spec.workingDir() != null ? spec.workingDir() : root,
+                target,
+                null,
+                TsRunRoute.Kind.PLAIN,
+                relative(spec.projectRoot(), root.resolve(config)));
     }
 
     /**

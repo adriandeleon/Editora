@@ -82,14 +82,15 @@ final class NodeDebugConfigs {
 
     /**
      * Whether js-debug can launch {@code runtime}: Node.js itself, or a Node-based runner it reaches through
-     * {@code NODE_OPTIONS} (tsx, ts-node). Deno and Bun are not Node.js.
+     * {@code NODE_OPTIONS} (tsx, ts-node), or Deno, which waits for it on an inspector port
+     * ({@link com.editora.run.DenoRun#inspected}). Bun is not: it speaks WebKit's inspector protocol.
      */
     static boolean debuggableRuntime(List<String> runtime) {
         if (runtime == null || runtime.isEmpty()) {
             return false;
         }
         String exe = runtime.get(0);
-        if (com.editora.run.NodeRunPlan.isNodeName(exe)) {
+        if (com.editora.run.NodeRunPlan.isNodeName(exe) || com.editora.run.DenoRun.isDeno(exe)) {
             return true;
         }
         String name = exe.replace('\\', '/');

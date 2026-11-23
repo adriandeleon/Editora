@@ -3511,9 +3511,26 @@ final class RunCoordinator {
     private void launchNode(Path path, List<String> args) {
         Path root = ops.projectRoot();
         boolean test = com.editora.run.NodeRunPlan.isTestFile(path, root);
+        if (test && com.editora.process.ExecTargets.runsHere(path)) {
+            // A Deno project's test file runs under deno test, not node --test: looked at off the FX thread first.
+            com.editora.perf.OffFx.then(
+                    "run-deno-test",
+                    () -> com.editora.run.DenoRun.root(path, root).isPresent(),
+                    a -> {
+                        if (Boolean.TRUE.equals(a.value()) || !ops.runNodeTestFile(path)) {
+                            planNode(path, root, args);
+                        }
+                    });
+            return;
+        }
         if (test && ops.runNodeTestFile(path)) {
             return;
         }
+        planNode(path, root, args);
+    }
+
+    /** Plans and streams Run File on {@code path} (a Node.js or Deno script). */
+    private void planNode(Path path, @Nullable Path root, List<String> args) {
         NodeRunLauncher.plan(
                 new NodeRunLauncher.Spec(
                         path,
