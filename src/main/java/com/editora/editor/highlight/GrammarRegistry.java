@@ -60,10 +60,16 @@ public final class GrammarRegistry {
     private final Registry registry;
     private final Map<String, IGrammar> grammarCache = new ConcurrentHashMap<>();
     private final Set<String> failedScopes = ConcurrentHashMap.newKeySet();
-    /** Held while a grammar is being loaded; never by a lookup of one that already is. */
-    final Object loadLock = new Object();
+    /**
+     * Held while a grammar is being loaded; never by a lookup of one that already is. Fair: {@link #warmAllLater}
+     * takes it again for each of its hundreds of grammars, and an unfair lock let that loop take it back at once
+     * every time, so the grammar a tab was waiting for (the first file opened) waited for most of the warm-up, and
+     * the tab, its window and a closed window with them were held that long.
+     */
+    final java.util.concurrent.locks.ReentrantLock loadLock = new java.util.concurrent.locks.ReentrantLock(true);
 
-    private GrammarRegistry() {
+    /** The process's one registry is {@link #shared}; a test makes a cold one of its own here. */
+    GrammarRegistry() {
         // tm4e logs verbose WARNING/SEVERE messages for grammar quirks it can tolerate or that we
         // handle ourselves (see TextMateHighlighter): the Oniguruma backend warns for nearly every
         // regex using Oniguruma-specific syntax (e.g. an unescaped ']'), and the rule parser logs
@@ -231,7 +237,8 @@ public final class GrammarRegistry {
             return cached;
         }
         com.editora.perf.BlockingSites.enter(LOAD_SITE);
-        synchronized (loadLock) {
+        loadLock.lock();
+        try {
             cached = grammarCache.get(scope); // loaded while this thread waited for the lock
             if (cached != null || failedScopes.contains(scope)) {
                 return cached;
@@ -247,6 +254,8 @@ public final class GrammarRegistry {
             }
             failedScopes.add(scope);
             return null;
+        } finally {
+            loadLock.unlock();
         }
     }
 

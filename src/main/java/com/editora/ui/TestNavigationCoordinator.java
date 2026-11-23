@@ -627,6 +627,10 @@ final class TestNavigationCoordinator {
         if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugJsTestAtCaret(b)) {
             return;
         }
+        // A Dart test file's test or group at the caret is debugged on dart (or flutter) debug_adapter --test.
+        if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugDartTestAtCaret(b)) {
+            return;
+        }
         // A Go test file's test at the caret is debugged under Delve's test mode.
         if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugGoTestAtCaret(b)) {
             return;

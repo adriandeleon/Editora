@@ -5493,6 +5493,10 @@ final class DebugCoordinator {
      * Debug Test at Caret on a Go test file ({@code *_test.go}): the test at the caret under Delve's test mode, the
      * package's tests outside any. False — nothing done — for any other buffer.
      */
+    boolean debugDartTestAtCaret(@Nullable EditorBuffer b) {
+        return dart.debugTestAtCaret(b); // its test or group, on the adapter's test mode
+    }
+
     boolean debugGoTestAtCaret(@Nullable EditorBuffer b) {
         if (b == null
                 || b.getPath() == null

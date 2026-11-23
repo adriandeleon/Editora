@@ -422,8 +422,15 @@ class TerminalPanelFxTest {
             shells.get(0).emit("see /notes.txt\r\n");
             await(() -> call(() -> screen().contains("notes")), "the output");
             await(() -> call(() -> panel.activeView().getWidth() > 0), "a layout");
-            clickWithLinkModifier(6, 0);
-            assertEquals(List.of(), opened, "not asked of the host on the FX thread: no link until it answers");
+            // Read in the same FX turn as the press: the host's answer lands in a later one and then opens the
+            // click that waited for it, so a read after the turn could already see that.
+            assertEquals(
+                    List.of(),
+                    fx(() -> {
+                        fireWithLinkModifier(javafx.scene.input.MouseEvent.MOUSE_PRESSED, 6, 0);
+                        return List.copyOf(opened);
+                    }),
+                    "not asked of the host on the FX thread: no link until it answers");
             await(
                     () -> {
                         try {
@@ -445,41 +452,46 @@ class TerminalPanelFxTest {
 
     private void mouseWithLinkModifier(javafx.event.EventType<javafx.scene.input.MouseEvent> type, int column, int row)
             throws Exception {
+        fx(() -> {
+            fireWithLinkModifier(type, column, row);
+            return null;
+        });
+    }
+
+    /** As {@link #mouseWithLinkModifier}, on the FX thread already. */
+    private void fireWithLinkModifier(javafx.event.EventType<javafx.scene.input.MouseEvent> type, int column, int row) {
         boolean mac = System.getProperty("os.name", "")
                 .toLowerCase(java.util.Locale.ROOT)
                 .startsWith("mac");
-        fx(() -> {
-            var view = panel.activeView();
-            var size = view.getSession().getTerminal().getSize();
-            double cellWidth = view.getWidth() / size.getColumns();
-            double cellHeight = view.getHeight() / size.getRows();
-            // A MouseEvent is built in scene coordinates; firing it at the view makes them local again.
-            var at = view.localToScene((column + 0.5) * cellWidth, (row + 0.5) * cellHeight);
-            double x = at.getX();
-            double y = at.getY();
-            Event.fireEvent(
-                    view,
-                    new javafx.scene.input.MouseEvent(
-                            type,
-                            x,
-                            y,
-                            x,
-                            y,
-                            javafx.scene.input.MouseButton.PRIMARY,
-                            1,
-                            false,
-                            !mac,
-                            false,
-                            mac,
-                            true,
-                            false,
-                            false,
-                            false,
-                            false,
-                            false,
-                            null));
-            return null;
-        });
+        var view = panel.activeView();
+        var size = view.getSession().getTerminal().getSize();
+        double cellWidth = view.getWidth() / size.getColumns();
+        double cellHeight = view.getHeight() / size.getRows();
+        // A MouseEvent is built in scene coordinates; firing it at the view makes them local again.
+        var at = view.localToScene((column + 0.5) * cellWidth, (row + 0.5) * cellHeight);
+        double x = at.getX();
+        double y = at.getY();
+        Event.fireEvent(
+                view,
+                new javafx.scene.input.MouseEvent(
+                        type,
+                        x,
+                        y,
+                        x,
+                        y,
+                        javafx.scene.input.MouseButton.PRIMARY,
+                        1,
+                        false,
+                        !mac,
+                        false,
+                        mac,
+                        true,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        null));
     }
 
     private String screen() throws Exception {

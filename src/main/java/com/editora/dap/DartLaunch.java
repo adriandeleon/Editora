@@ -46,4 +46,23 @@ public final class DartLaunch {
         m.put("debugExternalPackageLibraries", false);
         return new Plan(flutter ? DebugLanguages.FLUTTER : DebugLanguages.DART, m, cwd);
     }
+
+    /** What follows the adapter's command for a test run: {@code --test}, its {@code dart test} (or flutter) mode. */
+    public static final List<String> TEST_MODE = List.of("--test");
+
+    /**
+     * The plan for test file {@code file} narrowed to {@code target} (null: every test of the file), on the adapter's
+     * test mode ({@link #TEST_MODE}): {@code toolArgs} go to {@code dart test} (or {@code flutter test}, which runs
+     * a widget test on its own test device, so no {@code -d}).
+     */
+    public static Plan testPlan(
+            Path file, @Nullable Path root, @Nullable String pubspec, DartTests.@Nullable Target target) {
+        Plan plain = plan(file, root, pubspec, List.of(), "");
+        Map<String, Object> m = new LinkedHashMap<>(plain.launch());
+        m.remove("toolArgs");
+        if (target != null) {
+            m.put("toolArgs", DartTests.toolArgs(target));
+        }
+        return new Plan(plain.language(), m, plain.cwd());
+    }
 }

@@ -1329,7 +1329,18 @@ the file's line; the scopes are Locals and Globals (`args`, `i`, `total`); `eval
 builds the app first (about ten seconds when the engine is cached), then the same sequence. Stop: Flutter's adapter
 ends `flutter run` at once on a `disconnect`, before that has stopped the app, which then runs on as an orphan, so a
 Flutter session's Stop sends `terminate` first and waits (up to 5 s) for its answer (`DapClient.setTerminateFirst`):
-`flutter run` stops the app (`app.stop`), as VS Code's Stop does.
+`flutter run` stops the app (`app.stop`), as VS Code's Stop does. A window's close stops its sessions the same way
+(`DapManager.shutdown` → `stop` → `disposeInBackground`), so it ends the app too (probed).
+
+**Debug Test at Caret for Dart.** In a `*_test.dart` file (`dap/DartTests.isTestFile`), `test.debugAtCaret` debugs the
+`test(…)`, `testWidgets(…)` or `group(…)` whose call spans the caret's line, innermost first, named with its groups'
+names joined by spaces as `dart test` names it (`DartTests.at`; a `)` in a string or comment does not end a call);
+outside every call, the whole file. `DartLaunch.testPlan` sends it to the adapter's test mode (`--test` after its
+command, `DartLaunch.TEST_MODE`: `dart debug_adapter --test`, or Flutter's for a Flutter app's test, which then runs on
+`flutter test`'s own device: no `-d`) with `toolArgs: ["--name", "^<name>$"]`, or `"^<group>( |$)"` for a group: every
+test in it (`DartTests.toolArgs`; the name's regex characters escaped). Probed: with breakpoints in two tests, the
+caret's alone stops. The test runner's isolate and the test's each start paused at `entry` (two threads), both passed.
+The test is found off the FX thread with the package (`DartDebugLaunch.debugTestAtCaret`).
 
 **Run File for Dart.** A Dart file with a top-level `main` at the start of a line (`DartRun.runLine`: `main(`,
 `void main(`, `Future<void> main(`) is runnable: the `dart` run configuration type is one of the `isCompiled` types, so
@@ -1338,11 +1349,12 @@ Flutter session's Stop sends `terminate` first and waits (up to 5 s) for its ans
 package's edited Dart files, and streams `dart run <file> args…` in the package root (else the file's folder), or for
 a Flutter app's file `flutter run -d <device> -t <file relative to the root> --dart-entrypoint-args=<arg>…` in the
 app's folder. It runs the `dart` and `flutter` the Debugging page names, else the PATH's. Rerun reads the package
-again. Debug Test at Caret for `dart test` files is not done: a `_test.dart` file runs and debugs as a program.
+again. Run File on a `_test.dart` file runs it as a program (`dart run`), which runs its tests.
 `DartDebugWindowFxTest` (stand-ins for both adapters) covers the launch, the entry stop passed, the breakpoint's
-shown and Flutter's device; `RunCoordinatorFlowsFxTest` covers both Run File command lines; the opt-in
+shown, Flutter's device and Debug Test at Caret; `RunCoordinatorFlowsFxTest` covers both Run File command lines; the opt-in
 `DartDebugProbeFxTest` drives the real adapters (its Flutter case needs Linux, `flutter` and a display, builds a
-`flutter create --platforms=linux --no-pub` app and checks Stop ends it).
+`flutter create --platforms=linux --no-pub` app and checks that Stop, and a window's close, end it; its test case needs
+`package:test` in the pub cache).
 
 `CsharpDebugProbeFxTest`, `RubyDebugProbeFxTest` and `PhpDebugProbeFxTest`, opt-in, run in CI with the pinned
 adapters (`setup-dotnet`, the runner's Ruby with the debug gem, `php-xdebug`). `PresetDebugWindowFxTest` drives the

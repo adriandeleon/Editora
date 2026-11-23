@@ -110,10 +110,19 @@ class GitBranchCommandsFxTest {
         return FxTestSupport.callOnFx(() -> OverlayTestKit.pickerItems(win.w().scene()));
     }
 
-    private static void pick(Window win, String query) throws Exception {
+    /**
+     * Types {@code query} into the open picker, presses Enter and waits for the pick to land. The picker filters
+     * off the FX thread (PERF-01), so Enter pressed before that answer is back waits for it: the row is chosen, the
+     * picker closed and whatever comes next (a prompt, a question) shown only once the answer lands.
+     */
+    private static void pick(AsyncTestScope async, Window win, String query) throws Exception {
         assertTrue(
                 FxTestSupport.callOnFx(() -> OverlayTestKit.pick(win.w().scene(), query)),
                 "the picker has a row for " + query);
+        OverlayTestKit.await(
+                async,
+                "the pick of " + query,
+                () -> OverlayTestKit.picker(win.w().scene()) == null);
     }
 
     private static GitBranchCoordinator.Ref local(String name) {
@@ -132,7 +141,7 @@ class GitBranchCommandsFxTest {
 
             FxTestSupport.runOnFx(win.branches()::deleteBranch);
             assertEquals(List.of(local("topic")), awaitPicker(async, win), "never the checked-out branch");
-            pick(win, "topic");
+            pick(async, win, "topic");
             awaitMessage(async, win, tr("status.git.deletedBranch", "topic"));
             assertFalse(hasBranch(repo, "topic"));
             assertEquals(
@@ -156,7 +165,7 @@ class GitBranchCommandsFxTest {
 
             FxTestSupport.runOnFx(win.branches()::renameBranch);
             assertEquals(List.of(local("main"), local("topic")), awaitPicker(async, win));
-            pick(win, "topic");
+            pick(async, win, "topic");
             assertEquals(
                     tr("dialog.renameBranch.title"),
                     FxTestSupport.callOnFx(
@@ -193,7 +202,7 @@ class GitBranchCommandsFxTest {
                             local("feat"),
                             new GitBranchCoordinator.Ref("origin/main", GitBranchCoordinator.RefKind.REMOTE)),
                     awaitPicker(async, win));
-            pick(win, "feat");
+            pick(async, win, "feat");
             awaitMessage(async, win, tr("status.git.merged", "feat", "main"));
             assertTrue(Files.exists(repo.root.resolve("feat.txt")));
 
@@ -203,7 +212,7 @@ class GitBranchCommandsFxTest {
             // main now holds feat: rebasing main onto feat has nothing to replay.
             FxTestSupport.runOnFx(win.branches()::rebaseOnto);
             awaitPicker(async, win);
-            pick(win, "feat");
+            pick(async, win, "feat");
             awaitMessage(async, win, tr("status.git.alreadyUpToDate", "feat"));
 
             // A branch with a commit main lacks: main's own commits are replayed on top of it.
@@ -232,7 +241,7 @@ class GitBranchCommandsFxTest {
                     List.of(local("main"), new GitBranchCoordinator.Ref("v1", GitBranchCoordinator.RefKind.TAG)),
                     awaitPicker(async, win),
                     "tags are offered as starting points too");
-            pick(win, "v1");
+            pick(async, win, "v1");
             assertEquals(
                     tr("dialog.newBranchFrom.title"),
                     FxTestSupport.callOnFx(
@@ -299,7 +308,7 @@ class GitBranchCommandsFxTest {
                     List.of(new GitBranchCoordinator.Ref("origin/main", GitBranchCoordinator.RefKind.REMOTE)),
                     awaitPicker(async, win),
                     "only a remote branch can be tracked");
-            pick(win, "origin/main");
+            pick(async, win, "origin/main");
             awaitMessage(async, win, tr("status.git.upstreamSet", "main", "origin/main"));
             assertEquals(
                     "origin/main",
@@ -329,7 +338,7 @@ class GitBranchCommandsFxTest {
 
             FxTestSupport.runOnFx(win.branches()::compareWithCurrent);
             assertEquals(List.of(local("feat")), awaitPicker(async, win));
-            pick(win, "feat");
+            pick(async, win, "feat");
             OverlayTestKit.await(
                     async,
                     "the review tab",
@@ -398,7 +407,7 @@ class GitBranchCommandsFxTest {
                             .map(remote -> ((GitRemotes.Remote) remote).name())
                             .sorted()
                             .toList());
-            pick(win, "backup");
+            pick(async, win, "backup");
             awaitMessage(async, win, tr("status.gitDone", tr("gitlabel.fetchRemote", "backup")));
 
             // An empty answer to the push-to prompt means "the same name".
@@ -811,7 +820,7 @@ class GitBranchCommandsFxTest {
             FxTestSupport.runOnFx(action(actions, tr("branch.row.setUpstream", "feat", "main"))
                     .run());
             awaitPicker(async, win);
-            pick(win, "origin/main");
+            pick(async, win, "origin/main");
             awaitMessage(async, win, tr("status.git.upstreamSet", "feat", "origin/main"));
             FxTestSupport.runOnFx(action(actions, tr("branch.row.unsetUpstream", "feat", "main"))
                     .run());
@@ -884,7 +893,7 @@ class GitBranchCommandsFxTest {
             List<?> offered = awaitPicker(async, win);
             assertTrue(offered.contains(
                     new GitBranchCoordinator.Ref("origin/topic", GitBranchCoordinator.RefKind.REMOTE)));
-            pick(win, "origin/topic");
+            pick(async, win, "origin/topic");
             async.await(agreed, "the delete question, accepted");
             awaitMessage(async, win, tr("status.git.deletedRemoteBranch", "topic", "origin"));
             assertEquals("", bareRev(remote, "refs/heads/topic"));

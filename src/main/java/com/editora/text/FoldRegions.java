@@ -46,12 +46,19 @@ public final class FoldRegions {
     /** A foldable span of lines, inclusive, with {@code startLine < endLine}. */
     public record Region(int startLine, int endLine) {}
 
+    /**
+     * The tokens {@link #xml} and {@link #xmlComments} step through. A tag's attributes are read in runs, possessively:
+     * a run of plain characters, a quoted value, or a {@code /} not ending the tag. The lazy one-character-at-a-time
+     * loop this replaces recursed once per character in java.util.regex, so a tag (or a stray {@code <name} in text)
+     * with a couple of thousand unquoted characters before its {@code >} overflowed the stack, and folding stopped.
+     */
     private static final Pattern XML_TOKEN = Pattern.compile(
             "<!--.*?-->" // comment
                     + "|<!\\[CDATA\\[.*?\\]\\]>" // CDATA
                     + "|<!DOCTYPE[^>]*>" // doctype
                     + "|<\\?.*?\\?>" // processing instruction
-                    + "|<(/?)([\\w:.-]+)((?:\"[^\"]*\"|'[^']*'|[^>\"'])*?)(/?)>", // open/close/self-closing tag
+                    // open/close/self-closing tag
+                    + "|<(/?)([\\w:.-]+)((?:[^>\"'/]++|/(?!>)|\"[^\"]*+\"|'[^']*+')*+)(/?)>",
             Pattern.DOTALL);
 
     private FoldRegions() {}

@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Deno.test` (or `describe`) around the caret. A file whose first line names `deno` (`#!/usr/bin/env -S deno run`)
   debugs too. Editora finds Deno on your PATH or in `~/.deno/bin`, where its installer puts it.
 
+- **Debug Test at Caret for Dart.** In a Dart `_test.dart` file, Debug Test at Caret debugs the `test`,
+  `testWidgets` or `group` the caret is in, alone, on Dart's (or Flutter's) test runner; outside them, every test of
+  the file.
+
 - **Dart and Flutter.** Editora now knows Dart: syntax colouring, comments, indenting and folding, the
   Structure panel and Go to Symbol, snippets, a New File template and its file icon. With the Dart SDK (or
   Flutter's) installed, Dart's own analysis server gives errors, completion, navigation, rename and formatting
@@ -125,6 +129,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OpenPGP signature beside it (`<file>.asc`), by the key attached to the release as `editora-signing-key.asc`.
 
 ### Fixed
+
+- **Folding no longer stops on a very long XML or HTML tag.** A tag (or a stray `<name` in text) with a couple of
+  thousand characters before its `>` made the fold scan run out of stack, and that file then had no folding at all.
+
+- **The first file you open gets its colours sooner.** Its syntax colouring no longer waits behind the start-up
+  loading of every other language's grammar.
 
 - **The Disassembly view on GDB** now shows the instructions leading up to where the program stopped. GDB used to
   answer with instructions after it, so the current instruction wasn't in the list.
