@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Deno.** A JavaScript or TypeScript file in a Deno project (a folder with a `deno.json` or `deno.jsonc`) now
+  runs under Deno: Run File runs `deno run` (a test file `deno test`) from the project's folder, with every
+  permission granted, since the Run console can't ask for them. F5 debugs it the same way through the JavaScript
+  debugger: breakpoints in your TypeScript, locals, watches and stepping. Debug Test at Caret runs just the
+  `Deno.test` (or `describe`) around the caret. A file whose first line names `deno` (`#!/usr/bin/env -S deno run`)
+  debugs too. Editora finds Deno on your PATH or in `~/.deno/bin`, where its installer puts it.
+
 - **The documentation comes with Editora.** Help ▸ Documentation now opens the user guide that ships inside
   Editora, in your browser: the same pages as the website, with their pictures, search and every command's page,
   for the version you are running, and without a network connection. Help for a command in the palette, Settings'

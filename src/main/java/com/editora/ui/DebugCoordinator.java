@@ -5510,7 +5510,8 @@ final class DebugCoordinator {
 
     /**
      * Debug Test at Caret on a JavaScript/TypeScript test file ({@link com.editora.dap.JsLaunch#isTestFile}): the
-     * file runs under {@code node --test}, narrowed to the test at the caret by name when there is one. False —
+     * file runs under {@code node --test} (in a Deno project, {@code deno test}), narrowed to the test at the caret by
+     * name when there is one. False —
      * nothing done — for any other buffer.
      */
     boolean debugJsTestAtCaret(@Nullable EditorBuffer b) {
@@ -5523,14 +5524,11 @@ final class DebugCoordinator {
         int caret = b.getFocusedArea().getCurrentParagraph()
                 + b.getBreakpointManager().regionFirstLine();
         List<String> nodeArgs = new java.util.ArrayList<>(List.of("--test"));
-        var named = scan(b, "jsTest:" + caret, t -> JsLaunch.testNameAt(t, caret), () -> debugJsTestAtCaret(b));
+        var named = scan(b, "jsTest:" + caret, t -> JsLaunch.testArgsAt(t, caret), () -> debugJsTestAtCaret(b));
         if (named == null) {
             return true; // found off the FX thread (PERF-01): asked again once it is
         }
-        java.util.Objects.requireNonNull(named.value()).ifPresent(name -> {
-            nodeArgs.add("--test-name-pattern");
-            nodeArgs.add(com.editora.dap.JsLaunch.literalPattern(name));
-        });
+        nodeArgs.addAll(java.util.Objects.requireNonNull(named.value())); // Node's test pattern, Deno's test name
         launchBuffer(b, nodeArgs);
         return true;
     }

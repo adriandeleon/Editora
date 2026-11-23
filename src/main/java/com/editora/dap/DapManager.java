@@ -590,7 +590,7 @@ public final class DapManager {
 
     /** Sets {@link #jsNodeArgs}; sticky across {@link #restart()}, like the program arguments. */
     public void setJsNodeArgs(List<String> args) {
-        this.jsNodeArgs = args == null ? List.of() : List.copyOf(args);
+        this.jsNodeArgs = com.editora.run.DenoRun.withoutFilter(args); // a Deno test's name is not for Node
     }
 
     /** The project root a JavaScript launch resolves its Node.js, package root and workspace folder from. */
@@ -3386,6 +3386,12 @@ public final class DapManager {
                     : cwd;
             env = JsLaunch.colourEnvironment(System.getenv("NO_COLOR")); // as Run (review D104)
         }
+        int denoPort = -1;
+        if (!runtime.isEmpty() && com.editora.run.DenoRun.isDeno(runtime.get(0))) {
+            // Deno is not started through NODE_OPTIONS: it waits on an inspector port, and js-debug attaches there.
+            denoPort = freePort();
+            runtime = com.editora.run.DenoRun.inspected(runtime, denoPort);
+        }
         boolean clientConsole = shared.programConsole;
         Map<String, Object> launch = overlay(
                 JsLaunch.request(
@@ -3398,6 +3404,11 @@ public final class DapManager {
                         clientConsole,
                         env),
                 configured);
+        if (denoPort > 0) {
+            launch.put("attachSimplePort", denoPort);
+            // js-debug gives up on the port after 10 s by default; a cold Deno (its first type load) can take longer.
+            launch.putIfAbsent("timeout", com.editora.run.DenoRun.ATTACH_TIMEOUT_MS);
+        }
         jsClientConsole = clientConsole;
         // The command line that runs is printed when js-debug asks Editora to start it (startDebuggee): js-debug may
         // run another file than the one planned — a .ts source's compiled output (review D106).

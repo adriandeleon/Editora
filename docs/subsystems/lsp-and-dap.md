@@ -1026,7 +1026,7 @@ the child env. The result is cached after the first call.
 
 ### Language profiles and transports
 
-Editora debugs Java, Python, JavaScript (Node), the JVM languages, Go, Rust, C, C++, C#, Ruby, PHP, Bash and Dart (Flutter too), off by default
+Editora debugs Java, Python, JavaScript (Node and Deno), the JVM languages, Go, Rust, C, C++, C#, Ruby, PHP, Bash and Dart (Flutter too), off by default
 (`Settings.debugSupport`). Each language is a [`dap/DebugLanguage`](../../src/main/java/com/editora/dap/DebugLanguage.java)
 profile in [`dap/DebugLanguages`](../../src/main/java/com/editora/dap/DebugLanguages.java): its `Kind` transport, the
 DAP `launch` type, the `initialize` adapter id, the default interpreter + adapter args, the fallback transport, what
@@ -1536,6 +1536,25 @@ becomes a notice that marks that breakpoint rejected. Debug ▸ Attach on a JS/T
 inspector (`host:port`, `continueOnAttach: false`); Debug Test at Caret on a JS/TS test file runs it under
 `node --test --test-name-pattern <the test at the caret>`. js-debug reports failed evaluations only in
 `body.error.format` (`DapErrors.responseText`).
+
+**Deno.** A JS/TS file of a Deno project — [`run/DenoRun`](../../src/main/java/com/editora/run/DenoRun.java):
+the nearest folder above it with a `deno.json(c)`, before any with a `package.json`, inside the project (a loose
+file: up to eight folders, not past home) — is planned by `NodeRunLauncher.denoReady` instead of `NodeRunPlan`,
+unless its shebang or a configuration's Interpreter names a runner: `deno run --allow-all <file> <args>` (a test
+file, `{*_,*.,}test.{ts,tsx,mts,js,mjs,jsx}`, `deno test --allow-all <file>`), from that folder, `FORCE_COLOR=1`
+as for Node. `--allow-all` because the Run console gives Deno no terminal to ask in (VS Code's Deno launch does the
+same). The executable is `deno` on PATH, else `$DENO_INSTALL/bin` or `~/.deno/bin` (its installer leaves PATH
+alone). Debug reuses that plan: `NodeDebugConfigs.debuggableRuntime` takes Deno, and `DapManager.startSocket`
+rewrites the runtime with `DenoRun.inspected` (`--inspect-wait=127.0.0.1:<free port>` after the subcommand, `run`
+added for a bare `#!/usr/bin/env deno`) and sets `attachSimplePort` plus a 60 s `timeout` — NODE_OPTIONS reaches
+Node alone, so js-debug attaches to Deno's inspector instead (probed: Deno 2.9.8 maps `.ts` breakpoints itself; its
+own `core/…`, `deno_web/…` files are sourceReference sources). Debug Test at Caret narrows `deno test` with
+`--filter /^<name>$/`, the **outermost** test around the caret
+([`run/DenoTests`](../../src/main/java/com/editora/run/DenoTests.java): `Deno.test("…")`, `{ name: "…" }`,
+`function named()`, bdd `describe`/`it`), since Deno's filter matches top-level tests alone (a `t.step` or nested
+`it` runs inside its test). That name rides in the Node arguments as `DenoRun.FILTER_ARG`, which every Node route
+drops (`withoutFilter`), because which runtime runs is known only once the planner has looked at the disk. Bun stays
+out: it speaks WebKit's inspector protocol. `DenoDebugProbeFxTest` drives the real Deno and js-debug.
 
 **Child sessions (vscode-js-debug).** js-debug never debugs the program on the connection that launched
 it. That root session only starts the launcher; for every debuggee it sends the reverse request

@@ -38,6 +38,8 @@ class MissingProgramTest {
         assertEquals(
                 "status.run.bunMissing",
                 MissingProgram.forProgram("bun", "bun.lock").key());
+        assertEquals(
+                "status.run.denoMissing", MissingProgram.forProgram("deno", "").key());
         assertNull(MissingProgram.forProgram("java", ""));
     }
 

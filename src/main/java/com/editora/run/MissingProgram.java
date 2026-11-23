@@ -53,6 +53,7 @@ public final class MissingProgram {
                         ? new Message("status.run.managerMissing", name)
                         : new Message("status.run.managerMissingFrom", name, reason);
             case "bun", "bunx" -> new Message("status.run.bunMissing", name);
+            case "deno" -> new Message("status.run.denoMissing", name);
             default -> null;
         };
     }

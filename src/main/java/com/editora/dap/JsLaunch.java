@@ -351,6 +351,25 @@ public final class JsLaunch {
         return Optional.empty();
     }
 
+    /**
+     * What narrows a test file's debug run to the test at 0-based {@code line} of {@code content}: Node's
+     * {@code --test-name-pattern} for the test there ({@link #testNameAt}), and the outermost test's name for Deno
+     * ({@link com.editora.run.DenoTests}), which Deno's {@code --filter} matches and Node never sees
+     * ({@link com.editora.run.DenoRun#FILTER_ARG}). Which one runs is known once the file's project is.
+     */
+    public static List<String> testArgsAt(String content, int line) {
+        List<String> out = new ArrayList<>();
+        testNameAt(content, line).ifPresent(name -> {
+            out.add("--test-name-pattern");
+            out.add(literalPattern(name));
+        });
+        String deno = content == null ? null : com.editora.run.DenoTests.at(content, line);
+        if (deno != null) {
+            out.add(com.editora.run.DenoRun.FILTER_ARG + deno);
+        }
+        return List.copyOf(out);
+    }
+
     /** {@code name} as a JavaScript regular expression matching it literally ({@code --test-name-pattern}). */
     public static String literalPattern(String name) {
         StringBuilder sb = new StringBuilder();
