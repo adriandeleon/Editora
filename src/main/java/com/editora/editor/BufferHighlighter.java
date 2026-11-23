@@ -291,26 +291,29 @@ final class BufferHighlighter {
         java.util.List<SemanticToken> overlay = semanticOverlay();
         long version = b.docVersion;
         long gen = ++highlightGen;
-        HighlightPass.Request request = new HighlightPass.Request(
-                        b.documentTextSnapshot(),
-                        b.grammar,
-                        highlightLines,
-                        b.symbols,
-                        highlightDirty.isClean() ? -1 : highlightDirty.start(),
-                        highlightDirty.end(),
-                        bracketColors,
-                        overlay)
-                .withPreview( // a long file's screen is coloured before the rest is tokenized (review 2 E105)
-                        Math.max(ScrollAnchor.firstVisibleLine(b.area), b.area.getCurrentParagraph()) + 150,
-                        spans -> Platform.runLater(() -> {
-                            if (gen == highlightGen && version == b.docVersion) {
-                                ScrollAnchor.setStyleSpans(b.area, 0, spans);
-                            }
-                        }));
+        // The document is taken in O(1) here and its text built on the pass's thread (perf review 2026-11-23 E2);
+        // everything else the request needs is read now, on the FX thread.
+        DocumentText document = b.documentText();
+        var grammar = b.grammar;
+        var lines = highlightLines;
+        var symbols = b.symbols;
+        int dirtyStart = highlightDirty.isClean() ? -1 : highlightDirty.start();
+        int dirtyEnd = highlightDirty.end();
+        boolean brackets = bracketColors;
+        int previewLines = Math.max(ScrollAnchor.firstVisibleLine(b.area), b.area.getCurrentParagraph()) + 150;
         passesInFlight++;
         HighlightPass.submit(EditorBuffer.HIGHLIGHT_POOL, b.grammar, () -> {
             HighlightPass.Result r;
             try {
+                HighlightPass.Request request = new HighlightPass.Request(
+                                document.text(), grammar, lines, symbols, dirtyStart, dirtyEnd, brackets, overlay)
+                        .withPreview( // a long file's screen is coloured before the rest is tokenized (review 2 E105)
+                                previewLines,
+                                spans -> Platform.runLater(() -> {
+                                    if (gen == highlightGen && version == b.docVersion) {
+                                        ScrollAnchor.setStyleSpans(b.area, 0, spans);
+                                    }
+                                }));
                 // The cancel check lets a superseded pass stop at the next line instead of finishing a
                 // doomed multi-MB tokenize while holding the shared grammar monitor (see analyzeFrom).
                 r = HighlightPass.run(request, () -> gen != highlightGen);

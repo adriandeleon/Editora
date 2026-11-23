@@ -56,11 +56,11 @@ final class BufferTodos {
             return;
         }
         TodoMatcher matcher = todoMatcher; // may be reassigned on the FX thread; capture the current one
-        String text = b.documentTextSnapshot();
+        DocumentText document = b.documentText(); // O(1); its text is built on the pool (perf review 2026-11-23 E2)
         EditorBuffer.HIGHLIGHT_POOL.execute(() -> {
             java.util.List<TodoMark> marks;
             try {
-                marks = matcher.match(text);
+                marks = matcher.match(document.text());
             } catch (RuntimeException e) {
                 return; // never let a pathological user pattern kill the scan thread
             }

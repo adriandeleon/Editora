@@ -49,36 +49,58 @@ public final class HtmlLinks {
     /** Every link value of {@code text}, in document order, at most {@link #MAX_LINKS}. */
     public static List<Link> all(String text) {
         List<Link> out = new ArrayList<>();
+        walk(text, l -> {
+            out.add(l);
+            return true;
+        });
+        return out;
+    }
+
+    /**
+     * The link whose value {@code offset} is in (either edge counts), or null. Walks the page only as far as
+     * {@code offset} (perf review 2026-11-23 E11), among the first {@link #MAX_LINKS} links like {@link #all}.
+     */
+    public static @Nullable Link at(String text, int offset) {
+        Link[] hit = {null};
+        walk(text, l -> {
+            if (l.start() <= offset && offset <= l.end()) {
+                hit[0] = l;
+                return false;
+            }
+            return l.start() <= offset;
+        });
+        return hit[0];
+    }
+
+    /**
+     * Hands {@code text}'s link values to {@code each} in document order, at most {@link #MAX_LINKS}, until it
+     * answers false; the walk stops there instead of reading the rest of the page.
+     */
+    private static void walk(String text, java.util.function.Predicate<Link> each) {
+        int[] count = {0};
+        boolean[] stop = {false};
         HtmlTags.walk(text, new HtmlTags.Visitor() {
             @Override
             public void start(String name, int start, int nameEnd, int end, boolean selfClosing, boolean closed) {
-                if (out.size() >= MAX_LINKS) {
-                    return;
-                }
                 for (HtmlTags.Attribute a : HtmlTags.attributes(text, nameEnd, end)) {
+                    if (stop[0]) {
+                        return;
+                    }
                     if (a.valueStart() >= 0 && LINK_ATTRIBUTES.contains(a.name().toLowerCase(Locale.ROOT))) {
-                        out.add(new Link(name, a.name(), a.value(), a.valueStart(), a.valueEnd()));
+                        stop[0] = !each.test(new Link(name, a.name(), a.value(), a.valueStart(), a.valueEnd()))
+                                || ++count[0] >= MAX_LINKS;
                     }
                 }
             }
 
             @Override
             public void end(String name, int start, int end) {}
-        });
-        return out;
-    }
 
-    /** The link whose value {@code offset} is in (either edge counts), or null. */
-    public static @Nullable Link at(String text, int offset) {
-        for (Link l : all(text)) {
-            if (l.start() <= offset && offset <= l.end()) {
-                return l;
+            @Override
+            public boolean done() {
+                return stop[0];
             }
-            if (l.start() > offset) {
-                return null;
-            }
-        }
-        return null;
+        });
     }
 
     /** The {@code href} of the page's {@code <base>} element, or null when it has none. */

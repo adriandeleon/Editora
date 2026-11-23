@@ -26,13 +26,18 @@ final class HtmlTags {
 
         /** An end tag {@code </name>} from {@code start} to {@code end}. */
         void end(String name, int start, int end);
+
+        /** Whether the walk may stop here: the visitor has what it needs. */
+        default boolean done() {
+            return false;
+        }
     }
 
     /** Walks {@code text}, reporting each tag to {@code visitor} in document order. */
     static void walk(String text, Visitor visitor) {
         int n = text.length();
         int i = 0;
-        while (i < n) {
+        while (i < n && !visitor.done()) {
             int lt = text.indexOf('<', i);
             if (lt < 0) {
                 return;

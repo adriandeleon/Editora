@@ -20,8 +20,16 @@ public final class CaretLook {
 
     private CaretLook() {}
 
-    /** The text and the caret a look searches. */
-    public record At(String text, int caret, int anchor) {}
+    /**
+     * The text and the caret a look searches. The document is taken in O(1) on the FX thread; {@link #text()}
+     * builds its String on the search's thread (perf review 2026-11-23 E11).
+     */
+    public record At(DocumentText document, int caret, int anchor) {
+        /** The whole text; built on first use, off the FX thread. */
+        public String text() {
+            return document.text();
+        }
+    }
 
     /** A search from {@link At}; may answer null (nothing found). */
     @FunctionalInterface
@@ -43,7 +51,7 @@ public final class CaretLook {
             return false;
         }
         long edits = edits(area);
-        At at = new At(area.getText(), area.getCaretPosition(), area.getAnchor());
+        At at = new At(DocumentText.of(area), area.getCaretPosition(), area.getAnchor());
         area.getProperties().put(BUSY_KEY, Boolean.TRUE);
         OffFx.then(site, () -> search.find(at), answer -> {
             area.getProperties().remove(BUSY_KEY);

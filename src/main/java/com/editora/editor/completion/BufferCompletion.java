@@ -1262,7 +1262,8 @@ public final class BufferCompletion {
         if (!structural && !(autocompleteMermaid && !prefix.isEmpty() && mermaidFenceAbove(a, line))) {
             return false;
         }
-        String text = a.getText();
+        // O(1) here; the text is built on the offer's thread (perf review 2026-11-23 E11).
+        com.editora.editor.DocumentText text = com.editora.editor.DocumentText.of(a);
         String dictLang = host.getSpellLanguage();
         return offerOffFx(
                 a,
@@ -1271,7 +1272,7 @@ public final class BufferCompletion {
                 manual,
                 line,
                 column,
-                () -> markdown.offer(text, line, column, prefix, dictLang, manual));
+                () -> markdown.offer(text.text(), line, column, prefix, dictLang, manual));
     }
 
     /** Where a structural offer is worked out. TEST SEAM: a test may run it in place. */
@@ -1350,7 +1351,7 @@ public final class BufferCompletion {
         if (open < 0 || before.indexOf("}}", open) >= 0) {
             return false;
         }
-        String text = a.getText();
+        com.editora.editor.DocumentText text = com.editora.editor.DocumentText.of(a); // built off the FX thread
         String after = lineText.substring(before.length());
         var variables = httpVariables == null ? null : httpVariables.get();
         return offerOffFx(
@@ -1360,7 +1361,7 @@ public final class BufferCompletion {
                 manual,
                 line,
                 column,
-                () -> HttpCompletions.offer(text, line, before, after, variables));
+                () -> HttpCompletions.offer(text.text(), line, before, after, variables));
     }
 
     /** Shows a structural {@code offer} (rows that replace from {@code offer.start()}) as the local list. */
@@ -1927,13 +1928,13 @@ public final class BufferCompletion {
     private void askShellNames(CodeArea a, int wordStart, String prefix, int room, boolean manual) {
         long version = host.docVersion();
         int caret = a.getCaretPosition();
-        String text = a.getText();
+        com.editora.editor.DocumentText text = com.editora.editor.DocumentText.of(a); // built off the FX thread
         long ask = ++shellNamesAsk;
         offerRunner.accept(() -> {
             com.editora.perf.BlockingSites.enter(SHELL_NAMES_SITE);
             List<Completion> found;
             try {
-                found = com.editora.completion.ShellBufferNames.complete(text, wordStart, prefix, room);
+                found = com.editora.completion.ShellBufferNames.complete(text.text(), wordStart, prefix, room);
             } catch (RuntimeException e) {
                 found = List.of();
             }
