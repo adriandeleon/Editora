@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Kotlin and Groovy tests at the caret.** Kotlin and Groovy test files in a Gradle or Maven project get the blue ▶ on
+  each test, Run Test at Caret and Debug Test at Caret, as Java's have: JUnit tests (Kotlin's `` `named like this` ``
+  ones too), Spock features (`def "adds two numbers"()`) and Kotest specs (run as a whole). Debugging one stops at
+  your breakpoints in the Kotlin or Groovy source, and Test Results opens the test's file.
 - **Return values after a step.** When a step leaves a function, the Variables view shows what it returned, first
   in the caller's locals as `(return) name`. It works in Python, and in Kotlin, Groovy and Clojure on Editora's own
   JVM debugger, for the function you step out of (JavaScript's debugger shows its own "Return value").
@@ -218,7 +222,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Old error underlines came back after some edits.** After signature help, Format, code actions and other requests
   that send the text first, the typing pause could put the pre-edit squiggles back on lines the edit had moved.
 - **The Threads view stopped updating** while a program kept starting and ending threads.
-
+- **Debug Test on Maven and Gradle attaches again.** Debugging a test from the editor or Test Results started the
+  test with its JVM waiting for the debugger, but the debugger never attached, since the build started a moment later
+  than Editora checked. It attaches now.
 - **A bulk edit in a large file could lose the file's previous text.** The Local History copy taken before an edit in
   a buffer with no undo (Replace in Files, an agent or LSP edit, diff apply) was reported as kept before it reached
   the disk, so the edit went ahead even when the copy failed. The edit now waits for the copy and is refused without
