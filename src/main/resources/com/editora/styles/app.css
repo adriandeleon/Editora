@@ -5428,6 +5428,7 @@
 .debug-panel .debug-disassembly-source { -fx-opacity: 0.65; }
 .debug-panel .debug-disassembly-list .list-cell.debug-disassembly-current { -fx-background-color: -color-accent-muted; }
 .debug-disassembly-breakpoint { -fx-fill: -state-red; }
+.debug-disassembly-breakpoint.debug-disassembly-breakpoint-conditional { -fx-fill: -state-red-emphasis; }
 .debug-disassembly-breakpoint.debug-disassembly-breakpoint-unverified { -fx-fill: transparent; -fx-stroke: -color-fg-muted; -fx-stroke-width: 1.5; }
 .debug-disassembly-margin { -fx-cursor: hand; }
 .debug-panel .debug-thread-shown { -fx-font-weight: bold; }

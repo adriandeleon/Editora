@@ -9330,7 +9330,8 @@ final class DebugCoordinator {
                         this::toggleMuteBreakpoints,
                         () -> breakpointsMuted,
                         memberBreakpoints)
-                .sendingClosed(this::sendClosed);
+                .sendingClosed(this::sendClosed)
+                .instructions(instructionBreakpoints);
     }
 
     /** Debug: Move Breakpoint to Group… — on the caret line (see {@link BreakpointGroups#moveToGroupAtCaret}). */

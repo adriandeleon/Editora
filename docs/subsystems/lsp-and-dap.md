@@ -1493,7 +1493,16 @@ IntelliJ's ([`ui/InstructionBreakpoints`](../../src/main/java/com/editora/ui/Ins
 - A stop on one shows the Disassembly view at it. DAP's reason for it is `instruction breakpoint`, but CodeLLDB
   and GDB say `breakpoint`, so a `breakpoint` stop whose top frame is at one of the set's addresses counts too
   (`atInstructionBreakpoint`).
-- Not done: conditions and hit counts on them (DAP has the fields), and a row for them in the Breakpoints list.
+- A condition and a hit count: the row's Edit Breakpoint… (`debug.editBreakpoint`, enabled on a row with one) asks
+  for the condition, then the hit count — each only where the adapter says it takes it
+  (`supportsConditionalBreakpoints`, `supportsHitConditionalBreakpoints`; neither: the status line says so) — and
+  sends them in the breakpoint's `condition`/`hitCondition` (`DapClient.setInstructionBreakpoints(addresses,
+  conditions)`, kept per address in `instructionConditions`; an address taken off loses its own). Its dot then takes
+  the conditional colour.
+- The Breakpoints list (`BreakpointsPicker`) lists the shown session's instruction breakpoints after the rest
+  (`Entry.instruction`), with what each asks and "this run only": Enter opens the Disassembly view at it, Alt+D
+  takes it off, and Alt+E says it has no off state (DAP has none: remove it). Not in groups, export or triggers,
+  which are the project's and an address is not.
 
 [`ui/DebugMemoryView`](../../src/main/java/com/editora/ui/DebugMemoryView.java) shows the program's memory as rows
 of 16 bytes: address, hex and text (`rows`). It reads a 256-byte page at a time (`DapManager.readMemory`), with ◀ ▶
@@ -1517,8 +1526,8 @@ to move between pages.
   toolchain on the dev machine).
 
 `DisassemblyMemoryProbeFxTest` drives the real CodeLLDB; `GoDebugProbeFxTest` checks Delve's answers too.
-`InstructionBreakpointProbeFxTest` stops at an instruction breakpoint on CodeLLDB, GDB and Delve, through the
-window. `LowLevelViewsFxTest` drives both views and instruction breakpoints against `FakeDebugAdapter.lowLevel`.
+`InstructionBreakpointProbeFxTest` stops at an instruction breakpoint with a condition (`i == 3`) on CodeLLDB, GDB and
+Delve, through the window. `LowLevelViewsFxTest` drives both views and instruction breakpoints against `FakeDebugAdapter.lowLevel`.
 
 `GoDebugProbeFxTest`, opt-in, runs in CI's integration job with Go and a pinned Delve. It drives the real Delve
 through `DapManager`: variables, Step Over, goroutines, a test at the caret, and an attach then detach. It also

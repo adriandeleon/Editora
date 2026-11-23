@@ -26,9 +26,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Opt-in probe of instruction breakpoints against the real adapters, in a window: a loop stops at a line breakpoint,
- * the Disassembly view puts a breakpoint on an instruction of the loop's body, the line breakpoint goes, and Continue
- * stops at that instruction — with the Disassembly view shown and the instruction marked; taken off, the program runs
- * to its end. On CodeLLDB and on GDB (C), and on Delve (Go). Run with
+ * the Disassembly view puts a breakpoint on an instruction of the loop's body with a condition ({@code i == 3}), the line
+ * breakpoint goes, and Continue stops at that instruction the third time round — with the Disassembly view shown and
+ * the instruction marked; taken off, the program runs to its end. On CodeLLDB and on GDB (C), and on Delve (Go). Run with
  * {@code ./mvnw test -Dtest=InstructionBreakpointProbeFxTest -Dgroups=probe -Dlsp.probe=true}; needs {@code cc} with
  * CodeLLDB ({@code -Dcodelldb.path=…} or Editora's install) or {@code gdb}, and {@code go} with Delve.
  */
@@ -150,7 +150,22 @@ class InstructionBreakpointProbeFxTest {
             await("the instruction marked", 30, () -> call(() -> view.hasBreakpoint(address)));
             assertEquals(List.of(address), call(dap::instructionBreakpoints));
 
-            // The line breakpoint goes: Continue stops at the instruction, the next time round.
+            // A condition on it: the stop waits for the third time round the loop.
+            java.util.concurrent.CompletableFuture<List<DapModels.InstructionBreakpoint>> conditioned =
+                    new java.util.concurrent.CompletableFuture<>();
+            FxTestSupport.runOnFx(() -> dap.setInstructionBreakpoints(
+                    List.of(address),
+                    java.util.Map.of(address, new DapModels.InstructionConditions("i == 3", "")),
+                    conditioned::complete,
+                    why -> conditioned.completeExceptionally(new AssertionError(why))));
+            assertTrue(
+                    conditioned
+                            .get(30, java.util.concurrent.TimeUnit.SECONDS)
+                            .getFirst()
+                            .verified(),
+                    "the adapter takes the condition");
+
+            // The line breakpoint goes: Continue stops at the instruction, the third time round.
             FxTestSupport.runOnFx(() -> b.toggleBreakpoint(line));
             FxTestSupport.runOnFx(() -> debug.panel().showArea(DebugPanel.AREA_CONSOLE)); // the stop brings it back
             stops = call(() -> debug.s().stopSerial);
@@ -161,6 +176,11 @@ class InstructionBreakpointProbeFxTest {
                     DebugDisassemblyView.parseAddress(address),
                     DebugDisassemblyView.parseAddress(stoppedAt),
                     "stopped at the instruction breakpoint");
+            java.util.concurrent.CompletableFuture<DapModels.EvalResult> i =
+                    new java.util.concurrent.CompletableFuture<>();
+            int frame = call(() -> debug.panel().selectedFrameId());
+            FxTestSupport.runOnFx(() -> dap.evaluateFull("i", frame, "watch", i::complete));
+            assertEquals("3", i.get(30, java.util.concurrent.TimeUnit.SECONDS).result(), "its condition held");
             await(
                     "the Disassembly view shown at it",
                     30,
