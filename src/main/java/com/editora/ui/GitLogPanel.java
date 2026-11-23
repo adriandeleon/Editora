@@ -214,6 +214,10 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
 
     private View view = View.NONE;
     private boolean hasMore;
+
+    /** How many of the newest commits a searched file history covered, when it was cut there (0: all). */
+    private int searchedCommits;
+
     private boolean loadingMore;
     /** The lane layout of {@link #allCommits}, row for row; null when the listing has no graph. */
     private @Nullable GitGraph graph;
@@ -614,6 +618,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         searchChip.setManaged(searching);
         placeholder.setText(placeholderText(page.error(), view));
         hasMore = page.truncated();
+        searchedCommits = page.searchedCommits();
         loadingMore = false;
         if (!sameListing || !allCommits.equals(page.entries())) {
             String selected = selectedHash();
@@ -757,18 +762,34 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     }
 
     private void updateFooter() {
-        // A shallow clone ends where it was cut, not where the history began: say so under the last row.
-        boolean cut = shallow && !hasMore && !allCommits.isEmpty();
-        footer.setVisible(hasMore || cut);
-        footer.setManaged(hasMore || cut);
-        truncatedLabel.setText(hasMore ? tr("gitlog.truncated", allCommits.size()) : cut ? tr("gitlog.shallow") : "");
+        String note = footerNote(hasMore, allCommits.size(), searchedCommits, shallow);
+        boolean shown = !note.isEmpty();
+        footer.setVisible(shown);
+        footer.setManaged(shown);
+        truncatedLabel.setText(note);
         // Visible and managed with the footer (GitLogRowsFxTest reads them off the label).
-        truncatedLabel.setVisible(hasMore || cut);
-        truncatedLabel.setManaged(hasMore || cut);
+        truncatedLabel.setVisible(shown);
+        truncatedLabel.setManaged(shown);
         loadMoreButton.setVisible(hasMore);
         loadMoreButton.setManaged(hasMore);
         loadMoreButton.setDisable(loadingMore);
         loadMoreButton.setText(tr(loadingMore ? "gitlog.loadingMore" : "gitlog.loadMore"));
+    }
+
+    /**
+     * What the footer says under the last row ({@code ""}: no footer): that more can be loaded; that a
+     * searched file history covered only its newest {@code searchedCommits} commits (older matches are not
+     * listed, and no page can bring them); or that a shallow clone ends where it was cut, not where the
+     * history began. Pure.
+     */
+    static String footerNote(boolean hasMore, int loaded, int searchedCommits, boolean shallow) {
+        if (hasMore) {
+            return tr("gitlog.truncated", loaded);
+        }
+        if (searchedCommits > 0) {
+            return tr("gitlog.searchCapped", searchedCommits);
+        }
+        return shallow && loaded > 0 ? tr("gitlog.shallow") : "";
     }
 
     /** The graph column is as wide as the widest loaded row (capped), and absent without a graph. */
@@ -1123,14 +1144,21 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         return rowWidth >= UiZoom.px(520);
     }
 
-    /** "3 days ago" for a commit time; the short ISO date when git gave no usable timestamp. */
+    /**
+     * "3 days ago" for a commit time; the short ISO date when git gave no usable timestamp, or when the time
+     * is ahead of the clock by more than a little skew (it is not "now").
+     */
     static String relativeDate(Entry c, long nowSeconds) {
         return relativeDate(c.epochSeconds(), c.date(), nowSeconds);
     }
 
+    /** As {@link #relativeDate(Entry, long)}; a future time without a {@code fallback} reads "in the future". */
     static String relativeDate(long epochSeconds, String fallback, long nowSeconds) {
         if (epochSeconds <= 0) {
             return fallback;
+        }
+        if (RelativeTime.isFuture(epochSeconds, nowSeconds)) {
+            return fallback.isEmpty() ? tr("blame.future") : fallback;
         }
         RelativeTime.Span span = RelativeTime.of(epochSeconds, nowSeconds);
         long v = span.value();

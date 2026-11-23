@@ -38,7 +38,16 @@ class GitSafetyTest {
         for (String command : List.of("diff", "show", "log", "diff-tree")) {
             List<String> argv = GitSafety.backgroundArgv(List.of("git"), command, "HEAD");
             int at = argv.indexOf(command);
-            assertEquals(List.of("--no-ext-diff", "--no-textconv", "HEAD"), argv.subList(at + 1, argv.size()), command);
+            assertEquals(
+                    List.of(
+                            "--no-ext-diff",
+                            "--no-textconv",
+                            "--no-color",
+                            "--src-prefix=a/",
+                            "--dst-prefix=b/",
+                            "HEAD"),
+                    argv.subList(at + 1, argv.size()),
+                    command);
         }
         List<String> blame = GitSafety.backgroundArgv(List.of("git"), "blame", "--line-porcelain", "--", "f");
         assertEquals("--no-textconv", blame.get(blame.indexOf("blame") + 1));
@@ -47,6 +56,46 @@ class GitSafetyTest {
         assertFalse(listing.contains("--no-ext-diff"));
         List<String> literal = GitSafety.backgroundArgv(List.of("git"), "--literal-pathspecs", "diff", "--cached");
         assertEquals("--no-ext-diff", literal.get(literal.indexOf("diff") + 1));
+    }
+
+    /**
+     * A {@code -c key=value} before the subcommand is a global option and its value: the value used to be taken
+     * for the subcommand, so the Changes card's {@code -c core.quotePath=false diff} ran without
+     * {@code --no-textconv} and a repository's textconv program ran.
+     */
+    @Test
+    void theValueOfAGlobalOptionIsNotTheSubcommand() {
+        List<String> argv = GitSafety.backgroundArgv(
+                List.of("git"), "--literal-pathspecs", "-c", "core.quotePath=false", "diff", "--no-color", "HEAD");
+        int diff = argv.indexOf("diff");
+        assertEquals(
+                List.of("--no-ext-diff", "--no-textconv", "--no-color", "--src-prefix=a/", "--dst-prefix=b/"),
+                argv.subList(diff + 1, diff + 6));
+        assertEquals("core.quotePath=false", argv.get(diff - 1));
+        List<String> log = GitSafety.backgroundArgv(List.of("git"), "-C", "sub", "log", "--name-status");
+        assertEquals("--no-ext-diff", log.get(log.indexOf("log") + 1));
+        assertEquals(3, GitSafety.subcommandIndex("-c", "a=b", "--literal-pathspecs", "show"));
+        assertEquals(2, GitSafety.subcommandIndex("--git-dir", "x", "status"));
+        assertEquals(-1, GitSafety.subcommandIndex("-c", "a=b"));
+    }
+
+    /** A clone, fetch, pull or push the user asked for cannot stop on an ssh question nobody can answer. */
+    @Test
+    void userNetworkCommandsPutSshInBatchModeUnlessTheUserHasTheirOwnSsh() {
+        java.util.Map<String, String> base = GitSafety.userEnv(java.util.Map.of());
+        assertEquals(
+                "ssh -o BatchMode=yes",
+                GitSafety.userNetworkEnv(base, java.util.Map.of(), false).get("GIT_SSH_COMMAND"));
+        assertFalse(GitSafety.userNetworkEnv(base, java.util.Map.of(), true).containsKey("GIT_SSH_COMMAND"));
+        assertFalse(GitSafety.userNetworkEnv(base, java.util.Map.of("GIT_SSH_COMMAND", "my-ssh"), false)
+                .containsKey("GIT_SSH_COMMAND"));
+        assertFalse(GitSafety.userNetworkEnv(base, java.util.Map.of("GIT_SSH", "plink"), false)
+                .containsKey("GIT_SSH_COMMAND"));
+        // The user's settings stay: no editor, no terminal prompt, and gpg is not pointed at a terminal.
+        java.util.Map<String, String> env = GitSafety.userNetworkEnv(base, java.util.Map.of(), false);
+        assertEquals(":", env.get("GIT_EDITOR"));
+        assertEquals("0", env.get("GIT_TERMINAL_PROMPT"));
+        assertTrue(env.containsKey("GPG_TTY") && env.get("GPG_TTY") == null, "GPG_TTY is removed");
     }
 
     @Test

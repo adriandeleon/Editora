@@ -69,17 +69,21 @@ class GitCommitFlowFxTest {
     }
 
     @Test
-    void committingSavesEveryUnsavedBufferOfTheRepository(@TempDir Path dir) throws Exception {
+    void committingSavesOnlyTheStagedFilesUnsavedBuffers(@TempDir Path dir) throws Exception {
         GitTestRepo repo = GitTestRepo.init(dir);
         Path file = repo.write("work.txt", "committed\n");
         repo.commitAll("base");
-        repo.write("staged.txt", "new\n");
+        Path staged = repo.write("staged.txt", "new\n");
         repo.git("add", "staged.txt");
 
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             EditorBuffer buffer = open(fx.controller, file);
-            FxTestSupport.runOnFx(() -> buffer.replaceWholeDocument("typed but never saved\n"));
+            EditorBuffer stagedBuffer = open(fx.controller, staged);
+            FxTestSupport.runOnFx(() -> {
+                buffer.replaceWholeDocument("typed but never saved\n");
+                stagedBuffer.replaceWholeDocument("new, and edited\n");
+            });
             GitCoordinator git = activate(async, fx, repo.root);
             CountDownLatch done = new CountDownLatch(1);
             AtomicReference<Boolean> committed = new AtomicReference<>();
@@ -91,11 +95,41 @@ class GitCommitFlowFxTest {
             async.await(done, "commit completion");
 
             assertEquals(Boolean.TRUE, committed.get());
-            assertEquals("typed but never saved\n", Files.readString(file), "nothing is left only in memory");
-            assertEquals(
-                    " M work.txt\n",
-                    repo.git("status", "--porcelain=v1").text(),
-                    "the edit is on disk and visibly uncommitted, instead of silently missing from the commit");
+            assertEquals("new, and edited\n", Files.readString(staged), "a file the commit records is saved first");
+            assertFalse(FxTestSupport.callOnFx(stagedBuffer::isDirty));
+            assertEquals("committed\n", Files.readString(file), "a file the commit does not record is left alone");
+            assertTrue(FxTestSupport.callOnFx(buffer::isDirty), "its edits stay in the editor, unsaved");
+        }
+    }
+
+    @Test
+    void aFileAPreCommitHookRewritesReloadsIntoItsCleanBuffer(@TempDir Path dir) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                dir.getFileSystem().supportedFileAttributeViews().contains("posix"), "needs an executable hook");
+        GitTestRepo repo = GitTestRepo.init(dir);
+        Path file = repo.write("work.txt", "committed\n");
+        repo.commitAll("base");
+        repo.write("work.txt", "unformatted\n");
+        repo.git("add", "work.txt");
+        Path hook = repo.root.resolve(".git/hooks/pre-commit");
+        Files.createDirectories(hook.getParent());
+        Files.writeString(hook, "#!/bin/sh\nprintf 'formatted\\n' > work.txt\ngit add work.txt\n");
+        Files.setPosixFilePermissions(hook, java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-xr-x"));
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            EditorBuffer buffer = open(fx.controller, file);
+            GitCoordinator git = activate(async, fx, repo.root);
+            CountDownLatch done = new CountDownLatch(1);
+
+            FxTestSupport.runOnFx(() -> git.gitCommit("formatted by the hook", ok -> done.countDown()));
+            async.await(done, "commit completion");
+
+            FxTestSupport.awaitFxCondition(
+                    () -> "formatted\n".equals(buffer.getArea().getText()),
+                    "the clean buffer shows what the hook wrote",
+                    java.time.Duration.ofSeconds(20));
+            assertFalse(FxTestSupport.callOnFx(buffer::isDirty));
         }
     }
 

@@ -62,6 +62,29 @@ class GitHubListQueryTest {
         assertFalse(args.contains("--state"));
     }
 
+    /** G15: a filter with no match among the listed rows becomes a search GitHub runs over all of them. */
+    @Test
+    void aSearchIsPassedToPullRequestAndIssueListsButNotRuns() {
+        GitHubListQuery q = new GitHubListQuery(State.OPEN, false, 50).searching("  crash on save ");
+        List<String> prs = q.prArgs();
+        assertEquals("crash on save", prs.get(prs.indexOf("--search") + 1));
+        List<String> issues = q.issueArgs();
+        assertEquals("crash on save", issues.get(issues.indexOf("--search") + 1));
+        assertFalse(q.runArgs().contains("--search"), "gh run list has no search");
+        assertFalse(new GitHubListQuery(State.OPEN, false, 50).prArgs().contains("--search"));
+        assertEquals("crash on save", q.grownBy(50).search(), "load more keeps the search");
+    }
+
+    @Test
+    void aNumberOnItsOwnNamesAnItem() {
+        assertEquals(1234, GitHubListQuery.itemNumber("#1234"));
+        assertEquals(7, GitHubListQuery.itemNumber(" 7 "));
+        assertEquals(0, GitHubListQuery.itemNumber("#"));
+        assertEquals(0, GitHubListQuery.itemNumber("fix #12"));
+        assertEquals(0, GitHubListQuery.itemNumber("99999999999"));
+        assertEquals(0, GitHubListQuery.itemNumber(null));
+    }
+
     @Test
     void aLimitIsAtLeastOne() {
         assertEquals(1, new GitHubListQuery(State.OPEN, false, 0).limit());

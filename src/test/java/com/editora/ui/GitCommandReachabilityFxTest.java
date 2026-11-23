@@ -67,7 +67,13 @@ class GitCommandReachabilityFxTest {
             }
 
             FxTestSupport.runOnFx(() -> registry.run("git.addToGitignore"));
-            assertEquals("/scratch.log\n", java.nio.file.Files.readString(repo.root.resolve(".gitignore")));
+            // which repository the file is in is looked at off the FX thread first: the file is what tells
+            Path ignore = repo.root.resolve(".gitignore");
+            com.editora.testkit.Await.holdsWithin(
+                    FxTestSupport.unchecked(() -> java.nio.file.Files.exists(ignore)
+                            && "/scratch.log\n".equals(java.nio.file.Files.readString(ignore))),
+                    java.time.Duration.ofSeconds(10));
+            assertEquals("/scratch.log\n", java.nio.file.Files.readString(ignore));
 
             FxTestSupport.runOnFx(() -> registry.run("git.stageAll"));
             // the stage runs after a save check off the FX thread: the index is what tells

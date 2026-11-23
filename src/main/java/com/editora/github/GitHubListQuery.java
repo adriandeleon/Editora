@@ -6,13 +6,14 @@ import java.util.Locale;
 
 /**
  * What one list of the GitHub tool window (or a picker) asks {@code gh} for: which state, whether only the
- * user's own items, and how many. The {@code gh} argument lists are built here so they can be tested without
+ * user's own items, how many, and — when the filter box found nothing among the rows already listed — a search
+ * GitHub runs over all of them ({@code --search}; pull requests and issues only). The {@code gh} argument lists are built here so they can be tested without
  * running anything.
  *
  * <p>{@code gh} has no "are there more?" answer, so a list asks for {@link #fetchLimit() one more} than it
  * shows and {@link #page} cuts the extra one off again: its presence is the answer. Pure — unit-tested.
  */
-public record GitHubListQuery(State state, boolean mine, int limit) {
+public record GitHubListQuery(State state, boolean mine, int limit, String search) {
 
     /** The state filter of {@code gh pr list} / {@code gh issue list}. */
     public enum State {
@@ -38,6 +39,16 @@ public record GitHubListQuery(State state, boolean mine, int limit) {
     public GitHubListQuery {
         state = state == null ? State.OPEN : state;
         limit = Math.max(1, limit);
+        search = search == null ? "" : search.strip();
+    }
+
+    public GitHubListQuery(State state, boolean mine, int limit) {
+        this(state, mine, limit, "");
+    }
+
+    /** The same query, searching GitHub for {@code text} (blank: no search). */
+    public GitHubListQuery searching(String text) {
+        return new GitHubListQuery(state, mine, limit, text);
     }
 
     /** Open items, everyone's, {@code limit} of them. */
@@ -52,7 +63,7 @@ public record GitHubListQuery(State state, boolean mine, int limit) {
 
     /** The same query with {@code more} further rows (the "load more" row). */
     public GitHubListQuery grownBy(int more) {
-        return new GitHubListQuery(state, mine, limit + Math.max(1, more));
+        return new GitHubListQuery(state, mine, limit + Math.max(1, more), search);
     }
 
     /** {@code gh pr list} arguments. */
@@ -66,6 +77,7 @@ public record GitHubListQuery(State state, boolean mine, int limit) {
                 String.valueOf(fetchLimit()),
                 "--json",
                 "number,title,author,headRefName,baseRefName,state,isDraft,updatedAt,url"));
+        addSearch(args);
         return args;
     }
 
@@ -78,7 +90,30 @@ public record GitHubListQuery(State state, boolean mine, int limit) {
         }
         args.addAll(List.of(
                 "--limit", String.valueOf(fetchLimit()), "--json", "number,title,author,state,labels,updatedAt,url"));
+        addSearch(args);
         return args;
+    }
+
+    private void addSearch(List<String> args) {
+        if (!search.isEmpty()) {
+            args.add("--search");
+            args.add(search);
+        }
+    }
+
+    /**
+     * The number a filter text names on its own ({@code #1234} or {@code 1234}), or 0 when it is anything else —
+     * the tool window opens that item directly instead of searching for it. Pure.
+     */
+    public static int itemNumber(String text) {
+        String t = text == null ? "" : text.strip();
+        if (t.startsWith("#")) {
+            t = t.substring(1);
+        }
+        if (t.isEmpty() || t.length() > 9 || !t.chars().allMatch(Character::isDigit)) {
+            return 0;
+        }
+        return Integer.parseInt(t);
     }
 
     /** {@code gh run list} arguments (runs have no state filter here; {@code mine} is not applied). */

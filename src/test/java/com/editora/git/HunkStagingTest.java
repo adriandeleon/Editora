@@ -23,12 +23,29 @@ class HunkStagingTest {
                 false);
     }
 
+    /** A hunk with the lines it really removes from {@code index} and adds from {@code working}. */
+    private static Hunk real(String index, String working, int oldStart, int oldCount, int newStart, int newCount) {
+        List<String> old = index.isEmpty() ? List.of() : List.of(index.split("\n", -1));
+        List<String> now = working.isEmpty() ? List.of() : List.of(working.split("\n", -1));
+        int at = oldCount == 0 ? oldStart : oldStart - 1;
+        int from = newCount == 0 ? newStart : newStart - 1;
+        return new Hunk(
+                oldStart,
+                oldCount,
+                newStart,
+                newCount,
+                old.subList(at, at + oldCount),
+                now.subList(from, from + newCount),
+                false,
+                false);
+    }
+
     @Test
     void onlyTheChosenHunkReachesTheIndex() {
         String index = "a\nb\nc\nd\ne\n";
         String working = "a\nB\nc\nd\nE\nf\n";
-        Hunk first = hunk(2, 1, 2, 1);
-        Hunk second = hunk(5, 1, 5, 2);
+        Hunk first = real(index, working, 2, 1, 2, 1);
+        Hunk second = real(index, working, 5, 1, 5, 2);
         assertEquals("a\nB\nc\nd\ne\n", HunkStaging.apply(index, working, List.of(first)));
         assertEquals("a\nb\nc\nd\nE\nf\n", HunkStaging.apply(index, working, List.of(second)));
         assertEquals(working, HunkStaging.apply(index, working, List.of(first, second)));
@@ -36,28 +53,51 @@ class HunkStagingTest {
 
     @Test
     void additionsAndDeletionsUseGitsLineBeforeTheGap() {
-        assertEquals("a\nnew\nb\n", HunkStaging.apply("a\nb\n", "a\nnew\nb\n", List.of(hunk(1, 0, 2, 1))));
-        assertEquals("top\na\n", HunkStaging.apply("a\n", "top\na\n", List.of(hunk(0, 0, 1, 1))));
-        assertEquals("a\nc\n", HunkStaging.apply("a\nb\nc\n", "a\nc\n", List.of(hunk(2, 1, 1, 0))));
-        assertEquals("", HunkStaging.apply("a\n", "", List.of(hunk(1, 1, 0, 0))));
-        assertEquals("a\n", HunkStaging.apply("", "a\n", List.of(hunk(0, 0, 1, 1))));
+        assertEquals(
+                "a\nnew\nb\n",
+                HunkStaging.apply("a\nb\n", "a\nnew\nb\n", List.of(real("a\nb\n", "a\nnew\nb\n", 1, 0, 2, 1))));
+        assertEquals("top\na\n", HunkStaging.apply("a\n", "top\na\n", List.of(real("a\n", "top\na\n", 0, 0, 1, 1))));
+        assertEquals(
+                "a\nc\n", HunkStaging.apply("a\nb\nc\n", "a\nc\n", List.of(real("a\nb\nc\n", "a\nc\n", 2, 1, 1, 0))));
+        assertEquals("", HunkStaging.apply("a\n", "", List.of(real("a\n", "", 1, 1, 0, 0))));
+        assertEquals("a\n", HunkStaging.apply("", "a\n", List.of(real("", "a\n", 0, 0, 1, 1))));
     }
 
     @Test
     void theFinalNewlineFollowsTheLastLineThatWasStaged() {
         // The file's last line is staged without its newline…
-        assertEquals("a\nb\nc", HunkStaging.apply("a\nb\n", "a\nb\nc", List.of(hunk(2, 0, 3, 1))));
+        assertEquals("a\nb\nc", HunkStaging.apply("a\nb\n", "a\nb\nc", List.of(real("a\nb\n", "a\nb\nc", 2, 0, 3, 1))));
         // …but a hunk further up leaves the index's own ending alone.
-        assertEquals("A\nb\n", HunkStaging.apply("a\nb\n", "A\nb", List.of(hunk(1, 1, 1, 1))));
-        assertEquals("a\nb\n", HunkStaging.apply("a\nb", "a\nb\n", List.of(hunk(2, 1, 2, 1))));
+        assertEquals("A\nb\n", HunkStaging.apply("a\nb\n", "A\nb", List.of(real("a\nb\n", "A\nb", 1, 1, 1, 1))));
+        assertEquals("a\nb\n", HunkStaging.apply("a\nb", "a\nb\n", List.of(real("a\nb", "a\nb\n", 2, 1, 2, 1))));
         // Deleting the index's unterminated last line leaves a terminated one.
-        assertEquals("a\n", HunkStaging.apply("a\nb", "a\n", List.of(hunk(2, 1, 1, 0))));
+        assertEquals("a\n", HunkStaging.apply("a\nb", "a\n", List.of(real("a\nb", "a\n", 2, 1, 1, 0))));
     }
 
     @Test
     void aHunkThatNoLongerFitsIsRefused() {
         assertNull(HunkStaging.apply("a\n", "a\nb\n", List.of(hunk(5, 1, 2, 1))));
         assertNull(HunkStaging.apply("a\nb\n", "a\n", List.of(hunk(2, 1, 2, 3))));
+    }
+
+    @Test
+    void aHunkWhoseLinesAreNoLongerThereIsRefused() {
+        Hunk diffed = real("a\nb\nc\n", "a\nB\nc\n", 2, 1, 2, 1);
+        assertEquals("a\nB\nc\n", HunkStaging.apply("a\nb\nc\n", "a\nB\nc\n", List.of(diffed)));
+        // The index moved on (someone staged "x" there): same counts, other text.
+        assertNull(HunkStaging.apply("a\nx\nc\n", "a\nB\nc\n", List.of(diffed)));
+        // The working file moved on.
+        assertNull(HunkStaging.apply("a\nb\nc\n", "a\nY\nc\n", List.of(diffed)));
+    }
+
+    @Test
+    void aCrlfOrOtherCharsetDiffStillMatchesTheEditorsText() {
+        Hunk crlf = new Hunk(2, 1, 2, 1, List.of("b\r"), List.of("B\r"), false, false);
+        assertEquals("a\nB\nc\n", HunkStaging.apply("a\nb\nc\n", "a\nB\nc\n", List.of(crlf)));
+        Hunk bom = new Hunk(1, 1, 1, 1, List.of("\uFEFFa"), List.of("\uFEFFA"), false, false);
+        assertEquals("A\nb\n", HunkStaging.apply("a\nb\n", "A\nb\n", List.of(bom)));
+        Hunk latin1 = new Hunk(1, 1, 1, 1, List.of("caf\uFFFD"), List.of("CAF\uFFFD"), false, false);
+        assertEquals("CAFÉ\n", HunkStaging.apply("café\n", "CAFÉ\n", List.of(latin1)));
     }
 
     @Test

@@ -5,8 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Parses a single {@code gh pr view <n> --json number,title,body,author,baseRefName,headRefName,state,url,
- * additions,deletions} object into a {@link PrDetail}. Same tolerant, {@code readTree}-based approach as
+ * Parses a single {@code gh pr view <n> --json number,title,body,author,baseRefName,headRefName,headRefOid,state,
+ * url,additions,deletions} object into a {@link PrDetail}. Same tolerant, {@code readTree}-based approach as
  * {@link PrListParser}; returns {@code null} on bad input. Pure — unit-tested.
  */
 public final class PrViewParser {
@@ -15,7 +15,10 @@ public final class PrViewParser {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    /** A pull request's detail, for the diff-tab header / (slice 2) the panel tooltip. */
+    /**
+     * A pull request's detail, for the diff-tab header / (slice 2) the panel tooltip. {@code headRefOid} is the head
+     * commit the detail was read at ({@code ""} when not known): a review from the review tab is pinned to it.
+     */
     public record PrDetail(
             int number,
             String title,
@@ -26,7 +29,23 @@ public final class PrViewParser {
             String state,
             String url,
             int additions,
-            int deletions) {}
+            int deletions,
+            String headRefOid) {
+
+        public PrDetail(
+                int number,
+                String title,
+                String body,
+                String authorLogin,
+                String baseRefName,
+                String headRefName,
+                String state,
+                String url,
+                int additions,
+                int deletions) {
+            this(number, title, body, authorLogin, baseRefName, headRefName, state, url, additions, deletions, "");
+        }
+    }
 
     /** Parses the {@code gh pr view --json …} object, or {@code null} on bad/empty input. */
     public static @Nullable PrDetail parse(String json) {
@@ -48,7 +67,8 @@ public final class PrViewParser {
                     text(n, "state"),
                     text(n, "url"),
                     n.path("additions").asInt(0),
-                    n.path("deletions").asInt(0));
+                    n.path("deletions").asInt(0),
+                    text(n, "headRefOid"));
         } catch (Exception e) {
             return null;
         }

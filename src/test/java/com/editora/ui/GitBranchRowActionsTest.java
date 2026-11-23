@@ -91,4 +91,80 @@ class GitBranchRowActionsTest {
         assertNull(GitBranchCoordinator.worktreeTarget(root, " "));
         assertNull(GitBranchCoordinator.worktreeTarget(root, "bad\u0000path"));
     }
+
+    /** B4: a repository on another file system (a remote host's) gets its work tree there, never a local path. */
+    @Test
+    void aWorktreeOfARepositoryOnAnotherFileSystemStaysOnIt(@org.junit.jupiter.api.io.TempDir Path dir)
+            throws Exception {
+        java.net.URI zip = java.net.URI.create("jar:" + dir.resolve("host.zip").toUri());
+        try (java.nio.file.FileSystem host = java.nio.file.FileSystems.newFileSystem(zip, Map.of("create", "true"))) {
+            Path root = host.getPath("/srv/app");
+            Path target = GitBranchCoordinator.worktreeTarget(root, "app-topic");
+            assertEquals(host.getPath("/srv/app-topic"), target);
+            assertTrue(target.getFileSystem() == host, "on the repository's own file system");
+            assertEquals(host.getPath("/opt/x"), GitBranchCoordinator.worktreeTarget(root, "/opt/x"));
+            assertEquals(host.getPath("/srv/app-y"), GitBranchCoordinator.onFileSystemOf(root, "/srv/app-y"));
+
+            // The folders git lists for that repository are compared on that file system too.
+            Map<String, String> elsewhere = GitBranchCoordinator.checkedOutElsewhere(
+                    root,
+                    List.of(
+                            tree("/srv/app", "main", true),
+                            tree("/srv/app-topic", "topic", false),
+                            tree("/srv/app-detached", "", false)));
+            assertEquals(Map.of("topic", "/srv/app-topic"), elsewhere);
+        }
+    }
+
+    /** B12: the branches checked out in another work tree, without this one's own, a detached one or a bare one. */
+    @Test
+    void theBranchesCheckedOutElsewhereLeaveThisWorktreeOut() {
+        Path root = Path.of("/home/me/src/app").toAbsolutePath();
+        Map<String, String> elsewhere = GitBranchCoordinator.checkedOutElsewhere(
+                root,
+                List.of(
+                        tree(root.toString(), "main", true),
+                        tree(root.resolveSibling("app-a").toString(), "a", false),
+                        tree(root.resolveSibling("app-b").toString(), "", false)));
+        assertEquals(Map.of("a", root.resolveSibling("app-a").toString()), elsewhere);
+    }
+
+    /** B2: New Branch From never tracks where it started, switched to or not. */
+    @Test
+    void aNewBranchFromNeverTracksItsStart() {
+        assertEquals(
+                List.of("checkout", "--no-track", "-b", "work", "origin/main", "--"),
+                List.of(GitBranchCoordinator.newBranchArgs("work", "origin/main", true)));
+        List<String> branch = List.of(GitBranchCoordinator.newBranchArgs("work", "origin/main", false));
+        assertEquals(List.of("branch", "--no-track"), branch.subList(0, 2));
+        assertEquals(List.of("work", "origin/main"), branch.subList(branch.size() - 2, branch.size()));
+    }
+
+    /** M6: a merge is cherry-picked against a chosen parent, as it is reverted. */
+    @Test
+    void aMergeIsCherryPickedAgainstItsMainline() {
+        assertEquals(List.of("cherry-pick", "abc"), List.of(GitWindowCoordinator.cherryPickArgs("abc", 0)));
+        assertEquals(List.of("cherry-pick", "-m", "2", "abc"), List.of(GitWindowCoordinator.cherryPickArgs("abc", 2)));
+    }
+
+    /** L3: a page of the log that could not be read says git's reason. */
+    @Test
+    void aFailedPageSaysWhy() {
+        assertEquals(
+                com.editora.i18n.Messages.tr("status.git.log.loadMoreFailed", "fatal: bad object"),
+                GitWindowCoordinator.loadMoreFailed("fatal: bad object\nmore"));
+    }
+
+    /** B3: the question names a hash as the log shows it, and a branch or tag as it is. */
+    @Test
+    void theLeaveDetachedQuestionNamesTheTarget() {
+        assertEquals("main", GitLeaveDetachedHead.shown("main"));
+        assertEquals("feature-branch-name", GitLeaveDetachedHead.shown("feature-branch-name"));
+        assertEquals("0123456", GitLeaveDetachedHead.shown("0123456789abcdef0123456789abcdef01234567"));
+    }
+
+    private static com.editora.git.GitWorktrees.Worktree tree(String path, String branch, boolean main) {
+        return new com.editora.git.GitWorktrees.Worktree(
+                path, "0123456", branch, main, false, branch.isEmpty(), false, false);
+    }
 }

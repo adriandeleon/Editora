@@ -18,8 +18,12 @@ class GitLogParseTest {
     }
 
     private static String line(String hash, String parents, String refs, String subject) {
-        return hash + "\t" + hash.substring(0, 7) + "\tAda Lovelace\t1791342219\t2026-10-06\t" + parents + "\t" + refs
-                + "\t" + subject;
+        return line(hash, "Ada Lovelace", parents, refs, subject);
+    }
+
+    private static String line(String hash, String author, String parents, String refs, String subject) {
+        return String.join(
+                "\u001f", hash, hash.substring(0, 7), author, "1791342219", "2026-10-06", parents, refs, subject);
     }
 
     @Test
@@ -180,5 +184,43 @@ class GitLogParseTest {
                 List.of("older"),
                 page.drop(1).entries().stream().map(GitLog.Entry::subject).toList());
         assertTrue(page.drop(5).entries().isEmpty());
+    }
+
+    @Test
+    void aTabInTheAuthorNameDoesNotShiftTheFields() {
+        GitLog.Page page = GitLog.parse(
+                line("abcdef1234567890", "Tab\tName", "1111111aaaaaaaaa", "", "subject\u001fwith a separator"), 10);
+
+        GitLog.Entry e = page.entries().get(0);
+        assertEquals("Tab\tName", e.author());
+        assertEquals(1791342219L, e.epochSeconds());
+        assertEquals("2026-10-06", e.date());
+        assertEquals(List.of("1111111aaaaaaaaa"), e.parents());
+        assertEquals("subject\u001fwith a separator", e.subject(), "the subject is last: nothing in it moves a field");
+        assertFalse(GitLog.FORMAT.contains("%x09"), "fields are not tab-separated: " + GitLog.FORMAT);
+    }
+
+    @Test
+    void aSearchedHistoryCutAtTheLimitSaysHowFarTheSearchWent() {
+        String out = line("1111111aaaaaaaaa", "", "newest") + "\n" + line("2222222aaaaaaaaa", "", "older") + "\n"
+                + line("3333333aaaaaaaaa", "", "beyond the limit");
+        GitLog.Page history = GitLog.parse(out, 2);
+        assertTrue(history.truncated());
+
+        GitLog.Page kept = history.keep(java.util.Set.of("2222222aaaaaaaaa"));
+        assertEquals(
+                List.of("older"),
+                kept.entries().stream().map(GitLog.Entry::subject).toList());
+        assertFalse(kept.truncated(), "no next page can be asked for: the search ran once");
+        assertTrue(kept.searchCapped());
+        assertEquals(2, kept.searchedCommits(), "the search covered the newest two commits only");
+        assertEquals(2, kept.drop(0).searchedCommits(), "dropping rows keeps the note");
+
+        GitLog.Page whole = GitLog.parse(out, 5);
+        assertFalse(whole.keep(java.util.Set.of("2222222aaaaaaaaa")).searchCapped(), "the whole history was searched");
+        assertTrue(
+                whole.keep(java.util.Set.of("2222222aaaaaaaaa"), true).searchCapped(),
+                "…unless the search's own listing was cut");
+        assertEquals(0, new GitLog.Page(List.of(), false).searchedCommits());
     }
 }

@@ -144,6 +144,14 @@ gutter work behind it. Working-tree mutations are serialised across both.
     queued (`GitService.networkBusy`), it is killed the moment one is requested, it is skipped for a
     window that has been unfocused for longer than one interval, and a failure is silent apart from
     one status-bar hint per repository per session.
+  *User network commands cannot prompt on a terminal either* (`GitSafety.userNetworkEnv`,
+  `GitService.withoutTerminal`). Launched from a shell, a clone, fetch, pull or push inherited that
+  shell's terminal: ssh asked about a host key or a passphrase there, pinentry-curses (through
+  `GPG_TTY`) asked for a signing passphrase there, and the command hung until its ceiling. Every user
+  command now drops `GPG_TTY`, starts under `setsid` where `/usr/bin/setsid` exists (Linux; the child is
+  never a group leader, so the pid and exit code stay git's), and a network command gets the same
+  batch-mode `GIT_SSH_COMMAND` rule as the automatic fetch. HTTPS askpass programs and credential
+  helpers are untouched; a failure shows git's stderr.
   Untested: the askpass/credential-manager suppression on Windows and macOS (the variables are the
   documented ones; an empty environment value is "unset" on Windows, which is why `core.askPass=` is
   passed as configuration as well).

@@ -1,10 +1,7 @@
 package com.editora.ui;
 
 import java.nio.file.Path;
-import java.time.Instant;
-import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -41,8 +38,12 @@ final class GitBlameCoordinator {
     private final GitCoordinator git;
     private final GitCoordinator.WindowOps ops;
 
-    /** Per buffer: commit hash → a line blamed on it (its path there, and the parent commit and path). */
-    private final Map<EditorBuffer, Map<String, BlameParser.BlameLine>> blamed = new WeakHashMap<>();
+    /**
+     * Per buffer: its blamed lines in file order — each with the file's path in its commit and the parent
+     * commit and path. Per line, not per commit: with {@code -M -C} one commit can own blocks moved in from
+     * different files, each with its own path and previous revision.
+     */
+    private final Map<EditorBuffer, List<BlameParser.BlameLine>> blamed = new WeakHashMap<>();
 
     /** The revision tabs opened by {@link #annotatePreviousRevision()}. */
     private final Map<EditorBuffer, Revision> revisions = new WeakHashMap<>();
@@ -149,17 +150,20 @@ final class GitBlameCoordinator {
     /** Opens the read-only diff of the active file at the caret line's commit vs its parent. */
     void showCommitAtCaret() {
         EditorBuffer b = host.activeBuffer();
-        showCommit(b, b == null ? null : b.blameHashAtCaret());
+        showCommit(
+                b,
+                b == null ? null : b.blameHashAtCaret(),
+                b == null ? 0 : b.getFocusedArea().getCurrentParagraph());
     }
 
     /** Clicking a line's blame annotation opens that line's commit (IntelliJ-style). */
     void onGutterClick(EditorBuffer buffer, int line) {
-        showCommit(buffer, buffer == null ? null : buffer.blameHashAt(line));
+        showCommit(buffer, buffer == null ? null : buffer.blameHashAt(line), line);
     }
 
     /** Opens the read-only diff of {@code b}'s file at {@code hash} vs its parent (shared by the caret
      *  command and the gutter-annotation click). */
-    private void showCommit(@Nullable EditorBuffer b, @Nullable String hash) {
+    private void showCommit(@Nullable EditorBuffer b, @Nullable String hash, int lineIndex) {
         Revision revision = revisionOf(b);
         Path root = revision != null ? revision.root() : git.repoRoot();
         Path file = b == null ? null : b.getPath();
@@ -173,7 +177,7 @@ final class GitBlameCoordinator {
         String rel = revision != null ? revision.path() : file != null ? GitService.repoRelative(root, file) : null;
         if (rel != null) {
             // Blame follows renames: a line older than a move belongs to the file's OLD path in its commit.
-            BlameParser.BlameLine line = blamed.getOrDefault(b, Map.of()).get(hash);
+            BlameParser.BlameLine line = lineNear(blamed.getOrDefault(b, List.of()), lineIndex, hash);
             String at = line == null || line.path() == null ? rel : line.path();
             ops.openCommitFileDiff(hash, at, line == null ? null : line.previousPath());
         }
@@ -190,9 +194,9 @@ final class GitBlameCoordinator {
         String hash = b == null ? null : b.blameHashAtCaret();
         Revision current = revisionOf(b);
         Path root = current != null ? current.root() : git.repoRoot();
-        BlameParser.BlameLine line = hash == null || hash.isBlank()
+        BlameParser.BlameLine line = b == null || hash == null || hash.isBlank()
                 ? null
-                : blamed.getOrDefault(b, Map.of()).get(hash);
+                : lineNear(blamed.getOrDefault(b, List.of()), b.getFocusedArea().getCurrentParagraph(), hash);
         if (b == null || hash == null || line == null || root == null) { // a line means a buffer and a hash
             host.setStatus(tr(isEnabled() ? "status.git.noBlameLine" : "status.git.blameOffForPrevious"));
             return;
@@ -264,11 +268,7 @@ final class GitBlameCoordinator {
             if (host.activeBuffer() != b) {
                 return; // the user switched tabs while blame ran
             }
-            Map<String, BlameParser.BlameLine> byHash = new HashMap<>();
-            for (BlameParser.BlameLine line : lines) {
-                byHash.putIfAbsent(line.hash(), line);
-            }
-            blamed.put(b, byHash);
+            blamed.put(b, List.copyOf(lines));
             b.setBlame(toBlameInfos(lines));
             reportIgnoreRevsProblem();
         };
@@ -309,7 +309,7 @@ final class GitBlameCoordinator {
                 out.add(new BlameInfo(label, "", label, "", ""));
                 continue;
             }
-            String date = blameDate(bl.epochSeconds());
+            String date = BlameParser.authorDate(bl.epochSeconds(), bl.authorTz());
             String shortHash = bl.hash().substring(0, Math.min(8, bl.hash().length()));
             String tooltip = tr(
                     "blame.tooltip",
@@ -329,16 +329,39 @@ final class GitBlameCoordinator {
         return out;
     }
 
-    /** ISO {@code yyyy-MM-dd} commit date for the annotation column (technical, not localized). */
-    private static String blameDate(long epochSeconds) {
-        return Instant.ofEpochSecond(epochSeconds)
-                .atZone(ZoneId.systemDefault())
-                .toLocalDate()
-                .toString();
+    /**
+     * The blamed line for buffer line {@code index}, whose annotation names {@code hash}: the line at that
+     * index when it is blamed on {@code hash}, else the nearest line that is (edits since the blame ran
+     * shift buffer lines against blamed ones a little), else null. Pure.
+     */
+    static BlameParser.@Nullable BlameLine lineNear(List<BlameParser.BlameLine> lines, int index, String hash) {
+        for (int d = 0; d < lines.size(); d++) {
+            int before = index - d;
+            int after = index + d;
+            if (before < 0 && after >= lines.size()) {
+                break;
+            }
+            if (before >= 0 && before < lines.size() && lines.get(before).hash().equals(hash)) {
+                return lines.get(before);
+            }
+            if (d > 0
+                    && after >= 0
+                    && after < lines.size()
+                    && lines.get(after).hash().equals(hash)) {
+                return lines.get(after);
+            }
+        }
+        return null;
     }
 
-    /** Localized "N days ago"-style label from the pure {@link RelativeTime} bucketing. */
+    /**
+     * Localized "N days ago"-style label from the pure {@link RelativeTime} bucketing; "in the future" for a
+     * time ahead of the clock by more than a little skew.
+     */
     static String relativeTimeLabel(long epochSeconds, long nowSeconds) {
+        if (RelativeTime.isFuture(epochSeconds, nowSeconds)) {
+            return tr("blame.future");
+        }
         RelativeTime.Span span = RelativeTime.of(epochSeconds, nowSeconds);
         long v = span.value();
         return switch (span.unit()) {

@@ -112,6 +112,12 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
      */
     record MoreRow(int shown) {}
 
+    /**
+     * The row offered when the filter box matches none of the rows listed but {@code gh} has more: activating it
+     * asks GitHub to search all of them for {@code text} ({@code #123} opens that pull request directly).
+     */
+    record SearchRow(String text) {}
+
     /** A palette command that acts on the selected row. */
     public enum RowAction {
         RERUN,
@@ -139,6 +145,8 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         NOT_FAILED("status.github.row.onlyFailed"),
         NOT_ACTIVE("status.github.row.notActive"),
         STILL_ACTIVE("status.github.row.stillActive"),
+        /** The run waits for approval on GitHub: there is nothing to re-run here. */
+        AWAITING_APPROVAL("status.github.row.awaitingApproval"),
         NO_URL("status.github.noUrl");
 
         private final String messageKey;
@@ -162,7 +170,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         if (!windowOpen) {
             return RowAnswer.OPEN_AND_ASK;
         }
-        if (selected == null || selected instanceof MoreRow) {
+        if (selected == null || selected instanceof MoreRow || selected instanceof SearchRow) {
             return RowAnswer.NO_SELECTION;
         }
         if (action == RowAction.COPY_URL || action == RowAction.OPEN_URL) {
@@ -176,7 +184,10 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         }
         RunState state = run.state();
         return switch (action) {
-            case RERUN -> state.active() ? RowAnswer.STILL_ACTIVE : RowAnswer.RUN;
+            case RERUN ->
+                state.active()
+                        ? RowAnswer.STILL_ACTIVE
+                        : state.awaitingApproval() ? RowAnswer.AWAITING_APPROVAL : RowAnswer.RUN;
             case RERUN_FAILED, VIEW_LOG -> state.failed() ? RowAnswer.RUN : RowAnswer.NOT_FAILED;
             case CANCEL -> state.active() ? RowAnswer.RUN : RowAnswer.NOT_ACTIVE;
             case COPY_URL, OPEN_URL, CHECKOUT_PR, REVIEW_PR -> RowAnswer.RUN;
@@ -419,10 +430,64 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         getChildren().setAll(toolbar, contextRow, filterRow, list);
     }
 
+    /**
+     * The text GitHub was asked to search for ({@code ""}: none): the rows on screen are its answer, so the filter
+     * box, which still holds that text, does not filter them again (a search also matches the description).
+     */
+    private String serverSearch = "";
+
     /** Applies the filter box to the showing segment's rows. */
     private void applyFilter(String query) {
+        String q = query == null ? "" : query.strip();
+        if (!serverSearch.isEmpty() && !serverSearch.equals(q)) {
+            // The filter moved away from what GitHub searched for: back to the plain list.
+            serverSearch = "";
+            allItems.removeIf(i -> i instanceof SearchRow);
+            filterChanged();
+        }
+        if (!serverSearch.isEmpty()) {
+            visibleItems.setPredicate(item -> !(item instanceof SearchRow));
+            return;
+        }
         // The "load more" row is not an item to filter: it stays, so a filtered list still says it is partial.
-        visibleItems.setPredicate(item -> item instanceof MoreRow || GitHubItemFilter.matches(item, query));
+        visibleItems.setPredicate(item -> item instanceof MoreRow
+                || (item instanceof SearchRow s && s.text().equals(q))
+                || GitHubItemFilter.matches(item, query));
+        offerSearch(q);
+    }
+
+    /**
+     * When the filter matches none of the listed rows and {@code gh} has more, offers to search GitHub for it — a
+     * row above "load more". Runs have no search in {@code gh}, and a list still loading has nothing to judge.
+     */
+    private void offerSearch(String q) {
+        boolean more = allItems.stream().anyMatch(i -> i instanceof MoreRow);
+        boolean anyMatch = visibleItems.stream().anyMatch(i -> !(i instanceof MoreRow) && !(i instanceof SearchRow));
+        boolean offer = !q.isEmpty() && more && !anyMatch && mode() != Mode.RUNS;
+        boolean offered = allItems.stream()
+                .anyMatch(i -> i instanceof SearchRow s && s.text().equals(q));
+        if (offer == offered
+                && allItems.stream().filter(i -> i instanceof SearchRow).count() <= 1) {
+            return;
+        }
+        allItems.removeIf(i -> i instanceof SearchRow);
+        if (offer) {
+            allItems.add(0, new SearchRow(q));
+        }
+    }
+
+    /** The search row: {@code #123} on the pull requests opens that one; anything else is searched for on GitHub. */
+    private void search(SearchRow row) {
+        int number = GitHubListQuery.itemNumber(row.text());
+        if (number > 0 && mode() == Mode.PRS) {
+            actions.reviewPr(number);
+            return;
+        }
+        Mode mode = mode();
+        serverSearch = row.text();
+        visibleItems.setPredicate(item -> !(item instanceof SearchRow)); // GitHub's answer is shown as it is
+        limits.remove(mode);
+        refetch(mode);
     }
 
     // --- the server-side filter (state / mine / limit) -------------------------------------------
@@ -436,7 +501,8 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         return new GitHubListQuery(
                 states.getOrDefault(mode, GitHubListQuery.State.OPEN),
                 mode != Mode.RUNS && mineToggle.isSelected(),
-                limits.getOrDefault(mode, defaultLimit(mode)));
+                limits.getOrDefault(mode, defaultLimit(mode)),
+                mode == Mode.RUNS ? "" : serverSearch);
     }
 
     /** Shows the filter controls that apply to {@code mode}: runs have neither a state nor "mine" here. */
@@ -492,7 +558,10 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
     /** The empty-list text of {@code mode} under its current filter. */
     private String emptyText(Mode mode) {
         GitHubListQuery q = query(mode);
-        if (mode != Mode.RUNS && (q.state() != GitHubListQuery.State.OPEN || q.mine())) {
+        if (mode != Mode.RUNS
+                && (q.state() != GitHubListQuery.State.OPEN
+                        || q.mine()
+                        || !q.search().isEmpty())) {
             return tr("github.panel.noMatches");
         }
         return tr(
@@ -592,6 +661,16 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
             actions.copyUrl(url);
         }
         return true;
+    }
+
+    /** Types {@code text} into the filter box. For tests. */
+    void typeFilter(String text) {
+        filterField.setText(text);
+    }
+
+    /** Activates the selected row, as Enter does. For tests. */
+    void activate() {
+        activateSelected();
     }
 
     /** Selects the row at {@code index} of the visible list. For tests. */
@@ -694,6 +773,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
             case RUNS -> runsToggle.setSelected(true);
         }
         syncFilterControls(mode);
+        serverSearch = ""; // a search of the previous segment's items is no search of these
         placeholder.setText(emptyText(mode));
         filterField.clear(); // also resets the predicate, via the text listener
         beginLoading(mode);
@@ -806,6 +886,10 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
             all.add(new MoreRow(rows.size()));
         }
         allItems.setAll(all);
+        if (serverSearch.isEmpty()) {
+            offerSearch(
+                    filterField.getText() == null ? "" : filterField.getText().strip());
+        }
         int select = selectAfterLoad;
         selectAfterLoad = -1;
         if (select >= 0 && select < list.getItems().size()) {
@@ -818,6 +902,8 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         Object sel = list.getSelectionModel().getSelectedItem();
         if (sel instanceof MoreRow more) {
             loadMore(more);
+        } else if (sel instanceof SearchRow row) {
+            search(row);
         } else if (sel instanceof PullRequest pr) {
             actions.reviewPr(pr.number());
         } else if (sel instanceof Issue issue) {
@@ -895,6 +981,16 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
                 text.setMaxWidth(Double.MAX_VALUE);
                 text.setOnMouseClicked(e -> loadMore(more)); // one click, like the link it reads as
                 setGraphic(text);
+            } else if (item instanceof SearchRow row) {
+                int number = GitHubListQuery.itemNumber(row.text());
+                Label text = new Label(
+                        number > 0 && mode() == Mode.PRS
+                                ? tr("github.panel.openNumber", number)
+                                : tr("github.panel.search", row.text()));
+                text.getStyleClass().add("github-more-row");
+                text.setMaxWidth(Double.MAX_VALUE);
+                text.setOnMouseClicked(e -> search(row));
+                setGraphic(text);
             } else if (item instanceof PullRequest pr) {
                 renderPr(pr);
             } else if (item instanceof Issue issue) {
@@ -926,13 +1022,14 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
                         () -> actions.rerunRun(run.databaseId(), true),
                         "github.rerunFailedJobs"));
             }
-            if (!state.active()) {
+            // A run awaiting approval is approved on GitHub, not here: its page (Open, below) is its one action.
+            if (!state.active() && !state.awaitingApproval()) {
                 items.add(item(
                         tr("github.panel.menu.rerun"),
                         Icons.refresh(),
                         () -> actions.rerunRun(run.databaseId(), false),
                         "github.rerunRun"));
-            } else {
+            } else if (state.active()) {
                 items.add(item(
                         tr("github.panel.menu.cancel"),
                         Icons.stopSquare(),

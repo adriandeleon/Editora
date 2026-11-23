@@ -342,17 +342,35 @@ public final class MergeViewerPane implements TabContent {
         long mine = ++resultGeneration;
         composing = true;
         com.editora.perf.OffFx.then(RESULT_SITE, () -> resultText(file, now, lineSeparator, finalNewline), a -> {
-            if (mine != resultGeneration || a.value() == null) {
+            if (mine != resultGeneration) {
                 return;
             }
             composing = false;
-            showResult(a.value());
+            String text = a.value();
+            if (text == null) {
+                // Not put together: a save waiting for it would wait forever, and would save the Result
+                // for earlier choices. Drop it, and say so — the next choice tries again.
+                afterComposed = null;
+                status.setText(resultFailedText(a.failure()));
+                return;
+            }
+            showResult(text);
             Runnable after = afterComposed;
             afterComposed = null;
             if (after != null) {
                 after.run();
             }
         });
+    }
+
+    /** What the status line says when the Result could not be put together or turned into text. Pure. */
+    static String resultFailedText(@Nullable Throwable failure) {
+        String why = failure == null
+                ? ""
+                : failure.getMessage() != null
+                        ? failure.getMessage()
+                        : failure.getClass().getSimpleName();
+        return tr("merge.resultFailed", why);
     }
 
     /** Pure: the text {@code choices} resolve {@code file} to. */
@@ -397,11 +415,13 @@ public final class MergeViewerPane implements TabContent {
         String shown = shownResult;
         String separator = lineSeparator;
         com.editora.perf.OffFx.then(SAVE_SITE, () -> resultTextForSave(current, generated, shown, separator), a -> {
-            if (!a.ok() || a.value() == null) {
+            String text = a.value();
+            if (!a.ok() || text == null) {
                 saving = false;
+                status.setText(resultFailedText(a.failure()));
                 return;
             }
-            apply(a.value(), whenSaved);
+            apply(text, whenSaved);
         });
     }
 

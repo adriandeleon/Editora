@@ -522,8 +522,12 @@ final class MenuBarModel {
                                                 "git.rebaseOnto",
                                                 "git.compareBranch",
                                                 SEPARATOR,
+                                                "git.setUpstream",
+                                                "git.unsetUpstream",
+                                                SEPARATOR,
                                                 "git.renameBranch",
-                                                "git.deleteBranch")),
+                                                "git.deleteBranch",
+                                                "git.deleteRemoteBranch")),
                                 new MenuSpec(
                                         "menubar.git.remotes",
                                         List.of(

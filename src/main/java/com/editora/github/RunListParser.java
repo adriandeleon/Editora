@@ -34,11 +34,22 @@ public final class RunListParser {
         QUEUED,
         CANCELLED,
         SKIPPED,
+        /**
+         * Finished with {@code action_required}: the run waits for someone to approve it on GitHub (a first-time
+         * contributor's pull request). Nothing failed, so there is no failure log and nothing to re-run; it is
+         * approved on GitHub.
+         */
+        AWAITING_APPROVAL,
         UNKNOWN;
 
         /** Only a genuine failure offers "View Failure Log" / "Rerun Failed Jobs". */
         public boolean failed() {
             return this == FAILURE;
+        }
+
+        /** Waiting for approval on GitHub: re-running it here would not get it approved. */
+        public boolean awaitingApproval() {
+            return this == AWAITING_APPROVAL;
         }
 
         /** Queued or running — the states that can still be cancelled. */
@@ -64,7 +75,8 @@ public final class RunListParser {
             }
             return switch (c) {
                 case "success" -> SUCCESS;
-                case "failure", "timed_out", "startup_failure", "action_required" -> FAILURE;
+                case "failure", "timed_out", "startup_failure" -> FAILURE;
+                case "action_required" -> AWAITING_APPROVAL;
                 case "cancelled", "stale" -> CANCELLED;
                 case "skipped", "neutral" -> SKIPPED;
                 default -> UNKNOWN;
@@ -80,12 +92,16 @@ public final class RunListParser {
                 case QUEUED -> "○";
                 case CANCELLED -> "⊘";
                 case SKIPPED -> "–";
+                case AWAITING_APPROVAL -> "⏸";
                 case UNKNOWN -> "·";
             };
         }
 
         /** The CSS class that colors the glyph (themed in {@code app.css}). */
         public String cssClass() {
+            if (this == AWAITING_APPROVAL) {
+                return "github-run-queued"; // waiting, like a queued run
+            }
             return "github-run-" + name().toLowerCase(Locale.ROOT);
         }
     }

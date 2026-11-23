@@ -74,7 +74,11 @@ class RunListParserTest {
         // The conclusions people forget — all must read as a failure.
         assertEquals(RunState.FAILURE, RunState.of("completed", "timed_out"));
         assertEquals(RunState.FAILURE, RunState.of("completed", "startup_failure"));
-        assertEquals(RunState.FAILURE, RunState.of("completed", "action_required"));
+        // G11: action_required is a run waiting for approval on GitHub, not a failure.
+        assertEquals(RunState.AWAITING_APPROVAL, RunState.of("completed", "action_required"));
+        assertFalse(RunState.AWAITING_APPROVAL.failed(), "no failure log, no re-run of failed jobs");
+        assertFalse(RunState.AWAITING_APPROVAL.active(), "nothing running to cancel");
+        assertTrue(RunState.AWAITING_APPROVAL.awaitingApproval());
         assertEquals(RunState.CANCELLED, RunState.of("completed", "cancelled"));
         assertEquals(RunState.CANCELLED, RunState.of("completed", "stale"));
         assertEquals(RunState.SKIPPED, RunState.of("completed", "skipped"));

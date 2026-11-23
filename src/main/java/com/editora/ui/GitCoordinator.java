@@ -119,6 +119,12 @@ final class GitCoordinator {
         void reloadAllFromDiskSilently();
 
         /**
+         * Reloads {@code buffers} from disk although they hold unsaved edits: a confirmed Discard whose question
+         * said those edits go too. The replaced text is kept in Local History.
+         */
+        default void revertBuffersFromDisk(List<EditorBuffer> buffers) {}
+
+        /**
          * Copies {@code files} into Local History as pre-delete revisions, then reports — on the FX thread —
          * whether every one that Local History can hold is safely stored. Untracked files have no other copy.
          */
@@ -402,6 +408,7 @@ final class GitCoordinator {
         autoFetch.apply();
         ops.setStatusBarGitEnabled(on);
         if (!on) {
+            closeMetadataWatch();
             service.invalidateRefreshes();
             ops.setCommitWindowAvailable(false);
             ops.setGitLogWindowAvailable(false);
@@ -475,6 +482,103 @@ final class GitCoordinator {
 
     /** Light refreshes within a moment of a full one keep its status (F2); see {@link GitRefreshCoalescer}. */
     private final GitRefreshCoalescer coalescer = new GitRefreshCoalescer();
+
+    // --- changes made outside Editora (a terminal's git) ---------------------------------------------------
+
+    /** How long the git folder must be quiet before a change heard in it refreshes: a rebase writes HEAD often. */
+    static final long EXTERNAL_QUIET_MS = 300;
+
+    /** A change heard this soon after one of Editora's own commands finished is that command's: it refreshed. */
+    static final long OWN_ECHO_NANOS = 1_000_000_000L;
+
+    /** The watch on the active repository's index, HEAD and branches ({@link GitMetadataWatcher}), or null. */
+    private @Nullable AutoCloseable metadataWatch;
+
+    /** The repository {@link #metadataWatch} is on. */
+    private @Nullable Path watchedRoot;
+
+    /** When this window's last git command finished ({@link #afterMutation(Path)}), on {@link System#nanoTime}. */
+    private volatile long lastOwnMutationNanos = System.nanoTime() - OWN_ECHO_NANOS;
+
+    /** The refresh a burst of outside changes ends with; created on first use, on the FX thread. */
+    private javafx.animation.@Nullable PauseTransition externalRefresh;
+
+    /** How many refreshes outside changes have caused (tests). */
+    int externalRefreshesForTest;
+
+    /** Treats this window's last git command as long finished, so the next change heard is from outside (tests). */
+    void forgetOwnMutationsForTest() {
+        lastOwnMutationNanos = System.nanoTime() - 2 * OWN_ECHO_NANOS;
+    }
+
+    /** Watches {@code root}'s git folder (null: none), the active repository, from now on. */
+    private void watchMetadata(@Nullable Path root) {
+        if (java.util.Objects.equals(root, watchedRoot)) {
+            return;
+        }
+        closeMetadataWatch();
+        watchedRoot = root;
+        if (root == null || !com.editora.vfs.Vfs.isLocal(root)) {
+            return; // a remote host's .git is not watched: focus regain refreshes it
+        }
+        metadataWatch = GitMetadataWatcher.SHARED.watch(
+                root, () -> javafx.application.Platform.runLater(() -> metadataChanged(root)));
+    }
+
+    private void closeMetadataWatch() {
+        AutoCloseable watch = metadataWatch;
+        metadataWatch = null;
+        watchedRoot = null;
+        if (watch != null) {
+            try {
+                watch.close();
+            } catch (Exception ignored) {
+                // closing only unregisters a listener
+            }
+        }
+        if (externalRefresh != null) {
+            externalRefresh.stop();
+        }
+    }
+
+    /** The git folder of {@code root} changed: a refresh once it has been quiet a moment (FX thread). */
+    private void metadataChanged(Path root) {
+        if (!root.equals(watchedRoot) || !isEnabled()) {
+            return;
+        }
+        if (externalRefresh == null) {
+            externalRefresh = new javafx.animation.PauseTransition(javafx.util.Duration.millis(EXTERNAL_QUIET_MS));
+            externalRefresh.setOnFinished(e -> externalRefreshDue());
+        }
+        externalRefresh.playFromStart(); // each change in a burst moves the refresh back: one for the burst
+    }
+
+    /** The refresh after files were renamed, moved or deleted in the Project tree; created on first use. */
+    private javafx.animation.@Nullable PauseTransition treeRefresh;
+
+    /**
+     * Files were renamed, moved or deleted by Editora (the Project tree, a rename refactoring): the status changed,
+     * but the tree's watcher takes those events for its own operation's echo and nothing else refreshed Git. One
+     * refresh for a batch (a multi-delete reports each file), a moment after its last file.
+     */
+    void filesChangedByEditora() {
+        if (!isEnabled()) {
+            return;
+        }
+        if (treeRefresh == null) {
+            treeRefresh = new javafx.animation.PauseTransition(javafx.util.Duration.millis(EXTERNAL_QUIET_MS));
+            treeRefresh.setOnFinished(e -> refresh());
+        }
+        treeRefresh.playFromStart();
+    }
+
+    private void externalRefreshDue() {
+        if (System.nanoTime() - lastOwnMutationNanos < OWN_ECHO_NANOS) {
+            return; // Editora's own command wrote it, and its completion refreshed already
+        }
+        externalRefreshesForTest++;
+        refresh();
+    }
 
     /** The full refresh that ends a window of light ones; created on first use, on the FX thread. */
     private javafx.animation.@Nullable PauseTransition trailingRefresh;
@@ -559,6 +663,7 @@ final class GitCoordinator {
         // with a Clone button, which is the way in. (Transient; the user's show/hide preference is untouched.)
         ops.setCommitWindowAvailable(isEnabled());
         ops.setGitLogWindowAvailable(state.isRepo());
+        watchMetadata(state.isRepo() ? root : null);
         if (!state.isRepo() || root == null) {
             branchName = "";
             upstream = "";
@@ -615,22 +720,35 @@ final class GitCoordinator {
      * runs on user-initiated git actions, so it's off the hot paths.
      */
     void afterMutation() {
+        afterMutation(repoRoot);
+    }
+
+    /**
+     * {@link #afterMutation()} for a mutation in {@code mutated}, the repository its command ran in: the open
+     * buffers of <em>that</em> repository are diffed again. A mutation in another repository than the active one
+     * (a Project-tree action in a nested repository, one that finished after a tab switch) used to diff the
+     * active repository's buffers instead — a {@code git diff} each, for nothing — and leave its own bars stale.
+     */
+    void afterMutation(@Nullable Path mutated) {
         refresh(); // status bar + tool window + active buffer's gutter
         mutationListener.run();
-        Path root = repoRoot;
-        if (root == null) {
+        lastOwnMutationNanos = System.nanoTime(); // the .git watcher's echo of it is not a change from outside
+        if (mutated == null) {
             return;
         }
+        Path root = mutated;
         EditorBuffer active = host.activeBuffer();
+        boolean activeRepository = root.equals(repoRoot);
         host.forEachBuffer(buf -> {
-            // The active buffer is handled by refresh(); skip non-file/huge buffers + files outside this repo.
+            // The active buffer of the active repository is handled by refresh(); skip non-file/huge buffers and
+            // files outside the mutated repository.
             Path bufPath = buf.getPath();
             if (bufPath == null
                     || buf.isNarrowed()
                     || !GitChangeBars.shouldRediff(
                             bufPath,
                             root,
-                            buf == active,
+                            buf == active && activeRepository,
                             buf.isLargeFile() || buf.encryption().isEncrypted())) {
                 return;
             }
@@ -654,6 +772,7 @@ final class GitCoordinator {
 
     void shutdown() {
         autoFetch.stop();
+        closeMetadataWatch();
         if (trailingRefresh != null) {
             trailingRefresh.stop(); // no full refresh for a window that is going away
         }
@@ -727,7 +846,7 @@ final class GitCoordinator {
                     } else {
                         gitError(tr("status.git.opFailed"), r.message());
                     }
-                    afterMutation();
+                    afterMutation(root);
                 }),
                 args);
     }
@@ -822,10 +941,15 @@ final class GitCoordinator {
 
     /** The words of the question before every change is discarded: {@code tracked} files and {@code untracked}. */
     static Confirm.Question discardAllQuestion(int tracked, int untracked) {
+        return discardAllQuestion(tracked, untracked, "");
+    }
+
+    /** As above, with {@code notes} (what else the user should know: the Local History limit, unsaved edits). */
+    static Confirm.Question discardAllQuestion(int tracked, int untracked, String notes) {
         return new Confirm.Question(
                 tr("dialog.discardAll.title"),
                 null,
-                tr("dialog.discardAll.message", tracked, untracked),
+                tr("dialog.discardAll.message", tracked, untracked) + notes,
                 tr("dialog.discardAll.action"));
     }
 
@@ -1031,35 +1155,100 @@ final class GitCoordinator {
      * in the prompt and then runs both commands (each over its whole list, so at most two invocations).
      */
     void discardChanges(List<String> tracked, List<String> untracked) {
-        discard(repoRoot, lastStatus, new Discard(tracked, List.of(), untracked));
+        GitStatus status = lastStatus;
+        // The Commit window's Changes rows go back to the index — except a file added with "git add -N", whose
+        // index entry is an empty placeholder: checkout would empty it. It leaves the index and is deleted.
+        List<String> worktree = new ArrayList<>(tracked.size());
+        java.util.LinkedHashSet<String> added = new java.util.LinkedHashSet<>();
+        boolean keepsStaged = false;
+        for (String spec : tracked) {
+            boolean onlyIntentToAdd = false;
+            for (GitStatus.FileEntry entry : status.files()) {
+                if (entry.path() == null || entry.untracked() || !selects(spec, entry.path())) {
+                    continue;
+                }
+                if (GitDiscardPlan.intentToAdd(entry)) {
+                    added.add(entry.path());
+                    onlyIntentToAdd |= spec.equals(entry.path());
+                } else if (entry.staged() && entry.unstaged()) {
+                    keepsStaged = true; // only the unstaged part goes: the prompt must not say "all changes"
+                }
+            }
+            if (!onlyIntentToAdd) {
+                worktree.add(spec);
+            }
+        }
+        discard(
+                repoRoot,
+                status,
+                new Discard(List.copyOf(worktree), List.of(), untracked, List.copyOf(added), keepsStaged, List.of()));
     }
 
     /**
      * The paths of one discard, by the command each needs: {@code worktree} paths are restored from the
      * index ({@code checkout --}), {@code head} paths have staged changes and go back to the last commit
-     * ({@code restore --staged --worktree --source=HEAD}), {@code untracked} ones are deleted ({@code clean}).
+     * ({@code restore --staged --worktree --source=HEAD}), {@code untracked} ones are deleted ({@code clean}),
+     * and {@code added} ones — in the index but in no commit — leave the index ({@code rm --cached}) and are
+     * deleted. {@code keepsStaged}: some {@code worktree} path also has staged changes, which stay.
      * {@code overwritten} are the files the first two put back, as absolute paths, copied to Local History first.
      */
-    private record Discard(List<String> worktree, List<String> head, List<String> untracked, List<Path> overwritten) {
+    private record Discard(
+            List<String> worktree,
+            List<String> head,
+            List<String> untracked,
+            List<String> added,
+            boolean keepsStaged,
+            List<Path> overwritten) {
         Discard(List<String> worktree, List<String> head, List<String> untracked) {
-            this(worktree, head, untracked, List.of());
+            this(worktree, head, untracked, List.of(), false, List.of());
         }
 
         /** This discard with the tracked files under {@code root} that it overwrites, as {@code status} lists them. */
         Discard overwriting(Path root, @Nullable GitStatus status) {
             List<String> tracked = new ArrayList<>(worktree);
             tracked.addAll(head);
-            return new Discard(worktree, head, untracked, GitDiscardCaptures.overwritten(root, status, tracked));
+            List<Path> overwritten = new ArrayList<>(GitDiscardCaptures.overwritten(root, status, tracked));
+            // An added file is deleted, not overwritten: it is copied with the deleted files.
+            java.util.Set<Path> deleted = new java.util.HashSet<>();
+            for (String path : added) {
+                deleted.add(root.resolve(path).normalize());
+            }
+            overwritten.removeIf(deleted::contains);
+            return new Discard(worktree, head, untracked, added, keepsStaged, List.copyOf(overwritten));
+        }
+
+        /** This discard without the untracked rows {@code kept} (nested repositories, left alone). */
+        Discard keeping(List<String> kept) {
+            if (kept.isEmpty()) {
+                return this;
+            }
+            List<String> rest = new ArrayList<>(untracked);
+            rest.removeAll(kept);
+            return new Discard(worktree, head, List.copyOf(rest), added, keepsStaged, overwritten);
         }
 
         boolean isEmpty() {
-            return worktree.isEmpty() && head.isEmpty() && untracked.isEmpty();
+            return worktree.isEmpty() && head.isEmpty() && untracked.isEmpty() && added.isEmpty();
+        }
+
+        /** The tracked paths: put back from the index or the last commit. */
+        List<String> tracked() {
+            List<String> all = new ArrayList<>(worktree);
+            all.addAll(head);
+            return all;
+        }
+
+        /** The files this deletes: the untracked rows and the added files. */
+        List<String> deleted() {
+            List<String> all = new ArrayList<>(untracked);
+            all.addAll(added);
+            return all;
         }
 
         List<String> affected() {
-            List<String> all = new ArrayList<>(worktree);
-            all.addAll(head);
+            List<String> all = tracked();
             all.addAll(untracked);
+            all.addAll(added);
             return all;
         }
     }
@@ -1079,14 +1268,67 @@ final class GitCoordinator {
         }
         List<String> untracked = discard.untracked();
         Discard copying = discard.overwriting(root, status);
-        // which rows are folders is looked at off the FX thread (PERF-01, Pauta 6.2.0)
+        List<EditorBuffer> edited = editedBuffers(root, discard.tracked());
+        // which rows are folders, and which of those are repositories of their own, is looked at off the FX
+        // thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then(
                 "git-untracked-look",
-                () -> GitUntrackedDelete.folders(root, untracked),
-                counted -> discardLooked(root, copying, untracked, counted.or(0)));
+                () -> GitUntrackedDelete.look(root, untracked),
+                looked -> discardLooked(root, copying, looked.or(GitUntrackedDelete.Look.NONE), edited));
     }
 
-    private void discardLooked(Path root, Discard discard, List<String> untracked, int folders) {
+    /**
+     * The open buffers of {@code root} with unsaved edits whose files {@code trackedSpecs} put back: a discard
+     * reverts the disk, and the buffer — had nobody said so — kept the edits and saved them again later.
+     */
+    private List<EditorBuffer> editedBuffers(Path root, List<String> trackedSpecs) {
+        List<EditorBuffer> edited = new ArrayList<>();
+        if (trackedSpecs.isEmpty()) {
+            return edited;
+        }
+        host.forEachBuffer(buffer -> {
+            Path file = buffer.getPath();
+            if (file == null || !buffer.isDirty() || file.getFileSystem() != root.getFileSystem()) {
+                return;
+            }
+            String relative = GitService.repoRelative(root, file);
+            if (relative != null && trackedSpecs.stream().anyMatch(spec -> selects(spec, relative))) {
+                edited.add(buffer);
+            }
+        });
+        return edited;
+    }
+
+    /** What the prompt adds after what is discarded: unsaved edits that go too, nested repositories left alone. */
+    private static String discardNotes(List<EditorBuffer> edited, List<String> nested) {
+        StringBuilder notes = new StringBuilder();
+        if (!edited.isEmpty()) {
+            notes.append("\n\n").append(tr("dialog.discard.unsavedEdits", edited.size()));
+        }
+        if (!nested.isEmpty()) {
+            notes.append("\n\n")
+                    .append(
+                            nested.size() == 1
+                                    ? tr("dialog.discard.nestedRepo", nested.get(0))
+                                    : tr("dialog.discard.nestedRepos", nested.size()));
+        }
+        return notes.toString();
+    }
+
+    /** Whether Local History keeps copies of what a discard deletes or overwrites. */
+    private boolean historyOn() {
+        return host.settings().isLocalHistory() && !host.simpleModeActive();
+    }
+
+    private void discardLooked(Path root, Discard all, GitUntrackedDelete.Look look, List<EditorBuffer> edited) {
+        Discard discard = all.keeping(look.nested());
+        if (discard.isEmpty()) {
+            host.setStatus(tr("status.git.nestedRepoOnly", look.nested().get(0)));
+            return;
+        }
+        String notes = discardNotes(edited, look.nested());
+        List<String> untracked = discard.untracked();
+        int folders = look.folders() - look.nested().size();
         if (folders > 0) {
             // Git shows a wholly untracked folder as one row; ask it what deleting that row removes.
             service.untrackedFiles(root, untracked, files -> {
@@ -1094,41 +1336,46 @@ final class GitCoordinator {
                     host.setError(tr("status.git.opFailed"));
                     return;
                 }
-                boolean historyOn = host.settings().isLocalHistory() && !host.simpleModeActive();
-                String prompt = GitUntrackedDelete.prompt(
-                        discard.worktree().size() + discard.head().size(), untracked, folders, files, historyOn);
-                confirmAndDiscard(root, discard, prompt, GitUntrackedDelete.captures(root, files));
+                List<String> deleted = new ArrayList<>(files);
+                deleted.addAll(discard.added());
+                String prompt =
+                        GitUntrackedDelete.prompt(discard.tracked().size(), untracked, folders, deleted, historyOn());
+                confirmAndDiscard(root, discard, prompt + notes, GitUntrackedDelete.captures(root, deleted), edited);
             });
             return;
         }
-        confirmAndDiscard(root, discard, discardPrompt(discard), GitUntrackedDelete.captures(root, untracked));
+        List<String> deleted = discard.deleted();
+        String prompt = discardPrompt(discard) + GitUntrackedDelete.historyNote(deleted.size(), historyOn());
+        confirmAndDiscard(root, discard, prompt + notes, GitUntrackedDelete.captures(root, deleted), edited);
     }
 
     /**
      * Confirms, copies the untracked files about to be deleted into Local History (they are in no commit, so
      * nothing else could bring them back), and only then runs the commands.
      */
-    private void confirmAndDiscard(Path root, Discard discard, String prompt, List<Path> untrackedFiles) {
+    private void confirmAndDiscard(
+            Path root, Discard discard, String prompt, List<Path> untrackedFiles, List<EditorBuffer> edited) {
         if (!confirmDestructive(discardQuestion(prompt))) {
             return;
         }
-        captureThenDiscard(root, discard, discardSuccessMessage(discard), untrackedFiles);
+        captureThenDiscard(root, discard, discardSuccessMessage(discard), untrackedFiles, edited);
     }
 
     /**
      * Copies the tracked files about to be overwritten and the untracked files about to be deleted into Local
      * History, then runs the confirmed discard; nothing runs when a copy could not be made.
      */
-    private void captureThenDiscard(Path root, Discard discard, String successMessage, List<Path> untrackedFiles) {
+    private void captureThenDiscard(
+            Path root, Discard discard, String successMessage, List<Path> untrackedFiles, List<EditorBuffer> edited) {
         List<String> affected = discard.affected();
         invalidatePendingWrites(root, affected);
         if (discard.overwritten().isEmpty()) {
-            captureUntrackedThenDiscard(root, discard, successMessage, untrackedFiles, affected);
+            captureUntrackedThenDiscard(root, discard, successMessage, untrackedFiles, affected, edited);
             return;
         }
         ops.captureBeforeOverwrite(discard.overwritten(), failed -> {
             if (failed.isEmpty()) {
-                captureUntrackedThenDiscard(root, discard, successMessage, untrackedFiles, affected);
+                captureUntrackedThenDiscard(root, discard, successMessage, untrackedFiles, affected, edited);
             } else {
                 host.setError(tr("status.git.discardHistoryFailed", failed.get().getFileName()));
             }
@@ -1136,23 +1383,32 @@ final class GitCoordinator {
     }
 
     private void captureUntrackedThenDiscard(
-            Path root, Discard discard, String successMessage, List<Path> untrackedFiles, List<String> affected) {
+            Path root,
+            Discard discard,
+            String successMessage,
+            List<Path> untrackedFiles,
+            List<String> affected,
+            List<EditorBuffer> edited) {
         if (untrackedFiles.isEmpty()) {
-            runDiscard(root, discard, successMessage, affected);
+            runDiscard(root, discard, successMessage, affected, edited);
             return;
         }
         ops.captureBeforeDelete(untrackedFiles, kept -> {
             if (kept) {
-                runDiscard(root, discard, successMessage, affected);
+                runDiscard(root, discard, successMessage, affected, edited);
             } else {
                 host.setStatus(tr("project.deleteHistoryFailed"));
             }
         });
     }
 
-    /** Runs a confirmed discard: one command per kind of path, then one refresh and reload. */
-    private void runDiscard(Path root, Discard discard, String successMessage, List<String> affected) {
-        List<String[]> commands = new ArrayList<>(3);
+    /** The commands of a confirmed discard, in the order they run. Pure. */
+    private static List<String[]> discardCommands(Discard discard) {
+        List<String[]> commands = new ArrayList<>(5);
+        if (!discard.added().isEmpty()) {
+            // First: once out of the index they are untracked, so the restores below leave them alone.
+            commands.add(argv(discard.added(), "rm", "--cached", "-f", "-q", "--"));
+        }
         if (!discard.worktree().isEmpty()) {
             commands.add(argv(discard.worktree(), "checkout", "--"));
         }
@@ -1162,33 +1418,57 @@ final class GitCoordinator {
         if (!discard.untracked().isEmpty()) {
             commands.add(argv(discard.untracked(), "clean", "-f", "--"));
         }
+        if (!discard.added().isEmpty()) {
+            // Named files, not folders: -x so an added file that a .gitignore now matches is deleted too.
+            commands.add(argv(discard.added(), "clean", "-f", "-x", "--"));
+        }
+        return commands;
+    }
+
+    /** Runs a confirmed discard: one command per kind of path, then one refresh and reload. */
+    private void runDiscard(
+            Path root, Discard discard, String successMessage, List<String> affected, List<EditorBuffer> edited) {
+        List<String[]> commands = discardCommands(discard);
         // Mixed sets run in order; one refresh/reload after every requested path was attempted.
         service.runWorktreeMutation(
                 root,
                 commands,
-                running(commands.get(0), result -> finishDiscard(root, result, successMessage, affected)));
+                running(commands.get(0), result -> finishDiscard(root, result, successMessage, affected, edited)));
     }
 
-    private void finishDiscard(Path root, ProcessRunner.Result result, String successMessage, List<String> affected) {
+    private void finishDiscard(
+            Path root,
+            ProcessRunner.Result result,
+            String successMessage,
+            List<String> affected,
+            List<EditorBuffer> edited) {
         invalidatePendingWrites(root, affected);
-        if (result != null && result.ok()) {
+        boolean ok = result != null && result.ok();
+        if (ok) {
             host.setStatus(successMessage);
         } else {
             gitError(tr("status.git.opFailed"), result == null ? tr("status.git.opFailed") : result.message());
         }
-        afterMutation();
+        afterMutation(root);
         ops.reloadAllFromDiskSilently();
+        if (ok && !edited.isEmpty()) {
+            ops.revertBuffersFromDisk(edited); // the user was told their unsaved edits go too
+        }
     }
 
     private static String discardSuccessMessage(Discard discard) {
-        List<String> untracked = discard.untracked();
-        if (!untracked.isEmpty()) {
-            return untracked.size() == 1
-                    ? tr("status.git.deleted", untracked.get(0))
-                    : tr("status.git.deletedMany", untracked.size());
+        List<String> deleted = discard.deleted();
+        if (!discard.untracked().isEmpty()) {
+            return deleted.size() == 1
+                    ? tr("status.git.deleted", deleted.get(0))
+                    : tr("status.git.deletedMany", deleted.size());
         }
-        List<String> tracked = discard.head().isEmpty() ? discard.worktree() : discard.head();
-        return tracked.size() == 1 || !discard.head().isEmpty()
+        if (!discard.head().isEmpty()) {
+            return tr("status.git.discarded", discard.head().get(0));
+        }
+        List<String> tracked = new ArrayList<>(discard.worktree());
+        tracked.addAll(discard.added());
+        return tracked.size() == 1
                 ? tr("status.git.discarded", tracked.get(0))
                 : tr("status.git.discardedMany", tracked.size());
     }
@@ -1199,18 +1479,28 @@ final class GitCoordinator {
             return tr("dialog.discard.toHead", discard.head().get(0)); // staged changes go too: say so
         }
         List<String> tracked = discard.worktree();
-        List<String> untracked = discard.untracked();
-        if (untracked.isEmpty()) {
+        List<String> deleted = discard.deleted();
+        if (deleted.isEmpty()) {
+            if (discard.keepsStaged()) { // a partly staged file: its staged part stays
+                return tracked.size() == 1
+                        ? tr("dialog.discard.unstagedOnly", tracked.get(0))
+                        : tr("dialog.discard.unstagedOnlyMany", tracked.size());
+            }
             return tracked.size() == 1
                     ? tr("dialog.discard.tracked", tracked.get(0))
                     : tr("dialog.discard.trackedMany", tracked.size());
         }
         if (tracked.isEmpty()) {
-            return untracked.size() == 1
-                    ? tr("dialog.discard.untracked", untracked.get(0))
-                    : tr("dialog.discard.untrackedMany", untracked.size());
+            if (discard.untracked().isEmpty()) { // only files added to Git and never committed
+                return deleted.size() == 1
+                        ? tr("dialog.discard.added", deleted.get(0))
+                        : tr("dialog.discard.addedMany", deleted.size());
+            }
+            return deleted.size() == 1
+                    ? tr("dialog.discard.untracked", deleted.get(0))
+                    : tr("dialog.discard.untrackedMany", deleted.size());
         }
-        return tr("dialog.discard.mixed", tracked.size(), untracked.size());
+        return tr("dialog.discard.mixed", tracked.size(), deleted.size());
     }
 
     void gitCommit(String message) {
@@ -1252,22 +1542,25 @@ final class GitCoordinator {
 
     /**
      * What Discard All runs: each changed path sorted by what its status needs ({@link GitDiscardPlan}) —
-     * back to the index, back to HEAD, or deleted. {@code conflict} names the first unmerged path, which
-     * stops the whole thing: a conflict is resolved, not discarded. Pure.
+     * back to the index, back to HEAD, deleted, or (in the index but in no commit) out of the index and deleted.
+     * {@code conflict} names the first unmerged path, which stops the whole thing: a conflict is resolved, not
+     * discarded. Pure.
      */
     record DiscardAll(
             List<String> worktree,
             List<String> head,
             List<String> untracked,
+            List<String> added,
             @Nullable String conflict) {
         int tracked() {
-            return worktree.size() + head.size();
+            return worktree.size() + head.size() + added.size();
         }
 
         static DiscardAll of(GitStatus status) {
             java.util.LinkedHashSet<String> worktree = new java.util.LinkedHashSet<>();
             java.util.LinkedHashSet<String> head = new java.util.LinkedHashSet<>();
             java.util.LinkedHashSet<String> untracked = new java.util.LinkedHashSet<>();
+            java.util.LinkedHashSet<String> added = new java.util.LinkedHashSet<>();
             String conflict = null;
             for (GitStatus.FileEntry entry : status == null ? List.<GitStatus.FileEntry>of() : status.files()) {
                 GitDiscardPlan plan = GitDiscardPlan.of(status, entry.path());
@@ -1276,17 +1569,21 @@ final class GitCoordinator {
                     case UNTRACKED -> untracked.addAll(plan.specs());
                     case WORKTREE -> worktree.addAll(plan.specs());
                     case HEAD -> head.addAll(plan.specs());
+                    case ADDED -> {}
                     case NOTHING -> {}
                 }
+                added.addAll(plan.added());
             }
-            return new DiscardAll(List.copyOf(worktree), List.copyOf(head), List.copyOf(untracked), conflict);
+            return new DiscardAll(
+                    List.copyOf(worktree), List.copyOf(head), List.copyOf(untracked), List.copyOf(added), conflict);
         }
     }
 
     /**
      * {@code git.discardAll}: throws away every local change — staged and unstaged edits go back to the
      * last commit and untracked files are deleted. Confirmed once, danger-styled, with both counts in the
-     * message. Refused while a file is unmerged.
+     * message — the untracked count is of files, a wholly untracked folder's included. Refused while a file is
+     * unmerged; a nested repository is left alone, and the question says so.
      */
     void gitDiscardAll() {
         Path root = repoRootOrReport();
@@ -1298,39 +1595,56 @@ final class GitCoordinator {
             host.setStatus(tr("status.git.discardConflict", all.conflict()));
             return;
         }
-        Discard discard = new Discard(all.worktree(), all.head(), all.untracked()).overwriting(root, lastStatus);
+        Discard discard = new Discard(all.worktree(), all.head(), all.untracked(), all.added(), false, List.of())
+                .overwriting(root, lastStatus);
         if (discard.isEmpty()) {
             host.setStatus(tr("status.git.nothingToDiscard"));
             return;
         }
-        if (!confirmDestructive(
-                discardAllQuestion(all.tracked(), all.untracked().size()))) {
-            return;
-        }
-        String successMessage =
-                tr("status.git.discardedAll", all.tracked(), all.untracked().size());
         List<String> untracked = discard.untracked();
-        // which rows are folders is looked at off the FX thread (PERF-01, Pauta 6.2.0)
+        List<EditorBuffer> edited = editedBuffers(root, discard.tracked());
+        // which rows are folders or nested repositories is looked at off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then(
                 "git-untracked-look",
-                () -> GitUntrackedDelete.folders(root, untracked),
-                counted -> discardAllLooked(root, discard, untracked, successMessage, counted.or(0)));
+                () -> GitUntrackedDelete.look(root, untracked),
+                looked -> discardAllLooked(root, discard, looked.or(GitUntrackedDelete.Look.NONE), edited));
     }
 
-    private void discardAllLooked(
-            Path root, Discard discard, List<String> untracked, String successMessage, int folders) {
-        if (folders > 0) {
-            // A wholly untracked folder is one row: ask Git which files deleting it removes, to copy them.
-            service.untrackedFiles(root, untracked, files -> {
+    private void discardAllLooked(Path root, Discard all, GitUntrackedDelete.Look look, List<EditorBuffer> edited) {
+        Discard discard = all.keeping(look.nested());
+        if (discard.isEmpty()) {
+            host.setStatus(tr("status.git.nestedRepoOnly", look.nested().get(0)));
+            return;
+        }
+        if (look.folders() - look.nested().size() > 0) {
+            // A wholly untracked folder is one row: ask Git which files deleting it removes, to count and copy them.
+            service.untrackedFiles(root, discard.untracked(), files -> {
                 if (files == null) {
                     host.setError(tr("status.git.opFailed"));
                     return;
                 }
-                captureThenDiscard(root, discard, successMessage, GitUntrackedDelete.captures(root, files));
+                confirmDiscardAll(root, discard, files, look.nested(), edited);
             });
             return;
         }
-        captureThenDiscard(root, discard, successMessage, GitUntrackedDelete.captures(root, untracked));
+        confirmDiscardAll(root, discard, discard.untracked(), look.nested(), edited);
+    }
+
+    private void confirmDiscardAll(
+            Path root, Discard discard, List<String> untrackedFiles, List<String> nested, List<EditorBuffer> edited) {
+        int tracked = discard.tracked().size() + discard.added().size();
+        List<String> deleted = new ArrayList<>(untrackedFiles);
+        deleted.addAll(discard.added());
+        String notes = GitUntrackedDelete.historyNote(deleted.size(), historyOn()) + discardNotes(edited, nested);
+        if (!confirmDestructive(discardAllQuestion(tracked, untrackedFiles.size(), notes))) {
+            return;
+        }
+        captureThenDiscard(
+                root,
+                discard,
+                tr("status.git.discardedAll", tracked, untrackedFiles.size()),
+                GitUntrackedDelete.captures(root, deleted),
+                edited);
     }
 
     void checkoutBranch(String name) {
@@ -1341,14 +1655,24 @@ final class GitCoordinator {
             return;
         }
         Path root = repoRoot;
-        String[] args = {"checkout", name};
-        aroundWorkingTreeMutation(done -> service.runWorktreeMutation(root, running(args, done), args), r -> {
-            if (r.ok()) {
-                host.setStatus(tr("status.switchedBranch", name));
-            } else {
-                gitError(tr("status.git.switchFailed", name), r.message());
-            }
-        });
+        // The closing "--": a branch deleted elsewhere whose name is also a path would otherwise make git restore
+        // that path from the index, discarding its uncommitted edits, and call it a success.
+        String[] args = {"checkout", name, "--"};
+        GitLeaveDetachedHead.thenMove(
+                this,
+                root,
+                name,
+                () -> aroundWorkingTreeMutation(
+                        root,
+                        done -> service.runWorktreeMutation(root, running(args, done), args),
+                        r -> {
+                            if (r.ok()) {
+                                host.setStatus(tr("status.switchedBranch", name));
+                            } else {
+                                gitError(tr("status.git.switchFailed", name), r.message());
+                            }
+                        },
+                        null));
     }
 
     /**
@@ -1393,7 +1717,7 @@ final class GitCoordinator {
         operation.accept(result -> {
             invalidatePendingWrites(root, List.of());
             report.accept(result);
-            afterMutation();
+            afterMutation(root);
             ops.reloadAllFromDiskSilently();
             if (afterReload != null) {
                 afterReload.run();
@@ -1602,7 +1926,7 @@ final class GitCoordinator {
             } else {
                 gitError(tr("status.git.opFailed"), result.message());
             }
-            afterMutation();
+            afterMutation(root);
             ops.reloadAllFromDiskSilently();
         }));
     }
@@ -1687,7 +2011,7 @@ final class GitCoordinator {
                         } else {
                             gitError(tr("status.git.createBranchFailed", name), r.message());
                         }
-                        afterMutation();
+                        afterMutation(root);
                     }),
                     args);
         });
@@ -1720,7 +2044,7 @@ final class GitCoordinator {
                 // Also after a failure: a pull that stopped on conflicts has rewritten files (with markers).
                 ops.reloadAllFromDiskSilently();
             }
-            afterMutation();
+            afterMutation(root);
             GitPullMode.Autostash autostash =
                     changesWorkingTree ? GitPullMode.autostash(r) : GitPullMode.Autostash.NONE;
             if (autostash == GitPullMode.Autostash.KEPT_IN_STASH) {
@@ -1865,7 +2189,7 @@ final class GitCoordinator {
                     if (r.ok()) {
                         ops.reloadAllFromDiskSilently();
                     }
-                    afterMutation();
+                    afterMutation(root);
                     onDone.accept(r);
                 }),
                 args);
@@ -1931,10 +2255,21 @@ final class GitCoordinator {
      * rejects. The active repository is answered at once from the last status; another one is asked for.
      */
     private void inRepositoryOf(@Nullable Path file, java.util.function.BiConsumer<Path, GitStatus> action) {
-        GitPathScope scope = GitPathScope.of(file, repoRoot);
+        // The repository the path is in is known only once its folders have been looked at: off the FX thread,
+        // for a path no menu has asked about yet (PERF-01, Pauta 6.2.0). The active repository as it was asked.
         Path root = repoRoot;
+        GitStatus status = lastStatus;
+        GitPathScope.whenKnown(file, root, scope -> inRepositoryOf(file, scope, root, status, action));
+    }
+
+    private void inRepositoryOf(
+            @Nullable Path file,
+            GitPathScope scope,
+            @Nullable Path root,
+            GitStatus status,
+            java.util.function.BiConsumer<Path, GitStatus> action) {
         if (scope == GitPathScope.ACTIVE && root != null) { // ACTIVE needs a root, OTHER a file
-            action.accept(root, lastStatus);
+            action.accept(root, status);
         } else if (scope == GitPathScope.OTHER && file != null) {
             service.status(file, state -> {
                 Path other = state.root();
@@ -2051,8 +2386,18 @@ final class GitCoordinator {
                     host.setStatus(tr("status.git.nothingToDiscard", file == null ? null : file.getFileName()));
                 case CONFLICT -> host.setStatus(tr("status.git.discardConflict", plan.subject()));
                 case UNTRACKED -> discard(root, status, new Discard(List.of(), List.of(), plan.specs()));
-                case WORKTREE -> discard(root, status, new Discard(plan.specs(), List.of(), List.of()));
-                case HEAD -> discard(root, status, new Discard(List.of(), plan.specs(), List.of()));
+                case WORKTREE ->
+                    discard(
+                            root,
+                            status,
+                            new Discard(plan.specs(), List.of(), List.of(), plan.added(), false, List.of()));
+                case HEAD ->
+                    discard(
+                            root,
+                            status,
+                            new Discard(List.of(), plan.specs(), List.of(), plan.added(), false, List.of()));
+                case ADDED ->
+                    discard(root, status, new Discard(List.of(), List.of(), List.of(), plan.added(), false, List.of()));
             }
         });
     }
@@ -2098,7 +2443,7 @@ final class GitCoordinator {
                         host.setStatus(tr("status.git.alreadyIgnored", done[0]));
                     } else {
                         host.setStatus(tr("status.git.addedToGitignore", done[0]));
-                        afterMutation();
+                        afterMutation(root);
                     }
                 });
     }

@@ -282,31 +282,61 @@ final class GitHunkCoordinator {
             return;
         }
         GitGutterLines gutter = b.gitGutter();
-        if (gutter.hunkAt(line) == null) {
+        GitHunk hunk = gutter.hunkAt(line);
+        if (hunk == null) {
             reportNoChange(gutter);
             return;
         }
         if (b.isDirty()) {
+            // The save may change the text (format on save, trailing white space, a final newline): then the line
+            // no longer names the change, which is looked up by its lines instead — the buffer's, as they are now.
+            String before = b.getArea().getText();
+            List<String> lines = bufferLines(b, gutter.locate(hunk));
             // Written off the FX thread first; a save that fails has said why, and nothing is staged (PERF-01).
             diff.saveThen(b, saved -> {
                 if (saved) {
-                    stageSaved(b, line, root, file, rel);
+                    boolean moved = !before.equals(b.getArea().getText());
+                    if (moved && lines == null) {
+                        host.setStatus(tr("status.git.hunk.changedBySave"));
+                    } else {
+                        stageSaved(b, line, moved ? lines : null, root, file, rel);
+                    }
                 }
             });
             return;
         }
-        stageSaved(b, line, root, file, rel);
+        stageSaved(b, line, null, root, file, rel);
     }
 
-    /** {@link #stage} once the buffer is saved: the change is looked up again in a fresh diff of the file. */
-    private void stageSaved(EditorBuffer b, int line, Path root, Path file, String rel) {
+    /** The buffer's lines in {@code span} (the change's new lines as typed), or null when it is not placed. */
+    private static @Nullable List<String> bufferLines(EditorBuffer b, GitGutterLines.@Nullable Span span) {
+        if (span == null) {
+            return null;
+        }
+        CodeArea area = b.getArea();
+        int count = area.getParagraphs().size();
+        List<String> out = new ArrayList<>(span.count());
+        for (int i = span.line(); i < span.line() + span.count() && i < count; i++) {
+            out.add(area.getParagraph(i).getText());
+        }
+        return out;
+    }
+
+    /**
+     * {@link #stage} once the buffer is saved: the change is looked up again in a fresh diff of the file — on
+     * {@code line}, or, when the save changed the text ({@code movedLines} not null), by those lines: the one
+     * change that adds exactly them. A change the save rewrote is not guessed at: nothing is staged.
+     */
+    private void stageSaved(
+            EditorBuffer b, int line, @Nullable List<String> movedLines, Path root, Path file, String rel) {
         git.service().diff(root, file.toAbsolutePath(), fresh -> {
             if (b.isDisposed() || b.isDirty()) {
                 return; // edited again while git ran: the lines no longer name what was asked for
             }
-            DiffParser.Hunk head = hunkOn(fresh.hunkList(), line);
+            DiffParser.Hunk head =
+                    movedLines == null ? hunkOn(fresh.hunkList(), line) : hunkAdding(fresh.hunkList(), movedLines);
             if (head == null) {
-                host.setStatus(tr("status.git.hunk.none"));
+                host.setStatus(tr(movedLines == null ? "status.git.hunk.none" : "status.git.hunk.changedBySave"));
                 return;
             }
             git.service().unstagedHunks(root, file.toAbsolutePath(), unstaged -> {
@@ -323,6 +353,26 @@ final class GitHunkCoordinator {
                         root, rel, file, (index, working) -> HunkStaging.apply(index, working, chosen), () -> {});
             });
         });
+    }
+
+    /**
+     * The one hunk of {@code hunks} whose added lines are {@code added}, or {@code null} when none or several are.
+     * A pure deletion has no lines of its own to find it by: {@code added} empty finds nothing.
+     */
+    static DiffParser.@Nullable Hunk hunkAdding(List<DiffParser.Hunk> hunks, @Nullable List<String> added) {
+        if (added == null || added.isEmpty()) {
+            return null;
+        }
+        DiffParser.Hunk found = null;
+        for (DiffParser.Hunk h : hunks) {
+            if (h.added().equals(added)) {
+                if (found != null) {
+                    return null; // two changes add the same lines: which one was meant is not known
+                }
+                found = h;
+            }
+        }
+        return found;
     }
 
     /** The hunk of a fresh diff marked on 0-based file line {@code line}, or {@code null}. */

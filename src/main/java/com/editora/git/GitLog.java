@@ -23,8 +23,9 @@ public final class GitLog {
 
     /**
      * {@code hash, short hash, author, author time (epoch seconds), author date (short), parent hashes,
-     * decorations, subject}, tab-separated. The subject is last because it is the only field that may itself
-     * hold a tab.
+     * decorations, subject}, separated by the unit separator ({@code %x1f}, {@link #SEPARATOR}): an author
+     * name may hold a tab, and a tab separator then shifted every later field. The subject is last, so even
+     * a unit separator in it cannot move another field.
      */
     public static final String FORMAT = "--pretty=format:" + row();
 
@@ -32,8 +33,11 @@ public final class GitLog {
     static final String FOLLOW_FORMAT = "--pretty=tformat:%x01" + row();
 
     private static String row() {
-        return "%H%x09%h%x09%an%x09%at%x09%ad%x09%P%x09%D%x09%s";
+        return "%H%x1f%h%x1f%an%x1f%at%x1f%ad%x1f%P%x1f%D%x1f%s";
     }
+
+    /** Separates the fields of a log row: a control character no name, ref or date holds in practice. */
+    static final char SEPARATOR = '\u001f';
 
     /** Starts every commit of a {@link #parseFollow file history} listing, whose records hold NULs and newlines. */
     static final char RECORD_START = '\u0001';
@@ -117,16 +121,27 @@ public final class GitLog {
      * for — more can be loaded. {@code followed} is filled for a file history: the file as each commit knew
      * it (its path there, and the path it was renamed from in the commit that renamed it), keyed by commit
      * hash. {@code error} is git's message when the listing failed ({@code ""} otherwise) — a search that
-     * timed out is not "no commits".
+     * timed out is not "no commits". {@code searchedCommits} is set on a searched file history
+     * ({@link #keep}) whose history was cut at that many commits: older commits exist but were not searched,
+     * and cannot be loaded a page at a time ({@code 0}: the whole history was searched, or not a search).
      */
     public record Page(
-            List<Entry> entries, boolean truncated, Map<String, GitService.CommitFile> followed, String error) {
+            List<Entry> entries,
+            boolean truncated,
+            Map<String, GitService.CommitFile> followed,
+            String error,
+            int searchedCommits) {
         public static final Page EMPTY = new Page(List.of(), false);
 
         public Page {
             entries = List.copyOf(entries);
             followed = Map.copyOf(followed);
             error = error == null ? "" : error;
+            searchedCommits = Math.max(0, searchedCommits);
+        }
+
+        public Page(List<Entry> entries, boolean truncated, Map<String, GitService.CommitFile> followed, String error) {
+            this(entries, truncated, followed, error, 0);
         }
 
         public Page(List<Entry> entries, boolean truncated) {
@@ -139,21 +154,43 @@ public final class GitLog {
 
         /**
          * The commits of this page whose hash is in {@code hashes}, in this page's order — a file history
-         * narrowed to the commits a search found. Nothing follows it: the search was run over everything.
+         * narrowed to the commits a search found. It is not {@code truncated} — no next page can be asked for,
+         * the search was run once over what was read — but when this history was itself cut short (it is
+         * {@code truncated}), {@link #searchedCommits} says how many of the newest commits the search covered,
+         * so older matches are not silently missing.
          */
         public Page keep(java.util.Set<String> hashes) {
+            return keep(hashes, false);
+        }
+
+        /**
+         * As {@link #keep(java.util.Set)}; {@code foundTruncated} is whether the search's own listing was cut
+         * short, which also leaves older matches out.
+         */
+        public Page keep(java.util.Set<String> hashes, boolean foundTruncated) {
             List<Entry> kept = new ArrayList<>();
             for (Entry entry : entries) {
                 if (hashes.contains(entry.hash())) {
                     kept.add(entry);
                 }
             }
-            return new Page(kept, false, followed, error);
+            boolean cut = truncated || searchedCommits > 0 || foundTruncated;
+            return new Page(kept, false, followed, error, cut ? entries.size() : 0);
+        }
+
+        /** Whether only the newest {@link #searchedCommits} commits were searched. */
+        public boolean searchCapped() {
+            return searchedCommits > 0;
         }
 
         /** This page without its first {@code n} commits (the overlap a continuation page is anchored with). */
         public Page drop(int n) {
-            return new Page(entries.subList(Math.min(n, entries.size()), entries.size()), truncated, followed, error);
+            return new Page(
+                    entries.subList(Math.min(n, entries.size()), entries.size()),
+                    truncated,
+                    followed,
+                    error,
+                    searchedCommits);
         }
     }
 
@@ -232,6 +269,15 @@ public final class GitLog {
     }
 
     /**
+     * The revisions of the all-branches view: every ref with {@code --all}, but not the stash (whose
+     * "index on …" and "untracked files on …" commits are not history to cherry-pick, revert or reset to),
+     * notes, or the background-fetch refs of {@code git maintenance}. {@code --exclude} (git 1.9) applies to
+     * the {@code --all} after it; {@code HEAD} stays, so a detached HEAD is still listed.
+     */
+    static final List<String> ALL_BRANCHES =
+            List.of("--exclude=refs/stash", "--exclude=refs/notes/*", "--exclude=refs/prefetch/*", "--all");
+
+    /**
      * The {@code git log} arguments (after the hardening prefix) of {@code request}. Pure.
      *
      * <p><b>Order.</b> {@code --date-order}: no commit before all of its children — the one property the
@@ -266,7 +312,7 @@ public final class GitLog {
             args.add("--skip=" + request.skip());
         }
         if (request.allBranches()) {
-            args.add("--all");
+            args.addAll(ALL_BRANCHES);
         }
         args.addAll(query.options());
         if (request.file() != null) {
@@ -309,7 +355,7 @@ public final class GitLog {
     }
 
     private static @Nullable Entry parseRow(String line) {
-        String[] f = line.split("\t", FIELDS);
+        String[] f = line.split(String.valueOf(SEPARATOR), FIELDS);
         if (f.length < FIELDS) {
             return null;
         }

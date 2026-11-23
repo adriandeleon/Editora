@@ -98,10 +98,13 @@ class MapBranchReviewFxTest {
             }
         }
 
+        /** What {@link #reviewRefs} answers; a test changes it to stand for a checkout. */
+        GitService.ReviewRefs refs =
+                new GitService.ReviewRefs("feature", "main", List.of("feature", "main", "origin/main", "topic"));
+
         @Override
         public void reviewRefs(Path folder, Consumer<GitService.ReviewRefs> found) {
-            found.accept(
-                    new GitService.ReviewRefs("feature", "main", List.of("feature", "main", "origin/main", "topic")));
+            found.accept(refs);
         }
 
         @Override
@@ -251,6 +254,46 @@ class MapBranchReviewFxTest {
                 FxTestSupport.call(cards, "closeChangesCard", new Class<?>[] {});
                 assertNull(view.changesCard());
                 assertEquals(0, surface.reviewMark(a));
+            });
+        } finally {
+            FxTestSupport.runOnFx(() -> {
+                view.dispose();
+                stage[0].close();
+            });
+        }
+    }
+
+    /** B10: after a checkout — a Git refresh with no status change, on a clean tree — Against lists the new refs. */
+    @Test
+    void againIsReadAfterACheckout() throws Exception {
+        Path project = Files.createDirectories(temp.resolve("checkout")).toRealPath();
+        Files.writeString(project.resolve("A.txt"), "a\n");
+        Code code = new Code(GitChanges.Result.UNAVAILABLE);
+        Stage[] stage = new Stage[1];
+        ProjectMapView view = FxTestSupport.callOnFx(() -> {
+            ProjectMapView made = new ProjectMapView(path -> {}, path -> false, path -> false);
+            made.setFollowCode(code);
+            stage[0] = new Stage();
+            stage[0].setScene(new Scene(new StackPane(made), 900, 600));
+            stage[0].show();
+            made.setRoot(project);
+            return made;
+        });
+        try {
+            FxTestSupport.runOnFx(() -> {
+                view.openChanges(null);
+                Menu other = (Menu) view.changesCard().againstItems().get(3);
+                assertEquals(
+                        List.of("origin/main", "topic"),
+                        other.getItems().stream().map(MenuItem::getText).toList());
+
+                code.refs = new GitService.ReviewRefs("topic", "main", List.of("feature", "main", "topic"));
+                view.setGitStatus(Map.of()); // the same (empty) status as before: only HEAD moved
+                Menu after = (Menu) view.changesCard().againstItems().get(3);
+                assertEquals(
+                        List.of("feature"),
+                        after.getItems().stream().map(MenuItem::getText).toList(),
+                        "the branch left is now another branch; the one checked out is not offered");
             });
         } finally {
             FxTestSupport.runOnFx(() -> {

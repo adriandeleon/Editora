@@ -146,6 +146,9 @@ public final class GitPanel extends VBox implements ToolWindowContent {
 
         /** Aborts the operation in progress (the controller confirms first). */
         default void abortOperation() {}
+
+        /** Says {@code text} in the window's status line: why a key did nothing, what a refresh changed. */
+        default void status(String text) {}
     }
 
     /**
@@ -427,7 +430,12 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         // Ctrl/Cmd+Enter commits, like most Git UIs.
         message.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             if (e.getCode() == KeyCode.ENTER && (e.isControlDown() || e.isMetaDown())) {
-                doCommit();
+                if (!doCommit(false)) {
+                    String why = commitRefusal(); // the button shows it is disabled; a key gave no sign at all
+                    if (!why.isEmpty()) {
+                        actions.status(why);
+                    }
+                }
                 e.consume();
             }
         });
@@ -486,13 +494,9 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     /**
      * Commits — from the button and from Ctrl/Cmd+Enter alike, so the shortcut obeys the button's disabled
      * state: with nothing staged it used to run {@code git commit} anyway and end in a "Commit failed" dialog,
-     * and during a slow hook a second press queued a second commit.
+     * and during a slow hook a second press queued a second commit. {@code push}: Commit and Push — the push
+     * follows only a commit that was made.
      */
-    private void doCommit() {
-        doCommit(false);
-    }
-
-    /** {@code push}: Commit and Push — the push follows only a commit that was made. */
     private boolean doCommit(boolean push) {
         String submitted = message.getText() == null ? "" : message.getText();
         String msg = submitted.strip();
@@ -549,6 +553,28 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         }
     }
 
+    /**
+     * Why a commit cannot be made now, in words for the status line, or {@code ""} when it can: a commit already
+     * running, unmerged files, nothing staged, no message — or, with neither a change staged nor a message, both.
+     */
+    String commitRefusal() {
+        if (committing) {
+            return tr("status.git.commitInProgress");
+        }
+        if (conflicts > 0) {
+            return commitBlockedTip.getText();
+        }
+        boolean nothingStaged = !(hasStaged || operation.kind() == GitOperation.Kind.MERGE || amending != null);
+        boolean noMessage = messageIsEmpty();
+        if (nothingStaged && noMessage) {
+            return tr("status.git.nothingToCommit");
+        }
+        if (nothingStaged) {
+            return tr("status.git.commitNothingStaged");
+        }
+        return noMessage ? tr("status.git.commitNeedsMessage") : "";
+    }
+
     /** The reason Commit is unavailable right now, or {@code ""}: what its tooltip says while it is disabled. */
     String commitBlockedReason() {
         return conflicts > 0 ? commitBlockedTip.getText() : "";
@@ -603,6 +629,27 @@ public final class GitPanel extends VBox implements ToolWindowContent {
                 return;
             }
             boolean first = amending == null;
+            GitService.HeadCommit was = amending;
+            if (was != null && !was.hash().equals(head.hash())) {
+                // HEAD moved under the armed Amend (a commit from a terminal, a reset, a branch switch).
+                String current = message.getText() == null ? "" : message.getText();
+                boolean untouched = current.isBlank()
+                        || current.equals(amendPrefill)
+                        || (template.configured() && current.equals(template.text()));
+                if (!untouched) {
+                    // The message was written for the old commit: amending another one with it is not what was
+                    // asked. Amend goes off; the message stays.
+                    amendPrefill = null;
+                    clearAmend();
+                    updateCommitEnabled();
+                    actions.status(tr("status.git.amendOffHeadMoved", head.shortHash()));
+                    return;
+                }
+                // Untouched: it is the old commit's message, so the new commit's replaces it.
+                amendPrefill = head.message();
+                setCommitMessage(amendPrefill);
+                actions.status(tr("status.git.amendRetargeted", head.shortHash(), head.subject()));
+            }
             amending = head;
             amendInfo.setText(tr("gitpanel.amending", head.shortHash(), head.subject()));
             amendWarning.setText(head.pushed() ? tr("gitpanel.amendPushed", head.upstream()) : "");
@@ -647,6 +694,32 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         if (template.configured() && current.isBlank() && amending == null) {
             message.setText(template.text());
             message.positionCaret(0); // the first line is where the subject goes
+        }
+    }
+
+    /**
+     * The message being written, or {@code ""} when the box holds nothing the user wrote: blank, the template,
+     * or a message this panel put there (an amend's, a merge's), which belongs to the repository it came from.
+     */
+    String draft() {
+        String current = message.getText() == null ? "" : message.getText();
+        if (current.isBlank()
+                || (template.configured() && current.equals(template.text()))
+                || current.equals(amendPrefill)
+                || current.equals(prefilledMessage)) {
+            return "";
+        }
+        return current;
+    }
+
+    /** Replaces the box's text with {@code draft} (a message kept for this repository), or empties it. */
+    void replaceDraft(@Nullable String draft) {
+        prefilledMessage = null;
+        if (draft == null || draft.isEmpty()) {
+            message.clear();
+            applyTemplate();
+        } else {
+            setCommitMessage(draft);
         }
     }
 
@@ -733,9 +806,10 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         if (merging) {
             // Offered once per merge, on the refresh that first sees it: a user who deletes the text must
             // not find it back after the next status refresh.
+            // A box holding exactly the commit template is as good as empty: the merge's message replaces it.
             if (previous.kind() != GitOperation.Kind.MERGE
                     && !operation.message().isEmpty()
-                    && current.isBlank()) {
+                    && (current.isBlank() || (template.configured() && current.equals(template.text())))) {
                 prefilledMessage = operation.message();
                 setCommitMessage(prefilledMessage);
             }

@@ -3718,6 +3718,13 @@ final class WindowCommandRegistrar {
         (open ? close : show).run();
     }
 
+    /**
+     * The ids of the projects Open in New Window created for a work tree in this session (every window's): those
+     * are dropped when Editora removes or prunes the work tree. A project the user made, or one from an earlier
+     * session, is never touched.
+     */
+    private static final java.util.Set<String> WORKTREE_PROJECTS = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     /** Branch, push-variant, remote and work-tree commands ({@link GitBranchCoordinator}); all Git-gated. */
     private void registerGitBranchCommands() {
         GitBranchCoordinator branches = host.gitWindows().branches;
@@ -3725,14 +3732,31 @@ final class WindowCommandRegistrar {
         branches.setWindowOpener(folder -> {
             WindowManager windows = host.windowManager(); // null only before the window is placed
             if (windows != null) {
-                windows.openOrFocus(host.config()
-                        .projects()
-                        .createOrGet(
-                                folder.getFileName() == null
-                                        ? folder.toString()
-                                        : folder.getFileName().toString(),
-                                folder));
+                com.editora.config.ProjectManager projects = host.config().projects();
+                boolean known = projects.find(folder) != null;
+                com.editora.config.Project project = projects.createOrGet(
+                        folder.getFileName() == null
+                                ? folder.toString()
+                                : folder.getFileName().toString(),
+                        folder);
+                if (!known) {
+                    WORKTREE_PROJECTS.add(project.id()); // made for the work tree: it goes when the work tree does
+                }
+                windows.openOrFocus(project);
             }
+        });
+        // A work tree Editora removed or pruned takes the project entry opening it made with it — never one the user
+        // had already, and never one whose window is open.
+        branches.setWorktreeGone(folder -> {
+            com.editora.config.ProjectManager projects = host.config().projects();
+            com.editora.config.Project project = projects.find(folder);
+            if (project == null || !WORKTREE_PROJECTS.contains(project.id()) || projects.isOpen(project.id())) {
+                return;
+            }
+            WORKTREE_PROJECTS.remove(project.id());
+            host.config().shared().cancelPendingWrite(projects.stateFile(project));
+            projects.delete(project.id());
+            projects.save();
         });
         java.util.Map<String, Runnable> commands = new java.util.LinkedHashMap<>();
         commands.put("git.newBranchFrom", branches::newBranchFrom);

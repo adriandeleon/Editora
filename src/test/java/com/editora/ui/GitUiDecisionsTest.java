@@ -68,21 +68,37 @@ class GitUiDecisionsTest {
     }
 
     @Test
-    void aRemoteBranchWithALocalTwinSwitchesToTheLocalBranch() {
+    void aRemoteBranchSwitchesOnlyToTheLocalBranchThatTracksIt() {
         List<com.editora.git.GitService.BranchInfo> local = List.of(
                 new com.editora.git.GitService.BranchInfo("main", "origin/main", 0, 0, false),
-                new com.editora.git.GitService.BranchInfo("feature/x", "", 0, 0, false));
+                new com.editora.git.GitService.BranchInfo("feature/x", "", 0, 0, false),
+                new com.editora.git.GitService.BranchInfo("feature", "origin/feature", 0, 0, false));
+        List<String> remotes = List.of("origin", "upstream", "team/eu");
 
-        assertEquals("main", GitWindowCoordinator.existingLocalFor("origin/main", local));
         assertEquals(
-                "feature/x",
-                GitWindowCoordinator.existingLocalFor("origin/feature/x", local),
-                "only the remote name is stripped, not every path segment");
-        assertNull(
-                GitWindowCoordinator.existingLocalFor("origin/new-work", local),
+                new GitWindowCoordinator.RemoteCheckout(GitWindowCoordinator.RemoteCheckout.Kind.SWITCH, "main"),
+                GitWindowCoordinator.remoteCheckout("origin/main", local, remotes));
+        assertEquals(
+                new GitWindowCoordinator.RemoteCheckout(
+                        GitWindowCoordinator.RemoteCheckout.Kind.ASK, "origin-feature/x"),
+                GitWindowCoordinator.remoteCheckout("origin/feature/x", local, remotes),
+                "a local branch of that name that tracks nothing is not taken for it");
+        assertEquals(
+                new GitWindowCoordinator.RemoteCheckout(
+                        GitWindowCoordinator.RemoteCheckout.Kind.ASK, "upstream-feature"),
+                GitWindowCoordinator.remoteCheckout("upstream/feature", local, remotes),
+                "feature tracks origin/feature, not upstream/feature");
+        assertEquals(
+                new GitWindowCoordinator.RemoteCheckout(GitWindowCoordinator.RemoteCheckout.Kind.TRACK, "new-work"),
+                GitWindowCoordinator.remoteCheckout("origin/new-work", local, remotes),
                 "no local branch yet: a tracking branch is created");
-        assertNull(GitWindowCoordinator.existingLocalFor("upstream/x", local), "\"x\" is not \"feature/x\"");
-        assertNull(GitWindowCoordinator.existingLocalFor("noslash", local));
+        assertEquals(
+                new GitWindowCoordinator.RemoteCheckout(GitWindowCoordinator.RemoteCheckout.Kind.TRACK, "main-2"),
+                GitWindowCoordinator.remoteCheckout("team/eu/main-2", local, remotes),
+                "split at the remote's whole name, slash and all");
+        assertEquals(
+                GitWindowCoordinator.RemoteCheckout.Kind.TRACK,
+                GitWindowCoordinator.remoteCheckout("noslash", local, remotes).kind());
     }
 
     @Test
@@ -91,5 +107,15 @@ class GitUiDecisionsTest {
                 List.of("fetch", "--all", "--prune"),
                 List.of(GitWindowCoordinator.FETCH_ARGS),
                 "without --prune a deleted upstream is never noticed and no branch is ever marked gone");
+    }
+
+    @org.junit.jupiter.api.Test
+    void theLogReloadsOnlyWhenItsRefsMoved() {
+        String refs = "HEAD=refs/heads/main\nabc HEAD\nabc refs/heads/main\n";
+        org.junit.jupiter.api.Assertions.assertFalse(GitWindowCoordinator.logNeedsReload(refs, refs));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                GitWindowCoordinator.logNeedsReload(refs, refs.replace("abc refs", "def refs")));
+        org.junit.jupiter.api.Assertions.assertTrue(GitWindowCoordinator.logNeedsReload("", refs));
+        org.junit.jupiter.api.Assertions.assertTrue(GitWindowCoordinator.logNeedsReload(refs, ""));
     }
 }

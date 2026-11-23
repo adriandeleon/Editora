@@ -74,12 +74,20 @@ final class GitBranchCoordinator {
     /** Opens a folder as a project in its own window; installed by the command registrar. */
     private Consumer<Path> windowOpener = folder -> {};
 
+    /** Told the folder of each work tree Editora removed or pruned; installed by the command registrar. */
+    private Consumer<Path> worktreeGone = folder -> {};
+
     GitBranchCoordinator(GitWindowCoordinator.Host windowHost) {
         this.windowHost = windowHost;
     }
 
     void setWindowOpener(Consumer<Path> opener) {
         windowOpener = opener == null ? folder -> {} : opener;
+    }
+
+    /** Installs what to do once a work tree is removed or pruned (its folder is handed on). */
+    void setWorktreeGone(Consumer<Path> listener) {
+        worktreeGone = listener == null ? folder -> {} : listener;
     }
 
     private GitCoordinator git() {
@@ -201,11 +209,22 @@ final class GitBranchCoordinator {
      * named {@code exclude} (the current one, for commands that cannot act on it) is left out.
      */
     private void pickRef(Path root, String title, Set<RefKind> kinds, @Nullable String exclude, Consumer<Ref> onPick) {
+        pickRef(root, title, kinds, exclude, ref -> true, onPick);
+    }
+
+    /** As above, offering only the local branches {@code offered} accepts. */
+    private void pickRef(
+            Path root,
+            String title,
+            Set<RefKind> kinds,
+            @Nullable String exclude,
+            java.util.function.Predicate<Ref> offered,
+            Consumer<Ref> onPick) {
         service().branches(root, branches -> {
             List<Ref> refs = new ArrayList<>();
             if (kinds.contains(RefKind.LOCAL)) {
                 for (GitService.BranchInfo branch : branches.local()) {
-                    if (!branch.name().equals(exclude)) {
+                    if (!branch.name().equals(exclude) && offered.test(new Ref(branch.name(), RefKind.LOCAL))) {
                         refs.add(new Ref(branch.name(), RefKind.LOCAL));
                     }
                 }
@@ -275,17 +294,64 @@ final class GitBranchCoordinator {
 
     // --- delete ------------------------------------------------------------------------------------
 
-    /** {@code git.deleteBranch}: picks a local branch other than the current one and deletes it. */
+    /**
+     * {@code git.deleteBranch}: picks a local branch other than the current one, and other than one checked out in
+     * another work tree (git refuses to delete that), and deletes it.
+     */
     void deleteBranch() {
         Path root = rootOrReport();
         if (root != null) {
             String current = git().branchName();
-            pickRef(
-                    root,
-                    tr("branch.pick.delete"),
-                    EnumSet.of(RefKind.LOCAL),
-                    current,
-                    ref -> deleteBranch(root, current, ref.name()));
+            service().worktrees(root, trees -> {
+                java.util.Map<String, String> elsewhere = checkedOutElsewhere(root, trees);
+                pickRef(
+                        root,
+                        tr("branch.pick.delete"),
+                        EnumSet.of(RefKind.LOCAL),
+                        current,
+                        ref -> !elsewhere.containsKey(ref.name()),
+                        ref -> deleteBranch(root, current, ref.name()));
+            });
+        }
+    }
+
+    /**
+     * The branches checked out in a work tree of {@code root}'s repository other than {@code root}'s own, each
+     * with that work tree's folder. Git refuses to delete them ("used by worktree"), so the delete commands leave
+     * them out and say where they are checked out. Pure.
+     */
+    static java.util.Map<String, String> checkedOutElsewhere(Path root, List<GitWorktrees.Worktree> trees) {
+        java.util.Map<String, String> out = new java.util.LinkedHashMap<>();
+        for (GitWorktrees.Worktree tree : trees) {
+            if (tree.branch().isEmpty() || tree.bare() || sameFolder(root, tree.path())) {
+                continue;
+            }
+            out.putIfAbsent(tree.branch(), tree.path());
+        }
+        return out;
+    }
+
+    /** Whether the folder git printed as {@code path} is {@code root}, on {@code root}'s own file system. */
+    private static boolean sameFolder(Path root, String path) {
+        Path other = onFileSystemOf(root, path);
+        return other != null
+                && other.toAbsolutePath()
+                        .normalize()
+                        .equals(root.toAbsolutePath().normalize());
+    }
+
+    /**
+     * {@code path} — as git printed it — on {@code root}'s file system: a work tree of a repository on a remote
+     * host is a folder on that host, never one on this machine. {@code null} for text that is no path there.
+     */
+    static @Nullable Path onFileSystemOf(Path root, String path) {
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        try {
+            return root.getFileSystem().getPath(path);
+        } catch (InvalidPathException | UnsupportedOperationException bad) {
+            return null;
         }
     }
 
@@ -303,6 +369,18 @@ final class GitBranchCoordinator {
             ui().setStatus(tr("status.git.deleteCurrentBranch", name));
             return;
         }
+        service().worktrees(root, trees -> {
+            String folder = checkedOutElsewhere(root, trees).get(name);
+            if (folder != null) {
+                ui().setStatus(tr("status.git.branchInWorktree", name, folder));
+                return;
+            }
+            deleteUnlessUnmergedRefused(root, name);
+        });
+    }
+
+    /** The questions and the delete itself, once the branch is known to be checked out nowhere. */
+    private void deleteUnlessUnmergedRefused(Path root, String name) {
         service().unmergedCount(root, name, count -> {
             if (count != 0) {
                 confirmForceDelete(root, name, count);
@@ -468,8 +546,9 @@ final class GitBranchCoordinator {
     }
 
     /**
-     * {@code git merge --no-edit <name>} into the checked-out branch ({@code --no-edit}: there is no terminal
-     * for git to open an editor in). A stop on conflicts leaves the merge in progress and is reported as such.
+     * {@code git merge --no-edit --autostash <name>} into the checked-out branch ({@code --no-edit}: there is no
+     * terminal for git to open an editor in; {@code --autostash}: uncommitted changes are carried across, as a
+     * pull carries them). A stop on conflicts leaves the merge in progress and is reported as such.
      */
     void merge(Path root, String current, String name) {
         if (root == null || unsafe(name)) {
@@ -477,14 +556,27 @@ final class GitBranchCoordinator {
         }
         runTree(
                 root,
-                GitService.guarded(List.of("merge", "--no-edit"), name),
-                result -> report(
+                GitService.guarded(List.of("merge", "--no-edit", "--autostash"), name),
+                result -> reportCarried(
                         result,
                         tr("gitlabel.merge"),
                         nz(result.out()).contains("Already up to date")
                                 ? tr("status.git.alreadyUpToDate", name)
                                 : tr("status.git.merged", name, nz(current)),
                         tr("status.git.mergeFailed", name)));
+    }
+
+    /**
+     * {@link #report} for a merge or rebase run with {@code --autostash}: when applying the stashed changes back
+     * conflicted, git keeps them as a stash entry, and that is what the user must hear about — the Commit window
+     * shows the conflicts, the status line says the changes are in the stash.
+     */
+    private void reportCarried(ProcessRunner.Result result, String operation, String success, String failure) {
+        if (com.editora.git.GitPullMode.autostash(result) == com.editora.git.GitPullMode.Autostash.KEPT_IN_STASH) {
+            git().conflictsNeedAttention(tr("status.git.opAutostashKept", operation));
+            return;
+        }
+        report(result, operation, success, failure);
     }
 
     /** {@code git.rebaseOnto}: picks a branch and rebases the current one onto it. */
@@ -501,15 +593,18 @@ final class GitBranchCoordinator {
         }
     }
 
-    /** {@code git rebase <name>}: replays the current branch's own commits on top of {@code name}. */
+    /**
+     * {@code git rebase --autostash <name>}: replays the current branch's own commits on top of {@code name},
+     * carrying uncommitted changes across as a pull does (without it git refuses a dirty working tree).
+     */
     void rebase(Path root, String current, String name) {
         if (root == null || unsafe(name)) {
             return;
         }
         runTree(
                 root,
-                GitService.guarded(List.of("rebase"), name),
-                result -> report(
+                GitService.guarded(List.of("rebase", "--autostash"), name),
+                result -> reportCarried(
                         result,
                         tr("gitlabel.rebase"),
                         nz(result.out()).contains("is up to date")
@@ -555,7 +650,10 @@ final class GitBranchCoordinator {
 
     /**
      * Creates branch {@code name} at {@code start}: {@code checkout -b} when switching (a working-tree
-     * command), else {@code branch} — the working tree and the current branch stay as they are.
+     * command, which asks first when it would abandon a detached HEAD's commits), else {@code branch} — the
+     * working tree and the current branch stay as they are. Never with {@code --track}: started from
+     * {@code origin/main}, the new branch would otherwise take {@code origin/main} as its upstream (git's
+     * {@code branch.autoSetupMerge}), and its first plain push would go there.
      */
     void newBranchFrom(Path root, String start, String name, boolean switchTo) {
         if (root == null || name.isEmpty() || invalidBranchName(name) || unsafe(start)) {
@@ -569,10 +667,18 @@ final class GitBranchCoordinator {
             }
         };
         if (switchTo) {
-            runTree(root, new String[] {"checkout", "-b", name, start, "--"}, report);
+            GitLeaveDetachedHead.thenMove(
+                    git(), root, start, () -> runTree(root, newBranchArgs(name, start, true), report));
         } else {
-            runLocal(root, GitService.guarded(List.of("branch"), name, start), report);
+            runLocal(root, newBranchArgs(name, start, false), report);
         }
+    }
+
+    /** The argv of New Branch From: {@code checkout -b} when switching, else {@code branch}; never tracking. Pure. */
+    static String[] newBranchArgs(String name, String start, boolean switchTo) {
+        return switchTo
+                ? new String[] {"checkout", "--no-track", "-b", name, start, "--"}
+                : GitService.guarded(List.of("branch", "--no-track"), name, start);
     }
 
     /** {@code git.checkoutRevision}: asks for a tag, branch or commit by name and checks it out. */
@@ -595,13 +701,47 @@ final class GitBranchCoordinator {
         if (root == null || revision.isEmpty() || unsafe(revision)) {
             return;
         }
-        runTree(root, new String[] {"checkout", revision, "--"}, result -> {
-            if (result.ok()) {
-                ui().setStatus(tr("status.checkedOut", revision));
-            } else {
-                fail(tr("status.git.checkoutFailed", revision), result);
-            }
-        });
+        GitLeaveDetachedHead.thenMove(
+                git(),
+                root,
+                revision,
+                () -> runTree(root, new String[] {"checkout", revision, "--"}, result -> {
+                    if (result.ok()) {
+                        ui().setStatus(tr("status.checkedOut", revision));
+                    } else {
+                        fail(tr("status.git.checkoutFailed", revision), result);
+                    }
+                }));
+    }
+
+    /**
+     * Checks out remote branch {@code remoteBranch} as a new local branch {@code name} that tracks it — the answer
+     * when a local branch of the remote branch's own name exists but tracks something else.
+     */
+    void checkoutRemoteAs(Path root, String remoteBranch, String name) {
+        if (root == null || name.isEmpty() || invalidBranchName(name) || unsafe(remoteBranch)) {
+            return;
+        }
+        GitLeaveDetachedHead.thenMove(
+                git(),
+                root,
+                remoteBranch,
+                () -> runTree(root, new String[] {"checkout", "--track", "-b", name, remoteBranch, "--"}, result -> {
+                    if (result.ok()) {
+                        ui().setStatus(tr("status.checkedOut", remoteBranch));
+                    } else {
+                        fail(tr("status.git.checkoutFailed", remoteBranch), result);
+                    }
+                }));
+    }
+
+    /** Asks the local name to check {@code remoteBranch} out as, starting from {@code suggested}. */
+    void promptCheckoutRemoteAs(Path root, String remoteBranch, String taken, String suggested) {
+        ui().promptText(
+                        tr("dialog.checkoutRemoteAs.title"),
+                        tr("dialog.checkoutRemoteAs.content", remoteBranch, taken),
+                        suggested,
+                        input -> checkoutRemoteAs(root, remoteBranch, input.strip()));
     }
 
     // --- upstream ----------------------------------------------------------------------------------
@@ -936,7 +1076,7 @@ final class GitBranchCoordinator {
 
     /** {@code git.fetchRemote}: fetches (and prunes) one remote — the only one, or a picked one. */
     void fetchRemote() {
-        onRemote(tr("remotes.pick.fetch"), (root, remote, after) -> fetchRemote(root, remote.name(), after));
+        onRemote(tr("remotes.pick.fetch"), (root, remote, after) -> fetchRemote(root, remote.name(), () -> {}));
     }
 
     /** {@code git fetch --prune <remote>}; {@code after} runs once it has finished, whatever the outcome. */
@@ -1004,13 +1144,15 @@ final class GitBranchCoordinator {
                                     true,
                                     false,
                                     "git.fetchRemote",
-                                    remote -> fetchRemote(root, remote.name(), reopen)),
+                                    // Not shown again after: a fetch or prune changes no remote of the list, and
+                                    // may take long enough for the user to be doing something else by then.
+                                    remote -> fetchRemote(root, remote.name(), () -> {})),
                             new GitManagerOverlay.Action<>(
                                     tr("remotes.prune"),
                                     true,
                                     false,
                                     "git.pruneRemote",
-                                    remote -> pruneRemote(root, remote.name(), reopen)),
+                                    remote -> pruneRemote(root, remote.name(), () -> {})),
                             new GitManagerOverlay.Action<>(
                                     tr("remotes.remove"),
                                     true,
@@ -1080,7 +1222,7 @@ final class GitBranchCoordinator {
 
     /** {@code git.pruneRemote}: Prune on the manager's selected remote, or on one picked. */
     void pruneRemoteCommand() {
-        onRemote(tr("remotes.pick.prune"), (root, remote, after) -> pruneRemote(root, remote.name(), after));
+        onRemote(tr("remotes.pick.prune"), (root, remote, after) -> pruneRemote(root, remote.name(), () -> {}));
     }
 
     /** {@code git.removeRemote}: Remove Remote… on the manager's selected remote, or on one picked. */
@@ -1284,7 +1426,7 @@ final class GitBranchCoordinator {
                                     true,
                                     false,
                                     "git.openWorktree",
-                                    tree -> openWorktree(tree.path())),
+                                    tree -> openWorktree(root, tree.path())),
                             new GitManagerOverlay.Action<>(
                                     tr("worktrees.prune"),
                                     false,
@@ -1371,7 +1513,7 @@ final class GitBranchCoordinator {
 
     /** {@code git.openWorktree}: Open in New Window on the manager's selected work tree, or on one picked. */
     void openWorktreeCommand() {
-        onWorktree(tr("worktrees.pick.open"), (root, tree, after) -> openWorktree(tree.path()));
+        onWorktree(tr("worktrees.pick.open"), (root, tree, after) -> openWorktree(root, tree.path()));
     }
 
     /** {@code git.removeWorktree}: Remove Worktree… on the manager's selected work tree, or on one picked. */
@@ -1379,7 +1521,7 @@ final class GitBranchCoordinator {
         onWorktree(tr("worktrees.pick.remove"), this::removeWorktree);
     }
 
-    /** Opens the work tree's folder as a project in its own window. */
+    /** Opens the work tree's folder (a local one) as a project in its own window. */
     void openWorktree(String path) {
         try {
             windowOpener.accept(Path.of(path));
@@ -1389,19 +1531,33 @@ final class GitBranchCoordinator {
     }
 
     /**
+     * Opens the work tree at {@code path} of {@code root}'s repository in its own window. A repository on a remote
+     * host has its work trees on that host: {@code path} names no folder here, so that is said instead of opening
+     * a local folder of the same name.
+     */
+    void openWorktree(Path root, String path) {
+        if (root != null && root.getFileSystem() != java.nio.file.FileSystems.getDefault()) {
+            ui().setStatus(tr("status.git.worktreeOpenRemote", path));
+            return;
+        }
+        openWorktree(path);
+    }
+
+    /**
      * Where a typed work-tree path lands: as typed when absolute, else beside the repository — never inside
      * it, where git would resolve a relative path and the new tree would show up as untracked files of the
-     * old one. {@code null} for text that is no path. Pure.
+     * old one. On the repository's own file system: a repository on a remote host gets a work tree on that
+     * host. {@code null} for text that is no path there. Pure.
      */
     static @Nullable Path worktreeTarget(Path root, String typed) {
         if (typed == null || typed.isBlank()) {
             return null;
         }
         try {
-            Path path = Path.of(typed.strip());
+            Path path = root.getFileSystem().getPath(typed.strip());
             Path base = root.toAbsolutePath().getParent();
             return (path.isAbsolute() || base == null ? path.toAbsolutePath() : base.resolve(path)).normalize();
-        } catch (InvalidPathException bad) {
+        } catch (InvalidPathException | UnsupportedOperationException | java.io.IOError bad) {
             return null;
         }
     }
@@ -1444,6 +1600,10 @@ final class GitBranchCoordinator {
             ui().setError(tr("status.git.worktreeBadPath", nz(typedPath)));
             return;
         }
+        if (branch == null || branch.isBlank()) {
+            ui().setError(tr(createBranch ? "status.git.worktreeNeedsNewBranch" : "status.git.worktreeNeedsBranch"));
+            return;
+        }
         String[] args;
         if (createBranch) {
             if (invalidBranchName(branch)) {
@@ -1479,7 +1639,12 @@ final class GitBranchCoordinator {
             ui().setStatus(tr("status.git.worktreeMain"));
             return;
         }
-        if (GitService.repoRelative(Path.of(tree.path()), root) != null) {
+        Path folder = onFileSystemOf(root, tree.path());
+        if (folder == null) {
+            ui().setError(tr("status.git.worktreeBadPath", tree.path()));
+            return;
+        }
+        if (GitService.repoRelative(folder, root) != null) {
             ui().setStatus(tr("status.git.worktreeCurrent"));
             return;
         }
@@ -1493,14 +1658,19 @@ final class GitBranchCoordinator {
     private void removeWorktree(Path root, String path, boolean force, Runnable after) {
         String[] args = GitService.guarded(
                 force ? List.of("worktree", "remove", "--force") : List.of("worktree", "remove"), path);
-        // The boundary is the work tree being removed: its open buffers must not write into it afterwards.
+        // The boundary is the work tree being removed: its open buffers must not write into it afterwards. On the
+        // repository's file system — a remote repository's work tree is on that host.
+        Path folder = onFileSystemOf(root, path);
         git().aroundWorkingTreeMutation(
-                        Path.of(path),
+                        folder,
                         done -> service().runWorktreeMutation(root, tracked(args, done), args),
                         result -> {
                             switch (GitOutcome.of(result)) {
                                 case OK -> {
                                     ui().setStatus(tr("status.git.worktreeRemoved", path));
+                                    if (folder != null) {
+                                        worktreeGone.accept(folder);
+                                    }
                                     after.run();
                                 }
                                 case DIRTY_WORKTREE ->
@@ -1518,18 +1688,31 @@ final class GitBranchCoordinator {
                         null);
     }
 
-    /** {@code git worktree prune}: forgets work trees whose folders were deleted by hand. */
+    /**
+     * {@code git worktree prune}: forgets work trees whose folders were deleted by hand. Those git listed as
+     * prunable just before are handed to {@link #setWorktreeGone} once it has.
+     */
     void pruneWorktrees(Path root, Runnable after) {
         if (root == null) {
             return;
         }
-        runLocal(root, new String[] {"worktree", "prune"}, result -> {
-            if (result.ok()) {
-                ui().setStatus(tr("status.git.worktreesPruned"));
-                after.run();
-            } else {
-                fail(tr("status.git.worktreeFailed"), result);
+        service().worktrees(root, trees -> {
+            List<Path> prunable = new ArrayList<>();
+            for (GitWorktrees.Worktree tree : trees) {
+                Path folder = tree.prunable() ? onFileSystemOf(root, tree.path()) : null;
+                if (folder != null) {
+                    prunable.add(folder);
+                }
             }
+            runLocal(root, new String[] {"worktree", "prune"}, result -> {
+                if (result.ok()) {
+                    ui().setStatus(tr("status.git.worktreesPruned"));
+                    prunable.forEach(worktreeGone);
+                    after.run();
+                } else {
+                    fail(tr("status.git.worktreeFailed"), result);
+                }
+            });
         });
     }
 
@@ -1574,6 +1757,20 @@ final class GitBranchCoordinator {
             GitService.Branches branches,
             BranchPopup.BranchRef branch,
             UnaryOperator<Runnable> guard) {
+        return rowActions(root, current, branches, java.util.Map.of(), branch, guard);
+    }
+
+    /**
+     * As above; {@code elsewhere} names the branches checked out in another work tree ({@link #checkedOutElsewhere}),
+     * whose Delete row is grayed out and says where.
+     */
+    List<BranchPopup.RowAction> rowActions(
+            Path root,
+            String current,
+            GitService.Branches branches,
+            java.util.Map<String, String> elsewhere,
+            BranchPopup.BranchRef branch,
+            UnaryOperator<Runnable> guard) {
         String name = branch.name();
         List<BranchPopup.RowAction> actions = new ArrayList<>();
         for (String id : rowActionIds(branch)) {
@@ -1597,8 +1794,13 @@ final class GitBranchCoordinator {
             String command = name.equals(current) && (id.equals("setUpstream") || id.equals("unsetUpstream"))
                     ? "git." + id
                     : null;
+            String inWorktree = id.equals("delete") ? elsewhere.get(name) : null;
             actions.add(new BranchPopup.RowAction(
-                    tr("branch.row." + id, name, nz(current)), danger, guard.apply(run), command));
+                    tr("branch.row." + id, name, nz(current)),
+                    danger,
+                    guard.apply(run),
+                    command,
+                    inWorktree == null ? null : tr("status.git.branchInWorktree", name, inWorktree)));
         }
         return actions;
     }

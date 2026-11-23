@@ -29,7 +29,25 @@ public final class RelativeTime {
 
     private RelativeTime() {}
 
-    /** Buckets {@code nowSeconds - epochSeconds} (clamped at 0) into the largest fitting unit. */
+    /**
+     * How far ahead of the clock a time may be and still read "now": a commit made on a machine whose clock
+     * runs a little fast, or a few seconds of difference between this machine and a remote.
+     */
+    public static final long SKEW_SECONDS = 5 * MINUTE;
+
+    /**
+     * Whether {@code epochSeconds} lies further in the future than {@link #SKEW_SECONDS}: "now" would be a
+     * lie, so a caller shows the absolute date instead.
+     */
+    public static boolean isFuture(long epochSeconds, long nowSeconds) {
+        return epochSeconds - nowSeconds > SKEW_SECONDS;
+    }
+
+    /**
+     * Buckets {@code nowSeconds - epochSeconds} (clamped at 0: a future time reads {@code NOW}; see
+     * {@link #isFuture}) into the largest fitting unit. Four weeks and more read as a month, and a year less
+     * a few days as a year — never "4 weeks" next to "1 month", or "12 months".
+     */
     public static Span of(long epochSeconds, long nowSeconds) {
         long delta = Math.max(0, nowSeconds - epochSeconds);
         if (delta < MINUTE) {
@@ -44,12 +62,12 @@ public final class RelativeTime {
         if (delta < WEEK) {
             return new Span(Unit.DAYS, delta / DAY);
         }
-        if (delta < MONTH) {
+        if (delta < 4 * WEEK) {
             return new Span(Unit.WEEKS, delta / WEEK);
         }
-        if (delta < YEAR) {
-            return new Span(Unit.MONTHS, delta / MONTH);
+        if (delta / MONTH < 12) {
+            return new Span(Unit.MONTHS, Math.max(1, delta / MONTH));
         }
-        return new Span(Unit.YEARS, delta / YEAR);
+        return new Span(Unit.YEARS, Math.max(1, delta / YEAR));
     }
 }

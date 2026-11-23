@@ -14,7 +14,9 @@ import java.util.Locale;
  * nothing about GitHub. Only when those hosts are not known (an older gh, an inconclusive probe) does the
  * host-name heuristic decide. This only gates the always-on surfaces; the palette commands run regardless and
  * surface gh's own error. Handles {@code https://…}, {@code ssh://git@…}, and scp-style
- * {@code [user@]host:org/repo.git} forms. Pure — unit-tested.
+ * {@code [user@]host:org/repo.git} forms. GitHub's SSH-over-443 endpoint ({@code ssh.github.com}) is
+ * {@code github.com}; an {@code ~/.ssh/config} alias ({@code git@github-work:…}) is resolved by the caller first
+ * ({@link com.editora.git.SshHosts#resolveUrl}), since that reads the user's config. Pure — unit-tested.
  */
 public final class GitHubRemote {
 
@@ -43,7 +45,7 @@ public final class GitHubRemote {
         if (ghHosts == null || ghHosts.isEmpty()) {
             return isGitHub(remoteUrl);
         }
-        String host = hostOf(remoteUrl);
+        String host = com.editora.git.SshHosts.canonical(hostOf(remoteUrl));
         if (host.isEmpty()) {
             return false;
         }
@@ -69,6 +71,24 @@ public final class GitHubRemote {
             }
         }
         return false;
+    }
+
+    /**
+     * The first of {@code remoteUrls} whose host (canonical: {@code ssh.github.com} is {@code github.com}) is
+     * one of {@code hosts}, as that host; {@code ""} with none. How a repository on a host whose gh token was
+     * refused is recognized.
+     */
+    public static String hostAmong(Collection<String> remoteUrls, Collection<String> hosts) {
+        if (remoteUrls == null || hosts == null || hosts.isEmpty()) {
+            return "";
+        }
+        for (String url : remoteUrls) {
+            String host = com.editora.git.SshHosts.canonical(hostOf(url));
+            if (!host.isEmpty() && hosts.contains(host)) {
+                return host;
+            }
+        }
+        return "";
     }
 
     /**

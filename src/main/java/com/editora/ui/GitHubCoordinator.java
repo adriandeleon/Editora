@@ -280,6 +280,12 @@ final class GitHubCoordinator {
         ops.setGitHubWindowAvailable(available);
         if (!available) {
             ops.setStatusBarChecks(null);
+            Path root = git.repoRoot();
+            String refused = isEnabled() && ready() ? rejectedRepoHost() : "";
+            if (!refused.isEmpty() && root != null && !root.equals(rejectedNoticeRoot)) {
+                rejectedNoticeRoot = root; // said once per repository, not on every tab switch
+                host.setStatus(tr("status.github.hostRejected", refused));
+            }
         }
         autoFetchChecks(available); // G12 hook (flows region): the roll-up needs no manual refresh
     }
@@ -313,6 +319,21 @@ final class GitHubCoordinator {
                     return; // no longer the current root (its own probe is running)
                 }
                 activityProbing = false;
+                if (activity == GitHubService.Activity.DENIED) {
+                    // Single sign-on: asking again changes nothing until the token is authorized. Not retried.
+                    hasActivity = false;
+                    if (!root.equals(ssoNoticeRoot)) {
+                        ssoNoticeRoot = root;
+                        GitHubService.Availability known = service.availability();
+                        String h = GitHubRemote.hostAmong(remoteUrls, known == null ? List.of() : known.hosts());
+                        host.setStatus(tr(
+                                "status.github.ssoRequired",
+                                h.isEmpty() ? "github.com" : h,
+                                tr("command.github.refresh")));
+                    }
+                    applyGating();
+                    return;
+                }
                 if (activity == GitHubService.Activity.UNKNOWN) {
                     activityUnknown = true;
                     activityRetryAtNanos = System.nanoTime() + activityRetryAfter.toNanos();
@@ -365,12 +386,38 @@ final class GitHubCoordinator {
                     }
                     remoteUrls = urls;
                     applyGating();
+                    // An SSH remote may name an ~/.ssh/config alias (git@github-work:o/r.git): ssh -G says which
+                    // host it stands for — off the FX thread, once per alias — and the surfaces are gated again.
+                    service.resolveRemoteHosts(urls, resolved -> {
+                        if (root.equals(remoteCheckedRoot) && remoteUrls == urls && !resolved.equals(urls)) {
+                            remoteUrls = resolved;
+                            applyGating();
+                        }
+                    });
                 }
             });
         }
         GitHubService.Availability a = service.availability();
         return GitHubRemote.anyGitHub(remoteUrls, a == null ? List.of() : a.hosts());
     }
+
+    /**
+     * The host of the current repository's GitHub remote whose {@code gh} token was refused, or {@code ""}: with
+     * another host signed in gh still reads as signed in, so without this the window just stayed hidden.
+     */
+    private String rejectedRepoHost() {
+        GitHubService.Availability a = service.availability();
+        if (a == null || a.rejectedHosts().isEmpty() || git.repoRoot() == null) {
+            return "";
+        }
+        return GitHubRemote.hostAmong(remoteUrls, a.rejectedHosts());
+    }
+
+    /** The repository root the refused-token notice was last given for, so it is said once per repository. */
+    private @Nullable Path rejectedNoticeRoot;
+
+    /** The repository root the single sign-on notice was last given for. */
+    private @Nullable Path ssoNoticeRoot;
 
     // --- readiness guard shared by every gh flow -------------------------------------------------
 
@@ -409,8 +456,11 @@ final class GitHubCoordinator {
                 reprobe(a);
             }
             dir = captured != null ? captured : contextDir();
+            String refused = captured == null ? rejectedRepoHost() : "";
             if (dir == null) {
                 reason = tr("status.github.noRepo");
+            } else if (!refused.isEmpty()) {
+                reason = tr("status.github.hostRejected", refused); // gh would only answer "401"
             }
         }
         if (reason != null) {
@@ -585,24 +635,42 @@ final class GitHubCoordinator {
     }
 
     /**
-     * Fetches the PR's diff + metadata concurrently, then opens the review tab. Both {@code gh} calls deliver
-     * on the FX thread, so the two-slot join uses plain fields (no synchronization). The metadata ({@code gh pr
-     * view}) is optional — if it fails, the tab still opens with a number-only header; only a failed diff aborts.
+     * The {@code gh} calls of the load of each pull request's review that is in flight: a newer load of the same
+     * pull request (Refresh pressed again) kills them, so repeated presses do not pile up downloads.
+     */
+    private final java.util.Map<ReviewKey, List<com.editora.process.ProcessRunner.Cancellation>> reviewLoads =
+            new java.util.HashMap<>();
+
+    /**
+     * Fetches the PR's diff + metadata, then opens the review tab. The two run at the same time — the detail on
+     * the read lane, the diff on the download lane — and both deliver on the FX thread, so the two-slot join uses
+     * plain fields (no synchronization). The metadata ({@code gh pr view}) is optional — if it fails, the tab
+     * still opens with a number-only header, and a tab already open keeps the details it shows and says the
+     * refresh of them failed; only a failed diff aborts. A newer load of the same pull request cancels this one.
      */
     private void doPrDiff(Path dir, int number) {
-        PrViewParser.PrDetail[] detailSlot = new PrViewParser.PrDetail[1];
+        ReviewKey key = new ReviewKey(dir, number);
+        List<com.editora.process.ProcessRunner.Cancellation> previous = reviewLoads.remove(key);
+        if (previous != null) {
+            previous.forEach(com.editora.process.ProcessRunner.Cancellation::cancel);
+        }
+        List<com.editora.process.ProcessRunner.Cancellation> calls = new java.util.ArrayList<>();
+        reviewLoads.put(key, calls);
+        GitHubService.PrViewResult[] detailSlot = new GitHubService.PrViewResult[1];
         GitHubService.DiffResult[] diffSlot = new GitHubService.DiffResult[1];
-        boolean[] detailDone = {false};
-        boolean[] diffDone = {false};
         Runnable join = () -> {
-            if (!detailDone[0] || !diffDone[0]) {
+            if (detailSlot[0] == null || diffSlot[0] == null) {
                 return;
             }
+            GitHubService.PrViewResult view = detailSlot[0];
+            String detailError =
+                    view.detail() == null ? failureLine(tr("github.review.detailFailed"), view.error()) : "";
             GitHubService.DiffResult res = diffSlot[0];
             if (res.ok()) {
+                reviewLoads.remove(key, calls);
                 // A diff cut off at the capture limit lost its last files: the tab and the status bar say so.
                 String cut = res.truncated() ? tr("status.github.diffCannotShowAll") : "";
-                openReview(dir, number, detailSlot[0], res.files(), cut);
+                openReview(dir, number, view.detail(), res.files(), joinNotice(cut, detailError));
                 if (res.truncated()) {
                     host.setStatus(cut);
                 }
@@ -610,7 +678,8 @@ final class GitHubCoordinator {
                 // GitHub refuses the whole diff above 300 files / 20,000 lines; the files API still lists
                 // every file with its own hunks, so the review opens from that and says so.
                 host.setStatus(tr("status.github.prDiffFallback", number));
-                service.prFiles(dir, number, files -> {
+                calls.add(service.prFiles(dir, number, files -> {
+                    reviewLoads.remove(key, calls);
                     if (!files.ok()) {
                         ghError(tr("status.github.diffFailed"), files.error());
                         return;
@@ -619,22 +688,28 @@ final class GitHubCoordinator {
                     if (files.truncated()) { // the API's answer itself passed the capture limit
                         notice += " " + tr("status.github.diffCannotShowAll");
                     }
-                    openReview(dir, number, detailSlot[0], files.files().files(), notice);
-                });
+                    openReview(dir, number, view.detail(), files.files().files(), joinNotice(notice, detailError));
+                }));
             } else {
+                reviewLoads.remove(key, calls);
                 ghError(tr("status.github.diffFailed"), res.error());
             }
         };
-        service.prView(dir, number, d -> {
+        calls.add(service.prView(dir, number, d -> {
             detailSlot[0] = d;
-            detailDone[0] = true;
             join.run();
-        });
-        service.prDiff(dir, number, r -> {
+        }));
+        calls.add(service.prDiff(dir, number, r -> {
             diffSlot[0] = r;
-            diffDone[0] = true;
             join.run();
-        });
+        }));
+    }
+
+    /** Two notices for the review tab, either of which may be blank. Pure. */
+    static String joinNotice(String first, String second) {
+        String a = first == null ? "" : first.strip();
+        String b = second == null ? "" : second.strip();
+        return a.isEmpty() ? b : b.isEmpty() ? a : a + " " + b;
     }
 
     /** What the review tab says when its files came from the files API instead of {@code gh pr diff}. */
@@ -657,11 +732,17 @@ final class GitHubCoordinator {
      * (may be blank) is shown in the tab — the files-API fallback explains itself there.
      */
     private void openReview(
-            Path dir, int number, PrViewParser.PrDetail detail, List<PatchParser.FilePatch> files, String notice) {
+            Path dir,
+            int number,
+            PrViewParser.@Nullable PrDetail detail,
+            List<PatchParser.FilePatch> files,
+            String notice) {
         ReviewKey key = new ReviewKey(dir, number);
         PrReviewPane existing = reviewPanes.get(key);
         if (existing != null && ops.selectTabOf(existing)) {
-            existing.update(detail, files, notice); // Refresh of an already-open tab
+            // Refresh of an already-open tab: a detail that could not be read again leaves the one on screen
+            // (and its head commit, which a review is pinned to) — the notice says it was not refreshed.
+            existing.update(detail != null ? detail : existing.detail(), files, notice);
             return;
         }
         reviewPanes.remove(key); // a stale entry whose tab was closed — rebuild
@@ -680,7 +761,11 @@ final class GitHubCoordinator {
                 // The tab's own links act on the repository the pull request was opened from: with this tab
                 // active the Git context is the project's repository, or none at all in a No-Project window.
                 () -> readyIn(dir, d -> doPrDiff(d, number)),
-                () -> readyIn(dir, d -> submitReviewForm(d, number)));
+                () -> readyIn(dir, d -> {
+                    PrReviewPane p = reviewPanes.get(key);
+                    PrViewParser.PrDetail seen = p == null ? null : p.detail();
+                    submitReviewForm(d, number, seen == null ? "" : seen.headRefOid());
+                }));
         pane.update(detail, files, notice);
         reviewPanes.put(key, pane);
         ops.addReviewTab(pane);
@@ -688,7 +773,16 @@ final class GitHubCoordinator {
 
     /** Drops a closed review tab from the map (called by {@code MainController} on tab disposal). */
     void onReviewPaneClosed(PrReviewPane pane) {
-        reviewPanes.values().remove(pane);
+        reviewPanes.entrySet().removeIf(e -> {
+            if (e.getValue() != pane) {
+                return false;
+            }
+            List<com.editora.process.ProcessRunner.Cancellation> loading = reviewLoads.remove(e.getKey());
+            if (loading != null) {
+                loading.forEach(com.editora.process.ProcessRunner.Cancellation::cancel);
+            }
+            return true;
+        });
     }
 
     // --- tool-window feeds (slice 2) -------------------------------------------------------------
@@ -942,9 +1036,15 @@ final class GitHubCoordinator {
         });
     }
 
-    /** Cancels an in-flight workflow run, then refreshes the panel. */
+    /**
+     * Cancels an in-flight workflow run, then refreshes the panel — after asking: a cancelled run cannot be
+     * resumed, only started again from the beginning (CONF-01, Pauta 6.2.0).
+     */
     void cancelRun(long runId) {
         readyIn(panelDir, dir -> {
+            if (!Confirm.ask(host.window(), cancelRunQuestion(runId))) {
+                return;
+            }
             host.setStatus(tr("status.github.cancelling", runId));
             service.runCancel(dir, runId, r -> {
                 if (r.ok()) {
@@ -955,6 +1055,15 @@ final class GitHubCoordinator {
                 }
             });
         });
+    }
+
+    /** What is asked before a workflow run is cancelled. Pure but for the language. */
+    static Confirm.Question cancelRunQuestion(long runId) {
+        return new Confirm.Question(
+                tr("dialog.github.title"),
+                null,
+                tr("dialog.github.cancelRun", runId),
+                tr("dialog.github.cancelRunAction"));
     }
 
     /** Opens a GitHub URL in the browser (a panel row's "Open on GitHub"). */
@@ -1067,6 +1176,8 @@ final class GitHubCoordinator {
         shownChecks = null;
         shownChecksDir = null;
         checksAsked = null;
+        checksFailure = "";
+        checksFailures = 0;
         if (switchedIn != null) {
             checksCache.keySet().removeIf(k -> k.root().equals(switchedIn));
         }
@@ -1082,6 +1193,7 @@ final class GitHubCoordinator {
     /** Fetches the current branch's PR checks and pushes the roll-up to the status bar (null hides it). */
     private void refreshChecks(@Nullable Path dir) {
         pollAttempt = 0;
+        checksFailures = 0;
         fetchChecks(dir);
     }
 
@@ -1110,7 +1222,11 @@ final class GitHubCoordinator {
             return;
         }
         checksWanted = true;
-        ChecksKey key = new ChecksKey(dir, seenBranch);
+        // The branch the answer belongs to is the one checked out in `dir`: the active repository's branch is
+        // only known for the active repository. An answer for another one (a row's checkout in a repository
+        // whose tab is not active) is neither cached under the active branch nor put in its status bar.
+        boolean active = seenRoot == null || dir.equals(seenRoot);
+        ChecksKey key = new ChecksKey(dir, active ? seenBranch : "");
         checksAsked = key;
         checksInFlight = true;
         service.branchChecks(dir, res -> {
@@ -1118,7 +1234,20 @@ final class GitHubCoordinator {
                 return; // superseded, or the repository / branch changed while gh ran
             }
             checksInFlight = false;
+            if (res.failed()) {
+                checksFailed(dir, res.error());
+                return;
+            }
+            checksFailure = "";
+            checksFailures = 0;
             GitHubService.BranchChecks kept = res.ok() && !res.runs().isEmpty() ? res : GitHubService.BranchChecks.NONE;
+            if (!active) {
+                if (checksAnnounce) {
+                    checksAnnounce = false;
+                    host.setStatus(tr("github.checks.none"));
+                }
+                return;
+            }
             checksCache.put(key, kept);
             schedulePoll(dir, showChecksResult(dir, kept));
             if (checksAnnounce) {
@@ -1131,6 +1260,45 @@ final class GitHubCoordinator {
                 }
             }
         });
+    }
+
+    /** Why the last checks lookup failed ({@code ""} when it did not); the open card says it. */
+    private String checksFailure = "";
+
+    /** Failed lookups in a row since the last answer: each waits longer before it is tried again. */
+    private int checksFailures;
+
+    /** Most automatic retries of a failed checks lookup before only a manual refresh asks again. */
+    static final int MAX_CHECKS_RETRIES = 3;
+
+    /**
+     * A checks lookup failed (offline, rate limit, a refused token, single sign-on). That is not "no pull
+     * request": nothing is cached, the roll-up on screen (if any) is left as it was, the open card and a
+     * command that asked say why, and it is tried again after a while — a few times, then on request only.
+     */
+    private void checksFailed(Path dir, String error) {
+        checksFailure = failureLine(tr("status.github.checksFailed"), error);
+        // checksAsked stays: a tab switch must not ask gh again while it is failing — the retry below does.
+        if (checksCard != null) {
+            checksCard.showFailure(checksFailure);
+        }
+        if (checksAnnounce) {
+            checksAnnounce = false;
+            host.setStatus(checksFailure);
+        }
+        if (checksFailures++ < MAX_CHECKS_RETRIES) {
+            long millis = pollDelayMillisForTest >= 0
+                    ? pollDelayMillisForTest
+                    : ChecksPoll.delaySeconds(checksFailures + 1) * 1000L;
+            long gen = checksGen;
+            pollTimer = new javafx.animation.PauseTransition(javafx.util.Duration.millis(Math.max(1, millis)));
+            pollTimer.setOnFinished(e -> {
+                if (gen == checksGen && isEnabled() && windowFocused()) {
+                    fetchChecks(dir);
+                }
+            });
+            pollTimer.play();
+        }
     }
 
     /** Puts {@code res} (or nothing, for a branch without a pull request / checks) in the status bar. */
@@ -1245,6 +1413,9 @@ final class GitHubCoordinator {
                 }
             });
             card.update(shownChecks);
+            if (!checksFailure.isEmpty()) {
+                card.showFailure(checksFailure); // the last lookup failed: these rows are the one before
+            }
             checksCard = card;
             javafx.scene.Scene scene =
                     host.window() == null ? null : host.window().getScene();
@@ -1499,7 +1670,7 @@ final class GitHubCoordinator {
                 tr("dialog.createPr.button"),
                 valid,
                 submission -> {
-                    List<String> args = PrCreateArgs.build(
+                    com.editora.github.GhInvocation args = PrCreateArgs.invocation(
                             titleField.getText(),
                             bodyField.getText(),
                             baseBox.getEditor().getText(),
@@ -1526,7 +1697,7 @@ final class GitHubCoordinator {
     }
 
     /** Runs {@code gh pr create} with the form's argv and opens the created PR; the form waits for the result. */
-    private void runPrCreate(Path dir, List<String> args, OverlayInput.Submission submission) {
+    private void runPrCreate(Path dir, com.editora.github.GhInvocation args, OverlayInput.Submission submission) {
         host.setStatus(tr("status.github.creatingPr"));
         service.prCreate(dir, args, r -> {
             String url = r.out() == null ? "" : r.out().strip();
@@ -1560,14 +1731,21 @@ final class GitHubCoordinator {
 
     /** Picks a PR then opens the submit-review form (the {@code github.submitReview} palette command). */
     void submitReviewPicked() {
-        ready(dir -> pickPr(dir, tr("github.picker.reviewTitle"), pr -> submitReviewForm(dir, pr.number())));
+        // Picked from a list, the pull request's head was never shown: the review is not pinned to a commit.
+        ready(dir -> pickPr(dir, tr("github.picker.reviewTitle"), pr -> submitReviewForm(dir, pr.number(), "")));
     }
 
-    private void submitReviewForm(Path dir, int number) {
+    /**
+     * The submit-review form. It starts on Comment, which needs a body, so a stray submit cannot approve a pull
+     * request in public: Approve is chosen in so many words, and only then may the body be empty. From a review
+     * tab ({@code commitId}, the head commit the tab loaded) the review is pinned to that commit, so commits
+     * pushed while the reviewer read are not approved with them.
+     */
+    private void submitReviewForm(Path dir, int number, String commitId) {
         KeymapManager keymap = ops.keymap();
         javafx.scene.control.ComboBox<PrReviewArgs.ReviewAction> actionBox = new javafx.scene.control.ComboBox<>();
         actionBox.getItems().setAll(PrReviewArgs.ReviewAction.values());
-        actionBox.getSelectionModel().select(PrReviewArgs.ReviewAction.APPROVE);
+        actionBox.getSelectionModel().select(PrReviewArgs.ReviewAction.COMMENT);
         actionBox.setConverter(new javafx.util.StringConverter<>() {
             @Override
             public String toString(PrReviewArgs.ReviewAction a) {
@@ -1601,12 +1779,12 @@ final class GitHubCoordinator {
         grid.add(body, 1, 1);
         GridPane.setHgrow(body, Priority.ALWAYS);
 
-        // Approve may be submitted with no comment; request-changes / comment require a body (gh rejects empty).
+        // Approve may be submitted with no comment — once chosen (the form starts on Comment); request-changes /
+        // comment require a body (GitHub rejects an empty one).
         BooleanProperty valid = new SimpleBooleanProperty(false);
         Runnable revalidate = () -> {
             PrReviewArgs.ReviewAction a = actionBox.getValue();
-            valid.set(a != null
-                    && (!PrReviewArgs.bodyRequired(a) || !body.getText().isBlank()));
+            valid.set(PrReviewArgs.canSubmit(a, body.getText(), a == PrReviewArgs.ReviewAction.APPROVE));
         };
         actionBox.valueProperty().addListener((o, x, y) -> revalidate.run());
         body.textProperty().addListener((o, x, y) -> revalidate.run());
@@ -1620,9 +1798,10 @@ final class GitHubCoordinator {
                 tr("dialog.review.button"),
                 valid,
                 submission -> {
-                    List<String> args = PrReviewArgs.build(number, actionBox.getValue(), body.getText());
+                    com.editora.github.GhInvocation call =
+                            PrReviewArgs.invocation(number, actionBox.getValue(), body.getText(), commitId);
                     host.setStatus(tr("status.github.reviewing", number));
-                    service.prReview(dir, args, r -> {
+                    service.prReview(dir, call, r -> {
                         if (r.ok()) {
                             submission.done();
                             host.setStatus(tr("status.github.reviewed", number));
