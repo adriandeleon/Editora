@@ -987,7 +987,8 @@ public class EditorBuffer implements TabContent {
             // their own immutable String; the next settled consumer materializes the new version once.
             documentSnapshots.invalidate();
             if (isMarkdown() || markdownEditing.blockMap().holdsMap()) {
-                // The line map the Markdown keys look up, scanned again off the FX thread (PERF-01).
+                // The line map the Markdown keys look up: notes the edited line; scanned off the FX thread when
+                // typing pauses or a key asks (PERF-01; perf review 2026-11-23 E1).
                 markdownEditing
                         .blockMap()
                         .changed(area.offsetToPosition(c.getPosition(), Bias.Forward)
@@ -1110,6 +1111,7 @@ public class EditorBuffer implements TabContent {
             sealBaselineIfDirty();
             highlighter.applyHighlighting();
             runGutter.recomputeRun(true); // re-evaluate the Run glyph when a top-level main / __main__ appears/leaves
+            markdownEditing.blockMap().settled(); // the Markdown line map, scanned per pause, not per key (E1)
         });
         settledEdits.at(
                 Duration.ofMillis(250),

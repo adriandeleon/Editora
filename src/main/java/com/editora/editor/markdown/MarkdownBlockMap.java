@@ -3,6 +3,7 @@ package com.editora.editor.markdown;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.editora.editor.DocumentText;
 import com.editora.editor.EditorBuffer;
 import com.editora.markdown.MarkdownBlocks;
 import com.editora.perf.OffFx;
@@ -15,10 +16,16 @@ import org.jspecify.annotations.Nullable;
  * the document on the JavaFX thread (PERF-01, Pauta 6.2.0). Whether a line is code depends on every line above
  * it, so the editing keys (Enter in a list, Backspace, Tab, {@code *} and smart punctuation, Enter in a table)
  * and the line commands used to scan the document from its start on every press. Now {@link MarkdownBlocks} is
- * scanned off the thread on a snapshot after each edit (one scan in flight; when it lands on a document that
- * has moved on, the next starts), and a key looks its line up.
+ * scanned off the thread, and a key looks its line up.
  *
- * <p>Between an edit and the scan of its version — a few milliseconds — the map is one version behind. A key
+ * <p>The map is lazy (perf review 2026-11-23 E1): an edit only notes the first line it touched. A scan starts
+ * when typing pauses ({@link #settled()}, on the buffer's first settle milestone), when a key or command finds
+ * the map behind, or when someone waits for it ({@link #whenCurrent}); one is in flight at a time, and the
+ * document is taken in O(1) and its text built on the scan's thread. A scan landing on a document that has moved
+ * on starts another only when someone waits; otherwise the next pause asks. Continuous typing therefore copies
+ * and scans nothing per keystroke.
+ *
+ * <p>Between an edit and the scan of its version the map is behind. A key
  * then decides from it without scanning: a line above every line edited since the map's version has not
  * changed, nor has anything above it, so its kind is exact; the first edited line keeps the kind it had; a
  * line inside the edited run carries the kind of the first edited line on (the line after an opening fence is
@@ -46,11 +53,18 @@ public final class MarkdownBlockMap {
         this.buffer = buffer;
     }
 
-    /** An edit starting on {@code line} (of the document after the edit): the map is behind until it is scanned. */
+    /**
+     * An edit starting on {@code line} (of the document after the edit): the map is behind until it is scanned.
+     * Records the line only; no copy and no scan per keystroke (see the class comment).
+     */
     public void changed(int line) {
         firstChanged = Math.min(firstChanged, line);
         firstChangedSinceAsk = Math.min(firstChangedSinceAsk, line);
-        if (buffer.isMarkdown()) {
+    }
+
+    /** Typing paused: brings a map that is behind up to date, off the FX thread. */
+    public void settled() {
+        if (buffer.isMarkdown() && !current()) {
             ask();
         }
     }
@@ -81,9 +95,9 @@ public final class MarkdownBlockMap {
         }
         asking = true;
         long version = buffer.docVersion();
-        String text = buffer.text();
+        DocumentText text = buffer.documentText(); // O(1); the String is built on the scan's thread
         firstChangedSinceAsk = Integer.MAX_VALUE;
-        OffFx.then(SITE, () -> MarkdownBlocks.scan(text), answer -> {
+        OffFx.then(SITE, () -> MarkdownBlocks.scan(text.text()), answer -> {
             asking = false;
             if (answer.ok() && answer.value() != null) {
                 blocks = answer.value();
@@ -91,7 +105,9 @@ public final class MarkdownBlockMap {
                 firstChanged = firstChangedSinceAsk;
             }
             if (buffer.docVersion() != version && buffer.isMarkdown()) {
-                ask();
+                if (!waiters.isEmpty()) {
+                    ask(); // someone waits for the document as it is; otherwise the next pause asks
+                }
             } else if (answer.ok()) {
                 List<Runnable> now = new ArrayList<>(waiters);
                 waiters.clear();
