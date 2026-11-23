@@ -63,10 +63,21 @@ final class StartupPrep {
                 () -> Thread.ofVirtual().name("read-prompt-shim").start(com.editora.run.ReadPromptShim::prepare));
     }
 
-    /** What the first window is built from, read ahead. {@code uiFontSheet} is the UI font's stylesheet. Blocking. */
-    static void forFirstWindow(SharedConfig shared, String uiFontSheet) {
+    /**
+     * What the first window is built from that reads neither the settings nor the shared config: the build
+     * information and {@link com.editora.ui.FirstWindowPrep#prepareApart}. Blocking.
+     */
+    static void apartForFirstWindow(java.nio.file.Path configDir) {
         step("build information", AppInfo::load);
-        com.editora.ui.FirstWindowPrep.prepare(shared, List.of(uiFontSheet));
+        com.editora.ui.FirstWindowPrep.prepareApart(configDir);
+    }
+
+    /**
+     * The rest of what the first window is built from, read ahead, after {@link #apartForFirstWindow}.
+     * {@code uiFontSheet} is the UI font's stylesheet. Blocking.
+     */
+    static void forFirstWindow(SharedConfig shared, String uiFontSheet) {
+        com.editora.ui.FirstWindowPrep.prepareWithSettings(shared, List.of(uiFontSheet));
     }
 
     static void step(String what, Runnable work) {
