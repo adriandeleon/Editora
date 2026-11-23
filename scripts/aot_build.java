@@ -421,13 +421,13 @@ public class aot_build {
         }
         Path pkg = Path.of(System.getProperty("user.dir"), "packaging", "linux");
         try {
-            Path metaSrc = pkg.resolve("com.editora.Editora.metainfo.xml");
+            Path metaSrc = pkg.resolve("io.github.adriandeleon.Editora.metainfo.xml");
             if (Files.isRegularFile(metaSrc)) {
                 String xml = Files.readString(metaSrc)
                         .replace("@VERSION@", version)
                         .replace("@DATE@", java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString())
                         .replace("@YEAR@", String.valueOf(java.time.Year.now(java.time.ZoneOffset.UTC).getValue()));
-                Files.writeString(lib.resolve("com.editora.Editora.metainfo.xml"), xml);
+                Files.writeString(lib.resolve("io.github.adriandeleon.Editora.metainfo.xml"), xml);
                 System.out.println("[aot] staged AppStream metainfo (version " + version + ")");
             }
             // The themed icon set. The .desktop entry deliberately keeps its absolute Icon= line — that is

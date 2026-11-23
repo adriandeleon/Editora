@@ -1563,6 +1563,26 @@ inspector (`host:port`, `continueOnAttach: false`); Debug Test at Caret on a JS/
 `node --test --test-name-pattern <the test at the caret>`. js-debug reports failed evaluations only in
 `body.error.format` (`DapErrors.responseText`).
 
+**Jest and Vitest.** A JS/TS test file (`JsLaunch.isTestFile`: `.jsx`/`.tsx` too) whose package tests with Jest or
+Vitest ([`run/JsTestRunner`](../../src/main/java/com/editora/run/JsTestRunner.java): Vitest when the package depends on
+`vitest` or has a `vitest.config.*`, else Jest when it depends on `jest`/`jest-cli`, has a `jest` section or a
+`jest.config.*`) and has that runner installed (its entry script, `node_modules/jest/bin/jest.js` or
+`node_modules/vitest/vitest.mjs`, at or above the package, not above the project: a workspace hoists it) is planned by
+`NodeRunLauncher.runnerReady` instead of `node --test`, on the Node.js Run would pick: Jest as
+`jest.js --runInBand [-t <pattern>] <file>` (one process, so the tests run where js-debug is attached), Vitest as
+`vitest.mjs run <file> [-t <pattern>]` (its fork workers are child processes js-debug attaches to by itself: a child
+session's own `startDebugging`). The plan's target is the runner's script, so js-debug launches `program` = that script
+(VS Code's recipes). Run File on such a test file streams the runner (`RunCoordinator.launchNode`'s off-FX check goes
+past `node --test`'s Test Results). Debug Test at Caret's pattern is the test's full name
+([`run/JsTestNames`](../../src/main/java/com/editora/run/JsTestNames.java): the innermost `test`/`it`/`describe`
+around the caret with its `describe`s; a `.each` row or a computed name runs the whole file), each name literal, joined
+as the runner joins them — Jest with a space, Vitest 3+ with ` > ` (probed: Vitest 5.1.1 does not match a space), so
+Vitest's pattern takes either — whole for a test, prefix for a suite. It rides in the Node arguments as
+`JsTestRunner.NAMES_ARG`, dropped with Deno's by `DenoRun.withoutFilter` (every `--editora-` word). The `.jsx`/`.tsx`
+refusal (`JsLaunch.launchProblemKey`) now waits for the plan: only plain Node running the file itself is refused
+(`NodeDebugConfigs.nodeRuns`), so Jest, Vitest and Deno debug them. `JsTestRunnerProbeFxTest` installs each runner with
+npm and debugs the caret's test alone.
+
 **Deno.** A JS/TS file of a Deno project — [`run/DenoRun`](../../src/main/java/com/editora/run/DenoRun.java):
 the nearest folder above it with a `deno.json(c)`, before any with a `package.json`, inside the project (a loose
 file: up to eight folders, not past home) — is planned by `NodeRunLauncher.denoReady` instead of `NodeRunPlan`,

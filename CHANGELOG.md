@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   condition and a hit count (Edit Breakpoint… on its row), as a line breakpoint can, where the debugger takes them
   (CodeLLDB, GDB, Delve). The Breakpoints list shows the session's instruction breakpoints too: Enter opens the
   Disassembly view at one, Alt+D removes it.
+- **Jest and Vitest.** In a package that tests with Jest or Vitest, Debug Test at Caret now debugs the test (or
+  `describe`) at the caret under that runner, alone, with breakpoints in your test and the code it calls, TypeScript
+  and `.tsx` files included. F5 on a test file debugs all of its tests, and Run File on it runs them with the runner
+  instead of `node --test`. Editora uses the runner installed in the package's `node_modules`.
 
 - **Lua debugging.** Press F5 on a Lua script to debug it: breakpoints (with conditions), locals, upvalues and
   globals, watches and hovers, stepping, changing a variable's value, and a stop where an error is raised. The script's
@@ -108,6 +112,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Editora's Linux app ID is now `io.github.adriandeleon.Editora`** (it was `com.editora.Editora`), as Pauta asks.
+  It is the ID GNOME Software, KDE Discover and other software centres know Editora by. The listing says it replaces
+  the old ID, and an upgrade removes the file named for the old one, so Editora is listed once.
 - **Local History keeps more, and says more.** Git Rollback and Discard of tracked files now keep a Local History
   copy of each file first, and nothing is discarded when a copy can't be made, so a change made outside Editora and
   never committed can be brought back. Maven Update Versions keeps a copy of a closed `pom.xml` before rewriting it,

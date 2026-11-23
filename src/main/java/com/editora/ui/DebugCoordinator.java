@@ -7826,10 +7826,6 @@ final class DebugCoordinator {
      */
     private void debugJsFile(Path file, List<String> fileArgs, List<String> nodeArgs) {
         String problem = com.editora.dap.JsLaunch.launchProblemKey(String.valueOf(file.getFileName()), null);
-        if (problem != null) {
-            host.setStatus(tr(problem, "?")); // JSX/TSX: Node.js cannot run it, whatever its version
-            return;
-        }
         NodeRunLauncher.plan(
                 new NodeRunLauncher.Spec(
                         file,
@@ -7842,12 +7838,15 @@ final class DebugCoordinator {
                         Map.of(),
                         null),
                 ready -> {
-                    if (ready.plan().error() != null) {
-                        host.setStatus(tr(ready.plan().error()));
+                    String why = ready.plan().error() != null
+                            ? ready.plan().error()
+                            : NodeDebugConfigs.nodeRuns(ready, file) ? problem : null; // JSX/TSX on plain Node
+                    if (why != null) {
+                        host.setStatus(tr(why, "?"));
                         return;
                     }
                     var program = NodeDebugConfigs.fromRunPlan(
-                            ready.plan().argv(), file.toString(), ready.plan().env(), ready.dir());
+                            ready.plan().argv(), ready.target(), ready.plan().env(), ready.dir());
                     if (program == null || !NodeDebugConfigs.debuggableRuntime(program.runtime())) {
                         withClosedBreakpoints(
                                 () -> dap().startLaunch(file, "javascript", this::pickMainClass, "", null));
