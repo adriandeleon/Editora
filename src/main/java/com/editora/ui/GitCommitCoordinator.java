@@ -44,6 +44,10 @@ final class GitCommitCoordinator {
     private boolean templateConfigured;
     /** Raised per status applied: a line-count read for an older status is dropped. */
     private long countsGeneration;
+    /** The last repository applied (never null once one was): a switch away from it moves its draft aside. */
+    private @Nullable Path appliedRoot;
+    /** The message typed in the box for each repository the window left, put back when it returns. */
+    private final Map<Path, String> drafts = new java.util.HashMap<>();
 
     GitCommitCoordinator(CoordinatorHost host, GitCoordinator git, GitCoordinator.WindowOps ops) {
         this.host = host;
@@ -77,6 +81,13 @@ final class GitCommitCoordinator {
         if (panel == null) {
             return;
         }
+        Path previous = appliedRoot;
+        if (root != null) {
+            appliedRoot = root;
+            if (previous != null && !key(previous).equals(key(root))) {
+                switchedRepository(panel, previous, root);
+            }
+        }
         if (root == null) {
             templateRoot = null;
             return;
@@ -93,6 +104,26 @@ final class GitCommitCoordinator {
             });
         }
         refreshLineCounts();
+    }
+
+    /**
+     * The window moved from repository {@code from} to {@code to}. An Amend armed for {@code from} would rewrite
+     * {@code to}'s last commit with {@code from}'s message: it is switched off, and the user told. The message being
+     * written belongs to {@code from}: it is kept for when the window comes back, and {@code to}'s own is put in
+     * the box — a message is not carried into another repository.
+     */
+    private void switchedRepository(GitPanel p, Path from, Path to) {
+        if (p.isAmending()) {
+            p.setAmending(false);
+            host.setStatus(tr("status.git.amendOffRepository"));
+        }
+        String draft = p.draft();
+        if (draft.isEmpty()) {
+            drafts.remove(key(from));
+        } else {
+            drafts.put(key(from), draft);
+        }
+        p.replaceDraft(drafts.remove(key(to)));
     }
 
     /** The template is configuration: a manual refresh reads it again. */
@@ -217,29 +248,60 @@ final class GitCommitCoordinator {
             onDone.accept(false);
             return;
         }
+        // Only the files the commit records are saved first (a hook may read them): the staged ones. Saving every
+        // unsaved buffer of the repository wrote files the user was still editing and had not chosen to commit.
+        List<String> staged = stagedPaths(git.status());
+        if (staged.isEmpty()) {
+            commitSaved(root, request, onDone);
+            return;
+        }
         // Saved first, off the FX thread; a save that fails says why and commits nothing (PERF-01, Pauta 6.2.0).
-        git.saveUnsaved(root, List.of(), () -> commitSaved(root, request, onDone), () -> onDone.accept(false));
+        git.saveUnsaved(root, staged, () -> commitSaved(root, request, onDone), () -> onDone.accept(false));
+    }
+
+    /** The paths a commit of {@code status}'s index records: its staged files. Pure. */
+    static List<String> stagedPaths(com.editora.git.@Nullable GitStatus status) {
+        if (status == null) {
+            return List.of();
+        }
+        java.util.LinkedHashSet<String> paths = new java.util.LinkedHashSet<>();
+        for (com.editora.git.GitStatus.FileEntry entry : status.files()) {
+            if (entry.staged() && entry.path() != null) {
+                paths.add(entry.path());
+            }
+        }
+        return List.copyOf(paths);
     }
 
     private void commitSaved(Path root, GitPanel.CommitRequest request, Consumer<Boolean> onDone) {
         String[] args = commitArgs(request, templateConfigured && root.equals(templateRoot));
-        git.service()
-                .runWorktreeMutation(
-                        root,
-                        git.running(args, result -> {
-                            onDone.accept(result.ok());
-                            if (result.ok()) {
-                                remember(root, request.message());
-                                host.setStatus(tr(request.amend() ? "status.git.amended" : "status.committed"));
-                            } else {
-                                git.gitError(tr("status.git.commitFailed"), result.message());
-                            }
-                            git.afterMutation();
-                            if (result.ok() && request.push() && root.equals(git.repoRoot())) {
-                                git.gitPush();
-                            }
-                        }),
-                        args);
+        // A commit runs the repository's hooks, and a pre-commit hook may rewrite files (a formatter): like every
+        // other working-tree mutation, saves queued meanwhile are superseded and clean buffers reload afterwards.
+        boolean[] committed = {false};
+        git.aroundWorkingTreeMutation(
+                root,
+                done -> git.service().runWorktreeMutation(root, git.running(args, done), args),
+                result -> {
+                    committed[0] = result.ok();
+                    onDone.accept(result.ok());
+                    if (result.ok()) {
+                        remember(root, request.message());
+                        host.setStatus(tr(request.amend() ? "status.git.amended" : "status.committed"));
+                    } else {
+                        git.gitError(tr("status.git.commitFailed"), result.message());
+                    }
+                },
+                () -> {
+                    if (!request.push() || !committed[0]) {
+                        return;
+                    }
+                    // Push only the repository that was committed; another one active by now is not pushed.
+                    if (root.equals(git.repoRoot())) {
+                        git.gitPush();
+                    } else {
+                        host.setStatus(tr("status.git.pushSkippedRepoChanged", root.getFileName()));
+                    }
+                });
     }
 
     /** {@code git.commitAndPush}: the Commit window's Commit and Push, from anywhere. */
@@ -249,7 +311,9 @@ final class GitCommitCoordinator {
         }
         ops.openCommitWindow();
         if (panel == null || !panel.commitAndPushNow()) {
-            host.setStatus(tr("status.git.nothingToCommit"));
+            // Why not: a message to type is a different thing to do than a change to stage.
+            String why = panel == null ? "" : panel.commitRefusal();
+            host.setStatus(why.isEmpty() ? tr("status.git.nothingToCommit") : why);
             ops.focusCommitMessage();
         }
     }
@@ -295,6 +359,15 @@ final class GitCommitCoordinator {
 
     // --- undo last commit ----------------------------------------------------------------------------
 
+    /**
+     * Whether {@code update-ref} refused because the ref is no longer at {@code expected}: git says "is at X but
+     * expected Y" (or names the expected value as missing). Pure.
+     */
+    static boolean movedFrom(com.editora.process.ProcessRunner.Result result, String expected) {
+        String text = (result.err() + "\n" + result.out());
+        return !result.ok() && text.contains(expected) && (text.contains("but expected") || text.contains("is at"));
+    }
+
     /** Why the last commit cannot be undone, or null when it can. Pure. */
     static @Nullable String undoRefusal(GitService.HeadCommit head) {
         if (head == null) {
@@ -321,8 +394,9 @@ final class GitCommitCoordinator {
     }
 
     /**
-     * {@code git.undoLastCommit}: {@code git reset --soft HEAD~1} — the commit is taken off the branch, its
-     * changes stay staged, and its message goes back into the commit box. Confirmed first, in stronger words
+     * {@code git.undoLastCommit}: what {@code git reset --soft HEAD~1} does — the commit is taken off the branch, its
+     * changes stay staged, and its message goes back into the commit box. It is the commit the question named that
+     * is undone, or nothing: should HEAD have moved meanwhile, the user is told and nothing changes. Confirmed first, in stronger words
      * when the commit is already on the upstream (the branch then has to be force-pushed). Refused for a
      * merge commit (a soft reset cannot bring the merge back), for a commit without a parent, and while an
      * operation is in progress.
@@ -348,7 +422,13 @@ final class GitCommitCoordinator {
                     undoCommitQuestion(head.pushed(), head.shortHash(), head.subject(), head.upstream()))) {
                 return;
             }
-            String[] args = {"reset", "--soft", "HEAD~1"};
+            // The commit confirmed is the one taken off: HEAD is moved from it to its parent only if HEAD is still
+            // it (update-ref checks the old value under the ref's lock) — a commit made meanwhile, in a terminal or
+            // another window, is never the one undone. This is what "reset --soft" does to the branch.
+            String parent = head.parents().get(0);
+            String[] args = {
+                "update-ref", "-m", "reset: moving to " + head.shortHash() + "~1", "HEAD", parent, head.hash()
+            };
             git.service()
                     .runWorktreeMutation(
                             root,
@@ -362,10 +442,12 @@ final class GitCommitCoordinator {
                                     host.setStatus(tr(
                                             restored ? "status.git.undoCommit.done" : "status.git.undoCommit.doneKept",
                                             head.shortHash()));
+                                } else if (movedFrom(result, head.hash())) {
+                                    host.setStatus(tr("status.git.undoCommit.moved", head.shortHash()));
                                 } else {
                                     git.gitError(tr("status.git.opFailed"), result.message());
                                 }
-                                git.afterMutation();
+                                git.afterMutation(root);
                             }),
                             args);
         });

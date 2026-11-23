@@ -51,6 +51,54 @@ final class GitUntrackedDelete {
     }
 
     /**
+     * What the disk says about untracked rows: how many are folders, and which of those folders are Git
+     * repositories of their own (a {@code .git} inside). Git lists a nested repository as an untracked folder,
+     * and {@code git clean -f} leaves it alone while reporting success: such a row is not deleted, and the user
+     * is told so.
+     */
+    record Look(int folders, List<String> nested) {
+        static final Look NONE = new Look(0, List.of());
+    }
+
+    /** {@link Look} for {@code pathspecs} under {@code root}: off the FX thread, it looks at the disk. */
+    static Look look(@Nullable Path root, List<String> pathspecs) {
+        int folders = 0;
+        List<String> nested = new java.util.ArrayList<>();
+        for (String spec : pathspecs) {
+            if (!isFolder(root, spec)) {
+                continue;
+            }
+            folders++;
+            if (isRepository(root, spec)) {
+                nested.add(spec);
+            }
+        }
+        return new Look(folders, List.copyOf(nested));
+    }
+
+    /** Whether the folder {@code pathspec} under {@code root} holds a {@code .git} (a folder or a gitdir file). */
+    static boolean isRepository(@Nullable Path root, String pathspec) {
+        if (root == null || pathspec == null) {
+            return false;
+        }
+        try {
+            return Files.exists(root.resolve(pathspec).resolve(".git"), LinkOption.NOFOLLOW_LINKS);
+        } catch (InvalidPathException notAPath) {
+            return false;
+        }
+    }
+
+    /**
+     * The sentence added to a confirmation when Local History keeps only some of the {@code deleted} files
+     * ({@code ""} when it keeps every one, or keeps none because it is off).
+     */
+    static String historyNote(int deleted, boolean historyOn) {
+        return historyOn && deleted > MAX_HISTORY_CAPTURES
+                ? "\n\n" + tr("dialog.discard.historyLimit", MAX_HISTORY_CAPTURES)
+                : "";
+    }
+
+    /**
      * The confirmation for deleting {@code untracked} rows of which {@code folders} (at least one) are
      * folders, together with discarding {@code tracked} tracked files (0 for none). {@code files} are the
      * files Git lists under the rows; {@code historyOn} says whether Local History will keep copies, so the
@@ -65,10 +113,7 @@ final class GitUntrackedDelete {
         } else {
             text = tr("dialog.discard.untrackedWithFolders", files.size(), folders);
         }
-        if (historyOn && files.size() > MAX_HISTORY_CAPTURES) {
-            text += "\n\n" + tr("dialog.discard.historyLimit", MAX_HISTORY_CAPTURES);
-        }
-        return text;
+        return text + historyNote(files.size(), historyOn);
     }
 
     /** The files to copy into Local History before the delete: the first {@link #MAX_HISTORY_CAPTURES}. */

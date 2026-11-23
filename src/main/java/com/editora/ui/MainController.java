@@ -1784,6 +1784,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         } else {
             remapProjectFileLocal(old, target, oldLspAlreadyClosed);
         }
+        git.filesChangedByEditora(); // a tracked file renamed or moved: the Commit window's rows changed
     }
 
     void remapProjectFileLocal(Path old, Path target, boolean oldLspAlreadyClosed) {
@@ -1884,6 +1885,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         } else {
             removeProjectFileLocal(path, discardApproved);
         }
+        git.filesChangedByEditora(); // a tracked file deleted: the Commit window's rows changed
     }
 
     /** The window that holds {@code buffer} in a tab; this one when no other does. */
