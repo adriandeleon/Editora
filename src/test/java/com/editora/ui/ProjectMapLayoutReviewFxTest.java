@@ -40,7 +40,6 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.text.Font;
 import javafx.stage.Stage;
 
-import com.editora.editor.ControlNames;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -600,7 +599,7 @@ class ProjectMapLayoutReviewFxTest {
             HBox crumbs = FxTestSupport.field(map.view, "breadcrumbs");
             List<Node> first = List.copyOf(crumbs.getChildren());
             assertEquals(5, first.size(), "p › a › one.txt");
-            assertNull(ControlNames.tipText(((Labeled) first.getFirst())), "a tooltip is made only when it is wanted");
+            assertNull(((Labeled) first.getFirst()).getTooltip(), "a tooltip is made only when it is wanted");
 
             select(map.surface, two);
             List<Node> second = List.copyOf(crumbs.getChildren());
@@ -636,8 +635,8 @@ class ProjectMapLayoutReviewFxTest {
                             false,
                             false,
                             null));
-            assertNotNull(ControlNames.tipText(rootCrumb));
-            assertEquals(root.toString(), ControlNames.tipText(rootCrumb));
+            assertNotNull(rootCrumb.getTooltip());
+            assertEquals(root.toString(), rootCrumb.getTooltip().getText());
         });
     }
 
