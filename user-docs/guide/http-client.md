@@ -217,7 +217,7 @@ when the file already exists:
 - `>>! file` replaces an existing file, but only with a complete, successful
   response. An error status, or a body that was cut short, leaves the file as it
   is. Before replacing, Editora records the previous content in
-  [Local History](/docs/undo-history), and it leaves the file alone when the file
+  [Local History](/docs/workspace#local-file-history) (*Before HTTP response*), and it leaves the file alone when the file
   is open in the editor with unsaved changes.
 
 The response's **Notes** tab reports what happened to every target: which files

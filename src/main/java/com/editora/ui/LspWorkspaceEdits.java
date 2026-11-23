@@ -440,7 +440,10 @@ final class LspWorkspaceEdits {
         });
     }
 
-    /** Most files of one deleted folder that are copied to Local History; a larger folder is not walked further. */
+    /**
+     * Most files of deleted folders that one edit copies to Local History. A larger delete is counted, and the
+     * user is asked ({@link #historyCapConfirmer}) before the files past it go without a copy.
+     */
     static final int MAX_CAPTURED_PER_EDIT = 200;
 
     /**
@@ -477,26 +480,62 @@ final class LspWorkspaceEdits {
         }
         workspaceExecutor.execute(() -> {
             List<Path> files = new java.util.ArrayList<>();
+            int found = 0; // every file the edit deletes, also those past the cap: the question says how many
             for (var hazard : hazards) {
                 if (hazard.kind() != com.editora.lsp.WorkspaceEditHazards.Kind.DELETE_DIRECTORY) {
-                    files.add(hazard.path());
+                    found++;
+                    files.add(hazard.path()); // a single file is always copied; the cap is on folder walks
                     continue;
                 }
                 try {
                     for (Path path : workspaceFiles.walk(hazard.path())) {
-                        if (files.size() >= MAX_CAPTURED_PER_EDIT) {
-                            break;
-                        }
                         if (workspaceFiles.isRegularFile(path)) {
-                            files.add(path);
+                            found++;
+                            if (files.size() < MAX_CAPTURED_PER_EDIT) {
+                                files.add(path);
+                            }
                         }
                     }
                 } catch (java.io.IOException | RuntimeException unreadable) {
                     // Staging will fail on the same folder and refuse the edit; nothing to copy from here.
                 }
             }
-            Platform.runLater(() -> captureEach(files, 0, done));
+            int deleted = found;
+            Platform.runLater(() -> {
+                if (deleted > files.size() && !historyCapConfirmer.test(new HistoryCap(files.size(), deleted))) {
+                    editRefused(
+                            hazards.stream()
+                                    .map(com.editora.lsp.WorkspaceEditHazards.Hazard::path)
+                                    .toList(),
+                            tr("status.lsp.destructiveEditDeclined"));
+                    done.accept(false);
+                    return;
+                }
+                captureEach(files, 0, done);
+            });
         });
+    }
+
+    /** A folder delete larger than Local History copies: {@code kept} of the {@code deleted} files get a copy. */
+    record HistoryCap(int kept, int deleted) {}
+
+    /**
+     * Asked when an edit deletes more files than {@link #MAX_CAPTURED_PER_EDIT}: Local History keeps only the
+     * first of them, and the user hears so before the rest are gone for good. A field so a test can answer.
+     */
+    java.util.function.Predicate<HistoryCap> historyCapConfirmer = this::confirmHistoryCap;
+
+    /** The words of {@link #historyCapConfirmer}'s question. */
+    static Confirm.Question historyCapQuestion(HistoryCap cap) {
+        return new Confirm.Question(
+                tr("dialog.lsp.historyCap.title"),
+                tr("dialog.lsp.historyCap.header"),
+                tr("dialog.lsp.historyCap.message", cap.kept(), cap.deleted()),
+                tr("dialog.lsp.historyCap.apply"));
+    }
+
+    private boolean confirmHistoryCap(HistoryCap cap) {
+        return Confirm.ask(host.window(), historyCapQuestion(cap));
     }
 
     private void captureEach(List<Path> files, int index, java.util.function.Consumer<Boolean> done) {

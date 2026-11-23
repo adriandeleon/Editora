@@ -12,6 +12,7 @@ import java.util.Locale;
 
 import com.editora.config.HistoryRevision;
 import com.editora.history.HistoryQueries;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The pure text decisions behind a Local History row ({@link FileHistoryPanel}): how a revision's time is
@@ -144,5 +145,32 @@ final class HistoryRowText {
             return oneDecimal.format(bytes / 1024.0) + " KB";
         }
         return oneDecimal.format(bytes / (1024.0 * 1024.0)) + " MB";
+    }
+
+    /**
+     * Whether {@code a} and {@code b} are the same recorded revision: the same file, moment and content. Not the
+     * record's {@code equals}, which also compares the label, so a revision relabelled in place is still itself.
+     */
+    static boolean sameRevision(@Nullable HistoryRevision a, @Nullable HistoryRevision b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        return a == b
+                || (a.timestamp() == b.timestamp()
+                        && a.path().equals(b.path())
+                        && a.sha256().equals(b.sha256()));
+    }
+
+    /** The element of {@code list} that is {@code wanted} ({@link #sameRevision}), or null when none is. */
+    static @Nullable HistoryRevision find(List<HistoryRevision> list, @Nullable HistoryRevision wanted) {
+        if (wanted == null) {
+            return null;
+        }
+        for (HistoryRevision r : list) {
+            if (sameRevision(r, wanted)) {
+                return r;
+            }
+        }
+        return null;
     }
 }
