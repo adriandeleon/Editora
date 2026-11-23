@@ -30,9 +30,63 @@ class GitPushArgsTest {
     }
 
     @Test
-    void trackedBranchUsesPlainPush() {
-        assertArrayEquals(new String[] {"push"}, GitService.pushArgs("main", "origin/main"));
-        assertArrayEquals(new String[] {"push"}, GitService.pushArgs("feature", "origin/feature"));
+    void trackedBranchIsResolvedWhenThePushStarts() {
+        assertArrayEquals(
+                new String[] {"push", GitService.PUSH_UPSTREAM, "refs/heads/main"},
+                GitService.pushArgs("main", "origin/main"));
+    }
+
+    private static String[] resolved(String[] args, String config) {
+        return GitService.resolvePush(args, config, List.of("origin", "fork"), true);
+    }
+
+    /** G5: an upstream of the branch's own name is git's business; another name is never pushed onto. */
+    @Test
+    void aTrackedPushNeverLandsOnABranchOfAnotherName() {
+        String same = config("branch.feat.remote", "origin", "branch.feat.merge", "refs/heads/feat");
+        assertArrayEquals(new String[] {"push"}, resolved(GitService.pushArgs("feat", "origin/feat"), same));
+        String other = config("branch.feat.remote", "origin", "branch.feat.merge", "refs/heads/main");
+        assertArrayEquals(
+                new String[] {"push", "--set-upstream", "origin", "refs/heads/feat:refs/heads/feat"},
+                resolved(GitService.pushArgs("feat", "origin/main"), other));
+        // The remote's own push refspecs (Gerrit's HEAD:refs/for/main) decide, as in a terminal.
+        String gerrit = other + "\u0000" + "remote.origin.push\nHEAD:refs/for/main";
+        assertArrayEquals(new String[] {"push"}, resolved(GitService.pushArgs("feat", "origin/main"), gerrit));
+        // A triangular workflow pushes to its push remote: git's own push.default handles that.
+        String triangular = other + "\u0000" + "branch.feat.pushremote\nfork";
+        assertArrayEquals(new String[] {"push"}, resolved(GitService.pushArgs("feat", "origin/main"), triangular));
+    }
+
+    /** C2/C3: a forced push names its remote and refspec, and refuses tips it never integrated. */
+    @Test
+    void aForcedPushOfATrackedBranchIsExplicit() {
+        String same = config("branch.main.remote", "origin", "branch.main.merge", "refs/heads/main");
+        assertArrayEquals(
+                new String[] {
+                    "push", "--force-with-lease", "--force-if-includes", "origin", "refs/heads/main:refs/heads/main"
+                },
+                resolved(GitService.forcePushArgs("main", "origin/main"), same));
+        assertArrayEquals(
+                new String[] {"push", "--force-with-lease", "origin", "refs/heads/main:refs/heads/main"},
+                GitService.resolvePush(GitService.forcePushArgs("main", "origin/main"), same, List.of("origin"), false),
+                "git older than 2.30 has no --force-if-includes");
+        String other = config("branch.feat.remote", "origin", "branch.feat.merge", "refs/heads/main");
+        assertArrayEquals(
+                new String[] {
+                    "push",
+                    "--force-with-lease",
+                    "--force-if-includes",
+                    "--set-upstream",
+                    "origin",
+                    "refs/heads/feat:refs/heads/feat"
+                },
+                resolved(GitService.forcePushArgs("feat", "origin/main"), other));
+        // Untracked: the remote placeholder is resolved as for a first push.
+        assertArrayEquals(
+                new String[] {
+                    "push", "--force-with-lease", "--force-if-includes", "--set-upstream", "fork", "refs/heads/topic"
+                },
+                resolved(GitService.forcePushArgs("topic", ""), config("remote.pushdefault", "fork")));
     }
 
     @Test
@@ -109,12 +163,23 @@ class GitPushArgsTest {
     @Test
     void aForcedPushAlwaysCarriesTheLease() {
         assertArrayEquals(
-                new String[] {"push", "--force-with-lease"}, GitService.forcePushArgs("main", "origin/main", "origin"));
+                new String[] {
+                    "push", "--force-with-lease", "--force-if-includes", GitService.PUSH_UPSTREAM, "refs/heads/main"
+                },
+                GitService.forcePushArgs("main", "origin/main", "origin"));
         assertArrayEquals(
-                new String[] {"push", "--force-with-lease", "--set-upstream", "fork", "refs/heads/topic"},
+                new String[] {
+                    "push", "--force-with-lease", "--force-if-includes", "--set-upstream", "fork", "refs/heads/topic"
+                },
                 GitService.forcePushArgs("topic", "", "fork"));
         assertArrayEquals(
-                new String[] {"push", "--force-with-lease", "--set-upstream", GitService.PUSH_REMOTE, "refs/heads/topic"
+                new String[] {
+                    "push",
+                    "--force-with-lease",
+                    "--force-if-includes",
+                    "--set-upstream",
+                    GitService.PUSH_REMOTE,
+                    "refs/heads/topic"
                 },
                 GitService.forcePushArgs("topic", null));
         for (String[] argv : List.of(
@@ -187,7 +252,14 @@ class GitPushArgsTest {
     @Test
     void theVariantsStayPushCommands() {
         assertArrayEquals(
-                new String[] {"push", "--progress", "--force-with-lease"},
+                new String[] {
+                    "push",
+                    "--progress",
+                    "--force-with-lease",
+                    "--force-if-includes",
+                    GitService.PUSH_UPSTREAM,
+                    "refs/heads/main"
+                },
                 GitService.withProgress(GitService.forcePushArgs("main", "origin/main")));
     }
 }

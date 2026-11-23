@@ -89,13 +89,17 @@ class GitLossWarningsTest {
             assertFalse(GitHeadMoveWarning.resetNeedsConfirmation(mode, nothing));
             assertFalse(GitHeadMoveWarning.resetNeedsConfirmation(mode, pushedElsewhere));
             assertTrue(GitHeadMoveWarning.resetNeedsConfirmation(mode, stranded));
-            assertFalse(
+            assertTrue(
                     GitHeadMoveWarning.resetNeedsConfirmation(mode, LeftBehind.UNKNOWN),
-                    "when Git cannot be asked, soft and mixed behave as they always did");
+                    "when Git cannot be asked nobody knows nothing is stranded: ask");
         }
         assertTrue(GitHeadMoveWarning.checkoutNeedsConfirmation(stranded));
         assertFalse(GitHeadMoveWarning.checkoutNeedsConfirmation(pushedElsewhere));
-        assertFalse(GitHeadMoveWarning.checkoutNeedsConfirmation(LeftBehind.UNKNOWN));
+        assertTrue(GitHeadMoveWarning.checkoutNeedsConfirmation(LeftBehind.UNKNOWN));
+        // The question for an unknown answer claims no count.
+        assertEquals(
+                tr("dialog.gitCheckout.strandUnknown", "abc1234"),
+                GitHeadMoveWarning.checkoutPrompt("abc1234", LeftBehind.UNKNOWN));
     }
 
     @Test
@@ -113,7 +117,10 @@ class GitLossWarningsTest {
                         + " reflog.",
                 GitHeadMoveWarning.commitsLeaving(new LeftBehind(true, 2, false, 2, 2), "topic"));
         assertEquals("", GitHeadMoveWarning.commitsLeaving(new LeftBehind(true, 0, false, 0, 0), "main"));
-        assertEquals("", GitHeadMoveWarning.commitsLeaving(LeftBehind.UNKNOWN, "main"));
+        assertEquals(
+                "Editora could not count the commits this would take off main; some may be left on no other branch"
+                        + " or tag, reachable only through the reflog.",
+                GitHeadMoveWarning.commitsLeaving(LeftBehind.UNKNOWN, "main"));
 
         Path root = Path.of("/repo");
         LeftBehind left = new LeftBehind(true, 3, true, 2, 1);
@@ -124,8 +131,14 @@ class GitLossWarningsTest {
                 GitHeadMoveWarning.resetPrompt("hard", "abc1234", "main", root, left));
         assertEquals(
                 tr("dialog.gitReset.hardConfirm", "abc1234", "main", root),
-                GitHeadMoveWarning.resetPrompt("hard", "abc1234", "main", root, LeftBehind.UNKNOWN),
+                GitHeadMoveWarning.resetPrompt("hard", "abc1234", "main", root, new LeftBehind(true, 0, false, 0, 0)),
                 "unchanged when there is nothing to add");
+        assertEquals(
+                tr("dialog.gitReset.hardConfirm", "abc1234", "main", root)
+                        + "\n\n"
+                        + tr("dialog.gitReset.commitsUnknown", "main"),
+                GitHeadMoveWarning.resetPrompt("hard", "abc1234", "main", root, LeftBehind.UNKNOWN),
+                "an unknown answer says so");
         String soft = tr("dialog.gitReset.confirm", "abc1234", "main", root, "soft");
         assertTrue(
                 soft.startsWith("Reset main in ")

@@ -205,10 +205,21 @@ stash and the conflicts appear in the Commit window.
 
 The first push of a branch publishes it to the push remote configured in Git
 (the branch's `pushRemote`, then the repository's `pushDefault`) or to the
-repository's only remote. **Force Push** always uses `--force-with-lease` and asks first: it
-is refused if the remote branch has moved since your last fetch. A push rejected
-because the remote has commits you do not offers **Pull, then Push**, **Force
-with Lease**, or Cancel.
+repository's only remote. A branch whose upstream has another name (`feat`
+tracking `origin/main`) is pushed to a branch of its own name on that remote,
+which then becomes its upstream; it is never pushed onto the other branch. **Force
+Push** always uses `--force-with-lease` (and `--force-if-includes` with Git 2.30
+or later), names the one branch it replaces, and asks first: it is refused if the
+remote branch has moved since your last fetch, or if a background fetch brought
+commits you never had locally. A push rejected because the remote has commits
+you do not offers **Pull, then Push**, **Force with Lease**, or Cancel.
+
+Clone, fetch, pull and push never wait for an answer in a terminal: ssh runs in
+batch mode unless you set an ssh command of your own (`core.sshCommand` or
+`GIT_SSH_COMMAND`), and on Linux Git runs without a controlling terminal. A
+host key that is not yet known, or a key whose passphrase is not in your ssh
+agent, fails at once with ssh's message ("Host key verification failed.") —
+connect once from a terminal, or add the key to your agent, then try again.
 
 ### Automatic fetch
 

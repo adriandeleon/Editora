@@ -457,6 +457,7 @@ class GitBranchManagementFxTest {
     void theRejectedPushQuestionIsAnsweredWithNoDialog(@TempDir Path dir) throws Exception {
         Diverged d = diverged(dir);
         d.repo().git("fetch", "-q", "origin"); // the lease is on what this repository last saw
+        integrated(d.repo()); // --force-if-includes: the remote tip was once part of the local branch
         String theirs = remoteRev(d.remote(), "main");
 
         try (AsyncTestScope async = new AsyncTestScope();
@@ -518,6 +519,7 @@ class GitBranchManagementFxTest {
     void aRejectedPushCanBeForcedWithALease(@TempDir Path dir) throws Exception {
         Diverged d = diverged(dir);
         d.repo().git("fetch", "-q", "origin"); // the lease is on what this repository last saw
+        integrated(d.repo()); // --force-if-includes: the remote tip was once part of the local branch
 
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
@@ -997,6 +999,41 @@ class GitBranchManagementFxTest {
     private record Seen(Alert.AlertType type, String header, String content, List<String> buttons, boolean danger) {}
 
     private record Diverged(GitTestRepo repo, Path remote) {}
+
+    /**
+     * Puts the fetched {@code origin/main} into the local branch's reflog and back, as a user who once had those
+     * commits checked out (and then rewrote them) has: what {@code --force-if-includes} asks for.
+     */
+    private static void integrated(GitTestRepo repo) throws Exception {
+        String mine = rev(repo, "main");
+        repo.git("update-ref", "-m", "looked at", "refs/heads/main", "origin/main");
+        repo.git("update-ref", "-m", "rewrote", "refs/heads/main", mine);
+    }
+
+    /** C2: a forced push is refused when a fetch brought remote commits that were never part of this branch. */
+    @Test
+    void aForcedPushDoesNotReplaceCommitsOnlyAFetchHasSeen(@TempDir Path dir) throws Exception {
+        Diverged d = diverged(dir);
+        d.repo().git("fetch", "-q", "origin"); // an automatic fetch moved the lease to their commit
+        String theirs = remoteRev(d.remote(), "main");
+        FxTestSupport.bootToolkit();
+        {
+            com.editora.git.GitService service = new com.editora.git.GitService();
+            try {
+                java.util.concurrent.CompletableFuture<com.editora.process.ProcessRunner.Result> done =
+                        new java.util.concurrent.CompletableFuture<>();
+                FxTestSupport.runOnFx(() -> service.runNetwork(
+                        d.repo().root,
+                        done::complete,
+                        com.editora.git.GitService.forcePushArgs("main", "origin/main")));
+                com.editora.process.ProcessRunner.Result result = done.get(60, java.util.concurrent.TimeUnit.SECONDS);
+                assertFalse(result.ok(), "forced over commits nobody here has seen");
+                assertEquals(theirs, remoteRev(d.remote(), "main"));
+            } finally {
+                service.shutdown();
+            }
+        }
+    }
 
     private static GitTestRepo repoWithCommit(Path dir) throws Exception {
         GitTestRepo repo = GitTestRepo.init(dir);
