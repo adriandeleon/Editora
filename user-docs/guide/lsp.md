@@ -344,7 +344,8 @@ own, so on a Python file Editora adds **Import**, **Remove unused import** and
 A multi-file edit is applied **completely or not at all**. An action that would
 delete a folder or replace an existing file asks first and names the paths, and
 whatever an edit deletes or replaces is copied to
-[local file history](/docs/workspace#local-file-history) beforehand. If Editora
+[local file history](/docs/workspace#local-file-history) beforehand (text
+files of up to 5 MB, while Local History is on). If Editora
 is interrupted in the middle of an edit that moves or deletes files, the next
 time the project is opened an **Interrupted Refactoring** dialog offers to put
 the files back.
