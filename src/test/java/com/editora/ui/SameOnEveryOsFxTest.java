@@ -56,8 +56,9 @@ class SameOnEveryOsFxTest {
                 for (MenuBarModel.MenuSpec menu : MenuBarModel.menus()) {
                     menuRows.add(menu.titleKey() + " " + menu.allEntries());
                 }
-                MenuBar bar = FxTestSupport.<MainMenuBar>field(fx.controller, "menuBar")
-                        .node();
+                MainMenuBar menuBar = FxTestSupport.field(fx.controller, "menuBar");
+                menuBar.buildAllRows(); // as if each menu had been opened
+                MenuBar bar = menuBar.node();
                 for (Menu menu : bar.getMenus()) {
                     menuRows.add("built: " + menu.getText() + " " + shape(menu));
                 }

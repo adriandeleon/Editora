@@ -309,14 +309,21 @@ final class FxTestSupport {
                 Field f = c.getDeclaredField(name);
                 f.setAccessible(true);
                 Object value = f.get(target);
-                if (value == null && target instanceof MainController) {
-                    value = builtByAccessor(target, c, name);
+                if (value == null && (target instanceof MainController || target instanceof ProjectPanel)) {
+                    value = builtByAccessor(target, c, name); // a part built on first use (the Project Map)
                 }
                 return (T) value;
             } catch (NoSuchFieldException e) {
                 // try the superclass
             } catch (IllegalAccessException e) {
                 throw new RuntimeException(e);
+            }
+        }
+        if (target instanceof ProjectPanel) {
+            // The Map's parts are built with the Map, and reached through accessors of their own names.
+            Object built = builtByAccessor(target, ProjectPanel.class, name);
+            if (built != null) {
+                return (T) built;
             }
         }
         throw new IllegalArgumentException("No field '" + name + "' on " + target.getClass());

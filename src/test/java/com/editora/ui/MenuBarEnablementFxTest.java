@@ -50,8 +50,12 @@ class MenuBarEnablementFxTest {
     }
 
     private MainMenuBar build() throws Exception {
-        return FxTestSupport.callOnFx(() -> new MainMenuBar(
-                new CommandRegistry(), Map::of, MenuBarEnablementFxTest::allFeaturesOn, ctx::get, id -> {}));
+        return FxTestSupport.callOnFx(() -> {
+            MainMenuBar bar = new MainMenuBar(
+                    new CommandRegistry(), Map::of, MenuBarEnablementFxTest::allFeaturesOn, ctx::get, id -> {});
+            bar.buildAllRows(); // as if every menu had been opened
+            return bar;
+        });
     }
 
     private static boolean disabled(MainMenuBar bar, String commandId) throws Exception {
@@ -106,6 +110,44 @@ class MenuBarEnablementFxTest {
         assertFalse(disabled(bar, NEEDS_REPO), "a menu opening did not re-evaluate its items");
     }
 
+    /**
+     * The in-window bar builds a menu's rows when that menu first opens, not with the window (PERF-14): a window
+     * shows its menu titles, and the ~300 rows behind them are made for the menus the user opens. The rows a first
+     * opening builds are labelled, and say whether they can run, as if they had been there all along.
+     */
+    @Test
+    void aMenusRowsAreBuiltWhenItFirstOpens() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeFalse(
+                com.editora.command.KeymapManager.isMac(), "the macOS system menu bar is built whole, for AppKit");
+        ctx.set(context(false));
+        MainMenuBar bar = FxTestSupport.callOnFx(() -> new MainMenuBar(
+                new CommandRegistry(), Map::of, MenuBarEnablementFxTest::allFeaturesOn, ctx::get, id -> {}));
+        assertTrue(FxTestSupport.callOnFx(bar::rowsUnbuilt), "no menu's rows are built before a menu opens");
+        assertEquals(
+                MenuBarModel.menus().size(),
+                (int) FxTestSupport.callOnFx(() -> bar.node().getMenus().size()),
+                "every menu's title is on the bar");
+
+        int vcs = -1;
+        for (int i = 0; i < MenuBarModel.menus().size(); i++) {
+            if (MenuBarModel.menus().get(i).allEntries().contains(NEEDS_REPO)) {
+                vcs = i;
+            }
+        }
+        int index = vcs;
+        int other = index == 0 ? 1 : 0;
+        FxTestSupport.runOnFx(() -> Event.fireEvent(
+                bar.node().getMenus().get(index), new Event(Menu.ON_SHOWING))); // what a menu's opening fires
+        assertTrue(disabled(bar, NEEDS_REPO), "the row the opening built says it cannot run outside a repo");
+        String commit = FxTestSupport.callOnFx(() -> MainMenuBar.displayTextOf(itemFor(bar, NEEDS_REPO)));
+        assertTrue(commit.contains(NEEDS_REPO), "the row is labelled (with its id: this registry is empty): " + commit);
+        assertEquals(
+                1,
+                (int) FxTestSupport.callOnFx(
+                        () -> bar.node().getMenus().get(other).getItems().size()),
+                "a menu not opened yet holds only its stand-in row");
+    }
+
     /** The other context fields were frozen by the same bug, so they get the same guarantee. */
     @Test
     void theBufferAndDebugShapedItemsTrackTheContextToo() throws Exception {
@@ -138,6 +180,7 @@ class MenuBarEnablementFxTest {
             MainMenuBar built = new MainMenuBar(
                     new CommandRegistry(), Map::of, MenuBarEnablementFxTest::allFeaturesOn, ctx::get, ran::add);
             built.setOnUnavailable(said::add);
+            built.buildAllRows();
             return built;
         });
         String reason = FxTestSupport.callOnFx(() -> MainMenuBar.reasonSentence(

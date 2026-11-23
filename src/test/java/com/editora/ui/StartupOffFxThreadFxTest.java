@@ -319,6 +319,32 @@ class StartupOffFxThreadFxTest {
                 "the window icons are the first window's, kept: " + heard);
     }
 
+    /** {@code App.start} has the window icons decoded on a thread of their own while it waits for the config. */
+    @Test
+    void theIconsReadAheadAreDecodedOffTheFxThread() throws Exception {
+        AppIcons.forgetForTest();
+        List<Heard> reads = new java.util.concurrent.CopyOnWriteArrayList<>();
+        BlockingSites.listenForTest((site, thread) -> {
+            if (site.equals("AppIcons.read")) {
+                reads.add(new Heard(site, thread.getName(), Platform.isFxApplicationThread()));
+            }
+        });
+        try {
+            FxTestSupport.runOnFx(AppIcons::readAhead); // as start() calls it, on the FX thread
+            FxTestSupport.awaitFxCondition(
+                    () -> reads.size() == AppIcons.WINDOW_SIZES.length, "every window icon read");
+        } finally {
+            BlockingSites.listenForTest(null);
+        }
+        assertEquals(AppIcons.WINDOW_SIZES.length, reads.size(), "every window icon was read: " + reads);
+        assertTrue(reads.stream().noneMatch(Heard::fx), "read off the FX thread: " + reads);
+        FxTestSupport.runOnFx(() -> {
+            for (int size : AppIcons.WINDOW_SIZES) {
+                assertTrue(AppIcons.icon(size) != null, size + " px is decoded and kept");
+            }
+        });
+    }
+
     @Test
     void theIconsAreReadOnceAndAMissingOneIsNone() throws Exception {
         FxTestSupport.runOnFx(() -> {

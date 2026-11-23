@@ -66,6 +66,8 @@ public class App extends Application {
         // One shared resolver, so this can never disagree with the single-instance claim in main() about
         // which directory (and therefore which instance) this launch belongs to.
         java.nio.file.Path configDir = ConfigManager.configDirFor(configDirArg(rawArgs), devFlag(rawArgs));
+        // The window icons are decoded on a thread of their own while this one waits for the config (startup R3).
+        com.editora.ui.WindowManager.readAppIconsAhead();
         Bootstrap boot = takeBootstrap(configDir);
         if (boot != null) {
             startWith(stage, rawArgs, boot);
@@ -636,16 +638,25 @@ public class App extends Application {
         try {
             Settings settings = manager.load();
             StartupPrep.beforeAnyServer(shared);
-            // The AI keys live in the system keychain; asking it may block, so it happens here.
-            shared.useSecretStore(com.editora.secrets.SecretStores.forThisMachine());
-            // The message catalog (a few hundred KB of properties) is parsed here too rather than on the FX thread:
-            // this thread already has the setting that selects the language. Completing the future publishes it —
-            // start() reads no message before join().
             String language = uiLanguage(settings);
-            com.editora.i18n.Messages.init(language);
-            // The bundled pauta.json is parsed here as well, so About and the Pauta window read no resource on the
-            // FX thread.
-            com.editora.PautaConformance.exceptions();
+            // The AI keys live in the system keychain; asking it may block (a round trip per provider), so it
+            // happens here, on a thread of its own while this one does the pieces that read neither the settings
+            // nor the shared config, which the keys may change (startup R3: it was ~70 ms of the wait in start()).
+            java.util.concurrent.FutureTask<@Nullable Void> keys = new java.util.concurrent.FutureTask<>(
+                    () -> shared.useSecretStore(com.editora.secrets.SecretStores.forThisMachine()), null);
+            Thread.ofPlatform().daemon().name("config-prefetch-keys").start(keys);
+            try {
+                // The message catalog (a few hundred KB of properties) is parsed here too rather than on the FX
+                // thread: this thread already has the setting that selects the language. Completing the future
+                // publishes it — start() reads no message before join().
+                com.editora.i18n.Messages.init(language);
+                // The bundled pauta.json is parsed here as well, so About and the Pauta window read no resource on
+                // the FX thread.
+                com.editora.PautaConformance.exceptions();
+                StartupPrep.apartForFirstWindow(configDir);
+            } finally {
+                awaitRethrowing(keys); // what the keys' thread threw is this load's failure, as it was inline
+            }
             com.editora.plugin.PluginManager plugins = com.editora.ui.WindowManager.discoverPlugins(shared);
             manager.setStartupSessionScan(com.editora.config.SessionScan.of(
                     manager.getWorkspaceState().getOpenFiles(), com.editora.vfs.Vfs::parseStorable));
@@ -661,6 +672,28 @@ public class App extends Application {
                 // the inline load reports what is wrong
             }
             throw e;
+        }
+    }
+
+    /**
+     * Waits for {@code task} and throws what it threw, unwrapped: a load step moved to a thread of its own fails the
+     * load as it did inline. A wait interrupted is a failure too, with the interrupt kept.
+     */
+    static void awaitRethrowing(java.util.concurrent.Future<?> task) {
+        try {
+            task.get();
+        } catch (java.util.concurrent.ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            if (cause instanceof Error error) {
+                throw error;
+            }
+            throw new IllegalStateException(cause);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while loading the configuration", e);
         }
     }
 

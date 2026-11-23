@@ -64,7 +64,10 @@ class MenuRowCommandCoverageTest {
             allow("LambdaBreakpoints", 1, "a lambda's row names it (debug.toggleLambdaBreakpoint acts at the caret)"),
             allow("LazyContextMenu", 2, "a placeholder; the row helper, whose callers tag the rows"),
             allow("MainController", 1, "the menu bar's empty Open Recent placeholder"),
-            allow("MainMenuBar", 1, "the menu bar's own rows, each built for its command"),
+            allow(
+                    "MainMenuBar",
+                    2,
+                    "the menu bar's own rows, each built for its command; a placeholder, replaced as the menu first shows"),
             allow("MavenProjectCoordinator", 1, "the row helper: mavenMenu tags each row"),
             allow("PrintPreview", 1, "a zoom choice, in the drop-down print.zoom opens"),
             allow("ProjectMapChangesCard", 1, "the card's row helper: MapMenuCommands marks the rows"),

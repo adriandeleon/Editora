@@ -53,7 +53,8 @@ class DebugExceptionTogglesFxTest {
         String title = com.editora.editor.MenuTitles.of(paletteTitle); // a menu row drops "Debug:" (ET3)
         return FxTestSupport.callOnFx(() -> {
             MainMenuBar menuBar = FxTestSupport.field(c, "menuBar");
-            menuBar.refreshEnablement(); // what opening a menu does
+            menuBar.buildAllRows(); // what opening each menu does the first time
+            menuBar.refreshEnablement(); // and every time
             MenuBar bar = FxTestSupport.field(menuBar, "bar");
             for (Menu menu : bar.getMenus()) {
                 String found = find(menu.getItems(), title);
