@@ -89,6 +89,14 @@ public final class AfterLayoutPaint {
         return origin.lookX();
     }
 
+    /**
+     * {@link #textColumnOnScreen()} for {@code area}, for code that paints over it without an
+     * {@code AfterLayoutPaint} of its own: the look the area's overlays share this pulse, or a fresh one.
+     */
+    public static double textColumnOnScreen(CodeArea area) {
+        return Origin.of(area).lookX();
+    }
+
     /** Whether a paint was asked for and will run after the layout of {@code scene}'s next pulse (tests). */
     boolean paintsAfterLayoutOf(Scene scene) {
         return pending && origin.armed == scene;

@@ -484,7 +484,10 @@ style-only change that still ended a succession — skips the draw and the snaps
   `LineNumberText` cache (no `String.format`), its clip is sized in the row's own `layoutChildren` rather
   than through two property bindings, and the empty bookmark and chevron slots are bare `Region`s. The
   per-view scroll features (format bar, AI actions bar, sticky scroll, semantic refresh) share one
-  `estimatedScrollY` listener (`installFormatBarListeners`; `ScrollListenerPolicyTest` pins it).
+  `estimatedScrollY` listener (`installFormatBarListeners`; `ScrollListenerPolicyTest` pins it). Sticky
+  scroll measures its row height and inset only when the text column moved, the font changed or the area did
+  (`StickyScrollBar.measuredAt`): the inset is a character-bounds query, which dirties the scene, and it ran on
+  every scroll step (`StickyScrollFxTest`).
 - Per-keystroke helpers read a bounded window, not the document: Enter/Tab/closer handling goes through
   `IndentWindow` slices, brace matching checks the two adjacent characters before building its window, and
   the find bar holds a `SearchMatches` page (at most 100,000 matches) that overlays binary-search. None of
