@@ -171,4 +171,14 @@ class DebugHistoryTest {
                 List.of(false, true, false),
                 seen.stream().map(DebugHistory.Seen::changed).toList());
     }
+
+    @Test
+    void aStopOfWhichOnlyTheTopWasFetchedKeysItsFramesByTheWholeStacksDepth() {
+        DebugHistory h = new DebugHistory();
+        DebugHistory.Stop top = h.newStop("step", T, 1, IN_WORK, 0, 300);
+        assertEquals(300, top.depth);
+        assertEquals(DebugValueChanges.frameKey(1, "work", FILE.toString(), 300), top.frameKey(0));
+        DebugHistory.Stop whole = h.newStop("step", T, 1, IN_WORK, 0);
+        assertEquals(DebugValueChanges.frameKey(1, "work", FILE.toString(), 2), whole.frameKey(0));
+    }
 }

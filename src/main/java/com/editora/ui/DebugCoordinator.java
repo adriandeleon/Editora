@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -2035,9 +2036,12 @@ final class DebugCoordinator {
 
     /** Whether the mapping of every file of {@code frames} is known; if not, {@code again} runs once they are. */
     private boolean framesKnown(@Nullable List<DapModels.StackFrameInfo> frames, Runnable again) {
-        for (DapModels.StackFrameInfo f :
-                frames == null || s().launchedLines.isEmpty() ? List.<DapModels.StackFrameInfo>of() : frames) {
-            if (f.file() != null && !linesKnown(ops.bufferForPath(f.file()), again)) {
+        if (frames == null || s().launchedLines.isEmpty()) {
+            return true;
+        }
+        Set<Path> asked = new HashSet<>(); // each file once: a recursion is one file many times (perf review D3)
+        for (DapModels.StackFrameInfo f : frames) {
+            if (f.file() != null && asked.add(f.file()) && !linesKnown(ops.bufferForPath(f.file()), again)) {
                 return false;
             }
         }
@@ -2092,9 +2096,13 @@ final class DebugCoordinator {
             return frames;
         }
         List<DapModels.StackFrameInfo> out = new ArrayList<>(frames.size());
+        Map<Path, LaunchedLines.Mapping> maps = new HashMap<>(); // each file's tab looked up once (perf review D3)
         for (DapModels.StackFrameInfo f : frames) {
-            EditorBuffer b = f.file() == null ? null : ops.bufferForPath(f.file());
-            LaunchedLines.Mapping map = lineMap(b);
+            if (f.file() == null) {
+                out.add(f);
+                continue;
+            }
+            LaunchedLines.Mapping map = maps.computeIfAbsent(f.file(), file -> lineMap(ops.bufferForPath(file)));
             int line = map.changed() ? map.toCurrent(f.line()) : f.line();
             out.add(line >= 0 && line != f.line() ? f.atLine(line) : f);
         }
@@ -2268,6 +2276,7 @@ final class DebugCoordinator {
                     s().recordedStops = 0; // the recording breakpoints' limit is per session
                     s().filteredHits.clear(); // and a filtered breakpoint's hit count
                     s().lastExceptionFrames = List.of(); // and the exception an exception breakpoint last showed
+                    s().lastExceptionDepth = 0;
                     s().lastExceptionType = "";
                     nameSession(s().sessionLabel); // ending the replaced session cleared it
                     refreshExceptionToggles(); // the session's language decides what Caught / Uncaught mean
@@ -2436,7 +2445,8 @@ final class DebugCoordinator {
                 if (!recording && !shown()) {
                     focusSession(s()); // another session stopped: it is shown now, as in VS Code and IntelliJ
                 }
-                panel().setCallStack(frames, shown);
+                DapModels.StackPage page = dap().shownStack();
+                panel().setCallStack(frames, shown, page.depth(), page.more());
                 if (recording) {
                     recordAndContinue(frames.getFirst());
                     return;
@@ -2624,6 +2634,18 @@ final class DebugCoordinator {
             }
 
             @Override
+            public void moreFrames(int loaded, java.util.function.Consumer<DapModels.StackPage> cb) {
+                DebugSession session = s();
+                dap().moreFrames(
+                                dap().currentThreadId(),
+                                loaded,
+                                page -> inSession(
+                                        session,
+                                        () -> cb.accept(new DapModels.StackPage(
+                                                currentLines(page.frames()), page.depth(), page.more()))));
+            }
+
+            @Override
             public void selectThread(int threadId) {
                 int previous = dap().currentThreadId();
                 dap().selectThread(threadId, threadFrames -> {
@@ -2632,7 +2654,12 @@ final class DebugCoordinator {
                     }
                     List<DapModels.StackFrameInfo> frames = currentLines(threadFrames);
                     if (!frames.isEmpty() || threadId == previous) {
-                        panel().setCallStack(frames, firstFrameWithSource(frames, DebugCoordinator.this::showsOnStop));
+                        DapModels.StackPage page = dap().shownStack();
+                        panel().setCallStack(
+                                        frames,
+                                        firstFrameWithSource(frames, DebugCoordinator.this::showsOnStop),
+                                        page.depth(),
+                                        page.more());
                         return;
                     }
                     // A thread that is not suspended has no stack to inspect. Stay on the stopped one: showing

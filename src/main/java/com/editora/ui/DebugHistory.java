@@ -64,6 +64,9 @@ final class DebugHistory {
         final int threadId;
         final List<DapModels.StackFrameInfo> frames;
         final int shownFrame;
+        /** How deep the stack was: more than {@code frames} when only its top was fetched. */
+        final int depth;
+
         private @Nullable String exception;
         private final Map<Integer, LinkedHashMap<List<String>, Row>> rows = new HashMap<>();
         private final Map<Integer, Inline> inline = new HashMap<>();
@@ -76,7 +79,19 @@ final class DebugHistory {
                 int threadId,
                 List<DapModels.StackFrameInfo> frames,
                 int shownFrame) {
+            this(number, reason, time, threadId, frames, shownFrame, frames.size());
+        }
+
+        Stop(
+                int number,
+                String reason,
+                LocalTime time,
+                int threadId,
+                List<DapModels.StackFrameInfo> frames,
+                int shownFrame,
+                int depth) {
             this.number = number;
+            this.depth = Math.max(depth, frames.size());
             this.reason = reason;
             this.time = time;
             this.threadId = threadId;
@@ -149,7 +164,7 @@ final class DebugHistory {
                             threadId,
                             f.name(),
                             f.file() == null ? null : f.file().toString(),
-                            frames.size() - i);
+                            depth - i);
                 }
                 frameKeys = keys;
             }
@@ -196,11 +211,18 @@ final class DebugHistory {
     /** The program stopped: a new live stop, or null when nothing is recorded. */
     @Nullable
     Stop newStop(String reason, LocalTime time, int threadId, List<DapModels.StackFrameInfo> frames, int shown) {
+        return newStop(reason, time, threadId, frames, shown, frames.size());
+    }
+
+    /** As above, for a stack {@code depth} frames deep of which {@code frames} are the top ones. */
+    @Nullable
+    Stop newStop(
+            String reason, LocalTime time, int threadId, List<DapModels.StackFrameInfo> frames, int shown, int depth) {
         counter++;
         if (capacity == 0) {
             return null;
         }
-        Stop stop = new Stop(counter, reason, time, threadId, frames, shown);
+        Stop stop = new Stop(counter, reason, time, threadId, frames, shown, depth);
         stops.addLast(stop);
         while (stops.size() > capacity) {
             stops.removeFirst();

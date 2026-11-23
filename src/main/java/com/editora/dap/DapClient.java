@@ -1941,44 +1941,70 @@ public final class DapClient implements IDebugProtocolClient {
      * it becomes the one later requests go to; false for a stack asked for in bulk (Thread Dump, Parallel Stacks).
      */
     public CompletableFuture<List<DapModels.StackFrameInfo>> stackTrace(int threadId, boolean focusThread) {
+        return stackPage(threadId, focusThread, 0, STACK_FRAME_LIMIT).thenApply(DapModels.StackPage::frames);
+    }
+
+    /**
+     * Frames {@code startFrame…} of {@code threadId}'s stack, at most {@code levels} of them ({@link
+     * #STACK_FRAME_LIMIT} in all). A stop asks for {@link #FIRST_FRAMES}, and the rest only when the user asks for
+     * them (perf review 2026-11-23, D3).
+     */
+    public CompletableFuture<DapModels.StackPage> stackPage(
+            int threadId, boolean focusThread, int startFrame, int levels) {
         DapClient session = focusThread ? target(threadId) : targetQuietly(threadId);
         if (session != this) {
-            return session.stackTrace(threadId, focusThread);
+            return session.stackPage(threadId, focusThread, startFrame, levels);
         }
+        int asked = Math.max(1, Math.min(levels, STACK_FRAME_LIMIT - startFrame));
         StackTraceArguments a = new StackTraceArguments();
         a.setThreadId(threadId);
         // Always a window: java-debug reads startFrame/levels without advertising supportsDelayedStackTraceLoading
         // (so the guard never applied to Java), and per the protocol an adapter that does not page ignores them.
-        a.setStartFrame(0);
-        a.setLevels(STACK_FRAME_LIMIT);
+        a.setStartFrame(startFrame);
+        a.setLevels(asked);
         return timed(server().stackTrace(a)).thenApply(r -> {
             List<DapModels.StackFrameInfo> out = new ArrayList<>();
-            if (r != null && r.getStackFrames() != null) {
-                for (StackFrame f : r.getStackFrames()) {
-                    if (out.size() == STACK_FRAME_LIMIT) {
-                        break; // an adapter that sent everything anyway: the innermost frames are the ones that matter
-                    }
-                    DapModels.LoadedSource reference = referenceOf(f.getSource(), paths);
-                    if (reference != null) {
-                        // The source request about it goes to the session whose frame it is (a js-debug worker's).
-                        (root == null ? this : root).sourceOwners.put(reference.sourceReference(), this);
-                    }
-                    out.add(new DapModels.StackFrameInfo(
-                            f.getId(),
-                            f.getName(),
-                            sourcePath(f.getSource(), paths),
-                            f.getLine() - 1, // back to 0-based line
-                            f.getColumn(),
-                            sourceUri(f.getSource()),
-                            frameHint(f),
-                            f.getInstructionPointerReference(),
-                            reference));
+            StackFrame[] sent = r == null || r.getStackFrames() == null ? new StackFrame[0] : r.getStackFrames();
+            for (StackFrame f : sent) {
+                if (out.size() == STACK_FRAME_LIMIT) {
+                    break; // an adapter that sent everything anyway: the innermost frames are the ones that matter
                 }
+                DapModels.LoadedSource reference = referenceOf(f.getSource(), paths);
+                if (reference != null) {
+                    // The source request about it goes to the session whose frame it is (a js-debug worker's).
+                    (root == null ? this : root).sourceOwners.put(reference.sourceReference(), this);
+                }
+                out.add(new DapModels.StackFrameInfo(
+                        f.getId(),
+                        f.getName(),
+                        sourcePath(f.getSource(), paths),
+                        f.getLine() - 1, // back to 0-based line
+                        f.getColumn(),
+                        sourceUri(f.getSource()),
+                        frameHint(f),
+                        f.getInstructionPointerReference(),
+                        reference));
             }
-            return out;
+            return page(startFrame, asked, sent.length, out, r == null ? null : r.getTotalFrames());
         });
     }
 
+    /**
+     * The page a reply made: {@code sent} frames for a request of {@code asked} from {@code start}, {@code out} of them
+     * kept. An adapter that sent more than asked does not page: what it sent is all there is to have.
+     */
+    static DapModels.StackPage page(
+            int start, int asked, int sent, List<DapModels.StackFrameInfo> out, @Nullable Integer totalFrames) {
+        int had = start + out.size();
+        if (sent > asked) {
+            return new DapModels.StackPage(out, totalFrames == null ? had : totalFrames, false);
+        }
+        if (totalFrames != null && totalFrames > 0) {
+            return new DapModels.StackPage(out, totalFrames, had < Math.min(totalFrames, STACK_FRAME_LIMIT));
+        }
+        // No total (or 0, which DAP lets an adapter send for "unknown"): a full page may have more below it.
+        return new DapModels.StackPage(out, had, sent == asked && had < STACK_FRAME_LIMIT);
+    }
     /** A frame's {@link DapModels.StackFrameInfo#hint} from the adapter's presentation hints. */
     static String frameHint(StackFrame f) {
         if (f.getPresentationHint() != null) {
@@ -2004,6 +2030,13 @@ public final class DapClient implements IDebugProtocolClient {
      * runaway recursion, on each Step Over. The frames that matter are the innermost ones.
      */
     static final int STACK_FRAME_LIMIT = 1000;
+
+    /**
+     * The frames a stop or a step asks for first. Most stops are looked at in their top few frames; a deep stack
+     * (Spring, Reactor, a recursion) fetched whole on every Step Over cost the adapter, the wire and the client
+     * hundreds of frames each time. The Call Stack lists the rest when asked (its "more frames" row).
+     */
+    public static final int FIRST_FRAMES = 50;
 
     /**
      * A frame's source as a local path, or {@code null} when it has none. Adapters put strings that are not

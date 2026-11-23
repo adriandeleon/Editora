@@ -222,6 +222,9 @@ final class DebugSession {
     /** The stack and type of the last exception an exception breakpoint showed: the same one passing up is not shown again. */
     List<DapModels.StackFrameInfo> lastExceptionFrames = List.of();
 
+    /** How deep the stack of {@link #lastExceptionFrames} was (they are its top frames). */
+    int lastExceptionDepth;
+
     String lastExceptionType = "";
 
     /** The stop a recording breakpoint made, whose frame is not shown in the editor; -1 for none. */

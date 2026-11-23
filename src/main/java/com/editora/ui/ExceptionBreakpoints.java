@@ -77,12 +77,26 @@ final class ExceptionBreakpoints {
      * same exception passing up, which debugpy stops on again in each frame it leaves.
      */
     static boolean propagating(List<DapModels.StackFrameInfo> before, List<DapModels.StackFrameInfo> now) {
-        if (before.isEmpty() || now.isEmpty() || now.size() >= before.size()) {
+        return propagating(before, before.size(), now, now.size());
+    }
+
+    /**
+     * As above, for the top frames of stacks {@code beforeDepth} and {@code nowDepth} frames deep (a stop fetches the
+     * top of the stack only): the frames both have must match. When they have none in common it cannot be told, and the
+     * exception is not taken to be passing up.
+     */
+    static boolean propagating(
+            List<DapModels.StackFrameInfo> before, int beforeDepth, List<DapModels.StackFrameInfo> now, int nowDepth) {
+        int out = beforeDepth - nowDepth; // frames left: now[i] is before[i + out]
+        if (before.isEmpty() || now.isEmpty() || out <= 0) {
             return false;
         }
-        List<DapModels.StackFrameInfo> tail = before.subList(before.size() - now.size(), before.size());
-        for (int i = 0; i < now.size(); i++) {
-            if (!ParallelStacks.key(tail.get(i)).equals(ParallelStacks.key(now.get(i)))) {
+        int common = Math.min(now.size(), before.size() - out);
+        if (common <= 0) {
+            return false;
+        }
+        for (int i = 0; i < common; i++) {
+            if (!ParallelStacks.key(before.get(i + out)).equals(ParallelStacks.key(now.get(i)))) {
                 return false;
             }
         }

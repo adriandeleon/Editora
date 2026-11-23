@@ -50,11 +50,12 @@ final class ExceptionBreakpointCommands {
         }
         session.quietStop = session.stopSerial;
         int serial = session.stopSerial;
+        int depth = Math.max(session.dap.shownStack().depth(), frames.size());
         session.dap.exceptionInfo(
                 threadId,
                 info -> d.inSession(session, () -> {
                     if (serial == session.stopSerial && session.dap.state() == DapManager.State.SUSPENDED) {
-                        decideException(session, language, info, mine, frames, again);
+                        decideException(session, language, info, mine, frames, depth, again);
                     }
                 }));
         return true;
@@ -66,11 +67,13 @@ final class ExceptionBreakpointCommands {
             DapModels.@Nullable ExceptionInfo info,
             List<com.editora.config.ExceptionBreakpoint> mine,
             List<DapModels.StackFrameInfo> frames,
+            int depth,
             Runnable again) {
         String type = info == null ? "" : info.type();
         Runnable show = () -> {
             session.lastExceptionType = type;
             session.lastExceptionFrames = frames;
+            session.lastExceptionDepth = depth;
             session.filtersPassed = true;
             again.run();
             if (info != null) {
@@ -83,9 +86,11 @@ final class ExceptionBreakpointCommands {
         }
         List<com.editora.config.ExceptionBreakpoint> hits = ExceptionBreakpoints.matching(mine, language, type);
         boolean passingUp = type.equals(session.lastExceptionType)
-                && ExceptionBreakpoints.propagating(session.lastExceptionFrames, frames);
+                && ExceptionBreakpoints.propagating(
+                        session.lastExceptionFrames, session.lastExceptionDepth, frames, depth);
         if (passingUp) {
             session.lastExceptionFrames = frames; // and further out, still the same one
+            session.lastExceptionDepth = depth;
         }
         if (hits.isEmpty() || passingUp) {
             session.dap.resume();
