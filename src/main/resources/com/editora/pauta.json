@@ -65,14 +65,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1575"
     },
     {
-      "rule": "REL-09",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.2.0/release/#rel-09",
-      "kind": "pending",
-      "reason": "The Linux app ID is com.editora.Editora rather than one under io.github.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1578"
-    },
-    {
       "rule": "REL-12",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.2.0/release/#rel-12",

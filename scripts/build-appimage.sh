@@ -127,7 +127,7 @@ mkdir -p "$OUTDIR"
 OUT="$OUTDIR/Editora-$ARCH.AppImage"
 # --runtime-file: embed the runtime verified above instead of letting appimagetool download one itself.
 # --no-appstream: skip AppStream validation. A metainfo file does exist (packaging/linux/
-# com.editora.Editora.metainfo.xml, installed by the .deb's postinst), but this AppDir does not place it
+# io.github.adriandeleon.Editora.metainfo.xml, installed by the .deb's postinst), but this AppDir does not place it
 # under usr/share/metainfo, and validating one would make appstreamcli a build dependency of the runner.
 ARCH="$ARCH" APPIMAGE_EXTRACT_AND_RUN=1 "$TOOL" --no-appstream --runtime-file "$RUNTIME" "$APPDIR" "$OUT"
 

@@ -47,6 +47,7 @@ com.editora.ui.JavaEditingCostProbeTest
 com.editora.ui.JavaTypingSoakProbeTest
 com.editora.ui.JsDebugProbeFxTest
 com.editora.ui.DenoDebugProbeFxTest
+com.editora.ui.JsTestRunnerProbeFxTest
 com.editora.ui.GoDebugProbeFxTest
 com.editora.ui.RustDebugProbeFxTest
 com.editora.ui.NativeDebugProbeFxTest

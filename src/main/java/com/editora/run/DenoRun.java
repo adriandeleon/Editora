@@ -177,12 +177,18 @@ public final class DenoRun {
         return null;
     }
 
-    /** {@code nodeArgs} without {@link #FILTER_ARG}: what Node is given. */
+    /**
+     * {@code nodeArgs} without what Editora carries in them for itself — {@link #FILTER_ARG}, and
+     * {@link JsTestRunner#NAMES_ARG} (every {@code --editora-} word): what Node is given.
+     */
     public static List<String> withoutFilter(@Nullable List<String> nodeArgs) {
         return nodeArgs == null
                 ? List.of()
-                : nodeArgs.stream().filter(a -> !a.startsWith(FILTER_ARG)).toList();
+                : nodeArgs.stream().filter(a -> !a.startsWith(EDITORA_ARG)).toList();
     }
+
+    /** What every argument Editora carries for itself starts with. */
+    private static final String EDITORA_ARG = "--editora-";
 
     /**
      * {@code runtime} (Deno, its subcommand and flags) waiting for a debugger on {@code port}:

@@ -154,6 +154,14 @@ final class NodeRunLauncher {
             if (deno.isPresent()) {
                 return denoReady(spec, deno.get());
             }
+            // A test file of a Jest or Vitest package runs under its runner, not node --test.
+            if (spec.workingDir() == null && com.editora.dap.JsLaunch.isTestFile(file)) { // .jsx/.tsx too
+                java.util.Optional<com.editora.run.JsTestRunner.Runner> runner =
+                        com.editora.run.JsTestRunner.find(file, spec.projectRoot());
+                if (runner.isPresent()) {
+                    return runnerReady(spec, runner.get());
+                }
+            }
         }
         Path dir = spec.workingDir() != null
                 ? spec.workingDir()
@@ -251,6 +259,32 @@ final class NodeRunLauncher {
                 null,
                 TsRunRoute.Kind.PLAIN,
                 relative(spec.projectRoot(), root.resolve(config)));
+    }
+
+    /**
+     * Test file {@code spec}'s tests under {@code runner} (Jest or Vitest) on the Node.js Run would pick, from the
+     * package's folder: the runner's entry script on the file, narrowed to the test a debug launch carries in its Node
+     * arguments ({@link com.editora.run.JsTestRunner#NAMES_ARG}). The runner's script is where the program starts.
+     */
+    static Ready runnerReady(Spec spec, com.editora.run.JsTestRunner.Runner runner) {
+        Path file = spec.file();
+        NodeRuntimes.NodeRuntime node =
+                NodeRuntimes.resolveLocal(file, spec.projectRoot(), spec.configured(), spec.setting());
+        List<String> argv = node.argv(com.editora.run.JsTestRunner.args(
+                runner, file.toString(), com.editora.run.JsTestRunner.namesOf(spec.nodeOptions())));
+        Map<String, String> env = new java.util.LinkedHashMap<>();
+        String noColor = System.getenv("NO_COLOR");
+        if ((noColor == null || noColor.isEmpty()) && !spec.userEnv().containsKey("NO_COLOR")) {
+            env.put("FORCE_COLOR", "1"); // the Run console draws colours
+        }
+        env.putAll(spec.userEnv());
+        return new Ready(
+                new NodeRunPlan(List.copyOf(argv), java.util.Collections.unmodifiableMap(env), null, null),
+                runner.root(),
+                runner.entry().toString(),
+                pinNotice(node),
+                TsRunRoute.Kind.PLAIN,
+                source(node));
     }
 
     /**

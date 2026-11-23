@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Guards {@code packaging/linux/com.editora.Editora.metainfo.xml} — the AppStream metadata a software
+ * Guards {@code packaging/linux/io.github.adriandeleon.Editora.metainfo.xml} — the AppStream metadata a software
  * centre describes the installed .deb from.
  *
  * <p>Without it, GNOME Software falls back to the dpkg control fields and the app page reads
@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("guard")
 class LinuxAppStreamMetadataTest {
 
-    private static final Path METAINFO = Path.of("packaging", "linux", "com.editora.Editora.metainfo.xml");
+    private static final Path METAINFO = Path.of("packaging", "linux", "io.github.adriandeleon.Editora.metainfo.xml");
     private static final Path POSTINST = Path.of("packaging", "linux", "postinst");
 
     private static Document parse() throws Exception {
@@ -51,7 +51,7 @@ class LinuxAppStreamMetadataTest {
     void theMetadataDeclaresWhatTheSoftwareCentreShows() throws Exception {
         assertTrue(Files.isRegularFile(METAINFO), METAINFO + " is missing — the .deb would be undescribed");
         Document doc = parse();
-        assertEquals("com.editora.Editora", text(doc, "id"));
+        assertEquals("io.github.adriandeleon.Editora", text(doc, "id"));
         assertEquals(AppInfo.NAME, text(doc, "name"));
         assertTrue(text(doc, "summary").length() > 10, "a summary is what replaces the bare package name");
         // "Unknown License" on the app page is precisely this element being absent.
