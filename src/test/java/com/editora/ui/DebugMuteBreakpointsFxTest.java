@@ -83,7 +83,8 @@ class DebugMuteBreakpointsFxTest {
         String title = com.editora.editor.MenuTitles.of(paletteTitle); // a menu row drops "Debug:" (ET3)
         return FxTestSupport.callOnFx(() -> {
             MainMenuBar menuBar = FxTestSupport.field(c, "menuBar");
-            menuBar.refreshEnablement(); // what opening a menu does
+            menuBar.buildAllRows(); // what opening each menu does the first time
+            menuBar.refreshEnablement(); // and every time
             MenuBar bar = FxTestSupport.field(menuBar, "bar");
             java.util.ArrayDeque<MenuItem> todo = new java.util.ArrayDeque<>();
             for (Menu menu : bar.getMenus()) {

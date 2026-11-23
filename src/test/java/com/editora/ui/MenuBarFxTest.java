@@ -51,7 +51,10 @@ class MenuBarFxTest {
     }
 
     private MenuBar bar() throws Exception {
-        return FxTestSupport.callOnFx(() -> menuBar.node());
+        return FxTestSupport.callOnFx(() -> {
+            menuBar.buildAllRows(); // a menu's rows are built when it first opens
+            return menuBar.node();
+        });
     }
 
     /**

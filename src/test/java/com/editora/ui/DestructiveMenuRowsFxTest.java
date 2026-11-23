@@ -186,6 +186,7 @@ class DestructiveMenuRowsFxTest {
                 DestructiveMenuRowsFxTest::allFeaturesOn,
                 Chrome.PaletteContext::all,
                 id -> {}));
+        FxTestSupport.runOnFx(bar::buildAllRows); // where each row is built: on its menu's first opening
         Map<String, ?> rows = FxTestSupport.field(bar, "items");
         Set<String> destructive = MenuBarModel.destructiveCommandIds();
         assertTrue(destructive.containsAll(List.of("git.discardAll", "git.deleteBranch", "git.tag.delete")));
