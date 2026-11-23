@@ -36,6 +36,7 @@ class PythonLaunchTest {
         assertEquals(Map.of("K", "v", "PYTHONPATH", ""), m.get("env"));
         assertEquals("internalConsole", m.get("console"));
         assertEquals(false, m.get("subProcess"));
+        assertEquals(true, m.get("showReturnValue"), "a step out shows what the function returned");
     }
 
     @Test

@@ -58,6 +58,7 @@ com.editora.ui.RubyDebugProbeFxTest
 com.editora.ui.PhpDebugProbeFxTest
 com.editora.ui.BashDebugProbeFxTest
 com.editora.ui.LuaDebugProbeFxTest
+com.editora.ui.ReturnValueProbeFxTest
 com.editora.ui.DebugHistoryProbeFxTest
 com.editora.ui.EvaluateProbeFxTest
 com.editora.ui.JsColumnBreakpointsProbeFxTest

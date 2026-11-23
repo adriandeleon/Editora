@@ -63,6 +63,13 @@ class LaunchRouteTest {
         assertEquals(LaunchRoute.Kind.DEBUGPY, py.kind());
         assertTrue(py.attach());
         assertEquals("python", py.request().get("type"));
+        assertEquals(true, py.request().get("showReturnValue"), "VS Code's default");
+        assertEquals(
+                false,
+                LaunchRoute.of(config("type", "debugpy", "request", "launch", "showReturnValue", false), none)
+                        .request()
+                        .get("showReturnValue"),
+                "a configuration's own choice stays");
         assertEquals(
                 "pwa-node",
                 LaunchRoute.of(config("type", "node"), none).request().get("type"));
