@@ -1942,7 +1942,13 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     private void refreshTree(boolean regain) {
         treeRefreshCountForTest++;
-        projectIndex.markStale(); // what changed in folders nobody watches: the next search lists again
+        if (regain) {
+            // What changed in folders nobody watches, found by their modification times before the next search
+            // (F4): a whole walk of the project after every focus regain made the filter wait for it.
+            projectIndex.revalidate();
+        } else {
+            projectIndex.markStale(); // a refresh asked for: the next search lists again
+        }
         GitPathScope.learnRemote(root, false); // a repository made or removed there since (at most once a minute)
         if (isMapShowing()) {
             if (regain) {
@@ -2062,7 +2068,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             queuedExternal.addAll(plan.external());
             queuedUnknown |= plan.unknown();
             long sinceLast = System.currentTimeMillis() - lastExternalNotifyMs;
-            if (plan.structural() || plan.unknown() || sinceLast >= MODIFY_THROTTLE_MS) {
+            // Entries that came or went are listed above at once; what they cost Git, the build tools and the diffs
+            // waits for the throttle like a rewrite does (F2), with a flush at its end.
+            if (ProjectWatchChanges.flushNow(plan.unknown(), sinceLast, MODIFY_THROTTLE_MS)) {
                 flushExternal();
             } else if (externalThrottle.getStatus() != javafx.animation.Animation.Status.RUNNING) {
                 externalThrottle.setDuration(Duration.millis(MODIFY_THROTTLE_MS - sinceLast));
@@ -2076,12 +2084,51 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (disposed || (queuedExternal.isEmpty() && !queuedUnknown)) {
             return;
         }
+        watchIgnoreFor(root, queuedExternal);
         ProjectWatchChanges.Plan plan = new ProjectWatchChanges.Plan(
                 false, java.util.Set.of(), List.of(), List.copyOf(queuedExternal), queuedUnknown);
         queuedExternal.clear();
         queuedUnknown = false;
         lastExternalNotifyMs = System.currentTimeMillis();
         onExternalChange.accept(plan);
+    }
+
+    /** The root's {@code .gitignore} rules as git reads them, for {@link #mayChangeGitStatus}; loaded off FX. */
+    private volatile com.editora.search.GitignoreFilter watchIgnore = com.editora.search.GitignoreFilter.NONE;
+    /** The root {@link #watchIgnore} was loaded for (FX thread). */
+    private @Nullable Path watchIgnoreRoot;
+
+    /** Keeps {@link #watchIgnore} for {@code root}: (re)loaded off FX for a new root or a changed .gitignore. */
+    private void watchIgnoreFor(@Nullable Path root, List<FsChange> changes) {
+        boolean stale = !java.util.Objects.equals(root, watchIgnoreRoot);
+        for (int i = 0; !stale && i < changes.size(); i++) {
+            stale = ".gitignore".equals(String.valueOf(changes.get(i).path().getFileName()));
+        }
+        if (!stale) {
+            return;
+        }
+        watchIgnoreRoot = root;
+        watchIgnore = com.editora.search.GitignoreFilter.NONE; // every change counts until the rules are read
+        if (root == null || !com.editora.vfs.Vfs.isLocal(root)) {
+            return;
+        }
+        watchWork.execute(() -> {
+            com.editora.search.GitignoreFilter loaded = com.editora.search.GitignoreFilter.load(root, false);
+            Platform.runLater(() -> {
+                if (root.equals(watchIgnoreRoot)) {
+                    watchIgnore = loaded;
+                }
+            });
+        });
+    }
+
+    /**
+     * Whether external {@code changes} may change {@code git status} (see
+     * {@link ProjectWatchChanges#mayChangeGitStatus}): the window leaves Git alone for a batch wholly inside
+     * gitignored paths, such as a build's output folder.
+     */
+    public boolean mayChangeGitStatus(List<FsChange> changes, boolean complete) {
+        return ProjectWatchChanges.mayChangeGitStatus(changes, complete, root, watchIgnore);
     }
 
     /** Every expanded directory row whose children are loaded, parents before children. */

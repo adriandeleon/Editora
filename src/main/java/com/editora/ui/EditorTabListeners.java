@@ -89,7 +89,7 @@ final class EditorTabListeners {
             mc.chrome.updateZenButton(); // re-position the Zen "Z" if the new file is/isn't Markdown
             mc.chrome.updateExpertButton(); // and the Expert "E"
             mc.fileWorkflows.checkExternalChanges(); // prompt if the file we just switched to changed on disk
-            mc.git.refresh(); // update branch/status + this file's gutter change bars
+            mc.git.refreshSoon(); // this file's gutter change bars; branch/status, coalesced with a recent refresh
             mc.refreshBuildTools(); // re-detect marker files for the newly active file/project
             mc.startupFocus.repositoryStateComputed(); // the first focus after show need not repeat these two
             mc.lspCoordinator

@@ -186,4 +186,71 @@ class ProjectFileIndexTest {
         assertNull(index.search(
                 root, "Widget", ProjectIndex.Kinds.FILES, 10, ProjectIndex.Freshness.AS_LISTED, () -> true));
     }
+
+    /** Sets {@code dir}'s modification time well after the list was made, as a change from outside would. */
+    private static void touchLater(Path dir) throws IOException {
+        Files.setLastModifiedTime(
+                dir, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() + 60_000));
+    }
+
+    @Test
+    void aFocusRegainFindsWhatChangedByFolderTimesWithoutListingAgain() throws Exception {
+        Path root = project();
+        AtomicInteger walks = new AtomicInteger();
+        index.builder = (r, s, c) -> {
+            walks.incrementAndGet();
+            return ProjectFileList.build(r, s, c);
+        };
+        assertNotNull(index.search(
+                root, "Widget", ProjectIndex.Kinds.FILES, 50, ProjectIndex.Freshness.CURRENT, () -> false));
+        assertEquals(1, walks.get());
+        // Unwatched, from outside: one file added, one removed, one new folder with a file in it.
+        Path app = root.resolve("src/main/java/app");
+        Files.writeString(app.resolve("Gadget.java"), "class Gadget {}");
+        Files.delete(root.resolve("vendor/lib/Widget.java"));
+        Files.createDirectories(app.resolve("sub"));
+        Files.writeString(app.resolve("sub/Gizmo.java"), "class Gizmo {}");
+        touchLater(app);
+        touchLater(root.resolve("vendor/lib"));
+
+        index.revalidate();
+        drain();
+        ProjectMapSearchResult found =
+                index.search(root, "java", ProjectIndex.Kinds.FILES, 50, ProjectIndex.Freshness.CURRENT, () -> false);
+        assertNotNull(found);
+        List<String> rels = rels(found);
+        assertTrue(rels.contains("src/main/java/app/Gadget.java"), "an added file: " + rels);
+        assertTrue(rels.contains("src/main/java/app/sub/Gizmo.java"), "a file in an added folder: " + rels);
+        assertFalse(rels.contains("vendor/lib/Widget.java"), "a removed file: " + rels);
+        assertEquals(1, walks.get(), "found by the folders' times, with no walk of the project");
+        synchronized (relisted) {
+            assertEquals(List.of(root), relisted, "the panel is told the list changed");
+        }
+
+        index.revalidate();
+        drain();
+        synchronized (relisted) {
+            assertEquals(1, relisted.size(), "a second regain with nothing new changes nothing");
+        }
+        assertEquals(1, walks.get());
+    }
+
+    @Test
+    void aRegainWithChangedIgnoreRulesListsAgainInTheBackground() throws Exception {
+        Path root = project();
+        AtomicInteger walks = new AtomicInteger();
+        index.builder = (r, s, c) -> {
+            walks.incrementAndGet();
+            return ProjectFileList.build(r, s, c);
+        };
+        assertNotNull(index.search(
+                root, "Widget", ProjectIndex.Kinds.FILES, 50, ProjectIndex.Freshness.CURRENT, () -> false));
+        Path rules = Files.writeString(root.resolve(".gitignore"), "vendor/\n");
+        Files.setLastModifiedTime(
+                rules, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() + 60_000));
+        index.revalidate();
+        drain();
+        drain();
+        assertEquals(2, walks.get(), "the rules the list was made by changed: listed again");
+    }
 }

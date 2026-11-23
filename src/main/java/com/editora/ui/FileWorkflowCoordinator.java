@@ -3635,7 +3635,7 @@ final class FileWorkflowCoordinator {
             if (!autoSave) {
                 cleanUpPastedImages(request);
             }
-            host.git().refresh();
+            host.git().refreshSoon(); // coalesced: autosave on every typing pause need not run git status each time
             host.lspCoordinator().notifyDocumentSaved(request.buffer(), request.savedText());
             if (!autoSave) {
                 host.refreshBuildTools();

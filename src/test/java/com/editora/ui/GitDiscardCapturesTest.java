@@ -44,4 +44,44 @@ class GitDiscardCapturesTest {
                 GitDiscardCaptures.overwritten(ROOT, status, List.of("a.txt", "a.txt", ".")));
         assertEquals(List.of(ROOT.resolve("b.txt")), GitDiscardCaptures.overwritten(ROOT, null, List.of("b.txt", "")));
     }
+
+    @Test
+    void severalSpecsMatchWhatSelectsMatches() {
+        GitStatus status = status(
+                new GitStatus.FileEntry("src/A.java", '.', 'M', null),
+                new GitStatus.FileEntry("srcx/B.java", '.', 'M', null),
+                new GitStatus.FileEntry("docs/guide/C.md", 'M', '.', null),
+                new GitStatus.FileEntry("top.txt", '.', 'M', null));
+        List<String> specs = List.of("src/", "docs/guide", "top.txt");
+        List<Path> expected = new java.util.ArrayList<>();
+        for (String spec : specs) {
+            expected.add(ROOT.resolve(spec).normalize());
+        }
+        for (GitStatus.FileEntry e : status.files()) {
+            if (specs.stream().anyMatch(spec -> GitCoordinator.selects(spec, e.path()))) {
+                Path p = ROOT.resolve(e.path()).normalize();
+                if (!expected.contains(p)) {
+                    expected.add(p);
+                }
+            }
+        }
+        assertEquals(expected, GitDiscardCaptures.overwritten(ROOT, status, specs));
+    }
+
+    @Test
+    void thousandsOfSelectedRowsAgainstThousandsOfStatusRowsIsLinear() {
+        List<GitStatus.FileEntry> files = new java.util.ArrayList<>();
+        List<String> specs = new java.util.ArrayList<>();
+        for (int i = 0; i < 20_000; i++) {
+            String path = "pkg" + (i % 50) + "/File" + i + ".java";
+            files.add(new GitStatus.FileEntry(path, '.', 'M', null));
+            specs.add(path);
+        }
+        GitStatus status = new GitStatus(true, "main", null, 0, 0, files);
+        long start = System.nanoTime();
+        List<Path> out = GitDiscardCaptures.overwritten(ROOT, status, specs);
+        long millis = (System.nanoTime() - start) / 1_000_000;
+        assertEquals(20_000, out.size());
+        org.junit.jupiter.api.Assertions.assertTrue(millis < 3_000, "20k x 20k took " + millis + " ms");
+    }
 }

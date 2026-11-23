@@ -273,6 +273,40 @@ final class ProjectFileIndex implements ProjectIndex {
         all().forEach(ProjectFileList::markStale);
     }
 
+    /**
+     * The window was away (a focus regain): what changed meanwhile in folders nobody watches is looked for by the
+     * folders' modification times, on the index's thread, before the next search there — instead of a walk of the
+     * whole project after every Alt+Tab (F4, perf review 2026-11-23). A list that look cannot vouch for (a remote
+     * root, changed ignore rules, many folders moved) is marked out of date and listed again in the background, as
+     * before; searches keep answering from it meanwhile.
+     */
+    void revalidate() {
+        submit(() -> {
+            for (ProjectFileList list : all()) {
+                if (closed.getAsBoolean()) {
+                    return;
+                }
+                if (list.stale()) {
+                    continue; // already listed again soon
+                }
+                ProjectFileList.Revalidation found;
+                try {
+                    found = list.revalidate(closed);
+                } catch (RuntimeException failed) {
+                    found = ProjectFileList.Revalidation.RELIST;
+                }
+                switch (found) {
+                    case CHANGED -> onRelisted.accept(list.root());
+                    case RELIST -> {
+                        list.markStale();
+                        relistLater(list);
+                    }
+                    case UNCHANGED -> {}
+                }
+            }
+        });
+    }
+
     private void submit(Runnable task) {
         if (closed.getAsBoolean()) {
             return;

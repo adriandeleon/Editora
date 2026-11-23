@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.util.ArrayList;
 import java.util.List;
 
+import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuButton;
@@ -10,6 +11,7 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.StackPane;
 
 import com.editora.git.GitStatus;
 import com.editora.git.GitStatus.FileEntry;
@@ -1113,5 +1115,74 @@ class GitPanelFxTest {
         } finally {
             FxTestSupport.runOnFx(stage::hide);
         }
+    }
+
+    @Test
+    void anEqualStatusLeavesTheRowsAsTheyAre() throws Exception {
+        GitPanel p = panel();
+        FxTestSupport.runOnFx(() -> p.setStatus(mixedStatus()));
+        TreeItem<Object> before =
+                FxTestSupport.callOnFx(() -> tree(p).getRoot().getChildren().get(0));
+        FxTestSupport.runOnFx(() -> p.setStatus(mixedStatus())); // a tab switch: git said the same again
+        TreeItem<Object> after =
+                FxTestSupport.callOnFx(() -> tree(p).getRoot().getChildren().get(0));
+        assertTrue(before == after, "an unchanged status does not rebuild the rows");
+        FxTestSupport.runOnFx(() -> p.setStatus(
+                new GitStatus(true, "main", "origin/main", 0, 0, List.of(new FileEntry("other.txt", '.', 'M', null)))));
+        TreeItem<Object> changed =
+                FxTestSupport.callOnFx(() -> tree(p).getRoot().getChildren().get(0));
+        assertTrue(changed != after, "a changed status does");
+    }
+
+    @Test
+    void aStatusThatArrivesWhileThePanelIsHiddenIsRenderedWhenItIsShownAgain() throws Exception {
+        GitPanel p = panel();
+        StackPane host = FxTestSupport.callOnFx(() -> {
+            StackPane h = new StackPane(p);
+            new Scene(h, 400, 400);
+            return h;
+        });
+        FxTestSupport.runOnFx(() -> p.setStatus(mixedStatus()));
+        assertEquals(3, (int)
+                FxTestSupport.callOnFx(() -> tree(p).getRoot().getChildren().size()));
+
+        FxTestSupport.runOnFx(() -> host.getChildren().clear()); // the Commit window is hidden
+        GitStatus one =
+                new GitStatus(true, "main", "origin/main", 0, 0, List.of(new FileEntry("only.txt", '.', 'M', null)));
+        FxTestSupport.runOnFx(() -> p.setStatus(one));
+        assertEquals(
+                3,
+                (int) FxTestSupport.callOnFx(
+                        () -> tree(p).getRoot().getChildren().size()),
+                "nothing is rebuilt for a panel off screen");
+        Label branch = FxTestSupport.field(p, "branchLabel");
+        assertTrue(FxTestSupport.callOnFx(branch::getText).contains("main"), "the header still follows");
+
+        FxTestSupport.runOnFx(() -> host.getChildren().add(p)); // shown again
+        assertEquals(
+                1,
+                (int) FxTestSupport.callOnFx(
+                        () -> tree(p).getRoot().getChildren().size()),
+                "the status that arrived meanwhile is rendered on show");
+    }
+
+    @Test
+    void theSelectionSurvivesARebuildOfManyRows() throws Exception {
+        GitPanel p = panel();
+        List<FileEntry> files = new ArrayList<>();
+        for (int i = 0; i < 3000; i++) {
+            files.add(new FileEntry(String.format("f%05d.txt", i), '.', 'M', null));
+        }
+        FxTestSupport.runOnFx(() -> p.setStatus(new GitStatus(true, "main", "", 0, 0, files)));
+        FxTestSupport.runOnFx(() -> tree(p).getSelectionModel().selectAll());
+        List<FileEntry> more = new ArrayList<>(files);
+        more.add(new FileEntry("zz-new.txt", '?', '?', null));
+        long start = System.nanoTime();
+        FxTestSupport.runOnFx(() -> p.setStatus(new GitStatus(true, "main", "", 0, 0, more)));
+        long millis = (System.nanoTime() - start) / 1_000_000;
+        int selected = FxTestSupport.callOnFx(
+                () -> tree(p).getSelectionModel().getSelectedIndices().size());
+        assertEquals(3001, selected, "the group row and every file row are selected again");
+        assertTrue(millis < 5_000, "putting 3,000 selected rows back is linear, not quadratic: " + millis + " ms");
     }
 }

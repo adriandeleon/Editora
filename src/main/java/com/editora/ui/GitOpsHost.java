@@ -137,7 +137,7 @@ final class GitOpsHost implements GitCoordinator.WindowOps {
             completion.accept(java.util.Optional.empty()); // nothing would be kept: no need to read every file
             return;
         }
-        HistoryOverwriteCaptures.captureAll(files, history::captureBeforeOverwriteDurably, completion);
+        history.captureAllBeforeOverwriteDurably(files, completion); // one index write for the batch (F3)
     }
 
     @Override

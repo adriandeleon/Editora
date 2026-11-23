@@ -229,7 +229,8 @@ reads the plan's tool, and the pasted-image check after a save searches the text
 Windows after the first are built by `MainView`, the frame `main.fxml` declares written in code (`MainViewFxTest`
 keeps them equal), so no later window parses XML. A `perf/Looked` memo never looks on the FX thread: a cold key
 answers its cold answer (null, "unknown", for a memo made without one, whose FX askers check `Looked.allKnown`) and is
-looked at behind; at its bound it drops keys older than a minute, never one a command just had looked at.
+looked at behind; a stale key asked again on the FX thread is looked at once behind (the same `looking` gate), and
+at its bound the memo drops the least recently used keys, never one used within the last minute.
 Run's save-before-run (`RunCoordinator.saveThen`, `FileWorkflowCoordinator.saveThen`) and Debug File's save write
 off the thread and go on in the save's callback, never in a nested event loop. The start-up fallback, when the
 prefetch failed or `main()` was bypassed, runs `loadForFirstWindow` on a `config-prefetch` thread `start()` does not
@@ -521,7 +522,24 @@ style-only change that still ended a succession — skips the draw and the snaps
   immutable values, so a worker reading the text beside an FX-thread `getText()` is safe (see `DocumentText`).
 - The project watcher re-lists only directories whose entries were created or deleted and reconciles the
   rows (`ChildReconciler`); Editora's own saves are registered through `ProjectPanel.noteLocalWrite` so
-  they are not treated as external changes.
+  they are not treated as external changes. The tree re-lists at once, but what an external change costs the
+  rest of the window (`git status`, build-tool detection, open diffs, the index) is passed on at most once per
+  `MODIFY_THROTTLE_MS` (2 s), created and deleted files included, with a flush at the end of the throttle
+  (`ProjectWatchChanges.flushNow`); only an overflow goes at once. A batch wholly inside gitignored paths (a
+  build's `target/`) refreshes no Git at all (`ProjectWatchChanges.mayChangeGitStatus`).
+- A tab switch, save or autosave refreshes Git through `GitCoordinator.refreshSoon`: within
+  `GitRefreshCoalescer.WINDOW_NANOS` (2 s) of a full refresh it diffs only the active file
+  (`GitService.refreshDiff`) and keeps the status, and a full refresh follows at the end of the window. A
+  mutation, a focus regain and a non-ignored external change still run `refresh()`. The Commit window
+  (`GitPanel.setStatus`) leaves its rows alone for an equal status and renders a status that arrives while it is
+  off screen when it is shown again; `TreeViewState` walks the rows once rather than asking `getTreeItem(row)`.
+- A focus regain does not list the project's files again: `ProjectFileIndex.revalidate` stats each listed folder
+  on the index's thread, ahead of the next search, and re-reads the direct entries of the folders modified since
+  (`ProjectFileList.revalidate`). A remote root, a changed root `.gitignore` or more than 64 moved folders still
+  mark the list out of date, listed again in the background.
+- Local History captures for a Git Rollback/Discard go through
+  `HistoryCoordinator.captureAllBeforeOverwriteDurably`: every file is recorded first and the index is written
+  and made durable once for the batch, not once per file.
 - The Markdown preview rebuilds only the **blocks that changed** (`MarkdownPreview`). The document is cut
   into its top-level blocks off the FX thread, each keyed by its exact source text (plus the link
   definitions it could use and the size/mtime of the local images it shows); a render keeps every node

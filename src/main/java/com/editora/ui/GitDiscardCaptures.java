@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -25,23 +26,44 @@ final class GitDiscardCaptures {
      */
     static List<Path> overwritten(Path root, @Nullable GitStatus status, List<String> trackedSpecs) {
         Set<Path> out = new LinkedHashSet<>();
+        // The specs as a set, each status row matched by looking its path and its folders up in it: one pass over
+        // the status, not one per selected row (Ctrl+A on a long list made that quadratic, on the FX thread).
+        Set<String> specs = new HashSet<>();
+        boolean all = false;
         for (String spec : trackedSpecs) {
             if (spec == null || spec.isEmpty()) {
                 continue;
             }
-            if (!".".equals(spec)) {
-                out.add(root.resolve(spec).normalize());
-            }
-            if (status == null) {
+            if (".".equals(spec)) {
+                all = true;
                 continue;
             }
-            for (GitStatus.FileEntry entry : status.files()) {
-                String path = entry.path();
-                if (path != null && !entry.untracked() && GitCoordinator.selects(spec, path)) {
-                    out.add(root.resolve(path).normalize());
-                }
+            out.add(root.resolve(spec).normalize());
+            specs.add(spec.endsWith("/") ? spec.substring(0, spec.length() - 1) : spec);
+        }
+        if (status == null || (!all && specs.isEmpty())) {
+            return new ArrayList<>(out);
+        }
+        for (GitStatus.FileEntry entry : status.files()) {
+            String path = entry.path();
+            if (path != null && !entry.untracked() && (all || selected(specs, path))) {
+                out.add(root.resolve(path).normalize());
             }
         }
         return new ArrayList<>(out);
+    }
+
+    /** Whether {@code path} or a folder it is in is one of {@code specs}: {@link GitCoordinator#selects} for a set. */
+    static boolean selected(Set<String> specs, String path) {
+        for (String p = path; ; ) {
+            if (specs.contains(p)) {
+                return true;
+            }
+            int slash = p.lastIndexOf('/');
+            if (slash <= 0) {
+                return false;
+            }
+            p = p.substring(0, slash);
+        }
     }
 }
