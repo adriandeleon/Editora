@@ -32,7 +32,7 @@ public final class LspDiagnosticOverlay extends Region implements SecondaryPane.
     private static final double STEP = 2.0;
 
     private final CodeArea area;
-    private final Canvas canvas = new Canvas(1, 1);
+    private Canvas canvas = new Canvas(1, 1);
     private List<LspDiagnostic> diagnostics = List.of();
     private boolean active;
     private boolean redrawPending;
@@ -94,7 +94,7 @@ public final class LspDiagnosticOverlay extends Region implements SecondaryPane.
             scheduleRedraw();
         } else {
             diagnostics = List.of();
-            CanvasGuards.release(canvas); // drop the full-viewport texture while hidden
+            canvas = CanvasGuards.released(canvas, getChildren()); // drop the full-viewport texture while hidden
         }
     }
 
@@ -106,7 +106,7 @@ public final class LspDiagnosticOverlay extends Region implements SecondaryPane.
         if (this.diagnostics.isEmpty()) {
             // Nothing to underline: let the texture go now, and stay out of the scroll/edit repaint path
             // entirely until there is (the usual state of a clean file).
-            CanvasGuards.release(canvas);
+            CanvasGuards.shrink(canvas);
             return;
         }
         scheduleRedraw();
@@ -144,7 +144,7 @@ public final class LspDiagnosticOverlay extends Region implements SecondaryPane.
             requestLayout();
             scheduleRedraw();
         } else {
-            CanvasGuards.release(canvas);
+            canvas = CanvasGuards.released(canvas, getChildren());
         }
     }
 
@@ -163,7 +163,7 @@ public final class LspDiagnosticOverlay extends Region implements SecondaryPane.
 
     private void redraw() {
         if (!drawable() || !CanvasGuards.paintable(getWidth(), getHeight())) {
-            CanvasGuards.release(canvas);
+            CanvasGuards.shrink(canvas);
             return;
         }
         CanvasGuards.fit(this, canvas); // grown here as well: content can arrive without a layout pass

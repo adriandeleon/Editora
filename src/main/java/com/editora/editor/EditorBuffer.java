@@ -1106,6 +1106,14 @@ public class EditorBuffer implements TabContent {
      * The order within a shared delay matches the former independent ReactFX subscriptions.
      */
     private void configureSettledEditDispatcher() {
+        // The fold detection, the minimap's render and the spell checker's code-line scan had a ReactFX timer
+        // each (two more with a split), restarted on every keystroke; they run from this one instead (E10).
+        folds.settleExternally();
+        settledEdits.at(FoldManager.SETTLE, () -> true, folds::editsSettled);
+        minimap.settleExternally();
+        settledEdits.at(Minimap.SETTLE, () -> true, minimap::editsSettled);
+        spellOverlay.settleExternally();
+        settledEdits.at(SpellCheckOverlay.SETTLE, () -> true, spellOverlay::editsSettled);
         settledEdits.at(Duration.ofMillis(150), () -> true, () -> {
             resolveDirty();
             sealBaselineIfDirty();

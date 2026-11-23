@@ -32,7 +32,7 @@ public final class SnippetFieldOverlay extends Region implements SecondaryPane.F
 
     private final CodeArea area;
     private final SnippetSessions sessions;
-    private final Canvas canvas = new Canvas(1, 1);
+    private Canvas canvas = new Canvas(1, 1);
     private OverlayPalette.@Nullable Colors colors;
     private boolean active;
     private boolean rendering = true;
@@ -90,9 +90,8 @@ public final class SnippetFieldOverlay extends Region implements SecondaryPane.F
             active = show;
             setVisible(show);
             if (!show) {
-                canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
-                canvas.setWidth(1); // no session here: hold no viewport-sized texture
-                canvas.setHeight(1);
+                // no session here: hold no viewport-sized texture
+                canvas = CanvasGuards.released(canvas, getChildren());
                 return;
             }
             requestLayout();

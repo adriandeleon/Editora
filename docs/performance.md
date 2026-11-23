@@ -428,7 +428,9 @@ For text-driven work inside `EditorBuffer`, register a milestone with its shared
 `SettledEditDispatcher` rather than adding another RichTextFX `successionEnds` subscription. One document
 subscription resets one JavaFX timer sequence, which preserves each feature's delay while inactive feature
 milestones are never armed. Standalone controls without that dispatcher should still debounce on their
-RichTextFX stream rather than doing expensive work per change.
+RichTextFX stream rather than doing expensive work per change. A class used both ways keeps its own timer and
+gives it up to the buffer's: `FoldManager`, `Minimap` and `SpellCheckOverlay` have `settleExternally()` and
+`editsSettled()`, and a split's follower runs from its leader's.
 
 A stripe on the minimap follows the same rule one step further: its *data* is not recomputed per repaint
 either. The Git change stripe holds an `int[]` of `{line, count, kind}` triples and asks `GitGutterLines`
@@ -517,7 +519,10 @@ style-only change that still ended a succession — skips the draw and the snaps
   `LineNumberText` cache (no `String.format`), its clip is sized in the row's own `layoutChildren` rather
   than through two property bindings, and the empty bookmark and chevron slots are bare `Region`s. The
   per-view scroll features (format bar, AI actions bar, sticky scroll, semantic refresh) share one
-  `estimatedScrollY` listener (`installFormatBarListeners`; `ScrollListenerPolicyTest` pins it).
+  `estimatedScrollY` listener (`installFormatBarListeners`; `ScrollListenerPolicyTest` pins it). Sticky
+  scroll measures its row height and inset only when the text column moved, the font changed or the area did
+  (`StickyScrollBar.measuredAt`): the inset is a character-bounds query, which dirties the scene, and it ran on
+  every scroll step (`StickyScrollFxTest`).
 - Per-keystroke helpers read a bounded window, not the document: Enter/Tab/closer handling goes through
   `IndentWindow` slices, brace matching checks the two adjacent characters before building its window, and
   the find bar holds a `SearchMatches` page (at most 100,000 matches) that overlays binary-search. None of
@@ -719,7 +724,12 @@ let GPU-backed resources grow with the number of open files:
 - Every per-buffer Canvas overlay implements `TabSurface` — the search-highlight, occurrence-highlight,
   inline-values and AceJump overlays included, so a find, a word highlight or a suspended debug session left
   on a hidden tab holds no viewport texture; `EditorBuffer.setRenderingActive` releases them all for a
-  background tab, and an overlay with nothing to draw holds a 1×1 canvas (`CanvasGuards.fit` / `release`).
+  background tab, and an overlay with nothing to draw holds a 1×1 canvas (`CanvasGuards.fit` / `shrink`).
+  Shrinking does not free a texture (`NGCanvas` keeps the largest one it rendered, and a hidden tab is never
+  rendered), so switching an overlay off and hiding its tab *replace* the canvas with a fresh 1×1 one
+  (`CanvasGuards.released`), the minimap's two canvases included; the old one goes with its texture.
+  `BackgroundTabCanvasesFxTest` reads each canvas's texture through its peer and checks no background tab
+  holds one (it was ~4.7 MB per indent-guide overlay at 1480×831).
   A jump in progress ends when its tab is hidden (its labels are drawn for one viewport and its keys must
   not stay owned on a tab the user cannot see).
 - A plain buffer builds only what every buffer uses: the note and spell overlays (both on by default), the
@@ -763,7 +773,8 @@ let GPU-backed resources grow with the number of open files:
   a recovery record, an MCP buffer call — gets it built on the spot (`MainController.ensureBuffer`,
   `WindowSessionCoordinator.materialize`); everything else that iterates buffers sees a placeholder as "no
   buffer", like an image tab, and treats the file as on disk, which is what its content is.
-- A Canvas overlay releases its backing canvas to **1×1** when it has nothing to draw.
+- A Canvas overlay shrinks its backing canvas to **1×1** when it has nothing to draw, and drops it (a fresh
+  1×1 canvas in its place) when it is switched off or its tab is hidden.
 
 When you add any per-buffer `Canvas`/`Image`, make sure it is released or bounded. The dist
 build (and `mvn javafx:run`) also raise the caps as a safety net
@@ -791,9 +802,17 @@ diagnostics, …) follows one discipline:
   through `AfterLayoutPaint`. A `Platform.runLater` paint runs between pulses, and when the next pulse moves
   the text (the line numbers widening on the fold recompute's debounce after the 1,000th line, line numbers
   toggled, the font) that pulse shows the old paint for one frame (on macOS the lint squiggles stayed there).
-  `AfterLayoutPaint` paints from a post-layout pulse listener, then looks again at where the first visible
-  character is for three pulses — one character-bounds query per pulse while the checks last.
-  `FrameWatch` (tests) checks every shown frame rather than where a paint settles
+  `AfterLayoutPaint` paints from a post-layout pulse listener, then looks again at where the text is on the
+  three pulses after. The overlays over one area share one listener and one look per pulse
+  (`AfterLayoutPaint.Origin`), and the checks ride on pulses that happen anyway: they never ask for a pulse,
+  and the look changes nothing (the text column's place via a transform, the first visible paragraph's top).
+  **Never use `getCharacterBoundsOnScreen` (or any RichTextFX range-bounds query) to *decide* whether to
+  paint:** RichTextFX answers it by adding a `Path` to the paragraph's text flow and removing it, which
+  dirties the scene and costs the next pulse and frame. The old per-overlay checks did that three pulses in a
+  row after every paint (3.79 rendered frames per key against 2.02 in October). Measure characters only while
+  painting, and key a frame on `AfterLayoutPaint.textColumnOnScreen()` (`IndentGuideOverlay`).
+  `FrameWatch` (tests) checks every shown frame rather than where a paint settles; `AfterLayoutPaintFxTest`
+  pins one look per pulse and no pulses asked for after a paint
 - **no gutter work for what the gutter does not show**: `recreateParagraphGraphic` builds a cell even for a
   line far off screen, so a model that follows edits (Personal Notes, which are painted inline) must not ask
   for gutter repaints per keystroke — notes did, two per note per moved line

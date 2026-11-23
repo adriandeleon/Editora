@@ -32,7 +32,7 @@ public final class SearchHighlightOverlay extends Region implements SecondaryPan
     private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
 
     private final CodeArea area;
-    private final Canvas canvas = new Canvas(1, 1);
+    private Canvas canvas = new Canvas(1, 1);
     private SearchMatches matches = SearchMatches.EMPTY;
     /** How many matches the last redraw looked at (tests): the visible ones, however many there are. */
     private int visited;
@@ -101,7 +101,7 @@ public final class SearchHighlightOverlay extends Region implements SecondaryPan
             requestLayout();
             scheduleRedraw();
         } else {
-            CanvasGuards.release(canvas);
+            canvas = CanvasGuards.released(canvas, getChildren());
         }
     }
 
@@ -126,7 +126,7 @@ public final class SearchHighlightOverlay extends Region implements SecondaryPan
             requestLayout(); // size the canvas up to the viewport, then draw
             scheduleRedraw();
         } else {
-            CanvasGuards.release(canvas); // release the full-viewport texture while hidden
+            canvas = CanvasGuards.released(canvas, getChildren()); // release the full-viewport texture while hidden
         }
     }
 

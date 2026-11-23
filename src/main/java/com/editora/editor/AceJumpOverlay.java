@@ -37,7 +37,7 @@ final class AceJumpOverlay extends Region implements SecondaryPane.Followed, Tab
     private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
 
     private final CodeArea area;
-    private final Canvas canvas = new Canvas(1, 1);
+    private Canvas canvas = new Canvas(1, 1);
     private final Font font = Font.font("monospace", FontWeight.BOLD, 12);
     private final Map<String, Integer> labelToOffset = new LinkedHashMap<>();
 
@@ -105,7 +105,7 @@ final class AceJumpOverlay extends Region implements SecondaryPane.Followed, Tab
             if (active) {
                 exit();
             }
-            CanvasGuards.release(canvas);
+            canvas = CanvasGuards.released(canvas, getChildren());
         }
     }
 
@@ -170,7 +170,7 @@ final class AceJumpOverlay extends Region implements SecondaryPane.Followed, Tab
         labelToOffset.clear();
         area.getProperties().remove("editora.ownsKeys");
         setVisible(false);
-        CanvasGuards.release(canvas); // nothing to show: no viewport texture either
+        canvas = CanvasGuards.released(canvas, getChildren()); // nothing to show: no viewport texture either
     }
 
     private void onKeyPressed(KeyEvent e) {
@@ -313,7 +313,7 @@ final class AceJumpOverlay extends Region implements SecondaryPane.Followed, Tab
         GraphicsContext g = canvas.getGraphicsContext2D();
         g.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
         if (!drawable() || !CanvasGuards.paintable(getWidth(), getHeight())) {
-            CanvasGuards.release(canvas);
+            CanvasGuards.shrink(canvas);
             return;
         }
         CanvasGuards.fit(this, canvas); // grown here as well: labels are assigned without a layout pass

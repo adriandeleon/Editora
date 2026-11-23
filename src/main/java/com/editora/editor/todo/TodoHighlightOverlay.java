@@ -33,7 +33,7 @@ public final class TodoHighlightOverlay extends Region implements SecondaryPane.
     private static final double WASH_ALPHA = 0.30;
 
     private final CodeArea area;
-    private final Canvas canvas = new Canvas(1, 1);
+    private Canvas canvas = new Canvas(1, 1);
     private List<TodoMark> marks = List.of();
     private boolean active;
     /**
@@ -106,8 +106,7 @@ public final class TodoHighlightOverlay extends Region implements SecondaryPane.
             scheduleRedraw();
         } else {
             clear();
-            canvas.setWidth(1);
-            canvas.setHeight(1);
+            CanvasGuards.shrink(canvas);
         }
     }
 
@@ -148,8 +147,7 @@ public final class TodoHighlightOverlay extends Region implements SecondaryPane.
             scheduleRedraw();
         } else {
             clear();
-            canvas.setWidth(1);
-            canvas.setHeight(1);
+            canvas = CanvasGuards.released(canvas, getChildren());
         }
     }
 

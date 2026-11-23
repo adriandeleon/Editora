@@ -37,7 +37,7 @@ public final class InlineValuesOverlay extends Region implements SecondaryPane.F
     private static final int MAX_VALUE_CHARS = 60;
 
     private final CodeArea area;
-    private final Canvas canvas = new Canvas(1, 1);
+    private Canvas canvas = new Canvas(1, 1);
     /** Variable name → rendered value for the suspended frame; null = inactive. */
     private @Nullable Map<String, String> values;
 
@@ -118,7 +118,7 @@ public final class InlineValuesOverlay extends Region implements SecondaryPane.F
             requestLayout();
             scheduleRedraw();
         } else {
-            CanvasGuards.release(canvas);
+            canvas = CanvasGuards.released(canvas, getChildren());
         }
     }
 
@@ -157,7 +157,7 @@ public final class InlineValuesOverlay extends Region implements SecondaryPane.F
             requestLayout();
             scheduleRedraw();
         } else {
-            CanvasGuards.release(canvas); // release the full-viewport texture while inactive
+            canvas = CanvasGuards.released(canvas, getChildren()); // release the full-viewport texture while inactive
         }
     }
 
