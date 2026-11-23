@@ -23,7 +23,12 @@
   repository, and no file inside a package can assert otherwise about itself.
 -->
 <component type="desktop-application">
-  <id>com.editora.Editora</id>
+  <id>io.github.adriandeleon.Editora</id>
+  <!-- Editora's ID up to 0.28 (Pauta REL-09 moved it under io.github): a software centre that
+       still lists the old one treats this as the same application. -->
+  <replaces>
+    <id>com.editora.Editora</id>
+  </replaces>
   <launchable type="desktop-id">editora-Editora.desktop</launchable>
   <!-- Ties this listing to the .deb and .rpm of that name, so the installed app's page has their
        version and can remove them. A distribution's catalogue would add it; a package installed
@@ -33,7 +38,7 @@
   <name>Editora</name>
   <summary>Keyboard-driven programmer's text editor</summary>
 
-  <developer id="dev.editora-project">
+  <developer id="io.github.adriandeleon">
     <name>Adrián Arturo De León Saldivar</name>
   </developer>
 

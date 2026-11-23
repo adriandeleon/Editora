@@ -98,11 +98,13 @@ case "$1" in
         # The icons are ADDITIVE: the .desktop keeps its own absolute Icon= line, which is what the
         # application menu already resolves. These exist so the software centre, which resolves the
         # metainfo's stock icon name through the theme, has something better than a generic glyph.
-        src="$root$app_dir/lib/com.editora.Editora.metainfo.xml"
+        src="$root$app_dir/lib/io.github.adriandeleon.Editora.metainfo.xml"
         if [ -f "$src" ]; then
             mkdir -p "$root/usr/share/metainfo"
-            cp -f "$src" "$root/usr/share/metainfo/com.editora.Editora.metainfo.xml"
-            chmod 0644 "$root/usr/share/metainfo/com.editora.Editora.metainfo.xml"
+            cp -f "$src" "$root/usr/share/metainfo/io.github.adriandeleon.Editora.metainfo.xml"
+            chmod 0644 "$root/usr/share/metainfo/io.github.adriandeleon.Editora.metainfo.xml"
+            # Up to 0.28 the file was named for the old ID; an upgrade would otherwise list Editora twice.
+            rm -f "$root/usr/share/metainfo/com.editora.Editora.metainfo.xml"
         fi
         for src in "$root$app_dir"/lib/icons/editora-*.png; do
             [ -f "$src" ] || continue

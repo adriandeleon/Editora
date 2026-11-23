@@ -103,6 +103,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Editora's Linux app ID is now `io.github.adriandeleon.Editora`** (it was `com.editora.Editora`), as Pauta asks.
+  It is the ID GNOME Software, KDE Discover and other software centres know Editora by. The listing says it replaces
+  the old ID, and an upgrade removes the file named for the old one, so Editora is listed once.
 - **Local History keeps more, and says more.** Git Rollback and Discard of tracked files now keep a Local History
   copy of each file first, and nothing is discarded when a copy can't be made, so a change made outside Editora and
   never committed can be brought back. Maven Update Versions keeps a copy of a closed `pom.xml` before rewriting it,
