@@ -365,11 +365,24 @@ class LowLevelViewsFxTest {
             return view.toggleSelected();
         }));
         String at = call(() -> view.list().getItems().get(row).address());
-        await("set", () -> call(() -> view.hasBreakpoint(at)));
-        assertTrue(call(view::editSelected));
-        assertEquals(tr("status.debug.instructionConditionsUnsupported"), status());
-        FxTestSupport.runOnFx(manager::stop);
-        await("stopped", () -> !call(manager::isActive));
+        await(
+                "set",
+                () -> !s[0].instructionBreakpointSets.isEmpty()
+                        && lastSet(s[0]).contains(at)
+                        && call(() -> view.hasBreakpoint(at)));
+        try {
+            // Selected again with each try: the list may be read again (and its selection lost) under the test.
+            await(
+                    "Edit Breakpoint… on its row",
+                    () -> call(() -> {
+                        view.list().getSelectionModel().clearAndSelect(row);
+                        return view.editSelected();
+                    }));
+            assertEquals(tr("status.debug.instructionConditionsUnsupported"), status());
+        } finally {
+            FxTestSupport.runOnFx(manager::stop);
+            await("stopped", () -> !call(manager::isActive));
+        }
 
         // One that takes both: the condition and the hit count are asked for, sent, and listed.
         adapter.conditionalBreakpoints = true;
@@ -381,8 +394,18 @@ class LowLevelViewsFxTest {
                 return v.toggleSelected();
             }));
             String address = call(() -> v.list().getItems().get(row).address());
-            await("set", () -> call(() -> v.hasBreakpoint(address)));
-            assertTrue(call(v::editSelected));
+            // This session's own request: the view, shared by the sessions, may still show the last one's mark.
+            await(
+                    "set",
+                    () -> !session.instructionBreakpointSets.isEmpty()
+                            && lastSet(session).contains(address)
+                            && call(() -> v.hasBreakpoint(address)));
+            await(
+                    "Edit Breakpoint… on its row",
+                    () -> call(() -> {
+                        v.list().getSelectionModel().clearAndSelect(row);
+                        return v.editSelected();
+                    }));
             await("the condition prompt", () -> call(() -> OverlayDriver.showing(fx.controller)));
             FxTestSupport.runOnFx(() -> OverlayDriver.answer(fx.controller, "count > 3"));
             await("the hit count prompt", () -> call(() -> OverlayDriver.showing(fx.controller)));
@@ -426,10 +449,10 @@ class LowLevelViewsFxTest {
             await("removed", () -> call(manager::instructionBreakpoints).isEmpty());
             await("the adapter told", () -> lastSet(session).isEmpty());
             assertTrue(call(() -> picker.entries().stream().noneMatch(e -> e.instruction() != null)));
-            FxTestSupport.runOnFx(manager::stop);
-            await("stopped", () -> !call(manager::isActive));
         } finally {
             adapter.conditionalBreakpoints = false;
+            FxTestSupport.runOnFx(manager::stop); // a failure above must not leave the next test a live session
+            await("stopped", () -> !call(manager::isActive));
         }
     }
 
