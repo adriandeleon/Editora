@@ -75,6 +75,8 @@ class DeploymentsWindowFxTest {
         FxTestSupport.runOnFx(now::fire);
         assertEquals(List.of("staging"), deployed);
         FxTestSupport.runOnFx(stage::close);
+        // Each saved field is written on the config writer's thread: let it finish before @TempDir is deleted.
+        assertTrue(config.shared().awaitWrites());
     }
 
     /** Remove is saved at once, so it asks first, naming the deployment: Cancel keeps it. */
@@ -118,5 +120,6 @@ class DeploymentsWindowFxTest {
                         .map(Deployment::name)
                         .toList());
         FxTestSupport.runOnFx(stage::close);
+        assertTrue(config.shared().awaitWrites()); // the removal's save, before @TempDir is deleted
     }
 }

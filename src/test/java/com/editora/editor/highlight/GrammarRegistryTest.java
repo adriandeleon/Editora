@@ -219,7 +219,8 @@ class GrammarRegistryTest {
         // path: every registry method used to be synchronized on the registry, so they all waited.
         java.util.concurrent.ExecutorService asker = java.util.concurrent.Executors.newSingleThreadExecutor();
         try {
-            synchronized (registry.loadLock) {
+            registry.loadLock.lock();
+            try {
                 synchronized (registry) {
                     java.util.concurrent.Future<Boolean> answered = asker.submit(() -> registry.hasGrammarFor("B.java")
                             && registry.cachedForFileName("B.java") == loaded
@@ -231,7 +232,41 @@ class GrammarRegistryTest {
                             answered.get(30, java.util.concurrent.TimeUnit.SECONDS),
                             "lookups of an already-loaded grammar answered while a load was in progress");
                 }
+            } finally {
+                registry.loadLock.unlock();
             }
+        } finally {
+            asker.shutdownNow();
+        }
+    }
+
+    /**
+     * The warm-up loads every bundled grammar, taking the load lock again for each. A load a tab asks for meanwhile
+     * goes next, not after the rest of the warm-up: the lock is fair. An unfair one let the warm-up's loop take it back
+     * at once each time, and the first file opened waited (and held its window) for most of the warm-up.
+     */
+    @Test
+    void aLoadAskedForDuringTheWarmUpGoesBeforeTheWarmUpsNextGrammar() throws Exception {
+        GrammarRegistry registry = new GrammarRegistry(); // cold: nothing loaded yet
+        String language = "java";
+        assertNull(registry.cachedForLanguageName(language));
+        java.util.concurrent.ExecutorService asker = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            java.util.concurrent.Future<org.eclipse.tm4e.core.grammar.IGrammar> asked;
+            registry.loadLock.lock(); // the warm-up, loading a grammar
+            try {
+                asked = asker.submit(() -> registry.forLanguageName(language));
+                com.editora.testkit.Await.until(registry.loadLock::hasQueuedThreads, "the asked load waiting");
+            } finally {
+                registry.loadLock.unlock();
+            }
+            registry.loadLock.lock(); // the warm-up's next grammar
+            try {
+                assertNotNull(registry.cachedForLanguageName(language), "the asked load went first: " + language);
+            } finally {
+                registry.loadLock.unlock();
+            }
+            assertNotNull(asked.get(30, java.util.concurrent.TimeUnit.SECONDS));
         } finally {
             asker.shutdownNow();
         }

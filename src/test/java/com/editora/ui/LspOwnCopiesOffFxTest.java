@@ -48,7 +48,15 @@ class LspOwnCopiesOffFxTest {
         String command = "my-html-server --stdio --from " + System.nanoTime(); // a key nothing has looked at
         List<String> onFx = new CopyOnWriteArrayList<>();
         List<Runnable> held = new CopyOnWriteArrayList<>();
-        OffFx.runnerForTest((name, task) -> held.add(task));
+        // Only the look is held: the rest of the window's off-FX work (and any other window's) runs where it always
+        // does, so the look landing below runs nothing but the look on this thread.
+        OffFx.runnerForTest((name, task) -> {
+            if (name.equals("lsp-own-copies")) {
+                held.add(task);
+            } else {
+                Thread.ofVirtual().name(name).start(task);
+            }
+        });
         BlockingSites.listenForTest((site, thread) -> {
             if (Platform.isFxApplicationThread()) {
                 onFx.add(site);

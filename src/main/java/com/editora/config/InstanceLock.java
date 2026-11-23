@@ -129,9 +129,11 @@ final class InstanceLock implements AutoCloseable {
     boolean othersPresent() {
         if (onFx()) {
             // No lock taken or probed on the FX thread (PERF-01, Pauta 6.2.0): the answer a probe off it last
-            // gave, true when none has yet (not knowing is not nobody), and a fresh probe behind it.
-            Thread.ofVirtual().name("instance-presence").start(() -> lastPresent = othersPresentNow());
+            // gave, true when none has yet (not knowing is not nobody), and a fresh probe behind it. The answer is
+            // read before that probe starts: read after it, the probe could land first and the FX thread answer
+            // with a probe it had only just started.
             Boolean last = lastPresent;
+            Thread.ofVirtual().name("instance-presence").start(() -> lastPresent = othersPresentNow());
             return last == null || last;
         }
         boolean now = othersPresentNow();
