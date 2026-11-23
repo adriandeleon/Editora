@@ -282,10 +282,11 @@ command waiting for one is busy, so a second press is refused.
   fence highlighter's worker and the block is coloured when it lands. Line commands beside a collapsed fold
   (`FoldManager.linesAsUnits`) look only at the hidden runs next to the lines they rewrite.
 - **Markdown editing.** Whether a line is code, front matter or raw HTML depends on every line above it.
-  `editor/markdown/MarkdownBlockMap` keeps that map per buffer: `MarkdownBlocks.scan` (`SCAN_SITE`) runs on a
-  snapshot off the thread after each edit, one scan out at a time. The keys and the list, heading, fence and table
-  commands look their lines up through `MarkdownLines.withKinds`, a scoped value bound for that very text. Until the
-  current version's scan lands, the map answers one version behind without scanning: lines above every edit exactly,
+  `editor/markdown/MarkdownBlockMap` keeps that map per buffer, lazily: an edit only notes its first line, and
+  `MarkdownBlocks.scan` (`SCAN_SITE`) runs off the thread when typing pauses (the 150 ms settle), when a key finds the
+  map behind or when someone waits for it, one scan out at a time, never once per keystroke. The keys and the list,
+  heading, fence and table commands look their lines up through `MarkdownLines.withKinds`, a scoped value bound for
+  that very text. Until the current version's scan lands, the map answers from the version it has: lines above every edit exactly,
   the edited lines from the first one, the lines below from their old place. The whole-document commands work on a
   snapshot through `MarkdownEditing.offFx`: the table of contents (and its update before a save), a footnote, the link
   commands, Format Document/Selection and heading numbers (`MarkdownFormatting.FORMAT_SITE`) and a paste of
@@ -489,6 +490,14 @@ style-only change that still ended a succession — skips the draw and the snaps
   `IndentWindow` slices, brace matching checks the two adjacent characters before building its window, and
   the find bar holds a `SearchMatches` page (at most 100,000 matches) that overlays binary-search. None of
   them may call `area.getText()`.
+- Whole-document work that runs off the FX thread takes the document, not its text: `DocumentText.of(area)` (or the
+  buffer's per-version `EditorBuffer.documentText()`) holds RichTextFX's immutable `ReadOnlyStyledDocument`, taken in
+  O(1), and `text()` builds the String on the worker, once per handle. The highlight pass, the Run scan, fold
+  detection, the TODO scan, the spell code lines, the Markdown line map, the tag-rename mirror, the caret looks, the
+  structural completion offers, Toggle Comment and the HTML link lookups all work this way; a consumer that needs
+  the String on the FX thread (`documentTextSnapshot()`: the LSP `didChange`, the Undo History checkpoint) reuses
+  the one a worker already built for that version. The fork's lazy caches behind `getText()` are races on
+  immutable values, so a worker reading the text beside an FX-thread `getText()` is safe (see `DocumentText`).
 - The project watcher re-lists only directories whose entries were created or deleted and reconciles the
   rows (`ChildReconciler`); Editora's own saves are registered through `ProjectPanel.noteLocalWrite` so
   they are not treated as external changes.
