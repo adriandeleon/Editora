@@ -382,7 +382,8 @@ class LocalHistoryRecordRestore2FxTest {
                     revisions(win, linked).get(0).reason());
 
             CompletableFuture<HistoryCoordinator.OverwriteCapture> http = new CompletableFuture<>();
-            FxTestSupport.runOnFx(() -> win.history().captureBeforeOverwriteDurably(redirected, http::complete));
+            FxTestSupport.runOnFx(() -> win.history()
+                    .captureBeforeOverwriteDurably(redirected, HistoryRevision.REASON_HTTP, http::complete));
             assertTrue(async.await(http).recorded());
             assertEquals(
                     HistoryRevision.REASON_HTTP,
@@ -497,6 +498,32 @@ class LocalHistoryRecordRestore2FxTest {
             });
             async.awaitFx();
             assertFalse(FxTestSupport.callOnFx(() -> toolWindows.isOpen(tw)));
+        }
+    }
+
+    // --- U3 ---------------------------------------------------------------------------------------------
+
+    @Test
+    void recentChangesOnADeletedFileSelectsThatRevisionInItsFolder(@TempDir Path temp) throws Exception {
+        Path folder = Files.createDirectory(temp.toRealPath().resolve("pkg"));
+        Path gone = folder.resolve("gone.txt");
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            Window win = window(async);
+            record(async, win, gone, "first\n", HistoryRevision.REASON_SAVE, 1);
+            record(async, win, gone, "last\n", HistoryRevision.REASON_DELETE, 2);
+            HistoryRevision picked = revisions(win, gone).get(1); // not the newest: the row that was picked
+            FileHistoryPanel panel = FxTestSupport.callOnFx(win.history()::panel);
+            FxTestSupport.runOnFx(
+                    () -> FxTestSupport.invokeWith(win.history(), "openRecentChange", HistoryRevision.class, picked));
+            OverlayTestKit.await(async, "the folder's listing", () -> folder.equals(panel.folderShown()));
+            javafx.scene.control.TreeView<Object> tree = FxTestSupport.field(panel, "folderTree");
+            OverlayTestKit.await(async, "the picked row selected", () -> {
+                var selected = tree.getSelectionModel().getSelectedItem();
+                return selected != null
+                        && selected.getValue() instanceof HistoryRevision r
+                        && r.timestamp() == picked.timestamp()
+                        && r.sha256().equals(picked.sha256());
+            });
         }
     }
 }
