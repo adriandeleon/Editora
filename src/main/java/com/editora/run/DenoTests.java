@@ -148,13 +148,13 @@ public final class DenoTests {
     }
 
     /** Whether {@code index} is on a line's {@code //} comment (a test commented out). */
-    private static boolean inComment(String text, int index) {
+    static boolean inComment(String text, int index) {
         int lineStart = text.lastIndexOf('\n', index - 1) + 1;
         String before = text.substring(lineStart, index);
         return before.contains("//") || before.stripLeading().startsWith("*");
     }
 
-    private static int lineOf(String text, int index) {
+    static int lineOf(String text, int index) {
         int line = 0;
         for (int i = 0; i < index && i < text.length(); i++) {
             if (text.charAt(i) == '\n') {

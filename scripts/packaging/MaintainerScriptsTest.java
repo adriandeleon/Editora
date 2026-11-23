@@ -88,7 +88,7 @@ class MaintainerScriptsTest implements AutoCloseable {
         Files.writeString(app.resolve("bin/Editora"), "#!/bin/sh\n");
         Files.setPosixFilePermissions(app.resolve("bin/Editora"), PosixFilePermissions.fromString("rwxr-xr-x"));
         Files.writeString(app.resolve("lib/editora-Editora.desktop"), PRIMARY_DESKTOP);
-        Files.writeString(app.resolve("lib/com.editora.Editora.metainfo.xml"), "<component/>\n");
+        Files.writeString(app.resolve("lib/io.github.adriandeleon.Editora.metainfo.xml"), "<component/>\n");
         Files.write(app.resolve("lib/icons/editora-48.png"), "png".getBytes(StandardCharsets.UTF_8));
     }
 
@@ -147,7 +147,7 @@ class MaintainerScriptsTest implements AutoCloseable {
         assertContains(expert, "Exec=/opt/editora/bin/Editora --expert --single-window --no-session %F");
         assertNotContains(expert, "StartupWMClass");
         assertTrue(
-                Files.isRegularFile(root.resolve("usr/share/metainfo/com.editora.Editora.metainfo.xml")),
+                Files.isRegularFile(root.resolve("usr/share/metainfo/io.github.adriandeleon.Editora.metainfo.xml")),
                 "metainfo missing");
         assertTrue(
                 Files.isRegularFile(root.resolve("usr/share/icons/hicolor/48x48/apps/editora.png")), "icon missing");
@@ -230,6 +230,21 @@ class MaintainerScriptsTest implements AutoCloseable {
         assertFalse(
                 Files.exists(root.resolve("usr/share/icons/hicolor/48x48/apps/editora.png")),
                 "the icon survived the purge");
+    }
+
+    @Test
+    void anUpgradeFromTheOldAppIdLeavesOneMetainfoFile() throws IOException {
+        Path metainfo = root.resolve("usr/share/metainfo");
+        Path old = metainfo.resolve("com.editora.Editora.metainfo.xml");
+        Files.createDirectories(metainfo);
+        Files.writeString(old, "<component/>\n"); // what 0.28 and earlier installed
+        runScript("postinst", "configure");
+        assertFalse(Files.exists(old), "the file named for the old app ID survived the upgrade");
+        assertTrue(Files.isRegularFile(metainfo.resolve("io.github.adriandeleon.Editora.metainfo.xml")), "metainfo missing");
+        Files.writeString(old, "<component/>\n");
+        runScript("postrm", "remove");
+        assertFalse(Files.exists(old), "the file named for the old app ID survived the removal");
+        assertFalse(Files.exists(metainfo.resolve("io.github.adriandeleon.Editora.metainfo.xml")), "metainfo survived the removal");
     }
 
     @Test
