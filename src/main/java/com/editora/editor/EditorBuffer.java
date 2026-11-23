@@ -3462,6 +3462,21 @@ public class EditorBuffer implements TabContent {
         refreshGutter();
     }
 
+    /**
+     * The distinct blame labels ({@code author + "  " + date}) of {@code lines}: a few dozen to a few hundred
+     * per file, where measuring every line was one text layout per line on the FX thread (perf review
+     * 2026-11-23 E5).
+     */
+    static java.util.Set<String> distinctBlameLabels(java.util.List<BlameInfo> lines) {
+        java.util.Set<String> labels = new java.util.HashSet<>();
+        for (BlameInfo bi : lines) {
+            if (bi != null && !bi.isEmpty()) {
+                labels.add(bi.author() + "  " + bi.date());
+            }
+        }
+        return labels;
+    }
+
     /** Measures the annotation column once: the widest "author + date" across all lines, in the actual
      *  (small) gutter font so the column isn't padded for the larger editor font, capped so a runaway long
      *  author can't let it dominate (it ellipsizes instead), plus a little cell padding. Off-scene
@@ -3470,11 +3485,8 @@ public class EditorBuffer implements TabContent {
         javafx.scene.text.Text probe = new javafx.scene.text.Text();
         probe.setFont(javafx.scene.text.Font.font(fontFamily, BLAME_FONT_SIZE));
         double max = 0;
-        for (BlameInfo bi : lines) {
-            if (bi == null || bi.isEmpty()) {
-                continue;
-            }
-            probe.setText(bi.author() + "  " + bi.date());
+        for (String label : distinctBlameLabels(lines)) {
+            probe.setText(label);
             max = Math.max(max, probe.getLayoutBounds().getWidth());
         }
         if (max <= 0) {
