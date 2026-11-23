@@ -212,6 +212,9 @@ class HandlersMarkdownOffFxThreadFxTest {
     void typingAsksNoScanPerKeystrokeOnlyWhenItPauses() throws Exception {
         EditorBuffer b = markdown(FAR + "- one\n");
         CodeArea a = FxTestSupport.callOnFx(b::getArea);
+        // The load's own scan (the first key after opening decides from it) lands before the count is taken.
+        SettingsRig.awaitFx(
+                "the load's scan landed", () -> b.markdown().blockMap().current());
         List<Runnable> held = new CopyOnWriteArrayList<>();
         OffFx.runnerForTest((name, task) -> {
             if (name.equals(com.editora.editor.markdown.MarkdownBlockMap.SITE)) {
