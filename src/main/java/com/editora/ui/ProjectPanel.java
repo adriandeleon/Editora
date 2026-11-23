@@ -1942,7 +1942,13 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     private void refreshTree(boolean regain) {
         treeRefreshCountForTest++;
-        projectIndex.markStale(); // what changed in folders nobody watches: the next search lists again
+        if (regain) {
+            // What changed in folders nobody watches, found by their modification times before the next search
+            // (F4): a whole walk of the project after every focus regain made the filter wait for it.
+            projectIndex.revalidate();
+        } else {
+            projectIndex.markStale(); // a refresh asked for: the next search lists again
+        }
         GitPathScope.learnRemote(root, false); // a repository made or removed there since (at most once a minute)
         if (isMapShowing()) {
             if (regain) {
