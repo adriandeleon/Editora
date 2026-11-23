@@ -2211,7 +2211,15 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
      * {@code previous} (the frame selected before) still selected.
      */
     private void loadMoreFrames(DapModels.@Nullable StackFrameInfo previous) {
+        loadMoreFrames(previous, null);
+    }
+
+    /** As above; {@code then} runs once they are listed (not when another stack is shown meanwhile). */
+    private void loadMoreFrames(DapModels.@Nullable StackFrameInfo previous, @Nullable Runnable then) {
         if (!moreFrames) {
+            if (then != null) {
+                then.run();
+            }
             return;
         }
         moreFrames = false; // asked once: the row goes while the answer comes
@@ -2230,6 +2238,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             moreFrames = page.more() && !page.frames().isEmpty();
             int keep = selected == null || StackFolding.isPlaceholder(selected) ? index : allFrames.indexOf(selected);
             showFrames(Math.max(0, keep));
+            if (then != null) {
+                then.run();
+            }
         });
     }
 
@@ -3306,6 +3317,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** Copies the whole call stack shown — folded runtime frames included — to the clipboard. */
     public void copyCallStack() {
         if (allFrames.isEmpty()) {
+            return;
+        }
+        if (moreFrames && viewing == null) {
+            // The whole stack, as before a stop fetched only its top: the frames below are asked for first.
+            DapModels.StackFrameInfo selected = stack.getSelectionModel().getSelectedItem();
+            loadMoreFrames(
+                    selected == null || StackFolding.isPlaceholder(selected) ? null : selected, this::copyCallStack);
             return;
         }
         DapModels.ThreadInfo thread = threads.getValue();
