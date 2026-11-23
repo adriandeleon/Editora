@@ -202,6 +202,7 @@ final class BufferHighlighter {
     void invalidateHighlighting() {
         highlightDirty.invalidate();
         highlightLines = null;
+        csvApplied = null;
     }
 
     /** Forgets the per-line tokenizer state and the structure symbols: no grammar pass owns the document. */
@@ -217,20 +218,30 @@ final class BufferHighlighter {
      *  off the FX thread; only the guarded style application returns to it. */
     private void applyCsvRainbow() {
         dropHighlightState();
-        String text = b.documentTextSnapshot();
-        int len = text.length();
-        if (len == 0) {
+        if (b.area.getLength() == 0) {
             return;
         }
         styled = true;
         long version = b.docVersion;
         long gen = ++highlightGen;
+        DocumentText document = b.documentText(); // O(1); the text is built on the pool (E2)
+        StyleSpans<Collection<String>> before = csvApplied;
+        int length = b.area.getLength();
+        int dirtyStart = highlightDirty.isClean() ? length : highlightDirty.start();
+        int dirtyEnd = highlightDirty.isClean() ? length : highlightDirty.end();
         passesInFlight++;
         EditorBuffer.HIGHLIGHT_POOL.execute(() -> {
             StyleSpans<Collection<String>> spans;
+            int[] range;
             try {
+                String text = document.text();
                 char delim = com.editora.csv.CsvParser.detectDelimiter(text);
                 spans = CsvRainbow.buildSpans(text, delim, CsvRainbow.COLORS);
+                // Only the records whose colours changed are restyled: a whole-document setStyleSpans replaced
+                // every paragraph and rebuilt every visible cell at each pause (perf review 2026-11-23 E4).
+                range = before == null
+                        ? new int[] {0, spans.length()}
+                        : CsvRainbow.changedRange(before, spans, dirtyStart, dirtyEnd);
             } catch (RuntimeException | LinkageError e) {
                 Platform.runLater(() -> passesInFlight--);
                 throw e;
@@ -240,17 +251,29 @@ final class BufferHighlighter {
                 if (gen != highlightGen || version != b.docVersion || spans.length() != b.area.getLength()) {
                     return;
                 }
-                ScrollAnchor.setStyleSpans(b.area, 0, spans);
-                b.scheduleBraceMatch();
+                highlightDirty.applied();
+                csvApplied = spans;
+                csvRestyledForTest = range[1] - range[0];
+                if (range[0] < range[1]) {
+                    ScrollAnchor.setStyleSpans(b.area, range[0], spans.subView(range[0], range[1]));
+                    b.scheduleBraceMatch();
+                }
             });
         });
     }
+
+    /** The CSV colours the document shows (the last pass applied), or null when it shows something else. */
+    private @Nullable StyleSpans<Collection<String>> csvApplied;
+
+    /** Characters the last CSV pass restyled (tests). */
+    int csvRestyledForTest = -1;
 
     void applyHighlighting() {
         if (b.disposed) {
             return; // a closed buffer must not dispatch new passes (see the disposed field)
         }
         if (b.largeFile) {
+            csvApplied = null;
             dropHighlightState(); // large-file mode: leave the document as plain text
             return;
         }
@@ -262,6 +285,7 @@ final class BufferHighlighter {
             applyCsvRainbow();
             return;
         }
+        csvApplied = null; // whatever styles the document next, the CSV colours are no longer what it shows
         if (b.grammar == null) {
             // No grammar for this file type, so nothing to compute — and nothing to clear either, except
             // once when a grammar or CSV pass had styled the document, and otherwise in the text typed
@@ -291,26 +315,29 @@ final class BufferHighlighter {
         java.util.List<SemanticToken> overlay = semanticOverlay();
         long version = b.docVersion;
         long gen = ++highlightGen;
-        HighlightPass.Request request = new HighlightPass.Request(
-                        b.documentTextSnapshot(),
-                        b.grammar,
-                        highlightLines,
-                        b.symbols,
-                        highlightDirty.isClean() ? -1 : highlightDirty.start(),
-                        highlightDirty.end(),
-                        bracketColors,
-                        overlay)
-                .withPreview( // a long file's screen is coloured before the rest is tokenized (review 2 E105)
-                        Math.max(ScrollAnchor.firstVisibleLine(b.area), b.area.getCurrentParagraph()) + 150,
-                        spans -> Platform.runLater(() -> {
-                            if (gen == highlightGen && version == b.docVersion) {
-                                ScrollAnchor.setStyleSpans(b.area, 0, spans);
-                            }
-                        }));
+        // The document is taken in O(1) here and its text built on the pass's thread (perf review 2026-11-23 E2);
+        // everything else the request needs is read now, on the FX thread.
+        DocumentText document = b.documentText();
+        var grammar = b.grammar;
+        var lines = highlightLines;
+        var symbols = b.symbols;
+        int dirtyStart = highlightDirty.isClean() ? -1 : highlightDirty.start();
+        int dirtyEnd = highlightDirty.end();
+        boolean brackets = bracketColors;
+        int previewLines = Math.max(ScrollAnchor.firstVisibleLine(b.area), b.area.getCurrentParagraph()) + 150;
         passesInFlight++;
         HighlightPass.submit(EditorBuffer.HIGHLIGHT_POOL, b.grammar, () -> {
             HighlightPass.Result r;
             try {
+                HighlightPass.Request request = new HighlightPass.Request(
+                                document.text(), grammar, lines, symbols, dirtyStart, dirtyEnd, brackets, overlay)
+                        .withPreview( // a long file's screen is coloured before the rest is tokenized (review 2 E105)
+                                previewLines,
+                                spans -> Platform.runLater(() -> {
+                                    if (gen == highlightGen && version == b.docVersion) {
+                                        ScrollAnchor.setStyleSpans(b.area, 0, spans);
+                                    }
+                                }));
                 // The cancel check lets a superseded pass stop at the next line instead of finishing a
                 // doomed multi-MB tokenize while holding the shared grammar monitor (see analyzeFrom).
                 r = HighlightPass.run(request, () -> gen != highlightGen);

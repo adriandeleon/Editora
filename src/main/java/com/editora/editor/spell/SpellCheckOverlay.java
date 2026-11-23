@@ -37,7 +37,7 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
     private static final double STEP = 2.0; // half-wavelength (px)
 
     private final CodeArea area;
-    private final java.util.function.Supplier<String> textSnapshot;
+    private final java.util.function.Supplier<com.editora.editor.DocumentText> textSnapshot;
     /** Generation of the latest code-line scan; an older scan's result is dropped (FX thread). */
     private long codeLinesGen;
     /** The last {@link #codeLinesGen} whose scan came back (FX thread only). */
@@ -175,14 +175,14 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
     }
 
     public SpellCheckOverlay(CodeArea area) {
-        this(area, area::getText);
+        this(area, () -> com.editora.editor.DocumentText.of(area));
     }
 
     /**
-     * @param textSnapshot the document text for the code-line scan, read on the FX thread and scanned off it:
-     *     the buffer's versioned snapshot, so the scan copies nothing out of RichTextFX
+     * @param textSnapshot the document for the code-line scan, taken in O(1) on the FX thread and read and
+     *     scanned off it: the buffer's versioned snapshot, so the scan copies nothing on the FX thread
      */
-    public SpellCheckOverlay(CodeArea area, java.util.function.Supplier<String> textSnapshot) {
+    public SpellCheckOverlay(CodeArea area, java.util.function.Supplier<com.editora.editor.DocumentText> textSnapshot) {
         this.area = area;
         this.afterLayout = new AfterLayoutPaint(
                 this,
@@ -250,10 +250,10 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
             applyCodeLines(SpellMode.Skips.NONE); // no scan to run: the answer is known without the text
             return;
         }
-        String text = textSnapshot.get();
+        com.editora.editor.DocumentText text = textSnapshot.get();
         SpellMode scanned = mode;
         Thread.ofVirtual().name("editora-spell-code-lines").start(() -> {
-            SpellMode.Skips found = scanned.skips(text);
+            SpellMode.Skips found = scanned.skips(text.text());
             javafx.application.Platform.runLater(() -> {
                 codeLinesLanded = Math.max(codeLinesLanded, gen);
                 if (gen == codeLinesGen) {

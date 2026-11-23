@@ -1,9 +1,12 @@
 package com.editora.editor.highlight;
 
+import java.util.Collection;
 import java.util.List;
 
+import org.fxmisc.richtext.model.StyleSpans;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class CsvRainbowTest {
@@ -55,5 +58,48 @@ class CsvRainbowTest {
     void emptyAndNull() {
         assertEquals("", flat(CsvRainbow.segments("", ',', 8)));
         assertEquals("", flat(CsvRainbow.segments(null, ',', 8)));
+    }
+
+    private static StyleSpans<Collection<String>> spans(String text) {
+        return CsvRainbow.buildSpans(text, ',', 8);
+    }
+
+    @Test
+    void anEditInsideAFieldRestylesOnlyTheEditedRange() {
+        String before = "a,b\nc,d\ne,f\n";
+        String after = "a,b\ncx,d\ne,f\n"; // 'x' typed at offset 5
+        int[] range = CsvRainbow.changedRange(spans(before), spans(after), 5, 6);
+        assertArrayEquals(new int[] {5, 6}, range, "the rest of the document keeps its colours");
+    }
+
+    @Test
+    void aDelimiterTypedRecoloursTheRestOfItsRecordOnly() {
+        String before = "a,b\nc,d\ne,f\n";
+        String after = "a,b\nc,,d\ne,f\n"; // ',' typed at offset 6: 'd' moves to the third column
+        int[] range = CsvRainbow.changedRange(spans(before), spans(after), 6, 7);
+        assertEquals(6, range[0]);
+        assertEquals(after.indexOf("\ne,f"), range[1], "the records below are untouched");
+    }
+
+    @Test
+    void anOpeningQuoteRecoloursTheDelimitersItSwallowsInItsRecord() {
+        String before = "a,b,c\nd,e\n";
+        String after = "a,\"b,c\nd,e\n"; // the quote takes ",c" into the second field (quotes end at the line)
+        int[] range = CsvRainbow.changedRange(spans(before), spans(after), 2, 3);
+        assertEquals(2, range[0]);
+        assertEquals(after.indexOf("c\n") + 1, range[1], "the record below keeps its colours");
+    }
+
+    @Test
+    void nothingChangedWhenNothingWasEditedAndTheColoursAgree() {
+        String text = "a,b\nc,d\n";
+        int[] range = CsvRainbow.changedRange(spans(text), spans(text), text.length(), text.length());
+        assertEquals(range[0], range[1]);
+    }
+
+    @Test
+    void aDirtyRangeThatCannotExplainTheLengthRestylesAll() {
+        int[] range = CsvRainbow.changedRange(spans("a,b\n"), spans("a,b\nc,d\ne,f\n"), 0, 1);
+        assertArrayEquals(new int[] {0, "a,b\nc,d\ne,f\n".length()}, range);
     }
 }

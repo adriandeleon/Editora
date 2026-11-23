@@ -121,12 +121,14 @@ final class TagRenameMirror {
                 : rename.oldName();
         String newName = rename.newName();
         long edits = CaretLook.edits(a);
-        String text = a.getText();
+        // The document is taken in O(1) and its text built off the FX thread with the lex (perf review
+        // 2026-11-23 E3): a letter typed in a tag name used to copy the whole document on the FX thread.
+        DocumentText text = DocumentText.of(a);
         long mine = ++asks;
         pending = new Pending(a, nameStart, oldName);
         OffFx.then(
                 MIRROR_SITE,
-                () -> TagRename.pairFor(text, nameStart, rename.closing(), oldName, newName, html),
+                () -> TagRename.pairFor(text.text(), nameStart, rename.closing(), oldName, newName, html),
                 answer -> {
                     if (mine != asks) {
                         return; // a later keystroke asked again
