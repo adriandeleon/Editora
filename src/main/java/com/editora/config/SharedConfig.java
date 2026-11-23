@@ -130,11 +130,24 @@ public class SharedConfig {
     private @Nullable HttpResponseHistory httpHistory;
 
     /**
-     * Whether the Local History index in memory can be collected against — false when it was lost, lists
-     * nothing beside stored bodies, or failed to load without a legible copy. Blob GC is refused when false (see
-     * {@link #mayCollectHistoryBlobs}); read on the history worker.
+     * True when the index was lost at load (missing or zero-length beside stored bodies, or read without a legible
+     * copy kept) and no {@linkplain HistoryIndexGuard#LOSS_MARKER loss marker} could be written to give the bodies
+     * their grace period: nothing is collected in this session then. Read on the history worker.
      */
-    private volatile boolean historyIndexIntact = true;
+    private volatile boolean historyLossUnmarked;
+
+    /**
+     * True when the index listed no revision at all at load although bodies are stored: nothing is collected in
+     * this session (collecting against it deletes every body). A copy kept beside it protects what it listed
+     * from then on; with no copy at all, the loss marker keeps every body for the grace period.
+     */
+    private volatile boolean historyEmptyAtLoad;
+
+    /** True while a backup beside the index cannot be read for its hashes; looked at again on each publication. */
+    private volatile boolean historyBackupsUnreadable;
+
+    /** Tells a superseded index publication what became of the publication that replaced it. */
+    private final HistoryPublicationAnswers historyAnswers = new HistoryPublicationAnswers();
 
     /** What {@link #load()} could not read as written, held until a window shows it (see {@link #takeLoadProblems}). */
     // Synchronized: a restored window's session is read on a thread of its own while the FX thread takes these.
@@ -242,7 +255,7 @@ public class SharedConfig {
      * hash — except, for a grace period, when it is not a whole index and so cannot say what it once listed.
      */
     boolean mayCollectHistoryBlobs() {
-        if (!historyIndexIntact) {
+        if (historyLossUnmarked || historyEmptyAtLoad || historyBackupsUnreadable) {
             return false;
         }
         long incompleteSince = incompleteHistoryBackupSince;
@@ -281,7 +294,28 @@ public class SharedConfig {
      * reason that applies, or {@link HistoryPurgeHold#NONE} when the next collection deletes them.
      */
     public HistoryPurgeHold historyPurgeHold(java.util.Collection<String> sha256s) {
-        return mayCollectHistoryBlobs() ? HistoryPurgeHold.NONE : HistoryPurgeHold.OTHER_PROCESS;
+        InstanceLock lock = instanceLock;
+        if (lock != null && (!lock.primary() || lock.othersPresent())) {
+            return HistoryPurgeHold.OTHER_PROCESS;
+        }
+        long incompleteSince = incompleteHistoryBackupSince;
+        boolean inGrace = incompleteSince != Long.MIN_VALUE
+                && System.currentTimeMillis() - incompleteSince <= HistoryIndexGuard.INCOMPLETE_BACKUP_GRACE_MILLIS;
+        if (historyLossUnmarked || historyEmptyAtLoad || historyBackupsUnreadable || inGrace) {
+            return HistoryPurgeHold.INDEX_UNTRUSTED;
+        }
+        if (sha256s == null || sha256s.isEmpty()) {
+            return HistoryPurgeHold.NONE;
+        }
+        Set<String> backup = backupHistoryHashes;
+        if (sha256s.stream().anyMatch(backup::contains)) {
+            return HistoryPurgeHold.BACKUP;
+        }
+        Set<String> foreign = foreignHistoryHashes;
+        if (sha256s.stream().anyMatch(foreign::contains)) {
+            return HistoryPurgeHold.OTHER_PROCESS; // another writer's rows on disk still list them
+        }
+        return HistoryPurgeHold.NONE;
     }
 
     /** The app-wide local-history worker. Sharing it coordinates blob publication and GC across windows. */
@@ -1869,7 +1903,8 @@ public class SharedConfig {
         historyFileSeen = Files.exists(index);
         HistoryStore loaded;
         if (lost && historyFileSeen) {
-            // Zero-length beside stored revision bodies: a write the OS never flushed, not "no history yet".
+            // Zero-length beside stored revision bodies: a write the OS never flushed, not "no history yet". (Its
+            // zero-byte copy lists nothing and starts no grace period; the loss marker below keeps the bodies.)
             problems.add(ConfigMigrations.unreadable(index));
             loaded = new HistoryStore();
         } else {
@@ -1879,6 +1914,8 @@ public class SharedConfig {
         // A list merged from two writers is not newest-first on disk (StoreMerge keeps this process's rows
         // first); everything that reads one takes row 0 for the newest. Null rows and lists — legal JSON, a
         // hand edit or damage — were dropped as the store took the lists in.
+        long now = System.currentTimeMillis();
+        loaded.clampFutureTimestamps(now);
         loaded.sortNewestFirst();
         historyStore = loaded;
         // What the file holds, as this build writes it: a list that had to be re-ordered is a change this
@@ -1901,8 +1938,9 @@ public class SharedConfig {
         // An index that did not load as written (torn, from a newer build, a value of the wrong type) is
         // missing revisions whose bodies are on disk. Its bytes were kept beside it, and the bodies that copy
         // refers to are protected by hash for as long as the copy exists (backupHistoryHashes) — in this
-        // session and every later one. Only when a copy could not be kept, or cannot be read for its hashes,
-        // is collection refused outright.
+        // session and every later one. When no copy could be kept, the loss is marked instead and every body
+        // is kept for the grace period of a torn copy; when a copy cannot be read for its hashes, nothing is
+        // collected until it can.
         // An index that was read with a non-UTF-8 byte replaced still lists every revision, so it does not
         // count; nor does one that was just restored, or a set-aside copy (the backup hashes cover that one).
         boolean everyLossHasACopy = problems.stream()
@@ -1910,13 +1948,19 @@ public class SharedConfig {
                         || p.kind() == ConfigLoadProblem.Kind.NEWER_COPY_RESTORED
                         || p.kind() == ConfigLoadProblem.Kind.NEWER_COPY_KEPT
                         || p.backup() != null);
-        boolean backupsReadable = readHistoryBackups(index);
         // An index that lists no revision at all while bodies are stored is not trusted either, however it
         // came to be that way ("{}", an index rewritten from defaults, the empty one a failed load leaves):
-        // collecting against it deletes every body. Bodies left by a deliberate purge are collected once the
-        // index lists a revision again.
+        // collecting against it deletes every body.
         boolean emptyBesideBodies = loaded.ledger().listsNothing() && HistoryIndexGuard.hasBlobs(getHistoryBlobsDir());
-        historyIndexIntact = !lost && everyLossHasACopy && backupsReadable && !emptyBesideBodies;
+        historyEmptyAtLoad = emptyBesideBodies;
+        // A loss with no copy of what was lost — the index missing or zero-length beside bodies, bytes that could
+        // not be kept, or an index that lists nothing beside bodies with no problem reported ("{}") — keeps every
+        // body for the same grace period as a torn index, from when it was noticed (see
+        // HistoryIndexGuard.LOSS_MARKER). Before, those protected the bodies for one session only.
+        boolean loss = lost || !everyLossHasACopy || (emptyBesideBodies && problems.isEmpty());
+        HistoryIndexGuard.dropExpiredLossMarker(index, now);
+        historyLossUnmarked = loss && !HistoryIndexGuard.markLoss(index, now);
+        historyBackupsUnreadable = !readHistoryBackups(index);
         foreignHistoryHashes = Set.of();
         HistoryStore.Limits limits = loaded.getAcknowledgedLimits();
         historyService.restoreAcknowledged(
@@ -1946,9 +1990,7 @@ public class SharedConfig {
         if (names != null && names.equals(knownHistoryBackups)) {
             return;
         }
-        if (!readHistoryBackups(index)) {
-            historyIndexIntact = false;
-        }
+        historyBackupsUnreadable = !readHistoryBackups(index);
     }
 
     /**
@@ -2000,10 +2042,10 @@ public class SharedConfig {
                     // memory, so their bodies are protected from this process's collection by hash.
                     Set<String>[] foreign = newHashSetHolder();
                     boolean written = sync.write(
-                            getHistoryFile(),
-                            json.writeValueAsBytes(snapshot),
-                            ConfigSchema.HISTORY,
-                            merged -> foreign[0] = foreignHashes(merged, snapshot));
+                            getHistoryFile(), json.writeValueAsBytes(snapshot), ConfigSchema.HISTORY, merged -> {
+                                foreign[0] = foreignHashes(merged, snapshot);
+                                adoptForeignRows(store, merged, snapshot);
+                            });
                     if (written) {
                         // Not merged: the file now holds this process's rows and nothing else.
                         foreignHistoryHashes = foreign[0] == null ? Set.of() : foreign[0];
@@ -2019,6 +2061,43 @@ public class SharedConfig {
                 outcome -> finishHistoryPublication(store, publication, outcome, sawDisk, completion));
     }
 
+    /**
+     * Takes the rows another writer added to the index on disk ({@code merged} holds them beside this process's
+     * own) into this process's index, on the FX thread that owns it. Left out, every later save had to re-read
+     * and three-way merge the whole index again, for the rest of the session: this process's copy never again
+     * equalled the file. Taken in, the next save writes the file plainly — and the other writer's revisions are
+     * listed here too, which is what the user expects of one shared history.
+     */
+    private void adoptForeignRows(HistoryStore store, JsonNode merged, HistoryStore.Snapshot mine) {
+        Map<String, Map<String, List<HistoryRevision>>> foreign = new LinkedHashMap<>();
+        for (Map.Entry<String, JsonNode> project : merged.path("byProject").properties()) {
+            Map<String, List<HistoryRevision>> own = mine.byProject().getOrDefault(project.getKey(), Map.of());
+            for (Map.Entry<String, JsonNode> file : project.getValue().properties()) {
+                List<HistoryRevision> ownRows = own.getOrDefault(file.getKey(), List.of());
+                for (JsonNode row : file.getValue()) {
+                    HistoryRevision revision;
+                    try {
+                        revision = json.treeToValue(row, HistoryRevision.class);
+                    } catch (com.fasterxml.jackson.core.JsonProcessingException | IllegalArgumentException bad) {
+                        continue; // not a row this build can read: it stays on disk, protected by hash
+                    }
+                    if (revision != null && !ownRows.contains(revision)) {
+                        foreign.computeIfAbsent(project.getKey(), k -> new LinkedHashMap<>())
+                                .computeIfAbsent(file.getKey(), k -> new ArrayList<>())
+                                .add(revision);
+                    }
+                }
+            }
+        }
+        if (!foreign.isEmpty()) {
+            fxThread.execute(() -> {
+                if (store == historyStore) {
+                    store.adopt(foreign);
+                }
+            });
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private static Set<String>[] newHashSetHolder() {
         return (Set<String>[]) new Set<?>[1];
@@ -2030,8 +2109,20 @@ public class SharedConfig {
             ConfigWriter.WriteOutcome outcome,
             boolean[] sawDisk,
             @Nullable Consumer<Boolean> completion) {
+        if (outcome == ConfigWriter.WriteOutcome.SUPERSEDED) {
+            // Not written by itself: the snapshot that replaced it holds its rows and answers for it.
+            if (completion != null) {
+                Boolean answered = historyAnswers.superseded(publication, completion);
+                if (answered != null) {
+                    completion.accept(answered);
+                }
+            }
+            return;
+        }
         boolean durable = outcome == ConfigWriter.WriteOutcome.WRITTEN;
+        List<Consumer<Boolean>> superseded;
         synchronized (historyPublicationLock) {
+            superseded = historyAnswers.finished(publication, durable);
             if (durable) {
                 store.ledger().durable(publication);
             }
@@ -2048,6 +2139,7 @@ public class SharedConfig {
                 historyService.gcIfDue(() -> protectedHistoryHashes(store));
             }
         }
+        superseded.forEach(answer -> answer.accept(durable));
         if (completion != null) {
             completion.accept(durable);
         }
