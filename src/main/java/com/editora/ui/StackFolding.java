@@ -62,6 +62,27 @@ final class StackFolding {
         return new Shown(List.copyOf(rows), selectedRow);
     }
 
+    /** Id of the "more frames" row; never an adapter's frame id. */
+    static final int MORE_ID = Integer.MIN_VALUE + 1;
+
+    /** The hint of the "more frames" row: the stack has frames below the ones fetched (perf review 2026-11-23, D3). */
+    static final String HINT_MORE = "more";
+
+    /** The row listed below a stack that has more frames than were fetched: {@code unlisted} of them, -1 unknown. */
+    static DapModels.StackFrameInfo moreRow(int unlisted) {
+        return new DapModels.StackFrameInfo(MORE_ID, "", null, unlisted, 0, null, HINT_MORE);
+    }
+
+    /** Whether {@code f} is the "more frames" row. */
+    static boolean isMore(DapModels.StackFrameInfo f) {
+        return f != null && f.id() == MORE_ID && HINT_MORE.equals(f.hint());
+    }
+
+    /** Whether {@code f} is a row that stands for frames (folded or not fetched), not a frame. */
+    static boolean isPlaceholder(DapModels.StackFrameInfo f) {
+        return isFold(f) || isMore(f);
+    }
+
     /** Whether {@code f} is a fold row. */
     static boolean isFold(DapModels.StackFrameInfo f) {
         return f != null && DapModels.HINT_FOLD.equals(f.hint());

@@ -15,7 +15,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * Pure: how exception breakpoints ({@link ExceptionBreakpoint}) decide an exception stop. Editora has the adapter stop
  * on every thrown exception of a language that has some (its "caught" / "raised" filter, added to the user's own
- * choice: {@link #extras}), and at each such stop asks which exception it is and lets the program go on unless one
+ * choice: {@link #extras}) — or, where the adapter can be told types (debugpy), on those types alone
+ * ({@link #adapterTypes}) — and at each such stop asks which exception it is and lets the program go on unless one
  * matches: its type pattern, then its condition.
  *
  * <p>An uncaught exception's stop ({@code breakMode} {@code unhandled}, as debugpy and java-debug mark it) comes from
@@ -77,12 +78,26 @@ final class ExceptionBreakpoints {
      * same exception passing up, which debugpy stops on again in each frame it leaves.
      */
     static boolean propagating(List<DapModels.StackFrameInfo> before, List<DapModels.StackFrameInfo> now) {
-        if (before.isEmpty() || now.isEmpty() || now.size() >= before.size()) {
+        return propagating(before, before.size(), now, now.size());
+    }
+
+    /**
+     * As above, for the top frames of stacks {@code beforeDepth} and {@code nowDepth} frames deep (a stop fetches the
+     * top of the stack only): the frames both have must match. When they have none in common it cannot be told, and the
+     * exception is not taken to be passing up.
+     */
+    static boolean propagating(
+            List<DapModels.StackFrameInfo> before, int beforeDepth, List<DapModels.StackFrameInfo> now, int nowDepth) {
+        int out = beforeDepth - nowDepth; // frames left: now[i] is before[i + out]
+        if (before.isEmpty() || now.isEmpty() || out <= 0) {
             return false;
         }
-        List<DapModels.StackFrameInfo> tail = before.subList(before.size() - now.size(), before.size());
-        for (int i = 0; i < now.size(); i++) {
-            if (!ParallelStacks.key(tail.get(i)).equals(ParallelStacks.key(now.get(i)))) {
+        int common = Math.min(now.size(), before.size() - out);
+        if (common <= 0) {
+            return false;
+        }
+        for (int i = 0; i < common; i++) {
+            if (!ParallelStacks.key(before.get(i + out)).equals(ParallelStacks.key(now.get(i)))) {
                 return false;
             }
         }
@@ -106,6 +121,37 @@ final class ExceptionBreakpoints {
         }
         return out;
     }
+
+    /**
+     * The exception types each language's adapter can be told to stop on in place of its thrown-exception filter
+     * ({@code language → types}), so that it does not stop on every exception the program throws for Editora to check
+     * (perf review 2026-11-23, D1): debugpy's {@code exceptionOptions}, when every enabled Python exception breakpoint
+     * names builtin types only ({@link com.editora.dap.PythonExceptionTypes#typesOf}). The check after each stop stays
+     * (an exact type, a condition, an excluded type). Other adapters cannot be told a type: java-debug reads no
+     * {@code exceptionOptions}, and its own type list (a global debug setting) narrows the Uncaught choice too.
+     */
+    static Map<String, List<String>> adapterTypes(List<ExceptionBreakpoint> all) {
+        Map<String, List<String>> out = new LinkedHashMap<>();
+        Set<String> cannot = new java.util.HashSet<>();
+        for (ExceptionBreakpoint b : all) {
+            if (!b.enabled() || !PYTHON.equals(b.language()) || cannot.contains(b.language())) {
+                continue;
+            }
+            List<String> types = com.editora.dap.PythonExceptionTypes.typesOf(b.type());
+            if (types == null) {
+                cannot.add(b.language());
+                out.remove(b.language());
+                continue;
+            }
+            List<String> named = new ArrayList<>(out.getOrDefault(b.language(), List.of()));
+            types.stream().filter(t -> !named.contains(t)).forEach(named::add);
+            out.put(b.language(), List.copyOf(named));
+        }
+        return out;
+    }
+
+    /** The language whose adapter (debugpy) is told exception types. */
+    private static final String PYTHON = com.editora.dap.DebugLanguages.PYTHON.id();
 
     /** A picker row's text: the type (any, when blank) and the condition, if there is one. */
     static String label(ExceptionBreakpoint b, String anyType) {

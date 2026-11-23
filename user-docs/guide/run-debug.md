@@ -2262,8 +2262,12 @@ stopped thread first, marked "(paused)". The [Threads view](#threads-view)
 shows every thread at once. After the program ends, the state line
 keeps "Exited with code N".
 
+A deep stack lists its top 50 frames first, then a row such as
+*… 250 more frames (click to list them)*: choosing it lists the frames below,
+up to 1,000 in all. Stepping stays quick in a deep recursion or framework stack.
+
 **Copy Call Stack**, in the call stack's right-click menu, copies the shown
-thread's whole stack as text, ready to paste into a bug report or a chat.
+thread's whole stack as text (the frames not listed yet are fetched first), ready to paste into a bug report or a chat.
 Ctrl+C (⌘C on macOS) in the call stack does the same. Frames folded into one
 row are copied too. The text reads like a Java stack trace: the thread's name,
 then one line per frame, top frame first:

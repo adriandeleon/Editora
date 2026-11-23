@@ -52,6 +52,18 @@ class DebugPanelThreadsFxTest {
                         case "resumeThread" -> calls.add("resume " + a[0]);
                         case "showThread" -> calls.add("show " + ((DapModels.ThreadStatus) a[0]).id());
                         case "threadDump" -> calls.add("dump");
+                        case "moreFrames" -> {
+                            calls.add("more " + a[0]);
+                            ((Consumer<DapModels.StackPage>) a[1])
+                                    .accept(new DapModels.StackPage(
+                                            List.of(
+                                                    new DapModels.StackFrameInfo(
+                                                            7, "Main.outer", Path.of("Main.java"), 9, 1),
+                                                    new DapModels.StackFrameInfo(
+                                                            8, "Main.main", Path.of("Main.java"), 2, 1)),
+                                            4,
+                                            false));
+                        }
                         default -> {}
                     }
                     Class<?> rt = m.getReturnType();
@@ -271,6 +283,76 @@ class DebugPanelThreadsFxTest {
             panel.showThreadsView(true);
             panel.setState(DapManager.State.INACTIVE);
             assertTrue(panel.threadList().getItems().isEmpty());
+        });
+    }
+
+    /** A busy pool's thread events must not keep the Threads view from ever being listed again (perf review D13). */
+    @Test
+    void threadChurnDoesNotPutTheThreadsViewsRefreshOffForever() throws Exception {
+        DebugPanel[] panel = {null};
+        FxTestSupport.runOnFx(() -> {
+            panel[0] = stopped(actions());
+            panel[0].showThreadsView(true);
+            calls.clear();
+            panel[0].threadsChanged();
+        });
+        javafx.animation.PauseTransition refresh = FxTestSupport.field(panel[0], "threadsRefresh");
+        // A thread event every 10 ms, for as long as it takes.
+        javafx.animation.Timeline churn = new javafx.animation.Timeline(
+                new javafx.animation.KeyFrame(javafx.util.Duration.millis(10), e -> panel[0].threadsChanged()));
+        churn.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        FxTestSupport.runOnFx(churn::play);
+        try {
+            com.editora.testkit.Await.until(
+                    () -> {
+                        try {
+                            return FxTestSupport.callOnFx(() -> !calls.isEmpty());
+                        } catch (Exception e) {
+                            throw new IllegalStateException(e);
+                        }
+                    },
+                    "listed again while the events kept coming",
+                    java.time.Duration.ofSeconds(5));
+        } finally {
+            FxTestSupport.runOnFx(() -> {
+                churn.stop();
+                refresh.stop();
+            });
+        }
+    }
+
+    /** A stop lists the top of a deep stack and a row that lists the frames below when chosen (perf review D3). */
+    @Test
+    void theMoreFramesRowListsTheFramesBelow() throws Exception {
+        DebugPanel[] panel = {null};
+        FxTestSupport.runOnFx(() -> {
+            panel[0] = new DebugPanel(actions());
+            panel[0].setState(DapManager.State.STARTING);
+            panel[0].setState(DapManager.State.SUSPENDED);
+            panel[0].setCallStack(
+                    List.of(
+                            new DapModels.StackFrameInfo(1, "Main.inner", Path.of("Main.java"), 4, 1),
+                            new DapModels.StackFrameInfo(2, "Main.middle", Path.of("Main.java"), 6, 1)),
+                    0,
+                    4,
+                    true);
+            ListView<DapModels.StackFrameInfo> stack = FxTestSupport.field(panel[0], "stack");
+            assertEquals(3, stack.getItems().size());
+            assertTrue(StackFolding.isMore(stack.getItems().get(2)));
+            assertEquals(2, stack.getItems().get(2).line(), "two more frames");
+            calls.clear();
+            stack.getSelectionModel().select(2);
+        });
+        FxTestSupport.runOnFx(() -> {}); // the row's runLater
+        FxTestSupport.runOnFx(() -> {
+            ListView<DapModels.StackFrameInfo> stack = FxTestSupport.field(panel[0], "stack");
+            assertEquals(List.of("more 2"), calls);
+            assertEquals(
+                    List.of(1, 2, 7, 8),
+                    stack.getItems().stream().map(DapModels.StackFrameInfo::id).toList(),
+                    "the frames below, and no more row");
+            assertEquals(1, stack.getSelectionModel().getSelectedItem().id(), "the frame selected stays selected");
+            assertEquals(4, panel[0].callStack().size());
         });
     }
 }

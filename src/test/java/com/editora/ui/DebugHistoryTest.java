@@ -151,4 +151,34 @@ class DebugHistoryTest {
         DebugHistory.Stop clamped = new DebugHistory.Stop(2, "pause", T, 1, IN_WORK, 9);
         assertEquals(1, clamped.shownFrame);
     }
+
+    @Test
+    void aLongValueIsKeptCappedYetItsChangesAreSeen() {
+        DebugHistory h = new DebugHistory();
+        String big = "x".repeat(1_000_000);
+        DebugHistory.Stop s1 = h.newStop("step", T, 1, IN_MAIN, 0);
+        h.record(0, TOTAL, big, "String", false);
+        DebugHistory.Stop s2 = h.newStop("step", T, 1, IN_MAIN, 0);
+        h.record(0, TOTAL, big.substring(1) + "y", "String", false); // same length, differs only at the end
+        DebugHistory.Stop s3 = h.newStop("step", T, 1, IN_MAIN, 0);
+        h.record(0, TOTAL, new String(big.substring(1) + "y"), "String", false);
+        assertTrue(s1.kept(0, TOTAL).truncated());
+        assertEquals(KeptValue.MAX_KEPT + 1, s1.value(0, TOTAL).length(), "the characters kept, then \u2026");
+        assertTrue(h.changed(s2, 0, TOTAL, big.substring(1) + "y"));
+        assertFalse(h.changed(s3, 0, TOTAL, big.substring(1) + "y"));
+        List<DebugHistory.Seen> seen = h.valueHistory(s1.frameKey(0), TOTAL);
+        assertEquals(
+                List.of(false, true, false),
+                seen.stream().map(DebugHistory.Seen::changed).toList());
+    }
+
+    @Test
+    void aStopOfWhichOnlyTheTopWasFetchedKeysItsFramesByTheWholeStacksDepth() {
+        DebugHistory h = new DebugHistory();
+        DebugHistory.Stop top = h.newStop("step", T, 1, IN_WORK, 0, 300);
+        assertEquals(300, top.depth);
+        assertEquals(DebugValueChanges.frameKey(1, "work", FILE.toString(), 300), top.frameKey(0));
+        DebugHistory.Stop whole = h.newStop("step", T, 1, IN_WORK, 0);
+        assertEquals(DebugValueChanges.frameKey(1, "work", FILE.toString(), 2), whole.frameKey(0));
+    }
 }

@@ -180,6 +180,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         /** A call-stack frame was selected: jump the editor and load its variables. */
         void selectFrame(DapModels.StackFrameInfo frame);
 
+        /**
+         * The frames of the shown thread's stack below the first {@code loaded} (callback on the FX thread; an empty
+         * page when there are none or the program moved on).
+         */
+        default void moreFrames(int loaded, java.util.function.Consumer<DapModels.StackPage> cb) {
+            cb.accept(DapModels.StackPage.EMPTY);
+        }
+
         /** Lazily fetch the children of a variables reference (scope or expandable variable). */
         void loadChildren(int variablesReference, Consumer<List<DapModels.VariableInfo>> cb);
 
@@ -755,6 +763,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     setGraphic(null);
                     return;
                 }
+                if (StackFolding.isMore(f)) {
+                    // Frames below the ones fetched (perf review 2026-11-23, D3): one muted row, clicked to list them.
+                    Text more = new Text(
+                            f.line() > 0 ? tr("debugpanel.moreFrames", f.line()) : tr("debugpanel.moreFramesUnknown"));
+                    more.getStyleClass().addAll("debug-frame-name", "debug-frame-nosource", "debug-frame-fold");
+                    setGraphic(CellNames.read(new TextFlow(more)));
+                    return;
+                }
                 if (StackFolding.isFold(f)) {
                     // Runtime/library frames folded away (review D105): one muted row, clicked to show them.
                     Text fold = new Text(tr("debugpanel.foldedFrames", f.line()));
@@ -798,6 +814,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     javafx.application.Platform.runLater(() -> expandFrames(a));
                     return;
                 }
+                if (StackFolding.isMore(f)) {
+                    // Asks for the frames below, keeping the frame that was selected selected.
+                    javafx.application.Platform.runLater(() -> loadMoreFrames(a));
+                    return;
+                }
                 reportFrame(f);
             }
         });
@@ -811,7 +832,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             DapModels.StackFrameInfo f = stack.getSelectionModel().getSelectedItem();
             if (f != null
                     && f == pressedOn[0]
-                    && !StackFolding.isFold(f)
+                    && !StackFolding.isPlaceholder(f)
                     && e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
                 reportFrame(f);
             }
@@ -1170,7 +1191,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 selectedThreadId(),
                 frame.name(),
                 frame.file() == null ? null : frame.file().toString(),
-                index < 0 ? -1 : allFrames.size() - index));
+                index < 0 ? -1 : framesDepth - index));
         actions.selectFrame(frame);
     }
 
@@ -1528,6 +1549,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             setRuntime(null);
             stack.getItems().clear();
             allFrames = List.of();
+            moreFrames = false;
+            framesAsked++;
             stoppedIn = "";
             variables.setRoot(idleRoot());
             setThreads(List.of(), -1);
@@ -1792,6 +1815,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private void clearStaleStop() {
         stack.getItems().clear();
         allFrames = List.of();
+        moreFrames = false;
+        framesAsked++;
         variables.setRoot(idleRoot());
         selectedFrameId = -1;
         settingThreads = true;
@@ -1862,7 +1887,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private List<javafx.scene.control.MenuItem> stackMenuRows() {
         DapModels.StackFrameInfo f = stack.getSelectionModel().getSelectedItem();
         List<javafx.scene.control.MenuItem> items = new java.util.ArrayList<>(
-                f == null || StackFolding.isFold(f) ? List.of() : actions.stackMenuItems(f, allFrames));
+                f == null || StackFolding.isPlaceholder(f) ? List.of() : actions.stackMenuItems(f, allFrames));
         if (!allFrames.isEmpty()) {
             if (!items.isEmpty()) {
                 items.add(new javafx.scene.control.SeparatorMenuItem());
@@ -2017,9 +2042,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    /** A thread started or ended: the Threads view, when shown, lists them again (at most every 250 ms). */
+    /**
+     * A thread started or ended: the Threads view, when shown, lists them again (at most every 250 ms). A throttle, not
+     * a debounce: a pool that starts and ends threads more often than that would otherwise never be listed again.
+     */
     public void threadsChanged() {
-        if (threadsShown()) {
+        if (threadsShown() && threadsRefresh.getStatus() != javafx.animation.Animation.Status.RUNNING) {
             threadsRefresh.playFromStart();
         }
     }
@@ -2085,10 +2113,21 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     /** As {@link #setCallStack(List)}, selecting frame {@code selected} — the topmost one that has source. */
     public void setCallStack(List<DapModels.StackFrameInfo> frames, int selected) {
+        setCallStack(frames, selected, frames.size(), false);
+    }
+
+    /**
+     * As {@link #setCallStack(List, int)}, for the top {@code frames} of a stack {@code depth} frames deep; {@code more}:
+     * the Call Stack lists a row that asks for the frames below them ({@link Actions#moreFrames}).
+     */
+    public void setCallStack(List<DapModels.StackFrameInfo> frames, int selected, int depth, boolean more) {
         int index = Math.max(0, Math.min(selected, frames.size() - 1));
+        framesDepth = Math.max(depth, frames.size());
+        moreFrames = more && !frames.isEmpty();
+        framesAsked++;
         if (historyStopPending && lastState == DapManager.State.SUSPENDED) {
             historyStopPending = false;
-            stopHistory.newStop(historyReason, java.time.LocalTime.now(), historyThreadId, frames, index);
+            stopHistory.newStop(historyReason, java.time.LocalTime.now(), historyThreadId, frames, index, framesDepth);
             refreshHistoryControls();
         }
         allFrames = List.copyOf(frames);
@@ -2115,6 +2154,15 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** Every frame of the stack shown, folded rows included in {@link StackFolding} form or not. */
     private List<DapModels.StackFrameInfo> allFrames = List.of();
 
+    /** How deep the stack shown is: more than {@link #allFrames} while only its top was fetched. */
+    private int framesDepth;
+
+    /** Whether the stack shown has frames below {@link #allFrames} that can be asked for. */
+    private boolean moreFrames;
+
+    /** Counts the stacks shown, so that frames asked for one are not added to the next. */
+    private long framesAsked;
+
     /** The call stack shown, top first (every frame, folded or not). */
     List<DapModels.StackFrameInfo> callStack() {
         return allFrames;
@@ -2123,7 +2171,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** Selects the listed frame {@code frameId} (reported like a click); false when it is not listed. */
     boolean selectFrameById(int frameId) {
         for (DapModels.StackFrameInfo f : stack.getItems()) {
-            if (f.id() == frameId && !StackFolding.isFold(f)) {
+            if (f.id() == frameId && !StackFolding.isPlaceholder(f)) {
                 stack.getSelectionModel().select(f);
                 return true;
             }
@@ -2139,7 +2187,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         StackFolding.Shown shown = StackFolding.fold(allFrames, index, framesExpanded);
         settingStack = true;
         try {
-            stack.getItems().setAll(shown.rows());
+            if (moreFrames) {
+                List<DapModels.StackFrameInfo> rows = new java.util.ArrayList<>(shown.rows());
+                rows.add(StackFolding.moreRow(framesDepth > allFrames.size() ? framesDepth - allFrames.size() : -1));
+                stack.getItems().setAll(rows);
+            } else {
+                stack.getItems().setAll(shown.rows());
+            }
             if (!shown.rows().isEmpty()) {
                 int row = shown.selectedRow();
                 stack.getSelectionModel().clearAndSelect(row);
@@ -2150,6 +2204,44 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         } finally {
             settingStack = false;
         }
+    }
+
+    /**
+     * The "more frames" row was chosen: the frames below the ones listed are asked for and listed under them,
+     * {@code previous} (the frame selected before) still selected.
+     */
+    private void loadMoreFrames(DapModels.@Nullable StackFrameInfo previous) {
+        loadMoreFrames(previous, null);
+    }
+
+    /** As above; {@code then} runs once they are listed (not when another stack is shown meanwhile). */
+    private void loadMoreFrames(DapModels.@Nullable StackFrameInfo previous, @Nullable Runnable then) {
+        if (!moreFrames) {
+            if (then != null) {
+                then.run();
+            }
+            return;
+        }
+        moreFrames = false; // asked once: the row goes while the answer comes
+        long asked = framesAsked;
+        int index = previous == null ? 0 : Math.max(0, allFrames.indexOf(previous));
+        showFrames(index);
+        actions.moreFrames(allFrames.size(), page -> {
+            if (asked != framesAsked || viewing != null) {
+                return; // another stack is shown now, or an earlier stop
+            }
+            DapModels.StackFrameInfo selected = stack.getSelectionModel().getSelectedItem();
+            List<DapModels.StackFrameInfo> all = new java.util.ArrayList<>(allFrames);
+            all.addAll(page.frames());
+            allFrames = List.copyOf(all);
+            framesDepth = Math.max(page.depth(), allFrames.size());
+            moreFrames = page.more() && !page.frames().isEmpty();
+            int keep = selected == null || StackFolding.isPlaceholder(selected) ? index : allFrames.indexOf(selected);
+            showFrames(Math.max(0, keep));
+            if (then != null) {
+                then.run();
+            }
+        });
     }
 
     /** A fold row was chosen: every frame is listed, {@code previous} (the frame selected before) still selected. */
@@ -3225,6 +3317,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** Copies the whole call stack shown — folded runtime frames included — to the clipboard. */
     public void copyCallStack() {
         if (allFrames.isEmpty()) {
+            return;
+        }
+        if (moreFrames && viewing == null) {
+            // The whole stack, as before a stop fetched only its top: the frames below are asked for first.
+            DapModels.StackFrameInfo selected = stack.getSelectionModel().getSelectedItem();
+            loadMoreFrames(
+                    selected == null || StackFolding.isPlaceholder(selected) ? null : selected, this::copyCallStack);
             return;
         }
         DapModels.ThreadInfo thread = threads.getValue();

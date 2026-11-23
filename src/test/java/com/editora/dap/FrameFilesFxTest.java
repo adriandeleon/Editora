@@ -15,7 +15,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** A stop's frame files are looked at off the FX thread; the FX thread answers from that (PERF-01, Pauta 6.2.0). */
@@ -85,5 +87,33 @@ class FrameFilesFxTest {
                 },
                 java.time.Duration.ofSeconds(5));
         assertTrue(seen, "the look behind the answer lands");
+    }
+
+    @Test
+    void aStopLooksAtEachFileOnceAndNotAgainWhileFresh(@TempDir Path dir) throws Exception {
+        Path a = Files.writeString(dir.resolve("A.java"), "class A {}");
+        Path b = Files.writeString(dir.resolve("B.java"), "class B {}");
+        List<DapModels.StackFrameInfo> recursive = new java.util.ArrayList<>();
+        for (int i = 0; i < 500; i++) {
+            recursive.add(new DapModels.StackFrameInfo(i, "f", i % 2 == 0 ? a : b, i, 0));
+        }
+        recursive.add(new DapModels.StackFrameInfo(999, "native", null, 0, 0));
+        assertEquals(java.util.Set.of(a, b), FrameFiles.toLook(recursive), "each file once");
+        FrameFiles.warmAsync(recursive).get(10, TimeUnit.SECONDS);
+        assertTrue(FrameFiles.toLook(recursive).isEmpty(), "looked at a moment ago: not again");
+        assertTrue(onFx(() -> FrameFiles.isFile(a)));
+        assertTrue(FrameFiles.warmAsync(recursive).isDone(), "nothing to look at: done at once");
+    }
+
+    @Test
+    void theLooksAreNotMadeOnTheCallingThread(@TempDir Path dir) throws Exception {
+        Path c = Files.writeString(dir.resolve("C.java"), "class C {}");
+        Thread caller = Thread.currentThread();
+        java.util.concurrent.atomic.AtomicReference<Thread> looked =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        BlockingSites.listenForTest((site, thread) -> looked.compareAndSet(null, thread));
+        FrameFiles.warmAsync(List.of(new DapModels.StackFrameInfo(1, "c", c, 0, 0)))
+                .get(10, TimeUnit.SECONDS);
+        assertNotEquals(caller, looked.get());
     }
 }

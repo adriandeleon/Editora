@@ -191,6 +191,13 @@ public final class DapClient implements IDebugProtocolClient {
      * thrown exception for Editora to check its type). Not the user's choice, so not in {@link #exceptionFilters}.
      */
     private volatile List<String> extraExceptionFilters = List.of();
+
+    /**
+     * The exception types those exception breakpoints name, when the adapter can be told to stop on them alone
+     * ({@link PythonExceptionTypes}): sent as {@code exceptionOptions}, in place of {@link #extraExceptionFilters}, to
+     * an adapter that supports them. Empty: none, or the types cannot be told.
+     */
+    private volatile List<String> extraExceptionTypes = List.of();
     /** True once the adapter's {@code initialized} event installed the configuration (breakpoints +
      *  exception filters). Before that, a filter change only updates the field — {@link #initialized}
      *  will read it. After it, a change must be sent on the wire itself. */
@@ -319,9 +326,7 @@ public final class DapClient implements IDebugProtocolClient {
         IDebugProtocolServer s = server;
         if (s != null && configured) {
             try {
-                SetExceptionBreakpointsArguments ex = new SetExceptionBreakpointsArguments();
-                ex.setFilters(effectiveExceptionFilters().toArray(new String[0]));
-                ignore(timed(s.setExceptionBreakpoints(ex)));
+                ignore(timed(s.setExceptionBreakpoints(exceptionArguments())));
             } catch (RuntimeException e) {
                 LOG.log(Level.WARNING, "live setExceptionBreakpoints failed", e);
             }
@@ -339,6 +344,32 @@ public final class DapClient implements IDebugProtocolClient {
         List<String> chosen = exceptionFilters;
         List<String> base = chosen != null ? chosen : defaultExceptionFilters(exceptionFilterOptions());
         return withExtras(base, extraExceptionFilters, exceptionFilterOptions());
+    }
+
+    /**
+     * The {@code setExceptionBreakpoints} arguments in force: the filters ({@link #effectiveExceptionFilters}), or —
+     * with exception types to tell an adapter that supports {@code exceptionOptions} — the chosen filters and the
+     * types as options, so that it stops on those types only (perf review 2026-11-23, D1).
+     */
+    SetExceptionBreakpointsArguments exceptionArguments() {
+        SetExceptionBreakpointsArguments ex = new SetExceptionBreakpointsArguments();
+        List<String> types = extraExceptionTypes;
+        Capabilities caps = capabilities;
+        if (!types.isEmpty() && caps != null && Boolean.TRUE.equals(caps.getSupportsExceptionOptions())) {
+            List<String> chosen = exceptionFilters;
+            List<String> base = chosen != null ? chosen : defaultExceptionFilters(exceptionFilterOptions());
+            ex.setFilters(base.toArray(new String[0]));
+            ex.setExceptionOptions(PythonExceptionTypes.options(base, types));
+        } else {
+            ex.setFilters(effectiveExceptionFilters().toArray(new String[0]));
+        }
+        return ex;
+    }
+
+    /** Whether {@code ex} asks the adapter to stop on any exception. */
+    private static boolean stopsOnAny(SetExceptionBreakpointsArguments ex) {
+        return (ex.getFilters() != null && ex.getFilters().length > 0)
+                || (ex.getExceptionOptions() != null && ex.getExceptionOptions().length > 0);
     }
 
     /** {@code base} and {@code extras} together, in the order the adapter lists its filters. Pure. */
@@ -361,14 +392,24 @@ public final class DapClient implements IDebugProtocolClient {
 
     /** Sets {@link #extraExceptionFilters}, and sends the filters again when the session is running. */
     public void setExtraExceptionFilters(List<String> extras) {
+        setExtraExceptionFilters(extras, List.of());
+    }
+
+    /**
+     * Sets {@link #extraExceptionFilters} and {@link #extraExceptionTypes}, and sends the filters again when the
+     * session is running.
+     */
+    public void setExtraExceptionFilters(List<String> extras, List<String> types) {
         List<String> next = extras == null ? List.of() : List.copyOf(extras);
+        List<String> nextTypes = types == null ? List.of() : List.copyOf(types);
         synchronized (configurationLock) { // see setExceptionFilters
-            if (next.equals(extraExceptionFilters)) {
+            if (next.equals(extraExceptionFilters) && nextTypes.equals(extraExceptionTypes)) {
                 return;
             }
             this.extraExceptionFilters = next;
+            this.extraExceptionTypes = nextTypes;
             for (DapClient child : children) {
-                child.setExtraExceptionFilters(next);
+                child.setExtraExceptionFilters(next, nextTypes);
             }
             sendExceptionFiltersIfConfigured();
         }
@@ -882,10 +923,8 @@ public final class DapClient implements IDebugProtocolClient {
                 for (DapModels.FileBreakpoints fb : initialBreakpoints) {
                     configuring.add(setBreakpointsNow(fb));
                 }
-                List<String> filters = effectiveExceptionFilters();
-                if (!filters.isEmpty()) {
-                    SetExceptionBreakpointsArguments ex = new SetExceptionBreakpointsArguments();
-                    ex.setFilters(filters.toArray(new String[0]));
+                SetExceptionBreakpointsArguments ex = exceptionArguments();
+                if (stopsOnAny(ex)) {
                     CompletableFuture<?> sent = timed(server().setExceptionBreakpoints(ex));
                     ignore(sent);
                     configuring.add(sent);
@@ -1380,6 +1419,7 @@ public final class DapClient implements IDebugProtocolClient {
             child.initialBreakpoints = initialBreakpoints;
             child.exceptionFilters = exceptionFilters;
             child.extraExceptionFilters = extraExceptionFilters;
+            child.extraExceptionTypes = extraExceptionTypes;
             child.memberBreakpoints = memberBreakpoints;
             child.terminateOnDisconnect = terminateOnDisconnect; // js-debug's program runs in the child sessions
             children.add(child);
@@ -1941,44 +1981,70 @@ public final class DapClient implements IDebugProtocolClient {
      * it becomes the one later requests go to; false for a stack asked for in bulk (Thread Dump, Parallel Stacks).
      */
     public CompletableFuture<List<DapModels.StackFrameInfo>> stackTrace(int threadId, boolean focusThread) {
+        return stackPage(threadId, focusThread, 0, STACK_FRAME_LIMIT).thenApply(DapModels.StackPage::frames);
+    }
+
+    /**
+     * Frames {@code startFrame…} of {@code threadId}'s stack, at most {@code levels} of them ({@link
+     * #STACK_FRAME_LIMIT} in all). A stop asks for {@link #FIRST_FRAMES}, and the rest only when the user asks for
+     * them (perf review 2026-11-23, D3).
+     */
+    public CompletableFuture<DapModels.StackPage> stackPage(
+            int threadId, boolean focusThread, int startFrame, int levels) {
         DapClient session = focusThread ? target(threadId) : targetQuietly(threadId);
         if (session != this) {
-            return session.stackTrace(threadId, focusThread);
+            return session.stackPage(threadId, focusThread, startFrame, levels);
         }
+        int asked = Math.max(1, Math.min(levels, STACK_FRAME_LIMIT - startFrame));
         StackTraceArguments a = new StackTraceArguments();
         a.setThreadId(threadId);
         // Always a window: java-debug reads startFrame/levels without advertising supportsDelayedStackTraceLoading
         // (so the guard never applied to Java), and per the protocol an adapter that does not page ignores them.
-        a.setStartFrame(0);
-        a.setLevels(STACK_FRAME_LIMIT);
+        a.setStartFrame(startFrame);
+        a.setLevels(asked);
         return timed(server().stackTrace(a)).thenApply(r -> {
             List<DapModels.StackFrameInfo> out = new ArrayList<>();
-            if (r != null && r.getStackFrames() != null) {
-                for (StackFrame f : r.getStackFrames()) {
-                    if (out.size() == STACK_FRAME_LIMIT) {
-                        break; // an adapter that sent everything anyway: the innermost frames are the ones that matter
-                    }
-                    DapModels.LoadedSource reference = referenceOf(f.getSource(), paths);
-                    if (reference != null) {
-                        // The source request about it goes to the session whose frame it is (a js-debug worker's).
-                        (root == null ? this : root).sourceOwners.put(reference.sourceReference(), this);
-                    }
-                    out.add(new DapModels.StackFrameInfo(
-                            f.getId(),
-                            f.getName(),
-                            sourcePath(f.getSource(), paths),
-                            f.getLine() - 1, // back to 0-based line
-                            f.getColumn(),
-                            sourceUri(f.getSource()),
-                            frameHint(f),
-                            f.getInstructionPointerReference(),
-                            reference));
+            StackFrame[] sent = r == null || r.getStackFrames() == null ? new StackFrame[0] : r.getStackFrames();
+            for (StackFrame f : sent) {
+                if (out.size() == STACK_FRAME_LIMIT) {
+                    break; // an adapter that sent everything anyway: the innermost frames are the ones that matter
                 }
+                DapModels.LoadedSource reference = referenceOf(f.getSource(), paths);
+                if (reference != null) {
+                    // The source request about it goes to the session whose frame it is (a js-debug worker's).
+                    (root == null ? this : root).sourceOwners.put(reference.sourceReference(), this);
+                }
+                out.add(new DapModels.StackFrameInfo(
+                        f.getId(),
+                        f.getName(),
+                        sourcePath(f.getSource(), paths),
+                        f.getLine() - 1, // back to 0-based line
+                        f.getColumn(),
+                        sourceUri(f.getSource()),
+                        frameHint(f),
+                        f.getInstructionPointerReference(),
+                        reference));
             }
-            return out;
+            return page(startFrame, asked, sent.length, out, r == null ? null : r.getTotalFrames());
         });
     }
 
+    /**
+     * The page a reply made: {@code sent} frames for a request of {@code asked} from {@code start}, {@code out} of them
+     * kept. An adapter that sent more than asked does not page: what it sent is all there is to have.
+     */
+    static DapModels.StackPage page(
+            int start, int asked, int sent, List<DapModels.StackFrameInfo> out, @Nullable Integer totalFrames) {
+        int had = start + out.size();
+        if (sent > asked) {
+            return new DapModels.StackPage(out, totalFrames == null ? had : totalFrames, false);
+        }
+        if (totalFrames != null && totalFrames > 0) {
+            return new DapModels.StackPage(out, totalFrames, had < Math.min(totalFrames, STACK_FRAME_LIMIT));
+        }
+        // No total (or 0, which DAP lets an adapter send for "unknown"): a full page may have more below it.
+        return new DapModels.StackPage(out, had, sent == asked && had < STACK_FRAME_LIMIT);
+    }
     /** A frame's {@link DapModels.StackFrameInfo#hint} from the adapter's presentation hints. */
     static String frameHint(StackFrame f) {
         if (f.getPresentationHint() != null) {
@@ -2004,6 +2070,13 @@ public final class DapClient implements IDebugProtocolClient {
      * runaway recursion, on each Step Over. The frames that matter are the innermost ones.
      */
     static final int STACK_FRAME_LIMIT = 1000;
+
+    /**
+     * The frames a stop or a step asks for first. Most stops are looked at in their top few frames; a deep stack
+     * (Spring, Reactor, a recursion) fetched whole on every Step Over cost the adapter, the wire and the client
+     * hundreds of frames each time. The Call Stack lists the rest when asked (its "more frames" row).
+     */
+    public static final int FIRST_FRAMES = 50;
 
     /**
      * A frame's source as a local path, or {@code null} when it has none. Adapters put strings that are not

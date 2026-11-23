@@ -5,6 +5,7 @@ import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -421,7 +422,7 @@ public final class DapManager {
         if (client != null) {
             List<String> chosen = shared.exceptionChoices.get(sessionLanguage);
             client.setExceptionFilters(muted ? List.of() : chosen);
-            client.setExtraExceptionFilters(exceptionExtras());
+            client.setExtraExceptionFilters(exceptionExtras(), exceptionTypes());
         }
     }
 
@@ -430,12 +431,28 @@ public final class DapManager {
      * of the window: they are sent besides the user's choice. None while breakpoints are muted.
      */
     public void setExceptionExtras(Map<String, List<String>> extras) {
+        setExceptionExtras(extras, Map.of());
+    }
+
+    /**
+     * As {@link #setExceptionExtras(Map)}, with the exception types ({@code language → types}) an adapter that can be
+     * told them stops on in place of the extra filters (debugpy's {@code exceptionOptions}: {@link
+     * PythonExceptionTypes}).
+     */
+    public void setExceptionExtras(Map<String, List<String>> extras, Map<String, List<String>> types) {
         shared.exceptionExtras.clear();
         extras.forEach((language, filters) -> shared.exceptionExtras.put(language, List.copyOf(filters)));
+        shared.exceptionTypes.clear();
+        types.forEach((language, named) -> shared.exceptionTypes.put(language, List.copyOf(named)));
         DapClient c = client;
         if (c != null) {
-            c.setExtraExceptionFilters(exceptionExtras());
+            c.setExtraExceptionFilters(exceptionExtras(), exceptionTypes());
         }
+    }
+
+    /** The exception types the session's adapter may be told for its language's exception breakpoints. */
+    private List<String> exceptionTypes() {
+        return shared.exceptionsMuted ? List.of() : shared.exceptionTypes.getOrDefault(sessionLanguage, List.of());
     }
 
     /** The extra exception filters for the session's language: none while breakpoints are muted. */
@@ -2002,7 +2019,7 @@ public final class DapManager {
                 : breakpoint;
     }
 
-    private List<DapModels.StackFrameInfo> originalFrames(List<DapModels.StackFrameInfo> frames) {
+    private List<DapModels.StackFrameInfo> originalFrames(@Nullable List<DapModels.StackFrameInfo> frames) {
         if (frames == null || frames.isEmpty()) {
             return List.of();
         }
@@ -4509,9 +4526,34 @@ public final class DapManager {
         c.threads()
                 .whenComplete((list, e) -> fx(() -> {
                     if (client == c) {
+                        if (list != null) {
+                            threadNames.clear();
+                            list.forEach(t -> threadNames.put(t.id(), t.name()));
+                        }
                         cb.accept(list == null ? List.of() : list);
                     }
                 }));
+    }
+
+    /** The threads' names from the last {@code threads} reply, until a thread starts or ends (FX thread). */
+    private final Map<Integer, String> threadNames = new HashMap<>();
+
+    /**
+     * The name of thread {@code threadId} (callback on the FX thread; "" when the adapter does not list it): from the
+     * last listing when it named the thread and no thread started or ended since, else asked for. A token logpoint in a
+     * loop asked for every thread at each hit (perf review 2026-11-23, D4).
+     */
+    public void threadName(int threadId, Consumer<String> cb) {
+        String known = client == null ? null : threadNames.get(threadId);
+        if (known != null) {
+            cb.accept(known);
+            return;
+        }
+        threads(list -> cb.accept(list.stream()
+                .filter(t -> t.id() == threadId)
+                .map(DapModels.ThreadInfo::name)
+                .findFirst()
+                .orElse("")));
     }
 
     /** Whether the live session's adapter lists the sources its debuggee loaded (js-debug does). */
@@ -5296,29 +5338,74 @@ public final class DapManager {
         });
     }
 
-    /** Looks at {@code frames}' files here, off the FX thread, before the FX thread picks one (PERF-01). */
-    private static boolean warmed(@Nullable List<DapModels.StackFrameInfo> frames) {
-        FrameFiles.warm(frames);
-        return true;
+    /** The frame-file looks of the stack replies so far, in the order the replies came (see {@link #fxAfterLooks}). */
+    private CompletableFuture<?> frameLooks = CompletableFuture.completedFuture(null);
+
+    /**
+     * {@link #fx(Runnable)} once {@code frames}' files have been looked at, off the FX thread and off the adapter's
+     * reader thread (PERF-01; perf review 2026-11-23, D2), before the FX thread picks one. Replies reach the FX thread
+     * in the order they came, though one waited for its looks and the next did not.
+     */
+    private synchronized void fxAfterLooks(@Nullable List<DapModels.StackFrameInfo> frames, Runnable r) {
+        frameLooks = frameLooks
+                .thenCompose(v -> FrameFiles.warmAsync(frames))
+                .handle((v, e) -> null)
+                .thenRun(() -> fx(r))
+                .exceptionally(e -> null); // the next reply's turn comes all the same
     }
 
-    /** {@link #fx(Runnable)}, after {@code warmed} has run on this thread. */
-    private void fx(boolean warmed, Runnable r) {
-        fx(r);
-    }
-
+    /** The first {@link DapClient#FIRST_FRAMES} frames of {@code threadId}'s stack (callback on the FX thread). */
     public void stackTrace(int threadId, Consumer<List<DapModels.StackFrameInfo>> cb) {
         DapClient c = client;
         if (c == null) {
             cb.accept(List.of());
             return;
         }
-        c.stackTrace(threadId)
-                .whenComplete((frames, e) -> fx(warmed(frames), () -> {
-                    if (client == c) {
-                        cb.accept(originalFrames(frames));
-                    }
-                }));
+        c.stackPage(threadId, true, 0, DapClient.FIRST_FRAMES).whenComplete((page, e) -> {
+            List<DapModels.StackFrameInfo> frames = page == null ? null : page.frames();
+            fxAfterLooks(frames, () -> {
+                if (client == c) {
+                    shownStack = page == null ? DapModels.StackPage.EMPTY : page;
+                    cb.accept(originalFrames(frames));
+                }
+            });
+        });
+    }
+
+    /**
+     * The page of the stack the last stop or thread switch asked for (FX thread): how deep the stack is and whether
+     * the Call Stack can list more of it ({@link #moreFrames}).
+     */
+    private DapModels.StackPage shownStack = DapModels.StackPage.EMPTY;
+
+    /** See {@link #shownStack}. */
+    public DapModels.StackPage shownStack() {
+        return shownStack;
+    }
+
+    /**
+     * The frames of {@code threadId}'s stack below the first {@code loaded}, up to {@link DapClient#STACK_FRAME_LIMIT}
+     * in all (callback on the FX thread; an empty page when the session moved on or the adapter could not say).
+     */
+    public void moreFrames(int threadId, int loaded, Consumer<DapModels.StackPage> cb) {
+        DapClient c = client;
+        if (c == null || state != State.SUSPENDED || loaded >= DapClient.STACK_FRAME_LIMIT) {
+            cb.accept(DapModels.StackPage.EMPTY);
+            return;
+        }
+        long epoch = sessionEpoch;
+        long stops = stopCount;
+        c.stackPage(threadId, true, loaded, DapClient.STACK_FRAME_LIMIT - loaded)
+                .whenComplete((page, e) -> {
+                    List<DapModels.StackFrameInfo> frames = page == null ? null : page.frames();
+                    fxAfterLooks(frames, () -> {
+                        if (!isCurrent(epoch, c) || stops != stopCount || state != State.SUSPENDED || page == null) {
+                            cb.accept(DapModels.StackPage.EMPTY);
+                            return;
+                        }
+                        cb.accept(new DapModels.StackPage(originalFrames(frames), page.depth(), page.more()));
+                    });
+                });
     }
 
     public void scopes(int frameId, Consumer<List<DapModels.ScopeInfo>> cb) {
@@ -5749,45 +5836,48 @@ public final class DapManager {
             boolean event,
             boolean allThreadsStopped,
             long resumed) {
-        c.stackTrace(threadId)
-                .whenComplete((frames, e) -> fx(warmed(frames), () -> {
-                    if (!isCurrent(epoch, c)) {
-                        return;
+        c.stackPage(threadId, true, 0, DapClient.FIRST_FRAMES).whenComplete((page, e) -> {
+            List<DapModels.StackFrameInfo> frames = page == null ? null : page.frames();
+            fxAfterLooks(frames, () -> {
+                if (!isCurrent(epoch, c)) {
+                    return;
+                }
+                if (event && (resumesOf(threadId) != resumed || passesDartPause(reason))) {
+                    // Resumed before its frames came back — Dart's adapter resumes its own entry stop at once:
+                    // shown now, it would leave a running program looking paused. Or a Dart pause of its own.
+                    return;
+                }
+                if (e != null) {
+                    LOG.log(Level.WARNING, "stackTrace failed for thread " + threadId, e);
+                }
+                if (event && passesBashEntry(c, threadId, frames)) {
+                    return; // bashdb's own stop at the script's first line, where no breakpoint is
+                }
+                if (event) {
+                    if (allThreadsStopped) {
+                        stoppedThreads.clear(); // one stop stands for all of them, and so will one continue
+                        allSuspended = true;
+                        resumedSinceSuspendAll.clear();
                     }
-                    if (event && (resumesOf(threadId) != resumed || passesDartPause(reason))) {
-                        // Resumed before its frames came back — Dart's adapter resumes its own entry stop at once:
-                        // shown now, it would leave a running program looking paused. Or a Dart pause of its own.
-                        return;
-                    }
-                    if (e != null) {
-                        LOG.log(Level.WARNING, "stackTrace failed for thread " + threadId, e);
-                    }
-                    if (event && passesBashEntry(c, threadId, frames)) {
-                        return; // bashdb's own stop at the script's first line, where no breakpoint is
-                    }
-                    if (event) {
-                        if (allThreadsStopped) {
-                            stoppedThreads.clear(); // one stop stands for all of them, and so will one continue
-                            allSuspended = true;
-                            resumedSinceSuspendAll.clear();
-                        }
-                        resumedSinceSuspendAll.remove(threadId);
-                        stoppedThreads.put(threadId, reason == null ? "" : reason);
-                        settleTempBreakpoint(frames);
-                    } else if (state != State.RUNNING || !stoppedThreads.containsKey(threadId)) {
-                        return;
-                    }
-                    stopCount++;
-                    stepInFlight = false;
-                    currentThreadId = threadId;
-                    lazyValues.newStop("pause".equals(stoppedThreads.get(threadId))); // B202
-                    state = State.SUSPENDED;
-                    listener.onState(State.SUSPENDED);
-                    listener.onStopped(threadId, reason, originalFrames(frames));
-                    if ("exception".equals(reason)) {
-                        reportException(epoch, c, threadId, stopCount);
-                    }
-                }));
+                    resumedSinceSuspendAll.remove(threadId);
+                    stoppedThreads.put(threadId, reason == null ? "" : reason);
+                    settleTempBreakpoint(frames);
+                } else if (state != State.RUNNING || !stoppedThreads.containsKey(threadId)) {
+                    return;
+                }
+                stopCount++;
+                stepInFlight = false;
+                currentThreadId = threadId;
+                lazyValues.newStop("pause".equals(stoppedThreads.get(threadId))); // B202
+                shownStack = page == null ? DapModels.StackPage.EMPTY : page;
+                state = State.SUSPENDED;
+                listener.onState(State.SUSPENDED);
+                listener.onStopped(threadId, reason, originalFrames(frames));
+                if ("exception".equals(reason)) {
+                    reportException(epoch, c, threadId, stopCount);
+                }
+            });
+        });
     }
 
     /**
@@ -6577,6 +6667,7 @@ public final class DapManager {
             stoppedThreads.clear();
             allSuspended = false;
             resumedSinceSuspendAll.clear();
+            threadNames.clear(); // the next session's thread ids are its own
         }
         this.state = s;
         listener.onState(s);
@@ -6637,7 +6728,8 @@ public final class DapManager {
             }
             bashEntryPassed = false; // a new session: bashdb stops at its script's first line again
             candidate.setMemberBreakpoints(shared.memberBreakpoints); // sent on its initialized event
-            candidate.setExtraExceptionFilters(exceptionExtras()); // its language's exception breakpoints need
+            candidate.setExtraExceptionFilters(
+                    exceptionExtras(), exceptionTypes()); // its language's exception breakpoints need
             String language = sessionLanguage;
             List<String> skips = StepFilters.patterns(shared.stepFilters, language);
             int limit = shared.evaluationTimeLimit;
@@ -6721,6 +6813,7 @@ public final class DapManager {
             @Override
             public void onThreadsChanged() {
                 fx(() -> {
+                    threadNames.clear(); // a thread started or ended: names are asked for again
                     if (isCurrent(epoch)) {
                         listener.onThreadsChanged();
                     }
@@ -7106,7 +7199,8 @@ public final class DapManager {
         }
         long epoch = sessionEpoch;
         int threadId = currentThreadId;
-        c.stackTrace(threadId)
+        c.stackPage(threadId, true, 0, 1)
+                .thenApply(DapModels.StackPage::frames)
                 .thenCompose(frames -> frames == null || frames.isEmpty()
                         ? CompletableFuture.completedFuture(List.<DapModels.StepTarget>of())
                         : c.stepInTargets(frames.get(0).id()))

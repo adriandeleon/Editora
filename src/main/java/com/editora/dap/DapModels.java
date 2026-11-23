@@ -76,6 +76,21 @@ public final class DapModels {
     public record ThreadStack(ThreadStatus thread, List<StackFrameInfo> frames) {}
 
     /**
+     * Frames {@code start…} of a thread's stack, as one {@code stackTrace} request gave them. {@code depth}: how many
+     * frames the whole stack has, as far as is known (the adapter's {@code totalFrames}, else the frames had so far);
+     * {@code more}: more frames can be asked for below these.
+     */
+    public record StackPage(List<StackFrameInfo> frames, int depth, boolean more) {
+
+        public static final StackPage EMPTY = new StackPage(List.of(), 0, false);
+
+        public StackPage {
+            frames = frames == null ? List.of() : frames;
+            depth = Math.max(depth, frames.size());
+        }
+    }
+
+    /**
      * One frame of a thread's call stack. {@code file} may be null for frames with no source. {@code sourceUri}
      * is the adapter's own name for a source that is not a file on this machine — java-debug's
      * {@code jdt://contents/…} for a JDK or library class, whose text jdtls can supply

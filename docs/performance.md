@@ -186,8 +186,9 @@ are warmed on `bundled-warm`, the About icon comes from `AppIcons`, and zoomed s
 `ui-zoom-sheets` (a copy not made yet answers the 100% sheet, and windows are re-pointed when it lands). A bundled
 font family asked for after the first frame is registered off the thread and `Fonts.whenFamiliesLoaded` re-applies
 it. Settings sync writes the config folder's files on the config writer (`SharedConfig.callWithWrites`, which the sync
-thread waits on, so no store saves meanwhile). A debugger stop's frame files are looked at on the adapter's reader
-thread (`dap/FrameFiles`). The structured previews' print and export parse off the thread (`PreviewSnapshots.parse`),
+thread waits on, so no store saves meanwhile). A debugger stop's frame files are looked at on a thread of their own,
+each file once and not again for five seconds, before the stop reaches the FX thread (`dap/FrameFiles.warmAsync`;
+replies keep their order) — never on the adapter's reader thread, which a stat over SSH would hold up. The structured previews' print and export parse off the thread (`PreviewSnapshots.parse`),
 the `.http` environment files where they are read, the inline results under a per-buffer generation, a binary diff's
 blobs on the diff executor, View As JSON/XML and the data table's pages through `OffFx`, and an agent message is
 encoded on the pipe writer. `ChecksOffFxThreadFxTest` drives a representative set and checks that none of their
@@ -343,6 +344,15 @@ command waiting for one is busy, so a second press is refused.
     on a snapshot keyed by document version. The breakpoint send after an edit, a stop, Run to Cursor and Jump to
     Line wait for it; other callers use the last mapping, and the file is sent again when it changes.
   - `DebugTextScans` (a breakpoint line with no code, the test at the caret) runs off the thread per version.
+  - A stop or a step asks for the top 50 frames of the stack (`DapClient.FIRST_FRAMES`); the Call Stack's last row
+    asks for the rest. Thread Dump and Parallel Stacks still ask for up to 1,000 frames per thread.
+  - A stop that may not be shown (breakpoint filters, a token logpoint, an exception breakpoint's check, a step
+    filter, Thread Dump's pause) is decided before the window shows the session suspended
+    (`DebugSession.suspendHeld`): one that goes on changes nothing on screen. Python exception breakpoints of builtin
+    types are told to debugpy as `exceptionOptions`, so it does not stop on every raised exception
+    (`PythonExceptionTypes`).
+  - Debug History and the changed-value marks keep a value's first 4,096 characters with its length and hash
+    (`KeptValue`); a Variables row finds a multi-line value's first line without splitting it.
   - The merge resolver's Save (`MergeViewerPane.SAVE_SITE`, busy meanwhile; a close-save asks for the close again
     once applied), Resolve Conflicts, Open in Diff Viewer and Apply Patch, and the diff viewer's applies parse and
     compose off the thread.

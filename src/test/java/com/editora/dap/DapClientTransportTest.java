@@ -162,6 +162,62 @@ class DapClientTransportTest {
         }
     }
 
+    /** A stop asks for the top of the stack, and the rest when the Call Stack's "more frames" row asks (D3). */
+    @Test
+    void aStopAsksForTheTopFramesAndTheRestOnlyWhenAsked() throws Exception {
+        try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
+            adapter.delayedStackTraceLoading = true;
+            DapClient client = new DapClient(NO_HOST);
+            client.connect(adapter.port(), "test").get(10, TimeUnit.SECONDS);
+            client.launch(Map.of("type", "test", "request", "launch")).get(10, TimeUnit.SECONDS);
+            FakeDebugAdapter.Session session = adapter.awaitSession();
+            session.frames = deepStack(300);
+
+            var top = client.stackPage(1, true, 0, DapClient.FIRST_FRAMES).get(10, TimeUnit.SECONDS);
+            assertEquals(DapClient.FIRST_FRAMES, top.frames().size());
+            assertEquals(300, top.depth());
+            assertEquals(true, top.more());
+            var rest = client.stackPage(1, true, top.frames().size(), DapClient.STACK_FRAME_LIMIT)
+                    .get(10, TimeUnit.SECONDS);
+            var request = session.stackTraceRequests.get(session.stackTraceRequests.size() - 1);
+            assertEquals(DapClient.FIRST_FRAMES, request.getStartFrame());
+            assertEquals(250, rest.frames().size());
+            assertEquals(DapClient.FIRST_FRAMES + 1, rest.frames().get(0).id(), "the frames below the first ones");
+            assertEquals(false, rest.more());
+            client.dispose();
+        }
+    }
+
+    /** An adapter that sends every frame whatever it is asked: nothing more to ask for, and still capped. */
+    @Test
+    void anAdapterThatDoesNotPageHasNoMoreFramesToAskFor() throws Exception {
+        try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
+            DapClient client = new DapClient(NO_HOST);
+            client.connect(adapter.port(), "test").get(10, TimeUnit.SECONDS);
+            client.launch(Map.of("type", "test", "request", "launch")).get(10, TimeUnit.SECONDS);
+            FakeDebugAdapter.Session session = adapter.awaitSession();
+            session.frames = deepStack(1_500);
+
+            var page = client.stackPage(1, true, 0, DapClient.FIRST_FRAMES).get(10, TimeUnit.SECONDS);
+            assertEquals(DapClient.STACK_FRAME_LIMIT, page.frames().size());
+            assertEquals(false, page.more());
+            client.dispose();
+        }
+    }
+
+    @Test
+    void aPageWithoutATotalMayHaveMoreBelowItWhenFull() {
+        List<DapModels.StackFrameInfo> fifty = new ArrayList<>();
+        for (int i = 0; i < 50; i++) {
+            fifty.add(new DapModels.StackFrameInfo(i, "f", null, 0, 0));
+        }
+        assertEquals(true, DapClient.page(0, 50, 50, fifty, null).more());
+        assertEquals(false, DapClient.page(0, 60, 50, fifty, null).more(), "fewer than asked: all of it");
+        assertEquals(false, DapClient.page(0, 50, 50, fifty, 50).more());
+        assertEquals(true, DapClient.page(0, 50, 50, fifty, 0).more(), "0: an unknown total");
+        assertEquals(120, DapClient.page(0, 50, 50, fifty, 120).depth());
+    }
+
     /** Without the capability the arguments are not the adapter's to honour: ask as before. */
     @Test
     void anAdapterThatDoesNotAdvertisePagingIsStillAskedForAWindowAndCapped() throws Exception {

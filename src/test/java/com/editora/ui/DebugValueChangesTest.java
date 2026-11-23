@@ -89,4 +89,16 @@ class DebugValueChangesTest {
                 changes.changed(List.of("Local", "list", "[" + (DebugValueChanges.MAX_ROWS + 5) + "]"), "1"),
                 "rows past the bound are not remembered");
     }
+
+    @Test
+    void aLongValueIsComparedWithoutKeepingItWhole() {
+        DebugValueChanges changes = new DebugValueChanges();
+        changes.setFrame("main");
+        String big = "a".repeat(100_000);
+        changes.record(X, big);
+        changes.newStop();
+        assertFalse(changes.changed(X, new String(big)));
+        assertTrue(changes.changed(X, big.substring(1) + "b"), "the same length and start, another end");
+        assertTrue(changes.changed(X, big + "a"));
+    }
 }
