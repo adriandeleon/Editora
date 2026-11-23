@@ -80,7 +80,7 @@ final class WindowToolbar {
         // No "Project:" label: it is the only labelled control on a bar of unlabelled icons, and the combo
         // already reads "No Project" or the project's name. Its explanation moves onto the combo itself —
         // where it was also the one hardcoded English string on the toolbar.
-        toolbarProjectCombo.setTooltip(ControlNames.tooltip(tr("toolbar.project.tip")));
+        ControlNames.tip(toolbarProjectCombo, tr("toolbar.project.tip"));
         toolbarProjectCombo.setOnDeleteProject(mc::deleteProject); // per-item delete in the dropdown
         projectToolbarGap = new Region();
         UiZoom.minWidth(projectToolbarGap, 78); // ≈ 3 toolbar-icon widths between the icon cluster and the combo
@@ -172,7 +172,7 @@ final class WindowToolbar {
         if (com.editora.AppInfo.isSnapshot()) {
             Label snapshotBadge = new Label(tr("badge.snapshot"));
             snapshotBadge.getStyleClass().add("snapshot-badge");
-            snapshotBadge.setTooltip(ControlNames.tooltip(tr("badge.snapshot.tip", com.editora.AppInfo.VERSION)));
+            ControlNames.tip(snapshotBadge, tr("badge.snapshot.tip", com.editora.AppInfo.VERSION));
             items.addAll(toolbarGap(14), snapshotBadge);
         }
 
@@ -181,8 +181,8 @@ final class WindowToolbar {
         if (mc.config.isDev()) {
             Label devBadge = new Label(tr("badge.devMode"));
             devBadge.getStyleClass().add("dev-mode-badge");
-            devBadge.setTooltip(ControlNames.tooltip(
-                    tr("badge.devMode.tip", mc.config.getConfigDir().toString())));
+            ControlNames.tip(
+                    devBadge, tr("badge.devMode.tip", mc.config.getConfigDir().toString()));
             items.addAll(toolbarGap(14), devBadge);
         }
 

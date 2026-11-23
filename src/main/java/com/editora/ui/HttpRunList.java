@@ -394,7 +394,7 @@ final class HttpRunList extends VBox {
             if (empty || row == null) {
                 setGraphic(null);
                 setAccessibleText(null);
-                setTooltip(null);
+                ControlNames.tip(this, null);
                 return;
             }
             status.setText(row.status());
@@ -415,10 +415,7 @@ final class HttpRunList extends VBox {
             setGraphic(box);
             String spoken = row.spoken();
             setAccessibleText(spoken);
-            if (getTooltip() == null) {
-                setTooltip(ControlNames.tooltip());
-            }
-            getTooltip().setText(spoken);
+            ControlNames.tip(this, spoken);
         }
     }
 

@@ -407,7 +407,7 @@ final class RemoteSitesPane {
      */
     private void checkKeyFile(RemoteConnection site) {
         keyPath.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_WARNING, false);
-        keyPath.setTooltip(null);
+        ControlNames.tip(keyPath, null);
         if (site.auth() != RemoteConnection.AuthMethod.KEY) {
             return;
         }
@@ -420,10 +420,11 @@ final class RemoteSitesPane {
                 .thenAccept(readable -> javafx.application.Platform.runLater(() -> {
                     if (!readable && path.equals(keyPath.getText())) {
                         keyPath.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_WARNING, true);
-                        keyPath.setTooltip(com.editora.editor.ControlNames.tooltip(
+                        ControlNames.tip(
+                                keyPath,
                                 path.isBlank()
                                         ? tr("settings.remote.check.keyNone")
-                                        : tr("settings.remote.check.keyMissing", path)));
+                                        : tr("settings.remote.check.keyMissing", path));
                     }
                 }));
     }

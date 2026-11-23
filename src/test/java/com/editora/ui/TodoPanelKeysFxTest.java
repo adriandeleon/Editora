@@ -26,6 +26,7 @@ import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 import javafx.stage.Stage;
 
+import com.editora.editor.ControlNames;
 import com.editora.todo.TodoComment;
 import com.editora.todo.TodoGrouping;
 import com.editora.todo.TodoMatch;
@@ -374,10 +375,10 @@ class TodoPanelKeysFxTest {
 
             panel.setScope("proj", "/home/me/proj");
             assertEquals("proj", scope.getText());
-            assertEquals("/home/me/proj", scope.getTooltip().getText());
+            assertEquals("/home/me/proj", ControlNames.tipText(scope));
             panel.setScope(null, " ");
             assertEquals("", scope.getText());
-            assertNull(scope.getTooltip());
+            assertNull(ControlNames.tipText(scope));
 
             ((Button) panel.lookup(".todo-refresh")).fire();
             assertEquals(List.of("refresh"), calls);

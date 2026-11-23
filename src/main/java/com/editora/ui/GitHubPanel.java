@@ -309,7 +309,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         repository.setGraphic(Icons.github());
         repository.setMinWidth(0);
         repository.setTextOverrun(OverrunStyle.LEADING_ELLIPSIS);
-        repository.setTooltip(ControlNames.tooltip(tr("github.panel.repositoryTip")));
+        ControlNames.tip(repository, tr("github.panel.repositoryTip"));
         repository.setOnAction(e -> {
             repository.setVisited(false);
             repositoryAction(true);
@@ -326,10 +326,10 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
                         () -> actions.copyUrl(context.url()),
                         "github.copyRepositoryUrl")));
         branch.setGraphic(Icons.git());
-        branch.setTooltip(ControlNames.tooltip(tr("github.panel.branchTip")));
+        ControlNames.tip(branch, tr("github.panel.branchTip"));
         branch.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
         account.setGraphic(Icons.account());
-        account.setTooltip(ControlNames.tooltip(tr("github.panel.accountTip")));
+        ControlNames.tip(account, tr("github.panel.accountTip"));
         account.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
         contextRow.getStyleClass().add("github-context");
         contextRow.setAlignment(Pos.CENTER_LEFT);
@@ -352,7 +352,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         });
         stateFilter.setAccessibleText(tr("github.panel.stateTip"));
         FocusCommands.bind(this, "github.filterByState", stateFilter::show); // the choices, in the drop-down itself
-        stateFilter.setTooltip(ControlNames.tooltip(tr("github.panel.stateTip")));
+        ControlNames.tip(stateFilter, tr("github.panel.stateTip"));
         stateFilter.getStyleClass().add("github-state-filter");
         // A fixed width: sized from its items it shrank below its own label when the segment's items changed.
         UiZoom.prefWidth(stateFilter, 112);
@@ -364,7 +364,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
             }
         });
         mineToggle.getStyleClass().add("github-tab");
-        mineToggle.setTooltip(ControlNames.tooltip(tr("github.panel.mineTip")));
+        ControlNames.tip(mineToggle, tr("github.panel.mineTip"));
         mineToggle.setOnAction(e -> filterChanged());
         FocusCommands.bind(this, "github.toggleMine", mineToggle::fire);
         FocusCommands.bindIf(this, "github.loadMore", () -> {

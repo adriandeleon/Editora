@@ -428,7 +428,7 @@ final class ProjectMapOverviewCard extends StackPane {
                                     ProjectMapActivity.names(owned.owners().reviewers()))
                             : ProjectMapActivity.names(owned.owners().approvers()),
                     "project-map-overview-muted");
-            meta.setTooltip(ControlNames.tooltip(String.join("\n", ProjectMapActivity.ownerLines(owned.owners()))));
+            ControlNames.tip(meta, String.join("\n", ProjectMapActivity.ownerLines(owned.owners())));
             UiZoom.padding(meta, 0, 0, 3, 4);
             // Two lines, as Most changed: a long owner list never squeezes the folder's name to "…" (B8).
             rows.getChildren().addAll(name, meta);
@@ -557,7 +557,7 @@ final class ProjectMapOverviewCard extends StackPane {
         Button link = new Button(label);
         link.setMnemonicParsing(false); // snake_case names keep their first underscore (review 3 E4)
         link.getStyleClass().addAll("flat", "project-map-overview-link");
-        link.setTooltip(ControlNames.tooltip(tr("project.map.overview.reveal")));
+        ControlNames.tip(link, tr("project.map.overview.reveal"));
         if (target != null) {
             // A place on the map: Show on Map while it has the keyboard (KBD-01), as a press of it.
             MapButtonCommands.runs(link, link, "projectMap.showOnMap", () -> onReveal.accept(target));

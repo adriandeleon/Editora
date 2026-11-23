@@ -288,12 +288,12 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         headerInfo.setMinWidth(0);
         headerInfo.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(headerInfo, Priority.ALWAYS);
-        ignoreWs.setTooltip(ControlNames.tooltip(tr("history.window.ignoreWhitespace")));
-        wordLevel.setTooltip(ControlNames.tooltip(tr("history.window.highlightWords")));
+        ControlNames.tip(ignoreWs, tr("history.window.ignoreWhitespace"));
+        ControlNames.tip(wordLevel, tr("history.window.highlightWords"));
         wordLevel.setSelected(true); // word-level emphasis on by default (matches the editor diff)
         ignoreWs.setOnAction(e -> recompute());
         wordLevel.setOnAction(e -> recompute());
-        restore.setTooltip(ControlNames.tooltip(tr("history.window.revertTip")));
+        ControlNames.tip(restore, tr("history.window.revertTip"));
         restore.setOnAction(e -> restoreShown());
         restore.setMinWidth(Region.USE_PREF_SIZE);
         diffToolbar = UiZoom.spacing(new HBox(headerInfo, ignoreWs, wordLevel, restore), 8);
@@ -368,7 +368,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         folderTree.setManaged(folder);
         backToFile.setVisible(folder);
         backToFile.setManaged(folder);
-        restore.getTooltip().setText(tr(folder ? "history.folder.revertTip" : "history.window.revertTip"));
+        ControlNames.tip(restore, tr(folder ? "history.folder.revertTip" : "history.window.revertTip"));
     }
 
     private static Button iconButton(javafx.scene.Node icon, String tip, Runnable action) {

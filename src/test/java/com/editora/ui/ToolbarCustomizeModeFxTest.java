@@ -18,6 +18,7 @@ import javafx.scene.input.TransferMode;
 import javafx.stage.Stage;
 
 import com.editora.config.Settings;
+import com.editora.editor.ControlNames;
 import com.editora.toolbar.ToolbarCatalog;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -346,8 +347,8 @@ class ToolbarCustomizeModeFxTest {
         FxTestSupport.drainFx();
         FxTestSupport.runOnFx(() -> {
             Button button = (Button) nodes().get(1);
-            assertTrue(button.getTooltip().getText().startsWith(CommandTips.title("view.toggleZen")));
-            assertEquals(button.getTooltip().getText(), button.getAccessibleText());
+            assertTrue(ControlNames.tipText(button).startsWith(CommandTips.title("view.toggleZen")));
+            assertEquals(ControlNames.tipText(button), button.getAccessibleText());
             com.editora.config.ConfigManager config = FxTestSupport.field(fx.controller, "config");
             assertFalse(config.getWorkspaceState().isZenMode());
             button.fire();

@@ -329,7 +329,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         filterField.getStyleClass().add("bookmarks-filter");
         // Where the list's own key is written down: on the field focus lands on, and for a screen reader on
         // the list itself. (Rows keep their tooltip for the path.)
-        filterField.setTooltip(ControlNames.tooltip(tr("gitpanel.spaceHint")));
+        ControlNames.tip(filterField, tr("gitpanel.spaceHint"));
         tree.setAccessibleHelp(tr("gitpanel.spaceHint"));
         filterField.textProperty().addListener((o, w, n) -> renderFiles());
         Runnable shown = () -> {
@@ -390,16 +390,16 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         aiCommitButton.setVisible(false); // hidden until setAiAvailable(true) — off by default
         aiCommitButton.setManaged(false);
         amendCheck.getStyleClass().add("git-commit-option");
-        amendCheck.setTooltip(ControlNames.tooltip(tr("gitpanel.amendTip")));
+        ControlNames.tip(amendCheck, tr("gitpanel.amendTip"));
         amendCheck.setOnAction(e -> setAmending(amendCheck.isSelected()));
         signOffCheck.getStyleClass().add("git-commit-option");
-        signOffCheck.setTooltip(ControlNames.tooltip(tr("gitpanel.signOffTip")));
+        ControlNames.tip(signOffCheck, tr("gitpanel.signOffTip"));
         signOffCheck.setOnAction(e -> actions.setSignOff(signOffCheck.isSelected()));
         FocusCommands.bind(this, "git.toggleSignOff", signOffCheck::fire); // the Commit window's own commands
         FocusCommands.press(this, "git.commitNow", commitButton);
         guideLabel.getStyleClass().add("git-message-guide");
         guideLabel.setMinWidth(Region.USE_PREF_SIZE);
-        guideLabel.setTooltip(ControlNames.tooltip(tr("gitpanel.guide.tip")));
+        ControlNames.tip(guideLabel, tr("gitpanel.guide.tip"));
         historyButton.setGraphic(Icons.history());
         historyButton.getStyleClass().addAll("flat", "git-toolbar-button");
         historyButton.setFocusTraversable(false);
@@ -1070,7 +1070,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             tip = tr("gitpanel.upToDate", status.upstream());
         }
         aheadLabel.setText(text);
-        aheadLabel.setTooltip(ControlNames.tooltip(tip));
+        ControlNames.tip(aheadLabel, tip);
         aheadLabel.getStyleClass().removeAll("git-ahead-active", "git-ahead-clean");
         aheadLabel.getStyleClass().add(needsPush ? "git-ahead-active" : "git-ahead-clean");
         pushButton.getStyleClass().remove("git-needs-push");

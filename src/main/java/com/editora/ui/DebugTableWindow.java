@@ -463,7 +463,7 @@ final class DebugTableWindow {
             if (dtype != null) {
                 // A DataFrame's dtype on hover: the header's text is a label of its own, which can have a tooltip.
                 Label header = new Label(text);
-                header.setTooltip(ControlNames.tooltip(dtype));
+                ControlNames.tip(header, dtype);
                 col.setText("");
                 col.setGraphic(header);
             }

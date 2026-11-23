@@ -72,7 +72,7 @@ public class MarkdownViewToggle extends HBox {
     private static ToggleButton segment(String label, String tooltip) {
         ToggleButton b = new ToggleButton(label);
         b.getStyleClass().addAll("md-viewmode-segment", "flat");
-        b.setTooltip(ControlNames.tooltip(tooltip));
+        ControlNames.tip(b, tooltip);
         b.setFocusTraversable(false);
         return b;
     }

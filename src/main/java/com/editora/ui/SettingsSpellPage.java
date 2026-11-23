@@ -131,7 +131,7 @@ final class SettingsSpellPage {
         Card dict = w.card(p, tr("settings.dict.title"));
         Hyperlink techLink = FocusCommands.press(
                 new Hyperlink(tr("settings.dict.openTechnical")), "settings.openTechnicalDictionary");
-        techLink.setTooltip(ControlNames.tooltip(tr("settings.dict.openTechnicalTip")));
+        ControlNames.tip(techLink, tr("settings.dict.openTechnicalTip"));
         techLink.setOnAction(e -> {
             if (onOpenTechnicalDictionary != null) {
                 onOpenTechnicalDictionary.run();
@@ -139,7 +139,7 @@ final class SettingsSpellPage {
         });
         Hyperlink personalLink =
                 FocusCommands.press(new Hyperlink(tr("settings.dict.openPersonal")), "settings.openPersonalDictionary");
-        personalLink.setTooltip(ControlNames.tooltip(tr("settings.dict.openPersonalTip")));
+        ControlNames.tip(personalLink, tr("settings.dict.openPersonalTip"));
         personalLink.setOnAction(e -> {
             if (onOpenPersonalDictionary != null) {
                 onOpenPersonalDictionary.run();

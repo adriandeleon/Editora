@@ -20,6 +20,7 @@ import javafx.scene.input.TransferMode;
 import javafx.stage.Window;
 import javafx.stage.WindowEvent;
 
+import com.editora.editor.ControlNames;
 import com.editora.git.GitFileStatus;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -208,14 +209,14 @@ class ProjectPanelCellsFxTest {
                 TreeCell<Path> file = r.cell(r.alpha);
                 assertTrue(hasMarker(file, "project-bookmark-indicator"));
                 assertTrue(hasMarker(file, "project-note-indicator"));
-                assertNull(file.getTooltip(), "a file's notes are read in the editor, not from a tooltip");
+                assertNull(ControlNames.tipText(file), "a file's notes are read in the editor, not from a tooltip");
 
                 TreeCell<Path> folder = r.cell(r.docs);
                 assertTrue(hasMarker(folder, "project-note-indicator"));
-                assertNull(folder.getTooltip(), "no note text, no tooltip");
+                assertNull(ControlNames.tipText(folder), "no note text, no tooltip");
                 markers.tooltip = "Read the guide first";
                 folder = r.cell(r.docs);
-                assertNotNull(folder.getTooltip(), "a folder's note is shown where the folder is");
+                assertNotNull(ControlNames.tipText(folder), "a folder's note is shown where the folder is");
 
                 markers.notesEnabled = false;
                 TreeCell<Path> off = r.cell(r.alpha);

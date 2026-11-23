@@ -670,6 +670,16 @@ pure translation between that and what a keymap takes (overrides, chord → id w
   `setShowDelay`: `TooltipDelayTest` fails on either outside `ControlNames`, and on a tooltip declared in
   FXML. The delay cannot live in the stylesheet: `-fx-show-delay` does not survive the precompiled `.bss`
   form (`StylesheetBinaryTest`).
+- **Tooltips are built on first hover**: a `Tooltip` is a popup window with a scene of its own, and a window
+  used to build a few hundred before its first paint. A control gets its tooltip text with
+  `ControlNames.tip(control, text)` (`name`, `Icons.name` and `CommandTips` use it), which keeps the text and
+  builds the tooltip on the control's first `MOUSE_ENTERED` (the tooltip's timer starts on the moves that
+  follow); call it again to change the text, with `null` to remove it. Until then the text is the control's
+  accessible help, unless it has help of its own, so a screen reader hears what it would read from the
+  tooltip. Read the text with `ControlNames.tipText`, not `getTooltip()` (null until the hover); a test that
+  needs the `Tooltip` itself calls `ControlNames.builtTooltip`. A tab's tooltip works the same way
+  (`ControlNames.tip(Tab, text)`, one handler per tab pane), and a non-control node uses `LazyTooltip.install`.
+  `LazyTooltipsFxTest` fails when a new window builds any tooltip before a hover, and names where.
 - **A menu bar row whose command cannot run stays, grayed, and says why** (KBD-04 in Pauta 6.2.0).
   `MainMenuBar.refreshEnablement` asks `Chrome.disabledReason` for every row and `MainMenuBar.showAvailability`
   shows the answer: the row keeps working as a row (a disabled node gets no mouse events, so no tooltip, and

@@ -16,6 +16,7 @@ import javafx.stage.Stage;
 import com.editora.diff.DiffEngine;
 import com.editora.diff.DiffModels;
 import com.editora.diff.DiffService;
+import com.editora.editor.ControlNames;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -164,16 +165,14 @@ class DiffViewerBehaviorFxTest {
         Control swap = FxTestSupport.field(pane, "swapButton");
 
         for (Control control : java.util.List.of(whitespace, words, rules, context, wrap, layout, swap, export)) {
-            assertNotNull(control.getTooltip());
-            assertTrue(
-                    control.getTooltip().getText().length() > 20,
-                    control.getTooltip().getText());
-            assertTrue(control.getTooltip().isWrapText());
+            assertNotNull(ControlNames.tipText(control));
+            assertTrue(ControlNames.tipText(control).length() > 20, ControlNames.tipText(control));
+            assertTrue(ControlNames.builtTooltip(control).isWrapText());
         }
 
-        String exactDescription = whitespace.getTooltip().getText();
+        String exactDescription = ControlNames.tipText(whitespace);
         FxTestSupport.runOnFx(() -> ((javafx.scene.control.Button) whitespace).fire());
-        assertNotEquals(exactDescription, whitespace.getTooltip().getText(), "whitespace help follows its mode");
+        assertNotEquals(exactDescription, ControlNames.tipText(whitespace), "whitespace help follows its mode");
     }
 
     @Test

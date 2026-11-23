@@ -25,6 +25,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 
+import com.editora.editor.ControlNames;
 import com.editora.lsp.SymbolNode;
 import com.editora.text.FoldRegions;
 import org.fxmisc.richtext.CodeArea;
@@ -210,9 +211,7 @@ class ProjectMapStructureFxTest {
 
                 // Open, and the menu's Open Narrowed, open the file narrowed to the declaration's block.
                 javafx.scene.control.Button open = FxTestSupport.field(card, "open");
-                assertEquals(
-                        tr("project.map.preview.openNarrowedHelp"),
-                        open.getTooltip().getText());
+                assertEquals(tr("project.map.preview.openNarrowedHelp"), ControlNames.tipText(open));
                 open.fire();
                 FxTestSupport.call(card, "rebuildEditorContextMenu", new Class<?>[] {int.class}, 0);
                 ContextMenu menu = FxTestSupport.field(card, "editorContextMenu");

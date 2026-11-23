@@ -22,6 +22,7 @@ import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 import javafx.stage.Window;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import com.editora.git.GitOperation;
 import com.editora.git.GitPullMode;
@@ -541,7 +542,7 @@ class GitOperationsFxTest {
                     FxTestSupport.callOnFx(() -> gitSegment(fx).getText()));
             assertEquals(
                     tr("statusbar.tip.gitRefused", reason),
-                    FxTestSupport.callOnFx(() -> gitSegment(fx).getTooltip().getText()));
+                    FxTestSupport.callOnFx(() -> ControlNames.tipText(gitSegment(fx))));
             Label placeholder = FxTestSupport.field(panel(fx), "placeholder");
             assertEquals(tr("gitpanel.refused", reason), FxTestSupport.callOnFx(placeholder::getText));
             Button clone = FxTestSupport.field(panel(fx), "cloneButton");

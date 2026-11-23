@@ -23,6 +23,7 @@ import atlantafx.base.controls.Breadcrumbs;
 import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import com.editora.git.GitStatus;
 import com.editora.git.GitStatus.FileEntry;
@@ -132,12 +133,12 @@ class PolishFxTest {
                 assertNotNull(fileCell, "file row rendered");
                 assertEquals(OverrunStyle.LEADING_ELLIPSIS, fileCell.getTextOverrun(), "the file name end stays");
                 assertTrue(fileCell.getWidth() <= tree.getWidth() + 0.5, "the row is no wider than the tree");
-                assertNotNull(fileCell.getTooltip());
-                assertTrue(fileCell.getTooltip().getText().endsWith("SettingsWindow.java"), "full path in the tooltip");
+                assertNotNull(ControlNames.tipText(fileCell));
+                assertTrue(ControlNames.tipText(fileCell).endsWith("SettingsWindow.java"), "full path in the tooltip");
 
                 Label branch = FxTestSupport.field(panel, "branchLabel");
                 assertTrue(branch.getWidth() >= GitPanel.BRANCH_MIN_WIDTH - 0.5, "branch was " + branch.getWidth());
-                assertTrue(branch.getTooltip().getText().contains("feature/review-ui-accessibility-and-layout"));
+                assertTrue(ControlNames.tipText(branch).contains("feature/review-ui-accessibility-and-layout"));
             } finally {
                 stage.hide();
             }
@@ -210,7 +211,7 @@ class PolishFxTest {
                             b.getAccessibleText() != null
                                     && b.getAccessibleText().length() > 3,
                             "'" + b.getText() + "' has no accessible name");
-                    assertEquals(b.getAccessibleText(), b.getTooltip().getText());
+                    assertEquals(b.getAccessibleText(), ControlNames.tipText(b));
                 }
             } finally {
                 stage.hide();

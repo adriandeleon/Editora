@@ -456,7 +456,8 @@ public final class LaunchJson {
                     return dir == null ? "" : dir.toString();
                 }
                 case "fileDirnameBasename" -> {
-                    return dir == null ? "" : String.valueOf(dir.getFileName());
+                    Path folder = dir == null ? null : dir.getFileName();
+                    return folder == null ? "" : folder.toString(); // a file at the root: its folder has no name
                 }
                 case "fileWorkspaceFolder" -> {
                     return ws.toString();
@@ -467,7 +468,7 @@ public final class LaunchJson {
                 case "relativeFileDirname" -> {
                     return dir != null && dir.startsWith(ws)
                             ? ws.relativize(dir).toString()
-                            : String.valueOf(dir);
+                            : dir == null ? "" : dir.toString();
                 }
                 default -> {
                     // unknown: below

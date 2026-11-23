@@ -8,6 +8,7 @@ import javafx.scene.robot.Robot;
 
 import com.editora.command.CommandRegistry;
 import com.editora.config.ConfigManager;
+import com.editora.editor.ControlNames;
 import com.editora.search.SearchEverywhere;
 import com.editora.search.SearchEverywhere.Item;
 import com.editora.search.SearchEverywhere.Kind;
@@ -360,12 +361,12 @@ class SearchEverywhereFxTest {
             Class<?>[] sig = {rowType, boolean.class};
             FxTestSupport.call(cell, "updateItem", sig, disabledRow, false);
             boolean grayed = cell.getGraphic().getStyleClass().contains("palette-disabled");
-            boolean explained = cell.getTooltip() != null;
+            boolean explained = ControlNames.tipText(cell) != null;
             // Now reuse the same cell for a row the user CAN run: a recycled cell that kept the previous
             // row's graying or tooltip is the classic cell-factory bug, and it lies about state.
             FxTestSupport.call(cell, "updateItem", sig, enabledRow, false);
             boolean stuckStyle = cell.getGraphic().getStyleClass().contains("palette-disabled");
-            boolean stuckTip = cell.getTooltip() != null;
+            boolean stuckTip = ControlNames.tipText(cell) != null;
             return new boolean[] {grayed, explained, stuckStyle, stuckTip};
         });
         assertTrue(seen[0], "a command whose feature is off must render grayed");

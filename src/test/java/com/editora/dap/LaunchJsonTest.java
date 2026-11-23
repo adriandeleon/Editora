@@ -367,7 +367,14 @@ class LaunchJsonTest {
         assertEquals(
                 "pre-set", LaunchJson.substitute("${input:id}", ctx, Map.of(), new HashMap<>(Map.of("id", "pre-set"))));
         LaunchJson.Context root = new LaunchJson.Context(ws, ws.getRoot(), 1, "", Map.of(), ws, in -> "x");
-        assertEquals("", LaunchJson.substitute("${fileDirname}${fileDirnameBasename}", root, Map.of(), answers));
+        assertEquals(
+                "",
+                LaunchJson.substitute(
+                        "${fileDirname}${fileDirnameBasename}${relativeFileDirname}", root, Map.of(), answers));
+        Path atRoot = ws.getRoot().resolve("notes.txt"); // a file directly in the root: its folder has no name
+        LaunchJson.Context rootFile = new LaunchJson.Context(ws, atRoot, 1, "", Map.of(), ws, in -> "x");
+        assertEquals(ws.getRoot().toString(), LaunchJson.substitute("${fileDirname}", rootFile, Map.of(), answers));
+        assertEquals("", LaunchJson.substitute("${fileDirnameBasename}", rootFile, Map.of(), answers));
         assertThrows(
                 LaunchJson.LaunchJsonException.class,
                 () -> LaunchJson.substitute("${fileNope}", ctx, Map.of(), answers),

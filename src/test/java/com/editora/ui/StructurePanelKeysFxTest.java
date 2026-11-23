@@ -26,6 +26,7 @@ import javafx.scene.text.Text;
 import javafx.stage.Stage;
 import javafx.stage.WindowEvent;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import com.editora.lsp.SymbolNode;
 import com.editora.ui.StructurePanel.SortMode;
@@ -413,12 +414,12 @@ class StructurePanelKeysFxTest {
             assertTrue(returnType.getStyleClass().containsAll(List.of("structure-return-type", "type")));
 
             TreeCell<Object> documented = r.cell("cherry");
-            assertEquals("Counts the cherries.", documented.getTooltip().getText());
-            assertNull(r.cell("zeta").getTooltip(), "no comment above, no tooltip");
+            assertEquals("Counts the cherries.", ControlNames.tipText(documented));
+            assertNull(ControlNames.tipText(r.cell("zeta")), "no comment above, no tooltip");
 
             documented.updateIndex(-1);
             assertNull(documented.getGraphic());
-            assertNull(documented.getTooltip());
+            assertNull(ControlNames.tipText(documented));
             assertNull(documented.getOnContextMenuRequested());
 
             r.filter.setText("no such symbol");

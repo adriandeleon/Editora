@@ -116,14 +116,14 @@ final class SearchInFilesPopup {
         // Emacs caret movement + basic editing (registered after onQueryKey so its list navigation wins).
         com.editora.command.TextInputKeymap.installShared(query);
 
-        caseSensitive.setTooltip(ControlNames.tooltip(tr("search.caseTip")));
-        regex.setTooltip(ControlNames.tooltip(tr("search.regexTip")));
-        wholeWord.setTooltip(ControlNames.tooltip(tr("find.wholeWord")));
+        ControlNames.tip(caseSensitive, tr("search.caseTip"));
+        ControlNames.tip(regex, tr("search.regexTip"));
+        ControlNames.tip(wholeWord, tr("find.wholeWord"));
         caseSensitive.selectedProperty().addListener((o, a, b) -> runSearch());
         regex.selectedProperty().addListener((o, a, b) -> runSearch());
         wholeWord.selectedProperty().addListener((o, a, b) -> runSearch());
         backendBadge.getStyleClass().add("search-backend-badge");
-        backendBadge.setTooltip(ControlNames.tooltip(tr("search.backendRipgrepTip")));
+        ControlNames.tip(backendBadge, tr("search.backendRipgrepTip"));
         backendBadge.setVisible(false);
         backendBadge.setManaged(false);
         Region toggleSpacer = new Region();

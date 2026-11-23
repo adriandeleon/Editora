@@ -20,6 +20,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 
 import com.editora.config.MapTrails;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
@@ -1011,8 +1012,8 @@ final class ProjectMapTrails {
         String name = stopTitle(at);
         title.setText(stopCardGone ? tr("project.map.trails.bar.cardClosed", name) : name);
         title.pseudoClassStateChanged(javafx.css.PseudoClass.getPseudoClass("gone"), stopCardGone);
-        title.setTooltip(com.editora.editor.ControlNames.tooltip(
-                stopCardGone ? tr("project.map.trails.bar.cardClosedHelp") : shown.label() + " — " + name));
+        ControlNames.tip(
+                title, stopCardGone ? tr("project.map.trails.bar.cardClosedHelp") : shown.label() + " — " + name);
         previous.setDisable(stop <= 0);
         next.setDisable(stop >= count - 1);
         editButton.setDisable(shown.readOnly());

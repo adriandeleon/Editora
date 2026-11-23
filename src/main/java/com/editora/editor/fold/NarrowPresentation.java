@@ -11,6 +11,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.LazyTooltip;
 import com.editora.editor.UiZoom;
 import com.editora.editor.logviewer.LogView;
 import org.fxmisc.richtext.CodeArea;
@@ -135,7 +136,7 @@ public final class NarrowPresentation {
         HBox box = UiZoom.spacing(new HBox(text, spacer, widen), 10);
         box.getStyleClass().add("narrow-bar");
         box.setAlignment(Pos.CENTER_LEFT);
-        javafx.scene.control.Tooltip.install(box, com.editora.editor.ControlNames.tooltip(tr("editor.narrow.tip")));
+        LazyTooltip.install(box, () -> tr("editor.narrow.tip"));
         return box;
     }
 

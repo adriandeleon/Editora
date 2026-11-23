@@ -28,7 +28,6 @@ import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToolBar;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.BorderPane;
@@ -52,6 +51,7 @@ import com.editora.config.Settings;
 import com.editora.config.WorkspaceState;
 import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.LazyTooltip;
 import com.editora.editor.MenuChords;
 import com.editora.editor.TabContent;
 import com.editora.editor.UiZoom;
@@ -1798,7 +1798,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             // path-keyed stores are remapped by the caller; the tab has no buffer-side state to move.
             placeholder.relocate(target);
             tabHeaders.contentHeader(tab, placeholder);
-            tab.setTooltip(TabHeaders.tooltip(target));
+            TabHeaders.fileTooltip(tab, target);
         } else if (tab != null && bufferOf(tab) instanceof EditorBuffer buffer) {
             buffer.setPath(target);
             editorSettings.applyEditorConfig(buffer);
@@ -1827,7 +1827,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         // Not built yet: its read, when it comes, must find the file where it now is.
                         Path moved = target.resolve(oldNorm.relativize(pn));
                         unbuilt.relocate(moved);
-                        t.setTooltip(TabHeaders.tooltip(moved));
+                        TabHeaders.fileTooltip(t, moved);
                         migrateFileState(p, moved);
                     }
                     continue;
@@ -2079,7 +2079,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         removeBtn.setGraphic(Icons.trash());
         removeBtn.getStyleClass().addAll("button-icon", "flat", "recent-remove");
         removeBtn.setFocusTraversable(false);
-        removeBtn.setTooltip(ControlNames.tooltip(tr("tooltip.removeRecent")));
+        ControlNames.tip(removeBtn, tr("tooltip.removeRecent"));
         // Remove just this entry, after a confirmation, without opening it. The dropdown closes first: a
         // modal dialog over an open popup would leave the popup stacked above it. Deferred so the dialog's
         // nested event loop doesn't run inside this mouse press.
@@ -2092,7 +2092,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         CustomMenuItem item = new CustomMenuItem(row);
         item.setOnAction(e -> openRecent(path));
-        Tooltip.install(row, ControlNames.tooltip(path.toString()));
+        LazyTooltip.install(row, () -> path.toString());
         return item;
     }
 

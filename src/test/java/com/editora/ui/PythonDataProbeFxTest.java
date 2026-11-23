@@ -16,6 +16,7 @@ import com.editora.command.CommandRegistry;
 import com.editora.config.SharedConfig;
 import com.editora.dap.DapManager;
 import com.editora.dap.DebugAdapterLocator;
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
@@ -166,7 +167,7 @@ class PythonDataProbeFxTest {
     private static String dtype(DebugTableWindow w, String column) {
         return w.table().getColumns().stream()
                 .filter(c -> c.getGraphic() instanceof Label l && l.getText().equals(column))
-                .map(c -> ((Label) c.getGraphic()).getTooltip().getText())
+                .map(c -> ControlNames.tipText(((Label) c.getGraphic())))
                 .findFirst()
                 .orElse(null);
     }

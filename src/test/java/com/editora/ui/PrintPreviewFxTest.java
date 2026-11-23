@@ -22,6 +22,7 @@ import javafx.scene.text.Font;
 import javafx.stage.Stage;
 import javafx.stage.Window;
 
+import com.editora.editor.ControlNames;
 import com.editora.pdf.PdfText;
 import com.editora.print.CodePrintLayout;
 import com.editora.print.PrintService;
@@ -328,8 +329,8 @@ class PrintPreviewFxTest {
             Button next = part("next");
             assertEquals(tr("print.preview.previous"), prev.getAccessibleText());
             assertEquals(tr("print.preview.next"), next.getAccessibleText());
-            assertEquals(tr("print.preview.previous"), prev.getTooltip().getText());
-            assertEquals(tr("print.preview.next"), next.getTooltip().getText());
+            assertEquals(tr("print.preview.previous"), ControlNames.tipText(prev));
+            assertEquals(tr("print.preview.next"), ControlNames.tipText(next));
             assertEquals(javafx.stage.Modality.WINDOW_MODAL, stage().getModality());
             assertTrue(stage().getMinWidth() >= 400 && stage().getMinHeight() >= 300, "a minimum size is set");
         });

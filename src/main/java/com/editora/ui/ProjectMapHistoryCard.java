@@ -110,8 +110,8 @@ final class ProjectMapHistoryCard extends MapFloatingCard {
         // Its modes are commands too (KBD-01): each presses its button while the keyboard is in the card.
         MapButtonCommands.press(this, "projectMap.historyChanges", changesButton);
         MapButtonCommands.press(this, "projectMap.historyBlame", blameButton);
-        changesButton.setTooltip(ControlNames.tooltip(tr("project.map.history.changesTip")));
-        blameButton.setTooltip(ControlNames.tooltip(tr("project.map.history.blameTip")));
+        ControlNames.tip(changesButton, tr("project.map.history.changesTip"));
+        ControlNames.tip(blameButton, tr("project.map.history.blameTip"));
         modes.selectedToggleProperty().addListener((obs, was, now) -> {
             if (now != null) {
                 setMode(now == blameButton ? Mode.BLAME : Mode.CHANGES);
@@ -120,7 +120,7 @@ final class ProjectMapHistoryCard extends MapFloatingCard {
         });
         openCommit.getStyleClass().add("flat");
         openCommit.setMnemonicParsing(false);
-        openCommit.setTooltip(ControlNames.tooltip(tr("project.map.history.openCommitTip")));
+        ControlNames.tip(openCommit, tr("project.map.history.openCommitTip"));
         openCommit.setOnAction(event -> {
             LineHistory.Commit picked = pickedCommit();
             if (picked != null) {
@@ -197,11 +197,13 @@ final class ProjectMapHistoryCard extends MapFloatingCard {
                 ? tr("project.map.history.titleFile", com.editora.config.PathDisplay.fileName(file))
                 : tr("project.map.history.title", name);
         title.setText(heading);
-        title.setTooltip(ControlNames.tooltip(tr(
-                "project.map.history.titleTip",
-                com.editora.config.PathDisplay.fileName(file),
-                startLine + 1,
-                endLine + 1)));
+        ControlNames.tip(
+                title,
+                tr(
+                        "project.map.history.titleTip",
+                        com.editora.config.PathDisplay.fileName(file),
+                        startLine + 1,
+                        endLine + 1));
         setAccessibleText(heading);
         summary.setText(tr("project.map.history.reading"));
         commits.getItems().clear();

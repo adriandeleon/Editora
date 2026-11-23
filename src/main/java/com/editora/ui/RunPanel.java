@@ -20,6 +20,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.build.OutputStyle;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.run.AnsiText;
 import com.editora.run.ConsoleUrls;
@@ -321,10 +322,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     static void showRuntime(Label chip, com.editora.run.@Nullable RuntimeVersion version) {
         boolean shown = version != null;
         chip.setText(version != null ? version.label() : "");
-        chip.setTooltip(
-                version != null && !version.detail().isBlank()
-                        ? com.editora.editor.ControlNames.tooltip(version.detail())
-                        : null);
+        ControlNames.tip(chip, version != null && !version.detail().isBlank() ? version.detail() : null);
         chip.setAccessibleText(version != null ? tr("run.runtime", version.label()) : null);
         chip.setVisible(shown);
         chip.setManaged(shown);

@@ -14,6 +14,7 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Region;
 import javafx.stage.Stage;
 
+import com.editora.editor.ControlNames;
 import com.editora.i18n.Messages;
 import com.editora.testkit.Await;
 import com.editora.vfs.RemoteConnection;
@@ -140,9 +141,7 @@ class SettingsRemoteSitesFxTest {
 
             typeAndEnter(f.get(2), "70000");
             assertTrue(red(f.get(2)));
-            assertEquals(
-                    Messages.tr("settings.remote.check.port"),
-                    f.get(2).getTooltip().getText());
+            assertEquals(Messages.tr("settings.remote.check.port"), ControlNames.tipText(f.get(2)));
             assertEquals("70000", f.get(2).getText(), "what was typed stays, to be fixed");
             assertEquals(22, fx.shared.getConnections().get(0).port(), "nothing was saved");
 
@@ -174,10 +173,10 @@ class SettingsRemoteSitesFxTest {
             String expanded = System.getProperty("user.home") + "/.ssh/editora-test-no-such-key";
             assertEquals(expanded, fx.shared.getConnections().get(0).keyPath());
             assertEquals(expanded, f.get(4).getText());
-            Await.holdsWithin(() -> onFx(() -> f.get(4).getTooltip()) != null, Duration.ofSeconds(10));
+            Await.holdsWithin(() -> onFx(() -> ControlNames.tipText(f.get(4))) != null, Duration.ofSeconds(10));
             assertEquals(
                     Messages.tr("settings.remote.check.keyMissing", expanded),
-                    FxTestSupport.callOnFx(() -> f.get(4).getTooltip().getText()));
+                    FxTestSupport.callOnFx(() -> ControlNames.tipText(f.get(4))));
         }
     }
 

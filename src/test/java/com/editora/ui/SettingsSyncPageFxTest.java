@@ -19,6 +19,7 @@ import javafx.scene.control.TextField;
 import javafx.stage.Stage;
 
 import com.editora.config.Settings;
+import com.editora.editor.ControlNames;
 import com.editora.git.QuietGit;
 import com.editora.sync.FileSyncTarget;
 import com.editora.sync.SyncCategory;
@@ -517,7 +518,7 @@ class SettingsSyncPageFxTest {
             url.fireEvent(new javafx.event.ActionEvent());
             assertEquals("", settings.getSyncRepoUrl(), "nothing is saved");
             assertTrue(url.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
-            assertEquals(tr("settings.sync.repo.credentials"), url.getTooltip().getText());
+            assertEquals(tr("settings.sync.repo.credentials"), ControlNames.tipText(url));
             assertEquals(tr("settings.sync.repo.credentials"), state.getText());
             SettingsRig.<Button>control(window, "syncConnectButton").fire();
             assertFalse(settings.isSyncEnabled(), "Connect does not reach for the stored URL instead");
@@ -538,7 +539,7 @@ class SettingsSyncPageFxTest {
             SettingsRig.typeAndEnter(branch, "a..b");
             assertEquals("main", settings.getSyncBranch());
             assertTrue(branch.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
-            assertEquals(tr("settings.sync.branch.invalid"), branch.getTooltip().getText());
+            assertEquals(tr("settings.sync.branch.invalid"), ControlNames.tipText(branch));
             SettingsRig.typeAndEnter(branch, "editora/sync");
             assertEquals("editora/sync", settings.getSyncBranch());
             assertTrue(SettingsRig.texts(FxTestSupport.<Stage>field(window, "stage")
@@ -751,7 +752,7 @@ class SettingsSyncPageFxTest {
             assertHugsItsText(pill);
             assertTrue(detail.isVisible(), "with the reason under it");
             assertEquals(sync.stateText(), detail.getText());
-            assertEquals(detail.getText(), pill.getTooltip().getText());
+            assertEquals(detail.getText(), ControlNames.tipText(pill));
 
             fakeState(SettingsSync.Phase.OFF, null, null);
             settings.setSyncEnabled(false);

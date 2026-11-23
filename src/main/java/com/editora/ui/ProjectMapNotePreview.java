@@ -197,7 +197,7 @@ final class ProjectMapNotePreview extends StackPane {
                 path.getFileName() == null
                         ? path.toString()
                         : path.getFileName().toString());
-        title.setTooltip(ControlNames.tooltip(path.toString()));
+        ControlNames.tip(title, path.toString());
         setAccessibleText(tr("project.map.notes.accessible", path.toString()));
     }
 
@@ -320,9 +320,10 @@ final class ProjectMapNotePreview extends StackPane {
         Button where = new Button(ProjectMapStickyNotes.where(note), Icons.notes());
         where.getStyleClass().addAll("flat", "project-map-note-preview-where");
         String quoted = note.anchor().selectedText().strip();
-        where.setTooltip(ControlNames.tooltip(
-                quoted.isEmpty() ? tr("project.map.notes.openAt") : quoted + "\n" + tr("project.map.notes.openAt")));
         where.setAccessibleHelp(tr("project.map.notes.openAt"));
+        ControlNames.tip(
+                where,
+                quoted.isEmpty() ? tr("project.map.notes.openAt") : quoted + "\n" + tr("project.map.notes.openAt"));
         int line = note.anchor().line();
         // Its file at the note: Open in Editor while it has the keyboard (KBD-01), as a press of it.
         MapButtonCommands.runs(where, where, "projectMap.openInEditor", () -> {

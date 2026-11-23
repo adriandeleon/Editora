@@ -20,6 +20,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.shape.Rectangle;
 
 import com.editora.command.CommandRegistry;
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -1120,7 +1121,7 @@ class PreviewCommandsFxTest {
         assertEquals(tr("statusbar.markdownLint", 2), FxTestSupport.callOnFx(segment::getText));
         assertEquals(
                 tr("statusbar.tip.markdownLintCounts", 0, 2, 0),
-                FxTestSupport.callOnFx(() -> segment.getTooltip().getText()));
+                FxTestSupport.callOnFx(() -> ControlNames.tipText(segment)));
 
         document("notes.txt", "plain   \n");
         FxTestSupport.drainFx();

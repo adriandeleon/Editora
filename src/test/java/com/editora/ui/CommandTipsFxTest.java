@@ -11,6 +11,7 @@ import javafx.scene.control.ButtonBase;
 
 import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
+import com.editora.editor.ControlNames;
 import com.editora.toolbar.ToolbarCatalog;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -72,11 +73,11 @@ class CommandTipsFxTest {
                 Button save = CommandTips.name(new Button(), "file.save");
                 String name = CommandTips.title("file.save") + " (" + cua.displayChord("file.save") + ")";
                 assertEquals("Save", CommandTips.title("file.save"), "the title without its palette category");
-                assertEquals(name, save.getTooltip().getText());
+                assertEquals(name, ControlNames.tipText(save));
                 assertEquals(name, save.getAccessibleText(), "a screen reader says what the tooltip shows");
                 assertEquals(
                         com.editora.editor.ControlNames.TOOLTIP_DELAY,
-                        save.getTooltip().getShowDelay(),
+                        ControlNames.builtTooltip(save).getShowDelay(),
                         "the one delay every named control's tooltip has");
 
                 // A keymap switch: the same button, named again from the new keymap.
@@ -84,7 +85,7 @@ class CommandTipsFxTest {
                 TextInputKeymap.setShared(emacs);
                 CommandTips.refresh();
                 String switched = "Save (" + emacs.displayChord("file.save") + ")";
-                assertEquals(switched, save.getTooltip().getText());
+                assertEquals(switched, ControlNames.tipText(save));
                 assertEquals(switched, save.getAccessibleText());
 
                 // An unbound command shows its title alone, never an empty pair of parentheses.
@@ -108,7 +109,7 @@ class CommandTipsFxTest {
                 maximized[0] = true;
                 CommandTips.refresh(button);
                 assertEquals("Restore (" + chord + ")", button.getAccessibleText());
-                assertEquals(button.getAccessibleText(), button.getTooltip().getText());
+                assertEquals(button.getAccessibleText(), ControlNames.tipText(button));
             });
         });
     }
@@ -126,8 +127,8 @@ class CommandTipsFxTest {
                 for (ButtonBase b : buttons) {
                     String name = b.getAccessibleText();
                     assertTrue(name != null && !name.isBlank(), "a toolbar button has no accessible name: " + b);
-                    assertNotNull(b.getTooltip(), "a toolbar button has no tooltip: " + name);
-                    assertEquals(name, b.getTooltip().getText(), "one string for the tooltip and the name");
+                    assertNotNull(ControlNames.tipText(b), "a toolbar button has no tooltip: " + name);
+                    assertEquals(name, ControlNames.tipText(b), "one string for the tooltip and the name");
                     assertFalse(b.isFocusTraversable(), name + " is in the Tab order");
                 }
                 KeymapManager shared = TextInputKeymap.sharedKeymap();

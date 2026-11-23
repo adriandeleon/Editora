@@ -160,8 +160,8 @@ final class HttpImageView extends VBox {
     private static ToggleButton segment(String label, String tip) {
         ToggleButton b = new ToggleButton(label);
         b.getStyleClass().addAll("md-viewmode-segment", "flat");
-        b.setTooltip(ControlNames.tooltip(tip));
         b.setAccessibleHelp(tip);
+        ControlNames.tip(b, tip);
         return b;
     }
 

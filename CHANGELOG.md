@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **PHP web apps and PHPUnit.** Run File and Debug File now run a PHP file as what it is: a script, a web app's
+  `index.php` on PHP's built-in web server, a Laravel app as `artisan serve` serves it, or a PHPUnit test file's tests.
+  Debugging a web app stops at your breakpoints on each request, and F5 in any class file of the app serves it. Debug
+  Test at Caret debugs the PHPUnit test at the caret alone. **Debug: Listen for Xdebug** waits for PHP you start
+  yourself, such as a request to your own web server, without a launch.json.
 - **Conditions on instruction breakpoints.** An instruction breakpoint in the Disassembly view can now have a
   condition and a hit count (Edit Breakpoint… on its row), as a line breakpoint can, where the debugger takes them
   (CodeLLDB, GDB, Delve). The Breakpoints list shows the session's instruction breakpoints too: Enter opens the
@@ -120,6 +125,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Before, only F5 started such a file, and Run said it was not runnable. Debug: Debug Current File now also works on
   a file that Run File runs.
 
+- **Internal: a performance A/B against the previous release.** `scripts/perf-ab.sh <tag> [reps]` builds the
+  previous release in a worktree beside the main checkout and runs a headless probe against both builds,
+  interleaved: typing (including rendered frames per keystroke), scrolling, idle, highlighting, a large file, heap
+  per tab, Find and save. It prints a table of medians and marks anything more than 10 % worse. Each release now
+  runs it before the tag (docs/release.md, step 3).
+
 ### Changed
 
 - **Faster typing, startup and large projects** (performance review of 2026-11-23).
@@ -139,6 +150,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Start-up builds each menu's items when that menu first opens, builds the Project Map when it is first opened
     rather than with the Project panel, and reads the AI keys from the keychain and decodes the window icons while
     other start-up work goes on.
+  - A window no longer builds a tooltip for every button, status bar item and tab before it first paints: each
+    tooltip is built the first time the pointer rests on its control, and looks and reads the same as before.
   - Project Map: typing in a column filter on a very large folder no longer sorts the whole map per keystroke;
     zooming, and with Compact rows moving the pointer between columns, no longer re-sorts or lays out every column;
     problem counts are no longer rebuilt every 100 ms while the Map is hidden; "Show dependencies of the selection"
@@ -261,6 +274,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Smaller fixes in blame, relative dates, the merge viewer, patch tabs, Load More errors and the remotes
     manager.
 
+- **`${fileDirnameBasename}` in `launch.json` is empty for a file at the root of a drive.** It used to read
+  `null`, as did `${relativeFileDirname}` when the file had no folder; both are now empty, as in VS Code.
 - **Old error underlines came back after some edits.** After signature help, Format, code actions and other requests
   that send the text first, the typing pause could put the pre-edit squiggles back on lines the edit had moved.
 - **The Threads view stopped updating** while a program kept starting and ending threads.

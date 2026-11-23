@@ -952,7 +952,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             Hyperlink link = new Hyperlink(GitFormat.shortHash(parent));
             link.getStyleClass().add("git-log-parent");
             link.setFocusTraversable(false);
-            link.setTooltip(ControlNames.tooltip(parent));
+            ControlNames.tip(link, parent);
             link.setOnAction(e -> {
                 if (!selectCommit(parent)) {
                     actions.commitNotLoaded(parent);

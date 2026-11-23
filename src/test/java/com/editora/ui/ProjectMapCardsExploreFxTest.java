@@ -27,6 +27,7 @@ import com.editora.config.FileIdentity;
 import com.editora.config.NoteScope;
 import com.editora.config.PersonalNote;
 import com.editora.config.TextAnchor;
+import com.editora.editor.ControlNames;
 import com.editora.git.GitService;
 import com.editora.testkit.Await;
 import org.jspecify.annotations.Nullable;
@@ -470,7 +471,7 @@ class ProjectMapCardsExploreFxTest {
         FxTestSupport.runOnFx(() -> {
             Label lock = FxTestSupport.field(card, "readOnly");
             assertEquals(tr("project.map.preview.glance"), lock.getAccessibleText());
-            assertEquals(tr("project.map.preview.glance"), lock.getTooltip().getText());
+            assertEquals(tr("project.map.preview.glance"), ControlNames.tipText(lock));
             for (ProjectMapPreview each : List.of(fileCard, card)) {
                 Label status = FxTestSupport.field(each, "status");
                 status.setText(

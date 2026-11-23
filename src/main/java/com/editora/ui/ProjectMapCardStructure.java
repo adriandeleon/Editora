@@ -151,7 +151,6 @@ final class ProjectMapCardStructure implements CardAttachment {
         title.setMinWidth(0);
         title.setMaxWidth(Double.MAX_VALUE);
         title.setTextOverrun(OverrunStyle.ELLIPSIS);
-        title.setTooltip(ControlNames.tooltip());
         HBox.setHgrow(title, Priority.ALWAYS);
         Button close = new Button("×");
         close.getStyleClass().add("project-map-preview-button");
@@ -290,7 +289,7 @@ final class ProjectMapCardStructure implements CardAttachment {
         Path file = card.path();
         Path fileName = file == null ? null : file.getFileName();
         String text = tr("project.map.column.structure", fileName == null ? "" : fileName.toString());
-        title.getTooltip().setText(text);
+        ControlNames.tip(title, text);
         tree.setAccessibleText(text);
     }
 

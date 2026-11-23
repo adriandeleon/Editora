@@ -19,7 +19,6 @@ import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.ScrollPane;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.FlowPane;
@@ -35,7 +34,7 @@ import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
 import com.editora.config.Project;
 import com.editora.config.RecentFiles;
-import com.editora.editor.ControlNames;
+import com.editora.editor.LazyTooltip;
 import com.editora.editor.TabContent;
 import com.editora.editor.UiZoom;
 import com.editora.vfs.RemoteConnection;
@@ -431,7 +430,7 @@ public final class WelcomePane extends Region implements TabContent {
         Path root = project.rootPath();
         String rootText = root == null ? "" : Vfs.displayLabel(root);
         HBox row = recentRowBox(link, folderLabel(Vfs.isLocal(root) ? WelcomeText.dirText(root, home) : rootText));
-        Tooltip.install(row, ControlNames.tooltip(rootText));
+        LazyTooltip.install(row, () -> rootText);
         row.setOnContextMenuRequested(e -> {
             menuFor(null, rootText).show(row, e.getScreenX(), e.getScreenY());
             e.consume();
@@ -483,7 +482,7 @@ public final class WelcomePane extends Region implements TabContent {
         Label where = folderLabel(WelcomeText.folderText(path, projectRoot, local ? home : null));
         HBox row = chip == null ? recentRowBox(link, where) : recentRowBox(link, chip, where);
         String pathText = Vfs.displayLabel(path);
-        Tooltip.install(row, ControlNames.tooltip(pathText));
+        LazyTooltip.install(row, () -> pathText);
         row.setOnContextMenuRequested(e -> {
             menuFor(path, pathText).show(row, e.getScreenX(), e.getScreenY());
             e.consume();
@@ -637,7 +636,7 @@ public final class WelcomePane extends Region implements TabContent {
             row.getChildren().add(where);
         }
         row.setAlignment(Pos.BASELINE_LEFT);
-        Tooltip.install(row, ControlNames.tooltip("sftp://" + c.id()));
+        LazyTooltip.install(row, () -> "sftp://" + c.id());
         return row;
     }
 

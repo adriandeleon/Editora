@@ -66,11 +66,11 @@ final class ProjectMapResultsStrip extends HBox {
         count.setAccessibleRole(AccessibleRole.TEXT);
         partial.getStyleClass().add("project-map-results-partial");
         partial.setMinWidth(Label.USE_PREF_SIZE);
-        partial.setTooltip(ControlNames.tooltip(tr("project.map.results.partialTooltip")));
+        ControlNames.tip(partial, tr("project.map.results.partialTooltip"));
         list.getStyleClass().add("project-map-results-list");
         list.setPromptText(tr("project.map.results.list"));
         list.setAccessibleText(tr("project.map.results.list"));
-        list.setTooltip(ControlNames.tooltip(tr("project.map.results.list")));
+        ControlNames.tip(list, tr("project.map.results.list"));
         list.setVisibleRowCount(16);
         list.setMaxWidth(Double.MAX_VALUE);
         list.setMinWidth(0);

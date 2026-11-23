@@ -117,7 +117,7 @@ final class AboutDialog {
                         openFile.accept(settingsFile);
                     }
                 });
-        settingsLink.setTooltip(ControlNames.tooltip(tr("settings.openFileTip")));
+        ControlNames.tip(settingsLink, tr("settings.openFileTip"));
         settingsLink.setOnAction(e -> {
             alert.close();
             if (openFile != null) {

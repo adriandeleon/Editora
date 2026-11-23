@@ -5,7 +5,6 @@ import java.util.function.Supplier;
 
 import javafx.animation.PauseTransition;
 import javafx.scene.control.Label;
-import javafx.scene.control.Tooltip;
 import javafx.util.Duration;
 
 import com.editora.config.Settings;
@@ -32,7 +31,6 @@ final class StatusWordCount {
     static final String COUNT_SITE = "StatusWordCount.count";
 
     private final Label label = new Label();
-    private final Tooltip tooltip = ControlNames.tooltip();
     private final Supplier<Settings> settings;
     private final PauseTransition selectionPause = new PauseTransition(Duration.millis(250));
 
@@ -47,7 +45,6 @@ final class StatusWordCount {
     StatusWordCount(Supplier<Settings> settings) {
         this.settings = settings;
         label.getStyleClass().addAll("status-segment", "status-word-count");
-        label.setTooltip(tooltip);
         selectionPause.setOnFinished(e -> countSelection());
         hide();
     }
@@ -133,7 +130,7 @@ final class StatusWordCount {
 
     private void show(int words, boolean selected) {
         label.setText(tr(selected ? "statusbar.wordsSelected" : "statusbar.words", words));
-        tooltip.setText(tr("statusbar.tip.words", WordCount.readingMinutes(words)));
+        ControlNames.tip(label, tr("statusbar.tip.words", WordCount.readingMinutes(words)));
         label.setVisible(true);
         label.setManaged(true);
     }

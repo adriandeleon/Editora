@@ -247,7 +247,7 @@ final class DebugParallelStacksWindow {
         for (DapModels.ThreadStack t : b.threads()) {
             names.append(names.isEmpty() ? "" : "\n").append(ThreadDump.name(t));
         }
-        head.setTooltip(ControlNames.tooltip(names.toString()));
+        ControlNames.tip(head, names.toString());
         VBox box = new VBox(head);
         box.getStyleClass().add("parallel-stacks-box");
         if (b.hasShownThread()) {
@@ -285,7 +285,7 @@ final class DebugParallelStacksWindow {
         row.setMaxWidth(Double.MAX_VALUE);
         row.setPrefHeight(UiZoom.px(ROW));
         row.setAccessibleText(f.text());
-        row.setTooltip(ControlNames.tooltip(DebugPanelText.frameText(f.opened())));
+        ControlNames.tip(row, DebugPanelText.frameText(f.opened()));
         row.setAction(() -> {
             row.requestFocus();
             actions.openFrame(f.opened());

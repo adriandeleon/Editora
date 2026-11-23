@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import com.editora.editor.ControlNames;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -31,7 +32,7 @@ class ToolStatusRowFxTest {
             assertTrue(row.pill().getStyleClass().contains("settings-git-warn"));
             assertFalse(row.pill().getStyleClass().contains("settings-git-missing"));
             assertEquals(shortText, row.pill().getText());
-            assertEquals(whole, row.pill().getTooltip().getText());
+            assertEquals(whole, ControlNames.tipText(row.pill()));
             assertFalse(row.installButton().isDisabled(), "Install… updates it");
             assertTrue(shortText.contains("0.31.2"), "the version is in the short text");
             assertTrue(shortText.length() < whole.length());

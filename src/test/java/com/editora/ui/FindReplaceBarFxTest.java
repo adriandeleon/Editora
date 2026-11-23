@@ -9,6 +9,7 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
@@ -97,9 +98,9 @@ class FindReplaceBarFxTest {
             for (Button button : iconButtons) {
                 assertTrue(button.getText() == null || button.getText().isEmpty());
                 assertNotNull(button.getGraphic());
-                assertNotNull(button.getTooltip());
+                assertNotNull(ControlNames.tipText(button));
                 assertFalse(button.getAccessibleText().isBlank());
-                assertEquals(button.getAccessibleText(), button.getTooltip().getText());
+                assertEquals(button.getAccessibleText(), ControlNames.tipText(button));
             }
         });
     }

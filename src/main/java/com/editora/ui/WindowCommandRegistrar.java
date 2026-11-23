@@ -2274,6 +2274,10 @@ final class WindowCommandRegistrar {
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugOpenCoreDump)));
         host.registry()
                 .register(Command.of(
+                        "debug.listenXdebug",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().php::listen)));
+        host.registry()
+                .register(Command.of(
                         "debug.reattach",
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugReattach)));
         host.registry()

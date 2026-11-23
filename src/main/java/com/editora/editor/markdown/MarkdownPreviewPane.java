@@ -129,7 +129,7 @@ public final class MarkdownPreviewPane implements TabContent {
         lock.setSelected(locked);
         lock.setText(tr(locked ? "markdown.sidePreview.locked" : "markdown.sidePreview.following"));
         String hint = tr(locked ? "markdown.sidePreview.unlockHint" : "markdown.sidePreview.lockHint");
-        lock.setTooltip(ControlNames.tooltip(hint));
+        ControlNames.tip(lock, hint);
         lock.setAccessibleText(hint);
     }
 

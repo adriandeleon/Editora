@@ -9,6 +9,7 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
+import com.editora.editor.ControlNames;
 import com.editora.i18n.Messages;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -102,9 +103,7 @@ class SettingsPluginsFxTest {
             reg.fireEvent(new javafx.event.ActionEvent());
             assertEquals("", fx.shared.getSettings().getPluginRegistryUrlRaw(), "the built-in registry stays");
             assertTrue(reg.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
-            assertEquals(
-                    Messages.tr("settings.plugins.registryNotHttps"),
-                    reg.getTooltip().getText());
+            assertEquals(Messages.tr("settings.plugins.registryNotHttps"), ControlNames.tipText(reg));
             reg.setText("https://registry.example.invalid/index.json");
             reg.fireEvent(new javafx.event.ActionEvent());
             assertFalse(reg.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
