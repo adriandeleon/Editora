@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Autos.** When the program stops, the Debug window's Variables view now has an **Autos** list at its end: open it
   to see the values of the variables and fields used on the line it stopped at and the line before, as Visual Studio
   shows them. It stays open from stop to stop once you open it, and works with every debugger Editora runs.
+- **Return values after a step.** When a step leaves a function, the Variables view shows what it returned, first
+  in the caller's locals as `(return) name`. It works in Python, and in Kotlin, Groovy and Clojure on Editora's own
+  JVM debugger, for the function you step out of (JavaScript's debugger shows its own "Return value").
 - **Jest and Vitest.** In a package that tests with Jest or Vitest, Debug Test at Caret now debugs the test (or
   `describe`) at the caret under that runner, alone, with breakpoints in your test and the code it calls, TypeScript
   and `.tsx` files included. F5 on a test file debugs all of its tests, and Run File on it runs them with the runner

@@ -25,6 +25,7 @@ import org.eclipse.lsp4j.debug.Source;
 import org.eclipse.lsp4j.debug.SourceBreakpoint;
 import org.eclipse.lsp4j.debug.StackFrame;
 import org.eclipse.lsp4j.debug.StackTraceArguments;
+import org.eclipse.lsp4j.debug.StepOutArguments;
 import org.eclipse.lsp4j.debug.StoppedEventArguments;
 import org.eclipse.lsp4j.debug.TerminatedEventArguments;
 import org.eclipse.lsp4j.debug.Variable;
@@ -255,6 +256,115 @@ class JvmDebugAdapterTest {
             assertTrue(
                     s.client().output.toString().contains("adl 42"),
                     s.client().output.toString());
+        } finally {
+            s.socket().close();
+        }
+    }
+
+    /**
+     * Stepping out of a method (and stepping over its last line) shows what it returned, first in the caller's Locals,
+     * as {@code (return) name()}; a recursive call's own return is not it, a void method has none, and the next step
+     * forgets it.
+     */
+    @Test
+    void aStepThatLeavesAMethodShowsWhatItReturned(@TempDir Path dir) throws Exception {
+        Path pkg = Files.createDirectories(dir.resolve("p"));
+        Path source = pkg.resolve("Ret.java");
+        Files.writeString(source, """
+                package p;
+                public class Ret {
+                    static int fact(int n) {
+                        int r = n <= 1 ? 1 : n * fact(n - 1);
+                        return r;
+                    }
+                    static void say(String s) {
+                        System.out.println(s);
+                    }
+                    public static void main(String[] args) {
+                        int v = fact(3);
+                        say("v=" + v);
+                        System.exit(0);
+                    }
+                }
+                """);
+        var javac = javax.tools.ToolProvider.getSystemJavaCompiler();
+        assertNotNull(javac, "tests run on a JDK");
+        assertEquals(
+                0, javac.run(null, null, null, "-g", "-d", dir.resolve("out").toString(), source.toString()));
+
+        Session s = open();
+        try {
+            CompletableFuture<Void> launched = s.server()
+                    .launch(Map.of(
+                            "argv",
+                            List.of(javaExecutable(), "-cp", dir.resolve("out").toString(), "p.Ret"),
+                            "cwd",
+                            dir.toString(),
+                            "jvmOptionsVariable",
+                            "JDK_JAVA_OPTIONS",
+                            "language",
+                            "java"));
+            s.client().initialized.get(WAIT, TimeUnit.SECONDS);
+            breakAt(s.server(), source, 5, 8); // fact's return line (each call), say's body
+            SetExceptionBreakpointsArguments none = new SetExceptionBreakpointsArguments();
+            none.setFilters(new String[0]);
+            s.server().setExceptionBreakpoints(none);
+            s.server().configurationDone(null);
+            launched.get(WAIT, TimeUnit.SECONDS);
+
+            // The innermost fact (n=1) stops first; continue to the outermost (n=3), returning 6.
+            StoppedEventArguments stop = s.client().stops.poll(WAIT, TimeUnit.SECONDS);
+            assertNotNull(stop);
+            for (int i = 0; i < 2; i++) {
+                ContinueArguments cont = new ContinueArguments();
+                cont.setThreadId(stop.getThreadId());
+                s.server().continue_(cont).get(WAIT, TimeUnit.SECONDS);
+                stop = s.client().stops.poll(WAIT, TimeUnit.SECONDS);
+                assertNotNull(stop);
+            }
+            assertEquals(
+                    "3",
+                    valueOf(
+                            locals(
+                                    s.server(),
+                                    top(s.server(), stop.getThreadId()).getId()),
+                            "n"));
+            breakAt(s.server(), source, 8); // fact's breakpoint off: the step out is not cut short
+
+            StepOutArguments out = new StepOutArguments();
+            out.setThreadId(stop.getThreadId());
+            s.server().stepOut(out).get(WAIT, TimeUnit.SECONDS);
+            StoppedEventArguments stepped = s.client().stops.poll(WAIT, TimeUnit.SECONDS);
+            assertNotNull(stepped, "the step out stops");
+            StackFrame caller = top(s.server(), stepped.getThreadId());
+            assertEquals("Ret.main", caller.getName());
+            List<Variable> vars = locals(s.server(), caller.getId());
+            assertEquals("(return) fact()", vars.getFirst().getName(), "first in the caller's Locals: " + vars);
+            assertEquals("6", vars.getFirst().getValue(), "the outermost call's value, not an inner one's");
+
+            // The next step forgets it; a void method returns nothing to show.
+            NextArguments next = new NextArguments();
+            next.setThreadId(stepped.getThreadId());
+            s.server().next(next).get(WAIT, TimeUnit.SECONDS);
+            StoppedEventArguments atSay = s.client().stops.poll(WAIT, TimeUnit.SECONDS);
+            assertNotNull(atSay);
+            StackFrame inSay = top(s.server(), atSay.getThreadId());
+            if (inSay.getName().equals("Ret.say")) { // the breakpoint in say's body
+                s.server().stepOut(out).get(WAIT, TimeUnit.SECONDS);
+                atSay = s.client().stops.poll(WAIT, TimeUnit.SECONDS);
+                assertNotNull(atSay);
+                inSay = top(s.server(), atSay.getThreadId());
+            }
+            assertTrue(
+                    locals(s.server(), inSay.getId()).stream()
+                            .noneMatch(v -> v.getName().startsWith("(return)")),
+                    "nothing returned shows: " + locals(s.server(), inSay.getId()));
+
+            breakAt(s.server(), source); // none left: Continue runs to the end
+            ContinueArguments cont = new ContinueArguments();
+            cont.setThreadId(atSay.getThreadId());
+            s.server().continue_(cont).get(WAIT, TimeUnit.SECONDS);
+            assertEquals(0, s.client().exited.get(WAIT, TimeUnit.SECONDS));
         } finally {
             s.socket().close();
         }

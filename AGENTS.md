@@ -89,7 +89,9 @@ worktree so branch switches and commits cannot interfere.
   command-line or configuration facts change. The user guide lives in [`user-docs/`](user-docs/README.md):
   a change that affects what a user sees updates its page there, in the same pull request. The website
   copies it (`SyncDocs`) and release builds ship it as HTML for Help ▸ Documentation; feature pages, news
-  and the archived docs stay in the website repository.
+  and the archived docs stay in the website repository. A local build renders that HTML into `.docs-site/`
+  when an `editora-website` checkout is nearby and the guide changed (about 20–35 s, once); pass
+  `-Ddocs.render=skip` when a build does not need it.
 - Do not commit generated build output, editor state, credentials, or unrelated user changes.
 
 ## Pull requests — do not wait for CI

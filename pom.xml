@@ -95,6 +95,11 @@
         <!-- Where the rendered user guide is picked up from (see the docs-site resource below). Outside
              target/ because the dist profile runs clean. -->
         <docs.site.dir>${project.basedir}/.docs-site</docs.site.dir>
+        <!-- scripts/RenderAppDocs.java: auto (render when the guide, the version or the website changed), force,
+             or skip; and the editora-website checkout to render with (empty: $EDITORA_WEBSITE, then the first
+             editora-website folder beside this checkout or one of its parents). -->
+        <docs.render>auto</docs.render>
+        <editora.website.dir></editora.website.dir>
         <!-- App icon for the native installer; overridden per OS (.icns/.ico/.png). -->
         <jpackage.icon>${project.basedir}/branding/editora.png</jpackage.icon>
         <!-- Transitive automatic-module deps patched by moditect for jlink/jpackage. -->
@@ -520,8 +525,9 @@
             </resource>
             <!-- The user guide as HTML, for Help > Documentation to serve from 127.0.0.1 (com.editora.web.AppDocs).
                  user-docs/ is its source; editora-website's scripts/build-app-docs.mjs renders it into
-                 ${docs.site.dir}, which release CI does before packaging. A build without that folder (most
-                 local builds) simply has no copy, and the docs links go to the website. -->
+                 ${docs.site.dir}: release CI before packaging, a local build through the render-app-docs step
+                 below when an editora-website checkout is beside it. A build without that folder simply has no
+                 copy, and the docs links go to the website. -->
             <resource>
                 <directory>${docs.site.dir}</directory>
                 <filtering>false</filtering>
@@ -1638,6 +1644,28 @@
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.7.0</version>
                 <executions>
+                    <!-- Renders the user guide into ${docs.site.dir} when it is stale, before process-resources
+                         copies it into the jar, so a local build serves Help > Documentation from the app as a
+                         release does. Needs an editora-website checkout with node_modules and Node; without them
+                         it says so in one line. Quiet when up to date, never fails the build, skipped on CI.
+                         -Ddocs.render=skip turns it off, -Ddocs.render=force renders anyway. -->
+                    <execution>
+                        <id>render-app-docs</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${java.home}/bin/java</executable>
+                            <arguments>
+                                <argument>${project.basedir}/scripts/RenderAppDocs.java</argument>
+                                <argument>${project.basedir}</argument>
+                                <argument>${docs.site.dir}</argument>
+                                <argument>--website=${editora.website.dir}</argument>
+                                <argument>--mode=${docs.render}</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
                     <execution>
                         <id>css-to-bss</id>
                         <phase>process-classes</phase>

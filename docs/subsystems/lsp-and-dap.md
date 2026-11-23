@@ -1608,6 +1608,20 @@ Set Value, but not watches (no edit, no Delete). The node is added only while it
 earlier stop of Debug History. Adapter-agnostic: every debugger that evaluates watches gets it. `DebugAutosFxTest`
 covers the node, its order, a refused expression and the next stop's lines.
 
+**Return values after a step.** A step that leaves a function shows what it returned, first in the caller's Locals
+as `(return) name`, where the adapter can say it. debugpy does with `showReturnValue: true`, which Editora sends on every
+launch and attach (`PythonLaunch.request`, `LaunchConfig.pythonAttach`) and adds to a launch.json debugpy configuration
+that does not set it (`LaunchRoute`), as VS Code's Python extension defaults it (debugpy's own default is off).
+Editora's JVM adapter (Kotlin, Groovy, Clojure, scripts) does it itself: a Step Over or Step Out puts a
+`MethodExitRequest` on the stepping thread, filtered to the stepped-from method's class, and keeps the value of that
+method's own exit at the depth it started at (`ReturnWatch`; a recursive call exits deeper and is not it; a `void`
+method or constructor has none); the top frame's Locals list it first as `(return) name()` until the next run. Only
+the stepped-from method is watched — IntelliJ's "show method return values" for every call on a line slows each step,
+and is off by default there. js-debug shows a "Return value" of its own. java-debug captures method exits only for
+its stepping and never shows the value, so Java through jdtls has none; CodeLLDB, GDB and Delve are not covered.
+`JvmDebugAdapterTest.aStepThatLeavesAMethodShowsWhatItReturned` drives a recursive method on a real JVM;
+`ReturnValueProbeFxTest` (opt-in) steps out of a Python function in a window.
+
 **Child sessions (vscode-js-debug).** js-debug never debugs the program on the connection that launched
 it. That root session only starts the launcher; for every debuggee it sends the reverse request
 `startDebugging` and waits for a *second* connection to the same port whose `launch`/`attach` carries the
