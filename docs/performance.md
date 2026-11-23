@@ -739,9 +739,17 @@ diagnostics, …) follows one discipline:
   through `AfterLayoutPaint`. A `Platform.runLater` paint runs between pulses, and when the next pulse moves
   the text (the line numbers widening on the fold recompute's debounce after the 1,000th line, line numbers
   toggled, the font) that pulse shows the old paint for one frame (on macOS the lint squiggles stayed there).
-  `AfterLayoutPaint` paints from a post-layout pulse listener, then looks again at where the first visible
-  character is for three pulses — one character-bounds query per pulse while the checks last.
-  `FrameWatch` (tests) checks every shown frame rather than where a paint settles
+  `AfterLayoutPaint` paints from a post-layout pulse listener, then looks again at where the text is on the
+  three pulses after. The overlays over one area share one listener and one look per pulse
+  (`AfterLayoutPaint.Origin`), and the checks ride on pulses that happen anyway: they never ask for a pulse,
+  and the look changes nothing (the text column's place via a transform, the first visible paragraph's top).
+  **Never use `getCharacterBoundsOnScreen` (or any RichTextFX range-bounds query) to *decide* whether to
+  paint:** RichTextFX answers it by adding a `Path` to the paragraph's text flow and removing it, which
+  dirties the scene and costs the next pulse and frame. The old per-overlay checks did that three pulses in a
+  row after every paint (3.79 rendered frames per key against 2.02 in October). Measure characters only while
+  painting, and key a frame on `AfterLayoutPaint.textColumnOnScreen()` (`IndentGuideOverlay`).
+  `FrameWatch` (tests) checks every shown frame rather than where a paint settles; `AfterLayoutPaintFxTest`
+  pins one look per pulse and no pulses asked for after a paint
 - **no gutter work for what the gutter does not show**: `recreateParagraphGraphic` builds a cell even for a
   line far off screen, so a model that follows edits (Personal Notes, which are painted inline) must not ask
   for gutter repaints per keystroke — notes did, two per note per moved line
