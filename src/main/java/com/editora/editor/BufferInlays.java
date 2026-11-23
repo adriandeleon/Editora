@@ -48,6 +48,10 @@ final class BufferInlays {
             byLine.computeIfAbsent(h.line(), k -> new java.util.ArrayList<>())
                     .add(new org.fxmisc.richtext.Inlay(h.col(), h.label(), "inlay-hint"));
         }
+        if (byLine.equals(inlayHintsByLine)) {
+            return; // the server answered what is shown (each typing pause asks again): re-laying the lines out is
+            // waste
+        }
         inlayHintsByLine = byLine;
         ensureInlayFactory();
         refreshInlayAreas();
