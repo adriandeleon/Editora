@@ -69,7 +69,6 @@ import static com.editora.ui.ProjectMapView.DEFAULT_FLOW;
 import static com.editora.ui.ProjectMapView.TYPE_AHEAD_RESET_MILLIS;
 import static com.editora.ui.ProjectMapView.claimedChords;
 import static com.editora.ui.ProjectMapView.clampInto;
-import static com.editora.ui.ProjectMapView.columnRowsInOrder;
 import static com.editora.ui.ProjectMapView.connectorOpacity;
 import static com.editora.ui.ProjectMapView.fadedInk;
 import static com.editora.ui.ProjectMapView.flowLimitedOffset;
@@ -269,7 +268,19 @@ final class MapSurface extends Region {
     private final Map<ProjectMapModel.ColumnId, ColumnLayout> columnLayouts = new HashMap<>();
     private final Map<ProjectMapModel.ColumnId, String> columnQueries = new HashMap<>();
     private final Map<ProjectMapModel.ColumnId, Boolean> columnShowHidden = new HashMap<>();
-    private final Map<String, Double> measuredLabelWidths = new HashMap<>();
+    /**
+     * Label widths by text, for the current font: kept across listings (perf review S7: an expand used to measure
+     * every label again), and bounded, the least recently used going first.
+     */
+    private final Map<String, Double> measuredLabelWidths = new java.util.LinkedHashMap<>(256, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, Double> eldest) {
+            return size() > MEASURED_LABELS_KEPT;
+        }
+    };
+    /** Each column's rows in order, filters aside, sorted once per listing (perf review S1). */
+    private final MapColumnOrders columnOrders = new MapColumnOrders();
+
     private final AnimationTimer viewportRepaintTimer = new AnimationTimer() {
         @Override
         public void handle(long now) {
@@ -723,7 +734,7 @@ final class MapSurface extends Region {
         Set<ProjectMapModel.ColumnId> newColumnIds = this.entries.stream()
                 .map(entry -> new ProjectMapModel.ColumnId(entry.depth(), entry.parent()))
                 .collect(java.util.stream.Collectors.toSet());
-        measuredLabelWidths.clear();
+        // The label widths stay: they are keyed by the text and the font clears them (perf review S7).
         expandedSnapshot = expanded == null ? Set.of() : Set.copyOf(expanded);
         clearNodeTooltip();
         if (selected == null || !byPath.containsKey(selected)) {
@@ -2952,6 +2963,9 @@ final class MapSurface extends Region {
 
     /** Rows past which a column's width is measured on its longest names only (position 15). */
     private static final int CANVAS_MEASURE_ALL_ROWS = 512;
+
+    /** The most label widths {@link #measuredLabelWidths} keeps. */
+    static final int MEASURED_LABELS_KEPT = 8_192;
 
     /** How many of a long column's longest names are measured for its width. */
     private static final int CANVAS_MEASURED_NAMES = 96;
@@ -5732,12 +5746,17 @@ final class MapSurface extends Region {
      * counts as the first step, so the move starts from where the row would be, not from the top (B16).
      */
     private int selectionStepFromHidden(ProjectMapModel.Entry current, List<ProjectMapModel.Entry> drawn, int delta) {
-        List<ProjectMapModel.Entry> all = selectionSiblings(current);
-        int position = all.indexOf(current);
+        MapColumnOrders.Order order = selectionSiblings(current);
+        List<ProjectMapModel.Entry> all = order.rows();
+        int position = order.indexOf(current);
+        Map<ProjectMapModel.Entry, Integer> drawnAt = HashMap.newHashMap(drawn.size());
+        for (int i = 0; i < drawn.size(); i++) {
+            drawnAt.putIfAbsent(drawn.get(i), i);
+        }
         int anchor = -1;
         if (delta > 0) {
             for (int i = position + 1; i < all.size() && anchor < 0; i++) {
-                anchor = drawn.indexOf(all.get(i));
+                anchor = drawnAt.getOrDefault(all.get(i), -1);
             }
             if (anchor < 0) {
                 return Math.abs(delta) == 1 ? 0 : drawn.size() - 1;
@@ -5745,7 +5764,7 @@ final class MapSurface extends Region {
             return Math.clamp(anchor + delta - 1, 0, drawn.size() - 1);
         }
         for (int i = position - 1; i >= 0 && anchor < 0; i--) {
-            anchor = drawn.indexOf(all.get(i));
+            anchor = drawnAt.getOrDefault(all.get(i), -1);
         }
         if (anchor < 0) {
             return Math.abs(delta) == 1 ? drawn.size() - 1 : 0;
@@ -5753,9 +5772,12 @@ final class MapSurface extends Region {
         return Math.clamp(anchor + delta + 1, 0, drawn.size() - 1);
     }
 
-    /** Every loaded row of {@code entry}'s column, drawn or not, in the order the column shows them. */
-    private List<ProjectMapModel.Entry> selectionSiblings(ProjectMapModel.Entry entry) {
-        return columnRowsInOrder(entries, columnId(entry));
+    /**
+     * Every loaded row of {@code entry}'s column, drawn or not, in the order the column shows them: sorted once per
+     * listing and column, never by grouping every column of the map again (perf review S1).
+     */
+    private MapColumnOrders.Order selectionSiblings(ProjectMapModel.Entry entry) {
+        return columnOrders.of(entries, columnId(entry));
     }
 
     /**
@@ -5770,8 +5792,9 @@ final class MapSurface extends Region {
             return;
         }
         Path target = null;
-        List<ProjectMapModel.Entry> siblings = selectionSiblings(entry);
-        int position = siblings.indexOf(entry);
+        MapColumnOrders.Order order = selectionSiblings(entry);
+        List<ProjectMapModel.Entry> siblings = order.rows();
+        int position = order.indexOf(entry);
         for (int distance = 1; target == null && distance < siblings.size(); distance++) {
             for (int index : new int[] {position + distance, position - distance}) {
                 if (target == null && index >= 0 && index < siblings.size()) {
@@ -6483,11 +6506,9 @@ final class MapSurface extends Region {
         if (!filtered) {
             position = index + 1;
         } else {
-            // Hidden by its column's filter: say so, and where it would stand.
-            List<ProjectMapModel.Entry> all = selectionSiblings(current);
-            int at = all.indexOf(current);
-            position = 1
-                    + (int) drawn.stream().filter(row -> all.indexOf(row) < at).count();
+            // Hidden by its column's filter: say so, and where it would stand. One lookup per drawn row, in an order
+            // sorted once per listing: not an indexOf scan per row of a 50,000-row folder (perf review S1).
+            position = selectionSiblings(current).positionAmong(drawn, current);
         }
         return canvasRowText(current, position, drawn.size(), filtered, false);
     }

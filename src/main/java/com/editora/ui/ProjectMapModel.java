@@ -1026,6 +1026,67 @@ final class ProjectMapModel {
         return List.copyOf(result);
     }
 
+    /** Whole-map column passes ({@link #columnsByIdUncompacted}) since start-up: a test seam (perf review S1). */
+    static final java.util.concurrent.atomic.AtomicLong columnPassesForTest =
+            new java.util.concurrent.atomic.AtomicLong();
+
+    /**
+     * One column's rows in the order the map shows them. The placeholder row ("+N more", "Empty folder") always
+     * closes its column. A structure column keeps the order its declarations are written in (the sort is stable).
+     */
+    private static List<Entry> inColumnOrder(List<Entry> rows) {
+        boolean structure = rows.stream().anyMatch(Entry::isSymbol);
+        java.util.Comparator<Entry> order = java.util.Comparator.comparing(Entry::isPlaceholder);
+        return rows.stream()
+                .sorted(
+                        structure
+                                ? order
+                                : order.thenComparing(ProjectPathOrder.forFolder(
+                                        rows.stream()
+                                                .filter(entry -> !entry.isPlaceholder())
+                                                .toList(),
+                                        Entry::directory,
+                                        Entry::name)))
+                .toList();
+    }
+
+    /**
+     * The rows of the column {@code id}, filters aside, in the order the map shows them: the column
+     * {@code columnsById(entries, Map.of(), Map.of(), null)} gives, found with one pass over {@code entries} and a
+     * sort of that column alone rather than grouping and sorting every column of the map (perf review S1). Empty
+     * when the column is not on the map: no row of it, or a folder above it that is not listed.
+     */
+    static List<Entry> columnInOrder(List<Entry> entries, ColumnId id) {
+        if (entries == null || entries.isEmpty()) {
+            return List.of();
+        }
+        List<Entry> rows = new ArrayList<>();
+        Map<Path, ColumnId> listedIn = new HashMap<>();
+        boolean nested = id.depth() > 0 && id.parent() != null;
+        for (Entry entry : entries) {
+            ColumnId at = new ColumnId(entry.depth(), entry.parent());
+            if (at.equals(id)) {
+                rows.add(entry);
+            }
+            if (nested && !entry.isPlaceholder()) {
+                listedIn.putIfAbsent(entry.path(), at);
+            }
+        }
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        // As columnsById drops a column whose folder is not a row of a column on the map, so does this.
+        ColumnId step = id;
+        for (int hops = 0; step.depth() > 0 && step.parent() != null; hops++) {
+            ColumnId up = listedIn.get(step.parent());
+            if (up == null || hops > entries.size()) {
+                return List.of();
+            }
+            step = up;
+        }
+        return inColumnOrder(rows);
+    }
+
     private static List<Column> columnsByIdUncompacted(
             List<Entry> entries,
             Map<ColumnId, String> columnQueries,
@@ -1034,6 +1095,7 @@ final class ProjectMapModel {
         if (entries == null || entries.isEmpty()) {
             return List.of();
         }
+        columnPassesForTest.incrementAndGet();
         Map<ColumnId, List<Entry>> grouped = new LinkedHashMap<>();
         for (Entry entry : entries) {
             grouped.computeIfAbsent(new ColumnId(entry.depth(), entry.parent()), ignored -> new ArrayList<>())
@@ -1044,21 +1106,7 @@ final class ProjectMapModel {
         for (var group : grouped.entrySet()) {
             ColumnId id = group.getKey();
             int depth = id.depth();
-            // The placeholder row ("+N more", "Empty folder") always closes its column. A structure column
-            // keeps the order its declarations are written in (the sort is stable).
-            boolean structure = group.getValue().stream().anyMatch(Entry::isSymbol);
-            java.util.Comparator<Entry> order = java.util.Comparator.comparing(Entry::isPlaceholder);
-            List<Entry> all = group.getValue().stream()
-                    .sorted(
-                            structure
-                                    ? order
-                                    : order.thenComparing(ProjectPathOrder.forFolder(
-                                            group.getValue().stream()
-                                                    .filter(entry -> !entry.isPlaceholder())
-                                                    .toList(),
-                                            Entry::directory,
-                                            Entry::name)))
-                    .toList();
+            List<Entry> all = inColumnOrder(group.getValue());
             if (depth > 0 && id.parent() != null && !visible.contains(id.parent())) {
                 continue;
             }

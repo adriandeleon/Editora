@@ -5273,12 +5273,7 @@ final class ProjectMapView extends VBox {
     /** One column's rows, filters aside, in the order the map shows them (the model's sort). */
     static List<ProjectMapModel.Entry> columnRowsInOrder(
             List<ProjectMapModel.Entry> rows, ProjectMapModel.ColumnId id) {
-        for (ProjectMapModel.Column column : ProjectMapModel.columnsById(rows, Map.of(), Map.of(), null)) {
-            if (column.id().equals(id)) {
-                return column.entries();
-            }
-        }
-        return List.of();
+        return ProjectMapModel.columnInOrder(rows, id); // that column alone, not every column sorted (S1)
     }
 
     /** What one wheel or touchpad scroll event does to the viewport. */
