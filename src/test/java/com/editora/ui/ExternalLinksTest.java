@@ -16,8 +16,10 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -262,5 +264,14 @@ class ExternalLinksTest {
         assertEquals("a+b", ExternalLinks.percentDecode("a+b"));
         assertEquals("100%.md", ExternalLinks.percentDecode("100%.md"));
         assertEquals("%zz", ExternalLinks.percentDecode("%zz"));
+    }
+
+    @Test
+    void docsHintExplainsWhyADevelopmentBuildOpenedTheWebsite() {
+        assertEquals(tr("status.docs.notBundled"), ExternalLinks.docsHint(true, null, "1.2.0"));
+        assertEquals(tr("status.docs.otherVersion", "1.1.0", "1.2.0"), ExternalLinks.docsHint(true, "1.1.0", "1.2.0"));
+        assertNull(ExternalLinks.docsHint(true, "1.2.0", "1.2.0"));
+        assertNull(ExternalLinks.docsHint(false, null, "1.2.0"));
+        assertNull(ExternalLinks.docsHint(false, "1.1.0", "1.2.0"));
     }
 }

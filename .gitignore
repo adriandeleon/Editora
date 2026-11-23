@@ -4,6 +4,7 @@ target/
 dist/
 # The rendered user guide a packaged build carries (pom: docs.site.dir)
 .docs-site/
+.docs-site.*
 
 # Example plugin build artifacts
 examples/*/*.jar

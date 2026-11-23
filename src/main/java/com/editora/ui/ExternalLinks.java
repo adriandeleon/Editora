@@ -294,11 +294,51 @@ final class ExternalLinks {
         // Classifying a local link stats it and resolves its real path: off the FX thread (PERF-01, Pauta 6.2.0).
         // A link into this version's docs opens the copy the build carries, when it has one: that may start the
         // local docs server, which is why it happens here too (com.editora.web.AppDocs).
-        looked("link-classify", () -> localDocs(classify(link, documentFile, projectRoot, anchor != null)), target -> {
-            if (target != null) {
-                dispatch(target, browser, editor, anchor, status);
-            }
-        });
+        looked(
+                "link-classify",
+                () -> {
+                    Target target = classify(link, documentFile, projectRoot, anchor != null);
+                    return new Looked(localDocs(target), docsHint(target));
+                },
+                looked -> {
+                    if (looked != null && looked.target() != null) {
+                        dispatch(looked.target(), browser, editor, anchor, status);
+                        if (looked.hint() != null) {
+                            status.accept(looked.hint());
+                        }
+                    }
+                });
+    }
+
+    /** What the classifier found, and a line for the status bar about it (null: nothing to say). */
+    private record Looked(@Nullable Target target, @Nullable String hint) {}
+
+    /**
+     * Why a development build sends a link into this version's docs to the website rather than to its own copy:
+     * it has none ({@code .docs-site/} was never rendered) or one for another version. Null for anything else.
+     */
+    private static @Nullable String docsHint(@Nullable Target target) {
+        if (!(target instanceof Browser(String url)) || !com.editora.web.AppDocs.isThisVersionsDocs(url)) {
+            return null;
+        }
+        return docsHint(
+                com.editora.AppInfo.isSnapshot(),
+                com.editora.web.AppDocs.bundledVersion(),
+                com.editora.AppInfo.releaseVersion());
+    }
+
+    /**
+     * {@link #docsHint(Target)} for a docs link, pure: null in a release build (the release always carries the
+     * guide, and its users cannot render one) and when {@code bundled} is {@code release}. Package-private for tests.
+     */
+    static @Nullable String docsHint(boolean snapshot, @Nullable String bundled, String release) {
+        if (!snapshot) {
+            return null;
+        }
+        if (bundled == null) {
+            return tr("status.docs.notBundled");
+        }
+        return bundled.equals(release) ? null : tr("status.docs.otherVersion", bundled, release);
     }
 
     /** A browser target into this version's docs, pointed at the bundled copy when the build has one. */
