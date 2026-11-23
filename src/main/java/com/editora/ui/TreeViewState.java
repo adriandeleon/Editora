@@ -36,16 +36,23 @@ final class TreeViewState {
     static <T> TreeViewState capture(TreeView<T> tree, Function<T, String> key) {
         Set<String> selected = new LinkedHashSet<>();
         List<String> fallbacks = new ArrayList<>(2);
-        TreeItem<T> first = null;
-        TreeItem<T> last = null;
         for (TreeItem<T> item : tree.getSelectionModel().getSelectedItems()) {
-            if (item == null || item.getValue() == null) {
-                continue;
+            if (item != null && item.getValue() != null) {
+                selected.add(key.apply(item.getValue()));
             }
-            selected.add(key.apply(item.getValue()));
-            first = first == null || tree.getRow(item) < tree.getRow(first) ? item : first;
-            last = last == null || tree.getRow(item) > tree.getRow(last) ? item : last;
         }
+        // The first and last selected rows from the selection's own indices: asking the tree for each item's row
+        // costs a walk of its siblings per item, which after Ctrl+A on a long list is quadratic.
+        int firstRow = Integer.MAX_VALUE;
+        int lastRow = -1;
+        for (Integer row : tree.getSelectionModel().getSelectedIndices()) {
+            if (row != null && row >= 0) {
+                firstRow = Math.min(firstRow, row);
+                lastRow = Math.max(lastRow, row);
+            }
+        }
+        TreeItem<T> first = lastRow < 0 ? null : tree.getTreeItem(firstRow);
+        TreeItem<T> last = lastRow < 0 ? null : tree.getTreeItem(lastRow);
         addSibling(fallbacks, last, 1, key);
         addSibling(fallbacks, first, -1, key);
         TreeItem<T> focusedItem = tree.getFocusModel().getFocusedItem();
@@ -77,9 +84,12 @@ final class TreeViewState {
         int focusRow = -1;
         int fallbackRow = -1;
         int fallbackRank = Integer.MAX_VALUE;
-        for (int row = 0, n = tree.getExpandedItemCount(); row < n; row++) {
-            TreeItem<T> item = tree.getTreeItem(row);
-            if (item == null || item.getValue() == null) {
+        // One walk of the visible rows in order, counting them, instead of asking the tree for each row: right after
+        // a rebuild its row cache is empty and each getTreeItem(row) steps through the siblings before it (O(n²)).
+        List<TreeItem<T>> visible = visibleRows(tree);
+        for (int row = 0, n = visible.size(); row < n; row++) {
+            TreeItem<T> item = visible.get(row);
+            if (item.getValue() == null) {
                 continue;
             }
             String k = key.apply(item.getValue());
@@ -105,5 +115,35 @@ final class TreeViewState {
         int[] rest = rows.stream().skip(1).mapToInt(Integer::intValue).toArray();
         selection.selectIndices(rows.get(0), rest);
         tree.getFocusModel().focus(focusRow >= 0 ? focusRow : rows.get(rows.size() - 1));
+    }
+
+    /** The rows {@code tree} shows, in row order: the root when it is shown, then every child of an expanded item. */
+    static <T> List<TreeItem<T>> visibleRows(TreeView<T> tree) {
+        List<TreeItem<T>> rows = new ArrayList<>();
+        TreeItem<T> root = tree.getRoot();
+        if (root == null) {
+            return rows;
+        }
+        java.util.ArrayDeque<TreeItem<T>> pending = new java.util.ArrayDeque<>();
+        if (tree.isShowRoot()) {
+            pending.push(root);
+        } else if (root.isExpanded()) {
+            pushChildren(pending, root);
+        }
+        while (!pending.isEmpty()) {
+            TreeItem<T> item = pending.pop();
+            rows.add(item);
+            if (item.isExpanded()) {
+                pushChildren(pending, item);
+            }
+        }
+        return rows;
+    }
+
+    private static <T> void pushChildren(java.util.ArrayDeque<TreeItem<T>> pending, TreeItem<T> item) {
+        List<TreeItem<T>> children = item.getChildren();
+        for (int i = children.size() - 1; i >= 0; i--) {
+            pending.push(children.get(i));
+        }
     }
 }

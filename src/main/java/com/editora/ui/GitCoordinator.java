@@ -467,6 +467,8 @@ final class GitCoordinator {
     /** Applies a completed Git refresh to the status bar, tool window, and active buffer's gutter. */
     void applyState(GitService.RepoState state) {
         Path root = state.root();
+        Path previousRoot = repoRoot;
+        GitStatus previousStatus = lastStatus;
         repoRoot = root;
         lastStatus = state.isRepo() ? state.status() : GitStatus.NOT_A_REPO;
         // Before the window surfaces below are told: they re-evaluate menu and palette enablement, which asks
@@ -505,7 +507,10 @@ final class GitCoordinator {
         ops.setGitOperation(operation, GitConflicts.unmerged(status).size());
         ops.setGitPanelStatus(status);
         commits.repositoryApplied(repoRoot); // the template of a new repository, the line counts of this status
-        lastStatusByPath = com.editora.git.GitFileStatus.byPath(status, root);
+        if (!status.equals(previousStatus) || !root.equals(previousRoot)) {
+            // Built only when the status moved: a path resolve and normalize per changed file, each refresh.
+            lastStatusByPath = com.editora.git.GitFileStatus.byPath(status, root);
+        }
         ops.setProjectGitStatus(lastStatusByPath); // color the tree
         if (b != null && b.isNarrowed()) {
             b.setChangeBars(null, null); // line numbers refer to the whole file, the view to the region
