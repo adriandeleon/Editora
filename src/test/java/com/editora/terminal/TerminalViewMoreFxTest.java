@@ -353,7 +353,9 @@ class TerminalViewMoreFxTest {
         awaitPixel(0.5, 0.5, fg, "a block over a bold letter, its corner still the cursor's");
 
         connector.emit("\r\n\ud83d\ude00\u001b[2D");
-        awaitPixel(cw * 1.5, 1, fg, "a wide glyph's cursor covers both its cells", lh);
+        if (!com.editora.Os.isMac()) { // Apple Color Emoji paints its own pixels over the cursor's there
+            awaitPixel(cw * 1.5, 1, fg, "a wide glyph's cursor covers both its cells", lh);
+        }
     }
 
     @Test
@@ -571,7 +573,9 @@ class TerminalViewMoreFxTest {
         return opened;
     }
 
+    /** A move with the link gesture's modifier down when {@code ctrl}: Ctrl, or Cmd on macOS. */
     private void move(double x, double y, boolean ctrl) throws Exception {
+        boolean mac = com.editora.Os.isMac();
         fx(() -> {
             Event.fireEvent(
                     view,
@@ -584,9 +588,9 @@ class TerminalViewMoreFxTest {
                             MouseButton.NONE,
                             0,
                             false,
-                            ctrl,
+                            ctrl && !mac,
                             false,
-                            false,
+                            ctrl && mac,
                             false,
                             false,
                             false,
