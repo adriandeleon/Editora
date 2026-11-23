@@ -2170,6 +2170,9 @@ final class ProjectMapView extends VBox {
             bearingsFlush();
             return;
         }
+        if (problemsStale) {
+            problemsRebuild(); // what the language servers said while the Map was hidden, counted once (S4)
+        }
         bearingsRestore(); // the first show of the folder the workspace remembers brings it back (B6)
         reload();
         if (showingStatesStale) {
@@ -3342,7 +3345,23 @@ final class ProjectMapView extends VBox {
      * theirs, the Problems chip filters by them, and Next and Previous Problem step through them on the Map.
      */
     void setProblems(java.util.Map<Path, List<com.editora.text.LspDiagnostic>> byFile) {
-        problemSource = java.util.Map.copyOf(byFile);
+        problemSource = byFile;
+        if (!active) {
+            // Nobody sees the Map: keep the reference (the Problems window's map, FX-owned) and count on the next
+            // show, not every 100 ms of a workspace build (perf review S4).
+            problemsStale = true;
+            return;
+        }
+        problemsRebuild();
+    }
+
+    /** Problems arrived while the Map was hidden: {@link #setShowing} (or a use) counts them. */
+    private boolean problemsStale;
+
+    /** Counts the problems the Map was last given, below the current root. */
+    private void problemsRebuild() {
+        problemsStale = false;
+        problemSource = java.util.Map.copyOf(problemSource);
         surface.setProblems(new ProjectMapProblems(problemSource, root));
     }
 
@@ -3351,6 +3370,9 @@ final class ProjectMapView extends VBox {
 
     /** The problems the Map shows. */
     ProjectMapProblems problems() {
+        if (problemsStale) {
+            problemsRebuild();
+        }
         return surface.problems();
     }
 
@@ -3360,7 +3382,7 @@ final class ProjectMapView extends VBox {
      * it says. With none, it says so.
      */
     void stepProblem(boolean forward) {
-        ProjectMapProblems known = surface.problems();
+        ProjectMapProblems known = problems();
         if (known.isEmpty()) {
             onStatus.accept(tr("project.map.problems.none"));
             return;
