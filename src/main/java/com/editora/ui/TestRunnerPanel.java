@@ -92,6 +92,14 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
     /** Same-instance {@link TestNode} → its tree item, so live updates never rebuild or duplicate the tree. */
     private final Map<TestNode, TreeItem<TestNode>> items = new IdentityHashMap<>();
 
+    /**
+     * The tree's cells, redrawn in place after a live update: a node's status changes inside the same object, so
+     * the tree cannot see it, and {@code tree.refresh()} threw every visible cell away and built it again — new
+     * rows, labels and tooltips up to 60 times a second (perf review P4). Weak: the tree owns its cells.
+     */
+    private final java.util.Set<TestTreeCell> cells =
+            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
     private @Nullable TestNode lastRoot;
     private @Nullable TestRun lastRun; // for the no-selection run summary in the detail pane
     private TestCounts lastCounts = TestCounts.ZERO; // drives the chip-visibility rule on a filter change
@@ -145,7 +153,11 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         tree.setAccessibleText(tr("toolwindow.testResults"));
         tree.setShowRoot(false);
         rootItem.setExpanded(true);
-        tree.setCellFactory(t -> new TestTreeCell());
+        tree.setCellFactory(t -> {
+            TestTreeCell cell = new TestTreeCell();
+            cells.add(cell);
+            return cell;
+        });
         tree.getSelectionModel().selectedItemProperty().addListener((obs, old, sel) -> {
             showDetail(sel == null ? null : sel.getValue());
             if (sel != null) {
@@ -358,7 +370,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         progress.setProgress(total == 0 ? 0 : (double) counts.finished() / total);
         setProgressFailed(counts.anyFailed());
         if (tree.getSelectionModel().getSelectedItem() == null) {
-            showRunSummary(); // keep the run summary live while nothing is selected
+            showRunSummary(counts); // keep the run summary live while nothing is selected
         }
     }
 
@@ -468,7 +480,17 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
             suiteItems.add(suiteItem);
         }
         reconcile(rootItem.getChildren(), suiteItems);
-        tree.refresh();
+        redrawCells();
+    }
+
+    /** Redraws the cells showing a node, in place: a status, a duration or a name that changed in the node. */
+    private void redrawCells() {
+        for (TestTreeCell cell : cells) {
+            TestNode node = cell.getItem();
+            if (node != null && !cell.isEmpty()) {
+                cell.render(node);
+            }
+        }
     }
 
     /**
@@ -481,7 +503,10 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         if (sameOrder(current, desired)) {
             return;
         }
-        current.removeIf(item -> !containsIdentical(desired, item));
+        java.util.Set<TreeItem<TestNode>> wanted =
+                java.util.Collections.newSetFromMap(new IdentityHashMap<>(desired.size() * 2));
+        wanted.addAll(desired);
+        current.removeIf(item -> !wanted.contains(item)); // an identity set: not a scan of desired per row (P9)
         for (int i = 0; i < desired.size(); i++) {
             TreeItem<TestNode> want = desired.get(i);
             if (i >= current.size()) {
@@ -502,15 +527,6 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
             }
         }
         return true;
-    }
-
-    private static boolean containsIdentical(List<TreeItem<TestNode>> list, TreeItem<TestNode> item) {
-        for (TreeItem<TestNode> candidate : list) {
-            if (candidate == item) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /** Re-applies the filter to the current tree (chip toggled, filter text typed, filter set by command). */
@@ -668,12 +684,16 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
 
     /** The detail pane when no node is selected: the run command + counts + elapsed. */
     private void showRunSummary() {
-        if (lastRun == null) {
+        showRunSummary(lastRun == null ? null : lastRun.counts());
+    }
+
+    /** As {@link #showRunSummary()} with the run's counts already taken (one tree walk per update, not two). */
+    private void showRunSummary(@Nullable TestCounts c) {
+        if (lastRun == null || c == null) {
             detail.replaceText(runLabel.isBlank() ? "" : tr("testrunner.detail.runHeader", runLabel));
             detail.moveTo(0);
             return;
         }
-        TestCounts c = lastRun.counts();
         String text = tr("testrunner.detail.runHeader", runLabel) + "\n"
                 + tr("testrunner.detail.suiteSummary", c.total(), c.passed(), c.failedOrErrored(), c.skipped()) + "\n"
                 + tr("testrunner.detail.elapsed", formatElapsed(lastRun.elapsedMillis(System.currentTimeMillis())));
@@ -767,33 +787,62 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         filterField.requestFocus();
     }
 
-    /** Renders a node as a status icon + name + (for a test) a muted duration. */
-    private static final class TestTreeCell extends TreeCell<TestNode> {
+    /**
+     * Renders a node as a status icon + name + (for a test) a muted duration. One row, its labels and one icon per
+     * status are built once per cell and reused; an update only sets their text and swaps the icon.
+     */
+    static final class TestTreeCell extends TreeCell<TestNode> {
+        private final Label name = new Label();
+        private final Label duration = new Label();
+        private final Label retries = new Label();
+        private final HBox row = UiZoom.spacing(new HBox(), 6);
+        private final java.util.EnumMap<TestStatus, Node> icons = new java.util.EnumMap<>(TestStatus.class);
+
+        TestTreeCell() {
+            duration.getStyleClass().add("test-duration");
+            retries.getStyleClass().add("test-duration");
+            row.setAlignment(Pos.CENTER_LEFT);
+        }
+
         @Override
         protected void updateItem(TestNode node, boolean empty) {
             super.updateItem(node, empty);
+            setText(null);
             if (empty || node == null) {
-                setText(null);
                 setGraphic(null);
                 return;
             }
-            setText(null);
-            Label name = new Label(node.displayName());
-            HBox row = UiZoom.spacing(new HBox(statusIcon(node.status()), name), 6);
-            row.setAlignment(Pos.CENTER_LEFT);
-            if (node.kind() == TestNodeKind.TEST && node.durationMs() > 0) {
-                Label dur = new Label(node.durationMs() + " ms");
-                dur.getStyleClass().add("test-duration");
-                row.getChildren().add(dur);
-            }
-            if (node.kind() == TestNodeKind.TEST && node.retries() > 0) {
-                // Surefire re-ran it: passed in the end (flaky) or failed every try (review D16).
-                Label retries =
-                        new Label(tr(node.isFlaky() ? "testrunner.flaky" : "testrunner.retried", node.retries()));
-                retries.getStyleClass().add("test-duration");
-                row.getChildren().add(retries);
-            }
+            render(node);
             setGraphic(row);
+        }
+
+        /** Shows {@code node} as it is now, touching only what changed. */
+        void render(TestNode node) {
+            name.setText(node.displayName());
+            boolean test = node.kind() == TestNodeKind.TEST;
+            boolean showDuration = test && node.durationMs() > 0;
+            if (showDuration) {
+                duration.setText(node.durationMs() + " ms");
+            }
+            boolean showRetries = test && node.retries() > 0;
+            if (showRetries) {
+                // Surefire re-ran it: passed in the end (flaky) or failed every try (review D16).
+                retries.setText(tr(node.isFlaky() ? "testrunner.flaky" : "testrunner.retried", node.retries()));
+            }
+            TestStatus status = node.status();
+            Node icon = icons.computeIfAbsent(status, TestTreeCell::statusIcon);
+            List<Node> want = new ArrayList<>(4);
+            want.add(icon);
+            want.add(name);
+            if (showDuration) {
+                want.add(duration);
+            }
+            if (showRetries) {
+                want.add(retries);
+            }
+            if (!row.getChildren().equals(want)) {
+                row.getChildren().setAll(want);
+            }
         }
 
         private static Node statusIcon(TestStatus status) {

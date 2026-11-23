@@ -76,4 +76,49 @@ class TestNodeTest {
         n.setStdout("short");
         assertEquals("short", n.stdout());
     }
+
+    @Test
+    void childByIdFindsTheFirstChildWithAnIdAndForgetsPrunedOnes() {
+        TestNode suite = new TestNode(TestNodeKind.SUITE, "s", "s");
+        for (int i = 0; i < 5_000; i++) {
+            suite.addChild(new TestNode(TestNodeKind.TEST, "s#t" + i, "t" + i)).setStatus(TestStatus.PASSED);
+        }
+        TestNode first = suite.childById("s#t42");
+        TestNode duplicate = suite.addChild(new TestNode(TestNodeKind.TEST, "s#t42", "again"));
+        assertTrue(first != null && first == suite.childById("s#t42"), "the first one with that id");
+        assertEquals(null, suite.childById("missing"));
+
+        TestNode pending = suite.addChild(new TestNode(TestNodeKind.TEST, "s#pending", "pending")); // RUNNING
+        duplicate.setStatus(TestStatus.PASSED);
+        assertTrue(suite.pruneRunning());
+        assertEquals(null, suite.childById("s#pending"), "a pruned child is not found");
+        assertTrue(pending.parent() == suite);
+        assertEquals(5_001, suite.children().size());
+    }
+
+    @Test
+    void childrenAreReadOnlyOutsideAddChild() {
+        TestNode suite = new TestNode(TestNodeKind.SUITE, "s", "s");
+        org.junit.jupiter.api.Assertions.assertThrows(
+                UnsupportedOperationException.class,
+                () -> suite.children().add(new TestNode(TestNodeKind.TEST, "x", "x")));
+    }
+
+    @Test
+    void tallyCountsEveryStatus() {
+        TestNode root = TestNode.root();
+        TestNode suite = root.addChild(new TestNode(TestNodeKind.SUITE, "s", "s"));
+        TestStatus[] statuses = {
+            TestStatus.PASSED,
+            TestStatus.PASSED,
+            TestStatus.FAILED,
+            TestStatus.ERROR,
+            TestStatus.SKIPPED,
+            TestStatus.RUNNING
+        };
+        for (int i = 0; i < statuses.length; i++) {
+            suite.addChild(new TestNode(TestNodeKind.TEST, "s#" + i, "t")).setStatus(statuses[i]);
+        }
+        assertEquals(new TestCounts(6, 2, 1, 1, 1, 1), root.tally());
+    }
 }

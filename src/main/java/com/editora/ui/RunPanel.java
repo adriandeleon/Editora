@@ -440,24 +440,52 @@ public final class RunPanel extends VBox implements ToolWindowContent {
                 : stderr
                         ? (StackTraceLinks.isTraceLine(text) ? "run-trace" : "run-stderr")
                         : lineStyle.styleClassFor(text);
-        int from = 0;
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (c != '\r' && c != AnsiText.CLEAR_SCREEN) {
-                continue;
-            }
-            write(text, from, i, chunk.runs(), base);
-            if (c == '\r') {
-                overwriteLine = true;
-            } else {
-                clearConsole(); // `clear`, or an erase-screen sequence
-            }
-            from = i + 1;
+        // Only what a terminal would still show is written: the console is cleared once at the chunk's last
+        // erase-screen, and of the carriage-return segments after it only the last non-empty one is drawn — a
+        // progress counter's 64 KiB "line" of thousands of "\r12345" pieces is one clear and one append, not two
+        // rich-text edits per piece.
+        Carriage c = Carriage.of(text);
+        if (c.clearScreen()) {
+            clearConsole(); // `clear`, or an erase-screen sequence
         }
-        write(text, from, text.length(), chunk.runs(), base);
+        if (c.returnBefore()) {
+            overwriteLine = true;
+        }
+        write(text, c.from(), c.to(), chunk.runs(), base);
+        if (c.returnAfter()) {
+            overwriteLine = true;
+        }
         if (completeLine) {
             overwriteLine = false; // "50%\r" then a newline: a terminal keeps the line and moves on
             appender.append("\n", null);
+        }
+    }
+
+    /**
+     * What survives of one output chunk on a terminal: whether it erases the screen ({@code clearScreen}: an
+     * {@link AnsiText#CLEAR_SCREEN} anywhere in it), the one piece {@code [from, to)} still visible — the last
+     * non-empty carriage-return segment after the last erase — and whether a carriage return comes before
+     * that piece (it overwrites the current line) or after it (the next text will). An empty piece
+     * ({@code from == to}) writes nothing.
+     */
+    record Carriage(boolean clearScreen, int from, int to, boolean returnBefore, boolean returnAfter) {
+
+        static Carriage of(String text) {
+            int start = text.lastIndexOf(AnsiText.CLEAR_SCREEN) + 1;
+            boolean clear = start > 0;
+            int end = text.length();
+            int to = end;
+            // Skip trailing returns: "50%\r" keeps "50%" visible and marks the line for overwriting.
+            while (to > start && text.charAt(to - 1) == '\r') {
+                to--;
+            }
+            boolean after = to < end;
+            int from = text.lastIndexOf('\r', to - 1) + 1;
+            if (from < start) {
+                from = start;
+            }
+            boolean before = from > start; // a '\r' at from - 1, inside this chunk's surviving part
+            return new Carriage(clear, from, to, before, after);
         }
     }
 
@@ -508,37 +536,39 @@ public final class RunPanel extends VBox implements ToolWindowContent {
             cuts.add(u.start());
             cuts.add(u.end());
         }
+        // One walk over the cuts, the colour runs and the links together: looking each cut's run and link up
+        // from the start made a heavily coloured 64 KiB line quadratic.
         StyleSpansBuilder<Collection<String>> builder = new StyleSpansBuilder<>();
+        int run = 0;
+        int runEnd = runs.isEmpty() ? 0 : runs.get(0).length();
+        int url = 0;
         Integer prev = null;
         for (int cut : cuts) {
             if (prev != null && cut > prev) {
+                while (run < runs.size() && prev >= runEnd) {
+                    run++;
+                    if (run < runs.size()) {
+                        runEnd += runs.get(run).length();
+                    }
+                }
+                while (url < urls.size() && prev >= urls.get(url).end()) {
+                    url++;
+                }
                 List<String> classes = new ArrayList<>();
                 if (base != null) {
                     classes.add(base);
                 }
-                classes.addAll(classesAt(runs, prev));
-                for (ConsoleUrls.Link u : urls) {
-                    if (prev >= u.start() && prev < u.end()) {
-                        classes.add("console-url");
-                        break;
-                    }
+                if (run < runs.size()) {
+                    classes.addAll(runs.get(run).classes());
+                }
+                if (url < urls.size() && prev >= urls.get(url).start()) {
+                    classes.add("console-url");
                 }
                 builder.add(classes, cut - prev);
             }
             prev = cut;
         }
         return builder.create();
-    }
-
-    private static java.util.Set<String> classesAt(List<AnsiText.Run> runs, int offset) {
-        int pos = 0;
-        for (AnsiText.Run r : runs) {
-            if (offset < pos + r.length()) {
-                return r.classes();
-            }
-            pos += r.length();
-        }
-        return java.util.Set.of();
     }
 
     /** The process exited; shows the exit code (or a "stopped" note for a killed run) and disables Stop. */

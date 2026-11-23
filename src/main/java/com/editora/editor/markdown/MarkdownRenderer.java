@@ -360,7 +360,39 @@ public final class MarkdownRenderer {
                         null,
                         null,
                         null,
+                        false,
+                        null,
                         false));
+    }
+
+    /**
+     * As {@link #renderDocument(org.commonmark.node.Node, Path, java.util.function.Consumer, ImagePolicy)} for text
+     * that is still arriving (an agent reply): {@code diagramKeys} names each Mermaid fence by its source line
+     * (see {@link RenderContext#diagramKey}), and with {@code streaming} a fence not closed yet is shown as plain
+     * code — no diagram render and no highlighting job for a fence that grows at every render (perf review P1,
+     * P5). It is drawn in full once it closes.
+     */
+    public static Node renderDocument(
+            org.commonmark.node.Node ast,
+            @Nullable Path baseDir,
+            java.util.function.@Nullable Consumer<String> onLinkClick,
+            ImagePolicy images,
+            java.util.function.@Nullable IntFunction<String> diagramKeys,
+            boolean streaming) {
+        return renderDocument(
+                ast,
+                new RenderContext(
+                        baseDir,
+                        onLinkClick,
+                        images == null ? ImagePolicy.DATA_ONLY : images,
+                        false,
+                        null,
+                        null,
+                        null,
+                        null,
+                        false,
+                        diagramKeys,
+                        streaming));
     }
 
     /**
@@ -377,7 +409,7 @@ public final class MarkdownRenderer {
             java.util.function.@Nullable Consumer<String> onLinkClick,
             ImagePolicy images) {
         return renderDocument(
-                ast, new RenderContext(baseDir, onLinkClick, images, false, null, null, null, null, true));
+                ast, new RenderContext(baseDir, onLinkClick, images, false, null, null, null, null, true, null, false));
     }
 
     /** {@link #renderPopup(org.commonmark.node.Node, Path, java.util.function.Consumer, ImagePolicy)} for text
@@ -405,7 +437,9 @@ public final class MarkdownRenderer {
     public static Node renderForPrint(
             org.commonmark.node.Node ast, @Nullable Path baseDir, @Nullable MarkdownPrintAssets assets) {
         return renderDocument(
-                ast, new RenderContext(baseDir, null, ImagePolicy.DOCUMENT, true, assets, null, null, null, false));
+                ast,
+                new RenderContext(
+                        baseDir, null, ImagePolicy.DOCUMENT, true, assets, null, null, null, false, null, false));
     }
 
     private static Node renderDocument(org.commonmark.node.Node ast, RenderContext ctx) {
@@ -420,7 +454,9 @@ public final class MarkdownRenderer {
                     ctx.dark(),
                     footnoteNumbers(ast),
                     ctx.live(),
-                    ctx.popup());
+                    ctx.popup(),
+                    ctx.diagramKeys(),
+                    ctx.streaming());
             appendBlocks(ast, content, numbered);
         }
         return wrapColumn(content);
@@ -456,7 +492,30 @@ public final class MarkdownRenderer {
             @Nullable Boolean dark,
             Map<String, Integer> footnotes,
             Live live) {
-        return new RenderContext(baseDir, onLinkClick, ImagePolicy.DOCUMENT, false, null, dark, footnotes, live, false);
+        return previewContext(baseDir, onLinkClick, dark, footnotes, live, null);
+    }
+
+    /** As {@link #previewContext(Path, java.util.function.Consumer, Boolean, Map, Live)}, its Mermaid fences named
+     *  by {@code diagramKeys} (see {@link RenderContext#diagramKey}). */
+    static RenderContext previewContext(
+            @Nullable Path baseDir,
+            java.util.function.Consumer<String> onLinkClick,
+            @Nullable Boolean dark,
+            Map<String, Integer> footnotes,
+            Live live,
+            java.util.function.@Nullable IntFunction<String> diagramKeys) {
+        return new RenderContext(
+                baseDir,
+                onLinkClick,
+                ImagePolicy.DOCUMENT,
+                false,
+                null,
+                dark,
+                footnotes,
+                live,
+                false,
+                diagramKeys,
+                false);
     }
 
     /**
@@ -546,7 +605,19 @@ public final class MarkdownRenderer {
             @Nullable Boolean dark,
             @Nullable Map<String, Integer> footnotes,
             @Nullable Live live,
-            boolean popup) {
+            boolean popup,
+            java.util.function.@Nullable IntFunction<String> diagramKeys,
+            boolean streaming) {
+
+        /**
+         * The diagram surface key of the Mermaid fence that starts on source line {@code line} of the parsed text,
+         * or null when this render has none: a newer render of the same fence supersedes a queued one (perf review
+         * P1), so typing in a fence or streaming one does not queue an {@code mmdc} run per version.
+         */
+        @Nullable
+        String diagramKey(int line) {
+            return diagramKeys == null || line < 0 ? null : diagramKeys.apply(line);
+        }
 
         /** What a reference to (or the definition of) footnote {@code label} shows: its number, else the label. */
         String footnoteMark(String label) {
@@ -722,6 +793,11 @@ public final class MarkdownRenderer {
             return renderList(ol, ctx, true, start == null ? 1 : start);
         }
         if (node instanceof FencedCodeBlock f) {
+            if (ctx.streaming() && f.getClosingFenceLength() == null && !ctx.print()) {
+                // Still arriving: plain code until it closes — no diagram and no tokenizing of a block that
+                // grows at every render of the stream (perf review P1, P5).
+                return codeCorner(codeBlock(f.getLiteral()), f.getInfo(), ctx);
+            }
             // An encrypted file's diagrams stay code: rendering one hands its source to mmdc in a file.
             if (isMermaidInfo(f.getInfo())
                     && MermaidImages.isEnabled()
@@ -739,7 +815,10 @@ public final class MarkdownRenderer {
                 double cap = ctx.live() != null ? PreviewPrefs.contentWidth() : MAX_CONTENT_WIDTH;
                 return enlargeable(
                         new ShrinkToFit(MermaidImages.node(
-                                stripTrailingNewline(f.getLiteral()), lw -> Math.min(lw, cap), null, ctx.dark())),
+                                stripTrailingNewline(f.getLiteral()),
+                                lw -> Math.min(lw, cap),
+                                ctx.diagramKey(lineOf(f)),
+                                ctx.dark())),
                         ctx);
             }
             if (ctx.print()) {
@@ -1419,12 +1498,18 @@ public final class MarkdownRenderer {
                 return; // not loadable after all — leave the plain text
             }
             String cacheKey = tokenKey(console, grammar, code);
-            List<Run> runs = console ? ConsoleSession.runs(code, grammar) : tokenizeRuns(code, grammar);
+            // The same block queued again before the first tokenize landed (a re-render while it waited) is
+            // coloured from the first one's runs, not tokenized again.
+            List<Run> runs = TOKEN_CACHE.get(cacheKey);
             if (runs == null) {
-                return; // tokenize failed — leave the plain text
+                runs = console ? ConsoleSession.runs(code, grammar) : tokenizeRuns(code, grammar);
+                if (runs == null) {
+                    return; // tokenize failed — leave the plain text
+                }
+                TOKEN_CACHE.put(cacheKey, runs);
             }
-            TOKEN_CACHE.put(cacheKey, runs);
-            Platform.runLater(() -> flow.getChildren().setAll(tokenNodes(runs)));
+            List<Run> found = runs;
+            Platform.runLater(() -> flow.getChildren().setAll(tokenNodes(found)));
         });
         return sideScrollingCode(flow, code);
     }

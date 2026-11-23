@@ -71,6 +71,25 @@ class RunConsoleAnsiFxTest {
     }
 
     @Test
+    void aLongProgressLineDrawsOnlyItsLastValue() throws Exception {
+        RunPanel p = started();
+        StringBuilder line = new StringBuilder();
+        for (int i = 0; i < 9_000; i++) {
+            line.append('\r').append(10_000 + i);
+        }
+        FxTestSupport.runOnFx(() -> {
+            p.appendOutput("before", false);
+            p.appendPartialOutput("0%", false);
+            p.appendPartialOutput(line.toString(), false);
+            p.appendPartialOutput("\r", false);
+            p.appendPartialOutput("\u001b[32mdone\u001b[0m", false);
+            p.appendOutput("", false);
+        });
+        assertEquals("before\ndone\n", text(p));
+        assertTrue(styleAt(p, "before\n".length() + 1).contains("ansi-green"));
+    }
+
+    @Test
     void clearEmptiesTheConsole() throws Exception {
         RunPanel p = started();
         FxTestSupport.runOnFx(() -> {

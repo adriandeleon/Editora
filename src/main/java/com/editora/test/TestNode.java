@@ -31,6 +31,10 @@ public final class TestNode {
     private int retries; // Surefire reruns before this result: PASSED + retries = flaky (review D16)
 
     private final List<TestNode> children = new ArrayList<>();
+    private final List<TestNode> childrenView = java.util.Collections.unmodifiableList(children);
+    /** The first child with each id: {@link #childById} is called for every merged result (perf review P9). */
+    private final java.util.Map<@Nullable String, TestNode> byId = new java.util.HashMap<>();
+
     private @Nullable TestNode parent;
 
     public TestNode(TestNodeKind kind, @Nullable String id, @Nullable String displayName) {
@@ -161,8 +165,9 @@ public final class TestNode {
         return retries > 0 && status == TestStatus.PASSED;
     }
 
+    /** The children, in order; read-only — {@link #addChild} adds one. */
     public List<TestNode> children() {
-        return children;
+        return childrenView;
     }
 
     public @Nullable TestNode parent() {
@@ -177,33 +182,41 @@ public final class TestNode {
     public TestNode addChild(TestNode child) {
         child.parent = this;
         children.add(child);
+        byId.putIfAbsent(child.id, child);
         return child;
     }
 
     /** The direct child with the given id, or {@code null}. */
     public @Nullable TestNode childById(@Nullable String childId) {
-        for (TestNode c : children) {
-            if (java.util.Objects.equals(c.id, childId)) {
-                return c;
-            }
-        }
-        return null;
+        return byId.get(childId);
     }
 
     /** Recursively counts the {@code TEST} leaves under this node by status. */
     public TestCounts tally() {
-        return tallyInto(TestCounts.ZERO);
+        int[] acc = new int[TestStatus.values().length];
+        tallyInto(acc);
+        int total = 0;
+        for (int n : acc) {
+            total += n;
+        }
+        return new TestCounts(
+                total,
+                acc[TestStatus.PASSED.ordinal()],
+                acc[TestStatus.FAILED.ordinal()],
+                acc[TestStatus.ERROR.ordinal()],
+                acc[TestStatus.SKIPPED.ordinal()],
+                acc[TestStatus.RUNNING.ordinal()]);
     }
 
-    private TestCounts tallyInto(TestCounts acc) {
+    /** Counts into {@code acc} by status ordinal — no {@link TestCounts} per leaf (perf review P4). */
+    private void tallyInto(int[] acc) {
         if (kind == TestNodeKind.TEST) {
-            return acc.plus(status);
+            acc[status.ordinal()]++;
+            return;
         }
-        TestCounts result = acc;
         for (TestNode c : children) {
-            result = c.tallyInto(result);
+            c.tallyInto(acc);
         }
-        return result;
     }
 
     /**
@@ -244,6 +257,12 @@ public final class TestNode {
                     it.remove();
                     removed = true;
                 }
+            }
+        }
+        if (removed) {
+            byId.clear();
+            for (TestNode c : children) {
+                byId.putIfAbsent(c.id, c);
             }
         }
         return removed;

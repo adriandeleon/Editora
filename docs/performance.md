@@ -55,7 +55,11 @@ Information panel's word count and disk facts, and the spell checker's code-line
 
 Console output is a special case of "don't flood FX": `process/OutputPump` delivers each drain inside an
 `OutputBatch`, `ui/ConsoleAppender` applies a drain as one append, one style application and one trim, and
-drains start at least 16 ms apart. Text that is kept rather than shown is bounded the same way: a test's
+drains start at least 16 ms apart. A drain's carriage returns are collapsed before the console is touched: the Run
+console and the build tabs write only the last non-empty `\r` segment of a chunk (`RunPanel.Carriage`), so a
+progress counter is one line overwrite and one append, not two edits per segment. The Test Results tree redraws
+its visible cells in place after a live update; it never calls `TreeView.refresh()`, which rebuilds every cell.
+Text that is kept rather than shown is bounded the same way: a test's
 captured output, failure message and stack trace keep their head and tail around a note of the cut
 (`test/OutputCap`, 200,000 chars), and the agent transcript holds at most 200,000 chars per entry and
 1,000,000 in all, oldest entries first (`AgentPanel`). Pipe and socket writes to language servers, debug adapters and the ACP
@@ -292,7 +296,10 @@ command waiting for one is busy, so a second press is refused.
   commands, Format Document/Selection and heading numbers (`MarkdownFormatting.FORMAT_SITE`) and a paste of
   structured HTML. A Ctrl/Cmd-click's link (`LINK_AT_SITE`), the heading crumbs, the agent's streamed reply
   (`AgentPanel.PARSE_SITE`), the preview's Copy and the HTML export's check of the source go the same way. Mermaid
-  completion asks the line map whether the caret is in a mermaid fence.
+  completion asks the line map whether the caret is in a mermaid fence. A Mermaid fence in the preview or an agent
+  reply is keyed by its surface and source line (`RenderContext.diagramKey`), so a newer render of it drops the one
+  still queued for `mmdc`. While an agent reply streams, a fence not yet closed is plain code: no diagram and no
+  highlighting job until it closes.
 - **Editor commands.** Commands that search from the caret take the text, caret and anchor on the FX thread and
   search on a virtual thread through `editor/CaretLook`: Select All Occurrences, Add Caret at Next Occurrence, Skip
   Occurrence, Jump/Select to Matching Bracket, the sexp, defun and paragraph motions, Expand Selection, kill-sexp,
@@ -316,7 +323,11 @@ command waiting for one is busy, so a second press is refused.
   `SESSION_READ_SITE`).
 - **Consoles, Settings, grammars and the terminal.**
   - A console's find bar searches a snapshot once typing pauses for 80 ms (`ConsoleFindBar.SEARCH_SITE`). The latest
-    ask wins, and text the output changed meanwhile is searched again.
+    ask wins, and text the output changed meanwhile is searched again. While the bar is open, output that arrives
+    is searched from the start of the last line not yet searched only: the matches before it are kept current as the
+    console appends, trims and overwrites (`ConsoleKnownMatches`). With an empty query nothing is searched.
+  - The CSV grid parses, infers its column types and measures its widths off the thread under a per-buffer
+    generation (`CsvCoordinator.PARSE_SITE`), and keeps its columns when a re-parse does not change them.
   - A console hover or click reads only the line under the pointer.
   - Settings' modified markers, a row's reset and restore, and a window's re-apply compare and set property values
     through their accessors, with no JSON (`SettingsModified`, `SettingsReapply`).
