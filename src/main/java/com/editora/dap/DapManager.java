@@ -5296,15 +5296,20 @@ public final class DapManager {
         });
     }
 
-    /** Looks at {@code frames}' files here, off the FX thread, before the FX thread picks one (PERF-01). */
-    private static boolean warmed(@Nullable List<DapModels.StackFrameInfo> frames) {
-        FrameFiles.warm(frames);
-        return true;
-    }
+    /** The frame-file looks of the stack replies so far, in the order the replies came (see {@link #fxAfterLooks}). */
+    private CompletableFuture<?> frameLooks = CompletableFuture.completedFuture(null);
 
-    /** {@link #fx(Runnable)}, after {@code warmed} has run on this thread. */
-    private void fx(boolean warmed, Runnable r) {
-        fx(r);
+    /**
+     * {@link #fx(Runnable)} once {@code frames}' files have been looked at, off the FX thread and off the adapter's
+     * reader thread (PERF-01; perf review 2026-11-23, D2), before the FX thread picks one. Replies reach the FX thread
+     * in the order they came, though one waited for its looks and the next did not.
+     */
+    private synchronized void fxAfterLooks(@Nullable List<DapModels.StackFrameInfo> frames, Runnable r) {
+        frameLooks = frameLooks
+                .thenCompose(v -> FrameFiles.warmAsync(frames))
+                .handle((v, e) -> null)
+                .thenRun(() -> fx(r))
+                .exceptionally(e -> null); // the next reply's turn comes all the same
     }
 
     public void stackTrace(int threadId, Consumer<List<DapModels.StackFrameInfo>> cb) {
@@ -5314,7 +5319,7 @@ public final class DapManager {
             return;
         }
         c.stackTrace(threadId)
-                .whenComplete((frames, e) -> fx(warmed(frames), () -> {
+                .whenComplete((frames, e) -> fxAfterLooks(frames, () -> {
                     if (client == c) {
                         cb.accept(originalFrames(frames));
                     }
@@ -5750,7 +5755,7 @@ public final class DapManager {
             boolean allThreadsStopped,
             long resumed) {
         c.stackTrace(threadId)
-                .whenComplete((frames, e) -> fx(warmed(frames), () -> {
+                .whenComplete((frames, e) -> fxAfterLooks(frames, () -> {
                     if (!isCurrent(epoch, c)) {
                         return;
                     }
