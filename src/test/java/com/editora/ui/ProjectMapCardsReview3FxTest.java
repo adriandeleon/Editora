@@ -18,6 +18,7 @@ import javafx.scene.input.PickResult;
 import javafx.scene.layout.Region;
 import javafx.stage.Stage;
 
+import com.editora.editor.ControlNames;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -252,7 +253,7 @@ class ProjectMapCardsReview3FxTest {
             double wanted = Math.min(name.getLayoutBounds().getWidth(), ProjectMapPreview.MIN_WIDTH * 0.5);
             assertTrue(title.getWidth() >= wanted - 1, "the file's name keeps its room: " + title.getWidth());
             assertTrue(status.getWidth() < title.getWidth(), "the status gives way first");
-            assertNotNull(status.getTooltip(), "and is read in full from its tooltip");
+            assertNotNull(ControlNames.tipText(status), "and is read in full from its tooltip");
             javafx.scene.control.Button open = FxTestSupport.field(card, "open");
             // At least its preferred width (macOS snaps the laid-out width up to whole pixels).
             assertTrue(

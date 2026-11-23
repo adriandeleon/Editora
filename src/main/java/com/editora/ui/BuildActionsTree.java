@@ -278,8 +278,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
             return;
         }
         rootLabel.setText(tr("buildtree.root", displayName(root, project)));
-        rootLabel.setTooltip(
-                ControlNames.tooltip(root.toAbsolutePath().normalize().toString()));
+        ControlNames.tip(rootLabel, root.toAbsolutePath().normalize().toString());
         trustPill.setVisible(trust != TrustState.NOT_GATED);
         trustPill.setManaged(trust != TrustState.NOT_GATED);
         trustPill.getStyleClass().removeAll("build-tasks-trusted", "build-tasks-untrusted");
@@ -825,10 +824,7 @@ public final class BuildActionsTree extends VBox implements ToolWindowContent {
                     check.setAllowIndeterminate(false);
                     check.setIndeterminate(state == ToggleState.EXPLICIT_OFF);
                     check.setSelected(state == ToggleState.ON);
-                    check.setTooltip(
-                            toggle.triState() && !toggle.locked()
-                                    ? ControlNames.tooltip(tr("buildtree.triStateTip"))
-                                    : null);
+                    ControlNames.tip(check, toggle.triState() && !toggle.locked() ? tr("buildtree.triStateTip") : null);
                     setGraphic(check);
                 }
                 case ProjectItem p -> {

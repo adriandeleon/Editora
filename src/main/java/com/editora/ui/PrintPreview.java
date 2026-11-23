@@ -603,7 +603,7 @@ final class PrintPreview {
         String printer = job.printerName();
         String paper = layout.getPaper().getName();
         infoLabel.setText((printer == null || printer.isBlank() ? "" : printer + " · ") + paper + " · " + orientation);
-        infoLabel.setTooltip(ControlNames.tooltip(infoLabel.getText()));
+        ControlNames.tip(infoLabel, infoLabel.getText());
     }
 
     /** Scales the sheet for the zoom setting and the viewport, and shows the resulting percentage. */
@@ -643,7 +643,7 @@ final class PrintPreview {
         pageField.setPrefColumnCount(Math.max(2, Integer.toString(count).length()));
         pageAfter.setText(tr("print.preview.pageAfter", count));
         pageField.setAccessibleText(pageText());
-        pageField.setTooltip(ControlNames.tooltip(tr("print.preview.pageField", Math.min(1, count), count)));
+        ControlNames.tip(pageField, tr("print.preview.pageField", Math.min(1, count), count));
         pageField.setDisable(count == 0 || printing);
         if (stage.getScene() != null) {
             arrangeBar(stage.getScene().getWidth()); // more digits may no longer fit beside the buttons

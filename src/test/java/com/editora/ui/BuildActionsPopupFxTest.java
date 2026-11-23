@@ -25,6 +25,7 @@ import javafx.stage.Stage;
 
 import com.editora.build.BuildAction;
 import com.editora.build.BuildActionsProvider;
+import com.editora.editor.ControlNames;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -221,8 +222,8 @@ class BuildActionsPopupFxTest {
             List<String> out = new ArrayList<>();
             for (Node n : list().lookupAll(".list-cell")) {
                 ListCell<?> cell = (ListCell<?>) n;
-                if (cell.getTooltip() != null) {
-                    out.add(cell.getIndex() + ":" + cell.getTooltip().getText());
+                if (ControlNames.tipText(cell) != null) {
+                    out.add(cell.getIndex() + ":" + ControlNames.tipText(cell));
                 }
             }
             return out;

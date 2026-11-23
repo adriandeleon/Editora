@@ -31,6 +31,7 @@ import javafx.util.StringConverter;
 
 import com.editora.config.ConfigManager;
 import com.editora.config.RunConfiguration;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import com.editora.run.RunConfigDefaults;
 import com.editora.run.RunConfigFields;
@@ -246,10 +247,10 @@ public final class RunConfigurationsWindow {
         runOnRow.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(runOn, Priority.ALWAYS);
         runOn.setMaxWidth(Double.MAX_VALUE);
-        runOn.setTooltip(com.editora.editor.ControlNames.tooltip(tr("settings.runConfig.runOn.hint")));
+        ControlNames.tip(runOn, tr("settings.runConfig.runOn.hint"));
         CheckBox inTerminal = new CheckBox(tr("settings.runConfig.runInTerminal"));
         inTerminal.setId("run-config-in-terminal");
-        inTerminal.setTooltip(com.editora.editor.ControlNames.tooltip(tr("settings.runConfig.runInTerminal.hint")));
+        ControlNames.tip(inTerminal, tr("settings.runConfig.runInTerminal.hint"));
 
         GridPane form = new GridPane();
         UiZoom.gaps(form, 8, 8);

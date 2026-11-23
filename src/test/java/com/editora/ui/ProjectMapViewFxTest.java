@@ -52,6 +52,7 @@ import com.editora.config.FileIdentity;
 import com.editora.config.NoteScope;
 import com.editora.config.PersonalNote;
 import com.editora.config.TextAnchor;
+import com.editora.editor.ControlNames;
 import com.editora.editor.notes.NoteDraft;
 import com.editora.pdf.PdfExportService;
 import org.apache.pdfbox.Loader;
@@ -1055,8 +1056,7 @@ class ProjectMapViewFxTest {
                 // A lock, named for screen readers and in its tooltip (review 3, C11), saying what a card is for: a
                 // glance, with Open to edit (Map explore round, position 12).
                 assertEquals(tr("project.map.preview.glance"), readOnly.getAccessibleText());
-                assertEquals(
-                        tr("project.map.preview.glance"), readOnly.getTooltip().getText());
+                assertEquals(tr("project.map.preview.glance"), ControlNames.tipText(readOnly));
                 Button zoomIn = FxTestSupport.field(preview, "zoomIn");
                 zoomIn.fire();
                 assertTrue((double) FxTestSupport.field(preview, "contentZoom") > 1.0);

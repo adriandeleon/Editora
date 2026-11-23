@@ -2256,7 +2256,7 @@ final class MapSurface extends Region {
         CheckBox showHidden = new CheckBox(tr("project.map.column.showHidden"));
         showHidden.getStyleClass().add("project-map-column-hidden");
         showHidden.setSelected(columnShowHidden.getOrDefault(id, view.showHiddenDefault));
-        showHidden.setTooltip(ControlNames.tooltip(tr("project.map.column.showHiddenHelp")));
+        ControlNames.tip(showHidden, tr("project.map.column.showHiddenHelp"));
         showHidden.setAccessibleText(tr("project.map.column.showHidden"));
         showHidden.selectedProperty().addListener((obs, old, selected) -> {
             if (syncingHidden) {

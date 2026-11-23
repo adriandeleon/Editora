@@ -1315,16 +1315,16 @@ final class ProjectMapView extends VBox {
         MapButtonCommands.bind(this, "projectMap.filterType", this::pickTypeFilter);
         hideUnmatched.getStyleClass().add("project-map-hide-unmatched");
         hideUnmatched.setMinWidth(Region.USE_PREF_SIZE);
-        hideUnmatched.setTooltip(ControlNames.tooltip(tr("project.map.filter.hideUnmatched.help")));
         hideUnmatched.setAccessibleHelp(tr("project.map.filter.hideUnmatched.help"));
+        ControlNames.tip(hideUnmatched, tr("project.map.filter.hideUnmatched.help"));
         hideUnmatched.selectedProperty().addListener((obs, old, hide) -> {
             surface.setHideUnmatched(hide);
             onHideUnmatchedChanged.accept(hide);
         });
         narrowedBadge.getStyleClass().add("project-map-narrowed-badge");
         narrowedBadge.setMinWidth(Region.USE_PREF_SIZE);
-        narrowedBadge.setTooltip(ControlNames.tooltip(tr("project.map.narrowed.help")));
         narrowedBadge.setAccessibleHelp(tr("project.map.narrowed.help"));
+        ControlNames.tip(narrowedBadge, tr("project.map.narrowed.help"));
         showNarrowed(0);
         surface.setOnNarrowedChanged(this::showNarrowed);
 
@@ -1618,8 +1618,8 @@ final class ProjectMapView extends VBox {
         ToggleButton button = new ToggleButton(tr(key));
         button.getStyleClass().add("project-map-filter-chip");
         button.setMinWidth(Region.USE_PREF_SIZE);
-        button.setTooltip(ControlNames.tooltip(tr(key + ".help")));
         button.setAccessibleHelp(tr(key + ".help"));
+        ControlNames.tip(button, tr(key + ".help"));
         return button;
     }
 
@@ -5225,16 +5225,12 @@ final class ProjectMapView extends VBox {
         fitBreadcrumbs();
     }
 
-    /** One crumb; its tooltip (the full path) is made the first time the pointer rests on it. */
+    /** One crumb; its tooltip (the full path) is made the first time the pointer rests on it ({@link ControlNames#tip}). */
     private Button breadcrumbButton(Path path) {
         Button crumb = new Button(crumbLabel(path));
         crumb.setMnemonicParsing(false); // "zz_generated.go" keeps its underscore (review 3 E4)
         crumb.getStyleClass().add("project-map-breadcrumb");
-        crumb.setOnMouseEntered(event -> {
-            if (crumb.getTooltip() == null) {
-                crumb.setTooltip(ControlNames.tooltip(path.toString()));
-            }
-        });
+        ControlNames.tip(crumb, path.toString());
         crumb.setOnAction(event -> revealPath(path));
         return crumb;
     }

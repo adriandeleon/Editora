@@ -755,7 +755,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         clear.managedProperty().bind(clear.visibleProperty()); // reclaim its width when hidden
 
         mapButton.getStyleClass().add("project-view-toggle");
-        mapButton.setTooltip(ControlNames.tooltip(tr("project.view.map.tooltip")));
+        ControlNames.tip(mapButton, tr("project.view.map.tooltip"));
         // Reachable by Tab: without it opening the Map was mouse-only (project.toggleMapView aside).
         mapButton.setFocusTraversable(true);
         mapButton.setOnAction(e -> openMapWindow(true));

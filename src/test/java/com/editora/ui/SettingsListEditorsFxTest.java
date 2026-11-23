@@ -27,6 +27,7 @@ import javafx.stage.Window;
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
 import com.editora.config.Abbreviation;
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import com.editora.externaltool.ExternalTool;
 import com.editora.snippet.Snippet;
@@ -695,7 +696,7 @@ class SettingsListEditorsFxTest {
                 assertEquals(before, stored.getPattern(), "a pattern that cannot compile is not saved");
                 assertEquals("RENAMED", stored.getName(), "the row's other fields still save");
                 assertTrue(regex.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
-                assertTrue(regex.getTooltip() != null);
+                assertTrue(ControlNames.tipText(regex) != null);
 
                 regex.setText("\\bTODO:");
                 regex.fireEvent(new ActionEvent());

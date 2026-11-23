@@ -13,6 +13,7 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.Tab;
 import javafx.scene.layout.HBox;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import com.editora.git.GitFileStatus;
 import com.editora.testkit.Await;
@@ -113,7 +114,7 @@ class ViewerTabsFxTest {
                     assertTrue(rows.contains(tr(key)), key + " in " + rows);
                 }
                 assertEquals("", tab.getText(), "the header is the title");
-                assertEquals(file.toAbsolutePath().toString(), tab.getTooltip().getText());
+                assertEquals(file.toAbsolutePath().toString(), ControlNames.tipText(tab));
                 c.closeTab(tab);
             }
         });
@@ -208,18 +209,17 @@ class ViewerTabsFxTest {
             assertTrue(imageTab.getStyleClass().contains("git-status-untracked"), "a viewer's tab is tinted too");
             assertEquals(
                     image.toAbsolutePath() + "\n" + TabGitStatus.words(GitFileStatus.UNTRACKED),
-                    imageTab.getTooltip().getText());
+                    ControlNames.tipText(imageTab));
             assertEquals(
                     text.toAbsolutePath() + "\n" + TabGitStatus.words(GitFileStatus.MODIFIED),
-                    textTab.getTooltip().getText());
+                    ControlNames.tipText(textTab));
             // The header is rebuilt when the title changes: the status line stays.
             EditorBuffer buffer = MainController.bufferOf(textTab);
             c.updateTabMeta(textTab, buffer);
-            assertTrue(textTab.getTooltip().getText().endsWith(TabGitStatus.words(GitFileStatus.MODIFIED)));
+            assertTrue(ControlNames.tipText(textTab).endsWith(TabGitStatus.words(GitFileStatus.MODIFIED)));
             TabGitStatus.apply(area().tabs(), Map.of());
-            assertEquals(
-                    image.toAbsolutePath().toString(), imageTab.getTooltip().getText(), "clean again");
-            assertEquals(text.toAbsolutePath().toString(), textTab.getTooltip().getText());
+            assertEquals(image.toAbsolutePath().toString(), ControlNames.tipText(imageTab), "clean again");
+            assertEquals(text.toAbsolutePath().toString(), ControlNames.tipText(textTab));
             c.closeTab(imageTab);
             c.closeTab(textTab);
         });

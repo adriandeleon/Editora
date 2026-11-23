@@ -211,7 +211,7 @@ final class HttpTabStrip extends HBox {
         String text = detail == null || detail.isBlank() ? name : name + " — " + detail;
         ToggleButton b = buttonOf(tab);
         b.setAccessibleText(text);
-        b.setTooltip(ControlNames.tooltip(text));
+        ControlNames.tip(b, text);
     }
 
     /** The tab's button. */

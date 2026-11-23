@@ -99,9 +99,9 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
         queryCombo.setVisibleRowCount(12);
         replaceField.setPromptText(tr("search.replacePrompt"));
         replaceField.setAccessibleText(tr("search.replacePrompt"));
-        caseBox.setTooltip(ControlNames.tooltip(tr("search.caseTip")));
-        regexBox.setTooltip(ControlNames.tooltip(tr("search.regexTip")));
-        wordBox.setTooltip(ControlNames.tooltip(tr("find.wholeWord")));
+        ControlNames.tip(caseBox, tr("search.caseTip"));
+        ControlNames.tip(regexBox, tr("search.regexTip"));
+        ControlNames.tip(wordBox, tr("find.wholeWord"));
         HBox.setHgrow(queryCombo, Priority.ALWAYS);
         queryCombo.setMaxWidth(Double.MAX_VALUE);
 
@@ -159,8 +159,8 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
 
         includeField.setPromptText(tr("search.includePrompt"));
         excludeField.setPromptText(tr("search.excludePrompt"));
-        includeField.setTooltip(ControlNames.tooltip(tr("search.globsTip")));
-        excludeField.setTooltip(ControlNames.tooltip(tr("search.globsTip")));
+        ControlNames.tip(includeField, tr("search.globsTip"));
+        ControlNames.tip(excludeField, tr("search.globsTip"));
         includeField.setOnAction(e -> runSearch());
         excludeField.setOnAction(e -> runSearch());
         includeField.setAccessibleText(tr("search.includePrompt"));
@@ -176,7 +176,7 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
 
         summary.getStyleClass().add("search-summary");
         backendBadge.getStyleClass().add("search-backend-badge");
-        backendBadge.setTooltip(ControlNames.tooltip(tr("search.backendRipgrepTip")));
+        ControlNames.tip(backendBadge, tr("search.backendRipgrepTip"));
         backendBadge.setVisible(false);
         backendBadge.setManaged(false);
         Region summarySpacer = new Region();

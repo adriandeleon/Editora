@@ -35,6 +35,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 
+import com.editora.editor.ControlNames;
 import com.editora.git.GitFileStatus;
 import com.editora.i18n.Messages;
 import org.junit.jupiter.api.AfterEach;
@@ -334,7 +335,7 @@ class ProjectMapLayoutFxTest {
             FxTestSupport.invoke(surface, "repaint");
             assertTrue(hidden.isVisible(), "the controls are still shown at 66%");
             assertEquals(ContentDisplay.GRAPHIC_ONLY, hidden.getContentDisplay(), "box only, not \"Hid…\"");
-            assertNotNull(hidden.getTooltip());
+            assertNotNull(ControlNames.tipText(hidden));
             assertFalse(hidden.getAccessibleText().isBlank(), "and it keeps its name");
         });
     }
@@ -773,12 +774,12 @@ class ProjectMapLayoutFxTest {
         FxTestSupport.runOnFx(() -> {
             for (Node node : mapView.lookupAll(".project-map-filter-chip")) {
                 ToggleButton chip = (ToggleButton) node;
-                assertNotNull(chip.getTooltip(), chip.getText());
-                assertNotEquals(chip.getText(), chip.getTooltip().getText(), "the tooltip says what the chip does");
+                assertNotNull(ControlNames.tipText(chip), chip.getText());
+                assertNotEquals(chip.getText(), ControlNames.tipText(chip), "the tooltip says what the chip does");
             }
             ComboBox<?> type = FxTestSupport.field(mapView, "typeFilter");
             assertEquals(tr("project.map.type.all"), type.getAccessibleText(), "the prefix lives in the name");
-            assertEquals(tr("project.map.type.all"), type.getTooltip().getText());
+            assertEquals(tr("project.map.type.all"), ControlNames.tipText(type));
             assertEquals(tr("project.map.type.name.all"), type.getConverter().toString(null), "and not in the face");
             // The flow moved into ⋯ → Flow (Map explore, position 17): its items name the directions.
             assertEquals(
@@ -797,7 +798,7 @@ class ProjectMapLayoutFxTest {
                         button.getAccessibleText() != null
                                 && button.getAccessibleText().length() > 3,
                         "a glyph button is announced by name, not as \"" + button.getText() + "\"");
-                assertEquals(button.getAccessibleText(), button.getTooltip().getText());
+                assertEquals(button.getAccessibleText(), ControlNames.tipText(button));
             }
         });
     }
@@ -965,7 +966,7 @@ class ProjectMapLayoutFxTest {
                     "root, then the last two; the middle collapsed");
             Label ellipsis = FxTestSupport.field(mapView, "breadcrumbEllipsis");
             assertTrue(crumbs.getChildren().contains(ellipsis));
-            assertTrue(ellipsis.getTooltip().getText().contains("package3"), "the tooltip lists what is hidden");
+            assertTrue(ControlNames.tipText(ellipsis).contains("package3"), "the tooltip lists what is hidden");
             for (Node node : crumbs.getChildren()) {
                 if (node instanceof Button crumb
                         && crumb.isVisible()

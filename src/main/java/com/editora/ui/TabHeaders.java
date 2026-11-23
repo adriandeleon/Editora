@@ -12,7 +12,6 @@ import javafx.scene.Node;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Label;
 import javafx.scene.control.Tab;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.Dragboard;
 import javafx.scene.input.TransferMode;
@@ -69,7 +68,7 @@ final class TabHeaders {
         Path file = path.apply(tab);
         tab.setText(""); // the header is the title
         if (file != null) {
-            setTooltip(tab, tooltip(file));
+            setTooltip(tab, tooltipText(file));
         }
         Node icon = content.icon();
         if (icon != null) {
@@ -135,10 +134,10 @@ final class TabHeaders {
         toggleClass(tab, "pinned", isPinned);
         toggleClass(tab, "read-only", !buffer.isEditable());
         toggleClass(tab, "remote", remote);
-        Tooltip tip = tooltip(p);
+        String tip = tooltipText(p);
         com.editora.editor.crypto.EncryptionState state = buffer.encryption().state();
         if (encrypted && state != null) {
-            tip.setText(EncryptionViews.tabTooltip(tip.getText(), state));
+            tip = EncryptionViews.tabTooltip(tip, state);
         }
         setTooltip(tab, tip);
     }
@@ -149,13 +148,18 @@ final class TabHeaders {
     /** Tab property: the file's Git status in words ("Git: modified"), while it has one. */
     private static final Object GIT_WORDS = new Object();
 
-    /** Sets {@code tab}'s tooltip, with the file's Git status as a last line while it has one. */
-    private static void setTooltip(Tab tab, Tooltip tip) {
-        tab.getProperties().put(TIP_TEXT, tip.getText());
-        if (tab.getProperties().get(GIT_WORDS) instanceof String words) {
-            tip.setText(tip.getText() + "\n" + words);
-        }
-        tab.setTooltip(tip);
+    /**
+     * Sets {@code tab}'s tooltip text, with the file's Git status as a last line while it has one. The tooltip
+     * itself is built on the header's first hover ({@link ControlNames#tip(Tab, String)}).
+     */
+    private static void setTooltip(Tab tab, String text) {
+        tab.getProperties().put(TIP_TEXT, text);
+        ControlNames.tip(tab, tab.getProperties().get(GIT_WORDS) instanceof String words ? text + "\n" + words : text);
+    }
+
+    /** Gives {@code tab}, a file's tab, the file's full path as its tooltip. */
+    static void fileTooltip(Tab tab, @Nullable Path file) {
+        setTooltip(tab, tooltipText(file));
     }
 
     /**
@@ -168,9 +172,8 @@ final class TabHeaders {
         } else {
             tab.getProperties().put(GIT_WORDS, words);
         }
-        Tooltip tip = tab.getTooltip();
-        if (tip != null && tab.getProperties().get(TIP_TEXT) instanceof String text) {
-            tip.setText(words == null ? text : text + "\n" + words);
+        if (tab.getProperties().get(TIP_TEXT) instanceof String text) {
+            ControlNames.tip(tab, words == null ? text : text + "\n" + words);
         }
     }
 
@@ -256,14 +259,13 @@ final class TabHeaders {
         });
     }
 
-    /** The full-path tooltip of a file tab ("untitled" for none; a remote file shows its display label). */
-    static Tooltip tooltip(@Nullable Path p) {
-        return ControlNames.tooltip(
-                p == null
-                        ? "untitled"
-                        : com.editora.vfs.Vfs.isRemote(p)
-                                ? com.editora.vfs.Vfs.displayLabel(p)
-                                : p.toAbsolutePath().toString());
+    /** The full-path tooltip text of a file tab ("untitled" for none; a remote file shows its display label). */
+    static String tooltipText(@Nullable Path p) {
+        return (p == null
+                ? "untitled"
+                : com.editora.vfs.Vfs.isRemote(p)
+                        ? com.editora.vfs.Vfs.displayLabel(p)
+                        : p.toAbsolutePath().toString());
     }
 
     /** Wires drag-and-drop on a tab's header so the user can reorder the strip with the mouse. */

@@ -160,13 +160,12 @@ public final class DeploymentsWindow {
         excludes.setId("deploy-excludes");
         excludes.setPromptText(tr("deploy.field.excludesPrompt"));
         excludes.setPrefRowCount(5);
-        excludes.setTooltip(
-                ControlNames.tooltip(tr("deploy.field.excludesHint", String.join("  ", DeployExcludes.DEFAULTS))));
+        ControlNames.tip(excludes, tr("deploy.field.excludesHint", String.join("  ", DeployExcludes.DEFAULTS)));
         CheckBox gitignore = new CheckBox(tr("deploy.field.useGitignore"));
         gitignore.setId("deploy-gitignore");
         CheckBox deleteRemoved = new CheckBox(tr("deploy.field.deleteRemoved"));
         deleteRemoved.setId("deploy-delete-removed");
-        deleteRemoved.setTooltip(ControlNames.tooltip(tr("deploy.field.deleteRemovedHint")));
+        ControlNames.tip(deleteRemoved, tr("deploy.field.deleteRemovedHint"));
         CheckBox uploadOnSave = new CheckBox(tr("deploy.field.uploadOnSave"));
         uploadOnSave.setId("deploy-upload-on-save");
 

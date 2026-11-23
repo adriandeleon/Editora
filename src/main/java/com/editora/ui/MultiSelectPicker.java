@@ -15,6 +15,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 
 import static com.editora.i18n.Messages.tr;
@@ -91,7 +92,7 @@ public final class MultiSelectPicker {
         ListView<CheckBox> list = new ListView<>();
         for (Item<T> it : items) {
             CheckBox cb = new CheckBox(it.label());
-            cb.setTooltip(com.editora.editor.ControlNames.tooltip(it.label())); // a row still too long says it whole
+            ControlNames.tip(cb, it.label()); // a row still too long says it whole
             cb.setSelected(it.preselected());
             cb.setFocusTraversable(false); // the ListView owns focus; Space toggles the selected row
             boxes.add(cb);

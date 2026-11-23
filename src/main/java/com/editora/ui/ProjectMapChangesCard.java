@@ -133,9 +133,9 @@ final class ProjectMapChangesCard extends MapFloatingCard {
         }
         Icons.name(previous, tr("project.map.changes.previousTip"));
         Icons.name(next, tr("project.map.changes.nextTip"));
-        openInEditor.setTooltip(ControlNames.tooltip(tr("project.map.changes.openInEditorTip")));
-        compare.setTooltip(ControlNames.tooltip(tr("project.map.changes.compareTip")));
-        refresh.setTooltip(ControlNames.tooltip(tr("project.map.changes.refreshTip")));
+        ControlNames.tip(openInEditor, tr("project.map.changes.openInEditorTip"));
+        ControlNames.tip(compare, tr("project.map.changes.compareTip"));
+        ControlNames.tip(refresh, tr("project.map.changes.refreshTip"));
         previous.setOnAction(event -> step(false));
         next.setOnAction(event -> step(true));
         openInEditor.setOnAction(event -> openLine(diff.getSelectionModel().getSelectedIndex(), true));
@@ -190,7 +190,7 @@ final class ProjectMapChangesCard extends MapFloatingCard {
         against.getStyleClass().addAll("flat", "project-map-changes-against");
         against.setMnemonicParsing(false);
         against.setFocusTraversable(false);
-        against.setTooltip(ControlNames.tooltip(tr("project.map.changes.againstTip")));
+        ControlNames.tip(against, tr("project.map.changes.againstTip"));
         against.setAccessibleText(tr("project.map.changes.againstTip"));
         HBox head = new HBox(against);
         UiZoom.padding(head, 4, 6, 0, 6);
@@ -211,7 +211,7 @@ final class ProjectMapChangesCard extends MapFloatingCard {
     void show(Path root, @Nullable Path select) {
         boolean sameRoot = root.equals(this.root);
         this.root = root;
-        title.setTooltip(ControlNames.tooltip(root.toString()));
+        ControlNames.tip(title, root.toString());
         if (select != null && select.startsWith(root)) {
             wanted = relative(root, select);
         } else if (!sameRoot) {

@@ -22,6 +22,7 @@ import javafx.stage.Stage;
 
 import com.editora.build.BuildAction;
 import com.editora.build.BuildActionsProvider;
+import com.editora.editor.ControlNames;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -132,9 +133,7 @@ class BuildActionsTreeKeysFxTest {
                 } else {
                     assertTrue(cell.getStyleClass().contains("build-tasks-task"));
                     text = cell.getText()
-                            + (cell.getTooltip() == null
-                                    ? ""
-                                    : " (" + cell.getTooltip().getText() + ")");
+                            + (ControlNames.tipText(cell) == null ? "" : " (" + ControlNames.tipText(cell) + ")");
                 }
                 out.put(cell.getIndex(), text);
             }

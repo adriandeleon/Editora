@@ -7,6 +7,7 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.layout.Pane;
 import javafx.stage.Stage;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.EditorFx;
 import org.fxmisc.richtext.CodeArea;
@@ -314,10 +315,8 @@ class MarkdownEditingFxTest {
             bar.showFor(buffer.getArea(), root);
             Button bold = (Button) node.getChildren().get(0);
             Button italic = (Button) node.getChildren().get(1);
-            assertTrue(
-                    bold.getTooltip().getText().endsWith("C-c C-s b"),
-                    bold.getTooltip().getText());
-            assertFalse(italic.getTooltip().getText().contains("·"), "unbound: just the name");
+            assertTrue(ControlNames.tipText(bold).endsWith("C-c C-s b"), ControlNames.tipText(bold));
+            assertFalse(ControlNames.tipText(italic).contains("·"), "unbound: just the name");
 
             // 260 px is narrower than the bar's single row: it used to run out of the pane.
             double rowHeight = bold.prefHeight(-1);

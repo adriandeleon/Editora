@@ -8,7 +8,6 @@ import javafx.scene.Node;
 import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -16,7 +15,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 import com.editora.diff.PatchParser.FilePatch;
-import com.editora.editor.ControlNames;
+import com.editora.editor.LazyTooltip;
 import com.editora.editor.TabContent;
 import com.editora.editor.UiZoom;
 import com.editora.editor.markdown.MarkdownRenderer;
@@ -312,7 +311,7 @@ public final class PrReviewPane extends Region implements TabContent {
         // The status class colors the letter + icon (the .pr-review-file-row.git-status-* CSS).
         row.getStyleClass().addAll("pr-review-file-row", r.status().cssClass());
         row.setAlignment(Pos.CENTER_LEFT);
-        Tooltip.install(row, ControlNames.tooltip(r.displayPath()));
+        LazyTooltip.install(row, () -> r.displayPath());
         row.setOnMouseClicked(e -> link.fire());
         return row;
     }

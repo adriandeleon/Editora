@@ -33,6 +33,7 @@ import javafx.stage.Stage;
 import com.editora.config.MapTrails;
 import com.editora.config.ProjectMapState;
 import com.editora.config.ProjectMapWorkingSet;
+import com.editora.editor.ControlNames;
 import com.editora.ui.ProjectMapView.FlowDirection;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeAll;
@@ -495,7 +496,7 @@ class ProjectMapTrailsCoverageFxTest {
                 Button close = (Button) header.getChildren().getLast();
                 assertEquals("×", close.getText());
                 assertEquals(tr("project.map.trails.note.closeHelp"), close.getAccessibleText());
-                assertEquals(close.getAccessibleText(), close.getTooltip().getText(), "one name for both");
+                assertEquals(close.getAccessibleText(), ControlNames.tipText(close), "one name for both");
                 close.fire();
                 assertNull(note.getParent(), "the sheet is gone");
                 assertNull(h.cards().viewsAttachment(card), "and off its card");

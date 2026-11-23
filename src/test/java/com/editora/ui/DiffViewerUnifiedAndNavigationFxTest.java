@@ -24,6 +24,7 @@ import javafx.stage.Stage;
 
 import com.editora.diff.DiffEngine;
 import com.editora.diff.DiffModels;
+import com.editora.editor.ControlNames;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -490,9 +491,7 @@ class DiffViewerUnifiedAndNavigationFxTest {
         assertEquals(tr("diff.whitespace.trim"), FxTestSupport.callOnFx(whitespace::getText));
         FxTestSupport.runOnFx(whitespace::fire);
         assertEquals(tr("diff.whitespace.all"), FxTestSupport.callOnFx(whitespace::getText));
-        assertEquals(
-                tr("diff.tooltip.whitespace.all"),
-                FxTestSupport.callOnFx(() -> whitespace.getTooltip().getText()));
+        assertEquals(tr("diff.tooltip.whitespace.all"), FxTestSupport.callOnFx(() -> ControlNames.tipText(whitespace)));
         FxTestSupport.runOnFx(whitespace::fire);
         assertEquals(tr("diff.whitespace.none"), FxTestSupport.callOnFx(whitespace::getText));
 

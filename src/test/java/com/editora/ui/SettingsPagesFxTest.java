@@ -29,6 +29,7 @@ import javafx.stage.Window;
 
 import com.editora.AppInfo;
 import com.editora.config.Settings;
+import com.editora.editor.ControlNames;
 import com.editora.markdown.MarkdownLint;
 import com.editora.plugin.PluginManager;
 import com.editora.todo.TodoPattern;
@@ -573,11 +574,11 @@ class SettingsPagesFxTest {
             // A malformed expression would silently switch the keyword off: it is flagged and not stored.
             SettingsRig.typeAndEnter(regex, "(unclosed");
             assertEquals("\\bHACK\\b", settings.getTodoPatterns().get(1).getPattern());
-            assertNotNull(regex.getTooltip());
+            assertNotNull(ControlNames.tipText(regex));
             assertTrue(regex.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
             SettingsRig.typeAndEnter(regex, "HACK!?");
             assertEquals("HACK!?", settings.getTodoPatterns().get(1).getPattern());
-            assertNull(regex.getTooltip());
+            assertNull(ControlNames.tipText(regex));
             assertFalse(regex.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
 
             // An unusable stored colour shows the default swatch instead of failing the page.

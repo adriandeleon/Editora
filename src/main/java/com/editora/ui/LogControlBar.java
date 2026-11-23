@@ -68,14 +68,14 @@ public class LogControlBar extends HBox {
 
         follow.setGraphic(Icons.arrowDown());
         follow.getStyleClass().addAll("log-follow", "flat");
-        follow.setTooltip(ControlNames.tooltip(tr("tooltip.logFollow")));
         follow.setAccessibleHelp(tr("tooltip.logFollow"));
+        ControlNames.tip(follow, tr("tooltip.logFollow"));
         follow.setOnAction(e -> onFollow.accept(follow.isSelected()));
 
         level.getItems().addAll(levelLabels());
         level.getSelectionModel().selectFirst();
         level.getStyleClass().add("log-level-combo");
-        level.setTooltip(ControlNames.tooltip(tr("tooltip.logLevel")));
+        ControlNames.tip(level, tr("tooltip.logLevel"));
         level.setAccessibleText(tr("tooltip.logLevel"));
         level.setOnAction(e -> {
             if (!showing) {

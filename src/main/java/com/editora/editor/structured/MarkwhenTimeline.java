@@ -8,14 +8,13 @@ import java.util.Locale;
 
 import javafx.scene.Node;
 import javafx.scene.control.Label;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 
-import com.editora.editor.ControlNames;
+import com.editora.editor.LazyTooltip;
 import com.editora.editor.markdown.MarkdownRenderer;
 import com.editora.i18n.Messages;
 import com.editora.markwhen.MwNode;
@@ -182,7 +181,7 @@ public final class MarkwhenTimeline {
             mark = bar;
             labelX = x2 + 5;
         }
-        Tooltip.install(mark, ControlNames.tooltip(tooltipText(e)));
+        LazyTooltip.install(mark, () -> tooltipText(e));
         pane.getChildren().add(mark);
 
         Label label = new Label(text);

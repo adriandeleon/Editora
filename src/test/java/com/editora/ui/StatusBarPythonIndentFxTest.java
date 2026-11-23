@@ -4,6 +4,7 @@ import javafx.scene.control.Label;
 
 import com.editora.command.CommandRegistry;
 import com.editora.config.Settings;
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import com.editora.testkit.Await;
 import org.junit.jupiter.api.BeforeAll;
@@ -42,7 +43,7 @@ class StatusBarPythonIndentFxTest {
         Label indent = FxTestSupport.callOnFx(() -> FxTestSupport.field(sb, "indent"));
         FxTestSupport.runOnFx(() -> {
             assertTrue(indent.getText().endsWith("mixed indent"), indent.getText());
-            assertTrue(indent.getTooltip().getText().startsWith("Line 3 mixes tabs and spaces"));
+            assertTrue(ControlNames.tipText(indent).startsWith("Line 3 mixes tabs and spaces"));
             assertTrue(indent.getStyleClass().contains("status-encoding-assumed"), "in the warning colour");
             int tab = b.getArea().getText().indexOf('\t');
             b.getArea().replaceText(tab, tab + 1, "        "); // the user re-indents the line with spaces
@@ -59,7 +60,7 @@ class StatusBarPythonIndentFxTest {
                 "the indent segment re-checked after the burst");
         FxTestSupport.runOnFx(() -> {
             assertFalse(indent.getText().contains("mixed"), indent.getText());
-            assertEquals("Set tab size", indent.getTooltip().getText());
+            assertEquals("Set tab size", ControlNames.tipText(indent));
             assertFalse(indent.getStyleClass().contains("status-encoding-assumed"));
         });
     }
@@ -90,7 +91,7 @@ class StatusBarPythonIndentFxTest {
         FxTestSupport.drainFx();
         FxTestSupport.runOnFx(() -> {
             assertTrue(indent.getText().endsWith("mixed indent"), indent.getText());
-            assertTrue(indent.getTooltip().getText().startsWith("Line 40002 mixes tabs and spaces"));
+            assertTrue(ControlNames.tipText(indent).startsWith("Line 40002 mixes tabs and spaces"));
         });
     }
 }

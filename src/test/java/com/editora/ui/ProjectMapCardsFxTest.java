@@ -42,6 +42,7 @@ import com.editora.config.NoteScope;
 import com.editora.config.PersonalNote;
 import com.editora.config.Settings;
 import com.editora.config.TextAnchor;
+import com.editora.editor.ControlNames;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
@@ -823,7 +824,7 @@ class ProjectMapCardsFxTest {
                         (javafx.scene.control.Button) three.get(0).lookup(".project-map-sticky-note-close");
                 assertNotNull(close, "each sheet has a ×");
                 assertEquals(tr("project.map.sticky.closeHelp"), close.getAccessibleText());
-                assertEquals(close.getAccessibleText(), close.getTooltip().getText(), "one name for both");
+                assertEquals(close.getAccessibleText(), ControlNames.tipText(close), "one name for both");
                 close.fire();
                 assertEquals(2, stickies(map).size(), "only that note goes");
                 assertEquals(3, card.noteCount(), "it is still a note of the file");

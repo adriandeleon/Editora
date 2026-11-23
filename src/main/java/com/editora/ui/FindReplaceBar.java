@@ -133,9 +133,9 @@ public class FindReplaceBar extends HBox {
     private void build() {
         findField.setPromptText(tr("find.prompt"));
         replaceField.setPromptText(tr("find.replacePrompt"));
-        wholeWord.setTooltip(ControlNames.tooltip(tr("find.wholeWord")));
-        preserveCase.setTooltip(ControlNames.tooltip(tr("find.preserveCase")));
-        inSelection.setTooltip(ControlNames.tooltip(tr("find.inSelection")));
+        ControlNames.tip(wholeWord, tr("find.wholeWord"));
+        ControlNames.tip(preserveCase, tr("find.preserveCase"));
+        ControlNames.tip(inSelection, tr("find.inSelection"));
         countLabel.getStyleClass().add("find-count");
 
         Button next = iconButton(Icons.findNext(), tr("find.next"));

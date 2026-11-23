@@ -20,6 +20,7 @@ import javafx.scene.layout.Priority;
 
 import com.editora.config.ProjectSettings;
 import com.editora.config.ProjectSettingsFile;
+import com.editora.editor.ControlNames;
 import com.editora.editor.UiZoom;
 import org.jspecify.annotations.Nullable;
 
@@ -106,7 +107,7 @@ final class ProjectScopeSettings {
         FocusCommands.bind(userButton, "settings.editUserSettings", () -> userButton.setSelected(true));
         FocusCommands.bind(projectButton, "settings.editProjectSettings", () -> projectButton.setSelected(true));
         userButton.setSelected(true);
-        userButton.setTooltip(com.editora.editor.ControlNames.tooltip(tr("settings.scope.userTip")));
+        ControlNames.tip(userButton, tr("settings.scope.userTip"));
         // A toggle group lets the selected button be clicked off; the scope is always one of the two.
         group.selectedToggleProperty().addListener((o, was, now) -> {
             if (now == null) {

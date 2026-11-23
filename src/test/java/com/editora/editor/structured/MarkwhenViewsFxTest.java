@@ -134,8 +134,32 @@ class MarkwhenViewsFxTest {
                 grouped.getStyleClass().stream().anyMatch(c -> c.startsWith("markwhen-lane-")),
                 "a tag whose colour does not parse falls back to one of the theme's lane hues: "
                         + grouped.getStyleClass());
-        // Tooltip.install keeps the tooltip in the node's properties, not in Control#tooltipProperty.
-        Tooltip tip = (Tooltip) grouped.getProperties().get("javafx.scene.control.Tooltip");
+        // The tooltip is built when the pointer first enters the chip (LazyTooltip), and Tooltip.install keeps it
+        // in the node's properties, not in Control#tooltipProperty.
+        Tooltip tip = EditorFx.callFx(() -> {
+            javafx.event.Event.fireEvent(
+                    grouped,
+                    new javafx.scene.input.MouseEvent(
+                            javafx.scene.input.MouseEvent.MOUSE_ENTERED,
+                            0,
+                            0,
+                            0,
+                            0,
+                            javafx.scene.input.MouseButton.NONE,
+                            0,
+                            false,
+                            false,
+                            false,
+                            false,
+                            false,
+                            false,
+                            false,
+                            false,
+                            false,
+                            false,
+                            null));
+            return (Tooltip) grouped.getProperties().get("javafx.scene.control.Tooltip");
+        });
         assertNotNull(tip, "a chip names its dates and tags on hover");
         assertTrue(tip.getText().contains("2026-03-10") && tip.getText().contains("#Bad"), tip.getText());
     }

@@ -1837,7 +1837,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private void buildThreadsView() {
         threadsToggle.getStyleClass().addAll("debug-threads-toggle", "small");
         threadsToggle.setFocusTraversable(false);
-        threadsToggle.setTooltip(com.editora.editor.ControlNames.tooltip(tr("debugpanel.threadsViewTip")));
+        ControlNames.tip(threadsToggle, tr("debugpanel.threadsViewTip"));
         threadsToggle.selectedProperty().addListener((o, was, on) -> showThreadsView(on));
         // The toggle's command, and the Console tab's (the Disassembly and Memory tabs have theirs).
         FocusCommands.bind(this, "debug.toggleThreadsView", threadsToggle::fire);

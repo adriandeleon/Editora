@@ -22,6 +22,7 @@ import javafx.scene.layout.VBox;
 import com.editora.command.KeymapManager;
 import com.editora.config.ConfigManager;
 import com.editora.config.SharedConfig;
+import com.editora.editor.ControlNames;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -61,7 +62,7 @@ class NamedControlsFxTest {
             int[] runs = {0};
             Button plain = Icons.button(Icons.refresh(), "Refresh", () -> runs[0]++, "flat", "git-toolbar-button");
             assertEquals("Refresh", plain.getAccessibleText());
-            assertEquals("Refresh", plain.getTooltip().getText());
+            assertEquals("Refresh", ControlNames.tipText(plain));
             assertTrue(plain.getStyleClass().containsAll(List.of("flat", "git-toolbar-button")));
             assertNotNull(plain.getGraphic());
             assertTrue(plain.isFocusTraversable());
@@ -73,7 +74,7 @@ class NamedControlsFxTest {
             assertEquals("Reload", toolbar.getAccessibleText());
             Icons.name(toolbar, "Stop");
             assertEquals("Stop", toolbar.getAccessibleText());
-            assertEquals("Stop", toolbar.getTooltip().getText());
+            assertEquals("Stop", ControlNames.tipText(toolbar));
         });
     }
 
@@ -96,9 +97,7 @@ class NamedControlsFxTest {
                 Map<ToolWindow, Button> stripe = FxTestSupport.field(m, "stripeButtons");
                 assertTrue(
                         stripe.get(tw).getAccessibleText().startsWith("Probe"), "stripe button is named by its window");
-                assertEquals(
-                        stripe.get(tw).getAccessibleText(),
-                        stripe.get(tw).getTooltip().getText());
+                assertEquals(stripe.get(tw).getAccessibleText(), ControlNames.tipText(stripe.get(tw)));
                 assertFalse(stripe.get(tw).isFocusTraversable(), "a stripe button is not a Tab stop");
                 Map<ToolWindow, Region> panels = FxTestSupport.field(m, "panels");
                 List<Button> header = all(panels.get(tw), Button.class, new ArrayList<>());
@@ -108,7 +107,7 @@ class NamedControlsFxTest {
                             b.getAccessibleText() != null
                                     && !b.getAccessibleText().isBlank(),
                             "an icon-only header button has no accessible name");
-                    assertEquals(b.getAccessibleText(), b.getTooltip().getText());
+                    assertEquals(b.getAccessibleText(), ControlNames.tipText(b));
                 }
                 assertTrue(header.stream().anyMatch(b -> b.getAccessibleText().startsWith(tr("toolwindow.hide"))));
                 assertTrue(header.stream().anyMatch(b -> b.getAccessibleText().startsWith(tr("toolwindow.maximize"))));

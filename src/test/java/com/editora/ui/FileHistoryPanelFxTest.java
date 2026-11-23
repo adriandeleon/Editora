@@ -32,6 +32,7 @@ import com.editora.config.HistoryRevision;
 import com.editora.config.Settings;
 import com.editora.diff.DiffEngine;
 import com.editora.diff.DiffModels.DiffModel;
+import com.editora.editor.ControlNames;
 import com.editora.history.HistoryBlobStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -318,9 +319,9 @@ class FileHistoryPanelFxTest {
             assertTrue(
                     f.header().getText().startsWith(tr("history.reason.external")),
                     f.header().getText());
-            assertEquals(f.header().getText(), f.header().getTooltip().getText(), "a narrow header is still readable");
+            assertEquals(f.header().getText(), ControlNames.tipText(f.header()), "a narrow header is still readable");
             assertEquals(tr("history.forFile", "Orders.java"), f.fileLabel().getText());
-            assertEquals(ORDERS.toString(), f.fileLabel().getTooltip().getText());
+            assertEquals(ORDERS.toString(), ControlNames.tipText(f.fileLabel()));
         });
     }
 
@@ -465,9 +466,7 @@ class FileHistoryPanelFxTest {
 
             assertTrue(labelled.getAccessibleText().startsWith("before the fix, "), labelled.getAccessibleText());
             assertTrue(newest.getAccessibleText().startsWith(tr("history.current") + ", "));
-            assertTrue(
-                    newest.getTooltip().getText().endsWith("14 B"),
-                    newest.getTooltip().getText());
+            assertTrue(ControlNames.tipText(newest).endsWith("14 B"), ControlNames.tipText(newest));
             layout();
             List<javafx.scene.control.IndexedCell<?>> drawn = new java.util.ArrayList<>();
             for (Node n : f.list().lookupAll(".list-cell")) {
@@ -487,7 +486,7 @@ class FileHistoryPanelFxTest {
             ListCell<HistoryRevision> cell = f.cell(0);
             cell.updateIndex(-1);
             assertNull(cell.getGraphic());
-            assertNull(cell.getTooltip());
+            assertNull(ControlNames.tipText(cell));
             assertNull(cell.getAccessibleText());
         });
     }
@@ -717,7 +716,7 @@ class FileHistoryPanelFxTest {
             assertSame(f.list(), stage.getScene().getFocusOwner());
             f.panel().setRevisions(List.of(), null, null);
             assertEquals(tr("history.noFile"), f.fileLabel().getText());
-            assertNull(f.fileLabel().getTooltip());
+            assertNull(ControlNames.tipText(f.fileLabel()));
             f.panel().editorTextChanged(); // no file: nothing to follow
             f.panel().setFolderHistory(Path.of("/p/docs"), List.of());
             f.panel().focusFirstItem();
