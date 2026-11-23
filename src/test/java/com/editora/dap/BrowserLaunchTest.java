@@ -146,4 +146,49 @@ class BrowserLaunchTest {
         assertEquals(
                 "index.html", BrowserLaunch.label("http://127.0.0.1:4711/abc/index.html", SITE.resolve("index.html")));
     }
+
+    @Test
+    void edgeCasesOfTypesUrlsLabelsAndServedSites() {
+        assertFalse(BrowserLaunch.isBrowserType(null));
+        assertFalse(BrowserLaunch.isBrowserType("node"));
+        assertEquals(BrowserLaunch.EDGE, BrowserLaunch.adapterType("msedge"));
+        assertEquals(BrowserLaunch.EDGE, BrowserLaunch.adapterType(BrowserLaunch.EDGE));
+        assertEquals(Optional.empty(), BrowserLaunch.url(null));
+        assertEquals(Optional.empty(), BrowserLaunch.url("a b"));
+        assertEquals(Optional.empty(), BrowserLaunch.url("ftp://host/x"), "a scheme js-debug cannot open");
+        assertEquals(Optional.empty(), BrowserLaunch.url("http://"), "no host");
+        assertEquals(Optional.empty(), BrowserLaunch.url("http://[bad"));
+        assertEquals(Optional.of("file:///tmp/a.html"), BrowserLaunch.url("file:///tmp/a.html"));
+        assertEquals("a.html", BrowserLaunch.label("file:///tmp/a.html", null));
+        assertEquals("index.html", BrowserLaunch.label("http://x/", Path.of("/site/index.html")));
+        assertEquals("x", BrowserLaunch.label("http://x", Path.of("/")), "a served file without a name: the URL");
+        assertEquals("not a [url", BrowserLaunch.label("not a [url", null));
+        assertEquals(Optional.empty(), BrowserLaunch.Served.of("http://h/", SITE));
+        assertEquals(Optional.empty(), BrowserLaunch.Served.of("http://h", SITE));
+        assertEquals(Optional.empty(), BrowserLaunch.Served.of("http://[bad", SITE));
+        assertEquals(
+                "/tok/",
+                BrowserLaunch.Served.of("http://h/tok", SITE).orElseThrow().urlPath());
+    }
+
+    @Test
+    void aLaunchWithoutARootAProgramOrAProfileLeavesThemToJsDebug() {
+        Map<String, Object> launch = BrowserLaunch.launch(
+                BrowserLaunch.CHROME, "http://x/", null, null, " ", null, List.of("--headless=new"));
+        assertFalse(launch.containsKey("webRoot"));
+        assertFalse(launch.containsKey("pathMapping"));
+        assertFalse(launch.containsKey("userDataDir"));
+        assertEquals("stable", launch.get("runtimeExecutable"));
+        assertEquals(List.of("--headless=new"), launch.get("runtimeArgs"));
+        Map<String, Object> configured = BrowserLaunch.configured(Map.of("type", "chrome"), null, null);
+        assertFalse(configured.containsKey("webRoot"));
+        assertFalse(configured.containsKey("userDataDir"));
+        assertEquals("launch", configured.get("request"));
+        BrowserLaunch.Served windows = new BrowserLaunch.Served("/tok/", Path.of("site"));
+        assertEquals(
+                Map.of("/tok/", "site/"),
+                BrowserLaunch.launch(BrowserLaunch.CHROME, "http://x/tok/", null, windows, null, null, List.of())
+                        .get("pathMapping"));
+        assertFalse(BrowserLaunch.attach(BrowserLaunch.CHROME, "h", 1, null).containsKey("webRoot"));
+    }
 }

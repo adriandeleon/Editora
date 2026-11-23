@@ -66,4 +66,32 @@ class DartTestsTest {
         assertEquals(-1, DartTests.closing("(]", 0), "a bracket closes it: not this call's end");
         assertEquals(5, DartTests.closing("(r'\\')", 0), "a raw string's backslash escapes nothing");
     }
+
+    @Test
+    void theClosingParenthesisSkipsCommentsStringsAndOtherBrackets() {
+        assertEquals(14, DartTests.closing("(/* ) */ a, b )", 0), "a block comment");
+        assertEquals(-1, DartTests.closing("( /* ) never closed", 0));
+        assertEquals(-1, DartTests.closing("( // ) to the end", 0));
+        assertEquals(8, DartTests.closing("( // )\n )", 0), "a line comment ends at its line");
+        assertEquals(10, DartTests.closing("({[\"])\"]} )", 0), "brackets nest, a string's do not count");
+        assertEquals(8, DartTests.closing("(\"a\\\")\" )", 0), "an escaped quote");
+        assertEquals(13, DartTests.closing("(\"\"\" ) \" \"\"\" )", 0), "a triple-quoted string");
+        assertEquals(4, DartTests.closing("('a\n)')", 0), "an unclosed string ends with its line");
+        assertEquals(-1, DartTests.closing("('''a)", 0), "a triple-quoted string to the end");
+        assertEquals(-1, DartTests.closing("(a / b", 0), "a slash alone");
+        assertEquals(-1, DartTests.closing("(a /", 0));
+        assertEquals(-1, DartTests.closing("(a '", 0));
+        assertEquals(-1, DartTests.closing("(a ''", 0));
+    }
+
+    @Test
+    void aCaretOutsideEveryCallIsNoTarget() {
+        String text = "void main() {\n  group('g', () {\n    test('t', () {});\n  });\n}\n";
+        assertEquals(new DartTests.Target("g", true), DartTests.at(text, 3));
+        assertEquals(new DartTests.Target("g t", false), DartTests.at(text, 2));
+        assertEquals(null, DartTests.at(text, 0));
+        assertEquals(null, DartTests.at(text, 99));
+        assertEquals(new DartTests.Target("w", false), DartTests.at("testWidgets(r\"w\", (t) {})", 0));
+        assertFalse(DartTests.isTestFile(Path.of("/")));
+    }
 }

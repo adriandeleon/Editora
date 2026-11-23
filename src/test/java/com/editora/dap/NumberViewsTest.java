@@ -105,4 +105,112 @@ class NumberViewsTest {
         assertEquals(0, NumberViews.width("int", "python").bits(), "Python's int has no width");
         assertEquals(BigInteger.valueOf(-42), NumberViews.parse("-42", "int", "go"));
     }
+
+    @Test
+    void everyTypeNameReadsAsItsWidthAndSign() {
+        String[][] cases = {
+            {"signed char", "8", "true"}, {"uint8_t", "8", "false"}, {"short int", "16", "true"},
+            {"unsigned short", "16", "false"}, {"char16_t", "16", "false"}, {"signed", "32", "true"},
+            {"rune", "32", "true"}, {"unsigned", "32", "false"}, {"char32_t", "32", "false"},
+            {"wchar_t", "32", "true"}, {"long long", "64", "true"}, {"isize", "64", "true"},
+            {"ptrdiff_t", "64", "true"}, {"size_t", "64", "false"}, {"uintptr", "64", "false"},
+            {"unsigned long long int", "64", "false"}, {"__int128", "128", "true"}, {"u128", "128", "false"},
+            {"unsigned __int128", "128", "false"}, {"java.lang.Short", "16", "true"}, {"Byte", "8", "false"},
+            {"Long", "64", "true"}, {"volatile int *", "32", "true"}, {"MyStruct", "0", "true"}
+        };
+        for (String[] c : cases) {
+            NumberViews.Width w = NumberViews.width(c[0], "cpp");
+            assertEquals(Integer.parseInt(c[1]), w.bits(), c[0]);
+            assertEquals(Boolean.parseBoolean(c[2]), w.signed(), c[0]);
+        }
+        assertEquals(0, NumberViews.width(null, "cpp").bits());
+        assertEquals(0, NumberViews.width("  ", "cpp").bits());
+        assertEquals(32, NumberViews.width("int", null).bits(), "no language: a C-like width");
+        for (String dynamic : new String[] {"javascript", "typescript", "ruby", "php"}) {
+            assertEquals(0, NumberViews.width("int", dynamic).bits(), dynamic);
+        }
+    }
+
+    @Test
+    void aBaseTypeDropsQualifiersReferencesAndNamespaces() {
+        assertEquals("", NumberViews.baseType(null));
+        assertEquals("unsigned char", NumberViews.baseType("const volatile unsigned char &"));
+        assertEquals("int", NumberViews.baseType("java.lang.Integer"));
+        assertEquals("boolean", NumberViews.baseType("java.lang.Boolean"));
+        assertEquals("char", NumberViews.baseType("Character"));
+        assertEquals("unsigned long", NumberViews.baseType("static unsigned long**"));
+        assertEquals("a.b c", NumberViews.baseType("a.b c"), "a dotted name with a space is no namespace");
+    }
+
+    @Test
+    void booleansAndFloatsAreNoNumbersWhateverTheyLookLike() {
+        assertNull(NumberViews.parse(null, "int", "cpp"));
+        for (String t : new String[] {"bool", "boolean", "_Bool", "java.lang.Boolean"}) {
+            assertNull(NumberViews.parse("1", t, "cpp"), t);
+        }
+        for (String t : new String[] {"float", "double", "long double", "float64", "f32", "f64"}) {
+            assertNull(NumberViews.parse("3", t, "rust"), t);
+            assertNull(NumberViews.parse("0x10", t, "rust"), t);
+        }
+        assertEquals(BigInteger.valueOf(-16), NumberViews.parse("-0x10", "int", "cpp"));
+        assertEquals(BigInteger.valueOf(255), NumberViews.parse("0xff", "unknown_t", "cpp"));
+        assertEquals(BigInteger.valueOf(42), NumberViews.parse("+42", "int", "cpp"));
+    }
+
+    @Test
+    void aJvmCharIsItsCodeAndACCharItsLiteral() {
+        assertEquals(BigInteger.valueOf(55), NumberViews.parse("7", "char", "java"), "java-debug shows '7' bare");
+        assertEquals(BigInteger.valueOf(32), NumberViews.parse(" ", "char", "kotlin"));
+        assertEquals(BigInteger.valueOf(65), NumberViews.parse("A", "java.lang.Character", "scala"));
+        assertEquals(BigInteger.valueOf(-1), NumberViews.parse("'\\377'", "char", "cpp"), "octal, 8-bit signed");
+        assertEquals(BigInteger.valueOf(0x263a), NumberViews.parse("'\\u263a'", "wchar_t", "cpp"));
+        assertEquals(BigInteger.valueOf(0x1f600), NumberViews.parse("'\\U0001f600'", "char32_t", "cpp"));
+        assertEquals(BigInteger.valueOf(66), NumberViews.parse("B", "char16_t", "cpp"), "a bare character");
+        assertNull(NumberViews.parse("'ab'", "char", "cpp"), "two characters are no literal");
+        assertNull(NumberViews.parse("hello", "char", "cpp"));
+    }
+
+    @Test
+    void everyEscapeReadsAsItsCode() {
+        String[][] cases = {
+            {"'\\n'", "10"}, {"'\\t'", "9"}, {"'\\r'", "13"}, {"'\\a'", "7"}, {"'\\b'", "8"},
+            {"'\\f'", "12"}, {"'\\v'", "11"}, {"'\\e'", "27"}, {"'\\\\'", "92"}, {"'\\''", "39"},
+            {"'\\\"'", "34"}, {"'\\x41'", "65"}, {"'\\101'", "65"}, {"'z'", "122"}, {"Q", "81"}
+        };
+        for (String[] c : cases) {
+            assertEquals(Integer.valueOf(c[1]), NumberViews.charCode(c[0]), c[0]);
+        }
+        assertNull(NumberViews.charCode("'\\q'"), "an unknown escape");
+        assertNull(NumberViews.charCode("nope"));
+    }
+
+    @Test
+    void aCodeShownAsACharacterUsesTheLiteralsEscapes() {
+        String[][] cases = {
+            {"0", "'\\0'"},
+            {"7", "'\\a'"},
+            {"8", "'\\b'"},
+            {"9", "'\\t'"},
+            {"10", "'\\n'"},
+            {"11", "'\\v'"},
+            {"12", "'\\f'"},
+            {"13", "'\\r'"},
+            {"39", "'\\''"},
+            {"92", "'\\\\'"},
+            {"1", "'\\x01'"},
+            {"127", "'\\x7f'"},
+            {"233", "'\u00e9'"},
+            {"1114111", "'\\U0010ffff'"},
+            {"55296", "'\\ud800'"},
+            {"128512", "'\ud83d\ude00'"}
+        };
+        for (String[] c : cases) {
+            assertEquals(c[1], as(c[0], "int", "java", Radix.CHARACTER), c[0]);
+        }
+        assertEquals("'\\xe9'", as("233", "unsigned char", "cpp", Radix.CHARACTER), "a C byte, not Latin-1");
+        assertEquals("'\\xff'", as("-1", "char", "cpp", Radix.CHARACTER), "a negative char wraps to its byte");
+        assertNull(as("1114112", "int", "java", Radix.CHARACTER), "past the last code point");
+        assertNull(as("-5", "int", "python", Radix.CHARACTER), "a negative number of no width");
+        assertNull(as("1.5", "double", "java", Radix.HEX));
+    }
 }

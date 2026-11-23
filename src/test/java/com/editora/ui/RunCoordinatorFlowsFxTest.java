@@ -2075,4 +2075,27 @@ class RunCoordinatorFlowsFxTest {
         assertTrue(shown.get().contains(real + "\n") || shown.get().contains(plain + "\n"), shown.get());
         assertFalse(shown.get().contains(sub + "\n"), shown.get());
     }
+
+    @Test
+    void aPlanProblemNamesTheFieldAndOpensTheConfiguration() throws Exception {
+        RunConfiguration cfg = javaConfig("App", "demo.App", "", "");
+        FxTestSupport.runOnFx(() -> {
+            run.reportPlanProblem(
+                    cfg, new com.editora.run.JavaLaunchPlan.Problem(com.editora.run.JavaLaunchPlan.Field.ARGS, '"'));
+            run.reportPlanProblem(
+                    cfg, new com.editora.run.JavaLaunchPlan.Problem(com.editora.run.JavaLaunchPlan.Field.ENV, '\''));
+            run.reportPlanProblem(
+                    cfg,
+                    new com.editora.run.JavaLaunchPlan.Problem(
+                            com.editora.run.JavaLaunchPlan.Field.ENV, '\0', "/nowhere/.env"));
+            run.reportPlanProblem(cfg, null);
+        });
+        assertEquals(
+                List.of(
+                        tr("status.run.argsUnclosedQuote", "\""),
+                        tr("status.run.envUnclosedQuote", "App", "'"),
+                        tr("status.run.envFileUnreadable", "App", "/nowhere/.env")),
+                statuses());
+        assertEquals(List.of("App", "App", "App", "App"), ops.edited, "the form opens every time");
+    }
 }

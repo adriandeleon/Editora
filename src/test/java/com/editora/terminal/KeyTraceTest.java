@@ -60,4 +60,15 @@ class KeyTraceTest {
         KeyEvent event = new KeyEvent(KeyEvent.KEY_TYPED, "\u0006", "", KeyCode.UNDEFINED, false, true, false, false);
         assertTrue(KeyTrace.describe(event, null).contains("sent=<nothing>"));
     }
+
+    @Test
+    void everyHeldModifierIsNamedOnce() {
+        KeyEvent all = new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.A, true, true, true, true);
+        assertEquals("shift ctrl alt meta", KeyTrace.modifiers(all));
+        assertEquals(
+                "",
+                KeyTrace.modifiers(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.A, false, false, false, false)));
+        assertEquals("U+0061,U+1F600", KeyTrace.codePoints("a" + new String(Character.toChars(0x1F600))));
+        assertEquals("null", KeyTrace.codePoints(null));
+    }
 }

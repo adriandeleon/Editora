@@ -231,4 +231,46 @@ class GoLaunchTest {
         assertEquals(
                 Map.of("type", "go", "request", "attach", "mode", "local", "processId", 4242L), GoLaunch.attach(4242));
     }
+
+    @Test
+    void stringsRunesAndCommentsDecideWhereALineStarts() {
+        String[] lines = {
+            "s := \"q\\\"`\" // `not raw", "r := '`'", "/* start", "still */ y := 1 /* one-line */ z", "next"
+        };
+        boolean[] quoted = GoLaunch.startsQuoted(lines, lines.length - 1);
+        assertEquals(
+                List.of(false, false, false, true, false),
+                List.of(quoted[0], quoted[1], quoted[2], quoted[3], quoted[4]));
+        boolean[] some = GoLaunch.startsQuoted(new String[] {"/*", "x", "*/"}, 1);
+        assertTrue(some[1]);
+        assertFalse(some[2], "past the last line asked for: not read");
+        assertNull(GoLaunch.testAt(null, 0));
+        assertNull(GoLaunch.testAt("func TestA(t *testing.T) {", -1));
+        assertNull(GoLaunch.testAt("func TestA(t *testing.T) {", 3));
+        assertNull(GoLaunch.testAt("/*\nfunc TestA(t *testing.T) {\n*/\nx", 3), "a test in a comment is none");
+    }
+
+    @Test
+    void onlyEditorasOwnDebugBinariesAreReleasedOrDeleted(@TempDir Path dir) throws Exception {
+        Path other = Files.writeString(dir.resolve("program"), "x");
+        Path ours = Files.writeString(dir.resolve("editora-dlv-released"), "x");
+        GoLaunch.releaseDebugBinary(42, Runnable::run);
+        GoLaunch.releaseDebugBinary("/", Runnable::run);
+        GoLaunch.releaseDebugBinary("bad\u0000path", Runnable::run);
+        GoLaunch.releaseDebugBinary(other.toString(), Runnable::run);
+        assertTrue(Files.exists(other));
+        GoLaunch.releaseDebugBinary(ours.toString(), Runnable::run);
+        assertFalse(Files.exists(ours));
+        GoLaunch.deleteDebugBinary(null);
+        GoLaunch.deleteDebugBinary("/");
+        GoLaunch.deleteDebugBinary("bad\u0000path");
+        GoLaunch.deleteDebugBinary(other.toString());
+        assertTrue(Files.exists(other), "not a debug binary");
+        Files.createDirectories(dir.resolve("editora-dlv-folder"));
+        assertEquals(
+                0,
+                GoLaunch.deleteStaleDebugBinaries(dir, java.time.Instant.now().plusSeconds(60)));
+        assertTrue(Files.isDirectory(dir.resolve("editora-dlv-folder")), "a folder is not a program");
+        assertEquals(0, GoLaunch.deleteStaleDebugBinaries(dir.resolve("missing"), java.time.Instant.now()));
+    }
 }

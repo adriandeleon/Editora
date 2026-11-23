@@ -1079,4 +1079,40 @@ class DoctorCatalogFxTest {
                 spec(specs(host, ops), "lsp.html").placeholder().command(),
                 "as it is");
     }
+
+    @Test
+    void theAiProviderRowNeedsAKeyOnlyWhereTheProviderDoesAndShowsTheEndpoint(@TempDir Path dir) throws Exception {
+        Host host = new Host();
+        Ops ops = new Ops();
+        host.settings.setAiSupport(true);
+        host.settings.setAiEnabled(true);
+
+        host.settings.setAiProvider("anthropic");
+        host.settings.setApiKeyFor(com.editora.ai.AiProvider.ANTHROPIC, "");
+        DoctorCheck noKey = spec(specs(host, ops), "ai.provider").placeholder();
+        assertEquals(DoctorStatus.MISSING, noKey.status());
+        assertEquals("doctor.tip.aiKey", noKey.tipKey());
+
+        host.settings.setApiKeyFor(com.editora.ai.AiProvider.ANTHROPIC, "sk-test-not-a-real-key");
+        host.settings.setAiEndpointFor(com.editora.ai.AiProvider.ANTHROPIC, "");
+        DoctorCheck keyed = spec(specs(host, ops), "ai.provider").placeholder();
+        assertEquals(DoctorStatus.OK, keyed.status());
+        assertEquals(com.editora.ai.AiProvider.ANTHROPIC.defaultEndpoint(), keyed.detail(), "the default endpoint");
+
+        host.settings.setAiProvider("lmstudio");
+        host.settings.setAiEndpointFor(com.editora.ai.AiProvider.LMSTUDIO, "http://127.0.0.1:9999/v1/chat/completions");
+        DoctorCheck local = spec(specs(host, ops), "ai.provider").placeholder();
+        assertEquals(DoctorStatus.OK, local.status(), "a local server needs no key");
+        assertEquals("http://127.0.0.1:9999/v1/chat/completions", local.detail());
+
+        host.settings.setAiProvider("codex");
+        host.settings.setCodexAgentCommand(dir.resolve("no-such-codex") + " --acp");
+        DoctorService.CheckSpec codex = spec(specs(host, ops), "ai.provider");
+        assertEquals(DoctorStatus.MISSING, codex.probe().get().status(), "Codex's command is not there");
+        Path installed = executable(dir.resolve("codex-acp"), "#!/bin/sh\nexit 0\n");
+        host.settings.setCodexAgentCommand(installed.toString());
+        DoctorCheck found = spec(specs(host, ops), "ai.provider").probe().get();
+        assertEquals(DoctorStatus.OK, found.status());
+        assertTrue(found.detail().contains("codex-acp"), found.detail());
+    }
 }

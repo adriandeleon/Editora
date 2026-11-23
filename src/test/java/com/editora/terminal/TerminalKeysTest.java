@@ -150,4 +150,98 @@ class TerminalKeysTest {
             assertFalse(TerminalKeys.isShellChord(t), t);
         }
     }
+
+    private static KeyEvent mods(KeyCode code, boolean shift, boolean ctrl, boolean alt, boolean meta) {
+        return new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, shift, ctrl, alt, meta);
+    }
+
+    @Test
+    void theTabChordsTakeExactlyTheirModifiers() {
+        assertTrue(TerminalKeys.isNextTab(mods(KeyCode.PAGE_DOWN, false, true, false, false)));
+        assertFalse(TerminalKeys.isNextTab(mods(KeyCode.PAGE_UP, false, true, false, false)));
+        assertFalse(TerminalKeys.isNextTab(mods(KeyCode.PAGE_DOWN, true, true, false, false)), "Shift moves the tab");
+        assertFalse(TerminalKeys.isNextTab(mods(KeyCode.PAGE_DOWN, false, true, true, false)));
+        assertFalse(TerminalKeys.isNextTab(mods(KeyCode.PAGE_DOWN, false, true, false, true)));
+        assertFalse(TerminalKeys.isNextTab(mods(KeyCode.PAGE_DOWN, false, false, false, false)));
+        assertTrue(TerminalKeys.isPreviousTab(mods(KeyCode.PAGE_UP, false, true, false, false)));
+        assertFalse(TerminalKeys.isPreviousTab(mods(KeyCode.PAGE_DOWN, false, true, false, false)));
+
+        assertTrue(TerminalKeys.isMoveTabRight(mods(KeyCode.PAGE_DOWN, true, true, false, false)));
+        assertFalse(TerminalKeys.isMoveTabRight(mods(KeyCode.PAGE_UP, true, true, false, false)));
+        assertFalse(TerminalKeys.isMoveTabRight(mods(KeyCode.PAGE_DOWN, false, true, false, false)));
+        assertFalse(TerminalKeys.isMoveTabRight(mods(KeyCode.PAGE_DOWN, true, false, false, false)));
+        assertFalse(TerminalKeys.isMoveTabRight(mods(KeyCode.PAGE_DOWN, true, true, true, false)));
+        assertFalse(TerminalKeys.isMoveTabRight(mods(KeyCode.PAGE_DOWN, true, true, false, true)));
+        assertTrue(TerminalKeys.isMoveTabLeft(mods(KeyCode.PAGE_UP, true, true, false, false)));
+        assertFalse(TerminalKeys.isMoveTabLeft(mods(KeyCode.PAGE_DOWN, true, true, false, false)));
+    }
+
+    @Test
+    void theClipboardAndFindChordsRefuseExtraModifiers() {
+        assertTrue(TerminalKeys.isFind(mods(KeyCode.F, true, true, false, false), false));
+        assertFalse(TerminalKeys.isFind(mods(KeyCode.G, true, true, false, false), false));
+        assertFalse(TerminalKeys.isFind(mods(KeyCode.F, true, true, true, false), false), "Alt is not Find");
+        assertFalse(TerminalKeys.isFind(mods(KeyCode.F, true, true, false, true), false));
+        assertFalse(TerminalKeys.isFind(mods(KeyCode.F, false, true, false, false), false));
+        assertTrue(TerminalKeys.isFind(mods(KeyCode.F, false, false, false, true), true));
+        assertFalse(TerminalKeys.isFind(mods(KeyCode.F, false, true, false, true), true));
+        assertFalse(TerminalKeys.isFind(mods(KeyCode.F, true, false, false, true), true));
+        assertFalse(TerminalKeys.isFind(mods(KeyCode.F, false, false, false, false), true));
+        assertFalse(TerminalKeys.isNextPrompt(mods(KeyCode.UP, true, true, false, false), false));
+        assertFalse(TerminalKeys.isPaste(mods(KeyCode.C, true, true, false, false), false));
+        assertTrue(TerminalKeys.isPaste(mods(KeyCode.V, true, true, false, false), false));
+    }
+
+    @Test
+    void theTerminalsOwnTokensNeverReachEditora() {
+        for (String t : List.of(
+                "C-S-c",
+                "C-S-v",
+                "C-S-up",
+                "C-S-down",
+                "C-S-f",
+                "C-pageup",
+                "C-pagedown",
+                "C-S-pageup",
+                "C-S-pagedown")) {
+            assertFalse(TerminalKeys.reachesEditora(t, "tool.files", DEFAULTS, false), t);
+        }
+        for (String t : List.of("Cmd-c", "Cmd-v", "Cmd-up", "Cmd-down", "Cmd-f")) {
+            assertFalse(TerminalKeys.reachesEditora(t, "tool.files", DEFAULTS, true), t);
+        }
+        assertFalse(TerminalKeys.reachesEditora(null, "tool.files", DEFAULTS, false));
+        assertTrue(TerminalKeys.reachesEditora("Cmd-s", null, DEFAULTS, true), "a Cmd chord is never the shell's");
+        assertTrue(TerminalKeys.reachesEditora("C-S-c", "tool.files", DEFAULTS, true), "on macOS Copy is Cmd+C");
+    }
+
+    @Test
+    void theAllowListCanNameAChordAndSkipsBlankEntries() {
+        List<String> list = java.util.Arrays.asList(null, "  ", "C-x", "file.save", "build.*");
+        assertTrue(TerminalKeys.listsChord("C-x", list));
+        assertFalse(TerminalKeys.listsChord("file.save", list), "an entry with a dot is a command id");
+        assertFalse(TerminalKeys.listsChord("C-y", list));
+        assertFalse(TerminalKeys.listsChord("C-x", null));
+        assertTrue(TerminalKeys.reachesEditora("C-x", "edit.cut", list, false), "a listed chord passes");
+        assertFalse(TerminalKeys.matches("tool.files", null));
+        assertTrue(TerminalKeys.matches("build.run", list));
+        assertTrue(TerminalKeys.matches("file.save", list));
+        assertFalse(TerminalKeys.matches("file.open", list));
+        assertTrue(TerminalKeys.reachesEditora("C-S-b", "build.run", list, false));
+        assertFalse(TerminalKeys.reachesEditora("C-b", "build.run", list, false), "a shell chord stays in the shell");
+        assertTrue(TerminalKeys.reachesEditora("M-x", "palette.show", DEFAULTS, false), "Emacs's palette");
+        assertFalse(TerminalKeys.reachesEditora("M-y", "palette.show", DEFAULTS, false));
+        assertTrue(TerminalKeys.reachesEditora("C-t", "tool.terminal", DEFAULTS, false), "the way out");
+    }
+
+    @Test
+    void aLoneModifierPrefixIsAKeyNotAModifier() {
+        assertTrue(TerminalKeys.isShellChord("C-"), "C- alone is a key named C-");
+        assertTrue(TerminalKeys.isShellChord("M-"));
+        assertTrue(TerminalKeys.isShellChord("S-"));
+        assertTrue(TerminalKeys.isShellChord("Cmd-"));
+        assertTrue(TerminalKeys.isShellChord("S-a"), "Shift alone types");
+        assertFalse(TerminalKeys.isShellChord("C-Cmd-k"));
+        assertTrue(TerminalKeys.isShellChord("C-M-a"), "a C-M chord is a shell chord");
+        assertFalse(TerminalKeys.isShellChord("C-f5"));
+    }
 }

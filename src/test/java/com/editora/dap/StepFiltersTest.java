@@ -137,4 +137,107 @@ class StepFiltersTest {
         assertEquals(new StepFilter(false, "python", "requests"), back);
         assertEquals(f, f.copy());
     }
+
+    @Test
+    void aNullOrRepeatedFilterIsSkippedAndTheLanguageMustMatch() {
+        List<StepFilter> all = new java.util.ArrayList<>();
+        all.add(null);
+        all.add(new StepFilter(true, "", "dup"));
+        all.add(new StepFilter(true, "go", "dup"));
+        all.add(new StepFilter(true, "rust", "core::*"));
+        assertEquals(List.of("dup"), StepFilters.patterns(all, "go"));
+        assertEquals(List.of("dup"), StepFilters.patterns(all, null));
+        StepFilter blank = new StepFilter();
+        blank.setLanguage(null);
+        blank.setPattern(null);
+        assertEquals("", blank.getLanguage());
+        assertEquals(":", blank.toString());
+        assertEquals("(off) go:x", new StepFilter(false, "go", "x").toString());
+        assertFalse(new StepFilter(true, "go", "x").equals("go:x"));
+        assertEquals(new StepFilter(true, "go", "x").hashCode(), new StepFilter(true, " go", "x ").hashCode());
+    }
+
+    @Test
+    void windowsPathsAndRootedGlobsAreFiles() {
+        assertTrue(StepFilters.pathLike("python", "lib\\util"));
+        assertTrue(StepFilters.pathLike("go", "/usr/lib/go/src/fmt"), "a rooted path is a file even in Go");
+        assertTrue(StepFilters.pathLike("cpp", "vector.hpp"));
+        assertFalse(StepFilters.pathLike("python", ".hidden"), "a leading dot is no extension");
+        assertFalse(StepFilters.pathLike("java", "Main.Inner"));
+        assertEquals("C:/lib/x.py", StepFilters.relativeGlob("C:\\lib\\x.py"));
+        assertEquals("<node_internals>/**", StepFilters.relativeGlob("<node_internals>/**"));
+        assertEquals("/abs/x.py", StepFilters.relativeGlob(" /abs/x.py "));
+        assertEquals("**/x/**", StepFilters.relativeGlob("**/x/**"));
+    }
+
+    @Test
+    void aLaunchOfALanguageWithoutStepOptionsOrOfNoLanguageIsLeftAlone() {
+        Map<String, Object> launch = Map.of("program", "a");
+        assertSame(launch, StepFilters.decorate(null, launch, List.of("x")));
+        assertSame(launch, StepFilters.decorate("java", launch, List.of("x")), "java-debug takes them elsewhere");
+        Map<String, Object> js = StepFilters.decorate(
+                "typescript", Map.of("skipFiles", "not a list"), List.of("lodash", "lodash", "/abs/*.ts"));
+        assertEquals(List.of("**/node_modules/lodash/**", "/abs/*.ts"), js.get("skipFiles"));
+        Map<String, Object> py = StepFilters.decorate("python", Map.of(), List.of("requests"));
+        assertEquals(List.of(Map.of("module", "requests", "include", false)), py.get("rules"));
+        assertEquals(
+                List.of("old", "a.B"),
+                StepFilters.decorate("groovy", Map.of("skipClasses", List.of("old")), List.of("a.B", "x.groovy"))
+                        .get("skipClasses"));
+        assertEquals(List.of("a.*"), StepFilters.classPatterns("scala", List.of("a.*", "**/gen/**")));
+    }
+
+    @Test
+    void globsMatchOneOrManyCharactersAndFoldersAsAPathOrANameDoes() {
+        assertTrue(StepFilters.glob("a?c", false).matcher("ABC").matches(), "a name matches without case");
+        assertTrue(StepFilters.glob("a?c", true).matcher("abc").matches());
+        assertFalse(StepFilters.glob("a?c", true).matcher("a/c").matches(), "? is no folder separator in a path");
+        assertTrue(StepFilters.glob("**/x.py", true).matcher("/a/b/x.py").matches());
+        assertTrue(StepFilters.glob("**/x.py", true).matcher("x.py").matches(), "**/ may be no folder at all");
+        assertTrue(StepFilters.glob("/a/**", true).matcher("/a/b/c.py").matches(), "** at the end crosses folders");
+        assertFalse(StepFilters.glob("/a/*", true).matcher("/a/b/c.py").matches(), "* does not");
+        assertTrue(StepFilters.glob("a*", false).matcher("a/b").matches(), "a name's * crosses everything");
+        assertEquals("", StepFilters.sourcePackage(null));
+        assertEquals("", StepFilters.sourcePackage("class A {}"));
+        assertEquals("/com/x/A.kt", StepFilters.packagePart("/p/src/main/kotlin/com/x/A.kt"));
+        assertEquals("/p/com/x/A.kt", StepFilters.packagePart("/p/com/x/A.kt"));
+    }
+
+    @Test
+    void aFrameIsMatchedByItsBareNameOrNotAtAll() {
+        assertFalse(StepFilters.matches("go", "  ", "fmt.Println", null), "a blank pattern filters nothing");
+        assertTrue(
+                StepFilters.matches("java", "Strings.pad", "Strings.pad(int)", null), "the name without its arguments");
+        assertFalse(StepFilters.matches("java", "Strings.pad", null, null));
+        assertFalse(StepFilters.matches("java", "Strings.pad", "", "/p/Other.java"));
+        assertTrue(StepFilters.matches("java", "com.shop.*", " ", "C:\\p\\com\\shop\\A.java"), "by its package folder");
+        assertTrue(StepFilters.matches("java", "com.shop.A", "x", "/p/com/shop/A.java"), "by its file");
+        assertFalse(StepFilters.matches("cpp", "std::*", "main", "/p/main.cpp"), "not dotted: no folder look-up");
+        assertTrue(StepFilters.matchesAny("go", List.of("os.*", "fmt.*"), "fmt.Println", null));
+        assertFalse(StepFilters.matchesAny("go", List.of("os.*"), "fmt.Println", null));
+        assertFalse(StepFilters.matchesAny("go", List.of(), "fmt.Println", null));
+    }
+
+    @Test
+    void everyLanguagesSuggestionWithAndWithoutAFile() {
+        assertEquals(
+                "com.x.Strings", StepFilters.suggest("kotlin", "Strings.pad", null, "com.x"), "the class of the name");
+        assertEquals("pad", StepFilters.suggest("scala", "pad", "", ""), "no class at all: the name");
+        assertEquals("Main", StepFilters.suggest("groovy", "x", "/p/Main.groovy", "  "));
+        assertEquals("Main", StepFilters.suggest("clojure", "Main", "/p/README", ""), "a file without extension");
+        assertEquals("shout", StepFilters.suggest("python", " shout() ", null, ""));
+        assertEquals(
+                "**/node_modules/lodash/**",
+                StepFilters.suggest("typescript", "f", "C:\\a\\node_modules\\lodash\\x.js", ""));
+        assertEquals("**/node_modules/@scope/**", StepFilters.suggest("javascript", "f", "/a/node_modules/@scope", ""));
+        assertEquals("f", StepFilters.suggest("javascript", "f", null, ""));
+        assertEquals("main", StepFilters.suggest("go", "main", null, ""), "no package in the name");
+        assertEquals("Format", StepFilters.suggest("csharp", "Format", null, ""));
+        assertEquals("<lambda>::*", StepFilters.suggest("rust", "<lambda>::call", null, ""));
+        assertEquals("**/main.cpp", StepFilters.suggest("cpp", "main", "/p/main.cpp", ""));
+        assertEquals("main", StepFilters.suggest("cpp", "main", null, ""));
+        assertEquals("**/m.rb", StepFilters.suggest("ruby", "go", "/p/m.rb", ""));
+        assertEquals("go", StepFilters.suggest(null, "go", null, ""));
+        assertEquals("", StepFilters.suggest("ruby", null, null, ""));
+    }
 }

@@ -61,4 +61,38 @@ class NotificationSequencesTest {
         var title = n(777, "notify;" + "t".repeat(500) + ";b").orElseThrow();
         assertEquals(OscSequences.MAX_TITLE, title.title().length());
     }
+
+    @Test
+    void anythingElseUnderTheNumbersIsNoNotification() {
+        org.junit.jupiter.api.Assertions.assertTrue(
+                OscSequences.notification(OscSequences.NOTIFY, null).isEmpty());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                OscSequences.notification(OscSequences.NOTIFY_RXVT, "notify").isEmpty());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                OscSequences.notification(OscSequences.NOTIFY_RXVT, "other;t;b").isEmpty());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                OscSequences.notification(2, "hello").isEmpty());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                OscSequences.clipboardText(null).isEmpty());
+        assertEquals(-1, OscSequences.conEmuSubcommand("1234"), "four digits are a message");
+        assertEquals(-1, OscSequences.conEmuSubcommand(""));
+    }
+
+    @Test
+    void controlCharactersBecomeOneSpaceAndTheBodyIsCutWhole() {
+        assertEquals(
+                "a b c",
+                OscSequences.notification(
+                                OscSequences.NOTIFY, "\u0001a\u0001\u0002b" + (char) 0x2028 + (char) 0x2029 + "c")
+                        .orElseThrow()
+                        .body());
+        String smile = new String(Character.toChars(0x1F600));
+        String body = "x".repeat(OscSequences.MAX_BODY - 1) + smile;
+        assertEquals(
+                "x".repeat(OscSequences.MAX_BODY - 1),
+                OscSequences.notification(OscSequences.NOTIFY, body)
+                        .orElseThrow()
+                        .body(),
+                "a pair that would cross the limit is left out");
+    }
 }

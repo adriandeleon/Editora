@@ -78,6 +78,22 @@ class BuildCoordinatorFxTest {
         public com.editora.editor.EditorBuffer activeBuffer() {
             return active;
         }
+
+        /** The text prompt's answer (null: the prompt is left open), and what it was asked with. */
+        String promptReply;
+
+        String promptLabel;
+        String promptInitial;
+
+        @Override
+        public void promptText(
+                String title, String label, String initial, java.util.function.Consumer<String> onAccept) {
+            promptLabel = label;
+            promptInitial = initial;
+            if (promptReply != null) {
+                onAccept.accept(promptReply);
+            }
+        }
     }
 
     private static final class FakeOps implements BuildCoordinator.Ops {
@@ -143,6 +159,21 @@ class BuildCoordinatorFxTest {
         public void setToolWindowsAvailable(boolean available) {
             toolbarVisibleCount++;
             lastVisible = available;
+        }
+
+        /** The project's remembered custom strings, newest first, and what was remembered since. */
+        List<String> customHistory = List.of();
+
+        final List<String> remembered = new java.util.ArrayList<>();
+
+        @Override
+        public List<String> customHistory(String toolId) {
+            return customHistory;
+        }
+
+        @Override
+        public void rememberCustom(String toolId, String text) {
+            remembered.add(text);
         }
     }
 
@@ -1278,5 +1309,70 @@ class BuildCoordinatorFxTest {
         assertEquals(
                 tr("settings.buildTools.exec.override", "/opt/maven/bin/mvn"),
                 FxTestSupport.callOnFx(p::executableSummary));
+    }
+
+    // --- Run custom… --------------------------------------------------------------------------------------
+
+    @Test
+    void runCustomAsksForTheTextPrefilledAndRunsItInTheDetectedRoot(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        FakeOps ops = new FakeOps();
+        ops.customHistory = List.of("verify -q", "older");
+        BuildCoordinator c = detectedWithWrapper(host, ops, dir);
+        host.settings.setMavenCommand("editora-test-nonexistent-maven-binary-zzz");
+
+        host.promptReply = "   ";
+        FxTestSupport.runOnFx(c::runCustom);
+        assertEquals("verify -q", host.promptInitial, "the project's newest custom string");
+        assertTrue(host.promptLabel.endsWith(tr("dialog.buildCustom.hintNoToggles")), host.promptLabel);
+        assertTrue(ops.remembered.isEmpty(), "a blank answer runs nothing");
+        assertEquals(0, ops.promptCount);
+
+        host.promptReply = "  clean   install ";
+        FxTestSupport.runOnFx(c::runCustom);
+        assertEquals(List.of("clean   install"), ops.remembered);
+        assertEquals(1, ops.promptCount, "the run goes through the trust gate");
+        assertEquals(dir, ops.promptedRoot);
+
+        host.promptReply = null;
+        FxTestSupport.runOnFx(c::runCustom);
+        assertEquals("clean   install", host.promptInitial, "this session's last string comes first");
+    }
+
+    @Test
+    void runCustomTextRefusesNothingAndANoBuildFolder() throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setMavenSupport(true);
+        FakeOps ops = new FakeOps();
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
+        FxTestSupport.runOnFx(() -> {
+            c.runCustomText(null, "  ");
+            assertNull(host.lastStatus, "no words, nothing said");
+            c.runCustomText(null, "clean");
+            assertEquals(tr("status.build.notDetected", disp(BuildTool.MAVEN)), host.lastStatus);
+        });
+        assertTrue(ops.remembered.isEmpty());
+    }
+
+    @Test
+    void runCustomAtAFolderNeedsTheToolTurnedOnAndTheActiveOneNeedsABuild(@TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setMavenSupport(false);
+        FakeOps ops = new FakeOps();
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
+        host.promptReply = "clean";
+        FxTestSupport.runOnFx(() -> c.runCustomAt(dir));
+        assertEquals(tr("status.build.disabled", disp(BuildTool.MAVEN)), host.lastStatus);
+        assertNull(host.promptInitial, "never asked");
+
+        host.settings.setMavenSupport(true);
+        FxTestSupport.runOnFx(() -> c.runCustomAt(null));
+        assertEquals(tr("status.build.notDetected", disp(BuildTool.MAVEN)), host.lastStatus);
+        assertNull(host.promptInitial);
+
+        Files.writeString(dir.resolve("pom.xml"), VALID_POM);
+        FxTestSupport.runOnFx(() -> c.runCustomAt(dir));
+        assertEquals("", host.promptInitial, "no history: an empty field");
+        assertEquals(List.of("clean"), ops.remembered, "run in the folder asked for, with no detection");
     }
 }

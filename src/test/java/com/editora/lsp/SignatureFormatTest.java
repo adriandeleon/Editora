@@ -140,4 +140,48 @@ class SignatureFormatTest {
                 SignatureFormat.parametersAtCaret(help, 1),
                 "the second argument: valueOf(double) takes none");
     }
+
+    @Test
+    void markupDocumentationOfTheParameterAndTheSignatureIsRead() {
+        SignatureInformation s = sig("greet(String text, int n)", "String text", "int n");
+        s.getParameters().get(0).setDocumentation(new org.eclipse.lsp4j.MarkupContent("markdown", "the greeting"));
+        s.setDocumentation(new org.eclipse.lsp4j.MarkupContent("markdown", "Greets."));
+        SignatureHelp help = new SignatureHelp(List.of(s), 0, 0);
+        assertEquals(
+                "`String text` — the greeting\n\nGreets.",
+                SignatureFormat.resolve(help).documentation());
+
+        s.getParameters().get(0).setDocumentation(new org.eclipse.lsp4j.MarkupContent());
+        s.setDocumentation(new org.eclipse.lsp4j.MarkupContent());
+        assertEquals("", SignatureFormat.resolve(help).documentation(), "markup without a value");
+
+        SignatureInformation unmatched = sig("go(int a)", "long");
+        unmatched.getParameters().get(0).setDocumentation("the count");
+        assertEquals(
+                "the count",
+                SignatureFormat.resolve(new SignatureHelp(List.of(unmatched), 0, 0))
+                        .documentation(),
+                "a parameter not found in the label: its doc alone");
+    }
+
+    @Test
+    void brokenSignaturesAndParametersAreSkipped() {
+        java.util.List<SignatureInformation> sigs = new java.util.ArrayList<>();
+        sigs.add(null);
+        assertNull(SignatureFormat.resolve(new SignatureHelp(sigs, 0, 0)));
+        assertEquals(List.of(), SignatureFormat.parametersAtCaret(new SignatureHelp(sigs, 0, 0)));
+        assertEquals(List.of(), SignatureFormat.parametersAtCaret(null));
+        assertEquals(List.of(), SignatureFormat.parametersAtCaret(new SignatureHelp()));
+
+        SignatureInformation noParams = new SignatureInformation("run()");
+        SignatureInformation blank = sig("go(int a)", " ");
+        SignatureInformation good = sig("go(int a) : String", "int a");
+        good.setActiveParameter(0);
+        assertEquals(
+                List.of(new SignatureFormat.Parameter("int a", "String")),
+                SignatureFormat.parametersAtCaret(new SignatureHelp(List.of(noParams, blank, good), 2, null), 5),
+                "the signature's own active parameter wins over the counted argument");
+        assertEquals(-1, SignatureFormat.indexOfToken("ab", "abc"));
+        assertEquals(-1, SignatureFormat.indexOfToken("xa ax", "a"), "only inside words");
+    }
 }

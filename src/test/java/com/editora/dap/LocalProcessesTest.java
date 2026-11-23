@@ -257,4 +257,114 @@ class LocalProcessesTest {
         assertEquals(LocalProcesses.Kind.RUST, LocalProcesses.programKind(ProgramFiles.Kind.RUST));
         assertEquals(LocalProcesses.Kind.NATIVE, LocalProcesses.programKind(ProgramFiles.Kind.NATIVE));
     }
+
+    @Test
+    void aJavaProcessIsNamedByItsJarModuleOrMainClassPastTheOptionsValues() {
+        assertEquals("app.jar", of("/jdk/bin/java", "-jar", "/opt/app.jar").name());
+        assertEquals("java", of("java", "-jar").name(), "-jar without its file");
+        assertEquals("com.shop.Main", of("java", "-m", "shop/com.shop.Main").name());
+        assertEquals("shop", of("java", "--module", "shop").name());
+        assertEquals("java", of("java", "-m").name());
+        assertEquals(
+                "p.Main",
+                of("javaw.exe", "-cp", "a.jar", "--add-opens", "x/y=z", "p.Main")
+                        .name());
+        LocalProcesses.Target old = of("java", "-Xrunjdwp:transport=dt_socket,server=y,address=4000", "p.M");
+        assertEquals(4000, old.port());
+        LocalProcesses.Target out = of("java", "-agentlib:jdwp=transport=dt_socket,server=n,address=4000", "p.M");
+        assertEquals(0, out.port(), "connects out: nothing to attach to");
+        assertEquals("localhost", out.host());
+    }
+
+    @Test
+    void jdwpOptionsWithoutAServerAddressOrWithABadPortOfferNothing() {
+        int[] port = new int[1];
+        assertNull(LocalProcesses.jdwp("server=y", port));
+        assertNull(LocalProcesses.jdwp("server=y,address=", port));
+        assertNull(LocalProcesses.jdwp("server=y,address=[::1", port));
+        assertNull(LocalProcesses.jdwp("server=y,address=host:0", port));
+        assertNull(LocalProcesses.jdwp("server=y,address=host:70000", port));
+        assertNull(LocalProcesses.jdwp("server=y,address=host:http", port));
+        assertEquals("box", LocalProcesses.jdwp("odd, server = Y ,address=box:5005", port));
+        assertEquals(5005, port[0]);
+    }
+
+    @Test
+    void aNodeProcessListensOnlyWithAnInspectFlag() {
+        LocalProcesses.Target plain = of("/usr/bin/nodejs", "--inspect-port=9300", "server.js");
+        assertEquals("server.js", plain.name());
+        assertEquals(0, plain.port(), "--inspect-port alone does not listen");
+        LocalProcesses.Target brk = of("node", "--inspect-brk=0.0.0.0:9301", "a.js", "b.js");
+        assertEquals("a.js", brk.name(), "the first script names it");
+        assertEquals(9301, brk.port());
+        assertEquals("localhost", brk.host());
+        assertEquals(0, of("node", "--inspect=0", "a.js").port(), "a port chosen at start");
+        assertEquals(9229, of("node", "--inspect=", "a.js").port(), "no value: the default port");
+        assertEquals(9229, of("node", "--inspect-wait=nope", "a.js").port(), "a bad value: the default port");
+        assertEquals("node", of("node", "--inspect").name());
+        assertEquals(9229, of("node", "--inspect").port());
+    }
+
+    @Test
+    void aPythonProcessIsNamedByItsModuleOrScriptAndDebugpysHelpersAreNoProgram() {
+        assertEquals("http.server", of("python3.12", "-m", "http.server").name());
+        assertEquals("python", of("python", "-m").name());
+        assertNull(of("python", "-m", "debugpy.adapter"));
+        LocalProcesses.Target listening = of("pythonw", "-m", "debugpy", "--listen", "[::1]:5678", "-m", "app");
+        assertEquals("app", listening.name());
+        assertEquals(5678, listening.port());
+        assertEquals("::1", listening.host());
+        assertEquals(0, of("python", "-m", "debugpy", "--listen", "0", "a.py").port());
+        assertEquals(
+                0, of("python", "-m", "debugpy", "--connect", "5678", "a.py").port());
+        assertEquals(
+                "a.py",
+                of("python", "-m", "debugpy", "--configure-subProcess", "x", "a.py")
+                        .name());
+        assertEquals(
+                "a.py",
+                of("python", "-X", "dev", "-W", "ignore", "--log-to", "/l", "a.py")
+                        .name());
+        assertEquals("-c", of("python", "-c", "print(1)").name());
+        assertEquals(
+                "a.py",
+                of("python", "/x/debugpy/__main__.py", "--listen", "5678", "a.py")
+                        .name());
+        assertNull(of("python", "/x/debugpy/launcher/__main__.py"));
+        assertEquals("5", of("python", "--listen", "5", "a.py").name(), "--listen is debugpy's only after debugpy");
+        assertNull(of("ruby", "a.rb"));
+    }
+
+    @Test
+    void debugpysPartsAreTheirFoldersOrMainFiles() {
+        assertEquals("", LocalProcesses.debugpyPart("C:\\py\\debugpy"));
+        assertEquals("adapter", LocalProcesses.debugpyPart("/x/debugpy/adapter"));
+        assertNull(LocalProcesses.debugpyPart("/x/other/adapter"));
+        assertNull(LocalProcesses.debugpyPart("adapter"));
+        assertNull(LocalProcesses.debugpyPart("/"));
+        assertNull(LocalProcesses.debugpyPart("__main__.py"));
+        assertNull(LocalProcesses.debugpyPart("/x/debugpy/server"));
+    }
+
+    @Test
+    void hostsAndPortsInEveryFormAProgramWrites() {
+        assertNull(LocalProcesses.hostPort("  "));
+        assertNull(LocalProcesses.hostPort("[::1]"));
+        assertNull(LocalProcesses.hostPort("[::1]x5"));
+        assertArrayEquals(new String[] {"localhost", "5"}, LocalProcesses.hostPort("[::]:5"));
+        assertArrayEquals(new String[] {"localhost", "5"}, LocalProcesses.hostPort(":5"));
+        assertArrayEquals(new String[] {"localhost", "5"}, LocalProcesses.hostPort("*:5"));
+        assertArrayEquals(new String[] {"h", "5"}, LocalProcesses.hostPort("h:5"));
+        assertArrayEquals(new String[] {"localhost", "5"}, LocalProcesses.hostPort("5"));
+    }
+
+    @Test
+    void aWindowsListAndCommandLineReadAsWindowsWritesThem() {
+        Map<Long, String> list = LocalProcesses.parseWindowsList("12\tjava -jar a.jar\r\nwarning\n\tx\nabc\tdef\n");
+        assertEquals(Map.of(12L, "java -jar a.jar"), list);
+        assertEquals(List.of("java", "", "-cp", "a b", "x"), LocalProcesses.splitWindows("java \"\" -cp \"a b\"  x "));
+        assertEquals(List.of(), LocalProcesses.splitWindows("   "));
+        assertEquals("python3", LocalProcesses.program(" C:\\Py\\python3.EXE "));
+        assertEquals("", LocalProcesses.program(null));
+    }
 }
