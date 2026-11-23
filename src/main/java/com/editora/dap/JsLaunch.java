@@ -354,8 +354,9 @@ public final class JsLaunch {
     /**
      * What narrows a test file's debug run to the test at 0-based {@code line} of {@code content}: Node's
      * {@code --test-name-pattern} for the test there ({@link #testNameAt}), and the outermost test's name for Deno
-     * ({@link com.editora.run.DenoTests}), which Deno's {@code --filter} matches and Node never sees
-     * ({@link com.editora.run.DenoRun#FILTER_ARG}). Which one runs is known once the file's project is.
+     * ({@link com.editora.run.DenoTests}), which Deno's {@code --filter} matches, and the test with its suites for Jest
+     * and Vitest ({@link com.editora.run.JsTestNames}), which Node never sees ({@link com.editora.run.DenoRun#FILTER_ARG},
+     * {@link com.editora.run.JsTestRunner#NAMES_ARG}). Which one runs is known once the file's project is.
      */
     public static List<String> testArgsAt(String content, int line) {
         List<String> out = new ArrayList<>();
@@ -366,6 +367,10 @@ public final class JsLaunch {
         String deno = content == null ? null : com.editora.run.DenoTests.at(content, line);
         if (deno != null) {
             out.add(com.editora.run.DenoRun.FILTER_ARG + deno);
+        }
+        var jest = content == null ? null : com.editora.run.JsTestNames.at(content, line);
+        if (jest != null) {
+            out.add(com.editora.run.JsTestRunner.namesArg(jest)); // Jest's or Vitest's full name, with its suites
         }
         return List.copyOf(out);
     }

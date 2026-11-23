@@ -81,6 +81,17 @@ final class NodeDebugConfigs {
     }
 
     /**
+     * Whether {@code ready} runs {@code file} on Node.js itself — not under Deno, nor a test runner's script (Jest,
+     * Vitest), which run what Node cannot ({@code .jsx}, {@code .tsx}).
+     */
+    static boolean nodeRuns(NodeRunLauncher.Ready ready, Path file) {
+        List<String> argv = ready.plan().argv();
+        return ready.target().equals(file.toString())
+                && !argv.isEmpty()
+                && !com.editora.run.DenoRun.isDeno(argv.getFirst());
+    }
+
+    /**
      * Whether js-debug can launch {@code runtime}: Node.js itself, or a Node-based runner it reaches through
      * {@code NODE_OPTIONS} (tsx, ts-node), or Deno, which waits for it on an inspector port
      * ({@link com.editora.run.DenoRun#inspected}). Bun is not: it speaks WebKit's inspector protocol.

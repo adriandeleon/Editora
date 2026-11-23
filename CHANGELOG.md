@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Jest and Vitest.** In a package that tests with Jest or Vitest, Debug Test at Caret now debugs the test (or
+  `describe`) at the caret under that runner, alone, with breakpoints in your test and the code it calls, TypeScript
+  and `.tsx` files included. F5 on a test file debugs all of its tests, and Run File on it runs them with the runner
+  instead of `node --test`. Editora uses the runner installed in the package's `node_modules`.
+
 - **Lua debugging.** Press F5 on a Lua script to debug it: breakpoints (with conditions), locals, upvalues and
   globals, watches and hovers, stepping, changing a variable's value, and a stop where an error is raised. The script's
   output appears in the Debug console. It runs on Local Lua Debugger, which Settings ▸ Debugging ▸ Lua installs (it

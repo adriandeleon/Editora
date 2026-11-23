@@ -3512,10 +3512,12 @@ final class RunCoordinator {
         Path root = ops.projectRoot();
         boolean test = com.editora.run.NodeRunPlan.isTestFile(path, root);
         if (test && com.editora.process.ExecTargets.runsHere(path)) {
-            // A Deno project's test file runs under deno test, not node --test: looked at off the FX thread first.
+            // A Deno project's test file runs under deno test, a Jest or Vitest package's under its runner, not
+            // node --test: looked at off the FX thread first.
             com.editora.perf.OffFx.then(
-                    "run-deno-test",
-                    () -> com.editora.run.DenoRun.root(path, root).isPresent(),
+                    "run-js-test",
+                    () -> com.editora.run.DenoRun.root(path, root).isPresent()
+                            || com.editora.run.JsTestRunner.find(path, root).isPresent(),
                     a -> {
                         if (Boolean.TRUE.equals(a.value()) || !ops.runNodeTestFile(path)) {
                             planNode(path, root, args);
