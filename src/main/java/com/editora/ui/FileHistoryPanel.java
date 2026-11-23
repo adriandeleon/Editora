@@ -157,6 +157,8 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
     private final Label placeholder = new Label(tr("history.noRevisions"));
     private final List<HistoryRevision> allRevisions = new ArrayList<>();
     private final TreeView<Object> folderTree = new TreeView<>();
+    private final List<FileGroup> allGroups = new ArrayList<>(); // the folder view's files, before the filter
+    private final Label folderEmpty = new Label(tr("history.noMatch")); // the tree has no placeholder of its own
 
     // --- Right: the live diff of the shown revision vs the current file ---
     private final BorderPane rightPane = new BorderPane();
@@ -181,6 +183,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
     private String baseText = "";
     private String editorSha = ""; // hash of the editor text, to find the row it equals ("" = not known)
     private @Nullable HistoryRevision pendingSelection; // asked for before its list arrived (Recent Changes)
+    private @Nullable HistoryRevision pendingFolderSelection; // asked for before its folder's tree arrived
     private boolean keepingSelection; // the list is being rebuilt; selection changes are not the user's
     private int gen; // stale-guard for async re-diffs (selection / toggle can overlap)
 
@@ -222,7 +225,12 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         filter.getStyleClass().add("history-filter");
         filter.setMaxWidth(Double.MAX_VALUE);
         filter.textProperty().addListener((o, a, b) -> {
-            if (!keepingSelection) {
+            if (keepingSelection) {
+                return;
+            }
+            if (folderTree.isManaged()) {
+                fillFolderTree(shown, null); // the shown revision stays while the filter still lists it
+            } else {
                 applyFilter();
             }
         });
@@ -251,6 +259,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
             if (keepingSelection) {
                 return;
             }
+            pendingFolderSelection = null; // the user chose: an earlier Recent Changes pick no longer applies
             if (b != null && b.getValue() instanceof HistoryRevision r) {
                 showRevision(r, Path.of(r.path()));
             } else {
@@ -262,8 +271,12 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         VBox.setVgrow(folderTree, Priority.ALWAYS);
         folderTree.setVisible(false);
         folderTree.setManaged(false);
+        folderEmpty.getStyleClass().add("tool-window-placeholder");
+        folderEmpty.setWrapText(true);
+        folderEmpty.setVisible(false);
+        folderEmpty.setManaged(false);
 
-        VBox left = UiZoom.spacing(new VBox(toolbar, filter, revisions, folderTree), 4);
+        VBox left = UiZoom.spacing(new VBox(toolbar, filter, revisions, folderTree, folderEmpty), 4);
         UiZoom.padding(left, 4);
         left.getStyleClass().add("history-window-left");
         UiZoom.minWidth(left, 200);
@@ -342,8 +355,13 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
 
     /** Toggles between single-file list mode and folder-tree mode. */
     private void setFolderMode(boolean folder) {
-        filter.setVisible(!folder);
-        filter.setManaged(!folder);
+        String prompt = tr(folder ? "history.folder.filterPrompt" : "history.filterPrompt");
+        filter.setPromptText(prompt);
+        filter.setAccessibleText(prompt);
+        if (!folder) {
+            folderEmpty.setVisible(false);
+            folderEmpty.setManaged(false);
+        }
         revisions.setVisible(!folder);
         revisions.setManaged(!folder);
         folderTree.setVisible(folder);
@@ -359,7 +377,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
 
     /** Replaces the revision list (single-file mode). {@code fileName} = null/blank ⇒ "no file". */
     public void setRevisions(List<HistoryRevision> list, @Nullable String fileName, @Nullable Path target) {
-        boolean wasFolder = folderShown != null;
+        boolean wasFolder = folderTree.isManaged();
         folderShown = null;
         setFolderMode(false);
         boolean sameFile = !wasFolder && target != null && target.equals(this.target);
@@ -367,14 +385,14 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         // While the shown revision of the same file is still listed its diff stays: clearing it threw the
         // user back to "select a revision" in the middle of a hunk-by-hunk restore, on the diff's own Save.
         // Coming back to a file's tab comes back to the revision that was selected there.
+        // Matched as the same recorded revision, not by equals: a relabelled revision is a new record (U1).
         HistoryRevision wanted = sameFile ? shown : target == null ? null : remembered.get(target.toString());
-        if (pendingSelection != null && list.contains(pendingSelection)) {
+        if (pendingSelection != null && HistoryRowText.find(list, pendingSelection) != null) {
             wanted = pendingSelection;
             pendingSelection = null;
         }
-        if (wanted != null && !list.contains(wanted)) {
-            wanted = null;
-        }
+        wanted = HistoryRowText.find(list, wanted);
+        pendingFolderSelection = null;
         this.target = target;
         boolean named = fileName != null && !fileName.isBlank();
         setHeading(named ? tr("history.forFile", fileName) : tr("history.noFile"), target);
@@ -398,8 +416,12 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         }
         if (wanted == null) {
             resetDiff(); // the previously-shown diff was for the old file (or old list) — clear it
-        } else if (sameFile && wanted.equals(shown) && pane != null) {
+        } else if (sameFile && HistoryRowText.sameRevision(wanted, shown) && pane != null) {
             shown = wanted;
+            describe(wanted); // a new label is in the header too
+            if (target != null) {
+                remembered.put(target.toString(), wanted);
+            }
             if (support != null && target != null) {
                 int asked = gen;
                 support.currentTextLater(target, now -> {
@@ -427,6 +449,30 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
     }
 
     /**
+     * In the folder view, selects {@code revision}'s row and brings it into view, which shows its diff; a filter
+     * that hides it is cleared. Asked for before the folder tree lists it (Recent Changes on a deleted file shows
+     * its folder off the FX thread), it is selected when a tree listing it arrives — unless the user picks a row
+     * first.
+     */
+    public void selectInFolder(HistoryRevision revision) {
+        if (revision == null) {
+            return;
+        }
+        TreeItem<Object> row = folderTree.isManaged() ? folderItemOf(revision) : null;
+        if (row == null && folderTree.isManaged() && !filter.getText().isEmpty()) {
+            pendingFolderSelection = revision;
+            filter.clear(); // rebuilds the tree, which selects it if this folder has it
+            row = folderItemOf(revision);
+        }
+        if (row != null) {
+            folderTree.getSelectionModel().select(row);
+            reveal(row);
+        }
+        // Kept after a select too: the folder that lists it may still be on its way (another folder shows now).
+        pendingFolderSelection = revision;
+    }
+
+    /**
      * Selects {@code revision} and brings it into view, which shows its diff on the right; a filter that
      * hides it is cleared. Asked for before the revision's file is the one listed (Recent Changes opens the
      * file first), it is selected as soon as a list containing it arrives.
@@ -435,16 +481,17 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         if (revision == null) {
             return;
         }
-        if (folderShown != null || !allRevisions.contains(revision)) {
+        HistoryRevision listed = HistoryRowText.find(allRevisions, revision);
+        if (folderTree.isManaged() || listed == null) {
             pendingSelection = revision;
             return;
         }
         pendingSelection = null;
-        if (!revisions.getItems().contains(revision)) {
+        if (!revisions.getItems().contains(listed)) {
             filter.clear();
         }
-        revisions.getSelectionModel().select(revision);
-        revisions.scrollTo(revision);
+        revisions.getSelectionModel().select(listed);
+        revisions.scrollTo(listed);
     }
 
     /** Clears the right diff pane back to the "select a revision" prompt (a fresh pane is built on next diff). */
@@ -475,11 +522,14 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         wordLevel.setDisable(shownTooLarge);
     }
 
-    /** Shows folder-history mode: a file → revisions tree (deleted files badged), restorable from each row. */
+    /**
+     * Shows folder-history mode: a file → revisions tree (deleted files badged), restorable from each row. The same
+     * folder listed again (a save, a restore, a relabel in it) keeps its selected revision, its diff and its scroll.
+     */
     public void setFolderHistory(Path folder, List<FileGroup> groups) {
         Path name = folder == null ? null : folder.getFileName();
-        setFolderHistory(name == null ? "" : name.toString(), groups);
-        folderShown = folder;
+        boolean sameFolder = folder != null && folder.equals(folderShown) && folderTree.isManaged();
+        showFolder(name == null ? "" : name.toString(), groups, folder, sameFolder);
         if (folder != null) {
             fileTip.setText(folder.toString());
             fileLabel.setTooltip(fileTip);
@@ -488,30 +538,179 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
 
     /** As {@link #setFolderHistory(Path, List)}, for a caller that only has the folder's name. */
     public void setFolderHistory(String folderName, List<FileGroup> groups) {
+        showFolder(folderName == null ? "" : folderName, groups, null, false);
+    }
+
+    private void showFolder(String folderName, List<FileGroup> groups, @Nullable Path folder, boolean sameFolder) {
+        HistoryRevision keep = sameFolder ? shown : null;
+        @Nullable Object firstVisible = sameFolder ? firstVisibleFolderRow() : null;
+        if (!sameFolder) {
+            resetDiff(); // the file view's diff, or another folder's, does not carry over
+        }
         setFolderMode(true);
         this.target = null;
-        folderShown = null;
-        setHeading(tr("history.forFolder", folderName == null ? "" : folderName), null);
+        folderShown = folder;
+        setHeading(tr("history.forFolder", folderName), null);
+        allGroups.clear();
+        allGroups.addAll(groups);
+        if (!sameFolder) {
+            keepingSelection = true;
+            try {
+                filter.clear(); // a filter typed for one listing says nothing about the next
+            } finally {
+                keepingSelection = false;
+            }
+        }
+        fillFolderTree(keep, firstVisible);
+    }
+
+    /**
+     * Builds the folder tree from {@link #allGroups} through the filter. A pending Recent Changes pick is selected
+     * first; otherwise {@code keep} is, while it is still listed, with its diff kept (and re-read, as its file may
+     * just have been restored); otherwise the diff is cleared. The row holding {@code firstVisible} (a file or a
+     * revision; null: none) is scrolled back to the top, so the rows on screen stay put though rows were added above.
+     */
+    private void fillFolderTree(@Nullable HistoryRevision keep, @Nullable Object firstVisible) {
+        String q = filter.getText();
+        boolean filtering = q != null && !q.isBlank();
         TreeItem<Object> root = new TreeItem<>();
-        for (FileGroup g : groups) {
+        TreeItem<Object> kept = null;
+        TreeItem<Object> picked = null;
+        for (FileGroup g : allGroups) {
+            List<HistoryRevision> rows = filtering ? folderRowsMatching(g, q) : g.revisions();
+            if (rows.isEmpty()) {
+                continue;
+            }
             TreeItem<Object> fileNode = new TreeItem<>(g);
             fileNode.setExpanded(true); // the revisions are what the view is for
-            for (HistoryRevision r : g.revisions()) {
-                fileNode.getChildren().add(new TreeItem<>(r));
+            for (HistoryRevision r : rows) {
+                TreeItem<Object> item = new TreeItem<>(r);
+                if (HistoryRowText.sameRevision(r, pendingFolderSelection)) {
+                    picked = item;
+                } else if (HistoryRowText.sameRevision(r, keep)) {
+                    kept = item;
+                }
+                fileNode.getChildren().add(item);
             }
             root.getChildren().add(fileNode);
         }
+        if (picked != null) {
+            pendingFolderSelection = null;
+        }
+        TreeItem<Object> select = picked != null ? picked : kept;
         keepingSelection = true;
         try {
             folderTree.setRoot(root);
-            folderTree.getSelectionModel().clearSelection();
+            if (select == null) {
+                folderTree.getSelectionModel().clearSelection();
+            } else {
+                folderTree.getSelectionModel().select(select);
+            }
         } finally {
             keepingSelection = false;
         }
-        resetDiff();
+        boolean empty = root.getChildren().isEmpty();
+        folderEmpty.setText(tr(filtering && !allGroups.isEmpty() ? "history.noMatch" : "history.noRevisions"));
+        folderEmpty.setVisible(empty);
+        folderEmpty.setManaged(empty);
+        if (select == null) {
+            resetDiff();
+        } else if (select.getValue() instanceof HistoryRevision chosen) {
+            if (select == kept && HistoryRowText.sameRevision(chosen, shown) && pane != null) {
+                shown = chosen;
+                describe(chosen);
+                rebaseline(); // the file may have changed under it (a restore brings a deleted one back)
+            } else {
+                showRevision(chosen, Path.of(chosen.path()));
+            }
+        }
+        TreeItem<Object> top = firstVisible == null ? null : folderItemOf(firstVisible);
+        if (select != null && (select == picked || top == null)) {
+            reveal(select);
+        } else if (top != null) {
+            reveal(top);
+        }
+    }
+
+    /**
+     * The folder filter: a file whose name or path matches keeps every revision; otherwise only its revisions that
+     * match as a row of the file's own list would (label, reason, time).
+     */
+    private List<HistoryRevision> folderRowsMatching(FileGroup g, String q) {
+        String needle = q.strip().toLowerCase(Locale.ROOT);
+        if (g.display().toLowerCase(Locale.ROOT).contains(needle)
+                || g.path().toLowerCase(Locale.ROOT).contains(needle)) {
+            return g.revisions();
+        }
+        List<HistoryRevision> out = new ArrayList<>();
+        for (HistoryRevision r : g.revisions()) {
+            if (HistoryRowText.matches(
+                    r,
+                    q,
+                    reasonLabel(r.reason()),
+                    HistoryRowText.dateTimeText(r.timestamp(), ZoneId.systemDefault(), locale()),
+                    fullTime(r.timestamp()),
+                    dayCaption(r.timestamp()))) {
+                out.add(r);
+            }
+        }
+        return out;
+    }
+
+    /** What the folder tree's first row on screen holds (a file group or a revision), or null when not known. */
+    private @Nullable Object firstVisibleFolderRow() {
+        if (folderTree.lookup(".virtual-flow") instanceof javafx.scene.control.skin.VirtualFlow<?> flow) {
+            javafx.scene.control.IndexedCell<?> cell = flow.getFirstVisibleCell();
+            TreeItem<Object> item = cell == null ? null : folderTree.getTreeItem(cell.getIndex());
+            return item == null ? null : item.getValue();
+        }
+        return null;
+    }
+
+    /** Scrolls the folder tree so {@code item}'s row is on screen. */
+    private void reveal(TreeItem<Object> item) {
+        int row = folderTree.getRow(item);
+        if (row >= 0) {
+            folderTree.scrollTo(row);
+        }
+    }
+
+    /**
+     * The folder-tree row of {@code value}: the same revision ({@link HistoryRowText#sameRevision}), or the file
+     * group of the same path; null when the tree does not list it.
+     */
+    private @Nullable TreeItem<Object> folderItemOf(Object value) {
+        TreeItem<Object> root = folderTree.getRoot();
+        if (root == null) {
+            return null;
+        }
+        for (TreeItem<Object> file : root.getChildren()) {
+            if (value instanceof FileGroup wanted
+                    && file.getValue() instanceof FileGroup g
+                    && g.path().equals(wanted.path())) {
+                return file;
+            }
+            for (TreeItem<Object> row : file.getChildren()) {
+                if (value instanceof HistoryRevision wanted
+                        && row.getValue() instanceof HistoryRevision r
+                        && HistoryRowText.sameRevision(r, wanted)) {
+                    return row;
+                }
+            }
+        }
+        return null;
     }
 
     // --- Diff (right pane) ------------------------------------------------------------------------------
+
+    /** The diff's header: when {@code rev} was recorded, and its label or reason. */
+    private void describe(HistoryRevision rev) {
+        String what = rev.label().isBlank() ? reasonLabel(rev.reason()) : rev.label();
+        String header = tr("history.window.header", fullTime(rev.timestamp()), what);
+        headerInfo.setText(header);
+        headerTip.setText(header);
+        headerInfo.setTooltip(headerTip);
+    }
 
     /**
      * Loads {@code rev}'s snapshot and the current text of {@code path}, then diffs them. {@code path} is the
@@ -526,11 +725,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         shownPath = path;
         shownMissing = false;
         shownTooLarge = false;
-        String what = rev.label().isBlank() ? reasonLabel(rev.reason()) : rev.label();
-        String header = tr("history.window.header", fullTime(rev.timestamp()), what);
-        headerInfo.setText(header);
-        headerTip.setText(header);
-        headerInfo.setTooltip(headerTip);
+        describe(rev);
         int request = ++gen;
         updateToolbar();
         DiffSupport diffs = support;
@@ -571,7 +766,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
             return; // nothing shown: the texts below belong to no revision
         }
         int g = ++gen;
-        boolean editable = folderShown == null;
+        boolean editable = !folderTree.isManaged(); // no per-hunk apply in a folder view
         DiffEngine.DiffOptions opts = new DiffEngine.DiffOptions(ignoreWs.isSelected(), wordLevel.isSelected());
         diffs.computeDiff(snapshotText, baseText, opts, model -> {
             if (g != gen) {
@@ -736,10 +931,9 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         return true;
     }
 
-    /** Set / Edit Label… on the selected revision of a file's history ({@code history.labelSelected}). */
+    /** Set / Edit Label… on the selected revision, in a file's or a folder's history ({@code history.labelSelected}). */
     boolean labelSelected() {
-        HistoryRevision r =
-                folderTree.isManaged() ? null : revisions.getSelectionModel().getSelectedItem();
+        HistoryRevision r = selectedRevision();
         if (r == null) {
             return false;
         }
@@ -770,10 +964,10 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         if (support != null && support.hasUnsavedEdits(target) && !actions.confirmRestoreOverUnsavedEdits(target)) {
             return;
         }
-        if (!revision.equals(shown)) {
+        if (!HistoryRowText.sameRevision(revision, shown)) {
             selectRevision(revision); // the diff then says what was restored
         }
-        if (revision.equals(shown)) {
+        if (HistoryRowText.sameRevision(revision, shown)) {
             revertSelected();
         } else {
             actions.restore(revision); // no diff support: nothing to re-baseline
@@ -809,8 +1003,15 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
 
     private void onFolderKey(KeyEvent e) {
         TreeItem<Object> sel = folderTree.getSelectionModel().getSelectedItem();
-        if (e.getCode() == KeyCode.ENTER && sel != null && sel.getValue() instanceof HistoryRevision r) {
+        Object value = sel == null ? null : sel.getValue();
+        if (e.getCode() == KeyCode.ENTER && value instanceof HistoryRevision r) {
             restoreRevision(r); // the folder view exists to bring a file back
+            e.consume();
+        } else if (e.getCode() == KeyCode.F2 && value instanceof HistoryRevision r) {
+            actions.editLabel(r);
+            e.consume();
+        } else if (e.getCode() == KeyCode.DELETE && !e.isShortcutDown() && value instanceof FileGroup) {
+            purgeSelectedFile(); // asks first, as the row's Delete History… does
             e.consume();
         }
     }
@@ -846,10 +1047,8 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         e.consume();
         if (e.isShiftDown()) {
             restore.requestFocus();
-        } else if (folderShown != null) {
-            folderTree.requestFocus();
         } else {
-            filter.requestFocus();
+            filter.requestFocus(); // the filter heads the file's list and the folder's tree alike
         }
     }
 
@@ -875,7 +1074,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
 
     /** Re-applies the filter field; a filter that hides the shown revision takes its diff down with it. */
     private void applyFilter() {
-        HistoryRevision keep = shown;
+        HistoryRevision keep = HistoryRowText.find(allRevisions, shown);
         keepingSelection = true;
         try {
             fillList();
@@ -983,7 +1182,10 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
                 MenuItem restoreItem = MenuChords.tag(
                         item(tr("history.menu.restore"), Icons.undo(), () -> restoreRevision(r)),
                         "history.restoreSelected");
-                setContextMenu(new ContextMenu(restoreItem));
+                String labelText = r.label().isBlank() ? tr("history.menu.setLabel") : tr("history.menu.editLabel");
+                MenuItem editLabel = MenuChords.tag(
+                        item(labelText, Icons.edit(), () -> actions.editLabel(r)), "history.labelSelected");
+                setContextMenu(new ContextMenu(restoreItem, editLabel));
             }
         }
     }
@@ -1165,6 +1367,11 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
             case HistoryRevision.REASON_EXTERNAL -> tr("history.reason.external");
             case HistoryRevision.REASON_LABEL -> tr("history.reason.label");
             case HistoryRevision.REASON_DELETE -> tr("history.reason.delete");
+            case HistoryRevision.REASON_AGENT -> tr("history.reason.agent");
+            case HistoryRevision.REASON_HTTP -> tr("history.reason.http");
+            case HistoryRevision.REASON_RESTORE -> tr("history.reason.restore");
+            case HistoryRevision.REASON_REVERT -> tr("history.reason.revert");
+            case HistoryRevision.REASON_LINK_UPDATE -> tr("history.reason.linkUpdate");
             case HistoryCoordinator.REASON_BASELINE -> tr("history.reason.baseline");
             // "replace-in-files" is what the same capture was stored as before it had a reason of its own
             case HistoryCoordinator.REASON_BEFORE_REPLACE, "replace-in-files" -> tr("history.reason.beforeReplace");

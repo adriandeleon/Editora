@@ -40,32 +40,12 @@ final class HistoryIndexGuard {
         return hasBlobs(blobsDir);
     }
 
-    /**
-     * True while a backup of an index that did not load ({@code index.json.v<n>.bak},
-     * {@code index.json.corrupt.bak}, …) sits beside {@code index}. The bodies that backup references are not
-     * in the index written since, so they stay protected until the user restores or removes the backup.
-     */
-    static boolean backupPresent(Path index) {
-        Path dir = index.getParent();
-        if (dir == null || !Files.isDirectory(dir)) {
-            return false;
-        }
-        String name = index.getFileName().toString();
-        try (Stream<Path> siblings = Files.list(dir)) {
-            return siblings.map(p -> p.getFileName().toString())
-                    .anyMatch(n -> n.startsWith(name)
-                            && BACKUP_SUFFIX.matcher(n.substring(name.length())).matches());
-        } catch (IOException e) {
-            return true; // cannot tell: keeping blobs is the safe answer
-        }
-    }
-
     /** A {@code "sha256":"…"} member, wherever it stands — in a whole index or in what is left of a torn one. */
     private static final Pattern HASH_MEMBER = Pattern.compile("\"sha256\"\\s*:\\s*\"([^\"\\\\]+)\"");
 
     /**
-     * The names of the index backups beside {@code index} (see {@link #backupPresent}), or {@code null} when
-     * the folder cannot be listed.
+     * The names of the index backups beside {@code index} — {@code index.json.v3.bak}, {@code .corrupt.bak} and
+     * their numbered siblings, and the {@link #LOSS_MARKER} — or {@code null} when the folder cannot be listed.
      */
     static @Nullable Set<String> backupNames(Path index) {
         Path dir = index.getParent();
@@ -133,6 +113,11 @@ final class HistoryIndexGuard {
             } catch (IOException | RuntimeException unreadable) {
                 return null;
             }
+            if (text.isBlank()) {
+                // A zero-length copy (of a zero-length index) lists nothing and is no way back to anything: it
+                // neither protects a body nor starts a grace period. The loss it records has its own marker.
+                continue;
+            }
             java.util.regex.Matcher member = HASH_MEMBER.matcher(text);
             while (member.find()) {
                 hashes.add(member.group(1));
@@ -142,6 +127,45 @@ final class HistoryIndexGuard {
             }
         }
         return new BackupHashes(hashes, incompleteSince);
+    }
+
+    /**
+     * The name, after the index's own, of the note left when the index was lost with no copy of it to keep —
+     * missing or zero-length beside stored bodies, or a load that could not keep the bytes it could not read.
+     * It is not JSON, so {@link #backupHashes} reads it as an incomplete backup: every body is kept for the same
+     * {@link #INCOMPLETE_BACKUP_GRACE_MILLIS} as after a torn index, counted from when the loss was noticed.
+     */
+    static final String LOSS_MARKER = ".lost.bak";
+
+    /**
+     * Notes, beside {@code index}, that it was lost just now (see {@link #LOSS_MARKER}); rewritten on each loss so
+     * that its grace period starts again. Returns whether the note could be written.
+     */
+    static boolean markLoss(Path index, long now) {
+        Path marker = index.resolveSibling(index.getFileName() + LOSS_MARKER);
+        try {
+            Files.writeString(
+                    marker,
+                    "The Local History index was lost; its revision bodies are kept for 30 days from "
+                            + java.time.Instant.ofEpochMilli(now) + ".\n");
+            Files.setLastModifiedTime(marker, java.nio.file.attribute.FileTime.fromMillis(now));
+            return true;
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** Removes the {@link #LOSS_MARKER} once its grace period is over: it protects nothing any more. */
+    static void dropExpiredLossMarker(Path index, long now) {
+        Path marker = index.resolveSibling(index.getFileName() + LOSS_MARKER);
+        try {
+            if (Files.isRegularFile(marker)
+                    && now - Files.getLastModifiedTime(marker).toMillis() > INCOMPLETE_BACKUP_GRACE_MILLIS) {
+                Files.delete(marker);
+            }
+        } catch (IOException | RuntimeException e) {
+            // it lingers, protecting nothing; the next start tries again
+        }
     }
 
     private static final com.fasterxml.jackson.databind.ObjectMapper JSON =

@@ -401,7 +401,7 @@ when a file is renamed or moved* in Settings → Markdown chooses **Ask each tim
 
 Editora keeps an index of the project's links while it is open, so the update
 does not re-read every file. A file that is not open gets a Local History entry
-before it is changed, and a file open in another window is changed through that
+(*Before link update*) before it is changed, and a file open in another window is changed through that
 window, as one undo step.
 
 ## Linting, math, and editing aids

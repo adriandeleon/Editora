@@ -12,6 +12,7 @@ import java.util.function.Consumer;
 import javafx.application.Platform;
 import javafx.scene.control.Tab;
 
+import com.editora.config.HistoryRevision;
 import com.editora.editor.EditorBuffer;
 import com.editora.editorconfig.EditorConfigCharset;
 import com.editora.io.TextEncodings;
@@ -136,7 +137,7 @@ final class EncodingCommands {
         boolean detectedAlready = !detected.assumed() && detected.charset().equals(decoded.charset());
         files.rememberEncoding(file, detectedAlready ? null : decoded.charset());
         Tab tab = host.tabFor(buffer);
-        files.reloadFromDisk(tab, buffer, applied -> {
+        files.reloadFromDisk(tab, buffer, HistoryRevision.REASON_REVERT, applied -> {
             if (applied) {
                 host.setStatus(tr("status.encoding.reopened", file.getFileName(), shown));
             }

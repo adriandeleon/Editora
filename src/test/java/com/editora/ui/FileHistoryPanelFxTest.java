@@ -544,7 +544,8 @@ class FileHistoryPanelFxTest {
             assertEquals("purge gone.md", f.host().log.getLast());
             f.tree().getSelectionModel().select(goneFile.getChildren().get(0));
             assertFalse(f.panel().purgeSelectedFile(), "a version row is not a file");
-            assertFalse(f.panel().labelSelected(), "a folder's history labels nothing");
+            assertTrue(f.panel().labelSelected(), "a folder's version is labelled as a file's is");
+            assertEquals("editLabel 6000", f.host().log.getLast());
             assertTrue(f.panel().restoreSelected());
             assertEquals("restoreToDisk gone.md", f.host().log.getLast());
         });
@@ -570,7 +571,8 @@ class FileHistoryPanelFxTest {
             assertEquals(tr("history.forFolder", "docs"), f.fileLabel().getText());
             assertNull(f.pane(), "the file view's diff does not carry over");
             assertTrue(f.right().getTop().isDisabled());
-            assertFalse(f.filter().isVisible());
+            assertTrue(f.filter().isVisible(), "the folder's tree has a filter too");
+            assertEquals(tr("history.folder.filterPrompt"), f.filter().getPromptText());
 
             TreeItem<Object> notesRow =
                     f.tree().getRoot().getChildren().get(0).getChildren().get(0);
@@ -738,6 +740,269 @@ class FileHistoryPanelFxTest {
                 .filter(l -> l.getStyleClass().contains(styleClass))
                 .map(Label::getText)
                 .toList();
+    }
+
+    /** U1: relabelling the shown revision keeps it selected and keeps its diff; the header says the new label. */
+    @Test
+    void aRelabelledRevisionStaysSelectedWithItsDiff() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Fixture f = fixture();
+            f.list().getSelectionModel().select(1);
+            DiffViewerPane before = f.pane();
+            assertNotNull(before);
+            List<HistoryRevision> relabelled = new ArrayList<>(f.orders());
+            relabelled.set(1, f.orders().get(1).withLabel("release 1"));
+            f.panel().setRevisions(relabelled, "Orders.java", ORDERS);
+            assertSame(relabelled.get(1), f.list().getSelectionModel().getSelectedItem(), "the renamed record");
+            assertSame(before, f.pane(), "the diff stays up");
+            assertTrue(f.header().getText().contains("release 1"), f.header().getText());
+
+            // Remembered for the way back to the tab, and found by an old copy of the record.
+            f.panel().setRevisions(List.of(), "notes.md", NOTES);
+            f.panel().setRevisions(relabelled, "Orders.java", ORDERS);
+            assertSame(relabelled.get(1), f.list().getSelectionModel().getSelectedItem());
+            f.list().getSelectionModel().select(0);
+            f.panel().selectRevision(f.orders().get(1)); // the record from before the relabel
+            assertSame(relabelled.get(1), f.list().getSelectionModel().getSelectedItem());
+        });
+    }
+
+    private static List<FileHistoryPanel.FileGroup> manyFiles(Host host, int files, long when) {
+        List<FileHistoryPanel.FileGroup> groups = new ArrayList<>();
+        for (int i = 0; i < files; i++) {
+            Path p = Path.of("/p/docs/f" + i + ".md");
+            groups.add(new FileHistoryPanel.FileGroup(
+                    p.toString(),
+                    "f" + i + ".md",
+                    false,
+                    List.of(host.revision(p, when + i, "file " + i + "\n", HistoryRevision.REASON_SAVE, ""))));
+        }
+        return groups;
+    }
+
+    private static TreeItem<Object> revisionRow(TreeView<Object> tree, String display) {
+        return tree.getRoot().getChildren().stream()
+                .filter(i ->
+                        ((FileHistoryPanel.FileGroup) i.getValue()).display().equals(display))
+                .findFirst()
+                .orElseThrow()
+                .getChildren()
+                .get(0);
+    }
+
+    private static int firstVisible(TreeView<Object> tree) {
+        javafx.scene.Parent root = tree.getScene().getRoot();
+        for (int pass = 0; pass < 3; pass++) { // the flow fills its cells over a few layouts
+            root.applyCss();
+            root.layout();
+        }
+        return ((javafx.scene.control.skin.VirtualFlow<?>) tree.lookup(".virtual-flow"))
+                .getFirstVisibleCell()
+                .getIndex();
+    }
+
+    /** U2: the same folder listed again keeps its selected revision, its diff and its scroll. */
+    @Test
+    void theFolderViewKeepsItsPlaceWhenListedAgain() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Fixture f = fixture();
+            Path docs = Path.of("/p/docs");
+            List<FileHistoryPanel.FileGroup> groups = manyFiles(f.host(), 40, 1_000);
+            f.panel().setFolderHistory(docs, groups);
+            TreeItem<Object> row = revisionRow(f.tree(), "f30.md");
+            f.tree().scrollTo(f.tree().getRow(row) - 2);
+            f.tree().getSelectionModel().select(row);
+            DiffViewerPane pane = f.pane();
+            assertNotNull(pane);
+            int top = firstVisible(f.tree());
+            assertTrue(top > 0, "scrolled down");
+            Object topValue = f.tree().getTreeItem(top).getValue();
+
+            // Another file of the folder is saved: one more revision, a new listing.
+            List<FileHistoryPanel.FileGroup> more = new ArrayList<>(groups);
+            FileHistoryPanel.FileGroup f2 = groups.get(2);
+            more.set(
+                    2,
+                    new FileHistoryPanel.FileGroup(
+                            f2.path(),
+                            f2.display(),
+                            false,
+                            List.of(
+                                    f.host()
+                                            .revision(
+                                                    Path.of(f2.path()),
+                                                    9_000,
+                                                    "saved again\n",
+                                                    HistoryRevision.REASON_SAVE,
+                                                    ""),
+                                    f2.revisions().get(0))));
+            f.panel().setFolderHistory(docs, more);
+            Object selected = f.tree().getSelectionModel().getSelectedItem().getValue();
+            assertTrue(HistoryRowText.sameRevision((HistoryRevision) selected, (HistoryRevision) row.getValue()));
+            assertSame(pane, f.pane(), "the diff stays up");
+            Object nowTop = f.tree().getTreeItem(firstVisible(f.tree())).getValue();
+            assertTrue(
+                    topValue.equals(nowTop)
+                            || (topValue instanceof HistoryRevision a
+                                    && nowTop instanceof HistoryRevision b
+                                    && HistoryRowText.sameRevision(a, b)),
+                    "the same rows are on screen, though a row was added above them: " + topValue + " / " + nowTop);
+
+            // A deleted file comes back (restored): its row stays and its diff is read again.
+            Path gone = Path.of("/p/docs/gone.md");
+            HistoryRevision deleted = f.host().revision(gone, 6_000, "was here\n", HistoryRevision.REASON_DELETE, "");
+            List<FileHistoryPanel.FileGroup> withGone = new ArrayList<>(more);
+            withGone.add(new FileHistoryPanel.FileGroup(gone.toString(), "gone.md", true, List.of(deleted)));
+            f.panel().setFolderHistory(docs, withGone);
+            f.tree().getSelectionModel().select(revisionRow(f.tree(), "gone.md"));
+            assertEquals(1, changes(f.pane()), "compared with nothing");
+            f.host().current.put(gone, "was here\n");
+            withGone.set(
+                    withGone.size() - 1,
+                    new FileHistoryPanel.FileGroup(gone.toString(), "gone.md", false, List.of(deleted)));
+            f.panel().setFolderHistory(docs, withGone);
+            assertNotNull(f.tree().getSelectionModel().getSelectedItem());
+            assertEquals(0, changes(f.pane()), "the restored file is what the revision holds");
+
+            // A revision that is no longer listed takes its diff with it; another folder starts afresh.
+            f.panel().setFolderHistory(docs, more);
+            assertNull(f.tree().getSelectionModel().getSelectedItem());
+            assertNull(f.pane());
+            f.tree().getSelectionModel().select(revisionRow(f.tree(), "f1.md"));
+            f.panel().setFolderHistory(Path.of("/p/other"), more);
+            assertNull(f.tree().getSelectionModel().getSelectedItem(), "another folder keeps nothing");
+            assertNull(f.pane());
+        });
+    }
+
+    /** U3: a revision asked for before its folder is listed is selected, shown and scrolled to when it is. */
+    @Test
+    void aRevisionAskedForAheadOfItsFolderIsSelectedWhenItArrives() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Fixture f = fixture();
+            Path docs = Path.of("/p/docs");
+            List<FileHistoryPanel.FileGroup> groups = manyFiles(f.host(), 40, 1_000);
+            HistoryRevision wanted = groups.get(35).revisions().get(0);
+            f.panel().selectInFolder(wanted); // the file view still shows: the folder is on its way
+            f.panel().setFolderHistory(docs, groups);
+            assertSame(wanted, f.tree().getSelectionModel().getSelectedItem().getValue());
+            assertNotNull(f.pane(), "its diff is shown");
+            int row = f.tree().getRow(f.tree().getSelectionModel().getSelectedItem());
+            assertTrue(firstVisible(f.tree()) <= row && row - firstVisible(f.tree()) < 12, "scrolled into view");
+
+            // Asked for while a filter hides it: the filter goes.
+            f.filter().setText("f3.md");
+            assertNull(f.tree().getSelectionModel().getSelectedItem());
+            HistoryRevision other = groups.get(7).revisions().get(0);
+            f.panel().selectInFolder(other);
+            assertEquals("", f.filter().getText());
+            assertSame(other, f.tree().getSelectionModel().getSelectedItem().getValue());
+
+            // The user's own pick beats a pick that had not arrived yet.
+            HistoryRevision late =
+                    f.host().revision(Path.of("/p/docs/late.md"), 50, "late\n", HistoryRevision.REASON_SAVE, "");
+            f.panel().selectInFolder(late);
+            f.tree().getSelectionModel().select(revisionRow(f.tree(), "f4.md"));
+            List<FileHistoryPanel.FileGroup> withLate = new ArrayList<>(groups);
+            withLate.add(new FileHistoryPanel.FileGroup("/p/docs/late.md", "late.md", false, List.of(late)));
+            f.panel().setFolderHistory(docs, withLate);
+            assertEquals(
+                    "f4.md",
+                    Path.of(((HistoryRevision) f.tree()
+                                            .getSelectionModel()
+                                            .getSelectedItem()
+                                            .getValue())
+                                    .path())
+                            .getFileName()
+                            .toString());
+        });
+    }
+
+    /** U5 / U6: the folder view labels from F2 and the row's menu, filters, and deletes a file's history on Delete. */
+    @Test
+    void theFolderViewLabelsFiltersAndDeletesFromTheKeyboard() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Fixture f = fixture();
+            Path gone = Path.of("/p/docs/gone.md");
+            HistoryRevision notes =
+                    f.host().revision(NOTES, 5_000, "old notes\n", HistoryRevision.REASON_SAVE, "draft");
+            HistoryRevision deleted = f.host().revision(gone, 6_000, "was here\n", HistoryRevision.REASON_DELETE, "");
+            f.panel()
+                    .setFolderHistory(
+                            Path.of("/p/docs"),
+                            List.of(
+                                    new FileHistoryPanel.FileGroup(NOTES.toString(), "notes.md", false, List.of(notes)),
+                                    new FileHistoryPanel.FileGroup(
+                                            gone.toString(), "gone.md", true, List.of(deleted))));
+            TreeItem<Object> goneRow = revisionRow(f.tree(), "gone.md");
+            f.tree().getSelectionModel().select(goneRow);
+            press(f.tree(), KeyCode.F2, false);
+            assertEquals("editLabel 6000", f.host().log.getLast());
+            TreeCell<Object> cell = f.tree().getCellFactory().call(f.tree());
+            cell.updateTreeView(f.tree());
+            cell.updateIndex(f.tree().getRow(goneRow));
+            assertEquals(
+                    List.of(tr("history.menu.restore"), tr("history.menu.setLabel")),
+                    OverlayTestKit.labels(cell.getContextMenu().getItems()));
+            assertEquals(
+                    "history.labelSelected",
+                    com.editora.editor.MenuChords.commandOf(
+                            cell.getContextMenu().getItems().get(1)));
+            cell.updateIndex(f.tree().getRow(revisionRow(f.tree(), "notes.md")));
+            assertEquals(
+                    tr("history.menu.editLabel"),
+                    cell.getContextMenu().getItems().get(1).getText());
+
+            // Delete on a file row asks to delete its history; on a version row it does nothing.
+            int logged = f.host().log.size();
+            press(f.tree(), KeyCode.DELETE, false);
+            assertEquals(logged, f.host().log.size(), "a version row is not a file");
+            f.tree().getSelectionModel().select(goneRow.getParent());
+            press(f.tree(), KeyCode.DELETE, false);
+            assertEquals("purge gone.md", f.host().log.getLast());
+
+            // The filter: by file name, by label, by reason as shown, and nothing.
+            Label empty = FxTestSupport.field(f.panel(), "folderEmpty");
+            f.filter().setText("GONE");
+            assertEquals(List.of("gone.md"), displays(f.tree()));
+            f.filter().setText("draft");
+            assertEquals(List.of("notes.md"), displays(f.tree()));
+            f.filter().setText(tr("history.reason.delete"));
+            assertEquals(List.of("gone.md"), displays(f.tree()));
+            assertFalse(empty.isVisible());
+            f.filter().setText("nothing is called this");
+            assertEquals(List.of(), displays(f.tree()));
+            assertTrue(empty.isVisible());
+            assertEquals(tr("history.noMatch"), empty.getText());
+            f.filter().requestFocus();
+            press(f.filter(), KeyCode.ESCAPE, false);
+            assertEquals(2, displays(f.tree()).size(), "Escape clears the filter");
+            assertFalse(empty.isVisible());
+        });
+    }
+
+    private static List<String> displays(TreeView<Object> tree) {
+        return tree.getRoot().getChildren().stream()
+                .map(i -> ((FileHistoryPanel.FileGroup) i.getValue()).display())
+                .toList();
+    }
+
+    /** F3: the reasons recorded since this pass are named, each in its own words. */
+    @Test
+    void theNewCaptureReasonsAreNamed() {
+        List<String> reasons = List.of(
+                HistoryRevision.REASON_AGENT,
+                HistoryRevision.REASON_HTTP,
+                HistoryRevision.REASON_RESTORE,
+                HistoryRevision.REASON_REVERT,
+                HistoryRevision.REASON_LINK_UPDATE);
+        java.util.Set<String> names = new java.util.HashSet<>();
+        for (String reason : reasons) {
+            String name = FileHistoryPanel.reasonLabel(reason);
+            assertFalse(name.equals(tr("history.reason.save")), reason + " is not a save");
+            names.add(name);
+        }
+        assertEquals(reasons.size(), names.size());
     }
 
     private static int changes(DiffViewerPane pane) {

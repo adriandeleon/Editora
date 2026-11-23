@@ -99,6 +99,23 @@ class MavenUpdateVersionsFxTest {
 
         @Override
         public void refreshProjectTree() {}
+
+        /** What Local History was asked to keep, with what the file held on disk at that moment. */
+        final List<String> recorded = new ArrayList<>();
+
+        final List<String> onDiskWhenRecorded = new ArrayList<>();
+        boolean historyFails;
+
+        @Override
+        public void recordBeforeReplace(Path file, String text, java.util.function.Consumer<Boolean> completion) {
+            recorded.add(text);
+            try {
+                onDiskWhenRecorded.add(Files.readString(file));
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+            completion.accept(!historyFails);
+        }
     }
 
     private static EditorBuffer buffer(Path file, String content) throws Exception {
@@ -187,5 +204,34 @@ class MavenUpdateVersionsFxTest {
                     "no temp file left");
         }
         assertTrue(host.errors.isEmpty());
+    }
+
+    @Test
+    void aClosedPomIsCopiedToLocalHistoryBeforeItIsRewritten(@TempDir Path dir) throws Exception {
+        Path pom = Files.writeString(dir.resolve("pom.xml"), POM);
+        RecordingHost host = new RecordingHost();
+        Ops ops = new Ops();
+        MavenProjectCoordinator c = coordinator(host, ops);
+
+        FxTestSupport.runOnFx(() -> c.applyUpgrades(pom, UPGRADE));
+
+        assertEquals(List.of(POM), ops.recorded, "the old versions are kept: a closed file has no undo");
+        assertEquals(List.of(POM), ops.onDiskWhenRecorded, "copied before the write, not after");
+        assertEquals(POM.replace("5.11.0", "5.13.0"), Files.readString(pom));
+    }
+
+    @Test
+    void aClosedPomIsLeftAloneWhenLocalHistoryCannotKeepItsText(@TempDir Path dir) throws Exception {
+        Path pom = Files.writeString(dir.resolve("pom.xml"), POM);
+        RecordingHost host = new RecordingHost();
+        Ops ops = new Ops();
+        ops.historyFails = true;
+        MavenProjectCoordinator c = coordinator(host, ops);
+
+        FxTestSupport.runOnFx(() -> c.applyUpgrades(pom, UPGRADE));
+
+        assertEquals(POM, Files.readString(pom), "nothing is written without the copy");
+        assertEquals(List.of(tr("status.mavenVersions.historyFailed")), host.errors);
+        assertTrue(ops.opened.isEmpty());
     }
 }

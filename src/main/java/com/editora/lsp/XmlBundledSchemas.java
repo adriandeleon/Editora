@@ -169,6 +169,11 @@ public final class XmlBundledSchemas {
 
     private static final java.util.Set<Path> ENSURING = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
+    /** Whether an {@link #ensureInBackground} run for {@code configDir} is still writing (tests wait it out). */
+    public static boolean ensuringInBackground(Path configDir) {
+        return ENSURING.contains(configDir);
+    }
+
     /** The bytes of a shipped schema, read once. */
     private static byte[] resource(String file) throws IOException {
         byte[] known = CACHE.get(file);

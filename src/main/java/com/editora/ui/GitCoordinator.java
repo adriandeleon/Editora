@@ -127,6 +127,15 @@ final class GitCoordinator {
         }
 
         /**
+         * Copies tracked files a Rollback is about to overwrite into Local History, then tells {@code completion}
+         * on the FX thread the first one whose copy could not be made, or empty when every one is safe. A change
+         * made outside Editora (a formatter, {@code sed}, another editor) is in no commit and no other copy.
+         */
+        default void captureBeforeOverwrite(List<Path> files, Consumer<java.util.Optional<Path>> completion) {
+            completion.accept(java.util.Optional.empty());
+        }
+
+        /**
          * Saves {@code buffer} through the window's ordinary save path (encoding, line endings, format on save) and
          * tells {@code then}, on the FX thread, whether it is on disk afterwards. The write runs off the FX thread
          * (PERF-01, Pauta 6.2.0); this default, for test stand-ins, answers {@link #saveBeforeGit} at once.
@@ -939,8 +948,20 @@ final class GitCoordinator {
      * The paths of one discard, by the command each needs: {@code worktree} paths are restored from the
      * index ({@code checkout --}), {@code head} paths have staged changes and go back to the last commit
      * ({@code restore --staged --worktree --source=HEAD}), {@code untracked} ones are deleted ({@code clean}).
+     * {@code overwritten} are the files the first two put back, as absolute paths, copied to Local History first.
      */
-    private record Discard(List<String> worktree, List<String> head, List<String> untracked) {
+    private record Discard(List<String> worktree, List<String> head, List<String> untracked, List<Path> overwritten) {
+        Discard(List<String> worktree, List<String> head, List<String> untracked) {
+            this(worktree, head, untracked, List.of());
+        }
+
+        /** This discard with the tracked files under {@code root} that it overwrites, as {@code status} lists them. */
+        Discard overwriting(Path root, @Nullable GitStatus status) {
+            List<String> tracked = new ArrayList<>(worktree);
+            tracked.addAll(head);
+            return new Discard(worktree, head, untracked, GitDiscardCaptures.overwritten(root, status, tracked));
+        }
+
         boolean isEmpty() {
             return worktree.isEmpty() && head.isEmpty() && untracked.isEmpty();
         }
@@ -967,11 +988,12 @@ final class GitCoordinator {
             return;
         }
         List<String> untracked = discard.untracked();
+        Discard copying = discard.overwriting(root, status);
         // which rows are folders is looked at off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then(
                 "git-untracked-look",
                 () -> GitUntrackedDelete.folders(root, untracked),
-                counted -> discardLooked(root, discard, untracked, counted.or(0)));
+                counted -> discardLooked(root, copying, untracked, counted.or(0)));
     }
 
     private void discardLooked(Path root, Discard discard, List<String> untracked, int folders) {
@@ -1003,10 +1025,28 @@ final class GitCoordinator {
         captureThenDiscard(root, discard, discardSuccessMessage(discard), untrackedFiles);
     }
 
-    /** Copies the untracked files about to be deleted into Local History, then runs the confirmed discard. */
+    /**
+     * Copies the tracked files about to be overwritten and the untracked files about to be deleted into Local
+     * History, then runs the confirmed discard; nothing runs when a copy could not be made.
+     */
     private void captureThenDiscard(Path root, Discard discard, String successMessage, List<Path> untrackedFiles) {
         List<String> affected = discard.affected();
         invalidatePendingWrites(root, affected);
+        if (discard.overwritten().isEmpty()) {
+            captureUntrackedThenDiscard(root, discard, successMessage, untrackedFiles, affected);
+            return;
+        }
+        ops.captureBeforeOverwrite(discard.overwritten(), failed -> {
+            if (failed.isEmpty()) {
+                captureUntrackedThenDiscard(root, discard, successMessage, untrackedFiles, affected);
+            } else {
+                host.setError(tr("status.git.discardHistoryFailed", failed.get().getFileName()));
+            }
+        });
+    }
+
+    private void captureUntrackedThenDiscard(
+            Path root, Discard discard, String successMessage, List<Path> untrackedFiles, List<String> affected) {
         if (untrackedFiles.isEmpty()) {
             runDiscard(root, discard, successMessage, affected);
             return;
@@ -1168,7 +1208,7 @@ final class GitCoordinator {
             host.setStatus(tr("status.git.discardConflict", all.conflict()));
             return;
         }
-        Discard discard = new Discard(all.worktree(), all.head(), all.untracked());
+        Discard discard = new Discard(all.worktree(), all.head(), all.untracked()).overwriting(root, lastStatus);
         if (discard.isEmpty()) {
             host.setStatus(tr("status.git.nothingToDiscard"));
             return;
