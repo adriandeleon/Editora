@@ -112,7 +112,7 @@ class SaveGuardsFxTest {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             Path file = Files.writeString(dir.resolve("closed.txt"), "on disk\n");
             FileWorkflowCoordinator workflows = workflows(fx);
-            EditorBuffer buffer = open(fx, file, "on disk\n");
+            EditorBuffer buffer = open(async, fx, file, "on disk\n");
 
             boolean written = FxTestSupport.callOnFx(() -> {
                 buffer.replaceWholeDocument("a late write from a dead tab");
@@ -198,7 +198,7 @@ class SaveGuardsFxTest {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             Path file = Files.writeString(dir.resolve("shared.txt"), "A");
             FileWorkflowCoordinator workflows = workflows(fx);
-            EditorBuffer buffer = open(fx, file, "A");
+            EditorBuffer buffer = open(async, fx, file, "A");
             Files.writeString(file, "changed by another program\n");
 
             CountDownLatch keptMine = pressNextDialog(async, ButtonBar.ButtonData.CANCEL_CLOSE);
@@ -230,7 +230,7 @@ class SaveGuardsFxTest {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             Path file = Files.writeString(dir.resolve("hosts"), "A");
             FileWorkflowCoordinator workflows = workflows(fx);
-            EditorBuffer buffer = open(fx, file, "A");
+            EditorBuffer buffer = open(async, fx, file, "A");
             AtomicInteger elevatedWrites = new AtomicInteger();
             FxTestSupport.runOnFx(() -> {
                 ConfigManager config = FxTestSupport.field(fx.controller, "config");
@@ -281,8 +281,14 @@ class SaveGuardsFxTest {
                 fx.controller, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, buffer, true);
     }
 
-    private static EditorBuffer open(FxWindowFixture fx, Path file, String content) throws Exception {
-        return FxTestSupport.callOnFx(() -> {
+    /**
+     * Opens {@code file} as a tab and waits for the external-change check its tab switch starts. That check stats
+     * the file off the FX thread: left running, it can read the disk after a test's own "another program" write,
+     * ask about it, and have the test's dialog answer re-baseline the buffer before the save under test runs.
+     */
+    private static EditorBuffer open(AsyncTestScope async, FxWindowFixture fx, Path file, String content)
+            throws Exception {
+        EditorBuffer opened = FxTestSupport.callOnFx(() -> {
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(file);
             buffer.setContent(content);
@@ -290,6 +296,9 @@ class SaveGuardsFxTest {
             addBuffer(fx, buffer);
             return buffer;
         });
+        java.util.Set<EditorBuffer> pending = FxTestSupport.field(workflows(fx), "verifyingExternalChange");
+        awaitOnFx(async, "the tab-switch check to settle", pending::isEmpty);
+        return opened;
     }
 
     private static EditorBuffer untitled(FxWindowFixture fx, String content) throws Exception {

@@ -119,6 +119,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Folding no longer stops on a very long XML or HTML tag.** A tag (or a stray `<name` in text) with a couple of
+  thousand characters before its `>` made the fold scan run out of stack, and that file then had no folding at all.
+
+- **The first file you open gets its colours sooner.** Its syntax colouring no longer waits behind the start-up
+  loading of every other language's grammar.
+
 - **The Disassembly view on GDB** now shows the instructions leading up to where the program stopped. GDB used to
   answer with instructions after it, so the current instruction wasn't in the list.
 - **Debugger review fixes, second round.** A second review of the debugger found these, now fixed:
