@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 182;
+    public static final int SCHEMA_VERSION = 183;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -996,6 +996,10 @@ public class Settings {
     private boolean luaDebugEnabled = true;
     /** local-lua-debugger's {@code debugAdapter.js} (or its folder); blank = Editora's install, VS Code's extension. */
     private String luaDebugPath = "";
+    /** Firefox debugging (vscode-firefox-debug): on by default, only effective when the adapter is found. */
+    private boolean firefoxDebugEnabled = true;
+    /** vscode-firefox-debug's {@code adapter.bundle.js} (or its folder); blank = Editora's install, VS Code's extension. */
+    private String firefoxDebugPath = "";
     /** Dart and Flutter debugging (the SDK's own adapters): on by default, only effective when {@code dart} is found. */
     private boolean dartDebugEnabled = true;
     /** {@code dart} (its {@code debug_adapter}); blank = {@code dart} on the PATH. */
@@ -4113,6 +4117,22 @@ public class Settings {
 
     public void setLuaDebugPath(String luaDebugPath) {
         this.luaDebugPath = luaDebugPath == null ? "" : luaDebugPath;
+    }
+
+    public boolean isFirefoxDebugEnabled() {
+        return firefoxDebugEnabled;
+    }
+
+    public void setFirefoxDebugEnabled(boolean firefoxDebugEnabled) {
+        this.firefoxDebugEnabled = firefoxDebugEnabled;
+    }
+
+    public String getFirefoxDebugPath() {
+        return firefoxDebugPath == null ? "" : firefoxDebugPath;
+    }
+
+    public void setFirefoxDebugPath(String firefoxDebugPath) {
+        this.firefoxDebugPath = firefoxDebugPath == null ? "" : firefoxDebugPath;
     }
 
     public boolean isDartDebugEnabled() {

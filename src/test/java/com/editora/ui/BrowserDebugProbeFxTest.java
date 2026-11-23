@@ -162,7 +162,7 @@ class BrowserDebugProbeFxTest {
             DebugCoordinator debug = FxTestSupport.field(c, "debugCoordinator");
             DapManager dap = FxTestSupport.field(c, "dapManager");
             await("JavaScript debugging available", 60, () -> call(() -> debug.debugEffectiveFor("javascript")));
-            debug.browserArgs = List.of("--headless=new", "--no-sandbox");
+            debug.browser.browserArgs = List.of("--headless=new", "--no-sandbox");
             EditorBuffer html = FxTestSupport.callOnFx(c::activeBuffer);
             assertTrue(call(html::isHtml));
             assertTrue(call(() -> debug.isDebuggableBuffer(html)), "an HTML file takes breakpoints");

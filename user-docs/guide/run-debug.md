@@ -1715,7 +1715,8 @@ installs only vscode-js-debug v1.117.0, a version tested with Editora.
 
 **Debug: Debug in Browser…** (`debug.browser`, in **Run ▸ Launch and Attach**)
 opens a web page in Chrome, Edge or another Chromium browser (Chromium, Brave,
-Vivaldi) under vscode-js-debug, as VS Code does. Breakpoints in the page's
+Vivaldi) under vscode-js-debug, or in Firefox under vscode-firefox-debug, as VS
+Code does. Breakpoints in the page's
 scripts stop it, with its variables, call stack, console output, stepping and
 evaluation as for a Node.js program, and through source maps a breakpoint in
 your TypeScript or framework source stops too. The list offers the HTML file in
@@ -1729,17 +1730,29 @@ browser. An HTML file takes breakpoints in its inline scripts.
 **Debug: Attach to Browser…** (`debug.attachBrowser`, also in **Run ▸ Launch
 and Attach**), or **Debug: Attach to Running Program…** on an HTML file,
 attaches to a Chrome or Edge started with `--remote-debugging-port=9222`; it
-asks for the port. A [launch.json](#launchjson-configurations) `chrome` or
-`msedge` configuration launches or attaches as it does in VS Code.
+asks for the port. With Firefox chosen, it attaches to a Firefox started with
+`-start-debugger-server 6000`, whose `about:config` allows remote debugging
+(`devtools.debugger.remote-enabled` and `devtools.chrome.enabled` on,
+`devtools.debugger.prompt-connection` off). A
+[launch.json](#launchjson-configurations) `chrome`, `msedge` or `firefox`
+configuration launches or attaches as it does in VS Code.
 
 The browser runs with a profile of Editora's own, kept between sessions, so a
 page you signed in to stays signed in and your everyday profile is left alone.
 Stop closes the browser. **Debug web pages in**, on the JavaScript card of
 **Settings → Debugging**, chooses the browser; **Automatic** takes the HTML
-preview's browser when it can be debugged, else the first of Chrome, Edge,
-Chromium, Brave and Vivaldi that is installed. When the chosen browser isn't
-found, another one is used and the status bar says so. Firefox and Safari
-can't be debugged this way.
+preview's browser when it is a Chromium browser, else the first of Chrome, Edge,
+Chromium, Brave and Vivaldi that is installed, and Firefox when it is the only
+one. When the chosen browser isn't found, another one is used and the status
+bar says so. Safari can't be debugged this way.
+
+**Firefox** needs its debugger, vscode-firefox-debug (the adapter of VS Code's
+*Debugger for Firefox*), which runs on Node.js: the **Firefox** card of
+**Settings → Debugging** finds it as set there, else in Editora's own install,
+else in VS Code's extension, and its **Install…** downloads version 2.15.0.
+Firefox runs with a profile of Editora's own too, kept between sessions. A
+`debugger;` statement stops in Firefox as it does in Chrome; its exception
+breakpoints are *All Exceptions* and *Uncaught Exceptions*.
 
 The browser has 30 seconds to start; a launch.json configuration's own
 `timeout` sets another limit. When the debugger gives up on the browser, or the

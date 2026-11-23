@@ -54,6 +54,7 @@ public final class CustomAdapters {
             "bashdb",
             "dart",
             "lua-local",
+            FirefoxLaunch.TYPE,
             "java",
             "editora-jvm",
             "scala");

@@ -439,7 +439,10 @@ public enum ConfigSchema {
                     Map.entry(180, (Migration) ConfigMigrations::identity),
                     // v181→182: + luaDebugEnabled (on), luaDebugPath ("") — Lua debugging on local-lua-debugger.
                     // Additive: absent is the default.
-                    Map.entry(181, (Migration) ConfigMigrations::identity)),
+                    Map.entry(181, (Migration) ConfigMigrations::identity),
+                    // v182→183: + firefoxDebugEnabled (on), firefoxDebugPath ("") — Firefox debugging on
+                    // vscode-firefox-debug. Additive: absent is the default.
+                    Map.entry(182, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

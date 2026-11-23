@@ -825,4 +825,26 @@ class InstallCatalogTest {
         }
         assertTrue(InstallCatalog.isTrustedDownloadUrl(linux.url()));
     }
+
+    @Test
+    void firefoxDebugIsOneOpenVsxVsixForEveryPlatform() {
+        Step firefox = InstallCatalog.debuggerInstall(InstallCatalog.FIREFOX_DEBUG_STEP)
+                .orElseThrow()
+                .getFirst();
+        assertEquals(Kind.PINNED_SERVER, firefox.kind());
+        assertEquals(InstallCatalog.FIREFOX_DEBUG_DIR, firefox.destSubpath());
+        var recipe =
+                InstallCatalog.pinnedServer(InstallCatalog.FIREFOX_DEBUG_STEP).orElseThrow();
+        assertEquals("adapter.bundle.js", recipe.launcher());
+        var linux = recipe.assetFor(Platform.LINUX_X64);
+        assertNotNull(linux);
+        assertEquals(
+                "https://open-vsx.org/api/firefox-devtools/vscode-firefox-debug/2.15.0/file/"
+                        + "firefox-devtools.vscode-firefox-debug-2.15.0.vsix",
+                linux.url());
+        for (Platform p : Platform.values()) {
+            assertEquals(linux, recipe.assetFor(p), p + ": one .vsix, run on Node.js");
+        }
+        assertTrue(InstallCatalog.isTrustedDownloadUrl(linux.url()));
+    }
 }

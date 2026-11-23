@@ -573,6 +573,21 @@ jobs:
             | tar -xz -C "$dest"
           test -f "$dest/js-debug/src/dapDebugServer.js"
 
+      # vscode-firefox-debug for FirefoxDebugProbeFxTest, pinned as Editora's installer fetches it, where it puts it; the
+      # runner's own Firefox.
+      - name: Install vscode-firefox-debug
+        env:
+          FIREFOX_DEBUG_VERSION: 2.15.0
+          FIREFOX_DEBUG_SHA256: f72f7443331fa091bb2a7323828c4de5c70b54cf09de9348c37be164e4c4220f
+        run: |
+          firefox --version || true
+          curl -fsSL -o /tmp/firefox-debug.vsix "https://open-vsx.org/api/firefox-devtools/vscode-firefox-debug/${FIREFOX_DEBUG_VERSION}/file/firefox-devtools.vscode-firefox-debug-${FIREFOX_DEBUG_VERSION}.vsix"
+          echo "${FIREFOX_DEBUG_SHA256}  /tmp/firefox-debug.vsix" | sha256sum -c -
+          dest="$HOME/.editora/plugins/dap/firefox"
+          mkdir -p "$dest"
+          unzip -q /tmp/firefox-debug.vsix -d "$dest"
+          test -f "$dest/extension/dist/adapter.bundle.js"
+
       # TypeScriptServerNodeProbeFxTest: a JavaScript file gets a diagnostic from the real server Editora starts.
       # JsDebugProbeFxTest: a breakpoint hits, steps, and the session ends with the program.
       # PyrightProbeFxTest: Pyright analyses with the project venv, tags hints, organizes imports once.
@@ -592,5 +607,7 @@ jobs:
       # it) in a read-only tab holding the code, its line marked.
       # BrowserDebugProbeFxTest: on js-debug and a headless Chrome, F5 on an HTML file stops in its inline script and
       # in a script it loads; a launch.json chrome configuration opens a file: URL and stops.
+      # FirefoxDebugProbeFxTest: on vscode-firefox-debug and a headless Firefox, F5 on an HTML file stops in its script;
+      # a launch.json firefox configuration opens a page and stops; Attach to Browser joins Firefox's debugger server.
       - name: Test the TypeScript server, JavaScript debugging and Pyright
-        run: ./mvnw -B --no-transfer-progress -Dtest=TypeScriptServerNodeProbeFxTest,JsDebugProbeFxTest,PyrightProbeFxTest,AttachToProcessProbeFxTest#aNode*,DebugHistoryProbeFxTest#javascript*,JsColumnBreakpointsProbeFxTest,StepFiltersProbeFxTest#javascript,WatchSetValueProbeFxTest#javascript,ValueFormatsProbeFxTest#javascript,TriggeredBreakpointsProbeFxTest#javascript,LoadedSourcesProbeFxTest#javascript*,SourcelessFramesProbeFxTest,BrowserDebugProbeFxTest -Dgroups=node,probe -Dnode.probe=true -Dlsp.probe=true -Djacoco.skip=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=TypeScriptServerNodeProbeFxTest,JsDebugProbeFxTest,PyrightProbeFxTest,AttachToProcessProbeFxTest#aNode*,DebugHistoryProbeFxTest#javascript*,JsColumnBreakpointsProbeFxTest,StepFiltersProbeFxTest#javascript,WatchSetValueProbeFxTest#javascript,ValueFormatsProbeFxTest#javascript,TriggeredBreakpointsProbeFxTest#javascript,LoadedSourcesProbeFxTest#javascript*,SourcelessFramesProbeFxTest,BrowserDebugProbeFxTest,FirefoxDebugProbeFxTest -Dgroups=node,probe -Dnode.probe=true -Dlsp.probe=true -Djacoco.skip=true test

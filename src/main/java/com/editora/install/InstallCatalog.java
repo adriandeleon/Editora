@@ -977,6 +977,9 @@ public final class InstallCatalog {
         if (LUA_DEBUG_STEP.equals(stepId)) {
             return Optional.of(luaDebug());
         }
+        if (FIREFOX_DEBUG_STEP.equals(stepId)) {
+            return Optional.of(firefoxDebug());
+        }
         if (!KOTLIN_LSP_STEP.equals(stepId)) {
             return Optional.empty();
         }
@@ -1068,6 +1071,24 @@ public final class InstallCatalog {
             assets.put(p, vsix);
         }
         return new PinnedServer(LUA_DEBUG_STEP, LUA_DEBUG_VERSION, assets, "debugAdapter.js", "", 2, 8);
+    }
+
+    /**
+     * vscode-firefox-debug (MIT, github.com/firefox-devtools/vscode-firefox-debug): one {@code .vsix} for every
+     * platform, a zip holding {@code extension/dist/adapter.bundle.js}, which runs on Node.js. The hash is the Open VSX
+     * file's SHA-256, checked against a downloaded copy.
+     */
+    private static PinnedServer firefoxDebug() {
+        PinnedAsset vsix = new PinnedAsset(
+                "https://open-vsx.org/api/firefox-devtools/vscode-firefox-debug/" + FIREFOX_DEBUG_VERSION
+                        + "/file/firefox-devtools.vscode-firefox-debug-" + FIREFOX_DEBUG_VERSION + ".vsix",
+                "f72f7443331fa091bb2a7323828c4de5c70b54cf09de9348c37be164e4c4220f",
+                Packing.ZIP);
+        java.util.Map<Platform, PinnedAsset> assets = new java.util.EnumMap<>(Platform.class);
+        for (Platform p : Platform.values()) {
+            assets.put(p, vsix);
+        }
+        return new PinnedServer(FIREFOX_DEBUG_STEP, FIREFOX_DEBUG_VERSION, assets, "adapter.bundle.js", "", 2, 8);
     }
 
     /**
@@ -1479,6 +1500,21 @@ public final class InstallCatalog {
                     LUA_DEBUG_DIR,
                     null)));
         }
+        if (FIREFOX_DEBUG_STEP.equals(key)) {
+            boolean linuxHost = currentPlatform() == Platform.LINUX_X64 || currentPlatform() == Platform.LINUX_ARM;
+            return Optional.of(List.of(new Step(
+                    FIREFOX_DEBUG_STEP,
+                    Kind.PINNED_SERVER,
+                    linuxHost ? Set.of() : Set.of(Prereq.TAR),
+                    List.of(),
+                    null,
+                    null,
+                    null,
+                    null,
+                    false,
+                    FIREFOX_DEBUG_DIR,
+                    null)));
+        }
         if (PHP_DEBUG_STEP.equals(key)) {
             boolean linux = currentPlatform() == Platform.LINUX_X64 || currentPlatform() == Platform.LINUX_ARM;
             return Optional.of(List.of(new Step(
@@ -1541,6 +1577,18 @@ public final class InstallCatalog {
 
     /** Where local-lua-debugger is unpacked, relative to the config dir; {@code InstalledAdapter.LUA_DEBUG} looks there. */
     public static final String LUA_DEBUG_DIR = "plugins/dap/lua";
+
+    /** The vscode-firefox-debug step's id, its Settings key and its recipe's ({@link #pinnedServer}). */
+    public static final String FIREFOX_DEBUG_STEP = "firefox-debug";
+
+    /** The vscode-firefox-debug release Editora installs (from Open VSX). Bump with its hash in {@link #pinnedServer}. */
+    public static final String FIREFOX_DEBUG_VERSION = "2.15.0";
+
+    /**
+     * Where vscode-firefox-debug is unpacked, relative to the config dir; {@code InstalledAdapter.FIREFOX_DEBUG} looks
+     * there.
+     */
+    public static final String FIREFOX_DEBUG_DIR = "plugins/dap/firefox";
 
     /** The netcoredbg step's id, its Settings key and its recipe's ({@link #pinnedServer}). */
     public static final String NETCOREDBG_STEP = "netcoredbg";
