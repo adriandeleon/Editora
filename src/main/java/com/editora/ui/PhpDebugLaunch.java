@@ -145,7 +145,10 @@ final class PhpDebugLaunch {
             d.host.setStatus(missing);
             return;
         }
-        Map<String, Object> launch = ScriptLaunch.phpCommand(plan.command(), plan.php(), plan.cwd());
+        Map<String, Object> launch = plan.kind() == PhpApps.Kind.SCRIPT // a script as before: the file the program
+                ? ScriptLaunch.phpLaunch(
+                        file, plan.command().subList(2, plan.command().size()), plan.cwd())
+                : ScriptLaunch.phpCommand(plan.command(), plan.php(), plan.cwd());
         Runnable start = () -> d.withClosedBreakpoints(() -> d.dap().startExternal(file, DebugLanguages.PHP, launch));
         Runnable go = () -> {
             d.s().relaunch = start;
