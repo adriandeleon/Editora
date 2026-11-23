@@ -90,7 +90,9 @@ public final class GitOutputLinks {
         if (text == null || offset < 0 || offset >= text.length()) {
             return null;
         }
-        int lineStart = text.lastIndexOf('\n', Math.max(0, offset - 1)) + 1;
+        // The line holding offset starts after the last newline before it (offset 0: at the start, even when
+        // the text itself starts with a newline — lastIndexOf from 0 would find that one and pass lineEnd).
+        int lineStart = offset == 0 ? 0 : text.lastIndexOf('\n', offset - 1) + 1;
         int lineEnd = text.indexOf('\n', offset);
         if (lineEnd < 0) {
             lineEnd = text.length();
