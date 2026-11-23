@@ -463,7 +463,9 @@ class NativeDebugProbeFxTest {
                 return ((org.fxmisc.richtext.CodeArea) area).getText();
             });
             assertTrue(console.contains("tally: 5 items"), console);
-            assertFalse(console.contains("143"), "the program exited 0, not the adapter's SIGTERM: " + console);
+            // The exit line itself: a bare "143" also turns up in the temporary folder's name (CI, 2026-11-23).
+            assertTrue(console.contains("exit code 0"), "the program exited 0: " + console);
+            assertFalse(console.contains("exit code 143"), "not the adapter's SIGTERM: " + console);
         } finally {
             fx.dispose();
         }
