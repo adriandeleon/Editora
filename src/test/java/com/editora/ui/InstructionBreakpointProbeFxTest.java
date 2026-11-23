@@ -172,12 +172,20 @@ class InstructionBreakpointProbeFxTest {
                                             >= 0));
 
             // Taken off (F9 in the view, the margin's click): the loop runs out and the program ends.
-            int stoppedRow = call(
-                    () -> DebugDisassemblyView.indexOf(List.copyOf(view.list().getItems()), stoppedAt));
-            assertTrue(call(() -> {
-                view.list().getSelectionModel().clearAndSelect(stoppedRow);
-                return view.toggleSelected();
-            }));
+            // The row is found, selected and toggled in one FX call: the view may reload its list in between
+            // otherwise, and an index taken before that toggles another instruction (CI, 2026-11-23).
+            await(
+                    "the instruction's row toggled",
+                    30,
+                    () -> call(() -> {
+                        int stoppedRow = DebugDisassemblyView.indexOf(
+                                List.copyOf(view.list().getItems()), stoppedAt);
+                        if (stoppedRow < 0) {
+                            return false;
+                        }
+                        view.list().getSelectionModel().clearAndSelect(stoppedRow);
+                        return view.toggleSelected();
+                    }));
             await("the mark gone", 30, () -> call(() -> !view.hasBreakpoint(address)));
             assertTrue(call(dap::instructionBreakpoints).isEmpty());
             run(c, "debug.continue");
