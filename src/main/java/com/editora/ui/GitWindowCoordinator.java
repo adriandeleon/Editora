@@ -222,6 +222,9 @@ final class GitWindowCoordinator {
      */
     static final int LOG_RELOAD_LIMIT = 5_000;
 
+    /** The refs fingerprint read when the log on screen was loaded; empty until known. */
+    private String gitLogRefs = "";
+
     /** The page size in use; a field so a test can page through a handful of commits. */
     int logPageSize = LOG_PAGE;
 
@@ -246,11 +249,30 @@ final class GitWindowCoordinator {
      * same commits come back. A closed log loads on its next open.
      */
     void gitMutated() {
-        if (gitLogRoot != null
-                && host.gitLogToolWindow() != null
-                && host.toolWindows().isOpen(host.gitLogToolWindow())) {
-            loadGitLog(gitLogFilter);
+        Path root = gitLogRoot;
+        if (root == null
+                || host.gitLogToolWindow() == null
+                || !host.toolWindows().isOpen(host.gitLogToolWindow())) {
+            return;
         }
+        String before = gitLogRefs;
+        if (!root.equals(host.git().repoRoot()) || before.isEmpty()) {
+            loadGitLog(gitLogFilter);
+            return;
+        }
+        // A stage, unstage or discard moves no ref: re-reading (and re-searching) the history would be wasted.
+        host.git().service().refsFingerprint(root, now -> {
+            if (logNeedsReload(before, now)
+                    && root.equals(gitLogRoot)
+                    && host.toolWindows().isOpen(host.gitLogToolWindow())) {
+                loadGitLog(gitLogFilter);
+            }
+        });
+    }
+
+    /** Whether the log listing must be read again: the refs moved, or either fingerprint is unknown. */
+    static boolean logNeedsReload(String before, String now) {
+        return before.isEmpty() || now.isEmpty() || !before.equals(now);
     }
 
     /** {@code git fetch --all --prune}: see {@link #FETCH_ARGS}. */
@@ -937,6 +959,12 @@ final class GitWindowCoordinator {
             });
         });
         gitLogLoading = true;
+        gitLogRefs = "";
+        host.git().service().refsFingerprint(root, refs -> {
+            if (generation == gitLogGeneration) {
+                gitLogRefs = refs;
+            }
+        });
         host.git().service().logPage(root, request, page -> {
             if (generation != gitLogGeneration) {
                 return;

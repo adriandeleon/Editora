@@ -108,4 +108,14 @@ class GitUiDecisionsTest {
                 List.of(GitWindowCoordinator.FETCH_ARGS),
                 "without --prune a deleted upstream is never noticed and no branch is ever marked gone");
     }
+
+    @org.junit.jupiter.api.Test
+    void theLogReloadsOnlyWhenItsRefsMoved() {
+        String refs = "HEAD=refs/heads/main\nabc HEAD\nabc refs/heads/main\n";
+        org.junit.jupiter.api.Assertions.assertFalse(GitWindowCoordinator.logNeedsReload(refs, refs));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                GitWindowCoordinator.logNeedsReload(refs, refs.replace("abc refs", "def refs")));
+        org.junit.jupiter.api.Assertions.assertTrue(GitWindowCoordinator.logNeedsReload("", refs));
+        org.junit.jupiter.api.Assertions.assertTrue(GitWindowCoordinator.logNeedsReload(refs, ""));
+    }
 }

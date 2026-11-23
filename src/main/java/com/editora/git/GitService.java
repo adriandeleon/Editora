@@ -2974,6 +2974,27 @@ public final class GitService {
         }
     }
 
+    /**
+     * A cheap fingerprint of what a history listing shows — HEAD (symbolic and resolved) and every ref with
+     * its commit — posted on the FX thread; {@code ""} when it cannot be read. Two equal fingerprints mean the
+     * Git Log would list the same commits with the same decorations, so a stage or unstage need not reload it.
+     */
+    public void refsFingerprint(Path root, Consumer<String> onResult) {
+        submit(exec, () -> {
+            String fingerprint = "";
+            if (gitAvailable(root) && root != null) {
+                ProcessRunner.Result head = git(root, QUICK, "symbolic-ref", "-q", "HEAD");
+                ProcessRunner.Result refs = git(root, QUICK, "show-ref", "--head");
+                // show-ref exits 1 when there are no refs at all (an unborn repository): still a stable answer.
+                if (refs.ok() || refs.out().isBlank()) {
+                    fingerprint = "HEAD=" + head.out().strip() + "\n" + refs.out();
+                }
+            }
+            String posted = fingerprint;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
     /** Lists tag short-names, sorted as returned by Git, and posts them on the FX thread. */
     public void tags(Path root, Consumer<List<String>> onResult) {
         submit(exec, () -> {
