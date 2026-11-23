@@ -75,7 +75,10 @@ folder is accepted.
 
 Branch switch, pull, and push reload unmodified open buffers whose files changed
 on disk. Branch switches, discard, and stash never silently replace a dirty open
-copy; deleted and edited buffers remain available for recovery. Git paths are
+copy; deleted and edited buffers remain available for recovery. Rolling back or
+discarding a file's changes keeps its current text in
+[Local History](/docs/workspace#local-file-history) first, and is refused if that
+copy cannot be made. Git paths are
 passed literally, including names that look like options or contain unusual
 characters, and conflicted entries remain visible while a merge is unresolved.
 History mutations and refreshes also revalidate the active file and working-tree
@@ -114,7 +117,8 @@ branch with no upstream keeps the header's `↑ publish` alone.
   the whole group. Group menus offer **Stage All in Group**, **Unstage All**
   (`git.unstageAll`), and **Discard All Changes…** (`git.discardAll`), which
   returns tracked files to the last commit and deletes untracked files after a
-  confirmation.
+  confirmation. Both keep a [Local History](/docs/workspace#local-file-history)
+  copy of each file first, and nothing is discarded if a copy cannot be made.
 - **Amend** (`git.commitAmend`) makes the next commit replace the last one.
   Nothing needs to be staged to change only its message. If the commit is
   already on the remote, the window says that amending it will need a force

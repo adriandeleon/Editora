@@ -91,9 +91,10 @@ command field replaces its default command.
 - Its edits to open files apply as **undoable buffer edits** that you review and
   save.
 - A write to a file that is **not open** goes to disk. The file's previous text
-  is saved to [local file history](/docs/workspace#local-file-history) first,
-  and the write is refused if that copy cannot be made. The file keeps its
-  encoding, byte-order mark and line endings.
+  is saved to [local file history](/docs/workspace#local-file-history) first
+  (a row named *Before agent write*), and the write is refused if that copy
+  cannot be made. With Local History off, the write goes ahead without a copy.
+  The file keeps its encoding, byte-order mark and line endings.
 - It **cannot replace text it has not seen**. A write is refused when the file
   or buffer changed since the agent last read it, including text you typed in
   the meantime; the agent is told to read the file again.
