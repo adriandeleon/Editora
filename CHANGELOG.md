@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Conditions on instruction breakpoints.** An instruction breakpoint in the Disassembly view can now have a
+  condition and a hit count (Edit Breakpoint… on its row), as a line breakpoint can, where the debugger takes them
+  (CodeLLDB, GDB, Delve). The Breakpoints list shows the session's instruction breakpoints too: Enter opens the
+  Disassembly view at one, Alt+D removes it.
+
 - **Lua debugging.** Press F5 on a Lua script to debug it: breakpoints (with conditions), locals, upvalues and
   globals, watches and hovers, stepping, changing a variable's value, and a stop where an error is raised. The script's
   output appears in the Debug console. It runs on Local Lua Debugger, which Settings ▸ Debugging ▸ Lua installs (it

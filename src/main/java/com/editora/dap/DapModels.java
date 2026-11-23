@@ -174,6 +174,24 @@ public final class DapModels {
     public record InstructionBreakpoint(String address, boolean verified, String message) {}
 
     /**
+     * What an instruction breakpoint asks before it stops: an expression that must be true ({@code condition}) and a
+     * hit count ({@code hitCondition}, the adapter's syntax: {@code 3}, {@code >= 5}); "" for none.
+     */
+    public record InstructionConditions(String condition, String hitCondition) {
+        public static final InstructionConditions NONE = new InstructionConditions("", "");
+
+        public InstructionConditions {
+            condition = condition == null ? "" : condition.strip();
+            hitCondition = hitCondition == null ? "" : hitCondition.strip();
+        }
+
+        /** Whether it asks nothing: it stops every time. */
+        public boolean none() {
+            return condition.isEmpty() && hitCondition.isEmpty();
+        }
+    }
+
+    /**
      * Memory read from the program: {@code data} from {@code address} on; the {@code unreadable} bytes after it could
      * not be read (an unmapped page).
      */

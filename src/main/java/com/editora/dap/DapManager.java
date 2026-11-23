@@ -4836,6 +4836,18 @@ public final class DapManager {
         return c == null ? List.of() : c.instructionBreakpoints();
     }
 
+    /** The conditions of the shown session's instruction breakpoints, by address (none: not there). */
+    public Map<String, DapModels.InstructionConditions> instructionConditions() {
+        DapClient c = client;
+        return c == null ? Map.of() : c.instructionConditions();
+    }
+
+    /** Whether the shown session's adapter takes a condition, and a hit count, on a breakpoint: {@code [cond, hit]}. */
+    public boolean[] instructionConditionSupport() {
+        DapClient c = client;
+        return new boolean[] {c != null && c.supportsConditions(), c != null && c.supportsHitConditions()};
+    }
+
     /**
      * Sets the shown session's instruction breakpoints to {@code addresses}; what the adapter made of each goes to
      * {@code cb} on the FX thread (none when the session ended or the request failed, with why to {@code failed}).
@@ -4843,10 +4855,20 @@ public final class DapManager {
     public void setInstructionBreakpoints(
             List<String> addresses, Consumer<List<DapModels.InstructionBreakpoint>> cb, Consumer<String> failed) {
         DapClient c = client;
+        setInstructionBreakpoints(addresses, c == null ? Map.of() : c.instructionConditions(), cb, failed);
+    }
+
+    /** As above, with each address's {@code conditions}. */
+    public void setInstructionBreakpoints(
+            List<String> addresses,
+            Map<String, DapModels.InstructionConditions> conditions,
+            Consumer<List<DapModels.InstructionBreakpoint>> cb,
+            Consumer<String> failed) {
+        DapClient c = client;
         if (c == null || !c.supportsInstructionBreakpoints()) {
             return;
         }
-        c.setInstructionBreakpoints(addresses)
+        c.setInstructionBreakpoints(addresses, conditions)
                 .whenComplete((list, e) -> fx(() -> {
                     if (client != c) {
                         return;

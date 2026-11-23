@@ -49,6 +49,12 @@ final class DebugDisassemblyView extends VBox {
     /** Those of {@link #breakpoints} the adapter could not set. */
     private final Set<Long> unverified = new HashSet<>();
 
+    /** The marked instructions whose breakpoint asks a condition or a hit count first: drawn as the gutter does. */
+    private final Set<Long> conditional = new HashSet<>();
+
+    /** What Edit Breakpoint… does to an instruction's breakpoint (its condition, its hit count). */
+    private Consumer<DapModels.Instruction> onEditBreakpoint = i -> {};
+
     private Consumer<DapModels.Instruction> onToggleBreakpoint = i -> {};
     private BooleanSupplier breakpointsTaken = () -> false;
 
@@ -83,6 +89,13 @@ final class DebugDisassemblyView extends VBox {
                                 this::toggleSelected),
                         () -> breakpointsTaken.getAsBoolean(),
                         "row.unavailable.noInstructionBreakpoints"),
+                ListRowCommands.enabledWhen(
+                        ListRowCommands.row(list, "debug.editBreakpoint", null, null, this::editSelected),
+                        () -> {
+                            DapModels.Instruction i = list.getSelectionModel().getSelectedItem();
+                            return i != null && hasBreakpoint(i.address());
+                        },
+                        "row.unavailable.noInstructionBreakpoint"),
                 ListRowCommands.copyRow(list, () -> ListRowCommands.selectedText(list, DebugDisassemblyView::rowText)));
         VBox.setVgrow(list, Priority.ALWAYS);
         getChildren().add(list);
@@ -116,6 +129,50 @@ final class DebugDisassemblyView extends VBox {
     void setOnToggleBreakpoint(Consumer<DapModels.Instruction> onToggle, BooleanSupplier taken) {
         this.onToggleBreakpoint = onToggle;
         this.breakpointsTaken = taken;
+    }
+
+    /** Edits the selected instruction's breakpoint; false when it has none. */
+    boolean editSelected() {
+        DapModels.Instruction i = list.getSelectionModel().getSelectedItem();
+        if (i == null || !hasBreakpoint(i.address())) {
+            return false;
+        }
+        onEditBreakpoint.accept(i);
+        return true;
+    }
+
+    /** What Edit Breakpoint… on a row with a breakpoint does. */
+    void setOnEditBreakpoint(Consumer<DapModels.Instruction> onEdit) {
+        this.onEditBreakpoint = onEdit;
+    }
+
+    /** Selects the shown instruction at {@code address} (a Breakpoints list row); false when it is not shown. */
+    boolean selectAddress(String address) {
+        Long wanted = parseAddress(address);
+        for (int i = 0; i < list.getItems().size(); i++) {
+            Long at = parseAddress(list.getItems().get(i).address());
+            if (wanted != null && wanted.equals(at)) {
+                list.getSelectionModel().select(i);
+                list.scrollTo(Math.max(0, i - 3));
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Marks the instructions at {@code addresses}, hollow those at {@code notSet} (the adapter could not set them), in
+     * the conditional colour those at {@code withConditions}.
+     */
+    void setBreakpoints(Collection<String> addresses, Collection<String> notSet, Collection<String> withConditions) {
+        conditional.clear();
+        for (String a : withConditions) {
+            Long n = parseAddress(a);
+            if (n != null) {
+                conditional.add(n);
+            }
+        }
+        setBreakpoints(addresses, notSet);
     }
 
     /** Marks the instructions at {@code addresses}, hollow those at {@code notSet} (the adapter could not set them). */
@@ -265,7 +322,11 @@ final class DebugDisassemblyView extends VBox {
             }
             Long at = parseAddress(item.address());
             dot.setVisible(at != null && breakpoints.contains(at));
-            dot.getStyleClass().remove("debug-disassembly-breakpoint-unverified");
+            dot.getStyleClass()
+                    .removeAll("debug-disassembly-breakpoint-unverified", "debug-disassembly-breakpoint-conditional");
+            if (at != null && conditional.contains(at)) {
+                dot.getStyleClass().add("debug-disassembly-breakpoint-conditional");
+            }
             if (at != null && unverified.contains(at)) {
                 dot.getStyleClass().add("debug-disassembly-breakpoint-unverified");
             }

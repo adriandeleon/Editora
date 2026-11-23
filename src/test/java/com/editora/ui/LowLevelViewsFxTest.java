@@ -330,6 +330,109 @@ class LowLevelViewsFxTest {
         assertEquals(List.of(), call(manager::instructionBreakpoints));
     }
 
+    /** Stops a new session at shelf.c line 2 with the Disassembly view shown; its view. */
+    private DebugDisassemblyView stopWithDisassembly(FakeDebugAdapter.Session[] out) throws Exception {
+        Path file = root.resolve("shelf.c");
+        FxTestSupport.runOnFx(() -> fx.controller.fileWorkflows.openPath(file));
+        run("debug.start");
+        FakeDebugAdapter.Session session = adapter.awaitSession();
+        out[0] = session;
+        session.awaitRequest("launch");
+        session.framePath = file.toString();
+        session.frameLine = 2;
+        await("running", () -> call(manager::state) == DapManager.State.RUNNING);
+        session.stop(1, "breakpoint");
+        await(
+                "stopped",
+                () -> call(manager::state) == DapManager.State.SUSPENDED
+                        && !call(() -> debug.panel().callStack().isEmpty()));
+        run("debug.showDisassembly");
+        DebugDisassemblyView view = call(() -> debug.panel().disassemblyView());
+        await(
+                "the instructions",
+                () -> call(() -> view.list().getItems().size()) == DebugCoordinator.DISASSEMBLY_COUNT);
+        return view;
+    }
+
+    @Test
+    void anInstructionBreakpointTakesAConditionAndAHitCountAndIsInTheBreakpointsList() throws Exception {
+        // An adapter that takes no conditions: Edit Breakpoint… says so.
+        FakeDebugAdapter.Session[] s = new FakeDebugAdapter.Session[1];
+        DebugDisassemblyView view = stopWithDisassembly(s);
+        int row = DebugCoordinator.DISASSEMBLY_BEFORE + 1;
+        assertTrue(call(() -> {
+            view.list().getSelectionModel().clearAndSelect(row);
+            return view.toggleSelected();
+        }));
+        String at = call(() -> view.list().getItems().get(row).address());
+        await("set", () -> call(() -> view.hasBreakpoint(at)));
+        assertTrue(call(view::editSelected));
+        assertEquals(tr("status.debug.instructionConditionsUnsupported"), status());
+        FxTestSupport.runOnFx(manager::stop);
+        await("stopped", () -> !call(manager::isActive));
+
+        // One that takes both: the condition and the hit count are asked for, sent, and listed.
+        adapter.conditionalBreakpoints = true;
+        try {
+            DebugDisassemblyView v = stopWithDisassembly(s);
+            FakeDebugAdapter.Session session = s[0];
+            assertTrue(call(() -> {
+                v.list().getSelectionModel().clearAndSelect(row);
+                return v.toggleSelected();
+            }));
+            String address = call(() -> v.list().getItems().get(row).address());
+            await("set", () -> call(() -> v.hasBreakpoint(address)));
+            assertTrue(call(v::editSelected));
+            await("the condition prompt", () -> call(() -> OverlayDriver.showing(fx.controller)));
+            FxTestSupport.runOnFx(() -> OverlayDriver.answer(fx.controller, "count > 3"));
+            await("the hit count prompt", () -> call(() -> OverlayDriver.showing(fx.controller)));
+            FxTestSupport.runOnFx(() -> OverlayDriver.answer(fx.controller, ">= 2"));
+            try {
+                await(
+                        "sent with them",
+                        () -> !session.instructionBreakpointSets.isEmpty()
+                                && "count > 3"
+                                        .equals(session.instructionBreakpointSets
+                                                .getLast()
+                                                .getBreakpoints()[0]
+                                                .getCondition()));
+            } catch (AssertionError e) {
+                throw new AssertionError(
+                        e.getMessage() + "; sets " + session.instructionBreakpointSets.size()
+                                + ", requests " + session.requests + ", status " + status()
+                                + ", conditions " + call(manager::instructionConditions),
+                        e);
+            }
+            assertEquals(
+                    ">= 2",
+                    session.instructionBreakpointSets
+                            .getLast()
+                            .getBreakpoints()[0]
+                            .getHitCondition());
+            assertEquals(
+                    new com.editora.dap.DapModels.InstructionConditions("count > 3", ">= 2"),
+                    call(() -> manager.instructionConditions().get(address)));
+
+            // The Breakpoints list has it, with what it asks; Remove takes it off.
+            BreakpointsPicker picker = call(debug::breakpointsPicker);
+            BreakpointsPicker.Entry entry = call(() -> picker.entries().stream()
+                    .filter(e -> address.equals(e.instruction()))
+                    .findFirst()
+                    .orElseThrow());
+            assertEquals(tr("debug.breakpoints.instruction", address), BreakpointsPicker.label(entry));
+            String detail = BreakpointsPicker.detail(entry, null, null);
+            assertTrue(detail.contains("count > 3") && detail.contains(">= 2"), detail);
+            FxTestSupport.runOnFx(() -> picker.remove(entry));
+            await("removed", () -> call(manager::instructionBreakpoints).isEmpty());
+            await("the adapter told", () -> lastSet(session).isEmpty());
+            assertTrue(call(() -> picker.entries().stream().noneMatch(e -> e.instruction() != null)));
+            FxTestSupport.runOnFx(manager::stop);
+            await("stopped", () -> !call(manager::isActive));
+        } finally {
+            adapter.conditionalBreakpoints = false;
+        }
+    }
+
     /** Opens Edit Bytes… on row {@code row} of the Memory view and answers it with {@code text}. */
     private void editRow(DebugMemoryView memory, int row, String text) throws Exception {
         FxTestSupport.runOnFx(() -> memory.rowList().getSelectionModel().clearAndSelect(row));

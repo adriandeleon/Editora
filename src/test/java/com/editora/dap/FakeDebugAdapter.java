@@ -119,6 +119,9 @@ public final class FakeDebugAdapter implements AutoCloseable {
     /** An instruction breakpoint at this address is answered not verified, with the message {@code no code here}. */
     public volatile String unsettableInstruction = "";
 
+    /** When set, the next session says it takes breakpoint conditions and hit counts. */
+    public volatile boolean conditionalBreakpoints;
+
     /** While set, {@code setInstructionBreakpoints} fails, with the message {@code adapter fell over}. */
     public volatile boolean instructionBreakpointsFail;
 
@@ -637,6 +640,10 @@ public final class FakeDebugAdapter implements AutoCloseable {
             }
             if (stepBack) {
                 capabilities.setSupportsStepBack(true);
+            }
+            if (conditionalBreakpoints) {
+                capabilities.setSupportsConditionalBreakpoints(true);
+                capabilities.setSupportsHitConditionalBreakpoints(true);
             }
             if (lowLevel) {
                 capabilities.setSupportsDisassembleRequest(true);

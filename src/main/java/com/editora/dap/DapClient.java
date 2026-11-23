@@ -2383,6 +2383,47 @@ public final class DapClient implements IDebugProtocolClient {
 
     private volatile List<String> instructionBreakpoints = List.of();
 
+    /** The conditions of {@link #instructionBreakpoints}, by address (as given); an address not here asks nothing. */
+    private volatile Map<String, DapModels.InstructionConditions> instructionConditions = Map.of();
+
+    /** Whether the session's adapter takes a breakpoint's condition ({@code supportsConditionalBreakpoints}). */
+    public boolean supportsConditions() {
+        Capabilities caps = target().capabilities;
+        return caps != null && Boolean.TRUE.equals(caps.getSupportsConditionalBreakpoints());
+    }
+
+    /** Whether it takes a hit count ({@code supportsHitConditionalBreakpoints}). */
+    public boolean supportsHitConditions() {
+        Capabilities caps = target().capabilities;
+        return caps != null && Boolean.TRUE.equals(caps.getSupportsHitConditionalBreakpoints());
+    }
+
+    /** The conditions of the session's instruction breakpoints, by address. */
+    public Map<String, DapModels.InstructionConditions> instructionConditions() {
+        return target().instructionConditions;
+    }
+
+    /**
+     * {@link #setInstructionBreakpoints(List)} with {@code conditions} by address: each is sent where the adapter
+     * takes it ({@code supportsConditionalBreakpoints}, {@code supportsHitConditionalBreakpoints}), kept either way.
+     */
+    public CompletableFuture<List<DapModels.InstructionBreakpoint>> setInstructionBreakpoints(
+            List<String> addresses, Map<String, DapModels.InstructionConditions> conditions) {
+        DapClient session = target();
+        if (session != this) {
+            return session.setInstructionBreakpoints(addresses, conditions);
+        }
+        Map<String, DapModels.InstructionConditions> kept = new java.util.LinkedHashMap<>();
+        for (String a : addresses) {
+            DapModels.InstructionConditions c = conditions.get(a);
+            if (c != null && !c.none()) {
+                kept.put(a, c);
+            }
+        }
+        instructionConditions = java.util.Collections.unmodifiableMap(kept);
+        return sendInstructionBreakpoints(addresses);
+    }
+
     /**
      * Sets the instruction breakpoints of the session a request goes to to {@code addresses}, each at its instruction
      * (offset 0); the answer says which the adapter could set.
@@ -2392,14 +2433,29 @@ public final class DapClient implements IDebugProtocolClient {
         if (session != this) {
             return session.setInstructionBreakpoints(addresses);
         }
+        return setInstructionBreakpoints(addresses, instructionConditions); // an address taken off loses its own
+    }
+
+    private CompletableFuture<List<DapModels.InstructionBreakpoint>> sendInstructionBreakpoints(
+            List<String> addresses) {
         List<String> list = List.copyOf(addresses);
         instructionBreakpoints = list;
+        Capabilities caps = capabilities;
+        boolean conditions = caps != null && Boolean.TRUE.equals(caps.getSupportsConditionalBreakpoints());
+        boolean hits = caps != null && Boolean.TRUE.equals(caps.getSupportsHitConditionalBreakpoints());
         org.eclipse.lsp4j.debug.InstructionBreakpoint[] wire =
                 new org.eclipse.lsp4j.debug.InstructionBreakpoint[list.size()];
         for (int i = 0; i < wire.length; i++) {
             wire[i] = new org.eclipse.lsp4j.debug.InstructionBreakpoint();
             wire[i].setInstructionReference(list.get(i));
             wire[i].setOffset(0);
+            DapModels.InstructionConditions c = instructionConditions.get(list.get(i));
+            if (c != null && conditions && !c.condition().isEmpty()) {
+                wire[i].setCondition(c.condition());
+            }
+            if (c != null && hits && !c.hitCondition().isEmpty()) {
+                wire[i].setHitCondition(c.hitCondition());
+            }
         }
         org.eclipse.lsp4j.debug.SetInstructionBreakpointsArguments a =
                 new org.eclipse.lsp4j.debug.SetInstructionBreakpointsArguments();

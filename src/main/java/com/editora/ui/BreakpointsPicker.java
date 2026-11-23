@@ -39,10 +39,21 @@ final class BreakpointsPicker {
             int line,
             Breakpoint breakpoint,
             @Nullable EditorBuffer buffer,
-            com.editora.config.@Nullable MemberBreakpoint member) {
+            com.editora.config.@Nullable MemberBreakpoint member,
+            @Nullable String instruction) {
 
         Entry(Path file, String key, int line, Breakpoint breakpoint, @Nullable EditorBuffer buffer) {
-            this(file, key, line, breakpoint, buffer, null);
+            this(file, key, line, breakpoint, buffer, null, null);
+        }
+
+        Entry(
+                Path file,
+                String key,
+                int line,
+                Breakpoint breakpoint,
+                @Nullable EditorBuffer buffer,
+                com.editora.config.@Nullable MemberBreakpoint member) {
+            this(file, key, line, breakpoint, buffer, member, null);
         }
 
         /** A method breakpoint or field watchpoint as a row of the list. */
@@ -50,6 +61,12 @@ final class BreakpointsPicker {
             Breakpoint stands =
                     new Breakpoint(-1, m.condition(), "", m.enabled(), "", m.hitCondition()); // for the glyph
             return new Entry(Path.of(""), "", -1, stands, null, m);
+        }
+
+        /** An instruction breakpoint of the shown session (its {@code address}) as a row of the list. */
+        static Entry ofInstruction(String address, com.editora.dap.DapModels.InstructionConditions conditions) {
+            Breakpoint stands = new Breakpoint(-1, conditions.condition(), "", true, "", conditions.hitCondition());
+            return new Entry(Path.of(""), "", -1, stands, null, null, address);
         }
     }
 
@@ -74,6 +91,15 @@ final class BreakpointsPicker {
     }
 
     private final @Nullable MemberBreakpointCommands members;
+
+    /** The shown session's instruction breakpoints, listed after the rest; null: none listed. */
+    private @Nullable InstructionBreakpoints instructions;
+
+    /** Lists {@code breakpoints}' instruction breakpoints too. */
+    BreakpointsPicker instructions(InstructionBreakpoints breakpoints) {
+        this.instructions = breakpoints;
+        return this;
+    }
 
     BreakpointsPicker(
             CoordinatorHost host,
@@ -164,6 +190,9 @@ final class BreakpointsPicker {
         for (com.editora.config.MemberBreakpoint m : ops.memberBreakpoints()) {
             out.add(Entry.of(m));
         }
+        if (instructions != null) {
+            instructions.listed().forEach((address, conditions) -> out.add(Entry.ofInstruction(address, conditions)));
+        }
         return out;
     }
 
@@ -214,6 +243,9 @@ final class BreakpointsPicker {
     static String label(Entry e) {
         if (e.member() != null) {
             return e.member().shortName();
+        }
+        if (e.instruction() != null) {
+            return tr("debug.breakpoints.instruction", e.instruction());
         }
         String name = e.file().getFileName() == null
                 ? e.file().toString()
@@ -288,6 +320,11 @@ final class BreakpointsPicker {
         if (e.member() != null) {
             return memberDetail(e.member());
         }
+        if (e.instruction() != null) {
+            List<String> parts = new ArrayList<>(BreakpointDescription.lines(e.breakpoint(), triggers));
+            parts.add(tr("debug.breakpoints.instructionDetail")); // an address is this run's: not kept
+            return String.join("  ·  ", parts);
+        }
         List<String> parts = new ArrayList<>(BreakpointDescription.lines(e.breakpoint(), triggers));
         String folder = folder(e.file().getParent(), projectRoot, home);
         if (!folder.isEmpty()) {
@@ -339,6 +376,12 @@ final class BreakpointsPicker {
     }
 
     private void jump(Entry e) {
+        if (e.instruction() != null) {
+            if (instructions != null) {
+                instructions.reveal(e.instruction());
+            }
+            return;
+        }
         if (e.member() != null) {
             if (members != null) {
                 members.jump(e.member());
@@ -354,6 +397,10 @@ final class BreakpointsPicker {
     }
 
     void toggleEnabled(Entry e) {
+        if (e.instruction() != null) {
+            host.setStatus(tr("status.debug.instructionBreakpointNoOff")); // DAP has no off state for one: remove it
+            return;
+        }
         if (e.member() != null) {
             if (members != null) {
                 members.replace(e.member().withEnabled(!e.member().enabled()));
@@ -370,6 +417,12 @@ final class BreakpointsPicker {
     }
 
     void remove(Entry e) {
+        if (e.instruction() != null) {
+            if (instructions != null) {
+                instructions.remove(e.instruction());
+            }
+            return;
+        }
         if (e.member() != null) {
             if (members != null) {
                 members.remove(e.member());

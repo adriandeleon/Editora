@@ -29,9 +29,115 @@ final class InstructionBreakpoints {
         this.d = d;
     }
 
-    /** Gives {@code view} its margin and its Toggle Breakpoint row. */
+    /** Gives {@code view} its margin, its Toggle Breakpoint row and its Edit Breakpoint… row. */
     void install(DebugDisassemblyView view) {
         view.setOnToggleBreakpoint(this::toggle, () -> d.dap().supportsInstructionBreakpoints());
+        view.setOnEditBreakpoint(i -> edit(i.address()));
+    }
+
+    /**
+     * Asks for the breakpoint at {@code address}'s condition, then its hit count — each only where the adapter takes
+     * it — and sends them; the dot turns the conditional colour. An empty answer asks nothing.
+     */
+    void edit(String address) {
+        DapManager dap = d.dap();
+        boolean[] takes = dap.instructionConditionSupport();
+        if (dap.state() != DapManager.State.SUSPENDED || !dap.supportsInstructionBreakpoints()) {
+            d.host.setStatus(tr("status.debug.noInstructionBreakpoints"));
+            return;
+        }
+        if (!takes[0] && !takes[1]) {
+            d.host.setStatus(tr("status.debug.instructionConditionsUnsupported"));
+            return;
+        }
+        DapModels.InstructionConditions was =
+                dap.instructionConditions().getOrDefault(address, DapModels.InstructionConditions.NONE);
+        java.util.function.Consumer<String> askHits = condition -> {
+            if (!takes[1]) {
+                apply(address, new DapModels.InstructionConditions(condition, ""));
+                return;
+            }
+            d.host.promptText(
+                    tr("debug.instructionBreakpoint.hitTitle"),
+                    tr("debug.instructionBreakpoint.hitLabel", address),
+                    was.hitCondition(),
+                    hits -> {
+                        if (hits != null) {
+                            apply(address, new DapModels.InstructionConditions(condition, hits));
+                        }
+                    });
+        };
+        if (!takes[0]) {
+            askHits.accept("");
+            return;
+        }
+        d.host.promptText(
+                tr("debug.instructionBreakpoint.conditionTitle"),
+                tr("debug.instructionBreakpoint.conditionLabel", address),
+                was.condition(),
+                condition -> {
+                    if (condition != null) {
+                        askHits.accept(condition);
+                    }
+                });
+    }
+
+    /** Sends the breakpoints again with {@code conditions} at {@code address}. */
+    private void apply(String address, DapModels.InstructionConditions conditions) {
+        DapManager dap = d.dap();
+        if (!dap.instructionBreakpoints().contains(address)) {
+            return; // taken off while the prompt was open
+        }
+        java.util.Map<String, DapModels.InstructionConditions> all =
+                new java.util.LinkedHashMap<>(dap.instructionConditions());
+        all.put(address, conditions);
+        dap.setInstructionBreakpoints(
+                dap.instructionBreakpoints(),
+                all,
+                results -> {
+                    notSet = unset(results);
+                    show();
+                    if (notSet.contains(address)) {
+                        d.host.setStatus(
+                                tr("status.debug.instructionBreakpointNotSet", address, messageOf(results, address)));
+                    }
+                },
+                why -> d.host.setStatus(tr("status.debug.instructionBreakpointFailed", why)));
+    }
+
+    /** The shown session's instruction breakpoints with their conditions, for the Breakpoints list. */
+    java.util.Map<String, DapModels.InstructionConditions> listed() {
+        java.util.Map<String, DapModels.InstructionConditions> out = new java.util.LinkedHashMap<>();
+        java.util.Map<String, DapModels.InstructionConditions> conditions =
+                d.dap().instructionConditions();
+        for (String a : d.dap().instructionBreakpoints()) {
+            out.put(a, conditions.getOrDefault(a, DapModels.InstructionConditions.NONE));
+        }
+        return out;
+    }
+
+    /** Takes the breakpoint at {@code address} off (the Breakpoints list's Remove). */
+    void remove(String address) {
+        DapManager dap = d.dap();
+        if (!dap.instructionBreakpoints().contains(address)) {
+            return;
+        }
+        dap.setInstructionBreakpoints(
+                toggled(dap.instructionBreakpoints(), address),
+                results -> {
+                    notSet = unset(results);
+                    show();
+                },
+                why -> d.host.setStatus(tr("status.debug.instructionBreakpointFailed", why)));
+    }
+
+    /** Shows the Disassembly view, at the instruction of {@code address} when it is listed there. */
+    void reveal(String address) {
+        d.showLowLevelView(DebugPanel.AREA_DISASSEMBLY);
+        DebugDisassemblyView view = d.s().panel == null ? null : d.s().panel.disassemblyView();
+        if (view != null) {
+            view.selectAddress(address);
+        }
     }
 
     /** Puts a breakpoint on {@code instruction}, or takes the one there off. */
@@ -63,7 +169,10 @@ final class InstructionBreakpoints {
         DebugDisassemblyView view = d.s().panel == null ? null : d.s().panel.disassemblyView();
         if (view != null) {
             List<String> set = d.dap().instructionBreakpoints();
-            view.setBreakpoints(set, notSet.stream().filter(set::contains).toList());
+            view.setBreakpoints(
+                    set,
+                    notSet.stream().filter(set::contains).toList(),
+                    d.dap().instructionConditions().keySet());
         }
     }
 
