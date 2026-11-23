@@ -2273,7 +2273,7 @@ final class HistoryCoordinator {
      * safe to replace.
      */
     void captureBeforeOverwriteDurably(Path file, Consumer<OverwriteCapture> completion) {
-        captureBeforeOverwriteDurably(file, HistoryRevision.REASON_HTTP, completion); // its one caller: >>! (F3)
+        captureBeforeOverwriteDurably(file, HistoryRevision.REASON_EXTERNAL, completion);
     }
 
     /** As {@link #captureBeforeOverwriteDurably(Path, Consumer)}, recording under {@code reason}. */
