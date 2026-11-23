@@ -254,19 +254,36 @@ public final class FoldManager {
         this(area, area::getText);
     }
 
+    /** How long after the last edit the regions are detected again. */
+    public static final Duration SETTLE = Duration.ofMillis(250);
+
+    /** This manager's own settle timer, until an owner's settled-edit dispatcher takes over. */
+    private org.reactfx.Subscription settleTimer;
+
+    /**
+     * Drops this manager's own settle timer: the owner calls {@link #editsSettled} {@link #SETTLE} after the last
+     * edit from the one timer it runs for every such milestone (an editor buffer's settled-edit dispatcher).
+     */
+    public void settleExternally() {
+        settleTimer.unsubscribe();
+    }
+
+    /** The edits have settled for {@link #SETTLE}: detects the regions again when they may have changed. */
+    public void editsSettled() {
+        // A load's own insertion settles here too; its restore already scanned (or is scanning) this very
+        // generation, so the pass would only repeat that detection. Any edit since bumps the generation.
+        settles++;
+        if (heuristicEnabled && recomputeGeneration != detectedGeneration) {
+            settleDetections++;
+            recomputeAsync();
+        }
+    }
+
     public FoldManager(CodeArea area, Supplier<String> textSnapshot) {
         this.area = area;
         this.caretLine = area::getCurrentParagraph;
         this.textSnapshot = textSnapshot;
-        area.multiPlainChanges().successionEnds(Duration.ofMillis(250)).subscribe(ignore -> {
-            // A load's own insertion settles here too; its restore already scanned (or is scanning) this very
-            // generation, so the pass would only repeat that detection. Any edit since bumps the generation.
-            settles++;
-            if (heuristicEnabled && recomputeGeneration != detectedGeneration) {
-                settleDetections++;
-                recomputeAsync();
-            }
-        });
+        settleTimer = area.multiPlainChanges().successionEnds(SETTLE).subscribe(ignore -> editsSettled());
         // Manual regions are anchored to nothing, so they shift through every edit immediately (the
         // BookmarkManager pattern) — the debounced recompute above re-detects, it cannot re-anchor.
         // The empty-list early-out keeps this a single field check per keystroke for every buffer

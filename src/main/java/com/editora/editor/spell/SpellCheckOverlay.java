@@ -204,12 +204,7 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
         });
         // Recompute fenced-code line ranges off the debounced edit pulse (O(lines), not per keystroke);
         // only while active, so an inactive overlay (e.g. a large file with spell check off) does no work.
-        area.multiPlainChanges().successionEnds(Duration.ofMillis(300)).subscribe(ignore -> {
-            codeLinesOwed = false;
-            if (active) {
-                recomputeCodeLines();
-            }
-        });
+        settleTimer = area.multiPlainChanges().successionEnds(SETTLE).subscribe(ignore -> editsSettled());
         area.estimatedScrollXProperty().addListener((o, a, b) -> scheduleRedraw());
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
     }
@@ -315,12 +310,46 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
     @Override
     public SpellCheckOverlay follower(CodeArea view) {
         SpellCheckOverlay second = new SpellCheckOverlay(view, textSnapshot);
+        if (settledExternally) {
+            second.settleExternally();
+        }
         second.checker = checker;
         second.setMode(mode);
         second.setRenderingActive(rendering);
         second.setActive(active);
         follower = second;
         return second;
+    }
+
+    /** How long after the last edit the code lines are scanned again. */
+    public static final Duration SETTLE = Duration.ofMillis(300);
+
+    /** This overlay's own settle timer, until an owner's settled-edit dispatcher takes over. */
+    private org.reactfx.Subscription settleTimer;
+
+    private boolean settledExternally;
+
+    /**
+     * Drops this overlay's own settle timer (and its follower's): the owner calls {@link #editsSettled}
+     * {@link #SETTLE} after the last edit from the one timer it runs for every such milestone.
+     */
+    public void settleExternally() {
+        settledExternally = true;
+        settleTimer.unsubscribe();
+        if (follower != null) {
+            follower.settleExternally();
+        }
+    }
+
+    /** The edits have settled for {@link #SETTLE}: scans the code lines again while on (and the follower's). */
+    public void editsSettled() {
+        codeLinesOwed = false;
+        if (active) {
+            recomputeCodeLines();
+        }
+        if (follower != null) {
+            follower.editsSettled();
+        }
     }
 
     void setChecker(SpellChecker checker) {

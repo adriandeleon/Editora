@@ -405,7 +405,9 @@ For text-driven work inside `EditorBuffer`, register a milestone with its shared
 `SettledEditDispatcher` rather than adding another RichTextFX `successionEnds` subscription. One document
 subscription resets one JavaFX timer sequence, which preserves each feature's delay while inactive feature
 milestones are never armed. Standalone controls without that dispatcher should still debounce on their
-RichTextFX stream rather than doing expensive work per change.
+RichTextFX stream rather than doing expensive work per change. A class used both ways keeps its own timer and
+gives it up to the buffer's: `FoldManager`, `Minimap` and `SpellCheckOverlay` have `settleExternally()` and
+`editsSettled()`, and a split's follower runs from its leader's.
 
 A stripe on the minimap follows the same rule one step further: its *data* is not recomputed per repaint
 either. The Git change stripe holds an `int[]` of `{line, count, kind}` triples and asks `GitGutterLines`

@@ -174,9 +174,40 @@ public final class Minimap extends Region {
     /** The minimap of the split's second view, given every setting and mark this one is given. */
     private @Nullable Minimap follower;
 
+    /** How long after the last edit the minimap renders again. */
+    public static final Duration SETTLE = Duration.ofMillis(200);
+
+    /** This minimap's own settle timer, until an owner's settled-edit dispatcher takes over. */
+    private org.reactfx.Subscription settleTimer;
+
+    private boolean settledExternally;
+
+    /**
+     * Drops this minimap's own settle timer (and its follower's): the owner calls {@link #editsSettled}
+     * {@link #SETTLE} after the last edit from the one timer it runs for every such milestone.
+     */
+    public void settleExternally() {
+        settledExternally = true;
+        settleTimer.unsubscribe();
+        if (follower != null) {
+            follower.settleExternally();
+        }
+    }
+
+    /** The edits have settled for {@link #SETTLE}: renders again (this minimap and its follower). */
+    public void editsSettled() {
+        renderAfterEdit();
+        if (follower != null) {
+            follower.editsSettled();
+        }
+    }
+
     /** A minimap for a split's second {@code view}, kept in step with this one. */
     public Minimap follower(CodeArea view) {
         Minimap second = new Minimap(view);
+        if (settledExternally) {
+            second.settleExternally();
+        }
         second.tabSize = tabSize;
         second.textColor = textColor;
         second.viewportColor = viewportColor;
@@ -203,7 +234,7 @@ public final class Minimap extends Region {
         setPrefWidth(WIDTH);
         setMaxWidth(WIDTH);
 
-        area.multiPlainChanges().successionEnds(Duration.ofMillis(200)).subscribe(ignore -> renderAfterEdit());
+        settleTimer = area.multiPlainChanges().successionEnds(SETTLE).subscribe(ignore -> renderAfterEdit());
         area.estimatedScrollYProperty().addListener((o, a, b) -> afterLayout.request());
         pacedRender.setOnFinished(e -> renderContent());
 
