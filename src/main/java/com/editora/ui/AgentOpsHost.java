@@ -47,8 +47,7 @@ final class AgentOpsHost implements AgentCoordinator.Ops {
 
     @Override
     public void recordHistory(Path file, @Nullable String content, Consumer<Boolean> completion) {
-        mc.historyCoordinator.recordDurably(
-                file, content, com.editora.config.HistoryRevision.REASON_EXTERNAL, completion);
+        mc.historyCoordinator.recordDurably(file, content, com.editora.config.HistoryRevision.REASON_AGENT, completion);
     }
 
     @Override
