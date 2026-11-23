@@ -62,17 +62,23 @@ public final class BranchPopup {
      * One entry of a branch row's secondary menu (rename, merge, delete…). {@code danger} marks an action
      * that destroys something; {@link #SEPARATOR} draws a line between groups. {@code commandId}: the command
      * that does the same to this branch (one exists for the current branch's upstream rows), whose chord the
-     * row shows; null when no command does.
+     * row shows; null when no command does. {@code disabledReason}: why the row is grayed out and inert (a branch
+     * checked out in another work tree cannot be deleted); null when it can be chosen.
      */
     public record RowAction(
             String label,
             boolean danger,
             Runnable run,
-            @Nullable String commandId) {
+            @Nullable String commandId,
+            @Nullable String disabledReason) {
         public static final RowAction SEPARATOR = new RowAction("", false, () -> {});
 
         public RowAction(String label, boolean danger, Runnable run) {
-            this(label, danger, run, null);
+            this(label, danger, run, null, null);
+        }
+
+        public RowAction(String label, boolean danger, Runnable run, @Nullable String commandId) {
+            this(label, danger, run, commandId, null);
         }
     }
 
@@ -359,8 +365,8 @@ public final class BranchPopup {
     }
 
     /**
-     * "No VCS" mode: the active file isn't under version control, so the dropdown offers only
-     * "Clone Git repository…". Opened from the always-visible status-bar segment.
+     * "No VCS" mode: the active file isn't under version control, so the dropdown offers
+     * "Clone Git repository…" only. Opened from the always-visible status-bar segment.
      */
     public void showNoVcs(Window owner, Node anchor, Runnable onClone) {
         ensureBuilt();
@@ -368,6 +374,21 @@ public final class BranchPopup {
         remoteUrlLabel.setText("");
         remoteUrlLabel.setTooltip(null);
         all = List.of(new ActionRow(tr("branchpopup.clone"), "", "git.clone", onClone));
+        present(owner, anchor);
+    }
+
+    /**
+     * "No VCS" mode with both ways to get a repository: "Clone Git repository…" and "Initialize Repository"
+     * (a new one in the project's folder, {@code git.init}).
+     */
+    public void showNoVcs(Window owner, Node anchor, Runnable onClone, Runnable onInit) {
+        ensureBuilt();
+        titleLabel.setText(tr("branchpopup.noVcs"));
+        remoteUrlLabel.setText("");
+        remoteUrlLabel.setTooltip(null);
+        all = List.of(
+                new ActionRow(tr("branchpopup.clone"), "", "git.clone", onClone),
+                new ActionRow(tr("branchpopup.init"), "", "git.init", onInit));
         present(owner, anchor);
     }
 
@@ -474,15 +495,19 @@ public final class BranchPopup {
 
     private void selectFirstSelectable() {
         // With nothing typed, the current branch: the actions above it are a keystroke away, and Enter on a
-        // just-opened dropdown must not run one. Else the first branch or action; a header is only the
-        // first stop when everything is folded.
-        for (int pass = query.isEmpty() ? 0 : 1; pass < 3; pass++) {
+        // just-opened dropdown must not run one. When it is not listed (a detached HEAD, Local folded) nothing
+        // that acts is selected either — at most a section header, which Enter only folds or unfolds. Once
+        // something is typed, the first branch or action; a header only when everything is folded.
+        for (int pass = 0; pass < 3; pass++) {
+            if (query.isEmpty() == (pass == 1)) {
+                continue; // nothing typed: passes 0 and 2 (headers only); typed: passes 1 and 2
+            }
             for (int i = 0; i < items.size(); i++) {
                 Row row = items.get(i);
                 boolean wanted = switch (pass) {
                     case 0 -> row instanceof BranchRow branch && branch.current();
                     case 1 -> !(row instanceof Header);
-                    default -> selectable(row);
+                    default -> query.isEmpty() ? row instanceof Header && selectable(row) : selectable(row);
                 };
                 if (wanted) {
                     list.getSelectionModel().select(i);
@@ -553,8 +578,11 @@ public final class BranchPopup {
         return List.of();
     }
 
-    /** Runs a secondary action the way a row is activated: the dropdown closes first. */
+    /** Runs a secondary action the way a row is activated: the dropdown closes first. A grayed-out one does nothing. */
     void runRowAction(RowAction action) {
+        if (action.disabledReason() != null) {
+            return;
+        }
         hide();
         action.run().run();
     }
@@ -600,6 +628,7 @@ public final class BranchPopup {
             if (action.danger()) {
                 item.getStyleClass().add("danger");
             }
+            com.editora.editor.RowReasons.set(item, action.disabledReason()); // grayed, saying why
             item.setOnAction(e -> runRowAction(action));
             if (action.commandId() != null) {
                 com.editora.editor.MenuChords.tag(item, action.commandId());

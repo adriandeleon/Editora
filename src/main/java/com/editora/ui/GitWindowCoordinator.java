@@ -106,12 +106,15 @@ final class GitWindowCoordinator {
      * Asks which parent a merge is reverted against: given the merge and its parents, the 1-based mainline,
      * or null to cancel. A field so a test can answer without a dialog.
      */
-    MainlineChooser mainlineChooser = this::chooseMainline;
+    MainlineChooser mainlineChooser = this::chooseRevertMainline;
 
     /** Asks which parent of a merge commit is the mainline to keep: its 1-based number, or null when cancelled. */
     interface MainlineChooser {
         void choose(String hash, List<String> parents, java.util.function.Consumer<@Nullable Integer> onChosen);
     }
+
+    /** Asks which parent a merge is cherry-picked against; a field for the same reason. */
+    MainlineChooser cherryPickMainlineChooser = this::chooseCherryPickMainline;
 
     /** Confirms deleting a tag (tag, repository); a field for the same reason. */
     java.util.function.BiPredicate<String, String> tagDeleteConfirmer = this::confirmTagDelete;
@@ -269,30 +272,60 @@ final class GitWindowCoordinator {
     static final String[] FETCH_ARGS = {"fetch", "--all", "--prune"};
 
     /**
-     * The local branch a remote-tracking branch would be checked out as: {@code origin/feature/x} →
-     * {@code feature/x}. Empty when {@code remoteBranch} has no remote prefix.
+     * What choosing a remote-tracking branch in the dropdown does. {@code kind}: switch to local branch
+     * {@code name} (it tracks this very remote branch); create a local branch that tracks it ({@code name} is
+     * git's own choice, the remote branch's name); or ask for a name, {@code name} the suggestion — a local
+     * branch of the remote branch's name exists but tracks something else, or nothing.
      */
-    static String localNameOf(String remoteBranch) {
-        int slash = remoteBranch == null ? -1 : remoteBranch.indexOf('/');
-        return slash < 0 ? "" : remoteBranch.substring(slash + 1);
+    record RemoteCheckout(Kind kind, String name) {
+        enum Kind {
+            SWITCH,
+            TRACK,
+            ASK
+        }
     }
 
     /**
-     * What choosing a remote branch in the dropdown does: switch to the local branch of that name when there
-     * is one ({@code git checkout --track origin/x} fails with "a branch named 'x' already exists"), else
-     * create the tracking branch. Returns the local branch to switch to, or {@code null} to create one.
+     * Decides {@link RemoteCheckout} for {@code remoteBranch}: split at the longest known remote name (a remote
+     * may itself hold a slash), then the local branch of the rest is reused only when its upstream is this remote
+     * branch — {@code upstream/feature} never switches to a {@code feature} that tracks {@code origin/feature}.
+     * The suggested name is {@code <remote>-<branch>}. Pure.
      */
-    static @Nullable String existingLocalFor(String remoteBranch, List<com.editora.git.GitService.BranchInfo> local) {
-        String name = localNameOf(remoteBranch);
-        if (name.isEmpty()) {
-            return null;
+    static RemoteCheckout remoteCheckout(
+            String remoteBranch, List<com.editora.git.GitService.BranchInfo> local, List<String> remoteNames) {
+        com.editora.git.GitRemotes.RemoteBranch split = com.editora.git.GitRemotes.split(remoteBranch, remoteNames);
+        if (split == null) {
+            return new RemoteCheckout(RemoteCheckout.Kind.TRACK, "");
         }
         for (com.editora.git.GitService.BranchInfo b : local) {
-            if (b.name().equals(name)) {
-                return name;
+            if (b.name().equals(split.branch())) {
+                return remoteBranch.equals(b.upstream())
+                        ? new RemoteCheckout(RemoteCheckout.Kind.SWITCH, b.name())
+                        : new RemoteCheckout(RemoteCheckout.Kind.ASK, split.remote() + "-" + split.branch());
             }
         }
-        return null;
+        return new RemoteCheckout(RemoteCheckout.Kind.TRACK, split.branch());
+    }
+
+    /** A remote-tracking row of the dropdown was chosen: see {@link #remoteCheckout}. */
+    private void checkoutRemoteRow(Path root, String remote, com.editora.git.GitService.Branches branches) {
+        RemoteCheckout choice = remoteCheckout(remote, branches.local(), branches.remoteNames());
+        switch (choice.kind()) {
+            case SWITCH -> host.git().checkoutBranch(choice.name());
+            case TRACK ->
+                GitLeaveDetachedHead.thenMove(
+                        host.git(),
+                        root,
+                        remote,
+                        () -> inRoot(root, () -> host.git().checkoutRemoteBranch(remote))
+                                .run());
+            case ASK -> {
+                com.editora.git.GitRemotes.RemoteBranch split =
+                        com.editora.git.GitRemotes.split(remote, branches.remoteNames());
+                this.branches.promptCheckoutRemoteAs(
+                        root, remote, split == null ? remote : split.branch(), choice.name());
+            }
+        }
     }
 
     /**
@@ -326,8 +359,12 @@ final class GitWindowCoordinator {
         // stays up for as long as the user reads it; everything below is tied to this root.
         Path root = host.git().repoRoot();
         if (root == null) {
-            // Not under version control: the dropdown offers only "Clone Git repository…".
-            branchPopup.showNoVcs(host.stage(), host.statusBar().gitSegmentNode(), host.git()::cloneRepo);
+            // Not under version control: the dropdown offers to clone a repository or to create one.
+            branchPopup.showNoVcs(
+                    host.stage(),
+                    host.statusBar().gitSegmentNode(),
+                    host.git()::cloneRepo,
+                    () -> host.git().ifEnabled(host.git()::initRepo));
             return;
         }
         host.git().service().branches(root, branches -> {
@@ -347,6 +384,12 @@ final class GitWindowCoordinator {
                     new BranchPopup.MenuAction(
                             tr("branch.commit"), "git.commit", inRoot(root, host.git()::gitCommitFocus)));
             String current = host.git().branchName();
+            // The branches checked out in other work trees, for the rows' Delete: listed after the dropdown is up
+            // (a row menu opened before they arrive offers Delete, which then says where the branch is).
+            java.util.Map<String, String> elsewhere = new java.util.HashMap<>();
+            host.git()
+                    .service()
+                    .worktrees(root, trees -> elsewhere.putAll(GitBranchCoordinator.checkedOutElsewhere(root, trees)));
             branchPopup.show(
                     host.stage(),
                     host.statusBar().gitSegmentNode(),
@@ -357,17 +400,10 @@ final class GitWindowCoordinator {
                     branches.remoteUrl(),
                     actions,
                     name -> inRoot(root, () -> host.git().checkoutBranch(name)).run(),
-                    remote -> inRoot(root, () -> {
-                                String existing = existingLocalFor(remote, branches.local());
-                                if (existing != null) {
-                                    host.git().checkoutBranch(existing);
-                                } else {
-                                    host.git().checkoutRemoteBranch(remote);
-                                }
-                            })
+                    remote -> inRoot(root, () -> checkoutRemoteRow(root, remote, branches))
                             .run(),
                     // Each row's secondary menu (rename, merge, delete…), under the same root guard.
-                    row -> this.branches.rowActions(root, current, branches, row, run -> inRoot(root, run)));
+                    row -> this.branches.rowActions(root, current, branches, elsewhere, row, run -> inRoot(root, run)));
         });
     }
 
@@ -680,8 +716,7 @@ final class GitWindowCoordinator {
 
             @Override
             public void cherryPick(String hash) {
-                gitMutate(
-                        tr("status.git.cherryPicked", com.editora.git.GitFormat.shortHash(hash)), "cherry-pick", hash);
+                cherryPickIn(gitLogRoot, hash);
             }
 
             @Override
@@ -689,8 +724,13 @@ final class GitWindowCoordinator {
                 Path root = gitLogRoot; // before the prompt: the active repository can change while it is up
                 host.promptText(tr("dialog.newBranch.title"), tr("dialog.newBranch.content"), "", input -> {
                     String name = input.strip();
-                    if (!name.isEmpty()) {
-                        gitMutateIn(root, tr("status.createdBranch", name), "checkout", "-b", name, hash);
+                    if (!name.isEmpty() && root != null) {
+                        GitLeaveDetachedHead.thenMove(
+                                host.git(),
+                                root,
+                                hash,
+                                () -> gitMutateIn(
+                                        root, tr("status.createdBranch", name), "checkout", "-b", name, hash, "--"));
                     }
                 });
             }
@@ -798,7 +838,7 @@ final class GitWindowCoordinator {
                     && !host.git().confirmDestructive(checkoutCommitQuestion(shortHash, left))) {
                 return;
             }
-            gitMutateIn(root, tr("status.git.checkedOutDetached", shortHash), "checkout", hash);
+            gitMutateIn(root, tr("status.git.checkedOutDetached", shortHash), "checkout", hash, "--");
         });
     }
 
@@ -1009,7 +1049,9 @@ final class GitWindowCoordinator {
                     return;
                 }
                 gitLogLoadingMore = false;
-                if (com.editora.git.GitLog.continuesFromTop(page, loaded, anchor)) {
+                if (!page.error().isEmpty()) {
+                    host.setStatus(loadMoreFailed(page.error()));
+                } else if (com.editora.git.GitLog.continuesFromTop(page, loaded, anchor)) {
                     panel.appendLog(page.drop(loaded));
                 } else {
                     loadGitLog(file); // history moved: reload to the depth already on screen
@@ -1024,12 +1066,24 @@ final class GitWindowCoordinator {
                 return; // a full load took over (it reset the flag)
             }
             gitLogLoadingMore = false;
-            if (continues(page, anchor)) {
+            if (!page.error().isEmpty()) {
+                // A failed read is not a moved history: reloading would hide the error behind the same rows.
+                host.setStatus(loadMoreFailed(page.error()));
+            } else if (continues(page, anchor)) {
                 panel.appendLog(page.drop(1));
             } else {
                 loadGitLog(file); // history moved: reload to the depth already on screen
             }
         });
+    }
+
+    /**
+     * What the status line says when the next page of the log could not be read: git's first line of complaint.
+     * The rows already loaded stay. Pure.
+     */
+    static String loadMoreFailed(String error) {
+        String first = error == null ? "" : error.strip().lines().findFirst().orElse("");
+        return tr("status.git.log.loadMoreFailed", first);
     }
 
     /** Whether {@code page}, requested with a one-commit overlap, begins with the last loaded commit. Pure. */
@@ -1165,54 +1219,114 @@ final class GitWindowCoordinator {
                 : new String[] {"revert", "--no-edit", hash};
     }
 
+    /**
+     * {@code git cherry-pick} arguments. A merge, as for a revert, needs the parent it is replayed against
+     * ({@code -m}); without it git fails with "is a merge but no -m option was given".
+     */
+    static String[] cherryPickArgs(String hash, int mainline) {
+        return mainline > 0
+                ? new String[] {"cherry-pick", "-m", String.valueOf(mainline), hash}
+                : new String[] {"cherry-pick", hash};
+    }
+
     /** Reverts {@code hash} in {@code root}; for a merge commit the mainline parent is asked for first. */
     void revertIn(@Nullable Path root, String hash) {
+        withParents(
+                root,
+                hash,
+                (r, parents) -> withMainline(
+                        parents,
+                        mainlineChooser,
+                        hash,
+                        "status.git.revertMergeCancelled",
+                        mainline -> gitMutateIn(
+                                r,
+                                tr("status.git.reverted", com.editora.git.GitFormat.shortHash(hash)),
+                                revertArgs(hash, mainline))));
+    }
+
+    /** Cherry-picks {@code hash} into {@code root}'s branch; for a merge commit the mainline is asked for first. */
+    void cherryPickIn(@Nullable Path root, String hash) {
+        withParents(
+                root,
+                hash,
+                (r, parents) -> withMainline(
+                        parents,
+                        cherryPickMainlineChooser,
+                        hash,
+                        "status.git.cherryPickMergeCancelled",
+                        mainline -> gitMutateIn(
+                                r,
+                                tr("status.git.cherryPicked", com.editora.git.GitFormat.shortHash(hash)),
+                                cherryPickArgs(hash, mainline))));
+    }
+
+    /** Hands {@code hash}'s parents to {@code then}: from its loaded row, else asked of git (any commit can be named). */
+    private void withParents(@Nullable Path root, String hash, java.util.function.BiConsumer<Path, List<String>> then) {
         if (root == null) {
             host.git().reportIfNoRepo();
             return;
         }
-        String done = tr("status.git.reverted", com.editora.git.GitFormat.shortHash(hash));
         com.editora.git.GitLog.Entry row = host.gitLogPanel().entry(hash);
         if (row != null) {
-            revertWithParents(root, hash, row.parents(), done);
+            then.accept(root, row.parents());
             return;
         }
-        // Not a loaded row (the command can name any commit): ask git for its parents.
         host.git()
                 .service()
                 .commitDetails(
-                        root,
-                        hash,
-                        details ->
-                                revertWithParents(root, hash, details == null ? List.of() : details.parents(), done));
+                        root, hash, details -> then.accept(root, details == null ? List.of() : details.parents()));
     }
 
-    private void revertWithParents(Path root, String hash, List<String> parents, String done) {
+    /** Runs {@code run} with mainline 0 for an ordinary commit, else with the parent {@code chooser} answers. */
+    private void withMainline(
+            List<String> parents,
+            MainlineChooser chooser,
+            String hash,
+            String cancelledKey,
+            java.util.function.IntConsumer run) {
         if (parents.size() <= 1) {
-            gitMutateIn(root, done, revertArgs(hash, 0));
+            run.accept(0);
             return;
         }
-        mainlineChooser.choose(hash, parents, chosen -> {
+        chooser.choose(hash, parents, chosen -> {
             if (chosen == null) {
-                host.setStatus(tr("status.git.revertMergeCancelled"));
+                host.setStatus(tr(cancelledKey));
             } else {
-                gitMutateIn(root, done, revertArgs(hash, chosen));
+                run.accept(chosen);
             }
         });
     }
 
-    /** The mainline picker: one row per parent, named by its short hash and, when loaded, its subject. */
-    private void chooseMainline(
+    private void chooseRevertMainline(
             String hash, List<String> parents, java.util.function.Consumer<@Nullable Integer> onChosen) {
+        chooseMainline(hash, parents, onChosen, false);
+    }
+
+    private void chooseCherryPickMainline(
+            String hash, List<String> parents, java.util.function.Consumer<@Nullable Integer> onChosen) {
+        chooseMainline(hash, parents, onChosen, true);
+    }
+
+    /**
+     * The mainline picker: one row per parent, named by its short hash and, when loaded, its subject; worded for a
+     * cherry-pick or a revert.
+     */
+    private void chooseMainline(
+            String hash,
+            List<String> parents,
+            java.util.function.Consumer<@Nullable Integer> onChosen,
+            boolean cherryPick) {
         List<Integer> numbers = java.util.stream.IntStream.rangeClosed(1, parents.size())
                 .boxed()
                 .toList();
+        String keys = cherryPick ? "dialog.cherryPickMerge." : "dialog.revertMerge.";
         QuickOpen<Integer> picker = new QuickOpen<>(
-                tr("dialog.revertMerge.title"),
-                tr("dialog.revertMerge.prompt", com.editora.git.GitFormat.shortHash(hash)),
+                tr(keys + "title"),
+                tr(keys + "prompt", com.editora.git.GitFormat.shortHash(hash)),
                 () -> numbers,
                 number -> mainlineLabel(number, parents.get(number - 1)),
-                number -> tr(number == 1 ? "dialog.revertMerge.first" : "dialog.revertMerge.other"),
+                number -> tr(keys + (number == 1 ? "first" : "other")),
                 onChosen::accept);
         picker.setOnCancelled(() -> onChosen.accept(null));
         picker.setOverlayHost(host.overlayHost());
@@ -1294,9 +1408,18 @@ final class GitWindowCoordinator {
 
     /** Checks out a tag (detached HEAD). {@code refs/tags/…} so a branch of the same name is not meant. */
     void checkoutTagIn(@Nullable Path root, String tag) {
-        if (validTag(tag)) {
-            gitMutateIn(root, tr("status.git.checkedOut", tag), "checkout", "refs/tags/" + tag);
+        if (!validTag(tag)) {
+            return;
         }
+        if (root == null) {
+            host.git().reportIfNoRepo();
+            return;
+        }
+        GitLeaveDetachedHead.thenMove(
+                host.git(),
+                root,
+                "refs/tags/" + tag,
+                () -> gitMutateIn(root, tr("status.git.checkedOut", tag), "checkout", "refs/tags/" + tag, "--"));
     }
 
     /** Deletes a local tag after confirmation; the tag on a remote is not touched. */

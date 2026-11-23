@@ -1341,14 +1341,24 @@ final class GitCoordinator {
             return;
         }
         Path root = repoRoot;
-        String[] args = {"checkout", name};
-        aroundWorkingTreeMutation(done -> service.runWorktreeMutation(root, running(args, done), args), r -> {
-            if (r.ok()) {
-                host.setStatus(tr("status.switchedBranch", name));
-            } else {
-                gitError(tr("status.git.switchFailed", name), r.message());
-            }
-        });
+        // The closing "--": a branch deleted elsewhere whose name is also a path would otherwise make git restore
+        // that path from the index, discarding its uncommitted edits, and call it a success.
+        String[] args = {"checkout", name, "--"};
+        GitLeaveDetachedHead.thenMove(
+                this,
+                root,
+                name,
+                () -> aroundWorkingTreeMutation(
+                        root,
+                        done -> service.runWorktreeMutation(root, running(args, done), args),
+                        r -> {
+                            if (r.ok()) {
+                                host.setStatus(tr("status.switchedBranch", name));
+                            } else {
+                                gitError(tr("status.git.switchFailed", name), r.message());
+                            }
+                        },
+                        null));
     }
 
     /**

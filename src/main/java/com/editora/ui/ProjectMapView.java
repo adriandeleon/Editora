@@ -1071,15 +1071,25 @@ final class ProjectMapView extends VBox {
         });
         card.show(current, select == null ? null : select.toAbsolutePath().normalize());
         readChanges(card);
-        FollowCode code = followCode;
-        if (code != null) {
-            code.reviewRefs(current, refs -> {
-                if (cards.changesCard() == card && current.equals(card.root())) {
-                    card.setRefs(refs);
-                }
-            });
-        }
+        readRefs(card);
         return card;
+    }
+
+    /**
+     * Asks Git which refs the card's Against offers (the branch, the default branch, the others). Again at every Git
+     * refresh while the card is open ({@link #activityGitRefreshed}): a checkout makes another branch the current one.
+     */
+    private void readRefs(ProjectMapChangesCard card) {
+        Path folder = card.root();
+        FollowCode code = followCode;
+        if (folder == null || code == null) {
+            return;
+        }
+        code.reviewRefs(folder, refs -> {
+            if (cards.changesCard() == card && folder.equals(card.root())) {
+                card.setRefs(refs);
+            }
+        });
     }
 
     private void readChanges(ProjectMapChangesCard card) {
@@ -2819,6 +2829,11 @@ final class ProjectMapView extends VBox {
         activity.setOverviewWanted(cards.overviewCard() != null);
         activity.setMetricsWanted(cards.metricsCard() != null);
         activity.headMaybeMoved();
+        ProjectMapChangesCard changes = cards.changesCard();
+        if (changes != null) {
+            // Against lists this branch and the others: a checkout or a new branch changes them, on a clean tree too.
+            readRefs(changes);
+        }
     }
 
     void setGitStatus(Map<Path, GitFileStatus> status) {

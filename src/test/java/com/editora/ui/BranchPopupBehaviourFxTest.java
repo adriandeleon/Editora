@@ -541,4 +541,100 @@ class BranchPopupBehaviourFxTest {
             }
         });
     }
+
+    /** Re-shows {@code s}'s dropdown with {@code current} as the current branch and {@code collapsed} folded. */
+    private static void reshow(Shown s, String current, List<String> collapsed) {
+        s.popup().hide();
+        s.popup().setCollapsedSections(collapsed);
+        StackPane root = (StackPane) s.stage().getScene().getRoot();
+        s.popup()
+                .show(
+                        s.stage(),
+                        root.getChildren().get(0),
+                        current,
+                        List.of(new BranchInfo("main", "origin/main", 0, 0, false)),
+                        List.of("origin/main"),
+                        "",
+                        ACTIONS.stream()
+                                .map(id -> new BranchPopup.MenuAction(
+                                        id, id, () -> s.ran().add(id)))
+                                .toList(),
+                        name -> s.ran().add("local:" + name),
+                        name -> s.ran().add("remote:" + name));
+        root.applyCss();
+        root.layout();
+    }
+
+    /** Enter on a just-opened dropdown runs nothing, even when the current branch is not listed to start on. */
+    @Test
+    void enterOnAJustOpenedDropdownNeverRunsAnAction() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Shown s = show();
+            try {
+                javafx.scene.control.TextField search = FxTestSupport.field(s.popup(), "search");
+                for (List<String> folded : List.of(List.<String>of(), List.of("local"))) {
+                    // A detached HEAD: no branch row is the current one.
+                    reshow(s, "(HEAD detached at 1a2b3c4)", folded);
+                    Object selected = s.list().getSelectionModel().getSelectedItem();
+                    assertTrue(
+                            selected == null || kind(selected).equals("Header"), "folded=" + folded + ": " + selected);
+                    press(search, javafx.scene.input.KeyCode.ENTER);
+                    assertEquals(List.of(), s.ran(), "folded=" + folded + ": Enter ran nothing");
+                }
+                // On a branch, with Local folded: the current branch is hidden, so is every action.
+                reshow(s, "main", List.of("local"));
+                Object selected = s.list().getSelectionModel().getSelectedItem();
+                assertTrue(selected == null || kind(selected).equals("Header"), String.valueOf(selected));
+                press(search, javafx.scene.input.KeyCode.ENTER);
+                assertEquals(List.of(), s.ran());
+            } finally {
+                s.popup().hide();
+                s.stage().close();
+            }
+        });
+    }
+
+    /** A grayed-out secondary action says why in its text and does nothing when run. */
+    @Test
+    void aDisabledSecondaryActionDoesNothing() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Shown s = show();
+            try {
+                BranchPopup.RowAction delete =
+                        new BranchPopup.RowAction("Delete", true, () -> s.ran().add("delete"), null, "checked out");
+                s.popup().runRowAction(delete);
+                assertEquals(List.of(), s.ran());
+                assertTrue(s.popup().isShown(), "the dropdown stays up");
+            } finally {
+                s.popup().hide();
+                s.stage().close();
+            }
+        });
+    }
+
+    /** Outside a repository the dropdown offers both ways to get one. */
+    @Test
+    void outsideARepositoryTheDropdownOffersCloneAndInit() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Shown s = show();
+            try {
+                s.popup().hide();
+                StackPane root = (StackPane) s.stage().getScene().getRoot();
+                s.popup()
+                        .showNoVcs(
+                                s.stage(),
+                                root.getChildren().get(0),
+                                () -> s.ran().add("clone"),
+                                () -> s.ran().add("init"));
+                List<String> labels = s.list().getItems().stream()
+                        .map(BranchPopupBehaviourFxTest::name)
+                        .toList();
+                assertTrue(labels.contains(tr("branchpopup.clone")), labels.toString());
+                assertTrue(labels.contains(tr("branchpopup.init")), labels.toString());
+            } finally {
+                s.popup().hide();
+                s.stage().close();
+            }
+        });
+    }
 }
