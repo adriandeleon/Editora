@@ -297,15 +297,28 @@ class DebugPanelThreadsFxTest {
             panel[0].threadsChanged();
         });
         javafx.animation.PauseTransition refresh = FxTestSupport.field(panel[0], "threadsRefresh");
-        long until = System.nanoTime() + 2_000_000_000L;
-        while (System.nanoTime() < until && calls.isEmpty()) {
-            FxTestSupport.runOnFx(() -> panel[0].threadsChanged()); // an event every few ms
-            Thread.sleep(10);
+        // A thread event every 10 ms, for as long as it takes.
+        javafx.animation.Timeline churn = new javafx.animation.Timeline(
+                new javafx.animation.KeyFrame(javafx.util.Duration.millis(10), e -> panel[0].threadsChanged()));
+        churn.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        FxTestSupport.runOnFx(churn::play);
+        try {
+            com.editora.testkit.Await.until(
+                    () -> {
+                        try {
+                            return FxTestSupport.callOnFx(() -> !calls.isEmpty());
+                        } catch (Exception e) {
+                            throw new IllegalStateException(e);
+                        }
+                    },
+                    "listed again while the events kept coming",
+                    java.time.Duration.ofSeconds(5));
+        } finally {
+            FxTestSupport.runOnFx(() -> {
+                churn.stop();
+                refresh.stop();
+            });
         }
-        FxTestSupport.runOnFx(() -> {
-            assertFalse(calls.isEmpty(), "listed again while the events kept coming");
-            refresh.stop();
-        });
     }
 
     /** A stop lists the top of a deep stack and a row that lists the frames below when chosen (perf review D3). */

@@ -28,7 +28,6 @@ import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
 import com.editora.dap.DapServerRegistry;
 import com.editora.dap.JsLaunch;
-import com.editora.dap.LogpointTokens;
 import com.editora.dap.RustLaunch;
 import com.editora.dap.TypeRenderer;
 import com.editora.editor.EditorBuffer;
@@ -2441,7 +2440,7 @@ final class DebugCoordinator {
                 boolean recording = recordingHit(reason, frames);
                 // A logpoint with $FUNCTION, $CALLSTACK…, or any logpoint of an adapter that does not log them
                 // (netcoredbg): Editora writes its message, and the program goes on.
-                String logMessage = recording ? null : logpointToWrite(reason, frames);
+                String logMessage = recording ? null : logpoints().toWrite(reason, frames);
                 armTriggered(reason, frames); // a breakpoint others wait for: they stop from now on
                 // Thread Dump paused the running program: the pause's stop is the dump's, taken quietly. Another stop
                 // the user sees came first: the dump is of it.
@@ -2452,7 +2451,7 @@ final class DebugCoordinator {
                 }
                 s().quietStop = recording || logMessage != null || dumpStop ? s().stopSerial : -1;
                 if (logMessage != null) {
-                    logAndContinue(threadId, logMessage, frames); // the window never shows it Suspended
+                    logpoints().logAndContinue(threadId, logMessage, frames); // the window never shows it Suspended
                     return;
                 }
                 if (dumpStop) {
@@ -3185,92 +3184,6 @@ final class DebugCoordinator {
         picker.show(host.window());
     }
 
-    // --- logpoints with tokens: Editora writes the message, then goes on ------------------------------
-
-    /**
-     * The message of the logpoint the program stopped on ({@code reason}) at the top frame's line, when Editora writes
-     * it: it uses a token ({@link LogpointTokens}), so the adapter was sent it as a plain breakpoint, or the adapter does
-     * not log logpoints at all (netcoredbg ignores {@code logMessage} and stops, after checking the condition). Null for
-     * any other stop.
-     */
-    private @Nullable String logpointToWrite(String reason, List<DapModels.StackFrameInfo> frames) {
-        if (!"breakpoint".equals(reason) || frames.isEmpty()) {
-            return null;
-        }
-        DapModels.StackFrameInfo top = frames.getFirst();
-        Path file = top.file();
-        if (file == null) {
-            return null;
-        }
-        boolean adapterLogs = dap().supportsLogPoints();
-        DapModels.LineBreakpoint lb = sentBreakpointAt(
-                file,
-                top.line(),
-                b -> b.column() <= 0
-                        && (LogpointTokens.uses(b.logMessage())
-                                || (!adapterLogs || !b.filters().none())
-                                        && b.logMessage() != null
-                                        && !b.logMessage().isBlank()));
-        return lb == null ? null : lb.logMessage();
-    }
-
-    /**
-     * Writes a token logpoint's message to the console as the adapter writes a logpoint's: its {@code {expression}}
-     * parts evaluated in the top frame one after another, the tokens from the stack and the thread. Then the program
-     * goes on, unless the user acted first (a step, Stop) or it stopped again meanwhile.
-     */
-    private void logAndContinue(int threadId, String message, List<DapModels.StackFrameInfo> frames) {
-        // The stopped session's own: another may be in front by the time the answers come.
-        DebugSession session = s();
-        DapManager dap = session.dap;
-        int serial = session.stopSerial;
-        DebugPanel panel = panel();
-        DapModels.StackFrameInfo top = frames.getFirst();
-        List<String> expressions = LogpointTokens.expressions(message);
-        Map<String, String> values = new LinkedHashMap<>();
-        Runnable write = () -> dap.threadName(threadId, name -> {
-            if (serial != session.stopSerial || dap.state() != DapManager.State.SUSPENDED) {
-                return;
-            }
-            String threadName = name.isEmpty() ? String.valueOf(threadId) : name;
-            LogpointTokens.Stop stop = new LogpointTokens.Stop(
-                    DebugPanelText.frameName(top.name()),
-                    frames.size() > 1 ? DebugPanelText.frameName(frames.get(1).name()) : "",
-                    frames.stream().map(DebugPanelText::frameText).toList(),
-                    threadId,
-                    threadName);
-            panel.appendOutput(LogpointTokens.expand(message, e -> values.getOrDefault(e, ""), stop) + "\n", "console");
-            dap.resume();
-        });
-        evaluateEach(session, top.id(), serial, expressions, 0, values, write);
-    }
-
-    /**
-     * Evaluates {@code expressions} from {@code index} on in frame {@code frameId} of {@code session} into
-     * {@code values}, then runs {@code then}; stops when the program moved on meanwhile.
-     */
-    private void evaluateEach(
-            DebugSession session,
-            int frameId,
-            int serial,
-            List<String> expressions,
-            int index,
-            Map<String, String> values,
-            Runnable then) {
-        if (index >= expressions.size()) {
-            then.run();
-            return;
-        }
-        if (serial != session.stopSerial) {
-            return;
-        }
-        String expression = expressions.get(index);
-        session.dap.evaluateFull(expression, frameId, "watch", r -> {
-            values.put(expression, r == null ? "" : DebugValues.display(r.result()));
-            evaluateEach(session, frameId, serial, expressions, index + 1, values, then);
-        });
-    }
-
     // --- step timing: how long the program ran to this stop (Visual Studio's PerfTips) ----------------
 
     /**
@@ -3420,7 +3333,7 @@ final class DebugCoordinator {
      * The first breakpoint sent for 0-based line {@code line} of {@code file} (open files' and closed ones') that
      * {@code which} accepts, or null.
      */
-    private DapModels.@Nullable LineBreakpoint sentBreakpointAt(
+    DapModels.@Nullable LineBreakpoint sentBreakpointAt(
             Path file, int line, java.util.function.Predicate<DapModels.LineBreakpoint> which) {
         String wanted = key(file);
         List<DapModels.FileBreakpoints> sent =
@@ -8328,6 +8241,18 @@ final class DebugCoordinator {
     }
 
     private @Nullable ExceptionBreakpointCommands exceptionCommands;
+
+    private @Nullable TokenLogpoints tokenLogpoints;
+
+    /** Logpoints whose message Editora writes. */
+    TokenLogpoints logpoints() {
+        TokenLogpoints t = tokenLogpoints;
+        if (t == null) {
+            t = new TokenLogpoints(this);
+            tokenLogpoints = t;
+        }
+        return t;
+    }
 
     /** Exception breakpoints: their stop check, picker rows and form. */
     ExceptionBreakpointCommands exceptions() {
