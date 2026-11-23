@@ -45,7 +45,7 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
     /** An edit since the debounced code-lines scan last ran (FX thread only). */
     private boolean codeLinesOwed;
 
-    private final Canvas canvas = new Canvas(1, 1);
+    private Canvas canvas = new Canvas(1, 1);
     private @Nullable SpellChecker checker;
     private SpellMode mode = SpellMode.PROSE;
     /** Whether {@link #mode} is Markdown — kept as a field because the fence-skip tests read it. */
@@ -347,7 +347,7 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
             recomputeCodeLines(); // pick up the current text (it may have changed while inactive)
             scheduleRedraw();
         } else {
-            releaseCanvas(); // off → drop the texture, not just clear it
+            dropCanvas(); // off → drop the texture, not just clear it
         }
     }
 
@@ -422,7 +422,7 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
         if (on) {
             scheduleRedraw();
         } else {
-            releaseCanvas();
+            dropCanvas();
         }
     }
 
@@ -447,13 +447,19 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
         canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
     }
 
-    /** Shrinks the canvas to 1x1, releasing its RTTexture (nothing visible to draw / overlay off). */
+    /**
+     * Shrinks the canvas to 1x1 while nothing is visible to draw. Cheap, so it can flap with scrolling; the texture
+     * itself goes with {@link #dropCanvas}.
+     */
     private void releaseCanvas() {
         hasContent = false;
-        if (canvas.getWidth() != 1 || canvas.getHeight() != 1) {
-            canvas.setWidth(1);
-            canvas.setHeight(1);
-        }
+        CanvasGuards.shrink(canvas);
+    }
+
+    /** Drops the canvas and its viewport-sized texture: the overlay is off or its tab is in the background. */
+    private void dropCanvas() {
+        hasContent = false;
+        canvas = CanvasGuards.released(canvas, getChildren());
     }
 
     private void redraw() {

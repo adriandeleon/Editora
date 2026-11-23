@@ -41,7 +41,7 @@ public final class NoteHighlightOverlay extends Region implements SecondaryPane.
     private static final double GLYPH_SIZE = 8.75;
 
     private final CodeArea area;
-    private final Canvas canvas = new Canvas(1, 1);
+    private Canvas canvas = new Canvas(1, 1);
     private Supplier<List<int[]>> spans = List::of;
     /**
      * Whether {@link #spans} has anything to paint, asked before a redraw is even queued. The overlay is
@@ -136,7 +136,7 @@ public final class NoteHighlightOverlay extends Region implements SecondaryPane.
         if (active) {
             scheduleRedraw();
         } else {
-            releaseCanvas(); // off → drop the texture, not just clear it
+            dropCanvas(); // off → drop the texture, not just clear it
         }
     }
 
@@ -176,7 +176,7 @@ public final class NoteHighlightOverlay extends Region implements SecondaryPane.
         if (on) {
             scheduleRedraw();
         } else {
-            releaseCanvas();
+            dropCanvas();
         }
     }
 
@@ -211,13 +211,19 @@ public final class NoteHighlightOverlay extends Region implements SecondaryPane.
         canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
     }
 
-    /** Shrinks the canvas to 1x1, releasing its RTTexture (no visible note spans / overlay off). */
+    /**
+     * Shrinks the canvas to 1x1 while nothing is visible to draw. Cheap, so it can flap with scrolling; the texture
+     * itself goes with {@link #dropCanvas}.
+     */
     private void releaseCanvas() {
         hasContent = false;
-        if (canvas.getWidth() != 1 || canvas.getHeight() != 1) {
-            canvas.setWidth(1);
-            canvas.setHeight(1);
-        }
+        CanvasGuards.shrink(canvas);
+    }
+
+    /** Drops the canvas and its viewport-sized texture: the overlay is off or its tab is in the background. */
+    private void dropCanvas() {
+        hasContent = false;
+        canvas = CanvasGuards.released(canvas, getChildren());
     }
 
     private void redraw() {

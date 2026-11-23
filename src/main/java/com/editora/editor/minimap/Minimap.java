@@ -59,7 +59,7 @@ public final class Minimap extends Region {
     private Color viewportColor = Color.gray(0.5, 0.14);
 
     private final CodeArea area;
-    private final Canvas canvas = new Canvas(WIDTH, 1);
+    private Canvas canvas = new Canvas(WIDTH, 1);
     /**
      * Where a content render draws its runs before they are cached as {@link #contentImage}. It is never
      * added to the scene graph, so {@code snapshot()} processes this canvas alone.
@@ -71,7 +71,7 @@ public final class Minimap extends Region {
      * node it left with the wrong value kept it until something restyled it again: the selected tab's title
      * stayed black instead of the theme's colour for a modified file.
      */
-    private final Canvas offscreen = new Canvas(WIDTH, 1);
+    private Canvas offscreen = new Canvas(WIDTH, 1);
 
     private @Nullable WritableImage contentImage;
     /** Canvas logical dims at the last successful snapshot, so the {@link #contentImage} buffer can be
@@ -207,8 +207,7 @@ public final class Minimap extends Region {
         area.estimatedScrollYProperty().addListener((o, a, b) -> afterLayout.request());
         pacedRender.setOnFinished(e -> renderContent());
 
-        canvas.addEventHandler(MouseEvent.MOUSE_PRESSED, this::beginDrag);
-        canvas.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::continueDrag);
+        wire(canvas);
         // On the Region rather than the canvas, so the wheel works over the whole column even in the
         // moments the canvas is smaller than it (see CanvasGuards / layoutChildren).
         addEventHandler(ScrollEvent.SCROLL, this::wheelScroll);
@@ -450,9 +449,19 @@ public final class Minimap extends Region {
         } else {
             retain();
             contentImage = null;
-            CanvasGuards.release(canvas);
-            CanvasGuards.release(offscreen);
+            Canvas was = canvas;
+            canvas = CanvasGuards.released(canvas, getChildren());
+            if (canvas != was) {
+                wire(canvas);
+            }
+            offscreen = CanvasGuards.released(offscreen);
         }
+    }
+
+    /** The drag handlers, on the canvas (each one {@link CanvasGuards#released} puts in place gets them too). */
+    private void wire(Canvas c) {
+        c.addEventHandler(MouseEvent.MOUSE_PRESSED, this::beginDrag);
+        c.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::continueDrag);
     }
 
     /** Copies the cached content pixels into {@link MinimapRetention} before the image is dropped. */

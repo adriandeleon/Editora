@@ -41,7 +41,7 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
     static java.util.@Nullable List<double[]> guidesForTest;
 
     private final CodeArea area;
-    private final Canvas canvas = new Canvas(1, 1);
+    private Canvas canvas = new Canvas(1, 1);
     private final ColumnAdvance advance = new ColumnAdvance();
     /** The indent unit in columns ({@code tabSize} for a tab) and the tab size, read at each redraw. */
     private final IntSupplier unitColumns;
@@ -149,7 +149,7 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
             requestLayout();
             scheduleRedraw();
         } else {
-            CanvasGuards.release(canvas);
+            canvas = CanvasGuards.released(canvas, getChildren());
             painted = 0;
         }
     }
@@ -178,7 +178,7 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
             requestLayout();
             scheduleRedraw();
         } else {
-            CanvasGuards.release(canvas);
+            canvas = CanvasGuards.released(canvas, getChildren());
         }
     }
 
@@ -201,7 +201,7 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
     /** Repaints when anything the guides depend on changed; returns whether it painted a new frame. */
     private boolean redraw() {
         if (!drawable() || !CanvasGuards.paintable(getWidth(), getHeight())) {
-            CanvasGuards.release(canvas);
+            CanvasGuards.shrink(canvas);
             painted = 0;
             return false;
         }

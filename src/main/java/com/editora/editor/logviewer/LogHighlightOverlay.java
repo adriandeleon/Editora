@@ -53,7 +53,7 @@ public final class LogHighlightOverlay extends Region implements SecondaryPane.F
 
     private final CodeArea area;
     private final LevelSource levels;
-    private final Canvas canvas = new Canvas(1, 1);
+    private Canvas canvas = new Canvas(1, 1);
     private boolean active;
     private boolean redrawPending;
     /** Runs the repaint after the layout pass, and looks again after it (see {@link AfterLayoutPaint}). */
@@ -138,7 +138,7 @@ public final class LogHighlightOverlay extends Region implements SecondaryPane.F
             requestLayout();
             scheduleRedraw();
         } else {
-            CanvasGuards.release(canvas); // drop the full-viewport texture while hidden
+            canvas = CanvasGuards.released(canvas, getChildren()); // drop the full-viewport texture while hidden
         }
     }
 
@@ -160,7 +160,7 @@ public final class LogHighlightOverlay extends Region implements SecondaryPane.F
             requestLayout();
             scheduleRedraw();
         } else {
-            CanvasGuards.release(canvas);
+            canvas = CanvasGuards.released(canvas, getChildren());
         }
     }
 
@@ -209,7 +209,7 @@ public final class LogHighlightOverlay extends Region implements SecondaryPane.F
 
     private void redraw() {
         if (!active || !rendering || !CanvasGuards.paintable(getWidth(), getHeight())) {
-            CanvasGuards.release(canvas);
+            CanvasGuards.shrink(canvas);
             return;
         }
         CanvasGuards.fit(this, canvas); // grown here as well: activation can arrive without a layout pass

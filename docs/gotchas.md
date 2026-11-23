@@ -56,8 +56,9 @@ files open.
 **Why/fix:** JavaFX's Prism texture pool has a fixed ceiling; exhausting it makes the render thread
 NPE on a null texture. Don't let GPU-backed resources grow with the number of open files: a
 background tab drops its minimap snapshot via `EditorBuffer.setRenderingActive(false)`; image caches
-(`PreviewImageLoader`, `MermaidImages`) are LRU-bounded; a **Canvas overlay** releases its canvas to
-1×1 when inactive. When you add any per-buffer `Canvas`/`Image`, make sure it's released or bounded.
+(`PreviewImageLoader`, `MermaidImages`) are LRU-bounded; a **Canvas overlay** drops its canvas for a fresh
+1×1 one when inactive (`CanvasGuards.released`: shrinking alone keeps the texture, as `NGCanvas` never shrinks
+the one it rendered, and a hidden canvas is never rendered). When you add any per-buffer `Canvas`/`Image`, make sure it's released or bounded.
 See [performance.md](performance.md#6-bound-retained-gpu-textures).
 
 ## Signed modular jar → `jlink` rejects it
