@@ -214,6 +214,7 @@ class MenuBarModelTest {
                 List.of(
                         "palette.show",
                         "help.documentation",
+                        "help.onlineDocumentation",
                         "help.keyboardShortcuts",
                         "view.welcome",
                         "help.checkForUpdates",

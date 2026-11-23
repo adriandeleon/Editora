@@ -92,6 +92,9 @@
         <jpackage.plugin.version>1.8.0</jpackage.plugin.version>
         <maven-javadoc-plugin.version>3.12.0</maven-javadoc-plugin.version>
         <jpackage.type>APP_IMAGE</jpackage.type>
+        <!-- Where the rendered user guide is picked up from (see the docs-site resource below). Outside
+             target/ because the dist profile runs clean. -->
+        <docs.site.dir>${project.basedir}/.docs-site</docs.site.dir>
         <!-- App icon for the native installer; overridden per OS (.icns/.ico/.png). -->
         <jpackage.icon>${project.basedir}/branding/editora.png</jpackage.icon>
         <!-- Transitive automatic-module deps patched by moditect for jlink/jpackage. -->
@@ -514,6 +517,15 @@
                     <include>NOTICE</include>
                 </includes>
                 <targetPath>META-INF/editora</targetPath>
+            </resource>
+            <!-- The user guide as HTML, for Help > Documentation to serve from 127.0.0.1 (com.editora.web.AppDocs).
+                 user-docs/ is its source; editora-website's scripts/build-app-docs.mjs renders it into
+                 ${docs.site.dir}, which release CI does before packaging. A build without that folder (most
+                 local builds) simply has no copy, and the docs links go to the website. -->
+            <resource>
+                <directory>${docs.site.dir}</directory>
+                <filtering>false</filtering>
+                <targetPath>com/editora/docs-site</targetPath>
             </resource>
         </resources>
         <plugins>

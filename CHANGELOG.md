@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The documentation comes with Editora.** Help ▸ Documentation now opens the user guide that ships inside
+  Editora, in your browser: the same pages as the website, with their pictures, search and every command's page,
+  for the version you are running, and without a network connection. Help for a command in the palette, Settings'
+  *Help for* links and Pauta Conformance open it too. Links to pages it does not hold, such as News, go to the
+  website, and the new Help ▸ Online Documentation opens the website's copy.
+
 - **Debug Test at Caret for Dart.** In a Dart `_test.dart` file, Debug Test at Caret debugs the `test`,
   `testWidgets` or `group` the caret is in, alone, on Dart's (or Flutter's) test runner; outside them, every test of
   the file.

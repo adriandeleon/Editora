@@ -103,9 +103,65 @@ jobs:
             java scripts/release/CheckRelease.java full "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$GITHUB_REF_NAME" --mode report
           fi
 
+  # The user guide as HTML, rendered once and carried by every installer (Help > Documentation serves it from
+  # 127.0.0.1: com.editora.web.AppDocs). Its source is this repo's user-docs/; editora-website's Astro build is
+  # the only renderer, so the copy is the website's pages exactly (scripts/build-app-docs.mjs there). The build
+  # legs put it where the pom's docs.site.dir looks (.docs-site/), and the -Pdist jar picks it up.
+  docs-site:
+    name: Render the user guide
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: editora
+
+      - name: Check out the website (the renderer)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: adriandeleon/editora-website
+          ref: master
+          persist-credentials: false
+          path: website
+
+      # The generators are JDK source files; no Maven, so the cache is only read (see the preflight).
+      - name: Set up JDK 25
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: liberica
+          java-version: '25'
+          cache: maven
+          cache-read-only: true
+          cache-dependency-path: editora/pom.xml
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Render user-docs/ with the website's build
+        shell: bash
+        run: |
+          cd website
+          npm ci --no-audit --no-fund
+          node scripts/build-app-docs.mjs --editora "$GITHUB_WORKSPACE/editora" --out "$GITHUB_WORKSPACE/docs-site"
+
+      - name: Upload the rendered guide
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docs-site
+          path: docs-site
+          if-no-files-found: error
+          retention-days: 5
+
   build:
     name: Build ${{ matrix.target }}
-    needs: preflight
+    needs: [preflight, docs-site]
     runs-on: ${{ matrix.os }}
     # A leg normally finishes in minutes; the cap only stops a hung AOT trainer or installer wrap from
     # holding a runner for the 6-hour default.
@@ -204,6 +260,12 @@ jobs:
             echo "EDITORA_MAC_KEYCHAIN=$kc"
           } >> "$GITHUB_ENV"
           echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+      - name: Download the rendered user guide
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: docs-site
+          path: .docs-site
 
       - name: Build native installer (-Pdist)
         shell: bash

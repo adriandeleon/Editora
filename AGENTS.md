@@ -86,8 +86,10 @@ worktree so branch switches and commits cannot interfere.
   a debug adapter ([testing](docs/testing.md)).
 - Update `CHANGELOG.md`, `TODO.md`, and contributor docs when the change affects them. `README.md` is a
   short landing page that defers to the website: touch it only when the highlights, install, build,
-  command-line or configuration facts change. User-facing feature documentation goes to the
-  separate website repository.
+  command-line or configuration facts change. The user guide lives in [`user-docs/`](user-docs/README.md):
+  a change that affects what a user sees updates its page there, in the same pull request. The website
+  copies it (`SyncDocs`) and release builds ship it as HTML for Help ▸ Documentation; feature pages, news
+  and the archived docs stay in the website repository.
 - Do not commit generated build output, editor state, credentials, or unrelated user changes.
 
 ## Pull requests — do not wait for CI

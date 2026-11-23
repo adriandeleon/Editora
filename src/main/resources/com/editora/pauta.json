@@ -1,6 +1,14 @@
 {
   "exceptions": [
     {
+      "rule": "DOCS-02",
+      "level": "MUST",
+      "url": "https://pauta-project.dev/6.2.0/documentation/#docs-02",
+      "kind": "pending",
+      "reason": "The user guide is written in Editora's own repository, so Editora can bring it along, and the website copies it from there.",
+      "link": "https://github.com/adriandeleon/Editora/issues/1726"
+    },
+    {
       "rule": "ACC-07",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.2.0/accessibility/#acc-07",

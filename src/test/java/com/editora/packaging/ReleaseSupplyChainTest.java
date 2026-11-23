@@ -167,8 +167,10 @@ class ReleaseSupplyChainTest {
                         .find(),
                 "the preflight no longer refuses a commit without a green Full tests run (the Windows and macOS"
                         + " suites run nowhere else before a release)");
-        for (String job : List.of("build", "native-experimental")) {
-            assertTrue(jobs.get(job).contains("needs: preflight"), job + " must wait for the preflight");
+        for (String job : List.of("build", "native-experimental", "docs-site")) {
+            assertTrue(
+                    jobs.get(job).contains("needs: preflight") || jobs.get(job).contains("needs: [preflight,"),
+                    job + " must wait for the preflight");
         }
         String publish = jobs.get("release");
         int check = publish.indexOf("CheckRelease.java assets");

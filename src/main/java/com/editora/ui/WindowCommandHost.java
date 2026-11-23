@@ -595,6 +595,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public void openOnlineDocumentation() {
+        mc.openOnlineDocumentation();
+    }
+
+    @Override
     public void onSplitVertical() {
         mc.onSplitVertical();
     }
