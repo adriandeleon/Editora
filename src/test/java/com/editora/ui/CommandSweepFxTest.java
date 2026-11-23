@@ -926,7 +926,9 @@ class CommandSweepFxTest {
             if (command.matches("\\S*(docker|podman)(\\.exe)? (ps|inspect)\\b.*")) {
                 return null;
             }
-            String program = command.strip().split("\\s+", 2)[0];
+            // User Git commands start under setsid (no controlling terminal to prompt on): judge the git behind it.
+            String run = command.strip().replaceFirst("^\\S*/setsid\\s+", "");
+            String program = run.split("\\s+", 2)[0];
             String name = program.substring(Math.max(program.lastIndexOf('/'), program.lastIndexOf('\\')) + 1);
             if (!name.equals("git") && !name.equals("git.exe")) {
                 return "started a program";

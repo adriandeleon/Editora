@@ -1016,7 +1016,7 @@ final class GitWindowCoordinator {
         for (com.editora.git.GitLog.Entry entry : found.entries()) {
             hashes.add(entry.hash());
         }
-        return history.keep(hashes);
+        return history.keep(hashes, found.truncated());
     }
 
     /**

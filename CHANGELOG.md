@@ -226,6 +226,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Git and GitHub, second review.** A second review of Git and GitHub support found about 85 problems, now fixed:
+  - *Safety.* The Project Map's Changes card could run a diff program a repository's own config names; it no
+    longer can. Force with Lease adds `--force-if-includes` and names the one branch it replaces, so a background
+    fetch can't let it overwrite a teammate's commits, and other branches are never forced. Switching to a branch
+    that was deleted elsewhere no longer restores a folder of the same name from the index. Discard on a
+    `git add -N` file no longer empties it, and Discard or Revert now also reverts a file's unsaved edits (after
+    saying so). Leaving a detached HEAD with commits of its own asks first from every checkout, not only the log's.
+    Undo Last Commit refuses if HEAD moved while it asked.
+  - *Branches and pushes.* A new branch from `origin/main` no longer tracks `origin/main`, and a branch whose
+    upstream has another name is pushed to its own name. Merge and Rebase Onto carry uncommitted changes across
+    (`--autostash`). Cherry-picking a merge commit asks which parent, as Revert does. Branches checked out in another
+    worktree are not offered for deletion. Worktrees of a repository on a remote host work. The no-repository
+    dropdown offers Initialize Repository.
+  - *Refreshing.* Commits, staging and checkouts done in a terminal, and renames or deletes in the Project tree,
+    now refresh the Commit window. A pre-commit hook's rewrites reload into the open files. An open Git Log
+    reloads only when a branch or HEAD moved, not after every stage.
+  - *Commit window.* Amend follows a moved HEAD or switches off instead of amending another commit with the old
+    message, and a typed message stays with its repository. Commit saves only the staged files' buffers.
+    Ctrl+Enter says why it can't commit. Staging a hunk checks the hunk's lines are still there.
+  - *Prompts.* Clone, fetch, pull and push never wait for a passphrase or host-key answer in the terminal
+    Editora was started from; they fail at once with ssh's message.
+  - *Output.* Patches, diffs and the AI commit prompt ignore `color.diff`, `diff.noprefix` and
+    `diff.mnemonicPrefix`. "All branches" in the Git Log no longer lists stash and notes commits, and a tab in an
+    author's name no longer garbles a row. A searched file history cut at 5,000 commits says so.
+  - *Links.* Permalinks and the GitHub window understand ssh host aliases (`git@github-work:…`) and
+    `ssh.github.com:443`. Bitbucket Server and Data Center get links of their own form, and GitHub links to
+    Markdown files land on the lines.
+  - *GitHub.* The review form starts on Comment, not Approve, and a review from the review tab is pinned to the
+    commit you looked at. PR and review bodies go to `gh` on standard input. A failed checks lookup is retried
+    instead of read as "no pull request". A long CI log download no longer holds up the lists. Cancel Run asks
+    first. A run awaiting approval is no longer shown as failed. An expired token on one of several hosts, or a
+    SAML refusal, is explained. The filter can search GitHub when no loaded row matches.
+  - Smaller fixes in blame, relative dates, the merge viewer, patch tabs, Load More errors and the remotes
+    manager.
+
 - **Old error underlines came back after some edits.** After signature help, Format, code actions and other requests
   that send the text first, the typing pause could put the pre-edit squiggles back on lines the edit had moved.
 - **The Threads view stopped updating** while a program kept starting and ending threads.
