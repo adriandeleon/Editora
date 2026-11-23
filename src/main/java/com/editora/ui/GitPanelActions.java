@@ -142,4 +142,9 @@ final class GitPanelActions implements GitPanel.Actions {
     public void abortOperation() {
         git.abortOperation();
     }
+
+    @Override
+    public void status(String text) {
+        git.host().setStatus(text);
+    }
 }

@@ -125,6 +125,18 @@ final class GitOpsHost implements GitCoordinator.WindowOps {
     }
 
     @Override
+    public void revertBuffersFromDisk(List<EditorBuffer> buffers) {
+        for (EditorBuffer buffer : buffers) {
+            if (buffer.isDisposed() || buffer.getPath() == null) {
+                continue;
+            }
+            // REASON_REVERT: the unsaved text the discard replaces stays in Local History, and the edit is undoable.
+            mc.fileWorkflows.reloadFromDisk(
+                    mc.tabFor(buffer), buffer, com.editora.config.HistoryRevision.REASON_REVERT, applied -> {});
+        }
+    }
+
+    @Override
     public void captureBeforeDelete(List<Path> files, java.util.function.Consumer<Boolean> completion) {
         mc.historyCoordinator.captureAllBeforeDelete(files, completion);
     }

@@ -182,6 +182,21 @@ public enum GitPathScope {
         return null;
     }
 
+    /**
+     * Hands {@code then} the scope of {@code path} on the FX thread once its nearest repository is known: at once
+     * when it has been looked at, else after a look off the FX thread. An action must not run on {@link #of}'s
+     * answer for a path nothing has looked at yet: with no {@code .git} known, a file of a nested repository is
+     * taken for one of the active repository, and staged or reverted there.
+     */
+    static void whenKnown(
+            @Nullable Path path, @Nullable Path activeRoot, java.util.function.Consumer<GitPathScope> then) {
+        if (path == null || !Vfs.isLocal(path)) {
+            then.accept(of(path, activeRoot));
+            return;
+        }
+        NEAREST.whenKnown(path.toAbsolutePath().normalize(), nearest -> then.accept(of(path, activeRoot)));
+    }
+
     static GitPathScope of(@Nullable Path path, @Nullable Path activeRoot) {
         Path nearest = nearestRepository(path);
         if (nearest == null) {

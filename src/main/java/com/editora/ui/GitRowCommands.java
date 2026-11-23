@@ -39,10 +39,13 @@ final class GitRowCommands {
         log(mc, "git.log.copyFilePath", p -> p.copySelectedFilePath());
     }
 
-    /** Registers {@code id}: {@code action} on the Commit window's selection, or {@code statusKey} when it did nothing. */
+    /**
+     * Registers {@code id}: {@code action} on the visible Commit window's selection, or {@code statusKey} when it did
+     * nothing. Never on a hidden selection: with the window closed, Discard would act on rows nobody can see.
+     */
     private static void commit(
             MainController mc, String id, String statusKey, java.util.function.Predicate<GitPanel> action) {
-        register(mc, id, statusKey, () -> action.test(mc.gitPanel()));
+        register(mc, id, statusKey, () -> mc.toolWindows.isOpen(mc.commitToolWindow) && action.test(mc.gitPanel()));
     }
 
     /** Registers {@code id}: {@code picker} of the active repository's stashes; Git must be on. */

@@ -84,13 +84,9 @@ class GitRollbackLocalHistoryFxTest {
                             new GitStatus.FileEntry("staged.txt", 'M', '.', null)));
             CountDownLatch done = watchStatus(fx, tr("status.git.discardedAll", 2, 0)::equals);
 
-            CountDownLatch confirmed = new CountDownLatch(1);
-            FxTestSupport.runOnFx(() -> {
-                // asked at once, in a nested event loop
-                javafx.application.Platform.runLater(() -> pressDialog(ButtonBar.ButtonData.OK_DONE, confirmed));
-                coordinator.gitDiscardAll();
-            });
-            async.await(confirmed, "discard-all confirmation");
+            // asked once the untracked rows have been looked at, off the FX thread
+            FxTestSupport.runOnFx(coordinator::gitDiscardAll);
+            confirmWhenAsked();
             async.await(done, "discard all");
 
             assertEquals("base one\n", Files.readString(unstaged));
