@@ -1602,6 +1602,21 @@ own `core/…`, `deno_web/…` files are sourceReference sources). Debug Test at
 drops (`withoutFilter`), because which runtime runs is known only once the planner has looked at the disk. Bun stays
 out: it speaks WebKit's inspector protocol. `DenoDebugProbeFxTest` drives the real Deno and js-debug.
 
+**Autos.** At a stop the Variables view gets an **Autos** node, last and closed, as Visual Studio's Autos window
+shows: the variables and member chains of the stop's line and the nearest line with code before it
+([`dap/AutoExpressions`](../../src/main/java/com/editora/dap/AutoExpressions.java), pure: strings and the line comment
+of the language skipped; keywords, a call's own name (its receiver stays), a declaration's type, Python keyword
+arguments and annotations left out; in their order on the lines; at most 10). `DebugPanel.loadAutos` reads the shown
+frame's two lines off the FX thread (PERF-01; a file over 4 MiB, code with no local file, a host's file: none) and
+adds the node; only once it is open does it evaluate each through the Watches' own path (`Actions.evaluateWatch`),
+keeping those the adapter answers — a type, a module or a name not in scope fails and is left out. Open, it stays open
+from stop to stop (remembered as a scope's expansion is). Closed and last on purpose: each expression is an evaluate
+request, and a first version that opened after Watches at every stop sent them to every adapter at every stop and moved
+the rows other features find by position. Rows are `Kind.AUTO`: values for copy, hover, View as and
+Set Value, but not watches (no edit, no Delete). The node is added only while its tree is still shown, and never on an
+earlier stop of Debug History. Adapter-agnostic: every debugger that evaluates watches gets it. `DebugAutosFxTest`
+covers the node, its order, a refused expression and the next stop's lines.
+
 **Return values after a step.** A step that leaves a function shows what it returned, first in the caller's Locals
 as `(return) name`, where the adapter can say it. debugpy does with `showReturnValue: true`, which Editora sends on every
 launch and attach (`PythonLaunch.request`, `LaunchConfig.pythonAttach`) and adds to a launch.json debugpy configuration
