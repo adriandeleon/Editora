@@ -177,4 +177,112 @@ class JvmSourceMapTest {
         assertEquals("Tools.run", JvmSourceMap.frameName("Tools", "run", "Hello.kt"), "@file:JvmName");
         assertEquals("UtilKt.go", JvmSourceMap.frameName("UtilKt", "go"), "no source name: as it is");
     }
+
+    @Test
+    void absolutePathsOnEveryPlatformAndFilesWithoutAName() {
+        assertTrue(JvmSourceMap.isAbsolute("/work/x.clj"));
+        assertTrue(JvmSourceMap.isAbsolute("\\\\server\\share\\x.clj"));
+        assertTrue(JvmSourceMap.isAbsolute("C:\\work\\x.clj"));
+        assertTrue(JvmSourceMap.isAbsolute("c:/work/x.clj"));
+        assertFalse(JvmSourceMap.isAbsolute("C:x.clj"));
+        assertFalse(JvmSourceMap.isAbsolute("1:/x"));
+        assertFalse(JvmSourceMap.isAbsolute("C:"));
+        assertFalse(JvmSourceMap.isAbsolute("a/b.clj"));
+        assertEquals("", JvmSourceMap.sourceName(null));
+        assertEquals("", JvmSourceMap.sourceName(Path.of("/")));
+        assertFalse(JvmSourceMap.compiledFrom(null, Path.of("/a/B.java")));
+        assertFalse(JvmSourceMap.compiledFrom(" ", Path.of("/a/B.java")));
+        assertFalse(JvmSourceMap.compiledFrom("B.java", null));
+        assertFalse(JvmSourceMap.compiledFrom("a/b/c/B.java", Path.of("/B.java")), "more folders than the file has");
+        assertFalse(JvmSourceMap.compiledFrom("/work/\u0000.clj", Path.of("/work/x.clj")));
+    }
+
+    @Test
+    void aPackageMatchNeedsAPackageAndAPath() {
+        Path file = Path.of("/src/Main.kt");
+        assertTrue(JvmSourceMap.compiledFrom("demo/Main.kt", file, " demo "));
+        assertFalse(JvmSourceMap.compiledFrom("demo/Main.kt", file, null));
+        assertFalse(JvmSourceMap.compiledFrom("demo/Main.kt", file, ""));
+        assertFalse(JvmSourceMap.compiledFrom(null, file, "demo"));
+        assertFalse(JvmSourceMap.compiledFrom(null, file, null, "scala"));
+        assertFalse(JvmSourceMap.compiledFrom("demo/Main.kt", null, null, "scala"));
+        assertTrue(
+                JvmSourceMap.compiledFrom("x\\Main.kt", file, null, "Scala"), "by name where packages need not follow");
+        assertTrue(JvmSourceMap.packagesFollowFolders(null));
+    }
+
+    @Test
+    void resolvingWithoutKnownFilesOrRootsFindsWhatIsThere() {
+        Set<Path> there = Set.of(Path.of("/r2/demo/Main.scala"), Path.of("/r3/Main.scala"), Path.of("/r2/a/B.java"));
+        java.util.List<Path> roots = new java.util.ArrayList<>();
+        roots.add(null);
+        roots.add(Path.of("/r1"));
+        roots.add(Path.of("/r2"));
+        assertEquals(Path.of("/r2/a/B.java"), JvmSourceMap.resolve("a/B.java", null, roots, there::contains));
+        assertNull(JvmSourceMap.resolve("a/C.java", List.of(), roots, there::contains));
+        assertNull(JvmSourceMap.resolve("a/B.java", null, null, there::contains));
+        assertNull(JvmSourceMap.resolve(" ", null, roots, there::contains));
+        assertEquals(
+                Path.of("/r2/demo/Main.scala"),
+                JvmSourceMap.resolve("demo/Main.scala", null, roots, there::contains, "scala"));
+        assertEquals(
+                Path.of("/r3/Main.scala"),
+                JvmSourceMap.resolve("demo/Main.scala", null, List.of(Path.of("/r3")), there::contains, "scala"),
+                "a flat Scala project");
+        assertNull(JvmSourceMap.resolve("demo/Nope.scala", null, roots, there::contains, "scala"));
+        assertNull(JvmSourceMap.resolve("demo/Main.scala", null, null, there::contains, "scala"));
+        assertEquals(
+                Path.of("/r2/a/B.java"),
+                JvmSourceMap.resolve("a/B.java", null, f -> "a", roots, there::contains),
+                "no known files: the roots");
+        assertNull(JvmSourceMap.resolve(null, List.of(Path.of("/k/B.java")), f -> "", roots, there::contains));
+        assertEquals(
+                Path.of("/k/a/B.java"),
+                JvmSourceMap.resolve("a/B.java", List.of(Path.of("/k/a/B.java")), null, roots, f -> false, "java"),
+                "no package look-up: matched by path only");
+    }
+
+    @Test
+    void scalaFrameNamesOfEveryShape() {
+        assertEquals("hello.main", JvmSourceMap.frameName("hello$_", "main", "hello.sc", "scala"));
+        assertEquals("Main.run", JvmSourceMap.frameName("demo.Main$package$", "run", null, "scala"));
+        assertEquals("Util { lambda }", JvmSourceMap.frameName("Util$", "$init$$$anonfun$1", null, "scala"));
+        assertEquals("Util { lambda }", JvmSourceMap.frameName("Util", "<init>$$anonfun$1", null, "scala"));
+        assertEquals("Util.greet { lambda }", JvmSourceMap.frameName("Util", "$anonfun$greet$1", null, "scala"));
+        assertEquals("Util { lambda }", JvmSourceMap.frameName("Util", "$anonfun$1", null, "scala"));
+        assertEquals("Util", JvmSourceMap.frameName("Util$", "<clinit>", null, "scala"));
+        assertEquals("Util", JvmSourceMap.frameName("Util$", "<init>", null, "scala"));
+        assertEquals(".", JvmSourceMap.frameName(null, null, null, "scala"));
+        assertEquals("A.b", JvmSourceMap.frameName("x.A", "b", null, null));
+        assertTrue(JvmSourceMap.hiddenField("bitmap$0", "Scala"));
+        assertFalse(JvmSourceMap.hiddenField("bitmap$0", null));
+        assertFalse(JvmSourceMap.hiddenField(null, "scala"));
+    }
+
+    @Test
+    void clojureAndGroovyFrameNamesInTheirEdgeCases() {
+        assertEquals("my-app.core/greet", JvmSourceMap.frameName("my_app.core$greet", "invoke", "core.cljc"));
+        assertEquals("core$.invoke", JvmSourceMap.frameName("core$", "invoke", "core.clj"), "nothing after the $");
+        assertEquals("core$f.other", JvmSourceMap.frameName("core$f", "other", "core.clj"), "not a function's method");
+        assertEquals(".invoke", JvmSourceMap.frameName(null, "invoke", "core.clj"));
+        assertEquals("A.", JvmSourceMap.frameName("A", null, "A.java"));
+        assertEquals("Script.run { closure }", JvmSourceMap.frameName("Script$_run_closure1", "doCall", null));
+        assertEquals("Script.x { closure }", JvmSourceMap.frameName("Script$_x", "doCall", null));
+        assertEquals("Script$_x.call", JvmSourceMap.frameName("Script$_x", "call", null));
+        assertEquals("Hello.main", JvmSourceMap.frameName("HelloKt", "main", "Hello.kts"));
+    }
+
+    @Test
+    void stepFiltersOfALanguageWithoutItsOwn() {
+        assertEquals(JvmSourceMap.stepFilters(null), JvmSourceMap.stepFilters("java"));
+        assertTrue(JvmSourceMap.stepFilters("CLOJURE").contains("clojure.lang.*"));
+    }
+
+    @Test
+    void theDeclaredPackageAfterCommentsThatEndOnTheirLine() {
+        assertEquals("a.b", JvmSourceMap.declaredPackage("/* x */ package a.b\n"));
+        assertEquals("a", JvmSourceMap.declaredPackage("/* x\n y */ package a;\n"));
+        assertEquals("", JvmSourceMap.declaredPackage(null));
+        assertEquals("", JvmSourceMap.declaredPackage("// nothing\n"));
+    }
 }

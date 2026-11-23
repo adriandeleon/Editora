@@ -242,4 +242,188 @@ class DapManagerTest {
         assertFalse(DapManager.isAdapterLauncher(java.util.List.of("/tmp/codelldb-launch-test/tally")));
         assertFalse(DapManager.isAdapterLauncher(java.util.List.of()));
     }
+
+    @Test
+    void aPathGetsItsFirstFoldersOnceAndGoBinariesAreLookedForWhereGoPutsThem() {
+        assertEquals(
+                "/a:/b:/c", DapManager.pathWithFirst(java.util.Arrays.asList("/a", null, " ", "/b"), "/b:/c", ":"));
+        assertEquals("/a", DapManager.pathWithFirst(java.util.List.of("/a"), null, ":"));
+        assertEquals("/a", DapManager.pathWithFirst(java.util.List.of("/a"), "", ":"));
+        Path home = Path.of("/home/u");
+        String sep = java.io.File.pathSeparator;
+        assertEquals(
+                java.util.List.of(
+                        Path.of("/gobin"), Path.of("/gp1", "bin"), Path.of("/gp2", "bin"), home.resolve("go/bin")),
+                DapManager.goBinDirs(
+                        java.util.Map.of("GOBIN", " /gobin ", "GOPATH", "/gp1" + sep + " " + sep + "/gp2"), home));
+        assertEquals(
+                java.util.List.of(home.resolve("go/bin")),
+                DapManager.goBinDirs(java.util.Map.of("GOBIN", " ", "GOPATH", ""), home));
+    }
+
+    @Test
+    void aHostPythonCommandIsReadWithItsEnvironment() {
+        DapManager.HostPython withEnv =
+                DapManager.HostPython.parse(java.util.List.of("env", "A=1", "B_2=x=y", "python3", "-X", "dev"));
+        assertEquals("python3", withEnv.executable());
+        assertEquals(java.util.List.of("-X", "dev"), withEnv.args());
+        assertEquals(java.util.Map.of("A", "1", "B_2", "x=y"), withEnv.env());
+        DapManager.HostPython onlyEnv = DapManager.HostPython.parse(java.util.List.of("env", "A=1"));
+        assertEquals(DapServerRegistry.DEFAULT_PYTHON_INTERPRETER, onlyEnv.executable());
+        assertEquals(java.util.List.of(), onlyEnv.args());
+        DapManager.HostPython plain = DapManager.HostPython.parse(java.util.List.of("py"));
+        assertEquals("py", plain.executable());
+        assertEquals(java.util.Map.of(), plain.env());
+        assertEquals(
+                DapServerRegistry.DEFAULT_PYTHON_INTERPRETER,
+                DapManager.HostPython.parse(java.util.List.of()).executable());
+    }
+
+    @Test
+    void theListeningPortIsTheFirstAnnouncedOrNoneWhenTheAdapterSaysNothing() {
+        java.io.InputStream twice =
+                new java.io.ByteArrayInputStream("starting\nlistening at ::1:4711\nlistening at ::1:9999\n"
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertEquals(4711, DapManager.listeningPort(twice, Duration.ofSeconds(10)));
+        java.io.InputStream silent =
+                new java.io.ByteArrayInputStream("nothing\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertEquals(-1, DapManager.listeningPort(silent, Duration.ofSeconds(10)));
+    }
+
+    @Test
+    void aPythonLaunchServesAWebAppByItsServerItsConfigurationOrItsFile() {
+        PythonLaunch.Target script = PythonLaunch.Target.script("/w/app.py", java.util.List.of(), "/w");
+        String flask = "from flask import Flask\napp = Flask(__name__)\n";
+        assertTrue(DapManager.servesWeb(
+                new PythonLaunch.Target(null, "flask", java.util.List.of(), null, null), null, null));
+        assertTrue(DapManager.servesWeb(script, null, java.util.Map.of("module", "uvicorn")));
+        assertTrue(DapManager.servesWeb(script, null, java.util.Map.of("program", "/w/manage.py")));
+        assertFalse(DapManager.servesWeb(script, null, java.util.Map.of("module", 3, "program", 4)));
+        assertFalse(DapManager.servesWeb(script, null, null), "no text to read");
+        assertTrue(DapManager.servesWeb(script, flask, null), "a Flask app that runs itself");
+        assertFalse(DapManager.servesWeb(script, "print(1)\n", null));
+        assertFalse(DapManager.servesWeb(
+                new PythonLaunch.Target(null, "app", java.util.List.of(), null, null), flask, null));
+        assertFalse(DapManager.servesWeb(
+                new PythonLaunch.Target(null, null, java.util.List.of(), null, null), flask, null));
+
+        assertEquals(java.util.List.of(), DapManager.pythonRuntime(java.util.Map.of()));
+        assertEquals(java.util.List.of(), DapManager.pythonRuntime(java.util.Map.of("python", " ")));
+        assertEquals(
+                java.util.List.of("py"),
+                DapManager.pythonRuntime(java.util.Map.of("python", "py", "pythonArgs", "-X")));
+        assertEquals(
+                java.util.List.of("py", "-X", "dev"),
+                DapManager.pythonRuntime(
+                        java.util.Map.of("python", "py", "pythonArgs", java.util.List.of("-X", "dev"))));
+    }
+
+    private static DapModels.Instruction at(String address) {
+        return new DapModels.Instruction(address, "", "nop", "", null, 0);
+    }
+
+    @Test
+    void instructionsAroundAnAddressAndAddressesInBothBases() {
+        java.util.List<DapModels.Instruction> listing =
+                java.util.List.of(at("0x10"), at("junk"), at("0x12"), at("19"), at("0x14"));
+        assertEquals(
+                java.util.List.of(at("junk"), at("0x12"), at("19")), DapManager.aroundAddress(listing, "18", 1, 3));
+        assertEquals(java.util.List.of(at("0x10"), at("junk")), DapManager.aroundAddress(listing, "0x10", 5, 2));
+        assertEquals(java.util.List.of(at("0x14")), DapManager.aroundAddress(listing, "0X14", 0, 9));
+        assertNull(DapManager.aroundAddress(listing, "0x11", 1, 3), "decoded out of step");
+        assertNull(DapManager.aroundAddress(listing, "nonsense", 1, 3));
+        assertNull(DapManager.parseAddress(null));
+        assertNull(DapManager.parseAddress(" "));
+        assertNull(DapManager.parseAddress("0xzz"));
+        assertEquals(-1L, DapManager.parseAddress("0xffffffffffffffff"), "an unsigned 64-bit address");
+    }
+
+    @Test
+    void aPlainBreakpointIsOneWithNothingThatDecidesWhetherItStops() {
+        Path file = Path.of("/s/run.sh");
+        DapModels.LineBreakpoint plain = new DapModels.LineBreakpoint(3, null, " ", null);
+        DapModels.LineBreakpoint conditional = new DapModels.LineBreakpoint(4, "x > 1", null, null);
+        DapModels.LineBreakpoint logging = new DapModels.LineBreakpoint(5, null, "hi", null);
+        DapModels.LineBreakpoint counted = new DapModels.LineBreakpoint(6, null, null, "3");
+        DapModels.LineBreakpoint recording = new DapModels.LineBreakpoint(7, null, null, null, 0, true);
+        DapModels.LineBreakpoint filtered = new DapModels.LineBreakpoint(
+                8, null, null, null, 0, false, new com.editora.config.StopFilters("main", "", ""));
+        java.util.List<DapModels.FileBreakpoints> all = java.util.List.of(
+                new DapModels.FileBreakpoints(Path.of("/s/other.sh"), java.util.List.of(plain)),
+                new DapModels.FileBreakpoints(
+                        Path.of("/s/./run.sh"),
+                        java.util.List.of(plain, conditional, logging, counted, recording, filtered)));
+        assertTrue(DapManager.plainBreakpointAt(all, file, 3));
+        for (int line = 4; line <= 9; line++) {
+            assertFalse(DapManager.plainBreakpointAt(all, file, line), "line " + line);
+        }
+        assertFalse(DapManager.plainBreakpointAt(java.util.List.of(), file, 3));
+    }
+
+    @Test
+    void codeLldbsLauncherIsKnownByItsFileName() {
+        assertTrue(DapManager.isAdapterLauncher(java.util.List.of("C:\\lldb\\codelldb-launch.EXE", "x")));
+        assertTrue(DapManager.isAdapterLauncher(java.util.List.of("codelldb-launch")));
+        assertFalse(DapManager.isAdapterLauncher(java.util.List.of("/bin/codelldb")));
+        assertFalse(DapManager.isAdapterLauncher(java.util.List.of()));
+        assertFalse(DapManager.isAdapterLauncher(null));
+        assertFalse(DapManager.isAdapterLauncher(java.util.Arrays.asList((String) null)));
+    }
+
+    @Test
+    void aFailuresMessageIsWhatTheAdapterSaid() {
+        assertEquals("", DapManager.msg(null));
+        assertEquals(
+                "boom",
+                DapManager.msg(
+                        new java.util.concurrent.ExecutionException(new CompletionException(new IOException("boom")))));
+        assertEquals("java.io.IOException", DapManager.msg(new IOException()), "no message: the exception");
+        assertEquals("bare", DapManager.msg(new CompletionException("bare", null)));
+        org.eclipse.lsp4j.jsonrpc.ResponseErrorException refused = new org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
+                new org.eclipse.lsp4j.jsonrpc.messages.ResponseError(1, "not here", null));
+        assertEquals("not here", DapManager.msg(new CompletionException(refused)));
+        assertEquals(
+                com.editora.i18n.Messages.tr("status.debug.noAnswer", DapClient.requestTimeoutSeconds()),
+                DapManager.msg(new TimeoutException()));
+        assertEquals(
+                com.editora.i18n.Messages.tr(
+                        "debug.error.debugpyNoStart", String.valueOf(DapClient.requestTimeoutSeconds()), "py3"),
+                DapManager.launchFailure(
+                        new RuntimeException(new TimeoutException()), java.util.Map.of("python", "py3")),
+                "a debugpy that never answered: its interpreter is named");
+        assertEquals(
+                com.editora.i18n.Messages.tr("debug.error.launchFailed", "gone"),
+                DapManager.launchFailure(new RuntimeException(new IOException("gone")), java.util.Map.of()));
+    }
+
+    @Test
+    void codeReplaceModesAndOutcomes() {
+        assertEquals(DapManager.CodeReplaceMode.MANUAL, DapManager.CodeReplaceMode.of(" Manual "));
+        assertEquals(DapManager.CodeReplaceMode.AUTO, DapManager.CodeReplaceMode.of("sometimes"));
+        assertEquals(DapManager.CodeReplaceMode.AUTO, DapManager.CodeReplaceMode.of(null));
+        assertEquals(
+                DapManager.CodeReplaceResult.FAILED,
+                DapManager.codeReplaceOutcome(new DapModels.CodeReplace(java.util.List.of(), ""), "no answer")
+                        .result());
+        assertEquals(
+                DapManager.CodeReplaceResult.NOTHING_CHANGED,
+                DapManager.codeReplaceOutcome(null, null).result());
+        assertEquals(
+                DapManager.CodeReplaceResult.NOTHING_CHANGED,
+                DapManager.codeReplaceOutcome(new DapModels.CodeReplace(java.util.List.of(), ""), null)
+                        .result());
+        assertEquals(
+                DapManager.CodeReplaceResult.APPLIED,
+                DapManager.codeReplaceOutcome(new DapModels.CodeReplace(java.util.List.of("a.B"), ""), null)
+                        .result());
+        assertEquals(
+                DapManager.CodeReplaceResult.APPLIED,
+                DapManager.codeReplaceOutcome(
+                                new DapModels.CodeReplace(java.util.List.of(), "JVM contains obsolete methods"), null)
+                        .result());
+        DapManager.CodeReplaceOutcome refused =
+                DapManager.codeReplaceOutcome(new DapModels.CodeReplace(java.util.List.of(), "schema change"), null);
+        assertEquals(DapManager.CodeReplaceResult.FAILED, refused.result());
+        assertEquals("schema change", refused.message());
+    }
 }

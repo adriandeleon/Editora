@@ -165,4 +165,38 @@ class LinkScannerTest {
         assertEquals(
                 "https://example.com/a", at("<https://example.com/a>", "https").target());
     }
+
+    @Test
+    void openersOrPunctuationAloneAreNoLink() {
+        assertNull(LinkScanner.at("((( x", 1));
+        assertNull(LinkScanner.at("see ... here", 5));
+        assertNull(LinkScanner.at("\"\"", 0));
+    }
+
+    @Test
+    void unopenedSquareAndCurlyBracketsAreDropped() {
+        assertEquals("src/Foo.java", LinkScanner.at("src/Foo.java]", 0).target());
+        assertEquals("src/Foo.java", LinkScanner.at("src/Foo.java}", 0).target());
+        assertEquals("a{b}", LinkScanner.at("a{b}", 0).target(), "a bracket the token opened is kept");
+    }
+
+    @Test
+    void aColonThatIsNotASchemeLeavesAPath() {
+        assertEquals(LinkMatch.Kind.PATH, LinkScanner.at("http:", 0).kind(), "nothing after the colon");
+        assertEquals(LinkMatch.Kind.PATH, LinkScanner.at(":foo", 1).kind());
+        assertEquals(LinkMatch.Kind.PATH, LinkScanner.at("https:example.com", 0).kind(), "no slashes");
+        assertEquals(LinkMatch.Kind.PATH, LinkScanner.at("h2tp://x", 0).kind(), "a digit in the scheme");
+        assertEquals(
+                LinkMatch.Kind.URL, LinkScanner.at("mailto:a@example.com", 0).kind());
+    }
+
+    @Test
+    void digitsWithoutAColonAreNoPosition() {
+        LinkMatch digits = LinkScanner.at("12345", 0);
+        assertEquals("12345", digits.target());
+        assertEquals(0, digits.line());
+        LinkMatch tail = LinkScanner.at("file2", 0);
+        assertEquals("file2", tail.target());
+        assertEquals(0, tail.line());
+    }
 }

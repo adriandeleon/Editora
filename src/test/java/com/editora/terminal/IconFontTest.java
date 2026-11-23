@@ -91,4 +91,20 @@ class IconFontTest {
     void noNerdFontLeavesTheFallbackAlone() {
         assertEquals(Optional.empty(), IconFont.chooseFamily("JetBrains Mono", List.of("Arial", "MathJax_WinIE6")));
     }
+
+    @Test
+    void powerlineIsItsOwnRangeAndPrivateUseSpansThreePlanes() {
+        assertTrue(IconFont.isPowerline(0xE0A0));
+        assertTrue(IconFont.isPowerline(0xE0D7));
+        assertFalse(IconFont.isPowerline(0xE09F));
+        assertFalse(IconFont.isPowerline(0xE0D8));
+        assertTrue(IconFont.isPrivateUse(0xF8FF));
+        assertFalse(IconFont.isPrivateUse(0xF900));
+        assertTrue(IconFont.isPrivateUse(0xF0000));
+        assertTrue(IconFont.isPrivateUse(0x10FFFD));
+        assertFalse(IconFont.isPrivateUse(0x10FFFE));
+        assertFalse(IconFont.containsPrivateUse("a豈b"), "past the BMP range");
+        assertTrue(IconFont.containsPrivateUse(new String(Character.toChars(0x100001))));
+        assertFalse(IconFont.containsPrivateUse(new String(Character.toChars(0xE0000))), "a tag, not private use");
+    }
 }

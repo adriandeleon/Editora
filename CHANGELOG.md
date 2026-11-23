@@ -129,6 +129,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The first file you open gets its colours sooner.** Its syntax colouring no longer waits behind the start-up
   loading of every other language's grammar.
 
+- **Smart Type completion after `return` in a switch rule's block.** In Java, a `return` inside `case X -> { … }`
+  now gets the method's return type for Smart Type completion, as it does elsewhere in the method.
+
 - **The Disassembly view on GDB** now shows the instructions leading up to where the program stopped. GDB used to
   answer with instructions after it, so the current instruction wasn't in the list.
 - **Debugger review fixes, second round.** A second review of the debugger found these, now fixed:

@@ -187,4 +187,57 @@ class DotnetTestsTest {
         assertEquals(2013826, DotnetTests.processId("Process Id: 2013826, Name: dotnet"));
         assertEquals(-1, DotnetTests.processId("Host debugging is enabled."));
     }
+
+    @Test
+    void aTargetsNamesWithAndWithoutANamespaceOrAMethod() {
+        DotnetTests.Target plain = new DotnetTests.Target("", "Outer+Inner", null);
+        assertEquals("Outer+Inner", plain.fullClassName());
+        assertEquals("Inner", plain.displayName());
+        assertEquals("FullyQualifiedName~Outer+Inner.", DotnetTests.filter(plain));
+        assertEquals("Inner.M", new DotnetTests.Target("N", "Outer+Inner", "M").displayName());
+        assertFalse(DotnetTests.isTestProject(null));
+        assertEquals(-1, DotnetTests.processId(null));
+        assertEquals("", DotnetTests.withoutAttributes("[Theory, InlineData(\"[x\")"));
+        assertEquals("void M()", DotnetTests.withoutAttributes("[A][B([1])] void M()"));
+    }
+
+    @Test
+    void stringsCommentsNestedTypesAndExpressionBodiesDoNotConfuseTheScan() {
+        String text = """
+                namespace Shop.Tests
+                {
+                    // [Fact] in a comment
+                    public class PriceTests
+                    {
+                        private readonly string brace = "{";
+                        private readonly char c = '}';
+                        private readonly string esc = "\\"{";
+                        public record Row(string Name);
+                        private int Helper() => 1;
+                        private Thing made = new Thing();
+                        [Fact]
+                        // why
+                        public void Adds()
+                        {
+                            var x = new { A = 1 };
+                        }
+                        private class Fake
+                        {
+                            public void Do() { }
+                        }
+                        [Test]
+                        public void Unclosed()
+                        {
+                """;
+        assertEquals(new DotnetTests.Target("Shop.Tests", "PriceTests", "Adds"), DotnetTests.testAt(text, 12));
+        assertEquals(new DotnetTests.Target("Shop.Tests", "PriceTests", "Adds"), DotnetTests.testAt(text, 15));
+        assertEquals(new DotnetTests.Target("Shop.Tests", "PriceTests", null), DotnetTests.testAt(text, 9));
+        assertEquals(
+                new DotnetTests.Target("Shop.Tests", "PriceTests", null),
+                DotnetTests.testAt(text, 19),
+                "a helper type nested in a test class: the class");
+        assertEquals(new DotnetTests.Target("Shop.Tests", "PriceTests", "Unclosed"), DotnetTests.testAt(text, 23));
+        assertNull(DotnetTests.testAt(text, 0));
+        assertNull(DotnetTests.testAt("class A { void M() { } }", 0), "no tests");
+    }
 }

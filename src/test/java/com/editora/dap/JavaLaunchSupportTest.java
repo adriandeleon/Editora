@@ -198,4 +198,229 @@ class JavaLaunchSupportTest {
         assertTrue(JavaLaunchSupport.supportsArgFiles(""), "java-debug then uses the project's own runtime");
         assertTrue(JavaLaunchSupport.supportsArgFiles(null));
     }
+
+    /** Paths of an adapter that names files {@code remote:<path>}. */
+    private static final DapPaths PREFIXED = new DapPaths() {
+        @Override
+        public boolean owns(Path file) {
+            return true;
+        }
+
+        @Override
+        public String toAdapter(Path file) {
+            return "remote:" + file;
+        }
+
+        @Override
+        public Path fromAdapter(String path) {
+            return path.startsWith("remote:") ? Path.of(path.substring("remote:".length())) : null;
+        }
+    };
+
+    @Test
+    void aFileNamedByARemoteAdapterIsComparedByItsLocalPath(@TempDir Path dir) {
+        Path file = dir.resolve("A.java");
+        assertTrue(JavaLaunchSupport.sameFile("remote:" + file, file, PREFIXED));
+        assertFalse(JavaLaunchSupport.sameFile("jdt://x", file, PREFIXED), "a pseudo-source names no file");
+        assertFalse(JavaLaunchSupport.sameFile(null, file, PREFIXED));
+        assertFalse(JavaLaunchSupport.sameFile("remote:" + file, null, PREFIXED));
+        assertTrue(JavaLaunchSupport.sameFile(file.toString(), file, DapPaths.LOCAL));
+        assertFalse(JavaLaunchSupport.sameFile(null, file));
+        assertFalse(JavaLaunchSupport.sameFile("x", null));
+    }
+
+    @Test
+    void theFirstTypeNameSkipsCommentsImportsAndThePackage() {
+        assertArrayEquals(
+                new int[] {6, 13},
+                JavaLaunchSupport.typeNamePosition(List.of(
+                        "// class Fake",
+                        "/* class Fake",
+                        "   class Fake */",
+                        "/** one line */",
+                        "package p;",
+                        "import java.util.List; * class Not",
+                        "public class Real {}")));
+        assertNull(JavaLaunchSupport.typeNamePosition(List.of("void main() {}")));
+        assertNull(JavaLaunchSupport.typeNamePosition((Path) null));
+    }
+
+    @Test
+    void theDeclaredPackageSkipsCommentsAndAnnotationsAndIsEmptyAfterCode(@TempDir Path dir) throws Exception {
+        assertEquals(
+                "a.b",
+                JavaLaunchSupport.declaredPackage(
+                        List.of("", "/* x", " */", "/* y */", "// z", " * w", "@Generated", "package a . b ;")));
+        assertEquals("", JavaLaunchSupport.declaredPackage(List.of("import x;", "package late;")));
+        assertEquals("", JavaLaunchSupport.declaredPackage(List.of()));
+        assertEquals("", JavaLaunchSupport.declaredPackage(dir.resolve("missing.java")));
+        Path f = dir.resolve("A.java");
+        Files.writeString(f, "package q;\nclass A {}\n");
+        assertEquals("q", JavaLaunchSupport.declaredPackage(f));
+    }
+
+    @Test
+    void aSourceRootIsTheFolderAboveThePackagesFoldersWhenTheySpellIt() {
+        Path root = Path.of("/w/src").toAbsolutePath();
+        assertEquals(root, JavaLaunchSupport.sourceRoot(root.resolve("a/b/A.java"), "a.b"));
+        assertEquals(root, JavaLaunchSupport.sourceRoot(root.resolve("A.java"), null));
+        assertEquals(root, JavaLaunchSupport.sourceRoot(root.resolve("A.java"), " "));
+        assertNull(JavaLaunchSupport.sourceRoot(root.resolve("x/b/A.java"), "a.b"), "misplaced");
+        assertNull(JavaLaunchSupport.sourceRoot(Path.of("/A.java"), "a.b.c"), "the folders run out");
+        assertNull(JavaLaunchSupport.sourceRoot(null, "a"));
+        assertNull(JavaLaunchSupport.sourceRoot(Path.of("/"), "a"));
+    }
+
+    @Test
+    void wrongSourceRootsAreTheFoldersBelowTheRootThatHoldTheFile(@TempDir Path dir) throws Exception {
+        Path root = dir.resolve("src");
+        Path file = Files.createDirectories(root.resolve("a/b")).resolve("A.java");
+        Files.writeString(file, "package a.b;");
+        List<Path> current = List.of(root, root.resolve("a"), dir, dir.resolve("other"));
+        assertEquals(List.of(root.resolve("a")), JavaLaunchSupport.wrongSourceRoots(current, file, root));
+        assertEquals(List.of(), JavaLaunchSupport.wrongSourceRoots(null, file, root));
+        assertEquals(List.of(), JavaLaunchSupport.wrongSourceRoots(current, null, root));
+        assertEquals(List.of(), JavaLaunchSupport.wrongSourceRoots(current, file, null));
+    }
+
+    @Test
+    void aQualifiedNameAndThePreviewQueryUseTheClassPartOfAModuleMainClass() {
+        assertNull(JavaLaunchSupport.qualified(null, "a"));
+        assertEquals("Main", JavaLaunchSupport.qualified("mod/x.y.Main", ""));
+        assertEquals("Main", JavaLaunchSupport.qualified("x.Main", null));
+        assertEquals("p.Main", JavaLaunchSupport.qualified("Main", "p"));
+        String q = JavaLaunchSupport.previewSettingsQuery("mod/p.Main", null);
+        assertTrue(q.contains("\"className\":\"p.Main\""), q);
+        assertTrue(q.contains("\"projectName\":\"\""), q);
+    }
+
+    @Test
+    void aProjectNameIsReadFromEveryReplyShape() {
+        assertEquals("app", JavaLaunchSupport.projectName(List.of(Map.of("projectName", "app"))));
+        assertNull(JavaLaunchSupport.projectName(List.of()));
+        assertNull(JavaLaunchSupport.projectName(Map.of("projectName", 3)));
+        assertNull(JavaLaunchSupport.projectName(Map.of("projectName", " ")));
+        assertEquals("app", JavaLaunchSupport.projectName(JsonParser.parseString("[{\"projectName\":\"app\"}]")));
+        assertNull(JavaLaunchSupport.projectName(JsonParser.parseString("[]")));
+        assertNull(JavaLaunchSupport.projectName(JsonParser.parseString("{\"projectName\":{}}")));
+        assertNull(JavaLaunchSupport.projectName(JsonParser.parseString("{}")));
+        assertNull(JavaLaunchSupport.projectName("app"));
+    }
+
+    @Test
+    void booleanRepliesAndStatusesInEveryShape() {
+        assertTrue(JavaLaunchSupport.isTrue(true));
+        assertTrue(JavaLaunchSupport.isTrue(JsonParser.parseString("true")));
+        assertFalse(JavaLaunchSupport.isTrue(JsonParser.parseString("\"true\"")), "a JSON string is no boolean");
+        assertFalse(JavaLaunchSupport.isTrue(JsonParser.parseString("{}")));
+        assertTrue(JavaLaunchSupport.isTrue("true"));
+        assertFalse(JavaLaunchSupport.isTrue(null));
+        assertFalse(JavaLaunchSupport.isTrue(1));
+
+        assertTrue(JavaLaunchSupport.statusOk(Map.of("status", true)));
+        assertTrue(JavaLaunchSupport.statusOk(JsonParser.parseString("{\"status\":\"true\"}")));
+        assertFalse(JavaLaunchSupport.statusOk(JsonParser.parseString("{\"status\":false}")));
+        assertFalse(JavaLaunchSupport.statusOk(JsonParser.parseString("{}")));
+        assertFalse(JavaLaunchSupport.statusOk(JsonParser.parseString("[]")));
+        assertFalse(JavaLaunchSupport.statusOk(null));
+    }
+
+    @Test
+    void sourcePathsKeepOnlyEntriesWithAPath() {
+        assertEquals(
+                List.of(Path.of("/a")),
+                JavaLaunchSupport.sourcePaths(JsonParser.parseString(
+                        "{\"data\":[{\"path\":\"/a\"},{\"name\":\"x\"},3,{\"path\":\"\\u0000\"}]}")));
+        assertEquals(List.of(), JavaLaunchSupport.sourcePaths(JsonParser.parseString("{\"data\":{}}")));
+        assertEquals(List.of(), JavaLaunchSupport.sourcePaths(JsonParser.parseString("{\"status\":true}")));
+        assertEquals(List.of(), JavaLaunchSupport.sourcePaths(JsonParser.parseString("[]")));
+        assertEquals(List.of(), JavaLaunchSupport.sourcePaths(null));
+        assertEquals(
+                List.of(Path.of("/b")), JavaLaunchSupport.sourcePaths(Map.of("data", List.of(Map.of("path", "/b")))));
+    }
+
+    @Test
+    void aClassFileIsLookedForInFoldersOnly(@TempDir Path dir) throws Exception {
+        Path out = Files.createDirectories(dir.resolve("out/p"));
+        Files.writeString(out.resolve("Main.class"), "");
+        List<String> paths = new ArrayList<>();
+        paths.add(null);
+        paths.add("\u0000bad");
+        paths.add(dir.resolve("out").toString());
+        assertTrue(JavaLaunchSupport.classFilePresent(paths, "mod/p.Main"));
+        assertFalse(JavaLaunchSupport.classFilePresent(paths, "p.Other"));
+        assertFalse(JavaLaunchSupport.classFilePresent(paths, null));
+        assertFalse(JavaLaunchSupport.classFilePresent(paths, " "));
+        assertFalse(JavaLaunchSupport.classFilePresent(null, "p.Main"));
+    }
+
+    @Test
+    void aClassStateComparesTheClassFileWithItsSource(@TempDir Path dir) throws Exception {
+        Path classes = Files.createDirectories(dir.resolve("out/p"));
+        Path classFile = classes.resolve("Main.class");
+        Files.writeString(classFile, "");
+        Path source = dir.resolve("Main.java");
+        Files.writeString(source, "class Main {}");
+        String out = dir.resolve("out").toString();
+        Files.setLastModifiedTime(source, java.nio.file.attribute.FileTime.fromMillis(1_000_000));
+        Files.setLastModifiedTime(classFile, java.nio.file.attribute.FileTime.fromMillis(2_000_000));
+        assertEquals(
+                JavaLaunchSupport.ClassState.CURRENT, JavaLaunchSupport.classState(List.of(out), "p.Main", source));
+        Files.setLastModifiedTime(source, java.nio.file.attribute.FileTime.fromMillis(3_000_000));
+        assertEquals(JavaLaunchSupport.ClassState.STALE, JavaLaunchSupport.classState(List.of(out), "p.Main", source));
+        assertEquals(
+                JavaLaunchSupport.ClassState.CURRENT,
+                JavaLaunchSupport.classState(List.of(out), "p.Main", dir.resolve("gone.java")),
+                "no source to compare with");
+        assertEquals(JavaLaunchSupport.ClassState.CURRENT, JavaLaunchSupport.classState(List.of(out), "p.Main", null));
+        List<String> withNull = new ArrayList<>();
+        withNull.add(null);
+        withNull.add(dir.resolve("none").toString());
+        withNull.add(out);
+        assertEquals(JavaLaunchSupport.ClassState.MISSING, JavaLaunchSupport.classState(withNull, "p.Other", source));
+        assertEquals(
+                JavaLaunchSupport.ClassState.MISSING,
+                JavaLaunchSupport.classState(List.of(out), "p.Other", null),
+                "only folders: the class cannot be in a jar");
+        assertEquals(
+                JavaLaunchSupport.ClassState.UNKNOWN,
+                JavaLaunchSupport.classState(List.of(out, "/lib/x.jar"), "p.Other", null),
+                "a jar may hold it");
+        assertEquals(
+                JavaLaunchSupport.ClassState.UNKNOWN,
+                JavaLaunchSupport.classState(List.of("/lib/x.jar"), "p.Other", source));
+        assertEquals(JavaLaunchSupport.ClassState.UNKNOWN, JavaLaunchSupport.classState(null, "p.Main", source));
+        assertEquals(JavaLaunchSupport.ClassState.UNKNOWN, JavaLaunchSupport.classState(List.of(out), " ", source));
+        assertEquals(JavaLaunchSupport.ClassState.UNKNOWN, JavaLaunchSupport.classState(List.of(out), null, source));
+    }
+
+    @Test
+    void theCompilerReportAndTheJvmWarningInTheirEdgeCases() {
+        Path a = Path.of("/tmp/x/A.java");
+        assertEquals("err", JavaLaunchSupport.compilerReport(null, "err", a, a));
+        assertEquals("out", JavaLaunchSupport.compilerReport("out", null, a, null));
+        assertEquals("/tmp/x/A.java:1", JavaLaunchSupport.compilerReport("/tmp/x/A.java:1", "", null, a));
+        assertNull(JavaLaunchSupport.withoutJvmVersionWarning(null));
+        assertEquals("x\n", JavaLaunchSupport.withoutJvmVersionWarning("Debugger JVM version: 21\nx\n"));
+        assertEquals("x\n", JavaLaunchSupport.withoutJvmVersionWarning("x\nDebuggee JVM version: 8\n"));
+        assertEquals("--enable-preview", JavaLaunchSupport.withPreview(null, true));
+        assertEquals("", JavaLaunchSupport.withPreview(null, false));
+    }
+
+    @Test
+    void argFilesAreSupportedUnlessTheReleaseFileSaysJava8(@TempDir Path dir) throws Exception {
+        Path jdk = Files.createDirectories(dir.resolve("jdk/bin"));
+        Path java = jdk.resolve("java");
+        assertTrue(JavaLaunchSupport.supportsArgFiles(java.toString()), "no release file");
+        Files.writeString(dir.resolve("jdk/release"), "IMPLEMENTOR=x\nJAVA_VERSION=\"1.8.0_392\"\n");
+        assertFalse(JavaLaunchSupport.supportsArgFiles(java.toString()));
+        Files.writeString(dir.resolve("jdk/release"), "IMPLEMENTOR=x\n");
+        assertTrue(JavaLaunchSupport.supportsArgFiles(java.toString()), "no version in it");
+        Files.writeString(dir.resolve("jdk/release"), "JAVA_VERSION=\"21\"\n");
+        assertTrue(JavaLaunchSupport.supportsArgFiles(java.toString()));
+        assertTrue(JavaLaunchSupport.supportsArgFiles(null));
+        assertTrue(JavaLaunchSupport.supportsArgFiles("java"), "no release file beside a bare name");
+        assertTrue(JavaLaunchSupport.supportsArgFiles("/java"));
+        assertTrue(JavaLaunchSupport.supportsArgFiles("\u0000"));
+    }
 }

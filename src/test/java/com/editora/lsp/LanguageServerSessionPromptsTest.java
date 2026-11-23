@@ -361,4 +361,67 @@ class LanguageServerSessionPromptsTest {
         asking.cancel(true);
         assertTrue(again.answer.isCancelled(), "the server gave up: the picker goes");
     }
+
+    @Test
+    void aQuestionWithoutAMessageOrWithBrokenActionsIsAnsweredSensibly() {
+        LanguageServerSession s = session();
+        ScriptedUi ui = new ScriptedUi();
+        s.setClientUi(ui);
+        assertNull(s.showMessageRequest(null).join());
+        assertNull(s.showMessageRequest(new ShowMessageRequestParams()).join(), "no message: nothing to ask");
+        assertTrue(ui.asked.isEmpty());
+
+        ShowMessageRequestParams p = new ShowMessageRequestParams();
+        p.setType(MessageType.Warning);
+        p.setMessage("Restart?");
+        List<MessageActionItem> actions = new ArrayList<>();
+        actions.add(null);
+        actions.add(new MessageActionItem());
+        actions.add(new MessageActionItem("Restart"));
+        p.setActions(actions);
+        CompletableFuture<MessageActionItem> reply = s.showMessageRequest(p);
+        assertEquals(List.of("scala|Warning|Restart?|[Restart]"), ui.asked, "only the actions with a title");
+        ui.answer.completeExceptionally(new IllegalStateException("window closed"));
+        assertNull(reply.join(), "a failed question is no answer");
+
+        ScriptedUi noActions = new ScriptedUi();
+        s.setClientUi(noActions);
+        ShowMessageRequestParams bare = new ShowMessageRequestParams();
+        bare.setMessage("Note");
+        CompletableFuture<MessageActionItem> plain = s.showMessageRequest(bare);
+        assertEquals(List.of("scala|null|Note|[]"), noActions.asked);
+        noActions.answer.complete("OK");
+        assertEquals("OK", plain.join().getTitle());
+    }
+
+    @Test
+    void aGotoLocationWithoutARangeOrACommandOpensNothing() {
+        LanguageServerSession s = session();
+        s.metalsExecuteClientCommand(new ExecuteCommandParams("metals-goto-location", List.of())); // no UI: ignored
+        ScriptedUi ui = new ScriptedUi();
+        s.setClientUi(ui);
+        Location noRange = new Location();
+        noRange.setUri(Path.of("/tmp/demo/Main.scala").toAbsolutePath().toUri().toString());
+        s.metalsExecuteClientCommand(new ExecuteCommandParams("metals-goto-location", List.of(noRange)));
+        s.metalsExecuteClientCommand(new ExecuteCommandParams("metals-goto-location", List.of()));
+        s.metalsExecuteClientCommand(new ExecuteCommandParams());
+        s.metalsExecuteClientCommand(null);
+        assertNull(ui.opened);
+    }
+
+    @Test
+    void theTypeScriptVersionIsReadFromItsNotification() {
+        LanguageServerSession s = session();
+        assertEquals("", s.typeScriptVersion());
+        s.typescriptVersion(com.google.gson.JsonParser.parseString("{\"version\":\"5.9.3\",\"source\":\"bundled\"}")
+                .getAsJsonObject());
+        assertEquals("5.9.3", s.typeScriptVersion());
+        s.typescriptVersion(
+                com.google.gson.JsonParser.parseString("{\"version\":{}}").getAsJsonObject());
+        assertEquals("", s.typeScriptVersion(), "not a version");
+        s.typescriptVersion(com.google.gson.JsonParser.parseString("{}").getAsJsonObject());
+        assertEquals("", s.typeScriptVersion());
+        s.typescriptVersion(null);
+        assertEquals("", s.typeScriptVersion());
+    }
 }

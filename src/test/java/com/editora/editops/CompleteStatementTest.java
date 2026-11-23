@@ -270,4 +270,76 @@ class CompleteStatementTest {
                 java("    for (int i = 0; i < n; i++) {|\n"),
                 "a header's = is no declaration");
     }
+
+    private static String kotlin(String marked) {
+        return complete(marked, CompleteStatement.Style.NO_SEMICOLON);
+    }
+
+    @Test
+    void anIncrementOrAnIndexIsAFinishedStatement() {
+        assertEquals("x = i++;|", java("x = i++|"));
+        assertEquals("y = i--;|", java("y = i--|"));
+        assertEquals("int[] a = new int[3];|", java("int[] a = new int[3|"));
+        assertEquals("x = {};|", java("x = {}|"));
+    }
+
+    @Test
+    void aFinishedStatementOrALabelGetsANewLine() {
+        assertEquals("x = 1;\n|", java("x = 1;|"));
+        assertEquals("label:\n|", java("label:|"));
+        assertEquals("case 1:\n|", java("case 1:|"));
+        assertEquals("return x +\n|", java("return x +|"), "an unfinished return goes on below");
+    }
+
+    @Test
+    void anAnnotationIsClosedAndTheNextLineStartsAtItsIndent() {
+        assertEquals("@SuppressWarnings(\"x\")\n|", java("@SuppressWarnings(\"x\"|"));
+    }
+
+    @Test
+    void methodsWithoutABodyEndInASemicolon() {
+        assertEquals("interface I {\n    void run();|\n}", java("interface I {\n    void run(|\n}"));
+        assertEquals(
+                "abstract class A {\n    abstract void run();|\n}",
+                java("abstract class A {\n    abstract void run(|\n}"));
+        assertEquals("int foo(int x) {\n    |\n}", java("int foo(int x|"), "a method with a body opens it");
+        assertEquals("foo.bar(x);|", java("foo.bar(x|"), "a call is no declaration");
+    }
+
+    @Test
+    void controlHeadersOpenABlockAndADoWhileEnds() {
+        assertEquals("while (x) {\n    |\n}", java("while (x|"));
+        assertEquals("do {\n} while (x);|", java("do {\n} while (x|"));
+        assertEquals("try (var r = open()) {\n    |\n}", java("try (var r = open(|"));
+        assertEquals("if (a) {\n    |\n}", java("if (a) {|}"));
+    }
+
+    @Test
+    void aBlockInsideACallOrAnAssignmentClosesBoth() {
+        assertEquals("list.forEach(n -> {\n    |\n});", java("list.forEach(n -> {|"));
+        assertEquals("Runnable r = () -> {\n    |\n};", java("Runnable r = () -> {|"));
+    }
+
+    @Test
+    void commentsBetweenContinuedLinesAreSkipped() {
+        assertEquals(
+                "    a = b\n        // note\n        /* c */ + c;|",
+                java("    a = b\n        // note\n        /* c */ + c|"));
+        assertEquals("    a = b +\n        c;\n    |\n", java("    a = b +|\n        c;\n"));
+        assertEquals("    f(a,\n      b)\n    .g();|", java("    f(a,\n      b)\n    .g(|"));
+    }
+
+    @Test
+    void stringsAndCommentsLeftOpen() {
+        assertEquals("String s = \"abc\";|", java("String s = \"abc|"));
+        assertEquals("s = `tmpl\n|", java("s = `tmpl|"), "a template literal may span lines");
+        assertEquals("/* comment\n|", java("/* comment|"));
+    }
+
+    @Test
+    void kotlinStatementsEndWithoutASemicolon() {
+        assertEquals("val x = f(1)|", kotlin("val x = f(1|"));
+        assertEquals("fun go(a: Int) {\n    |\n}", kotlin("fun go(a: Int|"));
+        assertEquals("x = 1\n|", kotlin("x = 1|"));
+    }
 }

@@ -88,4 +88,74 @@ class KittyKeyInputTest {
         assertNull(input.typed(typed("a"), 0));
         assertNull(input.released(released(KeyCode.ESCAPE), 0, true, false));
     }
+
+    private static KeyEvent chord(KeyCode code, String text, boolean ctrl, boolean alt, boolean meta) {
+        return new KeyEvent(KeyEvent.KEY_PRESSED, "", text, code, false, ctrl, alt, meta);
+    }
+
+    @Test
+    void typedEventsWithNothingInThemAreNotMine() {
+        assertNull(input.typed(typed(""), ALL_EVENTS));
+        assertNull(input.typed(typed(KeyEvent.CHAR_UNDEFINED), ALL_EVENTS));
+    }
+
+    @Test
+    void underAllKeysTextWithoutAPressIsATextEventOrLegacy() {
+        assertNull(input.typed(typed("é"), ALL_EVENTS), "without the text flag it goes as it is");
+        assertArrayEquals(new byte[0], input.typed(typed("\u0001"), ALL_EVENTS | KittyKeys.TEXT));
+        assertEquals("\\e[0;;233u", text(input.typed(typed("é"), ALL_EVENTS | KittyKeys.TEXT)));
+    }
+
+    @Test
+    void theSameNonAsciiTextThePressReportedIsNotSentAgain() {
+        assertEquals(
+                "\\e[233;;233u",
+                text(input.pressed(pressed(KeyCode.E, "é", false), ALL_EVENTS | KittyKeys.TEXT, true, false)));
+        assertArrayEquals(new byte[0], input.typed(typed("é"), ALL_EVENTS | KittyKeys.TEXT));
+    }
+
+    @Test
+    void aReleaseOwedButNoLongerAskedForIsLeftAlone() {
+        assertEquals(
+                "\\e[97;5u",
+                text(input.pressed(pressed(KeyCode.A, "\u0001", true), KittyKeys.DISAMBIGUATE, true, false)));
+        assertNull(input.released(released(KeyCode.A), KittyKeys.DISAMBIGUATE, true, false), "no event types");
+
+        input.pressed(pressed(KeyCode.A, "\u0001", true), DISAMBIGUATE_EVENTS, true, false);
+        assertNull(input.released(released(KeyCode.A), 0, true, false), "the program turned the protocol off");
+
+        assertEquals("\\e[57441;2u", text(input.pressed(pressed(KeyCode.SHIFT, "", false), ALL_EVENTS, true, false)));
+        assertNull(
+                input.released(released(KeyCode.SHIFT), DISAMBIGUATE_EVENTS, true, false),
+                "a modifier key is legacy short of all keys");
+    }
+
+    @Test
+    void aPressWithNoTextStillReports() {
+        assertEquals("\\e[A", text(input.pressed(pressed(KeyCode.UP, null, false), DISAMBIGUATE_EVENTS, true, false)));
+        assertArrayEquals(new byte[0], input.typed(typed("x"), DISAMBIGUATE_EVENTS), "its own character is dropped");
+    }
+
+    @Test
+    void altIsAModifierOnlyAsMeta() {
+        assertNull(input.pressed(chord(KeyCode.E, "é", false, true, false), KittyKeys.DISAMBIGUATE, false, false));
+        assertEquals(
+                "\\e[102;3u",
+                text(input.pressed(chord(KeyCode.F, "f", false, true, false), KittyKeys.DISAMBIGUATE, true, false)));
+    }
+
+    @Test
+    void ctrlAltIsAltGrUnlessToldOtherwise() {
+        org.junit.jupiter.api.Assumptions.assumeFalse(com.editora.Os.isMac(), "macOS has no AltGr");
+        assertNull(
+                input.pressed(chord(KeyCode.E, "€", true, true, false), KittyKeys.DISAMBIGUATE, true, false),
+                "AltGr composing types text");
+        assertEquals(
+                "\\e[102;7u",
+                text(input.pressed(chord(KeyCode.F, "f", true, true, false), KittyKeys.DISAMBIGUATE, true, true)));
+        assertEquals(
+                "\\e[103;15u",
+                text(input.pressed(chord(KeyCode.G, "g", true, true, true), KittyKeys.DISAMBIGUATE, true, false)),
+                "with Super held it is a chord");
+    }
 }

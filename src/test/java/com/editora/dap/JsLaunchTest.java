@@ -216,4 +216,101 @@ class JsLaunchTest {
                 + "(Use `node --trace-warnings ...` to show where the warning was created)\n";
         assertEquals(other, noise.filter(other));
     }
+
+    @Test
+    void aRequestWithoutAProgramFolderArgumentsOrEnvironment() {
+        Map<String, Object> m = JsLaunch.request(null, "", " ", null, List.of(" "), null, false, null);
+        assertEquals("pwa-node", m.get("type"));
+        assertFalse(m.containsKey("program"));
+        assertFalse(m.containsKey("cwd"));
+        assertFalse(m.containsKey("__workspaceFolder"));
+        assertFalse(m.containsKey("args"));
+        assertFalse(m.containsKey("runtimeExecutable"), "a blank runtime is none");
+        assertFalse(m.containsKey("env"));
+        Map<String, Object> run = JsLaunch.request(" ", "", "/w", "", List.of("npm"), List.of(), true, Map.of());
+        assertEquals("pwa-node", run.get("type"));
+        assertEquals("/w", run.get("__workspaceFolder"), "the folder is the cwd when none is named");
+        assertEquals("npm", run.get("runtimeExecutable"));
+        assertFalse(run.containsKey("runtimeArgs"));
+        assertFalse(run.containsKey("args"));
+        assertFalse(run.containsKey("env"));
+        assertEquals("integratedTerminal", run.get("console"));
+        assertNull(JsLaunch.request("pwa-node", "a.js", null, null, null, null, false)
+                .get("runtimeExecutable"));
+    }
+
+    @Test
+    void launchProblemsVersionsAndAddresses() {
+        assertNull(JsLaunch.launchProblemKey(null, "v20.0.0"));
+        assertNull(JsLaunch.launchProblemKey("a.mts", null), "an unknown Node says so itself");
+        assertNull(JsLaunch.launchProblemKey("a.cts", "nonsense"));
+        assertNull(JsLaunch.launchProblemKey("a.ts", "v23.6.0"));
+        assertEquals("debug.error.tsNeedsNode", JsLaunch.launchProblemKey("a.cts", "v20.1.0"));
+        assertNull(JsLaunch.version(null));
+        assertNull(JsLaunch.version("Welcome\nv1.2.3.4\n"));
+        assertEquals("v22.1.0", JsLaunch.version("22.1.0"));
+        assertTrue(JsLaunch.runsAdapter(null));
+        assertTrue(JsLaunch.runsAdapter("garbage"));
+        assertEquals(Optional.empty(), JsLaunch.parseAddress("[::1"));
+        assertEquals(Optional.empty(), JsLaunch.parseAddress("[::1]9229"));
+        assertEquals(Optional.of(new JsLaunch.Address("::1", 9229)), JsLaunch.parseAddress("[::1]:9229"));
+        assertEquals(Optional.empty(), JsLaunch.parseAddress(":9229"), "a colon needs a host before it");
+        assertEquals(Optional.empty(), JsLaunch.parseAddress("a:b:9229"));
+        assertEquals(Optional.empty(), JsLaunch.parseAddress("host:0"));
+        assertEquals(Optional.empty(), JsLaunch.parseAddress("host:port"));
+        assertEquals(Optional.of(new JsLaunch.Address("localhost", 9229)), JsLaunch.parseAddress(null));
+        assertEquals(Optional.of(new JsLaunch.Address("h", 1)), JsLaunch.parseAddress("wss://h:1"));
+    }
+
+    @Test
+    void conditionErrorsAndInspectorNoiseInTheirEdgeCases() {
+        assertEquals(Optional.empty(), JsLaunch.conditionError(null));
+        assertEquals(
+                Optional.empty(),
+                JsLaunch.conditionError("Syntax error setting breakpoint with condition without the rest"));
+        JsLaunch.InspectorNoise noise = new JsLaunch.InspectorNoise();
+        assertNull(noise.filter(null));
+        assertEquals("", noise.filter(""));
+        String warning = "(node:12) Warning: Using the inspector with --test forces running at a concurrency of 1.\n";
+        String hint = "(Use `node --trace-warnings ...` to show where the warning was created)\n";
+        assertEquals(
+                "\nok\n",
+                noise.filter(warning + "\n" + hint + "ok\n"),
+                "a blank line between them keeps the hint noise");
+        assertEquals(hint, noise.filter(hint), "the hint alone is the user's");
+        assertEquals("x", noise.filter("x"));
+    }
+
+    @Test
+    void testFilesTestNamesAndCompiledFilesInTheirEdgeCases() {
+        assertFalse(JsLaunch.isTestFile(null));
+        assertFalse(JsLaunch.isTestFile(Path.of("/")));
+        assertFalse(JsLaunch.isTestFile(Path.of("/p/test.md")));
+        assertTrue(JsLaunch.isTestFile(Path.of("/p/test.js")));
+        assertTrue(JsLaunch.isTestFile(Path.of("/p/test-api.mjs")));
+        assertTrue(JsLaunch.isTestFile(Path.of("/p/api-test.cjs")));
+        assertTrue(JsLaunch.isTestFile(Path.of("/p/api_test.ts")));
+        assertTrue(JsLaunch.isTestFile(Path.of("/p/__tests__/api.tsx")));
+        assertFalse(JsLaunch.isTestFile(Path.of("/p/src/api.jsx")));
+        assertEquals(Optional.empty(), JsLaunch.testNameAt(null, 0));
+        assertEquals(Optional.empty(), JsLaunch.testNameAt("test('a', () => {})", -1));
+        assertEquals(Optional.empty(), JsLaunch.testNameAt("test('', () => {})", 0), "an empty name is none");
+        assertEquals(Optional.of("b"), JsLaunch.testNameAt("it.only(\"a\"); it(`b`)\nx", 5));
+        assertEquals(List.of("node"), JsLaunch.withNodeArgs(List.of("node"), null));
+        assertEquals(List.of("--x"), JsLaunch.withNodeArgs(null, List.of("--x")));
+
+        Path cwd = Path.of("/p");
+        assertNull(JsLaunch.compiledInstead(null, cwd, List.of()));
+        assertNull(JsLaunch.compiledInstead(Path.of("/"), cwd, List.of()));
+        assertNull(JsLaunch.compiledInstead(Path.of("/p/a.ts"), cwd, null));
+        assertNull(
+                JsLaunch.compiledInstead(Path.of("/p/a.js"), cwd, List.of("node", "a.js")), "the source runs itself");
+        java.util.List<String> argv = new java.util.ArrayList<>(List.of("node", "--x", "b.js", "\u0000.js"));
+        argv.add(null);
+        argv.add("a.cjs");
+        assertEquals(Path.of("/p/a.cjs"), JsLaunch.compiledInstead(Path.of("/p/src/a.ts"), cwd, argv));
+        assertEquals(Path.of("a.cjs"), JsLaunch.compiledInstead(Path.of("/p/src/a.ts"), null, argv));
+        assertNull(JsLaunch.compiledInstead(Path.of("/p/Main"), cwd, List.of("node", "/o/Main.js")), "no TypeScript");
+        assertNull(JsLaunch.compiledInstead(Path.of("/p/a.mts"), cwd, List.of("node", "/")));
+    }
 }

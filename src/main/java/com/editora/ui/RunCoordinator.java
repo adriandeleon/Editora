@@ -3627,7 +3627,7 @@ final class RunCoordinator {
     }
 
     /** Whether {@code path} belongs to an sbt, Mill, Gradle or Maven build, which runs it (not Scala CLI). */
-    private static boolean scalaBuildOwner(Path path, @Nullable Path project) {
+    static boolean scalaBuildOwner(Path path, @Nullable Path project) {
         if (!com.editora.process.ExecTargets.runsHere(path)) {
             return false; // a remote file runs through Scala CLI on its host
         }

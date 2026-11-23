@@ -1734,7 +1734,7 @@ final class EncryptionCoordinator {
     }
 
     /** {signature, data} for a detached signature next to {@code path} or of it; null when there is none. */
-    private static Path @Nullable [] detachedPair(Path path, String text) {
+    static Path @Nullable [] detachedPair(Path path, String text) {
         String name = String.valueOf(path.getFileName());
         boolean signatureFile = name.endsWith(".sig")
                 || name.endsWith(".asc") && text.stripLeading().startsWith("-----BEGIN PGP SIGNATURE");

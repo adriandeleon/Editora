@@ -174,4 +174,63 @@ class KittyKeysTest {
         assertEquals("legacy", KittyKeys.visible(KittyKeys.textEvent("é", ALL)));
         assertEquals("nothing", KittyKeys.visible(KittyKeys.textEvent("\u0001", ALL | TEXT)));
     }
+
+    @Test
+    void everyModifierKeyCarriesItsOwnBitAndTheLocks() {
+        assertEquals("\\e[57443;3u", press(key(KeyCode.ALT, "", ""), ALL));
+        assertEquals("\\e[57444;9u", press(key(KeyCode.META, "", ""), ALL));
+        assertEquals("\\e[57444;9u", press(key(KeyCode.COMMAND, "", ""), ALL));
+        assertEquals("\\e[57444;9u", press(key(KeyCode.WINDOWS, "", ""), ALL));
+        assertEquals("\\e[57358u", press(key(KeyCode.CAPS, "", ""), ALL), "a lock key has no bit of its own");
+        assertEquals("\\e[57358;65u", press(key(KeyCode.CAPS, "", "C"), ALL));
+        assertEquals("nothing", release(key(KeyCode.SHIFT, "", ""), ALL), "no release without event types");
+    }
+
+    @Test
+    void releasesNeedEventTypes() {
+        assertEquals("legacy", press(key(KeyCode.A, "\u0001", "c"), EVENTS), "event types alone do not disambiguate");
+        assertEquals("nothing", release(key(KeyCode.A, "\u0001", "c"), EVENTS));
+        assertEquals("nothing", release(key(KeyCode.A, "\u0001", "c"), DISAMBIGUATE));
+        assertEquals("\\e[97;5:3u", release(key(KeyCode.A, "\u0001", "c"), DISAMBIGUATE | EVENTS));
+        assertEquals("nothing", release(key(KeyCode.A, "a", ""), ALL));
+        assertEquals("\\e[97;1:3u", release(key(KeyCode.A, "a", ""), ALL | EVENTS));
+    }
+
+    @Test
+    void theBaseKeyComesFromTheCodeOrFromWhatItTyped() {
+        assertEquals("\\e[97;5u", press(key(KeyCode.A, null, "c"), DISAMBIGUATE));
+        assertEquals("\\e[97;5u", press(key(KeyCode.A, "ab", "c"), DISAMBIGUATE));
+        assertEquals("\\e[97;5u", press(key(KeyCode.A, "1", "c"), DISAMBIGUATE), "a non-letter keeps the keycap");
+        assertEquals("\\e[1089;5u", press(key(KeyCode.C, "С", "c"), DISAMBIGUATE), "Cyrillic types its own");
+        assertEquals("\\e[233;5u", press(key(KeyCode.UNDEFINED, "É", "c"), DISAMBIGUATE), "lower-cased");
+        assertEquals("legacy", press(key(KeyCode.UNDEFINED, null, "c"), DISAMBIGUATE));
+        assertEquals("legacy", press(key(KeyCode.UNDEFINED, "ab", "c"), DISAMBIGUATE));
+        assertEquals("legacy", press(key(KeyCode.UNDEFINED, "\u0001", "c"), DISAMBIGUATE));
+        assertEquals("legacy", press(key(KeyCode.UNDEFINED, "\u007f", "c"), DISAMBIGUATE));
+    }
+
+    @Test
+    void theShiftedAlternateFallsBackToTheUpperCase() {
+        int flags = DISAMBIGUATE | ALTERNATES;
+        assertEquals("\\e[97:65;6u", press(key(KeyCode.A, null, "sc"), flags));
+        assertEquals("\\e[97:65;6u", press(key(KeyCode.A, "\u0001", "sc"), flags));
+        assertEquals("\\e[97:65;6u", press(key(KeyCode.A, "a", "sc"), flags), "the base itself is no alternate");
+        assertEquals("\\e[97:65;6u", press(key(KeyCode.A, "ab", "sc"), flags));
+        assertEquals("\\e[49;6u", press(key(KeyCode.DIGIT1, null, "sc"), flags), "1 has no upper case");
+        assertEquals("\\e[97;5u", press(key(KeyCode.A, "A", "c"), flags), "no Shift, no alternate");
+    }
+
+    @Test
+    void textRidesAlongOnlyWhenItIsPrintable() {
+        int flags = ALL | TEXT;
+        assertEquals("\\e[97;;97u", press(key(KeyCode.A, "a", ""), flags));
+        assertEquals("\\e[97u", press(key(KeyCode.A, "", ""), flags));
+        assertEquals("\\e[97u", press(key(KeyCode.A, null, ""), flags));
+        assertEquals("\\e[97u", press(key(KeyCode.A, "\u0085", ""), flags), "a C1 control is not text");
+        assertEquals("\\e[97u", press(key(KeyCode.A, "\u007f", ""), flags));
+        assertEquals("\\e[97;5u", press(key(KeyCode.A, "a", "c"), flags), "Ctrl types no text");
+        assertEquals("nothing", KittyKeys.visible(KittyKeys.textEvent("", flags)));
+        assertEquals("legacy", KittyKeys.visible(KittyKeys.textEvent("é", TEXT)));
+        assertEquals("\\e[0;;97:98u", KittyKeys.visible(KittyKeys.textEvent("ab", flags)));
+    }
 }

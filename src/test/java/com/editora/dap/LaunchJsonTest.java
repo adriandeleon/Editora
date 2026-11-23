@@ -291,4 +291,100 @@ class LaunchJsonTest {
         assertNull(f.configuration("Gone"));
         assertTrue(LaunchJson.parse("{}").compounds().isEmpty(), "none: no compounds");
     }
+
+    @Test
+    void entriesOfTheWrongShapeAreSkipped() throws Exception {
+        LaunchJson.File f = LaunchJson.parse("""
+                {
+                  "configurations": [1, {"name": 2, "type": "go"}],
+                  "inputs": [3, {"id": "pick", "type": ["x"], "options": ["a", {"value": "b"}, {"label": "c"}, [1]]}],
+                  "tasks": ["t", {"label": "build"}],
+                  "compounds": [4, {"name": "both", "configurations": ["a", {"name": "b"}, {"folder": "c"}, [1]],
+                                    "stopAll": {}, "preLaunchTask": ["x"]},
+                                {"name": "two", "stopAll": true}]
+                }
+                """);
+        assertEquals(1, f.configurations().size());
+        assertEquals("", f.configurations().get(0).name(), "a name that is no string reads as none");
+        assertEquals("go", f.configurations().get(0).type());
+        LaunchJson.Input pick = f.inputs().get("pick");
+        assertEquals("", pick.type());
+        assertEquals(List.of("a", "b"), pick.options());
+        assertEquals(List.of(Map.of("label", "build")), f.tasks());
+        assertEquals(2, f.compounds().size());
+        assertEquals(List.of("a", "b"), f.compounds().get(0).configurations());
+        assertEquals(false, f.compounds().get(0).stopAll());
+        assertEquals("", f.compounds().get(0).preLaunchTask());
+        assertEquals(true, f.compounds().get(1).stopAll());
+        assertThrows(LaunchJson.LaunchJsonException.class, () -> LaunchJson.parse("[1]"));
+        assertThrows(LaunchJson.LaunchJsonException.class, () -> LaunchJson.parse("{"));
+    }
+
+    @Test
+    void commentsAndTrailingCommasInEveryPlaceTheyCanBe() {
+        assertEquals("{\"a\": \"x//y\"\n}", LaunchJson.withoutCommentsAndTrailingCommas("{\"a\": \"x//y\"// c\n}"));
+        assertEquals(
+                "{\"a\": \"q\\\"/*\" }", LaunchJson.withoutCommentsAndTrailingCommas("{\"a\": \"q\\\"/*\"/* c */}"));
+        assertEquals("[1   ]", LaunchJson.withoutCommentsAndTrailingCommas("[1, /* last */ ]"));
+        assertEquals("[1 \n]", LaunchJson.withoutCommentsAndTrailingCommas("[1, // last\n]"));
+        assertEquals("[1,2]", LaunchJson.withoutCommentsAndTrailingCommas("[1,2]"));
+        assertEquals(
+                "[1,", LaunchJson.withoutCommentsAndTrailingCommas("[1,"), "a comma at the end is no trailing one");
+        assertEquals(
+                "[1, ", LaunchJson.withoutCommentsAndTrailingCommas("[1,/* open"), "an unclosed comment ends the text");
+        assertEquals("\"open", LaunchJson.withoutCommentsAndTrailingCommas("\"open"), "an unclosed string");
+        assertEquals("a/b", LaunchJson.withoutCommentsAndTrailingCommas("a/b"));
+        assertEquals("[1,/x]", LaunchJson.withoutCommentsAndTrailingCommas("[1,/x]"));
+        assertEquals("[1,\n", LaunchJson.withoutCommentsAndTrailingCommas("[1,// to the end"));
+    }
+
+    @Test
+    void jsonValuesBecomePlainJava() {
+        assertNull(LaunchJson.toJava(null));
+        assertNull(LaunchJson.toJava(com.google.gson.JsonNull.INSTANCE));
+        assertEquals(1.5, LaunchJson.toJava(new com.google.gson.JsonPrimitive(1.5)));
+        assertEquals(3L, LaunchJson.toJava(new com.google.gson.JsonPrimitive(3)));
+        assertEquals(1e16, LaunchJson.toJava(new com.google.gson.JsonPrimitive(1e16)), "past a long's exact range");
+        assertEquals(
+                Double.POSITIVE_INFINITY,
+                LaunchJson.toJava(new com.google.gson.JsonPrimitive(Double.POSITIVE_INFINITY)));
+    }
+
+    @Test
+    void fileVariablesOfAFileOutsideTheWorkspaceOrWithoutAnExtension(@TempDir Path ws) throws Exception {
+        Path outside = Path.of("/elsewhere/Makefile");
+        LaunchJson.Context ctx = new LaunchJson.Context(ws, outside, 1, "", Map.of(), ws, in -> "x");
+        Map<String, String> answers = new HashMap<>();
+        assertEquals(
+                "Makefile|",
+                LaunchJson.substitute("${fileBasenameNoExtension}|${fileExtname}", ctx, Map.of(), answers));
+        assertEquals(outside.toString(), LaunchJson.substitute("${relativeFile}", ctx, Map.of(), answers));
+        assertEquals("/elsewhere", LaunchJson.substitute("${relativeFileDirname}", ctx, Map.of(), answers));
+        assertEquals(java.io.File.separator, LaunchJson.substitute("${/}", ctx, Map.of(), answers));
+        assertEquals(ws.toString(), LaunchJson.substitute("${workspaceRoot}", ctx, Map.of(), answers));
+        assertEquals(
+                "pre-set", LaunchJson.substitute("${input:id}", ctx, Map.of(), new HashMap<>(Map.of("id", "pre-set"))));
+        LaunchJson.Context root = new LaunchJson.Context(ws, Path.of("/"), 1, "", Map.of(), ws, in -> "x");
+        assertEquals("", LaunchJson.substitute("${fileDirname}${fileDirnameBasename}", root, Map.of(), answers));
+        assertThrows(
+                LaunchJson.LaunchJsonException.class,
+                () -> LaunchJson.substitute("${fileNope}", ctx, Map.of(), answers),
+                "a file variable VS Code does not have");
+    }
+
+    @Test
+    void aTasksArgumentsMayBeQuotedObjectsAndATaskWithoutACommandRunsNothing() {
+        assertEquals(
+                List.of("make", "a b", "c", "{quoting=weak}"),
+                LaunchJson.taskArgv(
+                        Map.of(
+                                "command",
+                                "make",
+                                "args",
+                                List.of(Map.of("value", "a b", "quoting", "strong"), "c", Map.of("quoting", "weak"))),
+                        false));
+        assertNull(LaunchJson.taskArgv(Map.of("command", " "), false));
+        assertNull(LaunchJson.taskArgv(Map.of("args", List.of()), false));
+        assertNull(LaunchJson.taskArgv(Map.of("command", "make", "dependsOn", "x"), false));
+    }
 }
