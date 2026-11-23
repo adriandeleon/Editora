@@ -6,6 +6,7 @@ import javafx.scene.control.Label;
 
 import com.editora.command.CommandRegistry;
 import com.editora.config.Settings;
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -49,7 +50,7 @@ class StatusWordCountFxTest {
         });
         assertTrue(FxTestSupport.callOnFx(label::isManaged));
         assertEquals("5 words", FxTestSupport.callOnFx(label::getText));
-        assertTrue(FxTestSupport.callOnFx(() -> label.getTooltip().getText()).contains("1"));
+        assertTrue(FxTestSupport.callOnFx(() -> ControlNames.tipText(label)).contains("1"));
 
         // A selection is counted after its pause, not per caret move; clearing it shows the document again.
         FxTestSupport.runOnFx(() -> {

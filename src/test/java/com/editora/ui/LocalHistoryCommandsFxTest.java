@@ -17,6 +17,7 @@ import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 
 import com.editora.config.HistoryRevision;
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -360,9 +361,7 @@ class LocalHistoryCommandsFxTest {
             assertTrue(
                     goneRevision.getAccessibleText().contains(tr("history.reason.delete")),
                     goneRevision.getAccessibleText());
-            assertTrue(
-                    goneRevision.getTooltip().getText().endsWith("19 B"),
-                    goneRevision.getTooltip().getText());
+            assertTrue(ControlNames.tipText(goneRevision).endsWith("19 B"), ControlNames.tipText(goneRevision));
 
             // Restore the deleted file from its row's menu: nothing to overwrite, so nothing is asked.
             FxTestSupport.runOnFx(

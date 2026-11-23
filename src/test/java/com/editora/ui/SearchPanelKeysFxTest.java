@@ -21,6 +21,7 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 
+import com.editora.editor.ControlNames;
 import com.editora.search.FileResult;
 import com.editora.search.LineMatch;
 import com.editora.search.SearchQuery;
@@ -345,10 +346,10 @@ class SearchPanelKeysFxTest {
 
             panel.setScope("~/proj", "/home/me/proj");
             assertEquals("~/proj", scope.getText());
-            assertEquals("/home/me/proj", scope.getTooltip().getText());
+            assertEquals("/home/me/proj", ControlNames.tipText(scope));
             panel.setScope(null, null);
             assertEquals("", scope.getText());
-            assertNull(scope.getTooltip());
+            assertNull(ControlNames.tipText(scope));
 
             panel.setBackendActive(true);
             assertTrue(badge.isVisible() && badge.isManaged());

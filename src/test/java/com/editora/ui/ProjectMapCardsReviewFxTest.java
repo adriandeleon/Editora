@@ -22,6 +22,7 @@ import com.editora.command.CommandRegistry;
 import com.editora.command.KeyDispatcher;
 import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
+import com.editora.editor.ControlNames;
 import com.editora.editor.notes.NoteDraft;
 import com.editora.ui.ProjectMapPreview.Content;
 import org.junit.jupiter.api.BeforeAll;
@@ -573,9 +574,7 @@ class ProjectMapCardsReviewFxTest {
 
                 r.card.setNotesSuppressed(true);
                 assertFalse(notes.isSelected(), "not pressed while nothing shows");
-                assertEquals(
-                        tr("project.map.preview.notesHiddenByOption"),
-                        notes.getTooltip().getText());
+                assertEquals(tr("project.map.preview.notesHiddenByOption"), ControlNames.tipText(notes));
                 assertTrue(r.card.notesShown(), "still stuck on, only out of sight");
                 notes.fire();
                 assertEquals(1, asked[0], "a press asks for the notes back");
@@ -784,7 +783,7 @@ class ProjectMapCardsReviewFxTest {
             javafx.scene.layout.VBox rows = FxTestSupport.field(card, "notes");
             javafx.scene.control.Button heading =
                     (javafx.scene.control.Button) rows.getChildren().getFirst();
-            assertTrue(heading.getTooltip().getText().startsWith("add"), "the noted text");
+            assertTrue(ControlNames.tipText(heading).startsWith("add"), "the noted text");
             heading.fire();
             assertEquals(List.of("App.java:7"), opened);
             card.dispose();

@@ -26,6 +26,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.text.Text;
 
 import com.editora.config.Bookmark;
+import com.editora.editor.ControlNames;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -649,14 +650,14 @@ class BookmarksPanelKeysFxTest {
             TreeCell<Object> file = cellFor("B.java");
             assertEquals("B.java", file.getText());
             assertTrue(file.getStyleClass().contains("bookmark-file-row"));
-            assertEquals(Path.of(B).toString(), file.getTooltip().getText());
+            assertEquals(Path.of(B).toString(), ControlNames.tipText(file));
 
             // A reused cell drops everything the last row gave it.
             file.updateIndex(-1);
             assertNull(file.getText());
             assertNull(file.getGraphic());
             assertNull(file.getContextMenu());
-            assertNull(file.getTooltip());
+            assertNull(ControlNames.tipText(file));
             assertFalse(file.getStyleClass().contains("bookmark-file-row"));
         });
     }

@@ -19,6 +19,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 
 import com.editora.config.Settings;
+import com.editora.editor.ControlNames;
 import com.editora.todo.TodoPattern;
 import com.editora.todo.TodoPatterns;
 import com.editora.todo.TodoScanner;
@@ -188,9 +189,7 @@ class SettingsContentPagesFxTest {
             assertEquals(before, settings.getRulers(), "nothing saved");
             assertEquals("80; 120", rulers.getText(), "the typed text stays to be fixed");
             assertTrue(flagged(rulers));
-            assertTrue(
-                    rulers.getTooltip().getText().contains(";"),
-                    rulers.getTooltip().getText());
+            assertTrue(ControlNames.tipText(rulers).contains(";"), ControlNames.tipText(rulers));
 
             SettingsRig.typeAndEnter(rulers, "80, 120");
             assertEquals(List.of(80, 120), settings.getRulers());
@@ -209,7 +208,7 @@ class SettingsContentPagesFxTest {
             SettingsRig.typeAndEnter(perLanguage, "java: 100; bash: 61");
             assertEquals(Map.of(), settings.getLanguageRulers(), "nothing saved");
             assertTrue(flagged(perLanguage));
-            assertTrue(perLanguage.getTooltip().getText().contains("bash"));
+            assertTrue(ControlNames.tipText(perLanguage).contains("bash"));
 
             SettingsRig.typeAndEnter(perLanguage, "Java: 100; Python: 79");
             assertEquals(Map.of("java", List.of(100), "python", List.of(79)), settings.getLanguageRulers());
@@ -264,7 +263,7 @@ class SettingsContentPagesFxTest {
             TextField name = (TextField) todoRow(0).getChildren().get(1);
             TextField regex = (TextField) todoRow(0).getChildren().get(2);
             CheckBox matchCase = (CheckBox) todoRow(0).getChildren().get(4);
-            assertEquals(tr("settings.todo.caseTip"), matchCase.getTooltip().getText(), "\"Aa\" says what it is");
+            assertEquals(tr("settings.todo.caseTip"), ControlNames.tipText(matchCase), "\"Aa\" says what it is");
 
             SettingsRig.typeAndEnter(name, "  ");
             assertEquals("HACK", settings.getTodoPatterns().get(0).getName(), "a blank name is not stored");

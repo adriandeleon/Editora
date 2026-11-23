@@ -26,6 +26,7 @@ import javafx.stage.Stage;
 
 import com.editora.config.ProjectMapState;
 import com.editora.config.WorkspaceState;
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import com.editora.ui.ProjectMapView.FlowDirection;
 import org.jspecify.annotations.Nullable;
@@ -355,8 +356,7 @@ class ProjectMapBearingsReview3FxTest {
                 Button crosshair = FxTestSupport.field(h.view(), "revealActiveButton");
                 // Named after its command: the title, then the chord when the keymap binds one.
                 assertTrue(crosshair.getAccessibleText().startsWith(CommandTips.title("projectMap.revealActiveFile")));
-                assertEquals(
-                        crosshair.getAccessibleText(), crosshair.getTooltip().getText());
+                assertEquals(crosshair.getAccessibleText(), ControlNames.tipText(crosshair));
                 crosshair.fire();
                 FxTestSupport.<MenuItem>field(h.view(), "revealActiveItem").fire();
                 assertEquals(2, reveals.get());

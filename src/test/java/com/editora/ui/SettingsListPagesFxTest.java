@@ -18,6 +18,7 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.Region;
 
 import com.editora.config.Abbreviation;
+import com.editora.editor.ControlNames;
 import com.editora.macro.Macro;
 import com.editora.macro.MacroStep;
 import com.editora.snippet.SnippetManager;
@@ -272,7 +273,7 @@ class SettingsListPagesFxTest {
                 assertTrue(
                         prefix.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER),
                         "the field is red");
-                assertEquals(reason, prefix.getTooltip().getText());
+                assertEquals(reason, ControlNames.tipText(prefix));
                 assertTrue(
                         all(pg, Label.class, new ArrayList<>()).stream()
                                 .anyMatch(l -> l.isVisible() && l.getText().equals(reason)),
@@ -286,7 +287,7 @@ class SettingsListPagesFxTest {
                 prefix.setText("ok, mytrig");
                 prefix.fireEvent(new ActionEvent());
                 assertFalse(prefix.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
-                assertNull(prefix.getTooltip());
+                assertNull(ControlNames.tipText(prefix));
                 assertTrue(
                         manager.userSnippets(none).stream().anyMatch(sn -> "BODY".equals(sn.body())),
                         "saved once fixed: " + manager.userSnippets(none));

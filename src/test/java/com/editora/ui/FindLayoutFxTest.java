@@ -17,6 +17,7 @@ import javafx.scene.control.ToggleButton;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
+import com.editora.editor.ControlNames;
 import com.editora.editor.EditorBuffer;
 import com.editora.search.SearchQuery;
 import org.junit.jupiter.api.BeforeAll;
@@ -108,7 +109,7 @@ class FindLayoutFxTest {
                             t.getAccessibleText() != null
                                     && t.getAccessibleText().length() > 3,
                             t.getText());
-                    assertTrue(t.getTooltip() != null, t.getText());
+                    assertTrue(ControlNames.tipText(t) != null, t.getText());
                 }
                 assertTrue(all(bar, CheckBox.class, new ArrayList<>()).isEmpty(), "no bare 'Aa' checkboxes on screen");
                 CheckBox caseSensitive = FxTestSupport.field(bar, "caseSensitive");

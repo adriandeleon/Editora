@@ -144,10 +144,10 @@ final class MacroSettingsPane extends HBox {
         // a screen reader announced as the glyphs. Each is greyed where it cannot act.
         Button up = new Button(tr("settings.macro.moveUp"));
         Button down = new Button(tr("settings.macro.moveDown"));
-        up.setTooltip(ControlNames.tooltip(tr("settings.macro.moveUp.help")));
         up.setAccessibleHelp(tr("settings.macro.moveUp.help"));
-        down.setTooltip(ControlNames.tooltip(tr("settings.macro.moveDown.help")));
+        ControlNames.tip(up, tr("settings.macro.moveUp.help"));
         down.setAccessibleHelp(tr("settings.macro.moveDown.help"));
+        ControlNames.tip(down, tr("settings.macro.moveDown.help"));
         up.setOnAction(e -> moveStep(-1));
         down.setOnAction(e -> moveStep(1));
         Button remove = new Button(tr("settings.macro.removeStep"));

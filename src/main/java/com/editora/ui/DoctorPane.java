@@ -1076,7 +1076,7 @@ final class DoctorPane extends Region implements TabContent {
             label.setMinWidth(Region.USE_PREF_SIZE);
         }
         if (text.length() > TOOLTIP_THRESHOLD) {
-            label.setTooltip(ControlNames.tooltip(text));
+            ControlNames.tip(label, text);
         }
         return label;
     }

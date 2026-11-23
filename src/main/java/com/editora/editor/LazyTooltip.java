@@ -42,12 +42,14 @@ public final class LazyTooltip {
                 if (value == null || value.isBlank()) {
                     return;
                 }
-                Tooltip tip = ControlNames.tooltip(value);
-                if (styleClass != null) {
-                    tip.getStyleClass().add(styleClass);
-                }
-                created++;
-                Tooltip.install(node, tip);
+                ControlNames.hover(() -> {
+                    Tooltip tip = ControlNames.tooltip(value);
+                    if (styleClass != null) {
+                        tip.getStyleClass().add(styleClass);
+                    }
+                    created++;
+                    Tooltip.install(node, tip);
+                });
             }
         });
     }

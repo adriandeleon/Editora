@@ -17,7 +17,6 @@ import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
-import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
@@ -27,7 +26,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
-import com.editora.editor.ControlNames;
+import com.editora.editor.LazyTooltip;
 import com.editora.editor.UiZoom;
 import com.editora.run.StackTraceLinks;
 import com.editora.test.TestCounts;
@@ -853,7 +852,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
                 case RUNNING -> Icons.testRunning();
             };
             // Each row's status glyph is icon-only — a tooltip says what it means (Passed / Failed / …).
-            Tooltip.install(icon, ControlNames.tooltip(statusLabel(status)));
+            LazyTooltip.install(icon, () -> statusLabel(status));
             return icon;
         }
     }

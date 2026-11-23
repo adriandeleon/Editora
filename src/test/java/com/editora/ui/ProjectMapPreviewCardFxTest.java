@@ -26,6 +26,7 @@ import javafx.scene.layout.Region;
 import javafx.stage.Stage;
 
 import com.editora.config.NoteScope;
+import com.editora.editor.ControlNames;
 import com.editora.editor.notes.NoteDraft;
 import com.editora.ui.ProjectMapPreview.Content;
 import org.junit.jupiter.api.BeforeAll;
@@ -905,20 +906,16 @@ class ProjectMapPreviewCardFxTest {
                 r.card.setNoteCount(0, true);
                 assertTrue(notes.isVisible());
                 assertTrue(notes.isDisable(), "no notes here to show");
-                assertEquals(
-                        tr("project.map.preview.noNotes"), notes.getTooltip().getText());
+                assertEquals(tr("project.map.preview.noNotes"), ControlNames.tipText(notes));
 
                 r.card.setNoteCount(2, true);
                 assertFalse(notes.isDisable());
                 assertEquals("2", notes.getText());
-                assertEquals(
-                        tr("project.map.preview.showNotes", 2),
-                        notes.getTooltip().getText());
+                assertEquals(tr("project.map.preview.showNotes", 2), ControlNames.tipText(notes));
                 notes.fire();
                 assertTrue(r.card.notesShown());
                 assertEquals(List.of(true), toggles);
-                assertEquals(
-                        tr("project.map.preview.hideNotes"), notes.getTooltip().getText());
+                assertEquals(tr("project.map.preview.hideNotes"), ControlNames.tipText(notes));
 
                 r.card.setNoteCount(0, true); // the last note was deleted elsewhere
                 assertFalse(r.card.notesShown());

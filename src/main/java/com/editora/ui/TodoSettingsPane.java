@@ -105,7 +105,7 @@ final class TodoSettingsPane {
         String shownName = p.getName() == null ? "" : p.getName();
         CheckBox enabled = new CheckBox();
         enabled.setSelected(p.isEnabled());
-        enabled.setTooltip(ControlNames.tooltip(tr("settings.todo.enabledTip")));
+        ControlNames.tip(enabled, tr("settings.todo.enabledTip"));
         enabled.setAccessibleText(tr("settings.todo.enabledTip") + " — " + shownName);
         TextField name = new TextField(shownName);
         name.setPromptText(tr("settings.todo.namePrompt"));
@@ -116,12 +116,12 @@ final class TodoSettingsPane {
         regex.setAccessibleText(tr("settings.todo.regexPrompt") + " — " + shownName);
         HBox.setHgrow(regex, Priority.ALWAYS);
         ColorPicker color = new ColorPicker(parseColor(p.getColor()));
-        color.setTooltip(ControlNames.tooltip(tr("settings.todo.colorPrompt")));
+        ControlNames.tip(color, tr("settings.todo.colorPrompt"));
         color.setAccessibleText(tr("settings.todo.colorPrompt") + " — " + shownName);
         UiZoom.prefWidth(color, 56);
         CheckBox caseSensitive = new CheckBox(tr("settings.todo.case"));
         caseSensitive.setSelected(p.isCaseSensitive());
-        caseSensitive.setTooltip(ControlNames.tooltip(tr("settings.todo.caseTip")));
+        ControlNames.tip(caseSensitive, tr("settings.todo.caseTip"));
         caseSensitive.setAccessibleText(tr("settings.todo.caseTip") + " — " + shownName);
         Button remove = new Button("✕");
         // One name for the tooltip and the screen reader: which pattern it removes, as this row's other controls say.

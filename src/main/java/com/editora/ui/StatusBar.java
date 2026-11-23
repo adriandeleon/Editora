@@ -203,12 +203,12 @@ public final class StatusBar extends HBox {
 
         getStyleClass().add("status-bar");
         echo.getStyleClass().add("status-message");
-        echo.setTooltip(ControlNames.tooltip(tr("statusbar.tip.messageLog")));
         echo.setAccessibleHelp(tr("statusbar.tip.messageLog"));
+        ControlNames.tip(echo, tr("statusbar.tip.messageLog"));
         echo.setAccessibleText(tr("statusbar.tip.messageLog")); // until the first message: see setMessage
         unreadErrors.getStyleClass().add("status-unread-errors");
-        unreadErrors.setTooltip(ControlNames.tooltip(tr("statusbar.tip.unreadErrors")));
         unreadErrors.setAccessibleHelp(tr("statusbar.tip.unreadErrors"));
+        ControlNames.tip(unreadErrors, tr("statusbar.tip.unreadErrors"));
         unreadErrors.setVisible(false);
         unreadErrors.setManaged(false);
         backgroundTasks.getStyleClass().add("status-segment");
@@ -243,8 +243,8 @@ public final class StatusBar extends HBox {
         githubChecks.setManaged(false);
 
         httpEnv.getStyleClass().addAll("status-segment", "status-http-env");
-        httpEnv.setTooltip(ControlNames.tooltip(tr("statusbar.tip.httpEnv")));
         httpEnv.setAccessibleHelp(tr("statusbar.tip.httpEnv"));
+        ControlNames.tip(httpEnv, tr("statusbar.tip.httpEnv"));
         httpEnv.setVisible(false); // shown only for an .http buffer with the HTTP Client on
         httpEnv.setManaged(false);
 
@@ -286,13 +286,13 @@ public final class StatusBar extends HBox {
         UiZoom.maxHeight(lspProgress, 10);
         lspProgress.setVisible(false); // shown only while a language server is loading
         lspProgress.setManaged(false);
-        lspProgress.setTooltip(ControlNames.tooltip(tr("statusbar.tip.lspLoading")));
+        ControlNames.tip(lspProgress, tr("statusbar.tip.lspLoading"));
         debugProgress.getStyleClass().add("status-lsp-progress");
         UiZoom.prefWidth(debugProgress, 90);
         UiZoom.maxHeight(debugProgress, 10);
         debugProgress.setVisible(false);
         debugProgress.setManaged(false);
-        debugProgress.setTooltip(ControlNames.tooltip(tr("statusbar.tip.debugLoading")));
+        ControlNames.tip(debugProgress, tr("statusbar.tip.debugLoading"));
         debug.setVisible(false);
         debug.setManaged(false);
 
@@ -385,8 +385,8 @@ public final class StatusBar extends HBox {
         Button in = zoomButton("+", "view.textZoomIn");
         zoomPercent.setText("100%");
         zoomPercent.getStyleClass().addAll("status-segment", "text-zoom-percent");
-        zoomPercent.setTooltip(ControlNames.tooltip(tr("statusbar.tip.zoomReset")));
         zoomPercent.setAccessibleHelp(tr("statusbar.tip.zoomReset"));
+        ControlNames.tip(zoomPercent, tr("statusbar.tip.zoomReset"));
         HBox group = new HBox(out, zoomPercent, in);
         group.getStyleClass().add("text-zoom");
         return group;
@@ -406,10 +406,10 @@ public final class StatusBar extends HBox {
     private StatusSegment segment(String commandId, String hint) {
         StatusSegment label = new StatusSegment(() -> registry().run(commandId));
         label.getStyleClass().add("status-segment");
-        label.setTooltip(ControlNames.tooltip(hint));
         if (hint != null && !hint.isBlank()) {
             label.setAccessibleHelp(hint); // what a screen reader says it does (C112)
         }
+        ControlNames.tip(label, hint);
         return label;
     }
 
@@ -432,8 +432,8 @@ public final class StatusBar extends HBox {
         seg.setText(text == null ? "" : text);
         seg.getStyleClass().add("status-segment");
         if (hint != null && !hint.isBlank()) {
-            seg.setTooltip(ControlNames.tooltip(hint));
             seg.setAccessibleHelp(hint);
+            ControlNames.tip(seg, hint);
         }
         getChildren().add(seg);
         return seg;
@@ -628,7 +628,7 @@ public final class StatusBar extends HBox {
         if (!enabled) {
             gitInRepo = false;
             git.setText(tr("statusbar.gitOff"));
-            git.getTooltip().setText(tr("statusbar.tip.gitDisabled"));
+            ControlNames.tip(git, tr("statusbar.tip.gitDisabled"));
         } else if (!gitInRepo) {
             showNoVcs();
         }
@@ -642,10 +642,10 @@ public final class StatusBar extends HBox {
     private void showNoVcs() {
         if (gitRefusal.isEmpty()) {
             git.setText(tr("statusbar.noVcs"));
-            git.getTooltip().setText(tr("statusbar.tip.gitNoVcs"));
+            ControlNames.tip(git, tr("statusbar.tip.gitNoVcs"));
         } else {
             git.setText(tr("statusbar.gitRefused"));
-            git.getTooltip().setText(tr("statusbar.tip.gitRefused", gitRefusal));
+            ControlNames.tip(git, tr("statusbar.tip.gitRefused", gitRefusal));
         }
     }
 
@@ -710,11 +710,11 @@ public final class StatusBar extends HBox {
     private void renderGitBranch() {
         String label = gitOperationLabel(gitOperation.kind());
         git.setText(label.isEmpty() ? gitBranchText : gitBranchText + " · " + label);
-        git.getTooltip()
-                .setText(
-                        label.isEmpty()
-                                ? tr("statusbar.tip.gitBranch")
-                                : tr("statusbar.tip.gitOperation", GitCoordinator.operationName(gitOperation.kind())));
+        ControlNames.tip(
+                git,
+                label.isEmpty()
+                        ? tr("statusbar.tip.gitBranch")
+                        : tr("statusbar.tip.gitOperation", GitCoordinator.operationName(gitOperation.kind())));
     }
 
     /** The segment's label for an operation in progress ({@code MERGING}, …); {@code ""} for none. */
@@ -757,9 +757,9 @@ public final class StatusBar extends HBox {
                 summary == null || summary.overall() == com.editora.github.ChecksParser.Overall.NONE ? null : summary;
         if (summary != null && githubChecksSummary != null) {
             githubChecks.setText(checksText(prNumber, githubChecksSummary, tr("statusbar.checks")));
-            githubChecks
-                    .getTooltip()
-                    .setText(tr(
+            ControlNames.tip(
+                    githubChecks,
+                    tr(
                             "statusbar.tip.githubChecksRollup",
                             summary.pass(),
                             summary.fail(),
@@ -808,11 +808,7 @@ public final class StatusBar extends HBox {
         int total = Math.max(0, errors) + warnings + hints;
         boolean show = errors >= 0 && total > 0 && !simpleMode;
         markdownLint.setText(show ? tr("statusbar.markdownLint", total) : "");
-        markdownLint.setTooltip(
-                show
-                        ? com.editora.editor.ControlNames.tooltip(
-                                tr("statusbar.tip.markdownLintCounts", errors, warnings, hints))
-                        : null);
+        ControlNames.tip(markdownLint, show ? tr("statusbar.tip.markdownLintCounts", errors, warnings, hints) : null);
         markdownLint.setVisible(show);
         markdownLint.setManaged(show);
     }
@@ -844,7 +840,7 @@ public final class StatusBar extends HBox {
             encryption.setGraphic(Icons.lock());
         }
         encryption.setText(EncryptionViews.chipText(state));
-        encryption.getTooltip().setText(EncryptionViews.chipTooltip(state));
+        ControlNames.tip(encryption, EncryptionViews.chipTooltip(state));
     }
 
     /** The encryption item, which the encryption details card is anchored to. */
@@ -856,8 +852,8 @@ public final class StatusBar extends HBox {
     public void setPythonInterpreter(@Nullable String text, @Nullable String tooltip) {
         boolean show = text != null && !text.isBlank() && !simpleMode;
         pythonInterpreter.setText(show ? text : "");
-        pythonInterpreter.setTooltip(show && tooltip != null ? ControlNames.tooltip(tooltip) : null);
         pythonInterpreter.setAccessibleHelp(show ? tooltip : null); // what a screen reader says it does (C112)
+        ControlNames.tip(pythonInterpreter, show && tooltip != null ? tooltip : null);
         pythonInterpreter.setVisible(show);
         pythonInterpreter.setManaged(show);
     }
@@ -1021,8 +1017,7 @@ public final class StatusBar extends HBox {
 
     private void showIndent(EditorBuffer buffer, int bad) {
         indent.setText(tr(bad < 0 ? "statusbar.tabSizeShort" : "statusbar.tabSizeMixed", buffer.getTabSize()));
-        indent.getTooltip()
-                .setText(bad < 0 ? tr("statusbar.tip.setTabSize") : tr("statusbar.tip.indentMixed", bad + 1));
+        ControlNames.tip(indent, bad < 0 ? tr("statusbar.tip.setTabSize") : tr("statusbar.tip.indentMixed", bad + 1));
         if ((bad >= 0) != indent.getStyleClass().contains("status-encoding-assumed")) {
             if (bad >= 0) {
                 indent.getStyleClass().add("status-encoding-assumed"); // the format group's warning colour
@@ -1041,8 +1036,7 @@ public final class StatusBar extends HBox {
         boolean isRemote = com.editora.vfs.Vfs.isRemote(path) && !simpleMode;
         remote.setVisible(isRemote);
         remote.setManaged(isRemote);
-        remote.setTooltip(
-                isRemote && path != null ? ControlNames.tooltip(com.editora.vfs.Vfs.displayLabel(path)) : null);
+        ControlNames.tip(remote, isRemote && path != null ? com.editora.vfs.Vfs.displayLabel(path) : null);
         position.setVisible(hasBuffer);
         position.setManaged(hasBuffer);
         // Narrowing is a property of the buffer, not of the window: re-derive the chip on every tab switch, or
@@ -1087,8 +1081,9 @@ public final class StatusBar extends HBox {
             } else {
                 readOnly.getStyleClass().remove("active");
             }
-            readOnly.getTooltip()
-                    .setText(tr(
+            ControlNames.tip(
+                    readOnly,
+                    tr(
                             ro
                                     ? "statusbar.tip.readOnly"
                                     : noUndo ? "statusbar.tip.editableNoUndo" : "statusbar.tip.editable"));
@@ -1114,14 +1109,13 @@ public final class StatusBar extends HBox {
                 encoding.getStyleClass().remove("status-encoding-assumed");
             }
         }
-        encoding.getTooltip()
-                .setText(
-                        assumed
-                                ? tr(
-                                        "statusbar.tip.encodingAssumed",
-                                        com.editora.editorconfig.EditorConfigCharset.displayName(
-                                                buffer.getDetectedCharset()))
-                                : tr("statusbar.tip.encoding"));
+        ControlNames.tip(
+                encoding,
+                assumed
+                        ? tr(
+                                "statusbar.tip.encodingAssumed",
+                                com.editora.editorconfig.EditorConfigCharset.displayName(buffer.getDetectedCharset()))
+                        : tr("statusbar.tip.encoding"));
         // Show the EditorConfig indicator only when an .editorconfig actually applies to the active buffer
         // (the buffer's resolved properties are non-empty). Hidden in Simple UI mode.
         var ecProps = hasBuffer ? buffer.getEditorConfigProps() : null;
@@ -1178,7 +1172,7 @@ public final class StatusBar extends HBox {
             text += lines > 1 ? " (" + selected + " selected, " + lines + " lines)" : " (" + selected + " selected)";
         }
         position.setText(text);
-        position.getTooltip().setText(tr("statusbar.tip.offset", area.getCaretPosition()));
+        ControlNames.tip(position, tr("statusbar.tip.offset", area.getCaretPosition()));
         wordCount.selection(area);
 
         // CSV/TSV column readout — "Field N of M". Two single-line scans (the header row for the column count,

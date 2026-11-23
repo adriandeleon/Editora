@@ -23,6 +23,7 @@ import javafx.scene.text.TextFlow;
 
 import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
+import com.editora.editor.ControlNames;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -1005,9 +1006,9 @@ class DebugPanelWatchesFxTest {
             Button stepOver = FxTestSupport.field(panel, "stepOver");
             assertEquals(
                     DebugPanelText.tooltip(tr("command.debug.stepOver"), "F10", "N", tr("debugpanel.inPanel")),
-                    stepOver.getTooltip().getText());
+                    ControlNames.tipText(stepOver));
             assertEquals(
-                    stepOver.getTooltip().getText(),
+                    ControlNames.tipText(stepOver),
                     stepOver.getAccessibleText(),
                     "a screen reader says what the tooltip shows");
             ListView<?> stack = FxTestSupport.field(panel, "stack");
@@ -1015,10 +1016,10 @@ class DebugPanelWatchesFxTest {
                     tr("debugpanel.emptyHintChord", "F5"),
                     ((javafx.scene.control.Label) stack.getPlaceholder()).getText());
             Button start = FxTestSupport.field(panel, "start");
-            assertTrue(start.getTooltip().getText().startsWith(DebugPanelText.bareTitle(tr("command.debug.start"))));
+            assertTrue(ControlNames.tipText(start).startsWith(DebugPanelText.bareTitle(tr("command.debug.start"))));
             panel.setState(DapManager.State.SUSPENDED);
             assertTrue(
-                    start.getTooltip().getText().startsWith(DebugPanelText.bareTitle(tr("command.debug.continue"))),
+                    ControlNames.tipText(start).startsWith(DebugPanelText.bareTitle(tr("command.debug.continue"))),
                     "paused, the green button is Continue");
             assertEquals("", ((javafx.scene.control.Label) stack.getPlaceholder()).getText());
         });

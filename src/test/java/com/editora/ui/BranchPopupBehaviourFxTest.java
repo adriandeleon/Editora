@@ -14,6 +14,7 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 
+import com.editora.editor.ControlNames;
 import com.editora.git.GitService.BranchInfo;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -360,18 +361,18 @@ class BranchPopupBehaviourFxTest {
                 List<Object> rows = s.list().getItems();
                 int branch = indexOf(s.list(), "BranchRow", "feature/a");
                 ListCell<?> cell = cellOf(s.list(), branch);
-                assertNotNull(cell.getTooltip(), "a branch row describes its tracking state");
+                assertNotNull(ControlNames.tipText(cell), "a branch row describes its tracking state");
 
                 Class<?> rowType = rows.get(0).getClass().getInterfaces()[0]; // the private Row interface
                 Object action = rows.get(indexOf(s.list(), "ActionRow", "git.fetch"));
                 FxTestSupport.call(cell, "updateItem", new Class<?>[] {rowType, boolean.class}, action, false);
-                assertNull(cell.getTooltip(), "reused for an action, it still described feature/a");
+                assertNull(ControlNames.tipText(cell), "reused for an action, it still described feature/a");
 
                 FxTestSupport.call(
                         cell, "updateItem", new Class<?>[] {rowType, boolean.class}, rows.get(branch), false);
-                assertNotNull(cell.getTooltip());
+                assertNotNull(ControlNames.tipText(cell));
                 FxTestSupport.call(cell, "updateItem", new Class<?>[] {rowType, boolean.class}, null, true);
-                assertNull(cell.getTooltip(), "…and an empty cell says nothing");
+                assertNull(ControlNames.tipText(cell), "…and an empty cell says nothing");
             } finally {
                 s.stage().hide();
             }
@@ -493,7 +494,7 @@ class BranchPopupBehaviourFxTest {
                     if (n instanceof ListCell<?> cell && !cell.isEmpty() && n.lookup(".branch-gone") != null) {
                         marked = true;
                         assertEquals("fix/c", name(cell.getItem()));
-                        assertTrue(cell.getTooltip().getText().contains(tr("branchpopup.tip.goneHint")));
+                        assertTrue(ControlNames.tipText(cell).contains(tr("branchpopup.tip.goneHint")));
                     }
                 }
                 assertTrue(marked, "the branch whose upstream is gone carries the marker");

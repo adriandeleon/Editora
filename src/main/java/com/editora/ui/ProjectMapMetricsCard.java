@@ -85,8 +85,8 @@ final class ProjectMapMetricsCard extends MapFloatingCard {
         back.setOnAction(event -> goBack());
         filesButton.setToggleGroup(groupings);
         partsButton.setToggleGroup(groupings);
-        filesButton.setTooltip(ControlNames.tooltip(tr("project.map.metrics.filesTip")));
-        partsButton.setTooltip(ControlNames.tooltip(tr("project.map.metrics.partsTip")));
+        ControlNames.tip(filesButton, tr("project.map.metrics.filesTip"));
+        ControlNames.tip(partsButton, tr("project.map.metrics.partsTip"));
         groupings.selectedToggleProperty().addListener((obs, was, now) -> {
             if (now != null && !syncing) {
                 parts = now == partsButton;
@@ -176,7 +176,7 @@ final class ProjectMapMetricsCard extends MapFloatingCard {
             String key, String tip, Function<ProjectMapMetrics.Row, Integer> value) {
         TableColumn<ProjectMapMetrics.Row, Integer> column = new TableColumn<>();
         Label header = new Label(tr(key));
-        header.setTooltip(ControlNames.tooltip(tr(tip)));
+        ControlNames.tip(header, tr(tip));
         column.setGraphic(header);
         column.setId(key);
         column.setCellValueFactory(cell -> new ReadOnlyObjectWrapper<>(value.apply(cell.getValue())));
@@ -263,7 +263,7 @@ final class ProjectMapMetricsCard extends MapFloatingCard {
         String name = folderName(subject);
         String heading = tr("project.map.metrics.title", name);
         title.setText(heading);
-        title.setTooltip(ControlNames.tooltip(subject.isEmpty() ? name : subject));
+        ControlNames.tip(title, subject.isEmpty() ? name : subject);
         setAccessibleText(heading);
         ProjectMapMetrics known = metrics;
         if (known == null) {

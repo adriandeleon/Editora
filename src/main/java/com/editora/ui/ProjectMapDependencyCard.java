@@ -121,8 +121,8 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
         back.setOnAction(event -> goBack());
         aroundButton.setToggleGroup(views);
         insideButton.setToggleGroup(views);
-        aroundButton.setTooltip(ControlNames.tooltip(tr("project.map.deps.aroundTip")));
-        insideButton.setTooltip(ControlNames.tooltip(tr("project.map.deps.insideTip")));
+        ControlNames.tip(aroundButton, tr("project.map.deps.aroundTip"));
+        ControlNames.tip(insideButton, tr("project.map.deps.insideTip"));
         views.selectedToggleProperty().addListener((obs, was, now) -> {
             if (now != null && !syncing) {
                 view = now == insideButton ? View.INSIDE : View.AROUND;
@@ -131,8 +131,8 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
         });
         filesButton.setToggleGroup(groupings);
         foldersButton.setToggleGroup(groupings);
-        filesButton.setTooltip(ControlNames.tooltip(tr("project.map.deps.filesTip")));
-        foldersButton.setTooltip(ControlNames.tooltip(tr("project.map.deps.foldersTip")));
+        ControlNames.tip(filesButton, tr("project.map.deps.filesTip"));
+        ControlNames.tip(foldersButton, tr("project.map.deps.foldersTip"));
         groupings.selectedToggleProperty().addListener((obs, was, now) -> {
             if (now != null && !syncing) {
                 ProjectMapDependencies.Grouping chosen = now == foldersButton
@@ -294,7 +294,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
         String name = displayName(subject, folder);
         String heading = tr("project.map.deps.title", name);
         title.setText(heading);
-        title.setTooltip(ControlNames.tooltip(subject.isEmpty() ? name : subject));
+        ControlNames.tip(title, subject.isEmpty() ? name : subject);
         setAccessibleText(heading);
         picked = null;
         why.getItems().clear();
@@ -391,7 +391,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
         for (int c = 0; c < n; c++) {
             Label number = new Label(Integer.toString(c + 1));
             number.getStyleClass().add("project-map-deps-column");
-            number.setTooltip(ControlNames.tooltip(partName(found.folder(), parts.get(c))));
+            ControlNames.tip(number, partName(found.folder(), parts.get(c)));
             UiZoom.minWidth(number, CELL);
             number.setAlignment(Pos.CENTER);
             matrix.add(number, c + 1, 0);
@@ -403,7 +403,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
             header.setMnemonicParsing(false);
             header.setMaxWidth(Double.MAX_VALUE);
             header.setAlignment(Pos.CENTER_LEFT);
-            header.setTooltip(ControlNames.tooltip(tr("project.map.deps.partTip", part.rel(), part.files())));
+            ControlNames.tip(header, tr("project.map.deps.partTip", part.rel(), part.files()));
             View look = part.folder() ? View.INSIDE : View.AROUND;
             header.setOnAction(event -> moveTo(root, new Place(part.rel(), part.folder(), look), true));
             header.setContextMenu(placeMenu(part.rel(), part.folder()));
@@ -448,7 +448,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
         UiZoom.maxSize(cell, CELL, CELL);
         String tip =
                 tr(found.cycle()[r][c] ? "project.map.deps.cellCycleTip" : "project.map.deps.cellTip", from, to, count);
-        cell.setTooltip(ControlNames.tooltip(tip));
+        ControlNames.tip(cell, tip);
         cell.setAccessibleText(tip);
         ProjectMapDependencies known = Objects.requireNonNull(dependencies); // drawn from it
         cell.setOnAction(event -> pick(
@@ -780,7 +780,7 @@ final class ProjectMapDependencyCard extends MapFloatingCard {
             String name = displayName(found.subject(), found.folder());
             subject.setText(name);
             String tip = tr("project.map.deps.subjectTip", found.subject().isEmpty() ? name : found.subject());
-            subject.setTooltip(ControlNames.tooltip(tip));
+            ControlNames.tip(subject, tip);
             subject.setAccessibleText(tip);
             subject.setContextMenu(placeMenu(found.subject(), found.folder()));
             usersHeader.setText(tr("project.map.deps.usedBy", found.users().size()));

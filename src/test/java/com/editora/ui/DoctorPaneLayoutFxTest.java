@@ -9,6 +9,7 @@ import javafx.scene.control.Label;
 import javafx.stage.Stage;
 
 import com.editora.doctor.DoctorCheck;
+import com.editora.editor.ControlNames;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -132,6 +133,6 @@ class DoctorPaneLayoutFxTest {
         assertEquals(1, details.size());
         Label detail = (Label) details.iterator().next();
         assertTrue(detail.getText().startsWith("~/"), "the home prefix should collapse: " + detail.getText());
-        assertNotNull(detail.getTooltip(), "a long path needs the full text on hover");
+        assertNotNull(ControlNames.tipText(detail), "a long path needs the full text on hover");
     }
 }

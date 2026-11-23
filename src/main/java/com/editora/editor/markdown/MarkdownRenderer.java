@@ -28,6 +28,7 @@ import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
 import com.editora.editor.ControlNames;
+import com.editora.editor.LazyTooltip;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.i18n.Messages;
@@ -2299,12 +2300,12 @@ public final class MarkdownRenderer {
         PreviewImageLoader.loadInto(view, url, max, width > 0, () -> {
             Label missing = inlineCode(imagePlaceholder(alt, null));
             missing.getStyleClass().add("md-image-missing");
-            Tooltip.install(missing, ControlNames.tooltip(dest));
+            LazyTooltip.install(missing, () -> dest);
             slot.getChildren().setAll(missing);
         });
         String tip = title != null && !title.isBlank() ? title : alt;
         if (tip != null && !tip.isBlank()) {
-            Tooltip.install(view, ControlNames.tooltip(tip));
+            LazyTooltip.install(view, () -> tip);
             view.setAccessibleText(tip);
         }
         return enlargeable(slot, ctx);

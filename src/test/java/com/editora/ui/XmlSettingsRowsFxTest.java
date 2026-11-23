@@ -7,6 +7,7 @@ import javafx.scene.control.TextField;
 import javafx.stage.Stage;
 
 import com.editora.config.Settings;
+import com.editora.editor.ControlNames;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -62,10 +63,10 @@ class XmlSettingsRowsFxTest {
         FxTestSupport.runOnFx(() -> {
             assertTrue(keep.getPrefWidth() > 220, "wider than the usual text field");
             assertEquals(value, keep.getText());
-            assertNotNull(keep.getTooltip(), "the whole list on hover");
-            assertEquals(value, keep.getTooltip().getText());
+            assertNotNull(ControlNames.tipText(keep), "the whole list on hover");
+            assertEquals(value, ControlNames.tipText(keep));
             keep.setText("pre");
-            assertEquals(null, keep.getTooltip(), "a short value needs none");
+            assertEquals(null, ControlNames.tipText(keep), "a short value needs none");
         });
     }
 
@@ -90,10 +91,10 @@ class XmlSettingsRowsFxTest {
         FxTestSupport.runOnFx(() -> {
             assertNotNull(xml.getAccessibleText(), "named for a screen reader");
             xml.setText(longCommand);
-            assertNotNull(xml.getTooltip(), "the whole command on hover");
-            assertEquals(longCommand, xml.getTooltip().getText());
+            assertNotNull(ControlNames.tipText(xml), "the whole command on hover");
+            assertEquals(longCommand, ControlNames.tipText(xml));
             xml.setText("");
-            assertEquals(null, xml.getTooltip());
+            assertEquals(null, ControlNames.tipText(xml));
             xml.setText(was);
         });
         FxTestSupport.runOnFx(() -> assertTrue(field("lsp.xml.fileAssociations").getPrefWidth() > 220));

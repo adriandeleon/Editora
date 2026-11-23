@@ -10,6 +10,7 @@ import javafx.scene.control.Control;
 
 import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
+import com.editora.editor.ControlNames;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -124,9 +125,7 @@ final class CommandTips {
         if (detail != null && !detail.isBlank()) {
             name = name + "\n" + detail;
         }
-        if (!name.equals(control.getAccessibleText())
-                || control.getTooltip() == null
-                || !name.equals(control.getTooltip().getText())) {
+        if (!name.equals(control.getAccessibleText()) || !name.equals(ControlNames.tipText(control))) {
             Icons.name(control, name);
         }
     }

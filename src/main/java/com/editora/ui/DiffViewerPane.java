@@ -49,6 +49,7 @@ import com.editora.diff.DiffModels.UnifiedRow;
 import com.editora.diff.DiffText;
 import com.editora.diff.PatchWriter;
 import com.editora.editor.ControlNames;
+import com.editora.editor.LazyTooltip;
 import com.editora.editor.MenuChords;
 import com.editora.editor.PressableBox;
 import com.editora.editor.TabContent;
@@ -882,7 +883,7 @@ public final class DiffViewerPane implements TabContent {
         hunkButton(revertHunkButton, tr("diff.revertHunk"), GitHunkAction.REVERT);
         applyEofButton.setText(tr("diff.applyFinalNewline"));
         applyEofButton.setAccessibleText(tr("diff.applyFinalNewline"));
-        applyEofButton.setTooltip(ControlNames.tooltip(tr("diff.applyFinalNewline")));
+        ControlNames.tip(applyEofButton, tr("diff.applyFinalNewline"));
         applyEofButton.setFocusTraversable(false);
         applyEofButton.getStyleClass().addAll("flat", "diff-option-button");
         applyEofButton.setOnAction(e -> applyFinalNewline());
@@ -1031,7 +1032,7 @@ public final class DiffViewerPane implements TabContent {
     private void hunkButton(Button button, String label, GitHunkAction action) {
         button.setText(label);
         button.setAccessibleText(label);
-        button.setTooltip(ControlNames.tooltip(label));
+        ControlNames.tip(button, label);
         button.setFocusTraversable(false);
         button.getStyleClass().addAll("flat", "diff-option-button");
         button.setOnAction(e -> performGitAction(action, currentBlockStart(), false));
@@ -2475,7 +2476,7 @@ public final class DiffViewerPane implements TabContent {
         fixSlotWidth(slot);
         slot.getStyleClass().add("diff-apply");
         slot.setAccessibleText(tip);
-        Tooltip.install(slot, ControlNames.tooltip(tip));
+        LazyTooltip.install(slot, () -> tip);
         slot.getChildren().add(icon);
         return slot;
     }

@@ -107,13 +107,13 @@ class ToolbarStateFxTest {
             Button stepOver = FxTestSupport.field(panel, "stepOver");
             fx.shared.getSettings().setKeymap("emacs");
             fx.windowManager.reloadSharedKeymap();
-            String emacs = stepOver.getTooltip().getText();
+            String emacs = ControlNames.tipText(stepOver);
             assertNotNull(emacs);
             assertTrue(emacs.contains(c.keymap.displayChord("debug.stepOver")), emacs);
 
             fx.shared.getSettings().setKeymap("intellij");
             fx.windowManager.reloadSharedKeymap();
-            String intellij = stepOver.getTooltip().getText();
+            String intellij = ControlNames.tipText(stepOver);
             assertTrue(intellij.contains(c.keymap.displayChord("debug.stepOver")), intellij);
             assertFalse(intellij.equals(emacs), "the old keymap's chord is gone: " + intellij);
             assertEquals(intellij, stepOver.getAccessibleText(), "the tooltip and the accessible text are one name");
@@ -133,11 +133,14 @@ class ToolbarStateFxTest {
             assertEquals(ControlNames.TOOLTIP_DELAY, ControlNames.tooltip().getShowDelay());
             Button button = new Button();
             Icons.name(button, "A button");
-            assertEquals(ControlNames.TOOLTIP_DELAY, button.getTooltip().getShowDelay());
-            // A tab's and a status bar segment's tooltip, made where `new Tooltip` used to be.
             assertEquals(
                     ControlNames.TOOLTIP_DELAY,
-                    TabHeaders.tooltip(Path.of("a.txt")).getShowDelay());
+                    ControlNames.builtTooltip(button).getShowDelay());
+            // A tab's and a status bar segment's tooltip, made where `new Tooltip` used to be.
+            javafx.scene.control.Tab tab = new javafx.scene.control.Tab();
+            TabHeaders.fileTooltip(tab, Path.of("a.txt"));
+            assertEquals(
+                    ControlNames.TOOLTIP_DELAY, ControlNames.builtTooltip(tab).getShowDelay());
         });
     }
 

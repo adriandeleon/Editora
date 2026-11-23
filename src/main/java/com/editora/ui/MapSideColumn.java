@@ -85,7 +85,6 @@ abstract class MapSideColumn implements CardAttachment {
         title.setMinWidth(0);
         title.setMaxWidth(Double.MAX_VALUE);
         title.setTextOverrun(OverrunStyle.ELLIPSIS);
-        title.setTooltip(ControlNames.tooltip());
         HBox.setHgrow(title, Priority.ALWAYS);
         Button close = new Button("×");
         close.getStyleClass().add("project-map-preview-button");
@@ -152,7 +151,7 @@ abstract class MapSideColumn implements CardAttachment {
     /** Sets the title, its tooltip, and {@code spoken}'s accessible name. */
     protected final void setTitle(String text, Node spoken) {
         title.setText(text);
-        title.getTooltip().setText(text);
+        ControlNames.tip(title, text);
         spoken.setAccessibleText(text);
     }
 

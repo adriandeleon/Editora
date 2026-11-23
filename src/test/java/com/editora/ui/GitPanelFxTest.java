@@ -13,6 +13,7 @@ import javafx.scene.control.TreeView;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 
+import com.editora.editor.ControlNames;
 import com.editora.git.GitStatus;
 import com.editora.git.GitStatus.FileEntry;
 import org.junit.jupiter.api.BeforeAll;
@@ -1054,8 +1055,8 @@ class GitPanelFxTest {
                     javafx.scene.control.TreeCell<?> cell = (javafx.scene.control.TreeCell<?>) node;
                     boolean fileRow =
                             cell.getItem() != null && cell.getItem().toString().startsWith("FileRow");
-                    if (!fileRow && cell.getTooltip() != null) {
-                        out.add(cell.getTooltip().getText());
+                    if (!fileRow && ControlNames.tipText(cell) != null) {
+                        out.add(ControlNames.tipText(cell));
                     }
                 }
                 return out;

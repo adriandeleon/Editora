@@ -863,8 +863,8 @@ public class SettingsWindow {
 
         // The kit puts the search at the top of the nav rail, not spanning the window: search scopes the
         // sidebar (it greys categories and auto-selects the first hit), so it lives with the sidebar.
-        modifiedOnly.setTooltip(ControlNames.tooltip(tr("settings.search.modifiedOnly.tip")));
         modifiedOnly.setAccessibleHelp(tr("settings.search.modifiedOnly.tip"));
+        ControlNames.tip(modifiedOnly, tr("settings.search.modifiedOnly.tip"));
         modifiedOnly.setOnAction(e -> filter(searchField.getText()));
         // The window's buttons and links that act are commands too (KBD-01), found while this window shows.
         FocusCommands.press(modifiedOnly, "settings.toggleModifiedOnly");
@@ -3749,7 +3749,7 @@ public class SettingsWindow {
         Card fileSection = card(p, tr("settings.section.file"));
         Hyperlink link = FocusCommands.press(
                 new Hyperlink(displaySettingsPath(config.getSettingsFile())), "settings.openSettingsFile");
-        link.setTooltip(ControlNames.tooltip(tr("settings.openFileTip")));
+        ControlNames.tip(link, tr("settings.openFileTip"));
         link.setOnAction(e -> {
             if (onOpenFile != null) {
                 onOpenFile.accept(config.getSettingsFile());
@@ -3766,7 +3766,7 @@ public class SettingsWindow {
         Path sessionLog = DebugLog.sessionFile(config.getConfigDir());
         Hyperlink sessionLink = FocusCommands.press(
                 new Hyperlink(sessionLog == null ? "" : displaySettingsPath(sessionLog)), "settings.openSessionLog");
-        sessionLink.setTooltip(ControlNames.tooltip(tr("settings.openFileTip")));
+        ControlNames.tip(sessionLink, tr("settings.openFileTip"));
         sessionLink.setOnAction(e -> {
             if (onOpenFile != null && sessionLog != null) {
                 onOpenFile.accept(sessionLog);

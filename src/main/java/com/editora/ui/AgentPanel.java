@@ -10,7 +10,6 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextArea;
-import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -20,7 +19,7 @@ import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
 import com.editora.agent.AcpJson;
-import com.editora.editor.ControlNames;
+import com.editora.editor.LazyTooltip;
 import com.editora.editor.PressableLabel;
 import com.editora.editor.UiZoom;
 import com.editora.editor.markdown.MarkdownRenderer;
@@ -674,7 +673,7 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
                 link.getStyleClass().setAll(label.getStyleClass());
                 link.getStyleClass().add("agent-code-path");
                 link.setAccessibleHelp(tr("agent.openFileTooltip"));
-                Tooltip.install(link, ControlNames.tooltip(tr("agent.openFileTooltip")));
+                LazyTooltip.install(link, () -> tr("agent.openFileTooltip"));
                 pane.getChildren().set(pane.getChildren().indexOf(label), link);
             }
         } else if (node instanceof Parent parent) {

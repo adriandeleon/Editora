@@ -35,7 +35,7 @@ class NoLiteralUiTextTest {
             + "|Text|RadioButton|ToggleButton|Tab|TitledPane|Hyperlink|CheckMenuItem|RadioMenuItem|Menu"
             + "|TableColumn(?:<[^>]*>)?|TreeTableColumn(?:<[^>]*>)?)"
             + "|\\.set(?:Text|PromptText|Title|HeaderText|ContentText|AccessibleText|AccessibleHelp"
-            + "|AccessibleRoleDescription)|ControlNames\\.tooltip|Icons\\.name)\\(");
+            + "|AccessibleRoleDescription)|ControlNames\\.(?:tooltip|tip)|LazyTooltip\\.install|Icons\\.name)\\(");
 
     /**
      * Calls whose literal argument is not shown: a catalog lookup takes a key ({@code tr},
@@ -61,6 +61,8 @@ class NoLiteralUiTextTest {
     private static final Map<String, String> NOT_LANGUAGE = Map.ofEntries(
             Map.entry("Aa", "the match-case glyph of every find bar"),
             Map.entry("AB", "the preserve-case glyph of the find bar"),
+            Map.entry("git-diff-tooltip", "a style class LazyTooltip.install gives the tooltip, not its text"),
+            Map.entry("blame-tooltip", "a style class LazyTooltip.install gives the tooltip, not its text"),
             Map.entry("ripgrep", "the name of a program"),
             Map.entry("gdb", "the name of a program, as a prompt in its path field"),
             Map.entry("flutter", "the name of a program, as a prompt in its path field"),
@@ -84,8 +86,7 @@ class NoLiteralUiTextTest {
             Map.entry("UTF-8", "the name of an encoding"),
             Map.entry(" ms", "a unit"),
             Map.entry("ARG ", "a Dockerfile keyword"),
-            Map.entry("Editora", "the app's name"),
-            Map.entry("untitled", "the name of a buffer with no file, the same in every language as a file name is"));
+            Map.entry("Editora", "the app's name"));
 
     private static final Pattern TWO_LETTERS = Pattern.compile("\\p{L}{2}");
 

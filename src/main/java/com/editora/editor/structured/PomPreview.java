@@ -561,7 +561,7 @@ public final class PomPreview {
                 }
             });
             if (node instanceof javafx.scene.control.Control c) {
-                c.setTooltip(ControlNames.tooltip(Messages.tr("pom.gotoLine", line)));
+                ControlNames.tip(c, Messages.tr("pom.gotoLine", line));
             }
             return node;
         }

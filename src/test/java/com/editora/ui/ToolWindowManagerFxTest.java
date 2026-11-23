@@ -19,6 +19,7 @@ import javafx.stage.WindowEvent;
 import com.editora.command.KeymapManager;
 import com.editora.config.ConfigManager;
 import com.editora.config.SharedConfig;
+import com.editora.editor.ControlNames;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -313,17 +314,16 @@ class ToolWindowManagerFxTest {
             java.util.Map<ToolWindow, Button> buttons = FxTestSupport.field(manager, "stripeButtons");
 
             assertEquals(
-                    "With Chord (" + keymap.displayChord(bound) + ")",
-                    buttons.get(withChord).getTooltip().getText());
-            assertEquals("Unbound", buttons.get(unbound).getTooltip().getText());
-            assertEquals("Plain", buttons.get(noCommand).getTooltip().getText());
+                    "With Chord (" + keymap.displayChord(bound) + ")", ControlNames.tipText(buttons.get(withChord)));
+            assertEquals("Unbound", ControlNames.tipText(buttons.get(unbound)));
+            assertEquals("Plain", ControlNames.tipText(buttons.get(noCommand)));
 
             keymap.loadNamed("cua"); // a live keymap switch: the tooltips are rewritten from it
             manager.refreshTooltips();
             String now = keymap.displayChord(bound);
             assertEquals(
                     now == null ? "With Chord" : "With Chord (" + now + ")",
-                    buttons.get(withChord).getTooltip().getText());
+                    ControlNames.tipText(buttons.get(withChord)));
         });
     }
 

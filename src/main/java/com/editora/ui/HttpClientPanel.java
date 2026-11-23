@@ -457,7 +457,7 @@ public final class HttpClientPanel extends VBox {
         previousRow.setMaxWidth(Double.MAX_VALUE);
         previousRow.setAlignment(Pos.CENTER_LEFT);
         previousRow.setTextOverrun(OverrunStyle.ELLIPSIS);
-        previousRow.setTooltip(ControlNames.tooltip(tr("httppanel.previous.tip")));
+        ControlNames.tip(previousRow, tr("httppanel.previous.tip"));
         previousRow.setOnAction(e -> showPrevious());
         previousPane.getStyleClass().add("http-previous-pane");
         UiZoom.padding(previousPane, 6, 2, 2, 2);

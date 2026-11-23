@@ -12,14 +12,13 @@ import java.util.Map;
 
 import javafx.scene.Node;
 import javafx.scene.control.Label;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 
-import com.editora.editor.ControlNames;
+import com.editora.editor.LazyTooltip;
 import com.editora.i18n.Messages;
 import com.editora.markwhen.MwNode;
 import com.editora.markwhen.Timeline;
@@ -169,7 +168,7 @@ public final class MarkwhenCalendar {
         } else if (lane != null) {
             chip.getStyleClass().add(lane);
         }
-        Tooltip.install(chip, ControlNames.tooltip(e.tooltip()));
+        LazyTooltip.install(chip, () -> e.tooltip());
         return chip;
     }
 

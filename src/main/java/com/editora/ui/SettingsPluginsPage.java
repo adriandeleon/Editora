@@ -217,7 +217,7 @@ final class SettingsPluginsPage {
         pluginRegistryField.textProperty().addListener((o, was, now) -> {
             boolean bad = !now.isBlank() && !com.editora.plugin.PluginRegistry.isHttps(now);
             registryField.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, bad);
-            registryField.setTooltip(bad ? ControlNames.tooltip(tr("settings.plugins.registryNotHttps")) : null);
+            ControlNames.tip(registryField, bad ? tr("settings.plugins.registryNotHttps") : null);
         });
         Label regNote = SettingsWindow.note(tr("settings.plugins.registryNote"));
         regNote.setWrapText(true);
@@ -306,7 +306,7 @@ final class SettingsPluginsPage {
         CheckBox cb = new CheckBox(PluginDisclosure.clean(ver.isBlank() ? name : name + "  " + ver, 120));
         cb.setSelected(wanted || pill == PluginRowState.Pill.UPDATE_PENDING);
         cb.setMinWidth(0);
-        cb.setTooltip(ControlNames.tooltip(name + (ver.isBlank() ? "" : " " + ver) + " (" + d.id() + ")"));
+        ControlNames.tip(cb, name + (ver.isBlank() ? "" : " " + ver) + " (" + d.id() + ")");
         SettingsDependents.bind(pluginCheck.selectedProperty(), cb); // follows the switch as it is flipped
         if (d.loadError() != null || pill == PluginRowState.Pill.REMOVAL_PENDING) {
             SettingsDependents.lockOf(cb).set(true); // a broken (or departing) plugin cannot be ticked at all

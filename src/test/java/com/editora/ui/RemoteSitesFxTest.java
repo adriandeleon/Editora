@@ -34,6 +34,7 @@ import javafx.stage.Stage;
 import javafx.stage.Window;
 
 import com.editora.command.KeymapManager;
+import com.editora.editor.ControlNames;
 import com.editora.vfs.LoginPrompt;
 import com.editora.vfs.RemoteConnection;
 import org.junit.jupiter.api.AfterEach;
@@ -173,7 +174,7 @@ class RemoteSitesFxTest {
                 if (!cell.isEmpty() && cell.getGraphic() != null) {
                     StringBuilder sb = new StringBuilder();
                     collect(cell.getGraphic(), sb);
-                    out.put(cell.getIndex(), sb + cell.getTooltip().getText());
+                    out.put(cell.getIndex(), sb + ControlNames.tipText(cell));
                 }
             }
             return new ArrayList<>(out.values());

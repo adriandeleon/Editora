@@ -25,6 +25,7 @@ import com.editora.config.NoteScope;
 import com.editora.config.NoteStatus;
 import com.editora.config.PersonalNote;
 import com.editora.config.TextAnchor;
+import com.editora.editor.ControlNames;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -269,7 +270,7 @@ class NotesPanelKeysFxTest {
 
             TreeCell<Object> file = cellFor("fileKey=/p1/A.java");
             assertEquals("A.java", file.getText());
-            assertEquals("/p1/A.java", file.getTooltip().getText());
+            assertEquals("/p1/A.java", ControlNames.tipText(file));
             assertTrue(file.getStyleClass().contains("notes-file-row"));
 
             assertEquals("docs", cellFor("fileKey=C:\\p1\\docs").getText());

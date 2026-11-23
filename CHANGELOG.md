@@ -135,6 +135,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Start-up builds each menu's items when that menu first opens, builds the Project Map when it is first opened
     rather than with the Project panel, and reads the AI keys from the keychain and decodes the window icons while
     other start-up work goes on.
+  - A window no longer builds a tooltip for every button, status bar item and tab before it first paints: each
+    tooltip is built the first time the pointer rests on its control, and looks and reads the same as before.
   - Project Map: typing in a column filter on a very large folder no longer sorts the whole map per keystroke;
     zooming, and with Compact rows moving the pointer between columns, no longer re-sorts or lays out every column;
     problem counts are no longer rebuilt every 100 ms while the Map is hidden; "Show dependencies of the selection"

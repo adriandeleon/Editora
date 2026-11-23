@@ -747,7 +747,7 @@ final class ProjectMapPreview extends StackPane {
         // Read-only is a lock, not a word that took the file's name's room; it says what a card is for: a glance,
         // with Open for reading and editing in the editor (position 12).
         readOnly.setGraphic(Icons.lock());
-        readOnly.setTooltip(ControlNames.tooltip(tr("project.map.preview.glance")));
+        ControlNames.tip(readOnly, tr("project.map.preview.glance"));
         readOnly.setAccessibleText(tr("project.map.preview.glance"));
         readOnly.getStyleClass().add("project-map-preview-readonly");
         readOnly.setMinWidth(Region.USE_PREF_SIZE);
@@ -760,7 +760,7 @@ final class ProjectMapPreview extends StackPane {
 
         open.setText(tr("project.map.preview.open"));
         open.getStyleClass().add("project-map-preview-button");
-        open.setTooltip(ControlNames.tooltip(tr("project.map.preview.openHelp")));
+        ControlNames.tip(open, tr("project.map.preview.openHelp"));
         MapButtonCommands.runs(this, open, "projectMap.openInEditor", () -> {
             Path selected = path;
             Range shown = range;
@@ -1833,9 +1833,8 @@ final class ProjectMapPreview extends StackPane {
     /** A declaration card's Open (and its menu's Open Narrowed): the file opens narrowed to the declaration's block. */
     void setOnOpenNarrowed(Runnable callback) {
         onOpenNarrowed = callback;
-        open.getTooltip()
-                .setText(
-                        tr(callback == null ? "project.map.preview.openHelp" : "project.map.preview.openNarrowedHelp"));
+        ControlNames.tip(
+                open, tr(callback == null ? "project.map.preview.openHelp" : "project.map.preview.openNarrowedHelp"));
     }
 
     private void updateRangeChrome() {
@@ -1851,7 +1850,7 @@ final class ProjectMapPreview extends StackPane {
         updateStepButtons();
         if (shown == null) {
             title.setText(name);
-            title.setTooltip(ControlNames.tooltip(linked(shownPath.toString())));
+            ControlNames.tip(title, linked(shownPath.toString()));
             setAccessibleText(linked(tr("project.map.preview.accessible", shownPath.toString())));
             editor.setAccessibleText(tr("project.map.preview.editorAccessible", name));
             editor.getStyleClass().remove("narrowed");
@@ -1860,8 +1859,7 @@ final class ProjectMapPreview extends StackPane {
         }
         title.setText(name + " › " + shown.symbol());
         String link = linkDescription;
-        title.setTooltip(
-                ControlNames.tooltip(shownPath + "\n" + rangeLabel(shown) + (link == null ? "" : "\n" + link)));
+        ControlNames.tip(title, shownPath + "\n" + rangeLabel(shown) + (link == null ? "" : "\n" + link));
         setAccessibleText(linked(tr("project.map.preview.symbolAccessible", shown.symbol(), shownPath.toString())));
         editor.setAccessibleText(tr("project.map.preview.symbolEditorAccessible", shown.symbol(), name));
         if (!editor.getStyleClass().contains("narrowed")) {
@@ -2745,7 +2743,7 @@ final class ProjectMapPreview extends StackPane {
         selectionNote.setGraphic(Icons.notes());
         selectionNote.getStyleClass().addAll("flat", "md-fmt-btn");
         selectionNote.setFocusTraversable(false); // a click must leave the selection's text focused
-        selectionNote.setTooltip(ControlNames.tooltip(tr("project.map.preview.addNoteHelp")));
+        ControlNames.tip(selectionNote, tr("project.map.preview.addNoteHelp"));
         selectionNote.setOnAction(event -> {
             Path selected = path;
             MarkerActions actions = markerActions;

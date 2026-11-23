@@ -363,7 +363,7 @@ final class ProjectMapSymbolGraphCard extends MapFloatingCard {
             middle.setWrapText(true);
             // Its declaration, opened as a card: the graph's Open as Card, while the keyboard is on it (KBD-01).
             MapButtonCommands.runs(middle, middle, "projectMap.openCard", ProjectMapSymbolGraphCard.this::openSubject);
-            middle.setTooltip(ControlNames.tooltip(tr("project.map.graph.subjectTip")));
+            ControlNames.tip(middle, tr("project.map.graph.subjectTip"));
             curves.setManaged(false);
             curves.setMouseTransparent(true);
             UiZoom.follow(this, this::requestLayout);

@@ -137,7 +137,7 @@ final class ProjectMapStickyNotes implements CardAttachment {
         private More(int count, int total) {
             getStyleClass().add("project-map-sticky-more");
             open.setText(tr("project.map.sticky.more", count));
-            open.setTooltip(ControlNames.tooltip(tr("project.map.sticky.moreHelp", total - count, total)));
+            ControlNames.tip(open, tr("project.map.sticky.moreHelp", total - count, total));
             open.setAccessibleText(tr("project.map.sticky.moreHelp", total - count, total));
             open.getStyleClass().addAll("flat", "project-map-sticky-more-button");
             open.setMaxWidth(Double.MAX_VALUE);

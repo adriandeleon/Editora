@@ -3,6 +3,7 @@ package com.editora.ui;
 import javafx.event.ActionEvent;
 import javafx.scene.control.Spinner;
 
+import com.editora.editor.ControlNames;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -53,7 +54,7 @@ class IntSpinnersFxTest {
                 assertTrue(spinner.getEditor().getPseudoClassStates().contains(danger), typed + " is marked");
                 assertEquals(
                         com.editora.i18n.Messages.tr("settings.number.range", 1, 16),
-                        spinner.getTooltip().getText(),
+                        ControlNames.tipText(spinner),
                         "the mark says what is taken");
             }
 
@@ -69,7 +70,7 @@ class IntSpinnersFxTest {
             spinner.getEditor().fireEvent(new ActionEvent());
             assertEquals(8, spinner.getValue());
             assertEquals("8", spinner.getEditor().getText());
-            assertNull(spinner.getTooltip());
+            assertNull(ControlNames.tipText(spinner));
         });
     }
 }

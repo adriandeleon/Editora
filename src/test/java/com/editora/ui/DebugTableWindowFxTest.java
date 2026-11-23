@@ -16,6 +16,7 @@ import javafx.scene.control.TreeView;
 import com.editora.command.CommandRegistry;
 import com.editora.dap.DapManager;
 import com.editora.dap.FakeDebugAdapter;
+import com.editora.editor.ControlNames;
 import com.editora.testkit.Await;
 import org.eclipse.lsp4j.debug.VariablesArguments;
 import org.junit.jupiter.api.AfterAll;
@@ -185,9 +186,7 @@ class DebugTableWindowFxTest {
         return w.table().getColumns().stream()
                 .filter(c -> c.getGraphic() instanceof javafx.scene.control.Label l
                         && l.getText().equals(column))
-                .map(c -> ((javafx.scene.control.Label) c.getGraphic())
-                        .getTooltip()
-                        .getText())
+                .map(c -> ControlNames.tipText(((javafx.scene.control.Label) c.getGraphic())))
                 .findFirst()
                 .orElse(null);
     }
