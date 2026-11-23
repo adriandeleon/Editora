@@ -226,6 +226,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`${fileDirnameBasename}` in `launch.json` is empty for a file at the root of a drive.** It used to read
+  `null`, as did `${relativeFileDirname}` when the file had no folder; both are now empty, as in VS Code.
 - **Old error underlines came back after some edits.** After signature help, Format, code actions and other requests
   that send the text first, the typing pause could put the pre-edit squiggles back on lines the edit had moved.
 - **The Threads view stopped updating** while a program kept starting and ending threads.
