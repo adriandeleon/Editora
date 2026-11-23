@@ -28,10 +28,12 @@
 #   PERF_BASE_DIR   where the baseline worktree goes
 #   PERF_SKIP_BUILD set to 1 to reuse both trees' existing target/ (after a first run)
 #   PERF_TIMEOUT    seconds before one probe run is killed (default 900)
+#   PERF_RESUMMARIZE set to 1 (with PERF_OUT=<an earlier run's directory>) to print its table again, running nothing
 #
 # Every metric is lower-is-better. Medians of 2 reps are coarse; use 3 or more for a release, and re-run a
 # flagged mode alone (PERF_MODES=typing:2000 ...) before chasing it. The "spread" column is the larger of the two
-# sides' (max - min) / median: a change smaller than the spread is noise.
+# sides' (max - min) / median. A worse change smaller than the spread is marked ▲? (likely noise: re-run that mode,
+# with more reps or on a quieter machine); a worse change larger than the spread is marked ▲.
 set -euo pipefail
 
 die() { echo "perf-ab: $*" >&2; exit 1; }
@@ -71,6 +73,12 @@ if command -v taskset >/dev/null 2>&1; then
     PIN=(taskset -c "0-$(( CPUS - 1 ))") # Linux: the runs really get only these cores
 fi
 
+RESUMMARIZE=${PERF_RESUMMARIZE:-}
+if [ "$RESUMMARIZE" = 1 ]; then
+    [ -f "$OUT/metrics.tsv" ] && [ -f "$OUT/run.env" ] || die "PERF_RESUMMARIZE needs PERF_OUT=<an earlier run's directory>"
+    # shellcheck disable=SC1091
+    . "$OUT/run.env"
+else
 # --- the baseline worktree -------------------------------------------------------------------------------
 if [ -d "$BASE_DIR" ]; then
     if [ "$(git -C "$BASE_DIR" rev-parse HEAD)" != "$BASE_SHA" ]; then
@@ -167,12 +175,16 @@ for rep in $(seq 1 "$REPS"); do
     done
 done
 LOAD1=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo ?)
+printf 'REPS=%q CPUS=%q NCPU=%q LOAD0=%q LOAD1=%q FAILURES=%q NEW_SHA=%q\n' \
+    "$REPS" "$CPUS" "$NCPU" "$LOAD0" "$LOAD1" "$FAILURES" "$NEW_SHA" >"$OUT/run.env"
+fi # PERF_RESUMMARIZE
 
 # --- summary ---------------------------------------------------------------------------------------------
 {
     echo "Performance A/B: \`$(git rev-parse --short "$NEW_SHA")\` (new) vs \`$BASE_REF\` (base, $(git rev-parse --short "$BASE_SHA"))."
     echo "$REPS reps, interleaved; medians; lower is better everywhere. $CPUS of $NCPU cores, $(java -version 2>&1 | head -1 | tr -d '"');"
-    echo "load average $LOAD0 at the start, $LOAD1 at the end. **▲** = more than 10 % worse (and more than 0.5 ms / 20 µs / 1 MB)."
+    echo "load average $LOAD0 at the start, $LOAD1 at the end. **▲** = more than 10 % worse (and more than 0.5 ms / 20 µs / 1 MB) and more than the"
+    echo "spread; **▲?** = more than 10 % worse but within the spread (likely noise: re-run that mode)."
     echo
     echo "| Metric | $BASE_REF | new | Change | Spread | |"
     echo "|---|---:|---:|---:|---:|---|"
@@ -202,13 +214,15 @@ LOAD1=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo ?)
                     if (b > 0) {
                         pct = (n - b) / b * 100
                         change = sprintf("%+.0f %%", pct)
-                        if (big && pct > 10) { flag = "▲"; worse++ } else if (big && pct < -10) flag = "▼"
+                        if (big && pct > 10) {
+                            if (pct > spread * 100) { flag = "▲"; worse++ } else { flag = "▲?"; noisy++ }
+                        } else if (big && pct < -10) flag = "▼"
                     } else if (n > floor) { change = "new > 0"; flag = "▲"; worse++ }
                     else change = "="
                 }
                 printf "| %s | %s | %s | %s | %.0f %% | %s |\n", k, hb ? num(b) : "–", hn ? num(n) : "–", change, spread * 100, flag
             }
-            printf "\n%d metric(s) more than 10 %% worse.\n", worse
+            printf "\n%d metric(s) more than 10 %% worse beyond the spread (▲); %d more within it (▲?).\n", worse, noisy
         }'
     echo
     echo "Not measured here: startup (needs a display) — run \`scripts/measure-startup.sh -n 7\` on both builds."

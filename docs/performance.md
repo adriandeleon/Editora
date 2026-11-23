@@ -966,8 +966,11 @@ test fixtures and drives one scenario per run — typing (FX-thread time, proces
 frames** and pulses per keystroke, newline), smooth scrolling and far jumps, 20 s idle, highlighting a 79k-line
 file (load and edits), opening a 20 MB file, heap per open tab and what closing them leaves behind, Find over
 45 MB, save, and a bare `CodeArea` as a control for machine noise. Runs alternate between the builds (new, base,
-then base, new) and the script prints a markdown table of medians with the change and each metric's spread,
-marking anything more than 10 % worse; the table goes in the release PR. Run logs, folded FX-thread stacks
+then base, new) and the script prints a markdown table of medians with the change and each metric's spread
+(the larger side's (max − min) / median), marking a metric more than 10 % worse **▲** when the change is larger
+than the spread and **▲?** when it is not (likely noise: re-run that mode, with more reps or on a quieter
+machine); the table goes in the release PR. `PERF_RESUMMARIZE=1 PERF_OUT=<run directory>` prints an earlier
+run's table again. Run logs, folded FX-thread stacks
 (flame-graph input) and `metrics.tsv` stay under `target/perf-ab/`.
 
 - **Both sides run the same probe.** The script compiles the current probe source against each build. What
