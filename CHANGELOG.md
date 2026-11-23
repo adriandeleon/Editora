@@ -103,6 +103,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Editora's Linux app ID is now `io.github.adriandeleon.Editora`** (it was `com.editora.Editora`), as Pauta asks.
+  It is the ID GNOME Software, KDE Discover and other software centres know Editora by. The listing says it replaces
+  the old ID, and an upgrade removes the file named for the old one, so Editora is listed once.
 - **Editora now works toward Pauta 6.2.0** (it was 6.0.1). About and the README name the new edition. In 6.2.0 an icon
   on a menu row is optional, so menu rows without one are no longer listed as unmet.
 - **Force Push is offered only after a rejected push.** The Git ▸ Remotes ▸ Force Push (with Lease) row and its
