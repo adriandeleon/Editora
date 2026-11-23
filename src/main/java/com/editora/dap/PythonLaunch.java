@@ -26,6 +26,8 @@ import org.jspecify.annotations.Nullable;
  *   <li>With {@code programConsole}, debugpy hands the program's command line back ({@code runInTerminal})
  *       and Editora starts it, which gives it a standard input; output is then unbuffered so a prompt shows
  *       before the program waits.</li>
+ *   <li>{@code showReturnValue}: after a step leaves a function, its returned value shows in the caller's Locals as
+ *       {@code (return) name} (VS Code's Python extension sends it on by default; debugpy's own default is off).</li>
  * </ul>
  */
 public final class PythonLaunch {
@@ -100,6 +102,7 @@ public final class PythonLaunch {
         m.put("console", programConsole ? "integratedTerminal" : "internalConsole");
         m.put("subProcess", false);
         m.put("stopOnEntry", false);
+        m.put("showReturnValue", true); // "(return) f" in Locals after a step out of f, as VS Code's default
         return m;
     }
 

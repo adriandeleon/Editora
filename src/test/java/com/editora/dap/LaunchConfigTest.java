@@ -253,6 +253,7 @@ class LaunchConfigTest {
     @Test
     void debugpyAttachesToWhereTheProgramListens() {
         var m = LaunchConfig.pythonAttach("localhost", 5678);
+        assertEquals(true, m.get("showReturnValue"));
         org.junit.jupiter.api.Assertions.assertEquals("python", m.get("type"));
         org.junit.jupiter.api.Assertions.assertEquals("attach", m.get("request"));
         org.junit.jupiter.api.Assertions.assertEquals(

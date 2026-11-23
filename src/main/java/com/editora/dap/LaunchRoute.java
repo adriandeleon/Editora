@@ -98,6 +98,7 @@ public final class LaunchRoute {
             }
             case "debugpy", "python" -> {
                 request.put("type", "python");
+                request.putIfAbsent("showReturnValue", true); // VS Code's Python extension's default
                 return new Route(Kind.DEBUGPY, DebugLanguages.PYTHON, request, attach, "");
             }
             case "node", "pwa-node" -> {
