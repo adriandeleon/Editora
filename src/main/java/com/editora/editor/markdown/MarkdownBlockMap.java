@@ -55,11 +55,15 @@ public final class MarkdownBlockMap {
 
     /**
      * An edit starting on {@code line} (of the document after the edit): the map is behind until it is scanned.
-     * Records the line only; no copy and no scan per keystroke (see the class comment).
+     * Records the line only; no copy and no scan per keystroke (see the class comment). The one exception is a
+     * buffer with no map yet (its load): that scan starts at once, so the first key after opening decides from it.
      */
     public void changed(int line) {
         firstChanged = Math.min(firstChanged, line);
         firstChangedSinceAsk = Math.min(firstChangedSinceAsk, line);
+        if (blocks == null && buffer.isMarkdown()) {
+            ask();
+        }
     }
 
     /** Typing paused: brings a map that is behind up to date, off the FX thread. */
@@ -125,9 +129,11 @@ public final class MarkdownBlockMap {
 
     /** The kind of {@code line} (a paragraph index), as the map knows it; see the class comment. */
     MarkdownBlocks.Kind kindAtLine(int line, int lineCount) {
+        if (!current()) {
+            ask(); // ask before reading: a scan that answers at once is the map this key decides from
+        }
         MarkdownBlocks known = blocks;
         if (known == null) {
-            ask();
             return MarkdownBlocks.Kind.TEXT;
         }
         int old = oldLine(known, line, lineCount);
