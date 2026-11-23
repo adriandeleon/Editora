@@ -412,9 +412,13 @@ the web address of the current file at the HEAD commit, with the selected lines
 [Project Map](/docs/workspace#project-map) it is in a code card's menu and in a
 file's or folder's menu (`projectMap.copyPermalink`).
 
-- It works with GitHub, GitLab, Bitbucket, Gitea, Forgejo, Codeberg, sourcehut
-  and Azure DevOps remotes, on the remote the branch tracks (else `origin`,
-  else the first).
+- It works with GitHub, GitLab, Bitbucket (Cloud, and Server / Data Center),
+  Gitea, Forgejo, Codeberg, sourcehut and Azure DevOps remotes, on the remote the
+  branch tracks (else `origin`, else the first). An SSH remote whose host is an
+  `~/.ssh/config` alias (`git@github-work:org/repo.git`) links to the host the
+  alias stands for, and `ssh.github.com` to github.com.
+- On GitHub, a link with lines into a file GitHub shows rendered (Markdown, a
+  notebook, SVG, CSV) opens its source view, where the lines are marked.
 - The lines stay right when the file has unsaved or uncommitted edits above
   them. When the selected lines are all uncommitted, the link is to the whole
   file.

@@ -89,4 +89,16 @@ class GitHubRemoteTest {
         assertFalse(GitHubRemote.anyGitHub(java.util.List.of(), hosts));
         assertFalse(GitHubRemote.anyGitHub(null, hosts));
     }
+
+    /** G1: GitHub's SSH-over-443 endpoint is github.com when gh's hosts decide. */
+    @Test
+    void sshOver443IsGitHub() {
+        java.util.List<String> hosts = java.util.List.of("github.com");
+
+        assertTrue(GitHubRemote.isGitHub("ssh://git@ssh.github.com:443/o/r.git", hosts));
+        assertEquals(
+                "github.com", GitHubRemote.hostAmong(java.util.List.of("ssh://git@ssh.github.com:443/o/r"), hosts));
+        assertEquals("", GitHubRemote.hostAmong(java.util.List.of("https://gitlab.com/o/r"), hosts));
+        assertEquals("", GitHubRemote.hostAmong(java.util.List.of("https://github.com/o/r"), java.util.List.of()));
+    }
 }

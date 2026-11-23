@@ -62,4 +62,49 @@ class GitHubServiceArgsTest {
         assertTrue(new GitHubService.Availability(true, true, "gh version 2.40.0").ready());
         assertFalse(new GitHubService.Availability(true, true, "gh version 2.40.0").supportsChecks());
     }
+
+    /** G13: a repository name is never read as an option — flags, then {@code --}, then the name. */
+    @Test
+    void aRepositoryNameComesAfterADoubleDashAndCannotStartWithADash() {
+        assertEquals(
+                List.of("repo", "create", "--private", "--description", "d", "--", "editora-sync"),
+                List.of(GitHubService.createRepoArgs("editora-sync", "d")));
+        assertTrue(GitHubService.validRepositoryName("editora-sync"));
+        assertTrue(GitHubService.validRepositoryName("my.repo_2"));
+        assertFalse(GitHubService.validRepositoryName("--public"));
+        assertFalse(GitHubService.validRepositoryName("-x"));
+        assertFalse(GitHubService.validRepositoryName(".."));
+        assertFalse(GitHubService.validRepositoryName("a b"));
+        assertFalse(GitHubService.validRepositoryName(""));
+    }
+
+    /** G2: "no pull request" and "no checks" are answers; anything else gh says is a failure. */
+    @Test
+    void aFailedLookupIsNotNoPullRequest() {
+        assertTrue(GitHubService.noPullRequest("no pull requests found for branch \"topic\""));
+        assertFalse(GitHubService.noPullRequest("HTTP 401: Bad credentials (https://api.github.com/graphql)"));
+        assertFalse(GitHubService.noPullRequest("API rate limit exceeded for user ID 1."));
+        assertTrue(GitHubService.noChecks("no checks reported on the 'topic' branch"));
+        assertFalse(GitHubService.noChecks("error connecting to api.github.com"));
+        assertTrue(GitHubService.BranchChecks.failed("HTTP 401").failed());
+        assertFalse(GitHubService.BranchChecks.NONE.failed());
+    }
+
+    /** G10: GitHub's single sign-on refusal is told apart from a passing failure — asking again cannot help. */
+    @Test
+    void singleSignOnRefusalIsRecognized() {
+        assertTrue(GitHubService.ssoRefused(
+                "GraphQL: Resource protected by organization SAML enforcement. You must grant your OAuth token access"
+                        + " to this organization. (repository)"));
+        assertFalse(GitHubService.ssoRefused("error connecting to api.github.com"));
+    }
+
+    /** G14: a call that ran on another machine is logged as such. */
+    @Test
+    void theLogNamesTheMachineACallRanOn() {
+        assertEquals(List.of("gh", "pr", "list"), GitHubService.loggedArgv(List.of("gh"), "", "pr", "list"));
+        assertEquals(
+                List.of("[ssh:box]", "/opt/gh", "pr", "list"),
+                GitHubService.loggedArgv(List.of("/opt/gh"), "ssh:box", "pr", "list"));
+    }
 }

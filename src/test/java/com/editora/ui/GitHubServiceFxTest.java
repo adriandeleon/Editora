@@ -316,6 +316,32 @@ class GitHubServiceFxTest {
         assertEquals(List.of("late"), next.get(20, TimeUnit.SECONDS).lines(), "the read lane was not left blocked");
     }
 
+    /** G6: a CI log still downloading holds up neither a list nor a pull request's diff. */
+    @Test
+    void aLongLogDownloadDoesNotHoldUpListsOrDiffs() throws Exception {
+        Files.writeString(dir.resolve("log.slow"), "1");
+        Files.writeString(dir.resolve("big.log"), "late\n");
+        Files.writeString(dir.resolve("big.diff"), "");
+        ProcessRunner.Cancellation log = service.runFailedLog(dir, 42L, res -> {});
+        long pid = awaitPid(1);
+        try {
+            CompletableFuture<GitHubService.PrListResult> list = new CompletableFuture<>();
+            service.listPrsOnce(dir, com.editora.github.GitHubListQuery.open(5), list::complete);
+            assertTrue(list.get(10, TimeUnit.SECONDS).ok(), "the list answered while the log downloads");
+            CompletableFuture<GitHubService.DiffResult> diff = new CompletableFuture<>();
+            service.prDiff(dir, 7, diff::complete);
+            assertTrue(diff.get(10, TimeUnit.SECONDS).ok(), "the diff answered while the log downloads");
+            CompletableFuture<GitHubService.PrViewResult> view = new CompletableFuture<>();
+            service.prView(dir, 7, view::complete);
+            assertEquals("Fix", view.get(10, TimeUnit.SECONDS).detail().title());
+        } finally {
+            FxTestSupport.runOnFx(log::cancel);
+            await(
+                    "gh to be killed",
+                    () -> ProcessHandle.of(pid).map(h -> !h.isAlive()).orElse(true));
+        }
+    }
+
     /** G16: a newer request for the same list kills the older one's gh; a picker's one-shot is left alone. */
     @Test
     void aNewerListRequestKillsTheOlderOne() throws Exception {

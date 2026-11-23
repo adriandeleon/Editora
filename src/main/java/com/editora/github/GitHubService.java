@@ -27,11 +27,13 @@ import org.jspecify.annotations.Nullable;
 /**
  * The native-{@code gh} facade — a structural clone of {@code GitService}. Every GitHub command shells out via
  * {@link ProcessRunner} on a daemon executor thread and posts results back on the JavaFX thread, so the UI
- * thread is never blocked. There are four lanes, so one slow call cannot hold up the rest: working-tree and
+ * thread is never blocked. There are several lanes, so one slow call cannot hold up the rest: working-tree and
  * remote <em>mutations</em> (checkout, create, review, rerun, cancel) in order on one; <em>reads</em> (lists,
- * a PR's detail / diff / files, a CI log) on another; small <em>lookups</em> (the status bar's checks poll,
- * the resolved repository, what the create-PR form needs) on a third; and the silent <em>probes</em> (is gh
- * there and signed in, does the repository have anything to show) on a fourth, with a short timeout. Every
+ * a PR's detail, Open on GitHub) on another; the big <em>downloads</em> (a PR's whole diff, its files from the
+ * API) on a third and a CI <em>log</em> (up to five minutes) on a fourth, so neither holds up a list; small
+ * <em>lookups</em> (the status bar's checks poll, the resolved repository, what the create-PR form needs) on a
+ * fifth; and the silent <em>probes</em> (is gh there and signed in, does the repository have anything to show)
+ * on a sixth, with a short timeout. Every
  * read and lookup returns a {@link ProcessRunner.Cancellation}: cancelling it kills {@code gh} and its
  * consumer is never called — a newer request for the same list does that to the older one. Availability is
  * probed and cached ({@link #detect}); {@link #activeCallsProperty()} says how many of the user's calls are
@@ -74,8 +76,17 @@ public final class GitHubService {
     /** The mutation lane: {@code gh pr checkout / create / review}, {@code gh run rerun / cancel}, in order. */
     private final ThreadPoolExecutor exec = lane("github-service");
 
-    /** The read lane, so a list or a diff never waits behind a long checkout. */
+    /** The read lane, so a list never waits behind a long checkout. */
     private final ThreadPoolExecutor reads = lane("github-read");
+
+    /** The download lane: a PR's whole diff or its files from the API, which can take a while on a big PR. */
+    private final ThreadPoolExecutor downloads = lane("github-download");
+
+    /** The CI-log lane: a failed run's log can take minutes to download; nothing else waits behind it. */
+    private final ThreadPoolExecutor logs = lane("github-log");
+
+    /** Resolves SSH host aliases of remotes ({@code ssh -G}), off the FX thread and off the other lanes. */
+    private final ThreadPoolExecutor ssh = lane("github-ssh");
 
     /** The probe lane ({@link #detect}, {@link #openActivity}): background checks never delay a user's call. */
     private final ThreadPoolExecutor probes = lane("github-probe");
@@ -177,8 +188,10 @@ public final class GitHubService {
      * Whether {@code gh} is on PATH, its version line, and its sign-in: {@code authenticated} is true only
      * when a host confirmed the token, {@code auth} tells "signed out" from "could not check", {@code hosts}
      * are the hosts gh has an account on (empty = not known, e.g. gh older than 2.81), {@code detail} is
-     * gh's own reason for a failed check, and {@code accounts} is the login gh uses on each host (empty when
-     * gh did not say).
+     * gh's own reason for a failed check, {@code accounts} is the login gh uses on each host (empty when
+     * gh did not say), and {@code rejectedHosts} are the hosts whose saved token GitHub refused — with another
+     * host signed in, {@link #auth} still reads {@link AuthState#SIGNED_IN}, and a repository on one of these
+     * is told to run {@code gh auth refresh -h <host>} rather than left without its GitHub window.
      */
     public record Availability(
             boolean found,
@@ -187,8 +200,20 @@ public final class GitHubService {
             AuthState auth,
             List<String> hosts,
             String detail,
-            java.util.Map<String, String> accounts) {
+            java.util.Map<String, String> accounts,
+            List<String> rejectedHosts) {
         public static final Availability UNKNOWN = new Availability(false, false, "");
+
+        public Availability(
+                boolean found,
+                boolean authenticated,
+                String version,
+                AuthState auth,
+                List<String> hosts,
+                String detail,
+                java.util.Map<String, String> accounts) {
+            this(found, authenticated, version, auth, hosts, detail, accounts, List.of());
+        }
 
         public Availability(
                 boolean found,
@@ -220,6 +245,16 @@ public final class GitHubService {
                 List<String> hosts,
                 String detail,
                 java.util.Map<String, String> accounts) {
+            return found(version, auth, hosts, detail, accounts, List.of());
+        }
+
+        static Availability found(
+                String version,
+                AuthState auth,
+                List<String> hosts,
+                String detail,
+                java.util.Map<String, String> accounts,
+                List<String> rejectedHosts) {
             return new Availability(
                     true,
                     auth == AuthState.SIGNED_IN,
@@ -227,7 +262,8 @@ public final class GitHubService {
                     auth,
                     List.copyOf(hosts),
                     detail,
-                    java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(accounts)));
+                    java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(accounts)),
+                    List.copyOf(rejectedHosts));
         }
 
         /**
@@ -483,7 +519,12 @@ public final class GitHubService {
             GhAuthStatus.Parsed parsed = json.ok() ? GhAuthStatus.parse(json.out()) : null;
             if (parsed != null) {
                 return Availability.found(
-                        version, authState(parsed.state()), parsed.hosts(), parsed.detail(), parsed.accounts());
+                        version,
+                        authState(parsed.state()),
+                        parsed.hosts(),
+                        parsed.detail(),
+                        parsed.accounts(),
+                        parsed.rejected());
             }
             ProcessRunner.Result plain = run(command, dir, timeout, null, "auth", "status");
             if (plain.ok()) {
@@ -558,21 +599,22 @@ public final class GitHubService {
                 onResult);
     }
 
-    /** A PR's detail ({@code gh pr view <n> --json …}); posts {@code null} on failure. */
-    public ProcessRunner.Cancellation prView(Path dir, int number, Consumer<PrViewParser.@Nullable PrDetail> onResult) {
-        return this.<PrViewParser.@Nullable PrDetail>read(
+    /** The fields asked of {@code gh pr view} ({@link PrViewParser}). */
+    static final String PR_VIEW_FIELDS =
+            "number,title,body,author,baseRefName,headRefName,headRefOid,state,url,additions,deletions";
+
+    /** A PR's detail, or why it could not be read ({@code detail == null}). */
+    public record PrViewResult(PrViewParser.@Nullable PrDetail detail, String error) {}
+
+    /** A PR's detail ({@code gh pr view <n> --json …}); a failure posts gh's reason with no detail. */
+    public ProcessRunner.Cancellation prView(Path dir, int number, Consumer<PrViewResult> onResult) {
+        return read(
                 null,
                 cancel -> {
-                    ProcessRunner.Result r = gh(
-                            dir,
-                            NETWORK,
-                            cancel,
-                            "pr",
-                            "view",
-                            String.valueOf(number),
-                            "--json",
-                            "number,title,body,author,baseRefName,headRefName,state,url,additions,deletions");
-                    return r.ok() ? PrViewParser.parse(r.out()) : null;
+                    ProcessRunner.Result r =
+                            gh(dir, NETWORK, cancel, "pr", "view", String.valueOf(number), "--json", PR_VIEW_FIELDS);
+                    PrViewParser.PrDetail d = r.ok() ? PrViewParser.parse(r.out()) : null;
+                    return new PrViewResult(d, d != null ? "" : r.message());
                 },
                 onResult);
     }
@@ -590,7 +632,9 @@ public final class GitHubService {
 
     /** Fetches a PR's whole unified diff ({@code gh pr diff <n>}) and parses it off-thread into file patches. */
     public ProcessRunner.Cancellation prDiff(Path dir, int number, Consumer<DiffResult> onResult) {
-        return read(
+        return call(
+                downloads,
+                true,
                 null,
                 cancel -> {
                     ProcessRunner.Result r = gh(dir, NETWORK, cancel, "pr", "diff", String.valueOf(number));
@@ -632,7 +676,9 @@ public final class GitHubService {
      * into the user's repository.
      */
     public ProcessRunner.Cancellation prFiles(Path dir, int number, Consumer<PrFilesResult> onResult) {
-        return read(
+        return call(
+                downloads,
+                true,
                 null,
                 cancel -> {
                     ProcessRunner.Result r = gh(
@@ -678,8 +724,7 @@ public final class GitHubService {
      */
     public void createPrivateRepo(String name, String description, Consumer<CreatedRepo> onResult) {
         submitCall(exec, () -> {
-            ProcessRunner.Result created =
-                    gh(null, NETWORK, null, "repo", "create", name, "--private", "--description", description);
+            ProcessRunner.Result created = gh(null, NETWORK, null, createRepoArgs(name, description));
             CreatedRepo repo;
             if (created.ok()) {
                 ProcessRunner.Result protocol = ghSilent(null, QUICK, null, "config", "get", "git_protocol");
@@ -690,6 +735,23 @@ public final class GitHubService {
             }
             Platform.runLater(() -> onResult.accept(repo));
         });
+    }
+
+    /**
+     * Whether {@code name} may be given to {@code gh repo create} as a repository name: letters, digits,
+     * {@code .}, {@code _} and {@code -}, not starting with {@code -} (it would read as an option) or {@code .},
+     * and not {@code .} or {@code ..}. Pure.
+     */
+    public static boolean validRepositoryName(String name) {
+        return name != null && name.matches("[A-Za-z0-9._-]{1,100}") && !name.startsWith("-") && !name.startsWith(".");
+    }
+
+    /**
+     * The {@code gh repo create} arguments: the flags, then {@code --}, then the name — a name that starts with
+     * {@code -} is a name, never an option. Pure.
+     */
+    static String[] createRepoArgs(String name, String description) {
+        return new String[] {"repo", "create", "--private", "--description", description, "--", name};
     }
 
     private static final java.util.regex.Pattern REPO_WEB_URL = java.util.regex.Pattern.compile(
@@ -716,14 +778,20 @@ public final class GitHubService {
         return "";
     }
 
-    /** Creates a PR ({@code gh pr create …}); posts the raw result (the created PR URL is on stdout). */
-    public void prCreate(Path dir, List<String> ghArgs, Consumer<ProcessRunner.Result> onResult) {
-        run(dir, NETWORK, onResult, ghArgs.toArray(new String[0]));
+    /**
+     * Creates a PR ({@code gh pr create …}, the arguments and the body from {@link PrCreateArgs}); posts the raw
+     * result (the created PR URL is on stdout). The body goes to gh's standard input ({@code --body-file -}).
+     */
+    public void prCreate(Path dir, GhInvocation invocation, Consumer<ProcessRunner.Result> onResult) {
+        run(dir, NETWORK, onResult, invocation);
     }
 
-    /** Submits a top-level PR review ({@code gh pr review …}); posts the raw result (argv from {@link PrReviewArgs}). */
-    public void prReview(Path dir, List<String> ghArgs, Consumer<ProcessRunner.Result> onResult) {
-        run(dir, NETWORK, onResult, ghArgs.toArray(new String[0]));
+    /**
+     * Submits a top-level PR review — {@code gh api …/reviews} pinned to the commit the user saw, or
+     * {@code gh pr review} ({@link PrReviewArgs}); posts the raw result. The body goes on standard input.
+     */
+    public void prReview(Path dir, GhInvocation invocation, Consumer<ProcessRunner.Result> onResult) {
+        run(dir, NETWORK, onResult, invocation);
     }
 
     /**
@@ -732,9 +800,39 @@ public final class GitHubService {
      * @param ok whether the branch has a pull request ({@code false}: none, or {@code gh} failed)
      * @param pr the pull request ({@code null} when {@code !ok})
      * @param runs its check runs, with names and links; empty when it has none
+     * @param error why {@code gh} could not tell ({@code ""} when it could): a failed lookup is not "no pull
+     *     request", and is neither cached nor shown as one
      */
-    public record BranchChecks(boolean ok, PrViewParser.@Nullable PrDetail pr, List<ChecksParser.CheckRun> runs) {
-        public static final BranchChecks NONE = new BranchChecks(false, null, List.of());
+    public record BranchChecks(
+            boolean ok, PrViewParser.@Nullable PrDetail pr, List<ChecksParser.CheckRun> runs, String error) {
+        public static final BranchChecks NONE = new BranchChecks(false, null, List.of(), "");
+
+        public BranchChecks(boolean ok, PrViewParser.@Nullable PrDetail pr, List<ChecksParser.CheckRun> runs) {
+            this(ok, pr, runs, "");
+        }
+
+        /** {@code gh} failed (offline, rate limit, a refused token, single sign-on): {@code reason} says why. */
+        public static BranchChecks failed(String reason) {
+            String r = reason == null || reason.isBlank() ? "gh failed" : reason.strip();
+            return new BranchChecks(false, null, List.of(), r);
+        }
+
+        /** Whether the lookup itself failed (rather than the branch having no pull request). */
+        public boolean failed() {
+            return !error.isEmpty();
+        }
+    }
+
+    /** Whether {@code gh pr view}'s error says the branch has no pull request (rather than that gh failed). Pure. */
+    static boolean noPullRequest(String error) {
+        String e = error == null ? "" : error.toLowerCase(java.util.Locale.ROOT);
+        return e.contains("no pull requests found") || e.contains("no open pull requests");
+    }
+
+    /** Whether {@code gh pr checks}' error says the pull request has no checks (rather than that gh failed). Pure. */
+    static boolean noChecks(String error) {
+        String e = error == null ? "" : error.toLowerCase(java.util.Locale.ROOT);
+        return e.contains("no checks reported");
     }
 
     /**
@@ -755,7 +853,11 @@ public final class GitHubService {
                 false,
                 branchChecksCall,
                 cancel -> {
-                    PrViewParser.PrDetail pr = currentBranchPr(dir, cancel, false);
+                    ProcessRunner.Result view = ghSilent(dir, LOOKUP, cancel, "pr", "view", "--json", PR_VIEW_FIELDS);
+                    if (!view.ok()) {
+                        return noPullRequest(view.message()) ? BranchChecks.NONE : BranchChecks.failed(view.message());
+                    }
+                    PrViewParser.PrDetail pr = PrViewParser.parse(view.out());
                     if (pr == null || pr.number() <= 0) {
                         return BranchChecks.NONE;
                     }
@@ -768,7 +870,11 @@ public final class GitHubService {
                             String.valueOf(pr.number()),
                             "--json",
                             "name,state,bucket,link,workflow");
-                    return new BranchChecks(true, pr, ChecksParser.parse(r.out()));
+                    List<ChecksParser.CheckRun> runs = ChecksParser.parse(r.out());
+                    if (runs.isEmpty() && !r.ok() && !noChecks(r.message())) {
+                        return BranchChecks.failed(r.message()); // exit 1 / 8 still print the JSON
+                    }
+                    return new BranchChecks(true, pr, runs);
                 },
                 onResult);
     }
@@ -776,9 +882,7 @@ public final class GitHubService {
     /** The pull request of the checked-out branch, or {@code null} when it has none. Runs on the lane. */
     private PrViewParser.@Nullable PrDetail currentBranchPr(
             Path dir, ProcessRunner.Cancellation cancel, boolean logged) {
-        String[] args = {
-            "pr", "view", "--json", "number,title,body,author,baseRefName,headRefName,state,url,additions,deletions"
-        };
+        String[] args = {"pr", "view", "--json", PR_VIEW_FIELDS};
         ProcessRunner.Result r = logged ? gh(dir, LOOKUP, cancel, args) : ghSilent(dir, LOOKUP, cancel, args);
         return r.ok() ? PrViewParser.parse(r.out()) : null;
     }
@@ -854,7 +958,9 @@ public final class GitHubService {
      * first megabytes holds. Cancelling the returned handle kills {@code gh} (the console's Stop).
      */
     public ProcessRunner.Cancellation runFailedLog(Path dir, long id, Consumer<RunLogResult> onResult) {
-        return read(
+        return call(
+                logs,
+                true,
                 null,
                 cancel -> {
                     TailLines tail = new TailLines(MAX_LOG_LINES);
@@ -888,7 +994,21 @@ public final class GitHubService {
         YES,
         NONE,
         /** {@code gh} could not answer (offline, rate-limited, not a repository it knows): not a "no". */
-        UNKNOWN
+        UNKNOWN,
+        /**
+         * GitHub refused the token for this repository's organization (SAML single sign-on not authorized):
+         * asking again changes nothing until the user authorizes it, so this is not retried.
+         */
+        DENIED
+    }
+
+    /**
+     * Whether {@code gh}'s error says GitHub refused access for single sign-on (the token is not authorized for
+     * the organization) — retrying cannot help. Pure.
+     */
+    static boolean ssoRefused(String error) {
+        String e = error == null ? "" : error.toLowerCase(java.util.Locale.ROOT);
+        return e.contains("saml") || e.contains("single sign-on");
     }
 
     /**
@@ -917,7 +1037,7 @@ public final class GitHubService {
     private Activity probeActivity(Path dir) {
         ProcessRunner.Result prs = ghSilent(dir, PROBE, null, "pr", "list", "--limit", "1", "--json", "number");
         if (!prs.ok()) {
-            return Activity.UNKNOWN;
+            return ssoRefused(prs.message()) ? Activity.DENIED : Activity.UNKNOWN;
         }
         if (!PrListParser.parse(prs.out()).isEmpty()) {
             return Activity.YES;
@@ -1096,6 +1216,33 @@ public final class GitHubService {
         });
     }
 
+    /** {@link #run(Path, Duration, Consumer, String...)} for an invocation that feeds gh's standard input. */
+    private void run(Path dir, Duration timeout, Consumer<ProcessRunner.Result> onResult, GhInvocation invocation) {
+        submitCall(exec, () -> {
+            String[] args = invocation.args().toArray(new String[0]);
+            long startNanos = System.nanoTime();
+            ProcessRunner.Result r = invocation.stdin() == null
+                    ? ghSilent(dir, timeout, null, args)
+                    : ProcessRunner.run(dir, timeout, argv(commandFor(dir), args), GH_ENV, invocation.stdin());
+            record(r, r.out(), startNanos, dir, args);
+            Platform.runLater(() -> onResult.accept(r));
+        });
+    }
+
+    /**
+     * Resolves the SSH host aliases of {@code remoteUrls} ({@code git@github-work:o/r.git} → {@code
+     * git@github.com:o/r.git}, {@code ssh.github.com} → {@code github.com}) off the FX thread and posts the
+     * resolved URLs on it, in the same order. HTTPS URLs come back as they are.
+     */
+    public void resolveRemoteHosts(List<String> remoteUrls, Consumer<List<String>> onResult) {
+        List<String> urls = List.copyOf(remoteUrls);
+        submit(ssh, () -> {
+            List<String> resolved =
+                    urls.stream().map(com.editora.git.SshHosts::resolveUrl).toList();
+            Platform.runLater(() -> onResult.accept(resolved));
+        });
+    }
+
     /**
      * Installs the sink that receives every {@code gh} command the user's actions cause. Unlike git there is
      * no polling here, so everything is logged except the two availability probes ({@link #detect} and the
@@ -1110,7 +1257,7 @@ public final class GitHubService {
             @Nullable Path dir, Duration timeout, ProcessRunner.@Nullable Cancellation cancel, String... args) {
         long startNanos = System.nanoTime();
         ProcessRunner.Result r = ghSilent(dir, timeout, cancel, args);
-        record(r, r.out(), startNanos, args);
+        record(r, r.out(), startNanos, dir, args);
         return r;
     }
 
@@ -1139,13 +1286,36 @@ public final class GitHubService {
                     cancel);
         }
         // The console shows the log itself; the command log gets the command and its outcome, not megabytes.
-        record(r, "", startNanos, args);
+        record(r, "", startNanos, dir, args);
         return r;
     }
 
-    private void record(ProcessRunner.Result r, String out, long startNanos, String... args) {
+    /** Logs what ran: the {@code gh} of the machine {@code dir} is on — a remote host's own, not this one's. */
+    private void record(ProcessRunner.Result r, String out, long startNanos, @Nullable Path dir, String... args) {
         commandLog.record(new CommandLog.Entry(
-                argv(command, args), r.exit(), out, r.err(), (System.nanoTime() - startNanos) / 1_000_000L));
+                loggedArgv(
+                        commandFor(dir),
+                        ExecTargets.runsHere(dir)
+                                ? ""
+                                : ExecTargets.forPath(dir).id(),
+                        args),
+                r.exit(),
+                out,
+                r.err(),
+                (System.nanoTime() - startNanos) / 1_000_000L));
+    }
+
+    /**
+     * The command line the log shows: {@code command} and {@code args}, and for a call that ran on another
+     * machine ({@code host} non-blank) a first word naming it, so the log does not pass a remote run off as a
+     * local one. Pure.
+     */
+    static List<String> loggedArgv(List<String> command, String host, String... args) {
+        List<String> cmd = argv(command, args);
+        if (host != null && !host.isBlank()) {
+            cmd.add(0, "[" + host + "]");
+        }
+        return cmd;
     }
 
     /**
@@ -1194,6 +1364,9 @@ public final class GitHubService {
             probeWaiters = null; // a probe still running holds the service, not the window
         }
         reads.shutdownNow();
+        downloads.shutdownNow();
+        logs.shutdownNow();
+        ssh.shutdownNow();
         probes.shutdownNow();
         lookups.shutdownNow();
         if (runningMutations.get() > 0) {

@@ -3,6 +3,8 @@ package com.editora.git;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.Set;
+import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -10,8 +12,10 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Web links to a repository's code at a commit — permalinks — from a remote's URL: GitHub (and GitHub Enterprise),
- * GitLab, Bitbucket, Gitea, Forgejo and Codeberg, sourcehut and Azure DevOps, each in its own URL form; a host it does
- * not know is taken to follow GitHub's, as most do. Pure.
+ * GitLab, Bitbucket Cloud and Bitbucket Server / Data Center, Gitea, Forgejo and Codeberg, sourcehut and Azure DevOps,
+ * each in its own URL form; a host it does not know is taken to follow GitHub's, as most do. The host of an SSH remote
+ * may be an {@code ~/.ssh/config} alias or an SSH-only endpoint ({@code ssh.github.com}): {@link #repo(String,
+ * UnaryOperator)} takes the resolver that maps it to the site ({@link SshHosts#resolver()}). Pure for a pure resolver.
  */
 public final class GitWebLinks {
 
@@ -21,7 +25,10 @@ public final class GitWebLinks {
     public enum Host {
         GITHUB,
         GITLAB,
+        /** Bitbucket Cloud, {@code bitbucket.org}. */
         BITBUCKET,
+        /** Bitbucket Server / Data Center: {@code /projects/KEY/repos/name/browse/…?at=…}. */
+        BITBUCKET_SERVER,
         GITEA,
         SOURCEHUT,
         AZURE
@@ -40,6 +47,15 @@ public final class GitWebLinks {
      * git@host:owner/repo.git} forms; user names, ssh ports and {@code .git} are dropped.
      */
     public static @Nullable Repo repo(String remoteUrl) {
+        return repo(remoteUrl, SshHosts::canonical);
+    }
+
+    /**
+     * {@link #repo(String)}, the host of an SSH remote ({@code ssh://} or scp-like) first mapped by {@code sshHost} —
+     * an {@code ~/.ssh/config} alias ({@code github-work}) to the host it stands for. An HTTPS URL names its host
+     * outright and is never resolved.
+     */
+    public static @Nullable Repo repo(String remoteUrl, UnaryOperator<String> sshHost) {
         String url = remoteUrl.strip();
         String scheme;
         String host;
@@ -63,21 +79,67 @@ public final class GitWebLinks {
             return null;
         }
         host = host.toLowerCase(Locale.ROOT);
+        if (scheme.equals("ssh") || scheme.equals("git+ssh")) {
+            String resolved = sshHost.apply(host);
+            host = SshHosts.canonical(resolved == null || resolved.isBlank() ? host : resolved);
+        }
         path = trimPath(path);
         if (path.isEmpty() || !host.contains(".") && !host.equals("localhost")) {
             return null;
         }
+        boolean web = scheme.equals("https") || scheme.equals("http");
         Host kind = kindOf(host);
         if (kind == Host.AZURE) {
             return azure(host, path);
         }
+        if (kind == Host.BITBUCKET && !host.equals("bitbucket.org")
+                || kind == Host.GITHUB && !host.equals("github.com") && isBitbucketServerPath(web, path, port)) {
+            String origin =
+                    (scheme.equals("http") ? "http://" : "https://") + host + (web && port != null ? ":" + port : "");
+            return bitbucketServer(origin, path, web);
+        }
         if (kind == Host.SOURCEHUT && !path.startsWith("~")) {
             return null;
         }
-        boolean web = scheme.equals("https") || scheme.equals("http");
         String origin =
                 (scheme.equals("http") ? "http://" : "https://") + host + (web && port != null ? ":" + port : "");
         return new Repo(kind, origin + "/" + path);
+    }
+
+    /**
+     * Whether a remote on a host whose name does not say Bitbucket is still a Bitbucket Server: its HTTPS clone URL
+     * goes through {@code /scm/PROJECT/repo}, and its SSH one is on Bitbucket Server's port, 7999.
+     */
+    private static boolean isBitbucketServerPath(boolean web, String path, @Nullable String port) {
+        String[] parts = path.split("/");
+        if (web) {
+            int scm = java.util.Arrays.asList(parts).indexOf("scm");
+            return scm >= 0 && parts.length == scm + 3;
+        }
+        return "7999".equals(port) && parts.length == 2;
+    }
+
+    /**
+     * Bitbucket Server / Data Center: {@code https://host[/context]/scm/proj/repo.git} or {@code
+     * ssh://git@host:7999/proj/repo.git} is browsed at {@code https://host[/context]/projects/PROJ/repos/repo}; a
+     * personal repository ({@code ~user/repo}) at {@code /users/user/repos/repo}.
+     */
+    private static @Nullable Repo bitbucketServer(String origin, String path, boolean web) {
+        String context = "";
+        String rest = path;
+        int scm = path.startsWith("scm/") ? 0 : path.indexOf("/scm/") + 1;
+        if (web && (scm > 0 || path.startsWith("scm/"))) {
+            context = scm == 0 ? "" : "/" + path.substring(0, scm - 1);
+            rest = path.substring(scm + 4);
+        }
+        String[] parts = rest.split("/");
+        if (parts.length != 2 || parts[0].isEmpty() || parts[1].isEmpty()) {
+            return null;
+        }
+        String owner = parts[0].startsWith("~")
+                ? "users/" + parts[0].substring(1).toLowerCase(Locale.ROOT)
+                : "projects/" + parts[0].toUpperCase(Locale.ROOT);
+        return new Repo(Host.BITBUCKET_SERVER, origin + context + "/" + owner + "/repos/" + parts[1]);
     }
 
     private static String trimPath(String raw) {
@@ -136,13 +198,16 @@ public final class GitWebLinks {
         return switch (repo.host()) {
             case GITHUB ->
                 repo.base() + "/blob/" + commit + "/" + encoded
-                        + (lines ? "#L" + first + (range ? "-L" + last : "") : "");
+                        + (lines ? (rendered(path) ? "?plain=1" : "") + "#L" + first + (range ? "-L" + last : "") : "");
             case GITLAB ->
                 repo.base() + "/-/blob/" + commit + "/" + encoded
                         + (lines ? "#L" + first + (range ? "-" + last : "") : "");
             case BITBUCKET ->
                 repo.base() + "/src/" + commit + "/" + encoded
                         + (lines ? "#lines-" + first + (range ? ":" + last : "") : "");
+            case BITBUCKET_SERVER ->
+                repo.base() + "/browse/" + encoded + "?at=" + commit
+                        + (lines ? "#" + first + (range ? "-" + last : "") : "");
             case GITEA ->
                 repo.base() + "/src/commit/" + commit + "/" + encoded
                         + (lines ? "#L" + first + (range ? "-L" + last : "") : "");
@@ -166,10 +231,48 @@ public final class GitWebLinks {
             case GITHUB -> repo.base() + "/tree/" + commit + tail;
             case GITLAB -> repo.base() + "/-/tree/" + commit + tail;
             case BITBUCKET -> repo.base() + "/src/" + commit + tail + "/";
+            case BITBUCKET_SERVER -> repo.base() + "/browse" + tail + "?at=" + commit;
             case GITEA -> repo.base() + "/src/commit/" + commit + tail;
             case SOURCEHUT -> repo.base() + "/tree/" + commit + (encoded.isEmpty() ? "" : "/item/" + encoded);
             case AZURE -> repo.base() + "?path=/" + encoded + "&version=GC" + commit;
         };
+    }
+
+    /**
+     * The kinds of file GitHub shows rendered (Markdown, notebooks, images, tables): a line anchor there marks
+     * nothing unless the link asks for the source with {@code ?plain=1}.
+     */
+    private static final Set<String> RENDERED = Set.of(
+            "md",
+            "markdown",
+            "mdown",
+            "mkd",
+            "mkdn",
+            "mdx",
+            "rst",
+            "adoc",
+            "asciidoc",
+            "asc",
+            "org",
+            "textile",
+            "rdoc",
+            "creole",
+            "mediawiki",
+            "wiki",
+            "pod",
+            "ipynb",
+            "svg",
+            "csv",
+            "tsv",
+            "geojson",
+            "topojson",
+            "stl");
+
+    /** Whether GitHub shows {@code path} rendered rather than as source. Pure. */
+    static boolean rendered(String path) {
+        String name = path.substring(path.lastIndexOf('/') + 1);
+        int dot = name.lastIndexOf('.');
+        return dot > 0 && RENDERED.contains(name.substring(dot + 1).toLowerCase(Locale.ROOT));
     }
 
     /** Each part of a path percent-encoded for a URL, the slashes kept. */

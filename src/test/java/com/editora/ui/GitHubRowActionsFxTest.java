@@ -64,6 +64,54 @@ class GitHubRowActionsFxTest {
         });
     }
 
+    /** G15: a filter that matches none of the listed rows, with more on GitHub, offers to search GitHub for it. */
+    @Test
+    void aFilterWithNoMatchOffersASearchOfGitHub() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            GitHubPanel panel = panel();
+            panel.select(GitHubPanel.Mode.PRS);
+            panel.setPrs(List.of(PR), true); // gh has more than the one listed
+            panel.typeFilter("Fix");
+            assertEquals(List.of(PR, new GitHubPanel.MoreRow(1)), panel.rows(), "a match: nothing is offered");
+
+            panel.typeFilter("crash on save");
+            assertEquals(
+                    new GitHubPanel.SearchRow("crash on save"), panel.rows().getFirst());
+            panel.selectRow(0);
+            calls.clear();
+            panel.activate();
+            assertEquals(List.of("showPrs"), calls, "the list is fetched again");
+            assertEquals("crash on save", panel.query(GitHubPanel.Mode.PRS).search());
+
+            panel.setPrs(List.of(PR)); // GitHub's answer is shown as it is, not filtered again
+            assertEquals(List.of(PR), panel.rows());
+
+            calls.clear();
+            panel.typeFilter(""); // leaving the search goes back to the plain list
+            assertEquals("", panel.query(GitHubPanel.Mode.PRS).search());
+            assertEquals(List.of("showPrs"), calls);
+
+            panel.setPrs(List.of(PR), true);
+            panel.typeFilter("#1234");
+            panel.selectRow(0);
+            calls.clear();
+            panel.activate();
+            assertEquals(List.of("reviewPr [1234]"), calls, "a number opens that pull request");
+        });
+    }
+
+    /** G15: with every row listed there is nothing more to search for. */
+    @Test
+    void aCompleteListOffersNoSearch() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            GitHubPanel panel = panel();
+            panel.select(GitHubPanel.Mode.PRS);
+            panel.setPrs(List.of(PR), false);
+            panel.typeFilter("crash");
+            assertEquals(List.of(), panel.rows());
+        });
+    }
+
     @Test
     void theRunRowCommandsActOnTheSelectedRun() throws Exception {
         FxTestSupport.runOnFx(() -> {

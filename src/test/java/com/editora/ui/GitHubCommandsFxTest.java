@@ -295,6 +295,42 @@ class GitHubCommandsFxTest {
         assertFalse(w.activeContent() instanceof PrReviewPane);
     }
 
+    /** G9: a Refresh whose {@code gh pr view} fails keeps the details on screen, and says it could not refresh them. */
+    @Test
+    void aRefreshThatCannotReadTheDetailsKeepsThem() throws Exception {
+        answer("pr-diff", "diff --git a/x.txt b/x.txt\n--- a/x.txt\n+++ b/x.txt\n@@ -1 +1 @@\n-old\n+new\n");
+        answer(
+                "pr-view",
+                "{\"number\":21,\"title\":\"Kept title\",\"body\":\"Kept body\",\"headRefOid\":\"abc123\","
+                        + "\"state\":\"OPEN\",\"url\":\"https://github.com/o/r/pull/21\"}");
+        FxTestSupport.runOnFx(() -> github.reviewPrNumber(21));
+        OverlayTestKit.await(
+                async,
+                "the review tab",
+                () -> w.area.selectedTab().getUserData() instanceof PrReviewPane p && p.detail() != null);
+        PrReviewPane review = (PrReviewPane) w.activeContent();
+
+        refuse("pr-view", "HTTP 502: Bad gateway\n");
+        FxTestSupport.runOnFx(() -> github.reviewPrNumber(21));
+        OverlayTestKit.await(
+                async,
+                "the refresh's notice",
+                () -> FxTestSupport.callOnFx(review::notice).contains(tr("github.review.detailFailed")));
+        assertTrue(FxTestSupport.callOnFx(review::notice).contains("Bad gateway"));
+        assertEquals("Kept title", FxTestSupport.callOnFx(() -> review.detail().title()));
+        assertEquals("abc123", FxTestSupport.callOnFx(() -> review.detail().headRefOid()), "a review is still pinned");
+        FxTestSupport.runOnFx(() -> w.area.remove(w.area.selectedTab()));
+    }
+
+    /** G2: a checks lookup gh could not answer is reported as a failure, not as "no pull request". */
+    @Test
+    void aFailedChecksLookupIsNotNoPullRequest() throws Exception {
+        refuse("pr-view", "API rate limit exceeded for user ID 1.\n");
+        FxTestSupport.runOnFx(github::showChecks);
+        awaitMessage(GitHubCoordinator.failureLine(
+                tr("status.github.checksFailed"), "API rate limit exceeded for user ID 1."));
+    }
+
     @Test
     void openAllFilesAsksFirstForALargePullRequest() throws Exception {
         StringBuilder diff = new StringBuilder();
@@ -422,16 +458,31 @@ class GitHubCommandsFxTest {
         awaitMessage(tr("status.github.rerunStarted", 52L));
         assertEquals(List.of("run rerun 51 --failed", "run rerun 52"), calls("run rerun"));
 
-        FxTestSupport.runOnFx(() -> github.cancelRun(53L));
-        awaitMessage(tr("status.github.runCancelled", 53L));
-        assertEquals(List.of("run cancel 53"), calls("run cancel"));
+        // G12: a cancel asks first; declined, gh is not run.
+        List<Confirm.Question> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+        Confirm.answerWith(question -> {
+            asked.add(question);
+            return false;
+        });
+        try {
+            FxTestSupport.runOnFx(() -> github.cancelRun(50L));
+            assertEquals(GitHubCoordinator.cancelRunQuestion(50L), asked.getFirst());
+            assertEquals(tr("dialog.github.cancelRunAction"), asked.getFirst().action());
+            Confirm.answerWith(question -> true);
+            FxTestSupport.runOnFx(() -> github.cancelRun(53L));
+            awaitMessage(tr("status.github.runCancelled", 53L));
+            assertEquals(List.of("run cancel 53"), calls("run cancel"), "the declined cancel ran nothing");
 
-        refuse("run-rerun", "run 54 cannot be rerun; its workflow file may be broken\n");
-        OverlayTestKit.Shown rerun = errorDialog(tr("status.github.rerunFailed"), () -> github.rerunRun(54L, false));
-        assertTrue(rerun.content().contains("cannot be rerun"), rerun.content());
-        refuse("run-cancel", "Cannot cancel a workflow run that is completed\n");
-        OverlayTestKit.Shown cancel = errorDialog(tr("status.github.cancelFailed"), () -> github.cancelRun(55L));
-        assertTrue(cancel.content().contains("that is completed"), cancel.content());
+            refuse("run-rerun", "run 54 cannot be rerun; its workflow file may be broken\n");
+            OverlayTestKit.Shown rerun =
+                    errorDialog(tr("status.github.rerunFailed"), () -> github.rerunRun(54L, false));
+            assertTrue(rerun.content().contains("cannot be rerun"), rerun.content());
+            refuse("run-cancel", "Cannot cancel a workflow run that is completed\n");
+            OverlayTestKit.Shown cancel = errorDialog(tr("status.github.cancelFailed"), () -> github.cancelRun(55L));
+            assertTrue(cancel.content().contains("that is completed"), cancel.content());
+        } finally {
+            Confirm.answerWith(null);
+        }
     }
 
     // --- links -------------------------------------------------------------------------------------
