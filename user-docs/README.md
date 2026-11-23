@@ -31,4 +31,6 @@ past releases stay in the website (`src/content/docs-archive/`).
 
 The release workflow renders this folder with the website's own build (`node scripts/build-app-docs.mjs` there)
 and packages the HTML into every installer; Help ▸ Documentation serves it from `127.0.0.1`
-([building and packaging](../docs/building-and-packaging.md#bundled-user-guide)).
+([building and packaging](../docs/building-and-packaging.md#bundled-user-guide)). A local build does the same
+when an `editora-website` checkout (with `npm ci` done) sits beside this one: it re-renders `.docs-site/` after a
+change here, so `./mvnw javafx:run` shows your edit in Help ▸ Documentation.

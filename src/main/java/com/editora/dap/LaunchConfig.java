@@ -256,6 +256,7 @@ public final class LaunchConfig {
         connect.put("host", notBlank(host) ? host : "localhost");
         connect.put("port", port);
         m.put("connect", connect);
+        m.put("showReturnValue", true); // as a launch: "(return) f" after a step out of f
         return m;
     }
 
