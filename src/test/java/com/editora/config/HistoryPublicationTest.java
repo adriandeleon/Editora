@@ -352,9 +352,12 @@ class HistoryPublicationTest {
         Files.setLastModifiedTime(empty, FileTime.fromMillis(9_000));
         HistoryIndexGuard.BackupHashes both = HistoryIndexGuard.backupHashes(index);
         assertEquals(java.util.Set.of("h1", "h2"), both.hashes());
-        assertEquals(9_000, both.incompleteSince(), "the newest backup that is not a whole index");
-        assertFalse(both.allowsCollection(9_000 + HistoryIndexGuard.INCOMPLETE_BACKUP_GRACE_MILLIS));
-        assertTrue(both.allowsCollection(9_001 + HistoryIndexGuard.INCOMPLETE_BACKUP_GRACE_MILLIS));
+        assertEquals(
+                5_000,
+                both.incompleteSince(),
+                "the newest backup that is not a whole index; a zero-length one lists nothing and starts no grace");
+        assertFalse(both.allowsCollection(5_000 + HistoryIndexGuard.INCOMPLETE_BACKUP_GRACE_MILLIS));
+        assertTrue(both.allowsCollection(5_001 + HistoryIndexGuard.INCOMPLETE_BACKUP_GRACE_MILLIS));
         assertEquals(
                 java.util.Set.of("index.json.corrupt.bak", "index.json.corrupt.bak.2", "index.json.v9.bak"),
                 HistoryIndexGuard.backupNames(index));

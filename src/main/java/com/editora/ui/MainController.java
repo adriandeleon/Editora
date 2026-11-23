@@ -1894,7 +1894,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Brings this window and {@code buffer}'s tab forward, so a prompt about it is asked where it lives. */
-    private void revealBufferLocal(EditorBuffer buffer) {
+    void revealBufferLocal(EditorBuffer buffer) {
         Tab tab = tabFor(buffer);
         if (tab != null) {
             editorArea.select(tab);
@@ -2842,7 +2842,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                     this::windowProjectRoot,
                     this::openAndGoto,
                     () -> config.getSettings().isSearchRespectGitignore(),
-                    (file, text, done) -> historyCoordinator.recordBeforeReplace(file, text, done)));
+                    (file, text, done) -> historyCoordinator.recordBeforeReplace(
+                            file, text, com.editora.config.HistoryRevision.REASON_LINK_UPDATE, done)));
 
     final TerminalCoordinator terminalCoordinator = new TerminalCoordinator(coordinatorHost, new TerminalOpsHost(this));
 
