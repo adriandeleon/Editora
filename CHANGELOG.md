@@ -111,6 +111,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Faster typing, startup and large projects** (performance review of 2026-11-23).
+  - Typing renders about a third fewer frames (3.7 → 2.6 per key) and takes about half the UI-thread time: the
+    overlays drawn over the text share one look at where it is per frame instead of each measuring it again on the
+    next three frames. Scrolling with pinned scope headers no longer measures them again on every step, and fold
+    detection, the minimap and the spell checker's code-line scan share the editor's one typing-pause timer.
+  - A tab in the background no longer keeps a full-window texture for each overlay that had painted, such as the
+    indent guides and the minimap: 30 open tabs used about 145 MB for them, and memory per tab is back to what it
+    was in October.
+  - A typing pause no longer copies the whole document on the UI thread: highlighting, folding, TODO, spell, Run
+    and Markdown scans build their text in the background. Markdown no longer copies and scans the document on every
+    keystroke, typing a tag name in HTML or XML no longer copies it for each letter, CSV rainbow colours restyle only
+    the records an edit changed, Git blame measures each distinct author and date once, unchanged TODO marks are not
+    pushed again, and Ctrl/Cmd-click on an HTML link without a language server no longer parses the page on the UI
+    thread.
+  - Start-up builds each menu's items when that menu first opens, builds the Project Map when it is first opened
+    rather than with the Project panel, and reads the AI keys from the keychain and decodes the window icons while
+    other start-up work goes on.
+  - Project Map: typing in a column filter on a very large folder no longer sorts the whole map per keystroke;
+    zooming, and with Compact rows moving the pointer between columns, no longer re-sorts or lays out every column;
+    problem counts are no longer rebuilt every 100 ms while the Map is hidden; "Show dependencies of the selection"
+    works the overlay out off the UI thread and remembers recent ones; painting no longer allocates row-sized arrays
+    per frame, and expanding a folder no longer re-measures every label.
+  - Git: the Commit window keeps its rows for an unchanged status, catches up when shown, and restores the selection
+    in linear time. Switching tabs or saving shortly after a Git refresh diffs only the active file, with a full
+    `git status` within 2 s; files a build creates or deletes no longer run `git status` up to four times a second,
+    and changes wholly inside gitignored folders skip Git. Rollback or Discard of many files writes the Local
+    History index once. Coming back to the window checks folder times instead of re-walking the project's file list.
+  - Language servers: the Problems window updates only the files whose problems changed; ESLint checks a JS/TS file
+    2 s after typing stops (was 0.8 s) and reuses the configuration it found instead of starting Node.js at every
+    short pause; after an autosave, the recheck of the other open Java files waits for a 5 s lull; a Ctrl/Cmd-hover
+    probe for a new word cancels the last; inlay hints equal to those shown no longer re-lay out the lines.
+  - Debugger: a stop or step fetches the top 50 frames, not 1,000 (the Call Stack's last row lists the rest); a
+    stop's frame files are checked once each, off the adapter's reader thread (much faster over SSH); breakpoint
+    filters, token logpoints, exception-breakpoint checks, step filters and Thread Dump's pause no longer make the
+    Debug window flicker between Running and Suspended; a Python exception breakpoint for built-in types no longer
+    stops the program on every raised exception; Debug History keeps at most 4 KB of each value; multi-line values
+    are drawn without splitting the whole value.
+  - Consoles and tools: the Run console draws a fast `\r` progress counter as one update per output burst; an open
+    console find bar searches only new output, and nothing with an empty query; the Test Results tree updates its
+    rows in place during a run; the CSV grid parses off the UI thread and keeps its columns when they don't change;
+    Mermaid diagrams in the Markdown preview and agent replies no longer start a renderer for every version of a fence
+    being typed or streamed, and a code fence still streaming in an agent reply is highlighted once it closes.
+
 - **Editora's Linux app ID is now `io.github.adriandeleon.Editora`** (it was `com.editora.Editora`), as Pauta asks.
   It is the ID GNOME Software, KDE Discover and other software centres know Editora by. The listing says it replaces
   the old ID, and an upgrade removes the file named for the old one, so Editora is listed once.
@@ -171,6 +214,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OpenPGP signature beside it (`<file>.asc`), by the key attached to the release as `editora-signing-key.asc`.
 
 ### Fixed
+
+- **Old error underlines came back after some edits.** After signature help, Format, code actions and other requests
+  that send the text first, the typing pause could put the pre-edit squiggles back on lines the edit had moved.
+- **The Threads view stopped updating** while a program kept starting and ending threads.
 
 - **A bulk edit in a large file could lose the file's previous text.** The Local History copy taken before an edit in
   a buffer with no undo (Replace in Files, an agent or LSP edit, diff apply) was reported as kept before it reached
