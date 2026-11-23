@@ -103,6 +103,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Local History keeps more, and says more.** Git Rollback and Discard of tracked files now keep a Local History
+  copy of each file first, and nothing is discarded when a copy can't be made, so a change made outside Editora and
+  never committed can be brought back. Maven Update Versions keeps a copy of a closed `pom.xml` before rewriting it,
+  Decrypt to File keeps a copy of the file it replaces, and Save as Administrator keeps the version it replaced.
+  Rows now say what came before them: *Before agent write*, *Before HTTP response*, *Before restore*, *Before revert*
+  and *Before link update*, where they all used to read *External change*.
+- **Local History's folder view.** It keeps your place (the selected version, its diff and the scroll) while files
+  in the folder are saved or restored, has a filter by file name, label, reason or time, sets labels with F2, and
+  deletes a file's history with Delete. After a restore, the keyboard stays in the list, for the next one.
+- **Recent Changes lists this project.** Local History ▸ Recent Changes now lists the window's project only, or
+  every file in a window with no project; picking a deleted file's row selects that revision in its folder's view.
+- **Encrypt File and Local History.** After a file is encrypted, its banner says how many plain copies Local History
+  still holds and offers to delete them.
+- **Delete History of File** offers *Delete Everywhere* when Save As copies share its snapshots, so the text can
+  really leave the disk; after any purge, the status says why content may still be on disk for a while (another
+  running Editora, an index backup, or an index not trusted yet).
+- **An LSP edit that deletes many files asks first.** When it deletes more files than Local History copies (200),
+  Editora says so and asks before going ahead.
+
 - **Editora now works toward Pauta 6.2.0** (it was 6.0.1). About and the README name the new edition. In 6.2.0 an icon
   on a menu row is optional, so menu rows without one are no longer listed as unmet.
 - **Force Push is offered only after a rejected push.** The Git ▸ Remotes ▸ Force Push (with Lease) row and its
@@ -141,6 +160,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OpenPGP signature beside it (`<file>.asc`), by the key attached to the release as `editora-signing-key.asc`.
 
 ### Fixed
+
+- **A bulk edit in a large file could lose the file's previous text.** The Local History copy taken before an edit in
+  a buffer with no undo (Replace in Files, an agent or LSP edit, diff apply) was reported as kept before it reached
+  the disk, so the edit went ahead even when the copy failed. The edit now waits for the copy and is refused without
+  it.
+- **One project's big files emptied the others' Local History.** When the newest versions of a few big files were
+  over the project's size limit by themselves, every other file in the project was cut to its newest version, for
+  months. Only the big files' own older versions are dropped now.
+- **Local History copies that were reported missing.** A copy whose index write was folded into the next one was
+  reported as failed, so an agent write, a Replace in Files on a closed file or a delete could be refused for no
+  reason.
+- **Local History gaps.** A plain `.asc` file (AsciiDoc, a public key) was never recorded, because encrypted files
+  were recognised by name; a file shown only in part (a huge file, a trimmed log) was recorded as if that part were
+  the whole file; and the version a save replaced was not kept for files over 5 MB.
+- **Local History across windows and processes.** Delete History of Project and Save As now cover what every window
+  recorded; a restore from the folder view of a file open in another window goes into that window's tab, asking
+  first over unsaved edits; and with two Editoras on one configuration, a rename in one no longer deletes the
+  other's history of that file.
+- **Local History and encodings.** A version restored after the file was deleted outside Editora keeps the file's
+  charset, byte-order mark and line endings; a UTF-16 file without a byte-order mark gets a copy before a restore;
+  and the folder view's *Current* side shows a closed file in its own encoding.
+- **The Local History window** keeps the selected version and its diff after you rename its label, and reopens when
+  you come back to a file after a tab with none (it used to stay closed).
+- **Local History upkeep.** A clock set ahead and then corrected no longer leaves versions that never expire; an empty
+  index backup no longer stops old content being collected for 30 days, and a lost index gets the same 30-day grace as a
+  damaged one.
 
 - **A closed window no longer lingers in memory after a late GitHub check.** With the GitHub CLI installed, a window
   closed while Editora was still asking `gh` whether it is signed in got the answer afterwards: the closed window

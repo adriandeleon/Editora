@@ -149,7 +149,9 @@ preview image's stamp and a rooted image path. A file chooser opens on its start
 (`ui/ChooserStart`: JavaFX checks it, and a refused one is dropped). The emoji table and the technical dictionary are
 read at launch and with the spell dictionary. The safety copy before a bulk edit in a buffer with no undo
 (`HistoryCoordinator.recordSafetyCopy`) takes the text in memory and queues its write on the history worker, in
-order with every later capture of the file; the edit goes on at once, and the quit drains the worker. `FilesOffFxThreadFxTest` drives a representative set and checks that
+order with every later capture of the file. The edit then waits, bounded (as `SearchCoordinator.recordBeforeWrite`
+does), for the durable answer, and is refused when the copy fails or is not on disk in time: a recovery copy the
+edit cannot count on is no copy. The quit drains the worker. `FilesOffFxThreadFxTest` drives a representative set and checks that
 none of their `BlockingSites` is heard on the FX thread.
 
 The checks made as the user types, per buffer sync, per publish and per command follow it too (PERF-01, Pauta 6.2.0).
@@ -634,8 +636,8 @@ unlimited and records programmatic edits. `RichTextAreaUndoPolicyTest` enforces 
 Large-file mode has **no** undo, so "it is one undo step" is not a safety net there. A programmatic bulk or
 whole-document edit (Replace in Files, a line transform, tool/AI/agent/plugin/LSP output) must ask
 `ui/NoUndoGuard.allow(buffer, operationName)` immediately before it edits: on a no-undo buffer the guard
-first stores the buffer text in Local History as a labelled revision (blocking until it is on disk) and
-tells the user, or returns false — and then the edit must not happen.
+first stores the buffer text in Local History as a labelled revision (waiting, bounded, until it is on
+disk) and tells the user, or returns false when it could not be stored in time — and then the edit must not happen.
 
 Build `HttpClient`s through `io/LazyHttpClient`, never in a field initializer: each one starts a selector
 thread when built.

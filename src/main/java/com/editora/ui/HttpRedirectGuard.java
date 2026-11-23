@@ -76,7 +76,8 @@ final class HttpRedirectGuard implements ResponseRedirects.Guard {
             completion.accept(ResponseRedirects.Decision.of(ResponseRedirects.Verdict.NOT_KEPT));
             return;
         }
-        history.captureBeforeOverwriteDurably(target, capture -> {
+        // Filed as "Before an HTTP response", so the row says what replaced the file (F3).
+        history.captureBeforeOverwriteDurably(target, com.editora.config.HistoryRevision.REASON_HTTP, capture -> {
             ResponseRedirects.Verdict verdict = !capture.safe()
                     ? ResponseRedirects.Verdict.REFUSED_NOT_PRESERVED
                     : capture.recorded()

@@ -1542,6 +1542,72 @@ class LspWorkspaceEditFxTest {
         assertEquals(Map.of(old, "old"), ops.captured, "the deleted file is in Local History");
     }
 
+    /**
+     * R16. A folder delete with more files than Local History copies per edit asks first, says how many of how
+     * many are kept, and deletes nothing when declined.
+     */
+    @Test
+    void aFolderLargerThanTheCopyCapIsDeletedOnlyAfterTheUserHearsHowManyAreKept() throws Exception {
+        Path folder = Files.createDirectories(root.resolve("big"));
+        int total = LspWorkspaceEdits.MAX_CAPTURED_PER_EDIT + 5;
+        for (int i = 0; i < total; i++) {
+            Files.writeString(folder.resolve("F" + i + ".java"), "class F" + i + " {}\n");
+        }
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(), List.of(), List.of(), List.of(new WorkspaceEditMapper.FileDelete(folder, true, false)));
+        List<LspWorkspaceEdits.HistoryCap> asked = new ArrayList<>();
+        AtomicReference<Boolean> answer = new AtomicReference<>(false);
+        FxTestSupport.runOnFx(() -> {
+            coordinator.workspaceEdits.destructiveEditConfirmer = hazards -> true;
+            coordinator.workspaceEdits.historyCapConfirmer = cap -> {
+                asked.add(cap);
+                return answer.get();
+            };
+        });
+
+        CompletableFuture<Boolean> declined = new CompletableFuture<>();
+        FxTestSupport.runOnFx(() -> coordinator.applyWorkspaceEditsConfirmed(mapped, declined::complete));
+
+        assertFalse(declined.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertEquals(List.of(new LspWorkspaceEdits.HistoryCap(LspWorkspaceEdits.MAX_CAPTURED_PER_EDIT, total)), asked);
+        assertTrue(Files.isDirectory(folder), "declined: the folder is still there");
+        assertTrue(ops.captured.isEmpty(), "and nothing was copied for an edit that did not run");
+        String words = LspWorkspaceEdits.historyCapQuestion(asked.get(0)).message();
+        assertTrue(
+                words.contains(String.valueOf(total))
+                        && words.contains(String.valueOf(LspWorkspaceEdits.MAX_CAPTURED_PER_EDIT)),
+                words);
+
+        answer.set(true);
+        CompletableFuture<Boolean> accepted = new CompletableFuture<>();
+        FxTestSupport.runOnFx(() -> coordinator.applyWorkspaceEditsConfirmed(mapped, accepted::complete));
+
+        assertTrue(accepted.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertFalse(Files.exists(folder));
+        assertEquals(LspWorkspaceEdits.MAX_CAPTURED_PER_EDIT, ops.captured.size());
+    }
+
+    /** R16. A folder within the cap is copied whole and not asked about a second time. */
+    @Test
+    void aFolderWithinTheCopyCapIsNotAskedAboutTheCap() throws Exception {
+        Path folder = Files.createDirectories(root.resolve("small"));
+        Path inside = Files.writeString(folder.resolve("A.java"), "class A {}\n");
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(), List.of(), List.of(), List.of(new WorkspaceEditMapper.FileDelete(folder, true, false)));
+        FxTestSupport.runOnFx(() -> {
+            coordinator.workspaceEdits.destructiveEditConfirmer = hazards -> true;
+            coordinator.workspaceEdits.historyCapConfirmer = cap -> {
+                throw new AssertionError("must not ask: " + cap);
+            };
+        });
+
+        CompletableFuture<Boolean> result = new CompletableFuture<>();
+        FxTestSupport.runOnFx(() -> coordinator.applyWorkspaceEditsConfirmed(mapped, result::complete));
+
+        assertTrue(result.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertEquals(Map.of(inside, "class A {}\n"), ops.captured);
+    }
+
     /** E18. With history on, a file whose copy could not be kept is not deleted. */
     @Test
     void aFailedLocalHistoryCopyRefusesTheEdit() throws Exception {
