@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 181;
+    public static final int SCHEMA_VERSION = 182;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -992,6 +992,10 @@ public class Settings {
     private boolean bashDebugEnabled = true;
     /** vscode-bash-debug's {@code bashDebug.js} (or its folder); blank = Editora's install, VS Code's extension. */
     private String bashDebugPath = "";
+    /** Lua debugging (local-lua-debugger): on by default, only effective when the adapter is found. */
+    private boolean luaDebugEnabled = true;
+    /** local-lua-debugger's {@code debugAdapter.js} (or its folder); blank = Editora's install, VS Code's extension. */
+    private String luaDebugPath = "";
     /** Dart and Flutter debugging (the SDK's own adapters): on by default, only effective when {@code dart} is found. */
     private boolean dartDebugEnabled = true;
     /** {@code dart} (its {@code debug_adapter}); blank = {@code dart} on the PATH. */
@@ -4093,6 +4097,22 @@ public class Settings {
 
     public void setRubyDebugPath(String rubyDebugPath) {
         this.rubyDebugPath = rubyDebugPath == null ? "" : rubyDebugPath;
+    }
+
+    public boolean isLuaDebugEnabled() {
+        return luaDebugEnabled;
+    }
+
+    public void setLuaDebugEnabled(boolean luaDebugEnabled) {
+        this.luaDebugEnabled = luaDebugEnabled;
+    }
+
+    public String getLuaDebugPath() {
+        return luaDebugPath == null ? "" : luaDebugPath;
+    }
+
+    public void setLuaDebugPath(String luaDebugPath) {
+        this.luaDebugPath = luaDebugPath == null ? "" : luaDebugPath;
     }
 
     public boolean isDartDebugEnabled() {

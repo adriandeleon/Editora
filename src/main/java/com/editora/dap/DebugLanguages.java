@@ -411,8 +411,46 @@ public final class DebugLanguages {
             "debug.error.flutterUnavailable",
             new ExternalAdapter(List.of("flutter", "debug_adapter"), ExternalAdapter.Transport.STDIO, null));
 
+    /**
+     * Lua, on local-lua-debugger ({@code debugAdapter.js}, run on Node.js over its standard streams), which starts
+     * the script under a Lua interpreter with its {@code lldebugger.lua} loaded ({@link ScriptLaunch#luaLaunch}) and
+     * talks to it over a pipe. No exception filters: it stops on every uncaught error by itself.
+     */
+    public static final DebugLanguage LUA = new DebugLanguage(
+            "lua",
+            "Lua",
+            Set.of("lua"),
+            Kind.EXTERNAL,
+            "lua-local",
+            "lua-local",
+            "",
+            List.of(),
+            null,
+            Availability.LOCATED,
+            List.of(),
+            null,
+            null,
+            false,
+            "debug.error.luaUnavailable",
+            new ExternalAdapter(List.of("debugAdapter.js"), ExternalAdapter.Transport.STDIO, null));
+
     private static final List<DebugLanguage> ALL = List.of(
-            JAVA, PYTHON, JAVASCRIPT, GROOVY, KOTLIN, CLOJURE, SCALA, GO, RUST, CPP, CSHARP, RUBY, PHP, BASH, DART);
+            JAVA,
+            PYTHON,
+            JAVASCRIPT,
+            GROOVY,
+            KOTLIN,
+            CLOJURE,
+            SCALA,
+            GO,
+            RUST,
+            CPP,
+            CSHARP,
+            RUBY,
+            PHP,
+            BASH,
+            DART,
+            LUA);
 
     /**
      * GDB's own DAP mode ({@code gdb -i dap}, GDB 14 and later), over its standard streams: C and C++'s other debugger

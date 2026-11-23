@@ -2466,6 +2466,9 @@ public final class DapManager {
         if (DebugLanguages.BASH.equals(language)) {
             return InstalledAdapter.BASH_DEBUG;
         }
+        if (DebugLanguages.LUA.equals(language)) {
+            return InstalledAdapter.LUA_DEBUG;
+        }
         return DebugLanguages.PHP.equals(language) ? InstalledAdapter.PHP_DEBUG : null;
     }
 
@@ -2604,7 +2607,13 @@ public final class DapManager {
                         request,
                         Path.of(executable),
                         name -> ProcessRunner.resolveExecutable(List.of(name)).getFirst())
-                : request;
+                : DebugLanguages.LUA.equals(language) && executable != null
+                        ? ScriptLaunch.withLuaRuntime( // where lldebugger.lua is, and which Lua is installed
+                                request,
+                                Path.of(executable),
+                                name -> ProcessRunner.resolveExecutable(List.of(name))
+                                        .getFirst())
+                        : request;
         List<String> argv = new ArrayList<>(external.argv(executable, port));
         if (language == DebugLanguages.GDB) {
             argv.addAll(1, EvaluationLimits.gdbArguments(shared.evaluationTimeLimit)); // before -i dap

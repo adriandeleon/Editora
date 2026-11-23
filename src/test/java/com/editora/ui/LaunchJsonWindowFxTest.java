@@ -80,7 +80,7 @@ class LaunchJsonWindowFxTest {
         Files.createDirectories(root.resolve(".vscode"));
         launchJson = Files.writeString(root.resolve(".vscode/launch.json"), LAUNCH);
         Files.writeString(root.resolve(".vscode/tasks.json"), TASKS);
-        Files.writeString(root.resolve("main.lua"), "print('hi')\n");
+        Files.writeString(root.resolve("main.ps1"), "Write-Output hi\n");
         String jvm = ProcessHandle.current().info().command().orElse("java");
         String relay = "#!/bin/sh\nexec '" + jvm + "' -cp '" + System.getProperty("java.class.path")
                 + "' com.editora.dap.RelayAdapterMain ";
@@ -92,7 +92,7 @@ class LaunchJsonWindowFxTest {
         Files.writeString(
                 fx.configDir.resolve("debug-adapters.json"),
                 "{\"adapters\": [{\"type\": \"fake-dap\", \"name\": \"Fake\", \"command\": [\"" + fake
-                        + "\"], \"languages\": [\"lua\"], \"launch\": {\"program\": \"${file}\", \"mode\": \"f5\"}}]}");
+                        + "\"], \"languages\": [\"powershell\"], \"launch\": {\"program\": \"${file}\", \"mode\": \"f5\"}}]}");
         FxTestSupport.runOnFx(() -> {
             fx.shared.getSettings().setDebugSupport(true);
             fx.shared.getSettings().setRustDebugPath(codelldb.toString());
@@ -101,12 +101,12 @@ class LaunchJsonWindowFxTest {
         await(
                 "the fake adapter found",
                 () -> call(() -> manager.isExternalLocated(com.editora.dap.DebugLanguages.byId("fake-dap"))));
-        FxTestSupport.runOnFx(() -> fx.controller.fileWorkflows.openPath(root.resolve("main.lua")));
+        FxTestSupport.runOnFx(() -> fx.controller.fileWorkflows.openPath(root.resolve("main.ps1")));
         await(
-                "main.lua in front",
+                "main.ps1 in front",
                 () -> call(() -> {
                     EditorBuffer b = fx.controller.activeBuffer();
-                    return b != null && b.getPath() != null && Files.isSameFile(b.getPath(), root.resolve("main.lua"));
+                    return b != null && b.getPath() != null && Files.isSameFile(b.getPath(), root.resolve("main.ps1"));
                 }));
     }
 
@@ -211,7 +211,7 @@ class LaunchJsonWindowFxTest {
         choose("Fake");
         choose("high");
         FakeDebugAdapter.Session session = next("launch");
-        assertEquals(root.resolve("main.lua").toString(), session.launchArgs.get("program"), "${file}");
+        assertEquals(root.resolve("main.ps1").toString(), session.launchArgs.get("program"), "${file}");
         assertEquals("high", session.launchArgs.get("level"), "the input picked");
         assertEquals("fake-dap", session.launchArgs.get("type"));
         assertTrue(Files.isRegularFile(root.resolve("prepared.txt")), "the preLaunchTask ran first");
@@ -233,7 +233,7 @@ class LaunchJsonWindowFxTest {
         run("debug.start");
         FakeDebugAdapter.Session session = next("launch");
         assertEquals("f5", session.launchArgs.get("mode"));
-        assertEquals(root.resolve("main.lua").toString(), session.launchArgs.get("program"));
+        assertEquals(root.resolve("main.ps1").toString(), session.launchArgs.get("program"));
         assertEquals("fake-dap", session.launchArgs.get("type"));
     }
 
@@ -298,7 +298,7 @@ class LaunchJsonWindowFxTest {
                     }));
             assertTrue(Files.readString(file).contains("\"adapters\""), "the example");
         } finally {
-            FxTestSupport.runOnFx(() -> fx.controller.fileWorkflows.openPath(root.resolve("main.lua")));
+            FxTestSupport.runOnFx(() -> fx.controller.fileWorkflows.openPath(root.resolve("main.ps1")));
             Files.writeString(file, mine);
         }
     }
