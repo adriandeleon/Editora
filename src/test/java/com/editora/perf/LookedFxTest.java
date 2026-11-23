@@ -405,6 +405,59 @@ class LookedFxTest {
         assertEquals(2, probes.get(), "the failed probe let go of the key, so the next ask probes again");
     }
 
+    @Test
+    void aStaleKeyAskedOftenOnTheFxThreadIsLookedAtOnceBehind() throws Exception {
+        java.util.concurrent.atomic.AtomicLong now = new java.util.concurrent.atomic.AtomicLong(0);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger looks = new AtomicInteger();
+        Looked<String, String> looked = new Looked<>("stale-look", key -> {
+            if (looks.incrementAndGet() > 1) {
+                try {
+                    release.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            return key;
+        });
+        looked.clockForTest(now::get);
+        assertEquals("a", looked.get("a"), "looked at off the FX thread");
+        now.set(TimeUnit.SECONDS.toNanos(6)); // older than five seconds: stale
+        for (int i = 0; i < 50; i++) {
+            assertEquals("a", onFx(() -> looked.get("a")), "the kept answer, while a fresh look runs behind");
+        }
+        release.countDown();
+        waitUntil(() -> looks.get() == 2);
+        Thread.sleep(50);
+        assertEquals(2, looks.get(), "fifty stale asks start one look behind, not fifty");
+    }
+
+    @Test
+    void aFullMemoDropsTheLeastRecentlyUsedKeysNotTheWholeWorkingSet() throws Exception {
+        java.util.concurrent.atomic.AtomicLong now = new java.util.concurrent.atomic.AtomicLong(0);
+        Looked<Integer, Integer> memo = new Looked<>("lru-look", k -> k);
+        memo.clockForTest(now::get);
+        for (int i = 0; i < 256; i++) {
+            memo.get(i);
+        }
+        now.set(TimeUnit.SECONDS.toNanos(3));
+        for (int i = 0; i < 100; i++) {
+            final int k = i;
+            onFx(() -> memo.get(k)); // the first hundred are asked for again: in use
+        }
+        now.set(TimeUnit.MILLISECONDS.toNanos(61_500)); // past the keep window for the rest
+        memo.get(1000); // at the bound: room is made
+        assertTrue(memo.size() < 256, "back under the bound: " + memo.size());
+        assertTrue(memo.size() > 150, "but not emptied: " + memo.size());
+        for (int i = 0; i < 100; i++) {
+            assertTrue(memo.knows(i), "a key in use is kept: " + i);
+        }
+        assertTrue(memo.knows(1000), "the key just looked at is kept");
+        long unused =
+                java.util.stream.IntStream.range(100, 256).filter(memo::knows).count();
+        assertTrue(unused < 156, "the least recently used go first: " + unused);
+    }
+
     private static void waitUntil(java.util.function.BooleanSupplier done) throws Exception {
         long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         while (!done.getAsBoolean()) {
