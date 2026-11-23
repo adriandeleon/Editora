@@ -128,6 +128,14 @@ public final class GitHubService {
     /** The consumers of the probe that is queued or running ({@code null} when none is): detects coalesce. */
     private @Nullable List<Consumer<Availability>> probeWaiters;
 
+    /**
+     * Set by {@link #shutdown()}: the window is closed, so no probe answer is posted to it any more. A probe
+     * running then (a {@code gh auth status} that takes seconds) used to hold its waiters, and through them the
+     * closed window, until {@code gh} answered — and then still enabled the closed window's GitHub tool window and
+     * saved its settings.
+     */
+    private volatile boolean shutDown;
+
     /** {@link System#nanoTime} when the last probe finished ({@link #redetectIfOlderThan}). */
     private volatile long lastProbeNanos = System.nanoTime() - TimeUnit.HOURS.toNanos(1);
 
@@ -350,13 +358,20 @@ public final class GitHubService {
      */
     public void detect(Consumer<Availability> onResult) {
         synchronized (probeLock) {
+            if (shutDown) {
+                return; // the window is closed: nothing is waiting for the answer
+            }
             if (probeWaiters != null) {
                 probeWaiters.add(onResult);
                 return;
             }
             probeWaiters = new ArrayList<>(List.of(onResult));
         }
-        submit(probes, this::runDetect);
+        if (!submit(probes, this::runDetect)) {
+            synchronized (probeLock) {
+                probeWaiters = null; // shut down meanwhile: no probe will run to answer them
+            }
+        }
     }
 
     /**
@@ -420,9 +435,16 @@ public final class GitHubService {
                 }
             }
         }
+        if (shutDown || waiters.isEmpty()) {
+            return; // the window closed while gh ran: shutdown() dropped the waiters
+        }
         Availability a = posted;
         List<Consumer<Availability>> notify = waiters;
-        Platform.runLater(() -> notify.forEach(w -> w.accept(a)));
+        Platform.runLater(() -> {
+            if (!shutDown) {
+                notify.forEach(w -> w.accept(a));
+            }
+        });
     }
 
     /**
@@ -1167,6 +1189,10 @@ public final class GitHubService {
      * {@code git} child halfway through the branch switch (the same rule as {@code GitService.shutdown()}).
      */
     public void shutdown() {
+        shutDown = true;
+        synchronized (probeLock) {
+            probeWaiters = null; // a probe still running holds the service, not the window
+        }
         reads.shutdownNow();
         probes.shutdownNow();
         lookups.shutdownNow();

@@ -119,6 +119,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A closed window no longer lingers in memory after a late GitHub check.** With the GitHub CLI installed, a window
+  closed while Editora was still asking `gh` whether it is signed in got the answer afterwards: the closed window
+  showed its GitHub tool window and saved its settings, and that save could keep the whole window (about 20 MB) in
+  memory. The answer is now dropped once the window has closed.
 - **The Disassembly view on GDB** now shows the instructions leading up to where the program stopped. GDB used to
   answer with instructions after it, so the current instruction wasn't in the list.
 - **Debugger review fixes, second round.** A second review of the debugger found these, now fixed:
