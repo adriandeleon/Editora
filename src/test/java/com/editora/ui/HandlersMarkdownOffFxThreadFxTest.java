@@ -219,8 +219,12 @@ class HandlersMarkdownOffFxThreadFxTest {
         // The pause's other passes (highlight, TODO, spell…) build the same text when they run; held too, so the
         // count below sees only what asking for the map's scan cost.
         List<Runnable> others = new CopyOnWriteArrayList<>();
+        // Read when the scan is asked for (the runner is called on the FX thread then): a later pass, such as the Undo
+        // History checkpoint 400 ms into the pause, may build the text by the time the test looks again.
+        java.util.concurrent.atomic.AtomicLong atAsk = new java.util.concurrent.atomic.AtomicLong(-1);
         OffFx.runnerForTest((name, task) -> {
             if (name.equals(com.editora.editor.markdown.MarkdownBlockMap.SITE)) {
+                atAsk.compareAndSet(-1, materializations(b));
                 held.add(task);
             } else {
                 others.add(task);
@@ -237,10 +241,7 @@ class HandlersMarkdownOffFxThreadFxTest {
                 before, FxTestSupport.callOnFx(() -> materializations(b)), "no copy of the document per keystroke");
         SettingsRig.awaitFx("the pause asks for one scan", () -> !held.isEmpty());
         assertEquals(1, held.size());
-        assertEquals(
-                before,
-                FxTestSupport.callOnFx(() -> materializations(b)),
-                "the scan's text is built on its own thread, not when it is asked for");
+        assertEquals(before, atAsk.get(), "the scan's text is built on its own thread, not when it is asked for");
         held.forEach(Runnable::run);
         others.forEach(Runnable::run);
         FxTestSupport.drainFx();
