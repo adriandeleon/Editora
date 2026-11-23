@@ -49,6 +49,7 @@ import com.editora.editor.ControlNames;
 import com.editora.editor.MenuChords;
 import com.editora.editor.UiZoom;
 import com.editora.git.GitFileStatus;
+import com.editora.perf.OffFx;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -791,6 +792,7 @@ final class ProjectMapView extends VBox {
     private void dependencyOverlayUpdate(boolean reread) {
         Path current = root;
         if (!dependencyOverlayOption.isSelected() || current == null || disposed) {
+            dependencyOverlayWork.cancel();
             surface.setDependencyOverlay(MapDependencyOverlay.NONE);
             return;
         }
@@ -799,10 +801,49 @@ final class ProjectMapView extends VBox {
         Path subject = entry == null || entry.isPlaceholder() ? null : symbol != null ? symbol.file() : entry.path();
         boolean folder = entry != null && entry.directory() && symbol == null;
         ProjectMapDependencies read = dependencyIndex.latest();
-        MapDependencyOverlay before = surface.dependencyOverlay();
-        MapDependencyOverlay overlay = subject == null || read == null
+        MapDependencyOverlay known = subject == null || read == null
                 ? MapDependencyOverlay.NONE
-                : MapDependencyOverlay.of(read, current, subject, folder);
+                : dependencyOverlays.get(read, current, subject, folder);
+        if (known != null) {
+            dependencyOverlayWork.cancel();
+            dependencyOverlayShow(known);
+        } else if (subject != null && read != null) {
+            // Off the FX thread: a folder high in a large project walks every edge of every file in it (perf review
+            // S5). The rows keep the last overlay until this one lands; a newer selection supersedes it.
+            dependencyOverlayWork.submit(() -> MapDependencyOverlay.of(read, current, subject, folder), overlay -> {
+                if (disposed || !dependencyOverlayOption.isSelected() || !current.equals(root)) {
+                    return;
+                }
+                dependencyOverlays.put(read, current, subject, folder, overlay);
+                dependencyOverlayShow(overlay);
+            });
+        }
+        long now = System.nanoTime();
+        if (reread
+                && subject != null
+                && !dependencyIndex.loading()
+                && (read == null || now - dependencyOverlayReadAt > DEPENDENCY_OVERLAY_REREAD_NANOS)) {
+            dependencyOverlayReadAt = now;
+            dependencyIndex.load(found -> dependencyOverlayUpdate(false));
+        }
+    }
+
+    /** Where the dependency overlay is worked out (perf review S5). */
+    static final String DEPENDENCY_OVERLAY_SITE = "project-map-dependency-overlay";
+
+    /** The selection's dependency overlay, worked out off the FX thread: only the latest selection's lands. */
+    private final LatestOnly dependencyOverlayWork =
+            new LatestOnly(task -> OffFx.start(DEPENDENCY_OVERLAY_SITE, task), OffFx::onFx);
+
+    /** The overlays worked out lately, for the imports last read. */
+    private final MapDependencyOverlay.Recent dependencyOverlays = new MapDependencyOverlay.Recent();
+
+    /**
+     * Tints the rows with {@code overlay} and says on the status line how many files the selection uses and how many
+     * use it, when that changed.
+     */
+    private void dependencyOverlayShow(MapDependencyOverlay overlay) {
+        MapDependencyOverlay before = surface.dependencyOverlay();
         surface.setDependencyOverlay(overlay);
         Path at = overlay.subject();
         if (at != null
@@ -815,14 +856,6 @@ final class ProjectMapView extends VBox {
                     overlay.read()
                             ? tr("project.map.deps.overlayStatus", label, overlay.uses(), overlay.users())
                             : tr("project.map.deps.overlayNotRead", label));
-        }
-        long now = System.nanoTime();
-        if (reread
-                && subject != null
-                && !dependencyIndex.loading()
-                && (read == null || now - dependencyOverlayReadAt > DEPENDENCY_OVERLAY_REREAD_NANOS)) {
-            dependencyOverlayReadAt = now;
-            dependencyIndex.load(found -> dependencyOverlayUpdate(false));
         }
     }
 
@@ -1673,9 +1706,15 @@ final class ProjectMapView extends VBox {
         pendingSelection = normalized;
         setOutputEnabled(false);
         orientation.setRoot(normalized);
-        surface.setProblems(new ProjectMapProblems(problemSource, normalized)); // counted below the new root
+        if (active) {
+            problemsRebuild(); // counted below the new root
+        } else {
+            problemsStale = true;
+        }
         dependencyIndex.setRoot(normalized);
         dependencyOverlayReadAt = 0;
+        dependencyOverlayWork.cancel(); // one worked out for the old root must not land
+        dependencyOverlays.clear();
         surface.setDependencyOverlay(MapDependencyOverlay.NONE);
         metricsIndex.setRoot(normalized);
         activity.setRoot(normalized);
@@ -3881,6 +3920,7 @@ final class ProjectMapView extends VBox {
         cards.stopRefreshing();
         mapLoader.dispose();
         loader.shutdownNow();
+        dependencyOverlayWork.cancel();
         structure.dispose();
         loadInFlight = false;
         loadingDelay.stop();

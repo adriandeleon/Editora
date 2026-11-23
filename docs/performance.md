@@ -470,8 +470,18 @@ style-only change that still ended a succession — skips the draw and the snaps
   only when a choice is made, Query Replace copies a piece of the document from its offset and searches it off
   the FX thread, a piece twice as long when the answer lies past it (`QueryReplace.piece`, `nextIn`), a snippet or
   template body is coloured once typing pauses, off the FX thread, the Markdown heading crumbs and a large Python file's indent check scan off the FX thread, and a Project Map paint
-  makes and tests the boxes of the rows on screen only (`MapProjectedRows`). A listener on a `CodeArea`'s
-  `textProperty()` builds the whole document per change: use `plainTextChanges()`.
+  makes and tests the boxes of the rows on screen only (`MapProjectedRows`, whose row arrays live as long as the
+  world layout). A listener on a `CodeArea`'s `textProperty()` builds the whole document per change: use
+  `plainTextChanges()`.
+- The Project Map's world layout is cached in two steps (`MapSurface.worldLayout`): the columns (every row grouped,
+  sorted and filtered) are keyed by the rows, filters and folding only, and the geometry by the zoom only through
+  whether each card's controls fit, so a zoom pulse or a "Compact rows" hover sorts nothing and usually lays
+  nothing out. A row's place among its column's rows (the screen-reader text, a step out of a filtered column) comes
+  from `MapColumnOrders`, one column sorted once per listing; never call `ProjectMapModel.columnsById` over every
+  row from a keystroke or a selection path. Label widths are kept across listings (bounded, cleared by a font change).
+  The Map's problem counts are built only while it shows (diagnostics that arrive while hidden are counted on the
+  show), and the dependency overlay is worked out off the FX thread (`LatestOnly`, the latest selection wins, the
+  recent ones kept for revisits).
 - **Never** call `getCharacterBoundsOnScreen` synchronously inside a layout/viewport event.
 - **Never** ask `getCharacterBoundsOnScreen` for an **empty** range — it allocates a blinking
   `CaretNode` whose timer is never stopped, permanently leaking a pulse receiver. Measure a

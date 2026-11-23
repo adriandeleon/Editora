@@ -154,11 +154,17 @@ final class ProjectMapDependencies {
      */
     record Neighbours(Set<String> uses, Set<String> users) {}
 
-    /** The files around {@code subject}, the file or folder at that root-relative path. */
+    /**
+     * The files around {@code subject}, the file or folder at that root-relative path. An interrupted thread stops
+     * early with what it found so far (the Map's overlay drops a superseded answer, perf review S5).
+     */
     Neighbours neighbours(String subject, boolean folder) {
         Set<String> uses = new TreeSet<>();
         Set<String> users = new TreeSet<>();
         for (String file : filesOf(subject, folder)) {
+            if (Thread.currentThread().isInterrupted()) {
+                break;
+            }
             for (ProjectMapImports.Edge edge : out.getOrDefault(file, List.of())) {
                 if (!folder || !inside(edge.to(), subject)) {
                     uses.add(edge.to());
