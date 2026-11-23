@@ -974,6 +974,9 @@ public final class InstallCatalog {
         if (BASH_DEBUG_STEP.equals(stepId)) {
             return Optional.of(bashDebug());
         }
+        if (LUA_DEBUG_STEP.equals(stepId)) {
+            return Optional.of(luaDebug());
+        }
         if (!KOTLIN_LSP_STEP.equals(stepId)) {
             return Optional.empty();
         }
@@ -1050,9 +1053,27 @@ public final class InstallCatalog {
     }
 
     /**
-     * vscode-php-debug (MIT, github.com/xdebug/vscode-php-debug): one {@code .vsix} for every platform, a zip holding
-     * {@code extension/out/phpDebug.js}, which runs on Node.js. The hash is the release asset's SHA-256 as GitHub
-     * publishes it for the tag, checked against a downloaded copy.
+     * local-lua-debugger (MIT, github.com/tomblind/local-lua-debugger-vscode): one {@code .vsix} for every platform, a
+     * zip holding {@code extension/extension/debugAdapter.js}, which runs on Node.js, and the {@code lldebugger.lua}
+     * the debugged script loads. The hash is the Open VSX file's SHA-256, checked against a downloaded copy.
+     */
+    private static PinnedServer luaDebug() {
+        PinnedAsset vsix = new PinnedAsset(
+                "https://open-vsx.org/api/tomblind/local-lua-debugger-vscode/" + LUA_DEBUG_VERSION
+                        + "/file/tomblind.local-lua-debugger-vscode-" + LUA_DEBUG_VERSION + ".vsix",
+                "84cd428312459f5f511d98e9bed914fb9cff828cc132cb55ac0587225b2673ba",
+                Packing.ZIP);
+        java.util.Map<Platform, PinnedAsset> assets = new java.util.EnumMap<>(Platform.class);
+        for (Platform p : Platform.values()) {
+            assets.put(p, vsix);
+        }
+        return new PinnedServer(LUA_DEBUG_STEP, LUA_DEBUG_VERSION, assets, "debugAdapter.js", "", 2, 8);
+    }
+
+    /**
+     * vscode-bash-debug (MIT, github.com/rogalmic/vscode-bash-debug): one {@code .vsix} for every platform, a zip holding
+     * {@code extension/out/bashDebug.js}, which runs on Node.js. The hash is the Open VSX file's SHA-256, checked
+     * against a downloaded copy.
      */
     private static PinnedServer bashDebug() {
         PinnedAsset vsix = new PinnedAsset(
@@ -1443,6 +1464,21 @@ public final class InstallCatalog {
                     BASH_DEBUG_DIR,
                     null)));
         }
+        if (LUA_DEBUG_STEP.equals(key)) {
+            boolean linuxHost = currentPlatform() == Platform.LINUX_X64 || currentPlatform() == Platform.LINUX_ARM;
+            return Optional.of(List.of(new Step(
+                    LUA_DEBUG_STEP,
+                    Kind.PINNED_SERVER,
+                    linuxHost ? Set.of() : Set.of(Prereq.TAR),
+                    List.of(),
+                    null,
+                    null,
+                    null,
+                    null,
+                    false,
+                    LUA_DEBUG_DIR,
+                    null)));
+        }
         if (PHP_DEBUG_STEP.equals(key)) {
             boolean linux = currentPlatform() == Platform.LINUX_X64 || currentPlatform() == Platform.LINUX_ARM;
             return Optional.of(List.of(new Step(
@@ -1496,6 +1532,15 @@ public final class InstallCatalog {
 
     /** Where vscode-bash-debug is unpacked, relative to the config dir; {@code InstalledAdapter.BASH_DEBUG} looks there. */
     public static final String BASH_DEBUG_DIR = "plugins/dap/bash";
+
+    /** The local-lua-debugger step's id, its Settings key and its recipe's ({@link #pinnedServer}). */
+    public static final String LUA_DEBUG_STEP = "lua-debug";
+
+    /** The local-lua-debugger release Editora installs (from Open VSX). Bump with its hash in {@link #pinnedServer}. */
+    public static final String LUA_DEBUG_VERSION = "0.3.3";
+
+    /** Where local-lua-debugger is unpacked, relative to the config dir; {@code InstalledAdapter.LUA_DEBUG} looks there. */
+    public static final String LUA_DEBUG_DIR = "plugins/dap/lua";
 
     /** The netcoredbg step's id, its Settings key and its recipe's ({@link #pinnedServer}). */
     public static final String NETCOREDBG_STEP = "netcoredbg";

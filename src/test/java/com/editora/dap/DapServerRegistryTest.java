@@ -30,7 +30,8 @@ class DapServerRegistryTest {
                         "ruby",
                         "php",
                         "bash",
-                        "dart"),
+                        "dart",
+                        "lua"),
                 DapServerRegistry.languageIdsForDebug());
     }
 

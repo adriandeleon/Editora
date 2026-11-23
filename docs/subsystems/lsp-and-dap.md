@@ -1026,7 +1026,7 @@ the child env. The result is cached after the first call.
 
 ### Language profiles and transports
 
-Editora debugs Java, Python, JavaScript (Node and Deno), the JVM languages, Go, Rust, C, C++, C#, Ruby, PHP, Bash and Dart (Flutter too), off by default
+Editora debugs Java, Python, JavaScript (Node and Deno), the JVM languages, Go, Rust, C, C++, C#, Ruby, PHP, Bash, Dart (Flutter too) and Lua, off by default
 (`Settings.debugSupport`). Each language is a [`dap/DebugLanguage`](../../src/main/java/com/editora/dap/DebugLanguage.java)
 profile in [`dap/DebugLanguages`](../../src/main/java/com/editora/dap/DebugLanguages.java): its `Kind` transport, the
 DAP `launch` type, the `initialize` adapter id, the default interpreter + adapter args, the fallback transport, what
@@ -1294,6 +1294,23 @@ by name (a watch, a hover: `total` gives `declare -- total="0"`), so `$total` an
 a shell run configuration still is not debugged (`status.debug.shellNotDebuggable`). No exception filters, no attach.
 `BashDebugWindowFxTest` (a stand-in adapter) covers the launch, the first stop passed, the watch and a zsh script;
 `BashDebugProbeFxTest` stops in a loop on the real adapter, reads its variables, steps and runs to the end.
+
+**Lua.** The `lua` profile is local-lua-debugger (tomblind, MIT, `tomblind.local-lua-debugger-vscode` 0.3.3, its last
+release; SHA-256 checked), `extension/debugAdapter.js` on Node.js over stdio. `InstalledAdapter.LUA_DEBUG` finds it as
+configured (`Settings.luaDebugPath`), else in Editora's install (`plugins/dap/lua/extension/extension/debugAdapter.js`),
+else in VS Code's extension. F5 sends `ScriptLaunch.luaLaunch`: `program` `{lua, file, communication: "pipe"}` (the
+adapter starts `lua -e "require('lldebugger').runFile(…)"`; over a pipe — FIFOs, named pipes on Windows — the script's
+own stdout is its output, not the debugger's channel), its folder as `cwd`. VS Code's extension fills in the rest before
+the adapter sees it, so `DapManager.runExternal` does (`withLuaRuntime`): `extensionPath`, the folder above the
+adapter's, where `debugger/lldebugger.lua` is (the adapter sets `LUA_PATH`/`LOCAL_LUA_DEBUGGER_FILEPATH` from it);
+`workspacePath`; and for the bare `lua`, the first of `lua`, `lua5.4`, `lua5.3`, `luajit`, `lua5.2`, `lua5.1` on the
+PATH, keeping a launch.json's own (`lua-local` routes to `LaunchRoute.Kind.LUA_DEBUG`; no attach). Probed with Lua
+5.4.9: conditional breakpoints, locals/upvalues/globals scopes, evaluate, set variable; it stops on an uncaught error by
+itself (no exception filters) and cannot pause a running script; the script gets no standard input. A custom adapter in
+`debug-adapters.json` that lists `lua` no longer gets F5 (built-ins are looked up first), only its launch.json `type`.
+`LuaDebugWindowFxTest` (a stand-in adapter) covers F5's launch and a launch.json configuration;
+`LuaDebugProbeFxTest` stops in a function on the real adapter, reads its locals, steps, sees the output, and stops on
+an error.
 
 **Dart and Flutter.** The `dart` profile is the Dart SDK's own adapter, `dart debug_adapter` over stdio (`STDIO`);
 `DebugLanguages.FLUTTER` is `flutter debug_adapter`, the same adapter inside the Flutter tool (VS Code's Dart extension

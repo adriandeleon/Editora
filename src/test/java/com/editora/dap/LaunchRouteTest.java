@@ -212,6 +212,17 @@ class LaunchRouteTest {
                         .kind(),
                 "a socket path");
 
+        LaunchRoute.Route lua = LaunchRoute.of(
+                config("type", "lua-local", "request", "launch", "program", Map.of("lua", "lua", "file", "a.lua")),
+                none);
+        assertEquals(LaunchRoute.Kind.LUA_DEBUG, lua.kind());
+        assertSame(DebugLanguages.LUA, lua.profile());
+        assertEquals(
+                LaunchRoute.Kind.UNSUPPORTED,
+                LaunchRoute.of(config("type", "lua-local", "request", "attach"), none)
+                        .kind(),
+                "local-lua-debugger only launches");
+
         LaunchRoute.Route php = LaunchRoute.of(config("type", "php", "request", "launch", "port", 9003), none);
         assertEquals(LaunchRoute.Kind.PHP_DEBUG, php.kind());
         assertSame(DebugLanguages.PHP, php.profile());

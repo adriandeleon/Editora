@@ -1373,6 +1373,12 @@ final class DebugCoordinator {
                         on && s.isBashDebugEnabled(),
                         scope.debugTool("bash", s.getBashDebugPath()),
                         found -> applyGating());
+        // local-lua-debugger: as configured, else Editora's install or VS Code's extension.
+        dap().configureExternal(
+                        com.editora.dap.DebugLanguages.LUA,
+                        on && s.isLuaDebugEnabled(),
+                        scope.debugTool("lua", s.getLuaDebugPath()),
+                        found -> applyGating());
         dart.configure(on, s, scope, this::applyGating); // dart, and flutter for a Flutter app's file
         // C and C++: the same CodeLLDB as Rust's.
         dap().configureExternal(
@@ -4215,7 +4221,7 @@ final class DebugCoordinator {
                     withClosedBreakpoints(() -> dap().startBrowser(workspace, request));
                 }
             }
-            case DELVE, CODELLDB, NETCOREDBG, RDBG, PHP_DEBUG, GDB, CUSTOM -> {
+            case DELVE, CODELLDB, NETCOREDBG, RDBG, PHP_DEBUG, BASH_DEBUG, LUA_DEBUG, GDB, CUSTOM -> {
                 if (profile == null) {
                     return;
                 }
@@ -5659,7 +5665,7 @@ final class DebugCoordinator {
             debugCsharpFile(path, fileArgs);
             return;
         }
-        if ("ruby".equals(language) || "php".equals(language) || "bash".equals(language)) {
+        if (java.util.Set.of("ruby", "php", "bash", "lua").contains(language)) {
             debugScriptFile(path, language, fileArgs);
             return;
         }

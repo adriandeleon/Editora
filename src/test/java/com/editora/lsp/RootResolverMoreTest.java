@@ -37,7 +37,7 @@ class RootResolverMoreTest {
         assertTrue(RootResolver.isBroadRoot(Path.of("/")), "a filesystem root");
         assertFalse(RootResolver.isLoose(null, null, List.of("pom.xml"), null));
         assertNull(RootResolver.resolve(null, null, List.of("pom.xml"), null), "no file and no project");
-        assertEquals(Path.of("/"), RootResolver.resolve(null, Path.of("/"), List.of(), null), "a root has no parent");
+        assertEquals(dir.getRoot(), RootResolver.resolve(null, dir.getRoot(), List.of(), null), "a root has no parent");
         assertNull(RootResolver.javaBuildRoot(null, null, null));
         assertNull(RootResolver.outermostContiguous(null, "pom.xml", null, null));
         assertEquals(dir, RootResolver.outermostContiguous(dir, null, null, null));

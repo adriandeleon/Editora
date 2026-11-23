@@ -74,6 +74,19 @@ public record InstalledAdapter(
             List.of("rogalmic.bash-debug-"),
             List.of("out/bashDebug.js"));
 
+    /**
+     * local-lua-debugger (tomblind, MIT): {@code extension/debugAdapter.js} in its {@code .vsix}'s {@code extension}
+     * folder, run on Node.js, with the {@code debugger/lldebugger.lua} the script loads beside it; VS Code's extension
+     * is {@code tomblind.local-lua-debugger-vscode}.
+     */
+    public static final InstalledAdapter LUA_DEBUG = new InstalledAdapter(
+            "lua",
+            "debugAdapter.js",
+            false,
+            List.of("extension/extension/debugAdapter.js", "extension/debugAdapter.js", "debugAdapter.js"),
+            List.of("tomblind.local-lua-debugger-vscode-"),
+            List.of("extension/debugAdapter.js"));
+
     /** Where the installer puts it, by this launch's config folder first. Pure construction. */
     List<Path> roots(Path home) {
         List<Path> roots = new ArrayList<>();

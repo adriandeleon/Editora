@@ -637,7 +637,7 @@ final class SettingsDebugPage {
             java.util.function.Consumer<java.util.function.BiConsumer<Boolean, String>> detect) {}
 
     /**
-     * The debug adapters with a card of their own (Java, Python, JavaScript, Go, Rust, C#, Ruby, PHP, Bash, Dart), in display
+     * The debug adapters with a card of their own (Java, Python, JavaScript, Go, Rust, C#, Ruby, PHP, Bash, Dart, Lua), in display
      * order.
      */
     private java.util.List<DebugAdapterUi> debugAdapterUis() {
@@ -787,7 +787,15 @@ final class SettingsDebugPage {
                         v -> config.getSettings().setDartDebugEnabled(v),
                         () -> config.getSettings().isDartDebugEnabled(),
                         v -> config.getSettings().setDartDebugPath(v),
-                        () -> config.getSettings().getDartDebugPath()));
+                        () -> config.getSettings().getDartDebugPath()),
+                externalAdapterUi(
+                        com.editora.dap.DebugLanguages.LUA,
+                        "debugAdapter.js",
+                        "debug lua luajit local-lua-debugger lldebugger node path found install",
+                        v -> config.getSettings().setLuaDebugEnabled(v),
+                        () -> config.getSettings().isLuaDebugEnabled(),
+                        v -> config.getSettings().setLuaDebugPath(v),
+                        () -> config.getSettings().getLuaDebugPath()));
     }
 
     /**

@@ -38,6 +38,8 @@ public final class LaunchRoute {
         /** vscode-php-debug ({@code php}). */
         PHP_DEBUG,
         BASH_DEBUG,
+        /** local-lua-debugger ({@code lua-local}). */
+        LUA_DEBUG,
         /** java-debug, through a run configuration ({@code java}). */
         JAVA,
         /** An adapter of the user's ({@link CustomAdapters}). */
@@ -136,6 +138,12 @@ public final class LaunchRoute {
                     return unsupported(body, "a bashdb attach (vscode-bash-debug only launches)");
                 }
                 return new Route(Kind.BASH_DEBUG, DebugLanguages.BASH, request, false, "");
+            }
+            case "lua-local" -> {
+                if (attach) {
+                    return unsupported(body, "a lua-local attach (local-lua-debugger only launches)");
+                }
+                return new Route(Kind.LUA_DEBUG, DebugLanguages.LUA, request, false, "");
             }
             case "dotnet" -> {
                 return unsupported(body, "C# Dev Kit's \"dotnet\" (use \"coreclr\" with the built program)");
