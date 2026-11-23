@@ -2017,9 +2017,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    /** A thread started or ended: the Threads view, when shown, lists them again (at most every 250 ms). */
+    /**
+     * A thread started or ended: the Threads view, when shown, lists them again (at most every 250 ms). A throttle, not
+     * a debounce: a pool that starts and ends threads more often than that would otherwise never be listed again.
+     */
     public void threadsChanged() {
-        if (threadsShown()) {
+        if (threadsShown() && threadsRefresh.getStatus() != javafx.animation.Animation.Status.RUNNING) {
             threadsRefresh.playFromStart();
         }
     }
