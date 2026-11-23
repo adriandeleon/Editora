@@ -95,6 +95,11 @@ public record HistoryRevision(
         return new HistoryRevision(newPath, timestamp, sizeBytes, sha256, reason, label, charset, bom, lineEnding);
     }
 
+    /** This revision as captured at {@code newTimestamp}; everything else is kept. */
+    public HistoryRevision withTimestamp(long newTimestamp) {
+        return new HistoryRevision(path, newTimestamp, sizeBytes, sha256, reason, label, charset, bom, lineEnding);
+    }
+
     /** This revision under another user label; everything else is kept. */
     public HistoryRevision withLabel(String newLabel) {
         return new HistoryRevision(path, timestamp, sizeBytes, sha256, reason, newLabel, charset, bom, lineEnding);

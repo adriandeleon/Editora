@@ -75,7 +75,7 @@ its own subtree. Dragging a single file moves it at once; dragging a **folder** 
 **several items** asks first. **Undo Move** in the tree's right-click menu puts the
 last drag-move back. **Delete** acts on the whole selection at once: unsaved files
 get one Save/Discard/Cancel decision before the batch begins, and Editora records
-recoverable Local History before removing anything it has opened or edited.
+a Local History copy of each text file (up to 5 MB) before removing anything.
 
 Files open in any editor tab carry an accent marker in the tree; the active file
 uses a stronger marker. A file or folder menu can also add a first-line bookmark
@@ -1402,78 +1402,125 @@ can drag onto the bar.
 
 **Local History** snapshots your local files over time, independent of any
 version control, so you have a safety net even outside Git. A revision is
-recorded on save, on auto-save, and before a file is reloaded after an external
-change. The first save of a session also keeps the text the file held before
-it, listed as *Before first save*, so the version you started from is in the
-history too. A save that changes nothing adds no revision, and auto-saves less
-than five minutes apart collapse into one, so a run of them does not push
-earlier revisions out. [Encrypted files](/docs/encrypted-files) get no
-revisions: their text stays out of the history.
+recorded on save and on auto-save. The first save of a session also keeps the
+text the file held before it, listed as *Before first save*, so the version you
+started from is in the history too; a later save that finds the file changed
+by something else keeps that version as *External change*. A save that changes
+nothing adds no revision, and auto-saves less than five minutes apart collapse
+into one, so a run of them does not push earlier revisions out.
+[Encrypted files](/docs/encrypted-files) get no revisions: their text stays out
+of the history.
+
+Editora also keeps the file's text before anything else replaces or removes it,
+and each row says why:
+
+| Row | When |
+| --- | --- |
+| *External change* | Before a tab is reloaded because the file changed on disk |
+| *Before revert* | Before **File: Revert File** or **Reopen with Encoding** drops unsaved edits |
+| *Before Replace in Files* | Before Replace in Files rewrites a file that is not open |
+| *Before link update* | Before a [Markdown link update](/docs/markdown) rewrites a file that is not open |
+| *Before agent write* | Before the [AI agent](/docs/ai) writes a file that is not open |
+| *Before HTTP response* | Before an [HTTP client](/docs/http-client) `>>!` line replaces a file |
+| *Before restore* | Before a restore from the folder view overwrites a file |
+| *Deleted* | Before Editora deletes a file: from the Project tree, a language-server edit, or Git's discard of untracked files |
+| *Before ‹operation› (no undo)* | Before a bulk edit in a [file without undo](/docs/undo-history#files-without-undo) |
+
+Git's **Rollback** and **Discard** of tracked files also keep the current text
+first, and are refused if that copy cannot be made.
+
+The versions a save replaces are kept at any size. The copies taken before a
+delete or a folder-view restore hold text files of up to 5 MB: a binary file,
+or a larger one, is deleted or replaced without a copy. A step that promises a
+copy (a delete, an agent write, a Git discard) goes ahead without one when
+Local History is off.
 
 The **Local History** tool window lists the active file's revisions, newest
 first, under day captions. Each row shows its label if it has one, the time,
 and the reason it was recorded; the size and full date are in the tooltip. The
 newest row is tagged *Current* when it equals the editor's text and *Latest*
 when the editor has moved on (unsaved edits, an undo, or a restore of an older
-row).
+row). When you switch to a tab with no file, such as a diff or a terminal, the
+window steps aside, and it comes back on the next tab that has a local file.
 
 | Action | Command | Emacs | CUA, Sublime Text, VS Code, IntelliJ IDEA |
 | --- | --- | --- | --- |
 | Show or hide Local History | `tool.fileHistory` | `M-g l` | Alt+Shift+H (⌃⌘H on macOS) |
+| Show the current file's history (leaves it open) | `history.showActiveFile` | (palette) | (palette) |
 | Put Label | `history.putLabel` | (palette) | (palette) |
 | Recent Changes | `history.recentChanges` | (palette) | (palette) |
+| Turn Local History on or off | `view.toggleLocalHistory` | (palette) | (palette) |
 
 ![The Local History tool window beside a Java file: the file's revisions newest first under day captions, each with its time and reason, the selected one shown as a side-by-side diff against the current text with Restore](/screenshots/features/local-file-history.png "Local History: every save and auto-save of the file, each one a diff away.")
 
-The same three are under **Git ▸ Local History**, and *Show Local History* is in
-a tab's right-click menu and in the Project tree. Git's per-file log is a
-separate command, [Show Git History](/docs/git#git-log).
+The first three are under **Git ▸ Local History**, and *Show Local History* is
+in a tab's right-click menu and in the Project tree. Local History is switched
+on in **Settings → Workspace → Local History** (*Enable Local History*). Git's
+per-file log is a separate command, [Show Git History](/docs/git#git-log).
 
 Select a revision for a side-by-side diff against the current file; the diff
-follows edits you make in the editor. **Restore** replaces the file's text with
-that revision, or use the **apply-chevrons to copy individual fragments** back
-in. Either way the change goes into the open tab as an undoable edit and
-nothing is written to disk until you save. Restore asks first only when the
-tab has unsaved edits.
+follows edits you make in the editor. **Ignore whitespace**
+(`history.toggleIgnoreWhitespace`) compares lines without their spacing, and
+**Highlight words** (`history.toggleHighlightWords`) marks the changed words
+inside changed lines. **Restore** replaces the file's text with that revision,
+or use the **apply-chevrons to copy individual fragments** back in. Either way
+the change goes into the open tab as an undoable edit and nothing is written to
+disk until you save; undo brings back what the restore replaced. Restore asks
+first only when the tab has unsaved edits.
 
 | Key | Result |
 | --- | --- |
 | `Enter` | Move into the selected revision's diff |
 | `F2` | Set or edit the revision's label |
-| `F5` | Reload the list |
+| `F5` | Reload the list (`history.refresh`) |
 | Menu key or `Shift+F10` | Open the row's menu (*Restore This Version*, *Set Label…*) |
 | `Tab` | Leave the diff for the filter and the list |
 | `Escape` | Clear a typed filter, then return to the editor |
+
+The row menu's entries are commands too, for the selected row:
+`history.restoreSelected` and `history.labelSelected`.
 
 It mirrors more of IntelliJ's Local History:
 
 - **Named snapshots** with *Put Label* (`history.putLabel`), shown bold in the
   list even when the content is unchanged.
 - A **filter** over the revision list that matches the words the rows show
-  (label, reason, time, and day), plus a project-wide **Recent Changes** picker
-  (`history.recentChanges`) that opens the revision you pick, including one of a
-  deleted file.
+  (label, reason, time, and day), plus a **Recent Changes** picker
+  (`history.recentChanges`) of the newest revisions of the window's project
+  (in a window with no project, of every file). Picking one opens it; for a
+  deleted file it opens the folder view with that revision selected.
 - A **folder view**: right-click a folder in the Project tree and choose *Show
   Local History* to list every file under it that has history, with **deleted
-  files struck through and badged**. Selecting a revision shows its diff, and
-  Enter or **Restore** puts it back, recreating a deleted file; a file that
-  still exists asks before it is overwritten. The view stays up while you
-  restore several files, and a file row's menu has *Delete History…* for that
-  one file. Deleting a file in Editora snapshots it first, so an accidental
-  delete is recoverable (for files Editora had opened or edited).
+  files struck through and badged**, and a filter over the file names.
+  Selecting a revision shows its diff, and Enter or **Restore** puts it back,
+  recreating a deleted file; a file that still exists asks before it is
+  overwritten, and a file open in any window is restored into its tab there.
+  The view stays up, keeping your place, while you restore several files, and a
+  file row's menu has *Delete History…* for that one file
+  (`localHistory.purgeSelectedFile`). *Local History: Back to the Current File*
+  (`history.backToFile`) leaves it. Deleting a text file of up to 5 MB in
+  Editora snapshots it first, whether or not you had opened it, so an
+  accidental delete is recoverable.
 - History **follows the file**. Renaming or moving a file from the Project tree
   keeps its revisions, and a file created with **Save As** starts with a copy of
-  the original's history once its first save is recorded (the original keeps its
-  own). The copied revisions count towards the project's size limit.
+  the original's history, from every window, once its first save is recorded
+  (the original keeps its own). The copy shares the stored content, so it adds
+  nothing to the project's size.
 - **Deleting history for good**: *Local History: Delete History of Current
   File…* (`localHistory.purgeFile`) and *Local History: Delete History of
-  Project…* (`localHistory.purgeProject`) remove snapshots permanently, after
-  a confirmation that states how many snapshots go.
+  Project…* (`localHistory.purgeProject`) remove snapshots permanently, from
+  every window's records, after a confirmation that states how many snapshots
+  go. When a Save As copy shares some of a file's snapshots, the question
+  offers to delete those copies' shared snapshots too. If the content cannot
+  leave the disk at once, the status bar says why: another running Editora
+  shares the configuration, an index backup still lists it, or the history
+  index cannot be trusted yet.
 
 Restore validates the stored revision and verifies that the file has not
 changed while it was loading. If either check fails, the current file and editor
-contents are left untouched, and the status bar says which check failed. A copy
-of what a restore replaces is stored first.
+contents are left untouched, and the status bar says which check failed. A
+restore from the folder view that overwrites a file on disk stores a copy of
+what it replaces first (*Before restore*).
 
 A file's Local History is the same in every window, whichever project's window
 recorded it, and an open panel follows saves, labels, and deletions made in
@@ -1492,11 +1539,14 @@ or the three commands):
 The size limit applies to each project and counts content shared by several
 revisions once. When a project is over it, a file above its fair share loses
 its own older revisions first, so one large file does not push the other files'
-history out. A file's newest revision, labelled revisions, and copies taken
-before a delete are never removed for size, and are kept six times as long as
-the age limit (at least 180 days). Lowering a limit asks first when it would
-delete existing history, stating how many snapshots from how many files would
-go. It's on by default, local-only, and off in Simple UI mode.
+history out, even when the large files alone are over the limit. The limit is
+soft: a file's newest revision, labelled revisions, and copies taken before a
+delete are never removed for size. Labelled revisions and copies taken before a
+delete also don't count towards the revisions per file, and with a file's
+newest revision they outlast the age limit: they are kept six times as long (at
+least 180 days). Lowering a limit asks first when it would delete existing
+history, stating how many snapshots from how many files would go. It's on by
+default, local-only, and off in Simple UI mode.
 
 ## External-change detection
 

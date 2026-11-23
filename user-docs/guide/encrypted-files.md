@@ -105,7 +105,10 @@ format. The tab switches to the encrypted file.
 
 The plain original stays on disk until you decide. A banner says so and offers
 **Move Original to Trash** or **Keep It**; when Git tracks the original, the
-banner adds that Git also has its earlier versions.
+banner adds that Git also has its earlier versions. When
+[Local History](/docs/workspace#local-file-history) holds plain copies of the
+original, the banner says how many and offers **Delete History**, which asks
+before it deletes them.
 
 **Save As** to a name ending in `.gpg` or `.asc` encrypts too: Editora opens
 the picker before writing. An untitled tab is encrypted this way.
@@ -295,7 +298,9 @@ it out of everything it would otherwise write or send elsewhere:
 - **No crash recovery.** Editora keeps no recovery copy of an encrypted file's
   unsaved edits, so they are lost if Editora crashes. Save often, or turn on
   autosave. (A copy taken before the file was encrypted is deleted.)
-- **No Local History.** Nothing is recorded for encrypted files.
+- **No Local History.** Nothing is recorded for encrypted files. An `.asc`
+  file that is not an encrypted message, such as a public key or a signature,
+  is recorded like any other text file.
 - **Bookmarks and breakpoints** keep only line numbers, not the line's text.
 - **No personal notes**: a note keeps an unencrypted copy of the text it is
   about.

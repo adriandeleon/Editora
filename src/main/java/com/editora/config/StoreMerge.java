@@ -47,6 +47,15 @@ public final class StoreMerge {
         @Nullable
         List<String> entryKey(List<String> path);
 
+        /**
+         * Whether two entries of the array at {@code path} may share an identity and still be two entries (they
+         * are then told apart by their order among the entries with that identity) instead of making the array
+         * one value.
+         */
+        default boolean repeatsAllowed(List<String> path) {
+            return false;
+        }
+
         /** Every array is one opaque value. */
         Keys NONE = path -> null;
     }
@@ -69,7 +78,21 @@ public final class StoreMerge {
                                 ? List.of("kind", "className", "member")
                                 : path.size() == 3 && "pins".equals(path.get(0)) ? List.of("line") : null;
             case NOTES -> path -> bucketed(path) ? List.of("id") : null;
-            case HISTORY -> path -> bucketed(path) ? List.of("timestamp", "sha256", "reason") : null;
+            // Two revisions of one file can share all three (a label put twice in the same millisecond, a Save As copy
+            // merged into a history that had the row under another label): repeats are told apart by their order
+            // rather than making the file's list one value, which dropped the other writer's revisions of it.
+            case HISTORY ->
+                new Keys() {
+                    @Override
+                    public @Nullable List<String> entryKey(List<String> path) {
+                        return bucketed(path) ? List.of("timestamp", "sha256", "reason") : null;
+                    }
+
+                    @Override
+                    public boolean repeatsAllowed(List<String> path) {
+                        return bucketed(path);
+                    }
+                };
             case CONNECTIONS -> path -> path.equals(List.of("connections")) ? List.of("host", "port", "user") : null;
             case MACROS -> path -> path.equals(List.of("macros")) ? List.of("id") : null;
             case ABBREVIATIONS -> path -> path.equals(List.of("abbreviations")) ? List.of("abbreviation") : null;
@@ -117,7 +140,37 @@ public final class StoreMerge {
                 }
             }
         }
+        if (mine == null && theirs != null) {
+            JsonNode additions = theirAdditions(base, theirs, keys, path);
+            if (additions != null) {
+                return additions;
+            }
+        }
         return mine; // a real conflict: the value set here wins (for a removal here, that is "absent")
+    }
+
+    /**
+     * What survives of {@code theirs} when this process removed the value while the other writer changed it: the
+     * entries the other writer <em>added</em> to an array whose entries can be told apart (and, within an object,
+     * to such arrays below it). Everything this process had and removed stays removed. Without this, renaming or
+     * purging a file here deleted every revision another process had recorded for it since — from the index and
+     * then, unprotected, from the disk. {@code null} when nothing is left.
+     */
+    private static @Nullable JsonNode theirAdditions(
+            @Nullable JsonNode base, JsonNode theirs, Keys keys, List<String> path) {
+        if (theirs.isArray() && (base == null || base.isArray())) {
+            List<String> entryKey = keys.entryKey(List.copyOf(path));
+            if (entryKey == null) {
+                return null;
+            }
+            JsonNode kept = mergeArrays(base, JsonNodeFactory.instance.arrayNode(), theirs, entryKey, keys, path);
+            return kept == null || kept.isEmpty() ? null : kept;
+        }
+        if (theirs.isObject() && (base == null || base.isObject())) {
+            JsonNode kept = mergeObjects(base, JsonNodeFactory.instance.objectNode(), theirs, keys, path);
+            return kept.isEmpty() ? null : kept;
+        }
+        return null;
     }
 
     private static JsonNode mergeObjects(
@@ -148,9 +201,10 @@ public final class StoreMerge {
             List<String> entryKey,
             Keys keys,
             List<String> path) {
-        Map<JsonNode, JsonNode> baseByKey = index(base, entryKey);
-        Map<JsonNode, JsonNode> mineByKey = index(mine, entryKey);
-        Map<JsonNode, JsonNode> theirsByKey = index(theirs, entryKey);
+        boolean repeats = keys.repeatsAllowed(List.copyOf(path));
+        Map<JsonNode, JsonNode> baseByKey = index(base, entryKey, repeats);
+        Map<JsonNode, JsonNode> mineByKey = index(mine, entryKey, repeats);
+        Map<JsonNode, JsonNode> theirsByKey = index(theirs, entryKey, repeats);
         if (baseByKey == null || mineByKey == null || theirsByKey == null) {
             return null;
         }
@@ -177,17 +231,32 @@ public final class StoreMerge {
         return out;
     }
 
-    /** {@code array}'s entries by identity in order, or {@code null} when identities are missing or repeat. */
-    private static @Nullable Map<JsonNode, JsonNode> index(@Nullable JsonNode array, List<String> entryKey) {
+    /**
+     * {@code array}'s entries by identity in order, or {@code null} when identities are missing or repeat. With
+     * {@code repeats}, an identity seen before is told apart by how many times it was (the second entry with it is
+     * {@code [identity, 2]}).
+     */
+    private static @Nullable Map<JsonNode, JsonNode> index(
+            @Nullable JsonNode array, List<String> entryKey, boolean repeats) {
         Map<JsonNode, JsonNode> byKey = new LinkedHashMap<>();
         if (array == null) {
             return byKey;
         }
+        Map<JsonNode, Integer> seen = new java.util.HashMap<>();
         for (JsonNode entry : array) {
             JsonNode key = keyOf(entry, entryKey);
-            if (key == null || byKey.put(key, entry) != null) {
+            if (key == null) {
                 return null;
             }
+            int occurrence = seen.merge(key, 1, Integer::sum);
+            JsonNode identity = key;
+            if (occurrence > 1) {
+                if (!repeats) {
+                    return null;
+                }
+                identity = JsonNodeFactory.instance.arrayNode().add(key).add(occurrence);
+            }
+            byKey.put(identity, entry);
         }
         return byKey;
     }
