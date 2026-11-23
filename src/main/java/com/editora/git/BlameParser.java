@@ -23,7 +23,8 @@ public final class BlameParser {
      * so for a line older than a move it is the old path, the only one {@code <hash>:<path>} resolves.
      * {@code previousPath} is its name in the commit's parent ({@code null} when the commit added the file),
      * and {@code previousHash} that parent commit — together the file "as of the commit before", which is
-     * what annotating the previous revision opens.
+     * what annotating the previous revision opens. {@code authorTz} is the author's zone as git writes it
+     * ({@code +0100}; {@code null} when not given): the date the author saw, as the Git Log's dates are.
      */
     public record BlameLine(
             String hash,
@@ -33,7 +34,20 @@ public final class BlameParser {
             boolean uncommitted,
             @Nullable String path,
             @Nullable String previousPath,
-            @Nullable String previousHash) {
+            @Nullable String previousHash,
+            @Nullable String authorTz) {
+
+        public BlameLine(
+                String hash,
+                String author,
+                long epochSeconds,
+                String summary,
+                boolean uncommitted,
+                @Nullable String path,
+                @Nullable String previousPath,
+                @Nullable String previousHash) {
+            this(hash, author, epochSeconds, summary, uncommitted, path, previousPath, previousHash, null);
+        }
 
         public BlameLine(String hash, String author, long epochSeconds, String summary, boolean uncommitted) {
             this(hash, author, epochSeconds, summary, uncommitted, null, null, null);
@@ -61,6 +75,9 @@ public final class BlameParser {
         long time;
 
         @Nullable
+        String tz;
+
+        @Nullable
         String path;
 
         @Nullable
@@ -71,6 +88,26 @@ public final class BlameParser {
     }
 
     private BlameParser() {}
+
+    /**
+     * The calendar date of {@code epochSeconds} in the zone {@code tz} ({@code +0100}, git's
+     * {@code author-tz}), as ISO {@code yyyy-MM-dd} — the date git's own {@code --date=short} prints, so blame
+     * and the Git Log agree on a commit's day. The system zone when {@code tz} is missing or unreadable.
+     */
+    public static String authorDate(long epochSeconds, @Nullable String tz) {
+        java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+        if (tz != null && tz.matches("[+-]\\d{4}")) {
+            try {
+                zone = java.time.ZoneOffset.of(tz.substring(0, 3) + ":" + tz.substring(3));
+            } catch (java.time.DateTimeException e) {
+                // keep the system zone
+            }
+        }
+        return java.time.Instant.ofEpochSecond(epochSeconds)
+                .atZone(zone)
+                .toLocalDate()
+                .toString();
+    }
 
     /**
      * Parses {@code --porcelain} or {@code --line-porcelain} output. The former describes a commit only in
@@ -100,7 +137,8 @@ public final class BlameParser {
                             uncommitted,
                             info.path,
                             info.previousPath,
-                            info.previousHash));
+                            info.previousHash,
+                            info.tz));
                 }
                 hash = null;
                 info = null;
@@ -125,6 +163,8 @@ public final class BlameParser {
                 } catch (NumberFormatException ignored) {
                     // leave time = 0
                 }
+            } else if (line.startsWith("author-tz ")) {
+                info.tz = line.substring("author-tz ".length()).strip();
             } else if (line.startsWith("summary ")) {
                 info.summary = line.substring("summary ".length()).strip();
             } else if (line.startsWith("previous ")) {

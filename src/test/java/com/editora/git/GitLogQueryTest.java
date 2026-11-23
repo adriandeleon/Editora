@@ -162,6 +162,10 @@ class GitLogQueryTest {
         List<String> next = GitLog.logArgs(new GitLog.Request(true, null, GitLogQuery.NONE, 199, 201));
         assertTrue(next.contains("--skip=199"));
         assertTrue(next.contains("--all"));
+        assertTrue(
+                next.indexOf("--exclude=refs/stash") >= 0
+                        && next.indexOf("--exclude=refs/stash") < next.indexOf("--all"),
+                "an --exclude applies to the --all after it: the stash is not history " + next);
         assertEquals("202", next.get(next.indexOf("-n") + 1));
 
         Path file = Path.of("/repo/docs/[draft] notes.md").toAbsolutePath();

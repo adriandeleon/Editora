@@ -207,20 +207,56 @@ public final class GitChanges {
         return new Result(more ? all.subList(0, MAX_FILES) : all, more || outputTruncated, "");
     }
 
-    /** The path of a {@code diff --git a/P b/P} header (renames are off: both sides are the same path). */
+    /**
+     * The path of a {@code diff --git a/P b/P} header (renames are off: both sides are the same path). Also
+     * read without prefixes ({@code diff.noprefix}: {@code P P}), with mnemonic ones ({@code diff.mnemonicPrefix}:
+     * {@code i/P w/P}, {@code c/P i/P}…), and with C-quoted sides.
+     */
     static String headerPath(String rest) {
         if (rest.startsWith("\"")) {
             List<String> parts = quotedParts(rest);
+            if (parts.size() >= 2) {
+                String same = samePath(parts.get(0), parts.get(1));
+                if (same != null) {
+                    return same;
+                }
+            }
             String first = parts.isEmpty() ? rest : parts.get(0);
             return first.startsWith("a/") ? first.substring(2) : first;
         }
-        int length = rest.length();
-        int half = (length - 5) / 2;
-        if (half > 0 && rest.startsWith("a/") && rest.substring(2 + half).equals(" b/" + rest.substring(2, 2 + half))) {
-            return rest.substring(2, 2 + half);
+        // The same path twice, each side with the same kind of prefix ("x/" or none): prefixed first, the default.
+        for (int prefix : new int[] {2, 0}) {
+            int pathLength = rest.length() - 1 - 2 * prefix;
+            if (pathLength <= 0 || pathLength % 2 != 0) {
+                continue;
+            }
+            int half = pathLength / 2;
+            int space = prefix + half;
+            if (rest.charAt(space) != ' ') {
+                continue;
+            }
+            String first = rest.substring(prefix, space);
+            String second = rest.substring(space + 1 + prefix);
+            boolean prefixed = prefix == 0 || (isPrefix(rest, 0) && isPrefix(rest, space + 1));
+            if (prefixed && first.equals(second)) {
+                return first;
+            }
         }
         int split = rest.indexOf(" b/");
         return rest.startsWith("a/") && split > 2 ? rest.substring(2, split) : rest;
+    }
+
+    /** Whether {@code text} has a one-letter diff prefix ({@code a/}, {@code i/}…) at {@code at}. */
+    private static boolean isPrefix(String text, int at) {
+        return at + 1 < text.length() && Character.isLetterOrDigit(text.charAt(at)) && text.charAt(at + 1) == '/';
+    }
+
+    /** The path both sides of a header name, with or without one-letter prefixes; null when they differ. */
+    private static @Nullable String samePath(String first, String second) {
+        if (isPrefix(first, 0) && isPrefix(second, 0) && first.substring(2).equals(second.substring(2))) {
+            return first.substring(2);
+        }
+        return first.equals(second) ? first : null;
     }
 
     /** The C-quoted strings of {@code text} ({@code "a/x\tz" "b/x\tz"}), unquoted, UTF-8 octal escapes included. */

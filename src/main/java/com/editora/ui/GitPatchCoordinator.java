@@ -106,17 +106,69 @@ final class GitPatchCoordinator {
         String content = active.getContent();
         String ending = active.getLineEnding();
         String charset = active.getEffectiveCharset();
-        // Whether the tab holds a patch is a parse of its text: off the FX thread (PERF-01, Pauta 6.2.0).
+        Path path = active.getPath();
+        boolean edited = active.isDirty();
+        // Whether the tab holds a patch is a parse of its text, and its file is read: off the FX thread
+        // (PERF-01, Pauta 6.2.0).
         com.editora.perf.OffFx.then(
-                PATCH_CHECK_SITE, () -> isPatch(title, content) ? patchBytes(content, ending, charset) : null, a -> {
+                PATCH_CHECK_SITE,
+                () -> isPatch(title, content) ? tabPatch(readSmall(path), edited, content, ending, charset) : null,
+                a -> {
                     checkingPatch = false;
-                    byte[] bytes = a.value();
-                    if (bytes != null) {
-                        chooseTarget(bytes);
+                    TabPatch patch = a.value();
+                    if (patch != null) {
+                        if (patch.endingsLost()) {
+                            host.setStatus(tr("status.git.patchEndingsNormalized"));
+                        }
+                        chooseTarget(patch.bytes());
                     } else {
                         pickPatchFile();
                     }
                 });
+    }
+
+    /**
+     * What Apply Patch applies from a tab: the bytes, and whether the patch file's mixed line endings could
+     * not be kept (an edited tab is applied as a save would write it, one line ending throughout).
+     */
+    record TabPatch(byte[] bytes, boolean endingsLost) {}
+
+    /**
+     * The patch a tab holds, as bytes. A tab is text with one line ending, decoded with its charset — a
+     * patch whose hunks end in CRLF under LF headers, or whose lines are not valid in that charset, would no
+     * longer fit once written back. So an unedited tab whose file still reads as its text applies the file's
+     * own bytes ({@code disk}); an edited one (or one without a readable file) applies its text as a save
+     * would write it ({@link #patchBytes(String, String, String)}), and says when that loses the file's
+     * mixed line endings. Pure.
+     */
+    static TabPatch tabPatch(byte @Nullable [] disk, boolean edited, String content, String ending, String charset) {
+        if (disk != null && !edited && sameText(disk, content, charset)) {
+            return new TabPatch(disk, false);
+        }
+        boolean lost =
+                disk != null && LineEndings.mixed(new String(disk, java.nio.charset.StandardCharsets.ISO_8859_1));
+        return new TabPatch(patchBytes(content, ending, charset), lost);
+    }
+
+    /** Whether {@code disk}, decoded as the tab decodes it, is the tab's {@code content} up to line endings. */
+    private static boolean sameText(byte[] disk, String content, String charset) {
+        try {
+            return LineEndings.toLf(EditorConfigCharset.decode(disk, charset)).equals(LineEndings.toLf(content));
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** The bytes of {@code file} when it is a readable regular file of at most {@link #MAX_PATCH_BYTES}. */
+    private static byte @Nullable [] readSmall(@Nullable Path file) {
+        try {
+            if (file == null || !Files.isRegularFile(file) || Files.size(file) > MAX_PATCH_BYTES) {
+                return null;
+            }
+            return Files.readAllBytes(file);
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
     }
 
     /** Where Apply Patch parses the active tab, and the patch's touched paths: heard off the FX thread (PERF-01). */
