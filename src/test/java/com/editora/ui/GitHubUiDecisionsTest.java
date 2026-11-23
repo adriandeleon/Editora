@@ -61,6 +61,14 @@ class GitHubUiDecisionsTest {
         assertEquals(RowAnswer.NOT_ACTIVE, GitHubPanel.decide(RowAction.CANCEL, true, failed));
 
         assertEquals(RowAnswer.NOT_A_RUN, GitHubPanel.decide(RowAction.CANCEL, true, PR));
+
+        // G11: a run awaiting approval has no failure log, nothing to re-run here, nothing running to cancel.
+        WorkflowRun awaiting = run("completed", "action_required");
+        assertEquals(RowAnswer.AWAITING_APPROVAL, GitHubPanel.decide(RowAction.RERUN, true, awaiting));
+        assertEquals(RowAnswer.NOT_FAILED, GitHubPanel.decide(RowAction.RERUN_FAILED, true, awaiting));
+        assertEquals(RowAnswer.NOT_FAILED, GitHubPanel.decide(RowAction.VIEW_LOG, true, awaiting));
+        assertEquals(RowAnswer.NOT_ACTIVE, GitHubPanel.decide(RowAction.CANCEL, true, awaiting));
+        assertEquals(RowAnswer.RUN, GitHubPanel.decide(RowAction.OPEN_URL, true, awaiting));
     }
 
     @Test

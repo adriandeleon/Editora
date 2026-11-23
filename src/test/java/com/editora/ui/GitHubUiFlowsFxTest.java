@@ -417,7 +417,12 @@ class GitHubUiFlowsFxTest {
         assertEquals(tr("status.github.row.stillActive"), FxTestSupport.callOnFx(echo::getText));
 
         long listsBeforeCancel = logged("run list");
-        FxTestSupport.runOnFx(() -> registry.run("github.cancelRun"));
+        Confirm.answerWith(question -> true); // G12: the cancel asks first
+        try {
+            FxTestSupport.runOnFx(() -> registry.run("github.cancelRun"));
+        } finally {
+            Confirm.answerWith(null);
+        }
         assertTrue(
                 FxTestSupport.callOnFx(echo::getText).contains(String.valueOf(RUN_ID)),
                 "the run id is written as GitHub writes it, not digit-grouped: "

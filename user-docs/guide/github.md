@@ -37,6 +37,10 @@ each command reports the reason.
   [info row](#the-info-row).
 - **Any remote counts**, not only `origin`, and both URL forms are recognised,
   including the scp form without a user (`github.example.com:org/repo`).
+- **SSH host aliases and port 443**: a remote such as `git@github-work:org/repo.git`,
+  whose host is a `Host` alias in `~/.ssh/config` (two accounts on one site), is
+  recognised by the host the alias stands for, as `ssh -G` reports it. GitHub's
+  SSH-over-443 address, `ssh.github.com`, counts as github.com.
 - **GitHub Enterprise**: a host is treated as GitHub when `gh` has an account on
   it, so an Enterprise host you ran `gh auth login --hostname` for works like
   github.com.
@@ -57,6 +61,11 @@ can't be reached to check the sign-in, the commands and the tool window stay
 available, Settings shows that the sign-in could not be checked, and a command
 that still can't reach GitHub shows `gh`'s own network error. A sign-in that
 GitHub rejects is reported as such, with the advice to run `gh auth refresh`.
+With accounts on several hosts, a repository on the host whose sign-in was
+rejected says so, with the command for that host (`gh auth refresh -h <host>`),
+instead of the tool window just staying hidden. An organization that requires
+single sign-on (SAML) for `gh`'s token is reported once, with the advice to
+authorize `gh`; Editora does not keep asking until you run **GitHub: Refresh**.
 
 ## Signing in
 
@@ -115,9 +124,14 @@ window can load the rest.
 
 **GitHub: Submit Pull Request Review…** (`github.submitReview`), or the *Submit
 review…* link in the review tab, opens a small form: pick **approve**, **request
-changes**, or **comment**, and add a body. The body is optional for an approval
-and required for the other two. The form stays open while `gh` runs and keeps
+changes**, or **comment**, and add a body. The form starts on **comment**, so
+submitting it with nothing typed does nothing; an approval has to be picked, and
+only then may the body be empty. The form stays open while `gh` runs and keeps
 what you typed if the submission fails.
+
+A review submitted from the review tab applies to the commit the tab showed: if
+new commits were pushed while you read, your approval is for the commit you
+reviewed, not for them. Refresh the tab to review the newest commit.
 
 ## Working with pull requests
 
@@ -173,7 +187,10 @@ The **GitHub** tool window (`M-g p`, or `tool.github`) has three segments:
   menu offers check out, review diff, open on GitHub, and copy URL.
 - **Runs**, listing recent GitHub Actions workflow runs with a state glyph. The
   row menu offers view failure log, rerun, rerun failed jobs, cancel, open, and
-  copy URL, each enabled only where it makes sense for that run's state.
+  copy URL, each enabled only where it makes sense for that run's state. A run
+  waiting for approval on GitHub (⏸, for example a first-time contributor's pull
+  request) is not a failure: it has no log and nothing to re-run here; open it
+  on GitHub to approve it.
 
 **GitHub: Show Pull Requests** (`github.showPrs`), **GitHub: Show Issues**
 (`github.showIssues`) and **GitHub: Show Workflow Runs** (`github.showRuns`)
@@ -220,6 +237,12 @@ shows or tooltips (number, title, author, branch, state, labels), and a leading
 segment (a query typed against pull requests means nothing for runs) and survives
 a refresh.
 
+The filter searches the rows already loaded. When it finds none of them and
+GitHub has more, a row offers to **search GitHub** for the text (pull requests
+and issues), which lists what GitHub finds, descriptions included. On the pull
+requests, a number such as `#1234` offers to open that pull request instead.
+Changing the filter goes back to the plain list.
+
 The window opens with focus in the filter and the first row selected. `C-n` /
 `C-p` move the selection **without leaving the box**, Down enters the list (where
 bare `n` / `p` also move, since the list holds no text input), and Enter opens.
@@ -242,7 +265,8 @@ from the palette or bound to keys:
 - **GitHub: Rerun Failed Jobs of Selected Run** (`github.rerunFailedJobs`)
   re-runs only the failed jobs of a failed run.
 - **GitHub: Cancel Selected Workflow Run** (`github.cancelRun`) cancels a queued
-  or running run.
+  or running run, after asking: a cancelled run can't be resumed, only run again
+  from the start.
 - **GitHub: Copy URL of Selected Row** (`github.copyUrl`) copies the GitHub URL
   of the selected pull request, issue or run.
 
@@ -298,6 +322,11 @@ its workflow, with:
 
 The list has its own **Refresh** button and is usable from the keyboard (Tab,
 Enter, Escape).
+
+When `gh` can't look the checks up (offline, a rate limit, a rejected sign-in),
+that isn't taken to mean the branch has no pull request: the indicator keeps what
+it showed, the list says why the lookup failed, and Editora tries again after a
+few minutes (three times at most, then on **GitHub: Refresh**).
 
 ### What Editora asks GitHub on its own
 

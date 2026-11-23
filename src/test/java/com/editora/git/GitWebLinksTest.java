@@ -142,4 +142,77 @@ class GitWebLinksTest {
                 GitWebLinks.folderUrl(repo("https://dev.azure.com/o/p/_git/r"), SHA, "src"));
         assertEquals("a%23b/%C3%A9t%C3%A9", GitWebLinks.encode("a#b/été"));
     }
+
+    /** G1/M2: an ~/.ssh/config alias and GitHub's SSH-over-443 endpoint link to the real site. */
+    @Test
+    void sshAliasesAndPort443EndpointsResolveToTheSite() {
+        GitWebLinks.Repo github = new GitWebLinks.Repo(GitWebLinks.Host.GITHUB, "https://github.com/o/r");
+        assertEquals(github, repo("ssh://git@ssh.github.com:443/o/r.git"));
+        java.util.function.UnaryOperator<String> aliases =
+                h -> h.equals("github-work") || h.equals("github.com-work") ? "github.com" : h;
+        assertEquals(github, GitWebLinks.repo("git@github-work:o/r.git", aliases));
+        assertEquals(github, GitWebLinks.repo("git@github.com-work:o/r.git", aliases));
+        assertEquals(github, GitWebLinks.repo("ssh://git@github-work/o/r.git", aliases));
+        assertNull(GitWebLinks.repo("git@github-work:o/r.git"), "an unresolved alias names no web host");
+        assertEquals(
+                "https://github-work.example.com/o/r",
+                GitWebLinks.repo("https://github-work.example.com/o/r.git", h -> "github.com")
+                        .base(),
+                "an HTTPS URL is never resolved");
+    }
+
+    /** M3: Bitbucket Server / Data Center browses through /projects/KEY/repos/name. */
+    @Test
+    void bitbucketServerLinks() {
+        GitWebLinks.Repo https = repo("https://bitbucket.corp.example/scm/proj/app.git");
+        assertEquals(
+                new GitWebLinks.Repo(
+                        GitWebLinks.Host.BITBUCKET_SERVER, "https://bitbucket.corp.example/projects/PROJ/repos/app"),
+                https);
+        assertEquals(https, repo("ssh://git@bitbucket.corp.example:7999/proj/app.git"));
+        assertEquals(
+                "https://git.corp.example/projects/PROJ/repos/app",
+                repo("ssh://git@git.corp.example:7999/proj/app.git").base(),
+                "Bitbucket Server's SSH port names it whatever the host is called");
+        assertEquals(
+                "https://git.corp.example/bitbucket/projects/PROJ/repos/app",
+                repo("https://git.corp.example/bitbucket/scm/proj/app.git").base(),
+                "a context path is kept");
+        assertEquals(
+                "https://bitbucket.corp.example/users/me/repos/app",
+                repo("https://bitbucket.corp.example/scm/~me/app.git").base());
+        assertEquals(
+                "https://bitbucket.corp.example/projects/PROJ/repos/app/browse/src/a%20b.c?at=0123abcd#10-20",
+                GitWebLinks.fileUrl(https, SHA, "src/a b.c", 9, 19));
+        assertEquals(
+                "https://bitbucket.corp.example/projects/PROJ/repos/app/browse/a.c?at=0123abcd#3",
+                GitWebLinks.fileUrl(https, SHA, "a.c", 2, 2));
+        assertEquals(
+                "https://bitbucket.corp.example/projects/PROJ/repos/app/browse/src?at=0123abcd",
+                GitWebLinks.folderUrl(https, SHA, "src"));
+        assertEquals(
+                GitWebLinks.Host.BITBUCKET,
+                repo("https://bitbucket.org/t/app.git").host(),
+                "Cloud stays Cloud");
+        assertEquals(
+                GitWebLinks.Host.GITHUB, repo("https://github.com/scm/app.git").host());
+    }
+
+    /** L9: GitHub renders Markdown and the like; a line anchor needs the source view there. */
+    @Test
+    void renderedFilesAskGitHubForTheSourceBeforeALineAnchor() {
+        GitWebLinks.Repo gh = repo("git@github.com:me/app");
+        assertEquals(
+                "https://github.com/me/app/blob/0123abcd/README.md?plain=1#L2-L4",
+                GitWebLinks.fileUrl(gh, SHA, "README.md", 1, 3));
+        assertEquals(
+                "https://github.com/me/app/blob/0123abcd/docs/x.ipynb?plain=1#L1",
+                GitWebLinks.fileUrl(gh, SHA, "docs/x.ipynb", 0, 0));
+        assertEquals(
+                "https://github.com/me/app/blob/0123abcd/README.md", GitWebLinks.fileUrl(gh, SHA, "README.md", -1, -1));
+        assertEquals("https://github.com/me/app/blob/0123abcd/a.java#L1", GitWebLinks.fileUrl(gh, SHA, "a.java", 0, 0));
+        assertEquals(
+                "https://gitlab.com/g/app/-/blob/0123abcd/README.md#L1",
+                GitWebLinks.fileUrl(repo("git@gitlab.com:g/app"), SHA, "README.md", 0, 0));
+    }
 }

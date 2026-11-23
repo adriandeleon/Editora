@@ -112,16 +112,22 @@ public final class PrReviewPane extends Region implements TabContent {
     }
 
     /** Feeds fresh data (first build + Refresh-in-place); {@code detail} may be null (degraded header). */
-    void update(PrDetail detail, List<FilePatch> files) {
+    void update(@Nullable PrDetail detail, List<FilePatch> files) {
         update(detail, files, "");
     }
 
     /** As {@link #update(PrDetail, List)}, with a {@code notice} line (blank for none) under the header. */
-    void update(PrDetail detail, List<FilePatch> files, String notice) {
+    void update(@Nullable PrDetail detail, List<FilePatch> files, String notice) {
         this.detail = detail;
         this.files = files == null ? List.of() : files;
         this.notice = notice == null ? "" : notice.strip();
         rebuild();
+    }
+
+    /** The pull request's detail on screen ({@code null} while it could not be read) — its head commit pins a review. */
+    @Nullable
+    PrDetail detail() {
+        return detail;
     }
 
     /** The notice line on screen ({@code ""} when there is none). For tests. */

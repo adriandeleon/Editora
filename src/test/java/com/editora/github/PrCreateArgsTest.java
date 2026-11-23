@@ -14,14 +14,14 @@ class PrCreateArgsTest {
     void buildsTitleBodyBaseDraft() {
         List<String> args = PrCreateArgs.build("My PR", "Body text", "main", true);
         assertEquals(
-                List.of("pr", "create", "--title", "My PR", "--body", "Body text", "--base", "main", "--draft"), args);
+                List.of("pr", "create", "--title", "My PR", "--body-file", "-", "--base", "main", "--draft"), args);
     }
 
     @Test
     void blankBodyStillPassesEmptyBodyFlag() {
         // gh must never drop into an interactive editor (ProcessRunner closes stdin) — always pass --body.
         List<String> args = PrCreateArgs.build("t", "", "", false);
-        assertEquals(List.of("pr", "create", "--title", "t", "--body", ""), args);
+        assertEquals(List.of("pr", "create", "--title", "t", "--body-file", "-"), args);
         assertFalse(args.contains("--base"));
         assertFalse(args.contains("--draft"));
     }
@@ -35,8 +35,8 @@ class PrCreateArgsTest {
                         "create",
                         "--title",
                         "t",
-                        "--body",
-                        "b",
+                        "--body-file",
+                        "-",
                         "--reviewer",
                         "alice",
                         "--reviewer",
@@ -81,7 +81,22 @@ class PrCreateArgsTest {
         List<String> args = PrCreateArgs.build(null, null, null, false);
         assertTrue(args.contains("--title"));
         assertEquals("", args.get(args.indexOf("--title") + 1));
-        assertEquals("", args.get(args.indexOf("--body") + 1));
+        assertEquals("-", args.get(args.indexOf("--body-file") + 1));
+        assertEquals(
+                "",
+                PrCreateArgs.invocation(null, null, null, false, null, null, null)
+                        .stdin());
+    }
+
+    /** G4: the body is never an argument — it goes to gh's standard input, whatever its size. */
+    @Test
+    void theBodyGoesToStandardInputNotTheCommandLine() {
+        String body = "line one\n" + "x".repeat(300_000);
+        GhInvocation call = PrCreateArgs.invocation("Title", body, "main", false, null, null, null);
+        assertEquals(body, call.stdin());
+        assertFalse(call.args().contains(body));
+        assertEquals("-", call.args().get(call.args().indexOf("--body-file") + 1));
+        assertEquals("Title", call.args().get(call.args().indexOf("--title") + 1), "the short title stays an argument");
     }
 
     /** G10: the {@code @} is stripped before de-duplicating — "@a, a" is one person. */
@@ -90,6 +105,6 @@ class PrCreateArgsTest {
         assertEquals(List.of("alice", "bob"), PrCreateArgs.handles("@alice, alice, bob, @Bob"));
         assertEquals(List.of("@me", "alice"), PrCreateArgs.handles("@me, @ME, alice"));
         List<String> args = PrCreateArgs.build("t", "", "", false, "@a, a", null, null);
-        assertEquals(List.of("pr", "create", "--title", "t", "--body", "", "--reviewer", "a"), args);
+        assertEquals(List.of("pr", "create", "--title", "t", "--body-file", "-", "--reviewer", "a"), args);
     }
 }

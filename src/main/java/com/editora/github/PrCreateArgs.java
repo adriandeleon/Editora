@@ -10,9 +10,10 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Builds the {@code gh pr create} argument list from the create-PR form fields. The argv <em>decision</em> is
- * pure and unit-tested even though the invocation itself isn't: a blank body still passes {@code --body ""} so
- * {@code gh} never drops into an interactive editor (which would hang, since {@link com.editora.process.ProcessRunner}
- * closes the child's stdin), a blank base is omitted (gh uses the repo's default branch), and {@code --draft}
+ * pure and unit-tested even though the invocation itself isn't: the body goes to gh's standard input
+ * ({@code --body-file -}, {@link #invocation}) — never an argument, where a long description could pass the system's
+ * command-line limit — and is always passed, blank too, so {@code gh} never drops into an interactive editor; a
+ * blank base is omitted (gh uses the repo's default branch), and {@code --draft}
  * is added only when requested.
  *
  * <p>Reviewers / assignees / labels arrive as raw comma-separated form fields and are emitted as one repeated
@@ -28,13 +29,26 @@ public final class PrCreateArgs {
         return build(title, body, base, draft, null, null, null);
     }
 
+    /** {@link #build(String, String, String, boolean, String, String, String)} with the body for gh's standard input. */
+    public static GhInvocation invocation(
+            String title,
+            @Nullable String body,
+            String base,
+            boolean draft,
+            @Nullable String reviewers,
+            @Nullable String assignees,
+            @Nullable String labels) {
+        return new GhInvocation(
+                build(title, body, base, draft, reviewers, assignees, labels), body == null ? "" : body);
+    }
+
     /**
      * As {@link #build(String, String, String, boolean)}, plus the three people/label fields. Each is a raw
      * comma-separated field straight from the form ({@code null}/blank ⇒ the flag is omitted entirely).
      */
     public static List<String> build(
             String title,
-            String body,
+            @Nullable String body,
             String base,
             boolean draft,
             @Nullable String reviewers,
@@ -45,8 +59,8 @@ public final class PrCreateArgs {
         args.add("create");
         args.add("--title");
         args.add(title == null ? "" : title);
-        args.add("--body");
-        args.add(body == null ? "" : body);
+        args.add("--body-file"); // the body itself goes to gh's standard input
+        args.add("-");
         if (base != null && !base.isBlank()) {
             args.add("--base");
             args.add(base.strip());

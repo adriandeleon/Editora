@@ -37,9 +37,17 @@ public final class GhAuthStatus {
     /**
      * The parsed status: the overall {@code state}; the {@code hosts} gh has a usable-looking account on (not
      * the rejected ones), lower-cased; {@code detail}, gh's own error text for the first failed check; and
-     * {@code accounts}, the login gh uses on each of those hosts (a host whose login gh did not say is absent).
+     * {@code accounts}, the login gh uses on each of those hosts (a host whose login gh did not say is absent);
+     * {@code rejected}, the hosts whose token was refused, lower-cased — with another host signed in the overall
+     * state is still {@link State#SIGNED_IN}, so this is how a repository on the refused host is told why.
      */
-    public record Parsed(State state, List<String> hosts, String detail, Map<String, String> accounts) {}
+    public record Parsed(
+            State state, List<String> hosts, String detail, Map<String, String> accounts, List<String> rejected) {
+
+        public Parsed(State state, List<String> hosts, String detail, Map<String, String> accounts) {
+            this(state, hosts, detail, accounts, List.of());
+        }
+    }
 
     /**
      * Parses the JSON document; {@code null} when {@code json} is not one (an older gh that has no
@@ -60,6 +68,7 @@ public final class GhAuthStatus {
             return null;
         }
         List<String> hosts = new ArrayList<>();
+        List<String> rejectedHosts = new ArrayList<>();
         Map<String, String> accounts = new LinkedHashMap<>();
         boolean anySignedIn = false;
         boolean anyUnverified = false;
@@ -79,6 +88,7 @@ public final class GhAuthStatus {
                 if (detail.isEmpty()) {
                     detail = error;
                 }
+                rejectedHosts.add(entry.getKey().strip().toLowerCase(Locale.ROOT));
                 continue; // gh cannot use this host until the token is refreshed
             } else {
                 anyUnverified = true; // "timeout", or an "error" that is not the host refusing the token
@@ -100,7 +110,8 @@ public final class GhAuthStatus {
                 overall,
                 List.copyOf(hosts),
                 overall == State.SIGNED_IN ? "" : firstLine(detail),
-                java.util.Collections.unmodifiableMap(accounts));
+                java.util.Collections.unmodifiableMap(accounts),
+                List.copyOf(rejectedHosts));
     }
 
     /**

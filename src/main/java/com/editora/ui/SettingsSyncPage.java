@@ -578,7 +578,7 @@ final class SettingsSyncPage {
             return;
         }
         syncNotice = null;
-        if (!name.matches("[A-Za-z0-9._-]+")) {
+        if (!com.editora.github.GitHubService.validRepositoryName(name)) {
             showSyncNotice(tr("status.sync.invalidRepositoryName"));
             return;
         }

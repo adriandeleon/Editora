@@ -125,8 +125,18 @@ final class ChecksListCard extends VBox {
         return false;
     }
 
+    /**
+     * Says that the last lookup failed and why — the rows of the last answer, if any, stay: a lookup that could not
+     * reach GitHub says nothing about the checks.
+     */
+    void showFailure(String message) {
+        title.setText(message);
+        title.setTooltip(com.editora.editor.ControlNames.tooltip(message));
+    }
+
     /** Shows {@code checks} (a poll updates the open card in place); {@code null} empties the list. */
     void update(GitHubService.@Nullable BranchChecks checks) {
+        title.setTooltip(null);
         if (checks == null || checks.pr() == null) {
             list.getItems().clear();
             title.setText(tr("github.checks.none"));

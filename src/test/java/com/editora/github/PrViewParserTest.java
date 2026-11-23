@@ -12,7 +12,7 @@ class PrViewParserTest {
         String json = """
                 {"number":42,"title":"Feature","body":"Does things","author":{"login":"adl"},
                  "baseRefName":"main","headRefName":"feat/y","state":"OPEN","url":"https://x/pull/42",
-                 "additions":120,"deletions":30}
+                 "additions":120,"deletions":30,"headRefOid":"0123abc"}
                 """;
         PrViewParser.PrDetail d = PrViewParser.parse(json);
         assertEquals(42, d.number());
@@ -22,6 +22,7 @@ class PrViewParserTest {
         assertEquals("main", d.baseRefName());
         assertEquals(120, d.additions());
         assertEquals(30, d.deletions());
+        assertEquals("0123abc", d.headRefOid(), "G7: the head commit a review is pinned to");
     }
 
     @Test

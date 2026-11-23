@@ -73,6 +73,8 @@ class GhAuthStatusTest {
         assertEquals(GhAuthStatus.State.SIGNED_IN, p.state());
         assertEquals(List.of("ghe.corp.example"), p.hosts());
         assertEquals(java.util.Map.of(), p.accounts(), "gh named no login: none is made up");
+        // G10: the refused host is remembered, so a repository on it is told to refresh gh's token there.
+        assertEquals(List.of("github.com"), p.rejected());
     }
 
     /** An older gh has no {@code --json} here; a stand-in prints nothing: the caller falls back. */

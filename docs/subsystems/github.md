@@ -19,7 +19,10 @@ which gh it needs, and Settings and the Doctor name it.
   the probe falls back to that exit code, where a failure can only be read as *unverified* unless gh says
   outright that there is no login.
 - `AuthState`: `SIGNED_IN`, `UNVERIFIED` (an account exists, GitHub was unreachable), `SIGNED_OUT`,
-  `REJECTED` (HTTP 401 — `gh auth refresh`). **`Availability.ready()` is true for `UNVERIFIED`**: being
+  `REJECTED` (HTTP 401 — `gh auth refresh`). With several hosts the overall state is `SIGNED_IN` as soon as one
+  host accepts its token, so the refused ones are kept apart (`Availability.rejectedHosts`): a repository on one
+  of them is told, once per repository and by every command, to run `gh auth refresh -h <host>`
+  (`status.github.hostRejected`) instead of the window silently staying hidden. **`Availability.ready()` is true for `UNVERIFIED`**: being
   offline at startup must not disable the integration for the session; a command that still cannot reach
   GitHub shows gh's own network error.
 - A probe that did not answer in time is **never cached**. Concurrent `detect` calls share one probe.
@@ -40,20 +43,32 @@ host, and the repository has something to show.
 - Host matching (`GitHubRemote.anyGitHub`): all remotes count, not only `origin`; the scp form needs no
   user (`host:org/repo`); a host is "GitHub" when gh has an account on it (`Availability.hosts()`), and the
   host-name heuristic decides only when those hosts are unknown.
-- Activity (`GitHubService.openActivity`) answers `YES` / `NONE` / `UNKNOWN`. A failed pull-request probe is
-  `UNKNOWN` — never cached as "nothing here"; the coordinator keeps the previous answer and retries with
-  back-off (and on the next gating). Issues or Actions switched off in a repository only mean "none".
+- SSH hosts are resolved first (`git/SshHosts`, shared with the permalinks of `git/GitWebLinks`): GitHub's
+  SSH-over-443 endpoint `ssh.github.com` is `github.com` (also `altssh.gitlab.com`, `altssh.bitbucket.org`), and
+  an `~/.ssh/config` alias (`git@github-work:o/r.git`) is asked of `ssh -G <alias>` — off the FX thread
+  (`GitHubService.resolveRemoteHosts`, its own lane), 3 s at most, once per alias for the session — falling
+  back to reading `~/.ssh/config` (`Host` / `HostName`, globs, `!` negation; not `Match` or `Include`) when ssh
+  cannot be run. Only `ssh://` and scp-style remotes are resolved; an HTTPS URL names its host outright. The
+  gating runs first on the raw URLs and again when the resolved ones arrive.
+- Activity (`GitHubService.openActivity`) answers `YES` / `NONE` / `UNKNOWN` / `DENIED`. A failed pull-request
+  probe is `UNKNOWN` — never cached as "nothing here"; the coordinator keeps the previous answer and retries
+  with back-off (and on the next gating). `DENIED` is GitHub refusing for SAML single sign-on: retrying cannot
+  help, so it is not retried, and the status line says to authorize gh (`status.github.ssoRequired`) until
+  `github.refresh`. Issues or Actions switched off in a repository only mean "none".
 
 ## Lanes, cancellation, the busy signal
 
-Four single-thread lanes, so one slow call cannot hold up the rest:
+Single-thread lanes, so one slow call cannot hold up the rest:
 
 | lane | what runs there | counted as busy | in the command log |
 | --- | --- | --- | --- |
 | mutations (`github-service`) | `pr checkout / create / review`, `run rerun / cancel` — in order | yes | yes |
-| reads (`github-read`) | lists, `pr view`, `pr diff`, the files API, the CI log, `browse` | yes | yes |
+| reads (`github-read`) | lists, `pr view`, `browse` | yes | yes |
+| downloads (`github-download`) | `pr diff`, the files API | yes | yes |
+| logs (`github-log`) | the CI log (up to 5 min) | yes | yes |
 | lookups (`github-lookup`) | `branchChecks` (the checks poll), `repoInfo`, `prCreateContext` | only `prCreateContext` | only `prCreateContext` |
 | probes (`github-probe`) | `detect`, `openActivity` (20 s per call) | no | no |
+| ssh (`github-ssh`) | `ssh -G` for the remotes' SSH aliases | no | no |
 
 - Every read and lookup returns a `ProcessRunner.Cancellation`. Cancelling **kills gh** and the consumer is
   never called. A newer `listPrs` / `listIssues` / `listRuns` / `branchChecks` does that to the older one of
@@ -64,7 +79,12 @@ Four single-thread lanes, so one slow call cannot hold up the rest:
 - `GitHubService.activeCallsProperty()` (`GitHubCoordinator.callsInFlightProperty()`) is the number of the
   user's calls queued or running; `GitHubPanel.setBusy` follows it. Background polls and probes do not spin
   it and are not written to the Output ▸ GitHub transcript.
-- `shutdown()` interrupts reads, lookups and probes but lets a running `gh pr checkout` finish.
+- A review tab's load (`pr view` + `pr diff`, and the files API after an HTTP 406) is cancelled by the next
+  load of the same pull request (Refresh pressed again) and by closing the tab. A Refresh whose `pr view` fails
+  keeps the title, description and head commit on screen and says so in the tab's notice.
+- The command log records what ran: on a remote host (SSH, WSL, a container) the line starts with
+  `[<host>]` and shows that host's gh, not this machine's (`GitHubService.loggedArgv`).
+- `shutdown()` interrupts reads, downloads, logs, lookups and probes but lets a running `gh pr checkout` finish.
 
 ## Output that can be large
 
@@ -88,10 +108,33 @@ Four single-thread lanes, so one slow call cannot hold up the rest:
   `gh auth status --json hosts`, kept in `Availability.accounts`; absent with a gh older than 2.81).
 - The checks segment is fetched once per (repository, branch) and polled while pending with the back-off of
   the pure `ChecksPoll` (capped; a poll due in an unfocused window waits for focus) — the one bounded
-  exception to "no background polling".
+  exception to "no background polling". The key's branch is the one checked out in the repository asked about:
+  an answer for a repository other than the active one is neither cached under the active branch nor shown in
+  its status bar.
+- `BranchChecks.failed()` tells a failed lookup (gh error, rate limit, 401, single sign-on, timeout) from "no
+  pull request" (`noPullRequest`: gh's "no pull requests found") and "no checks" (`noChecks`). A failure is not
+  cached; the roll-up on screen stays, the open checks card and a `github.showChecks` that asked say why
+  (`status.github.checksFailed`), and it is tried again after 1, 2 and 5 minutes, then on request only.
 - The create-PR and submit-review forms stay open until gh succeeds (`OverlayInput.showSubmitting`);
   create-PR first looks up the default branch, the branch's existing pull request and the template.
-- `gh browse` gets its flags first, then `--`, then the path.
+- Bodies never travel as arguments (a long one could pass the command-line limit, and every one would show
+  in the process list): `gh pr create --body-file -` and `gh pr review --body-file -` read them from standard
+  input (`GhInvocation`, `PrCreateArgs.invocation`, `PrReviewArgs.invocation`). The title stays an argument.
+- The submit-review form starts on **Comment**, which needs a body; Approve (the one action that may have an
+  empty body) has to be chosen (`PrReviewArgs.canSubmit`). From a review tab the review is **pinned to the head
+  commit the tab loaded** (`headRefOid` of `pr view`): `gh api --method POST repos/{owner}/{repo}/pulls/<n>/reviews
+  --input -` with `commit_id`, `event` and `body` as JSON on standard input, so commits pushed while the reviewer
+  read are not approved with them. Picked from a list (`github.submitReview`) it is `gh pr review`, unpinned.
+- `gh run cancel` asks first (`Confirm`, `GitHubCoordinator.cancelRunQuestion`): a cancelled run cannot be
+  resumed.
+- A run whose conclusion is `action_required` is `RunState.AWAITING_APPROVAL` (⏸), not a failure: no failure
+  log, no re-run, no cancel — its page on GitHub, where it is approved, is the action.
+- The filter box filters the rows listed. When it matches none of them and gh has more (a "load more" row), a
+  row offers to search GitHub for the text (`GitHubListQuery.search` → `--search`; pull requests and issues —
+  `gh run list` has no search); `#123` on the pull requests opens that pull request's review instead. The
+  answer is shown unfiltered; changing the filter text goes back to the plain list.
+- `gh browse` gets its flags first, then `--`, then the path; `gh repo create` gets its flags, then `--`, then
+  the name, and Settings Sync refuses a name starting with `-` or `.` (`GitHubService.validRepositoryName`).
 
 ## Tests
 
