@@ -208,7 +208,18 @@ final class DebugAdapterSettings {
                     "lua-debug",
                     InstallCatalog.LUA_DEBUG_STEP,
                     "status.debug.luaOff",
-                    (s, scope) -> tr("status.debug.luaDebugMissing")));
+                    (s, scope) -> tr("status.debug.luaDebugMissing")),
+            new Binding(
+                    DebugLanguages.FIREFOX,
+                    Settings::isFirefoxDebugEnabled,
+                    Settings::setFirefoxDebugEnabled,
+                    Settings::getFirefoxDebugPath,
+                    Settings::setFirefoxDebugPath,
+                    "settings.debug.firefoxPath",
+                    "firefox-debug",
+                    InstallCatalog.FIREFOX_DEBUG_STEP,
+                    "status.debug.firefoxOff",
+                    (s, scope) -> tr("status.debug.firefoxMissing")));
 
     /** Every adapter with settings of its own, in the order the pickers list them. */
     static List<Binding> all() {

@@ -925,6 +925,16 @@ final class DoctorCoordinator {
                     return found != null ? base.ok(found) : base.missing("doctor.tip.missing", "lua-debug");
                 }));
             }
+            if (s.isFirefoxDebugEnabled()) {
+                String configured = scope.debugTool("firefox", s.getFirefoxDebugPath());
+                DoctorCheck check = DoctorCheck.checking("debug.firefox", "debug", tr("doctor.label.firefoxDebug"), "")
+                        .withSettings("debug");
+                specs.add(probe(check, base -> {
+                    String found = com.editora.dap.DapManager.locateExternal(
+                            com.editora.dap.DebugLanguages.FIREFOX, configured);
+                    return found != null ? base.ok(found) : base.missing("doctor.tip.missing", "firefox-debug");
+                }));
+            }
             if (s.isPhpDebugEnabled()) {
                 String configured = scope.debugTool("php", s.getPhpDebugPath());
                 DoctorCheck check = DoctorCheck.checking("debug.php", "debug", tr("doctor.label.phpDebug"), "")

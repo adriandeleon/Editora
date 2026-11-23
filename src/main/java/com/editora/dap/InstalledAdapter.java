@@ -87,6 +87,18 @@ public record InstalledAdapter(
             List.of("tomblind.local-lua-debugger-vscode-"),
             List.of("extension/debugAdapter.js"));
 
+    /**
+     * vscode-firefox-debug (firefox-devtools, MIT): {@code dist/adapter.bundle.js} in its {@code .vsix}'s {@code
+     * extension} folder, run on Node.js; VS Code's extension is {@code firefox-devtools.vscode-firefox-debug}.
+     */
+    public static final InstalledAdapter FIREFOX_DEBUG = new InstalledAdapter(
+            "firefox",
+            "adapter.bundle.js",
+            false,
+            List.of("extension/dist/adapter.bundle.js", "dist/adapter.bundle.js", "adapter.bundle.js"),
+            List.of("firefox-devtools.vscode-firefox-debug-"),
+            List.of("dist/adapter.bundle.js"));
+
     /** Where the installer puts it, by this launch's config folder first. Pure construction. */
     List<Path> roots(Path home) {
         List<Path> roots = new ArrayList<>();

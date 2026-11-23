@@ -78,8 +78,8 @@ class BrowserDebugWindowFxTest {
             debug.applySupport();
         });
         await("JavaScript debugging available", () -> call(() -> debug.debugEffectiveFor("javascript")));
-        debug.browserIds = () -> found;
-        debug.browserExecutable = id -> "/opt/" + id + "/" + id;
+        debug.browser.browserIds = () -> found;
+        debug.browser.browserExecutable = id -> "/opt/" + id + "/" + id;
     }
 
     @AfterAll
@@ -236,7 +236,7 @@ class BrowserDebugWindowFxTest {
         FxTestSupport.runOnFx(manager::stop);
         await("ended", () -> !call(manager::isActive));
 
-        found = List.of("firefox", "safari");
+        found = List.of("safari"); // (Firefox would be debugged in: on its own adapter)
         run("debug.browser");
         await("the picker", () -> call(() -> OverlayDriver.showing(fx.controller)));
         FxTestSupport.runOnFx(() -> OverlayDriver.pick(fx.controller, ""));

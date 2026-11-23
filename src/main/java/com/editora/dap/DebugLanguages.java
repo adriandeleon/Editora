@@ -475,6 +475,34 @@ public final class DebugLanguages {
             "debug.error.gdbUnavailable",
             new ExternalAdapter(List.of("gdb", "-q", "-i", "dap"), ExternalAdapter.Transport.STDIO, null));
 
+    /**
+     * Firefox, through vscode-firefox-debug (firefox-devtools, MIT; {@code adapter.bundle.js}, run on Node.js over its
+     * standard streams), which starts Firefox with its debugger server and speaks Firefox's own remote protocol: a
+     * page's JavaScript debugged in Firefox ({@link FirefoxLaunch}). Firefox is a browser, not a language of its own,
+     * so not among {@link #all}: a JavaScript, TypeScript or HTML file's breakpoints go to it when the browser debugged
+     * in is Firefox. Its exception breakpoints are the adapter's own: all, uncaught, and {@code debugger} statements.
+     */
+    public static final DebugLanguage FIREFOX = new DebugLanguage(
+            "firefox",
+            "Firefox",
+            JAVASCRIPT.editorLanguages(),
+            Kind.EXTERNAL,
+            FirefoxLaunch.TYPE,
+            FirefoxLaunch.TYPE,
+            "",
+            List.of(),
+            null,
+            Availability.LOCATED,
+            List.of(
+                    filter("all", "All Exceptions", false),
+                    filter("uncaught", "Uncaught Exceptions", false),
+                    filter("debugger", "Debugger Statements", true)), // a debugger; statement stops, as in Chrome
+            "all",
+            null,
+            false,
+            "debug.error.firefoxUnavailable",
+            new ExternalAdapter(List.of("adapter.bundle.js"), ExternalAdapter.Transport.STDIO, null));
+
     /** The user's own adapters ({@link CustomAdapters}): found by id and by language after the built-in ones. */
     private static volatile List<DebugLanguage> custom = List.of();
 
@@ -505,6 +533,9 @@ public final class DebugLanguages {
         }
         if (FLUTTER.id().equals(id)) {
             return FLUTTER;
+        }
+        if (FIREFOX.id().equals(id)) {
+            return FIREFOX;
         }
         for (DebugLanguage l : custom) {
             if (l.id().equals(id)) {

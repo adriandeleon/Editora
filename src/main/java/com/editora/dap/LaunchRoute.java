@@ -40,6 +40,8 @@ public final class LaunchRoute {
         BASH_DEBUG,
         /** local-lua-debugger ({@code lua-local}). */
         LUA_DEBUG,
+        /** vscode-firefox-debug ({@code firefox}): a launch opens a page in Firefox; an attach joins a Firefox. */
+        FIREFOX,
         /** java-debug, through a run configuration ({@code java}). */
         JAVA,
         /** An adapter of the user's ({@link CustomAdapters}). */
@@ -139,6 +141,9 @@ public final class LaunchRoute {
                     return unsupported(body, "a bashdb attach (vscode-bash-debug only launches)");
                 }
                 return new Route(Kind.BASH_DEBUG, DebugLanguages.BASH, request, false, "");
+            }
+            case FirefoxLaunch.TYPE -> {
+                return new Route(Kind.FIREFOX, DebugLanguages.FIREFOX, request, attach, "");
             }
             case "lua-local" -> {
                 if (attach) {
