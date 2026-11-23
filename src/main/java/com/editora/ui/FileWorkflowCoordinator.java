@@ -1936,6 +1936,19 @@ final class FileWorkflowCoordinator {
 
     /** Reloads asynchronously and reports on the FX thread whether the prepared snapshot was applied. */
     void reloadFromDisk(@Nullable Tab tab, EditorBuffer buffer, java.util.function.Consumer<Boolean> onComplete) {
+        reloadFromDisk(tab, buffer, HistoryRevision.REASON_EXTERNAL, onComplete);
+    }
+
+    /**
+     * As {@link #reloadFromDisk(Tab, EditorBuffer, java.util.function.Consumer)}; the text the reload replaces is
+     * kept in Local History under {@code historyReason} — {@link HistoryRevision#REASON_REVERT} for Revert File and
+     * Reopen with Encoding, so the row says what replaced it (F3).
+     */
+    void reloadFromDisk(
+            @Nullable Tab tab,
+            EditorBuffer buffer,
+            String historyReason,
+            java.util.function.Consumer<Boolean> onComplete) {
         Path file = buffer.getPath();
         if (file == null) {
             onComplete.accept(false); // untitled: nothing on disk to reload
@@ -1967,7 +1980,7 @@ final class FileWorkflowCoordinator {
                                 && buffer.getPath() != null
                                 && com.editora.config.PathKeys.sameNormalized(buffer.getPath(), file)) {
                             if (guard.stillHolds(buffer)) {
-                                applyPreparedReload(tab, buffer, load, inPlace);
+                                applyPreparedReload(tab, buffer, load, inPlace, historyReason);
                                 applied = true;
                             } else {
                                 // Left as it is: unsaved against a changed disk, which the external-change
@@ -1992,11 +2005,19 @@ final class FileWorkflowCoordinator {
     /** Applies bytes prepared off-thread after the user explicitly chooses the external copy. FX thread. */
     private void applyPreparedReload(
             @Nullable Tab tab, EditorBuffer buffer, PreparedLoad load, EditorBuffer.@Nullable PreparedEdit inPlace) {
+        applyPreparedReload(tab, buffer, load, inPlace, HistoryRevision.REASON_EXTERNAL);
+    }
+
+    private void applyPreparedReload(
+            @Nullable Tab tab,
+            EditorBuffer buffer,
+            PreparedLoad load,
+            EditorBuffer.@Nullable PreparedEdit inPlace,
+            String historyReason) {
         // Only the span that differs is rewritten, but a change above the viewport still moves it and a fold
         // inside the span is lost: keep the user's place (caret line/column, scroll position, collapsed folds).
         ReloadViewState view = ReloadViewState.capture(buffer);
-        host.historyCoordinator()
-                .record(buffer, HistoryRevision.REASON_EXTERNAL); // snapshot the in-memory version before disk wins
+        host.historyCoordinator().record(buffer, historyReason); // snapshot the in-memory version before disk wins
         String note = applyPreparedLoad(buffer, load, inPlace);
         notePerfContentLoaded(buffer);
         buffer.markClean();
@@ -2412,7 +2433,7 @@ final class FileWorkflowCoordinator {
             return;
         }
         Tab tab = host.tabFor(buffer);
-        reloadFromDisk(tab, buffer, applied -> {
+        reloadFromDisk(tab, buffer, HistoryRevision.REASON_REVERT, applied -> {
             if (applied) {
                 host.setStatus(tr("status.revert.done", buffer.getTitle()));
             }
@@ -2558,15 +2579,22 @@ final class FileWorkflowCoordinator {
                     }
                     // The same preimage check as an ordinary save: the elevated copy truncates
                     // in place, so an external edit would otherwise be overwritten unasked.
-                    if (Files.exists(target)
-                            && !prepareRemoteWrite(request, false, false, null).proceed()) {
+                    RemoteWritePlan plan = Files.exists(target)
+                            ? prepareRemoteWrite(request, false, false, null)
+                            : new RemoteWritePlan(true, null, true);
+                    if (!plan.proceed()) {
                         return new AdminResult(-2, "conflict", -1, -1);
                     }
                     if (!mayNormaliseBinary(request, true)) {
                         return new AdminResult(-2, "refused", -1, -1);
                     }
                     keepMixedOriginal(request);
-                    return elevatedWriter.write(request.target(), request.diskBytes());
+                    AdminResult wrote = elevatedWriter.write(request.target(), request.diskBytes());
+                    if (wrote.exit() == 0) {
+                        // As an ordinary save: what it replaced is kept when it was not this window's own (R10).
+                        host.historyCoordinator().saveReplaced(target, plan.expectedBytes(), request.diskBytes());
+                    }
+                    return wrote;
                 });
                 AdminResult written = outcome.value();
                 AdminResult result =
@@ -2581,6 +2609,19 @@ final class FileWorkflowCoordinator {
                 Platform.runLater(() -> onAdminSaveDone(request, result));
             }
         });
+    }
+
+    /**
+     * How a save wrote its file — the charset (a byte-order mark names its own), whether it has a mark, and the
+     * line ending — kept on its Local History row so a file deleted outside Editora comes back as those bytes
+     * (R14).
+     */
+    private static HistoryCoordinator.Encoding savedEncoding(SaveRequest request) {
+        byte[] written = request.bytes();
+        String byBom = com.editora.editorconfig.EditorConfigCharset.detectByBom(written);
+        String charset = byBom != null ? byBom : request.buffer().getEffectiveCharset();
+        return new HistoryCoordinator.Encoding(
+                charset, byBom != null, com.editora.editops.LineEndings.dominant(request.savedText()));
     }
 
     private AdminResult runElevatedWrite(Path target, byte[] bytes) throws IOException {
@@ -2615,7 +2656,8 @@ final class FileWorkflowCoordinator {
             Path target = request.target();
             if (result.exit() == 0) {
                 encryption.saved(buffer, target, request.seal());
-                host.historyCoordinator().record(target, request.content(), HistoryRevision.REASON_SAVE);
+                host.historyCoordinator()
+                        .recordSaved(target, request.content(), HistoryRevision.REASON_SAVE, savedEncoding(request));
                 acknowledgeLatestCommit(buffer);
                 settleSaveNotes(request);
                 if (request.ticket().isCurrent() && !buffer.isDisposed()) {
@@ -3555,10 +3597,11 @@ final class FileWorkflowCoordinator {
     private void completeSave(SaveRequest request, DiskWrite disk, boolean autoSave, boolean showFeedback) {
         encryption.saved(request.buffer(), request.target(), request.seal());
         host.historyCoordinator()
-                .record(
+                .recordSaved(
                         request.target(),
                         request.content(),
-                        autoSave ? HistoryRevision.REASON_AUTOSAVE : HistoryRevision.REASON_SAVE);
+                        autoSave ? HistoryRevision.REASON_AUTOSAVE : HistoryRevision.REASON_SAVE,
+                        savedEncoding(request));
         acknowledgeLatestCommit(request.buffer());
         if (request.saveAs()
                 && request.buffer().getPath() != null
