@@ -34,13 +34,14 @@ class ScriptLaunchLuaTest {
     @Test
     void theRuntimeNamesTheExtensionAboveTheAdapterAndTheInstalledLua() {
         Path adapter = DIR.resolve("plugins/dap/lua/extension/extension/debugAdapter.js");
+        String lua54 = DIR.resolve("bin/lua5.4").toString(); // absolute on every platform
         Map<String, Object> launch = ScriptLaunch.withLuaRuntime(
                 ScriptLaunch.luaLaunch(DIR.resolve("main.lua"), List.of(), DIR),
                 adapter,
-                name -> name.equals("lua5.4") ? "/usr/bin/lua5.4" : name);
+                name -> name.equals("lua5.4") ? lua54 : name);
         assertEquals(DIR.resolve("plugins/dap/lua/extension").toString(), launch.get("extensionPath"));
         assertEquals(DIR.toString(), launch.get("workspacePath"));
-        assertEquals("/usr/bin/lua5.4", ((Map<?, ?>) launch.get("program")).get("lua"), "lua is not there: lua5.4");
+        assertEquals(lua54, ((Map<?, ?>) launch.get("program")).get("lua"), "lua is not there: lua5.4");
     }
 
     @Test

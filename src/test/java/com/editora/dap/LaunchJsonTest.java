@@ -352,19 +352,21 @@ class LaunchJsonTest {
 
     @Test
     void fileVariablesOfAFileOutsideTheWorkspaceOrWithoutAnExtension(@TempDir Path ws) throws Exception {
-        Path outside = Path.of("/elsewhere/Makefile");
+        Path outside = ws.getRoot().resolve("elsewhere").resolve("Makefile"); // absolute here (a drive on Windows)
         LaunchJson.Context ctx = new LaunchJson.Context(ws, outside, 1, "", Map.of(), ws, in -> "x");
         Map<String, String> answers = new HashMap<>();
         assertEquals(
                 "Makefile|",
                 LaunchJson.substitute("${fileBasenameNoExtension}|${fileExtname}", ctx, Map.of(), answers));
         assertEquals(outside.toString(), LaunchJson.substitute("${relativeFile}", ctx, Map.of(), answers));
-        assertEquals("/elsewhere", LaunchJson.substitute("${relativeFileDirname}", ctx, Map.of(), answers));
+        assertEquals(
+                String.valueOf(outside.getParent()),
+                LaunchJson.substitute("${relativeFileDirname}", ctx, Map.of(), answers));
         assertEquals(java.io.File.separator, LaunchJson.substitute("${/}", ctx, Map.of(), answers));
         assertEquals(ws.toString(), LaunchJson.substitute("${workspaceRoot}", ctx, Map.of(), answers));
         assertEquals(
                 "pre-set", LaunchJson.substitute("${input:id}", ctx, Map.of(), new HashMap<>(Map.of("id", "pre-set"))));
-        LaunchJson.Context root = new LaunchJson.Context(ws, Path.of("/"), 1, "", Map.of(), ws, in -> "x");
+        LaunchJson.Context root = new LaunchJson.Context(ws, ws.getRoot(), 1, "", Map.of(), ws, in -> "x");
         assertEquals("", LaunchJson.substitute("${fileDirname}${fileDirnameBasename}", root, Map.of(), answers));
         assertThrows(
                 LaunchJson.LaunchJsonException.class,
