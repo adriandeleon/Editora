@@ -71,6 +71,59 @@ class DartDebugProbeFxTest {
         }
     }
 
+    /** 0-based lines 5 and 9 are the two tests' bodies; the caret goes to line 9, in {@code subtracts}. */
+    static final String TESTS = """
+            import 'package:test/test.dart';
+
+            void main() {
+              group('calc', () {
+                test('adds', () {
+                  var total = 1 + 2;
+                  expect(total, 3);
+                });
+                test('subtracts', () {
+                  var diff = 5 - 2;
+                  expect(diff, 3);
+                });
+              });
+            }
+            """;
+
+    @Test
+    void debugTestAtCaretStopsInThatTestAlone(@TempDir Path dir) throws Exception {
+        assumeTrue(Boolean.getBoolean("lsp.probe"), "opt-in: -Dlsp.probe=true");
+        String dart = DapManager.locateExternal(DebugLanguages.DART, "");
+        assumeTrue(dart != null, "needs dart on the PATH");
+        Path pkg = Files.createDirectory(dir.resolve("calc")).toRealPath();
+        Files.writeString(
+                pkg.resolve("pubspec.yaml"),
+                "name: calc\nenvironment:\n  sdk: ^3.0.0\ndev_dependencies:\n  test: any\n");
+        Process get = new ProcessBuilder(dart, "pub", "get", "--offline")
+                .directory(pkg.toFile())
+                .redirectErrorStream(true)
+                .redirectOutput(dir.resolve("pub.log").toFile())
+                .start();
+        assumeTrue(get.waitFor(300, TimeUnit.SECONDS) && get.exitValue() == 0, "package:test in the pub cache");
+        Path file = Files.writeString(Files.createDirectory(pkg.resolve("test")).resolve("calc_test.dart"), TESTS);
+        try (Window w = Window.open(dir, pkg, file)) {
+            FxTestSupport.runOnFx(() -> {
+                w.buffer.toggleBreakpoint(5);
+                w.buffer.toggleBreakpoint(9);
+                w.buffer.getFocusedArea().moveTo(9, 0);
+            });
+            FxTestSupport.runOnFx(() -> w.registry.run("test.debugAtCaret"));
+            await(
+                    "a stop",
+                    180,
+                    () -> w.call(() -> w.dap.state() == DapManager.State.SUSPENDED
+                            && !w.debug.panel().callStack().isEmpty()));
+            assertEquals(9, w.call(() -> w.debug.panel().callStack().getFirst().line()), "in subtracts, not adds");
+            FxTestSupport.runOnFx(w.dap::resume);
+            await("the run ended, adds never stopped", 120, () -> !w.call(w.dap::isActive));
+            assertEquals(1, w.call(() -> w.debug.panel().history().size()), "one stop: subtracts'");
+        }
+    }
+
     /** 0-based line 5 is {@code total += i;}. */
     static final String APP = """
             import 'package:flutter/widgets.dart';
@@ -86,6 +139,16 @@ class DartDebugProbeFxTest {
 
     @Test
     void aFlutterAppStopsAtItsBreakpointOnTheDesktopAndStopEndsIt(@TempDir Path dir) throws Exception {
+        flutterApp(dir, false);
+    }
+
+    @Test
+    void closingTheWindowOfAFlutterSessionEndsTheAppToo(@TempDir Path dir) throws Exception {
+        flutterApp(dir, true);
+    }
+
+    /** A Flutter app debugged on the Linux desktop to its breakpoint, then Stop, or the window closed. */
+    private static void flutterApp(Path dir, boolean closeWindow) throws Exception {
         assumeTrue(Boolean.getBoolean("lsp.probe"), "opt-in: -Dlsp.probe=true");
         assumeTrue(com.editora.Os.isLinux(), "Flutter's Linux desktop");
         assumeTrue(
@@ -123,7 +186,11 @@ class DartDebugProbeFxTest {
             w.f5At(5);
             w.awaitStop(main, 5, 600); // flutter builds the app first
             assertEquals("0", w.evaluate("total"));
-            FxTestSupport.runOnFx(w.dap::stop);
+            if (closeWindow) {
+                w.close(); // the window's close stops the session as Stop does
+            } else {
+                FxTestSupport.runOnFx(w.dap::stop);
+            }
             await("stopped", 120, () -> !w.call(w.dap::isActive));
             await(
                     "the app ended",
@@ -199,9 +266,14 @@ class DartDebugProbeFxTest {
             }
         }
 
+        private boolean closed;
+
         @Override
         public void close() throws Exception {
-            fx.dispose();
+            if (!closed) {
+                closed = true;
+                fx.dispose();
+            }
         }
     }
 
