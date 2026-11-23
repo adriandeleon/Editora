@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Lua debugging.** Press F5 on a Lua script to debug it: breakpoints (with conditions), locals, upvalues and
+  globals, watches and hovers, stepping, changing a variable's value, and a stop where an error is raised. The script's
+  output appears in the Debug console. It runs on Local Lua Debugger, which Settings ▸ Debugging ▸ Lua installs (it
+  needs Node.js), with the `lua` on your PATH (or `lua5.4`, `lua5.3`, `luajit`…). launch.json `lua-local`
+  configurations work too. A launch.json `bashdb` configuration, which started nothing before, now starts as well.
+
 - **Deno.** A JavaScript or TypeScript file in a Deno project (a folder with a `deno.json` or `deno.jsonc`) now
   runs under Deno: Run File runs `deno run` (a test file `deno test`) from the project's folder, with every
   permission granted, since the Run console can't ask for them. F5 debugs it the same way through the JavaScript

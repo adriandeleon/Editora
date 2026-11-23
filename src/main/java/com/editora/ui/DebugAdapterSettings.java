@@ -197,7 +197,18 @@ final class DebugAdapterSettings {
                     "dart",
                     "",
                     "status.debug.dartOff",
-                    (s, scope) -> tr("status.debug.dartMissing")));
+                    (s, scope) -> tr("status.debug.dartMissing")),
+            new Binding(
+                    DebugLanguages.LUA,
+                    Settings::isLuaDebugEnabled,
+                    Settings::setLuaDebugEnabled,
+                    Settings::getLuaDebugPath,
+                    Settings::setLuaDebugPath,
+                    "settings.debug.luaPath",
+                    "lua-debug",
+                    InstallCatalog.LUA_DEBUG_STEP,
+                    "status.debug.luaOff",
+                    (s, scope) -> tr("status.debug.luaDebugMissing")));
 
     /** Every adapter with settings of its own, in the order the pickers list them. */
     static List<Binding> all() {

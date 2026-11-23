@@ -1854,7 +1854,19 @@ class DebugCoordinatorCommandsFxTest {
 
         FxTestSupport.runOnFx(() -> debug.chooseAdapterPath());
         assertEquals(
-                List.of("java", "python", "javascript", "go", "rust", "cpp", "csharp", "ruby", "php", "bash", "dart"),
+                List.of(
+                        "java",
+                        "python",
+                        "javascript",
+                        "go",
+                        "rust",
+                        "cpp",
+                        "csharp",
+                        "ruby",
+                        "php",
+                        "bash",
+                        "dart",
+                        "lua"),
                 pickerRows());
         promptAnswer = "  " + python + " ";
         answerPicker(1, javafx.scene.input.KeyCode.ENTER);
@@ -1897,7 +1909,7 @@ class DebugCoordinatorCommandsFxTest {
 
         FxTestSupport.runOnFx(() -> debug.chooseAdapterToggle());
         assertEquals(
-                List.of("python", "javascript", "go", "rust", "cpp", "csharp", "ruby", "php", "bash", "dart"),
+                List.of("python", "javascript", "go", "rust", "cpp", "csharp", "ruby", "php", "bash", "dart", "lua"),
                 pickerRows());
         answerPicker(0, javafx.scene.input.KeyCode.ENTER);
         assertTrue(host.settings.isPythonDebugEnabled());

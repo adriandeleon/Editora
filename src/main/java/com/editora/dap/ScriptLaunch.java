@@ -7,7 +7,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * How a Ruby, PHP or Bash script is debugged, as VS Code's rdbg, PHP Debug and Bash Debug extensions start it. Pure.
+ * How a Ruby, PHP, Bash or Lua script is debugged, as VS Code's rdbg, PHP Debug, Bash Debug and Local Lua Debugger
+ * extensions start it. Pure.
  *
  * <ul>
  *   <li><b>Ruby</b>: the script runs under {@code rdbg} ({@link DebugLanguages#RUBY}'s command), which is the debug
@@ -19,6 +20,10 @@ import java.util.Map;
  *       {@code out/bashDebug.js}), talking to it through two named pipes it makes with {@code mkfifo}; the request names
  *       each program by its absolute path ({@link #withBashTools}). Only a Bash script ({@link #isBashScript}): bashdb
  *       is Bash's.
+ *   <li><b>Lua</b>: local-lua-debugger starts the interpreter with {@code -e "require('lldebugger').runFile(…)"},
+ *       its {@code lldebugger.lua} found through the {@code extensionPath} the request names (VS Code's extension fills
+ *       it in; here {@link #withLuaRuntime}, from where the adapter is), and talks to it over a pipe (FIFOs; named pipes
+ *       on Windows), so the script's own output reaches the Debug console and is not read as the debugger's.
  * </ul>
  */
 public final class ScriptLaunch {
@@ -28,11 +33,15 @@ public final class ScriptLaunch {
     /** How a script of a language is debugged: on that adapter, with this request and these words after its command. */
     public record Plan(DebugLanguage language, Map<String, Object> launch, List<String> tail) {}
 
-    /** The plan for script {@code script} of {@code language} ({@code ruby}, {@code php} or {@code bash}) in {@code cwd}. */
+    /**
+     * The plan for script {@code script} of {@code language} ({@code ruby}, {@code php}, {@code bash} or {@code lua}) in
+     * {@code cwd}.
+     */
     public static Plan plan(String language, Path script, List<String> args, Path cwd) {
         return switch (language) {
             case "ruby" -> new Plan(DebugLanguages.RUBY, rubyLaunch(script, args, cwd), rubyTail(script, args));
             case "bash" -> new Plan(DebugLanguages.BASH, bashLaunch(script, args, cwd), List.of());
+            case "lua" -> new Plan(DebugLanguages.LUA, luaLaunch(script, args, cwd), List.of());
             default -> new Plan(DebugLanguages.PHP, phpLaunch(script, args, cwd), List.of());
         };
     }
@@ -114,6 +123,65 @@ public final class ScriptLaunch {
         out.putIfAbsent("pathCat", resolve.apply("cat"));
         out.putIfAbsent("pathMkfifo", resolve.apply("mkfifo"));
         out.putIfAbsent("pathPkill", resolve.apply("pkill"));
+        return out;
+    }
+
+    /** The Lua interpreter a launch names until {@link #withLuaRuntime} finds the one installed. */
+    public static final String LUA = "lua";
+
+    /** The interpreters looked for, in order, when no {@code lua} is on PATH (distributions name it by version). */
+    public static final List<String> LUA_INTERPRETERS =
+            List.of("lua", "lua5.4", "lua5.3", "luajit", "lua5.2", "lua5.1");
+
+    /** local-lua-debugger's {@code launch} of {@code script} with {@code args}, run in {@code cwd}. */
+    public static Map<String, Object> luaLaunch(Path script, List<String> args, Path cwd) {
+        Map<String, Object> program = new LinkedHashMap<>();
+        program.put("lua", LUA);
+        program.put("file", script.toString());
+        program.put("communication", "pipe"); // the script's stdout is its own, not the debugger's channel
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("type", DebugLanguages.LUA.launchType());
+        m.put("request", "launch");
+        m.put("name", "Editora (Lua)");
+        m.put("program", program);
+        if (!args.isEmpty()) {
+            m.put("args", List.copyOf(args));
+        }
+        m.put("cwd", cwd.toString());
+        m.put("stopOnEntry", false);
+        return m;
+    }
+
+    /**
+     * {@code launch} with what VS Code's extension adds before local-lua-debugger sees it: {@code extensionPath}, the
+     * extension folder above {@code adapter} ({@code <extension>/extension/debugAdapter.js}), where its
+     * {@code debugger/lldebugger.lua} is; {@code workspacePath} (the folder a relative {@code cwd} is read from); and,
+     * when the request names the bare {@code lua}, the first of {@link #LUA_INTERPRETERS} {@code resolve} finds (an
+     * absolute path), else {@code lua} as it was. What the request already names (a launch.json's own) is kept.
+     */
+    @SuppressWarnings("unchecked")
+    public static Map<String, Object> withLuaRuntime(
+            Map<String, Object> launch, Path adapter, java.util.function.UnaryOperator<String> resolve) {
+        Map<String, Object> out = new LinkedHashMap<>(launch);
+        Path scripts = adapter.toAbsolutePath().getParent();
+        Path extension = scripts == null ? null : scripts.getParent();
+        if (extension != null) {
+            out.putIfAbsent("extensionPath", extension.toString());
+        }
+        Object cwd = out.get("cwd");
+        out.putIfAbsent("workspacePath", cwd != null ? cwd.toString() : String.valueOf(adapter.toAbsolutePath()));
+        out.putIfAbsent("cwd", out.get("workspacePath"));
+        if (out.get("program") instanceof Map<?, ?> program && LUA.equals(program.get("lua"))) {
+            Map<String, Object> p = new LinkedHashMap<>((Map<String, Object>) program);
+            for (String name : LUA_INTERPRETERS) {
+                String found = resolve.apply(name);
+                if (found != null && Path.of(found).isAbsolute()) {
+                    p.put("lua", found);
+                    break;
+                }
+            }
+            out.put("program", p);
+        }
         return out;
     }
 

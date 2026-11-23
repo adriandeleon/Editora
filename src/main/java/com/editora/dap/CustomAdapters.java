@@ -53,6 +53,7 @@ public final class CustomAdapters {
             "php",
             "bashdb",
             "dart",
+            "lua-local",
             "java",
             "editora-jvm",
             "scala");
