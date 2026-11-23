@@ -350,4 +350,128 @@ class EncryptedFilesFxTest {
             assertEquals("fresh secret\n", decrypt(file));
         }
     }
+
+    /** R6: the banner after Encrypt File says how many plain copies Local History holds, and can delete them. */
+    @Test
+    void encryptFileOffersToDeleteThePlainCopiesLocalHistoryHolds(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            Path plain = Files.writeString(dir.resolve("client.md"), "# Client\n");
+            EditorBuffer buffer = open(fx, plain);
+            await("loaded", () -> !buffer.isLoading());
+            HistoryCoordinator history = FxTestSupport.field(fx.controller, "historyCoordinator");
+            java.util.concurrent.CompletableFuture<Boolean> kept = new java.util.concurrent.CompletableFuture<>();
+            FxTestSupport.runOnFx(() -> history.recordDurably(
+                    plain, "# Client draft\n", com.editora.config.HistoryRevision.REASON_SAVE, kept::complete));
+            assertTrue(kept.get(30, java.util.concurrent.TimeUnit.SECONDS));
+            EncryptionCoordinator encryption = fx.controller.fileWorkflows.encryption();
+            encryption.picker = (request, choose) -> choose.accept(new RecipientPicker.Choice(
+                    EncryptionState.Mode.PUBLIC_KEY,
+                    request.keys().stream()
+                            .filter(k -> request.preselected().contains(k.fingerprint()))
+                            .toList(),
+                    null,
+                    false,
+                    false));
+
+            FxTestSupport.runOnFx(encryption::encryptFile);
+            await("the banner about the original", () -> buffer.encryption().notice() != null);
+
+            String copies = com.editora.i18n.Messages.tr("encryption.original.history", 1, "client.md");
+            assertTrue(FxTestSupport.callOnFx(() -> bannerText(buffer)).contains(copies));
+            javafx.scene.control.Button delete = FxTestSupport.callOnFx(
+                    () -> bannerButton(buffer, com.editora.i18n.Messages.tr("encryption.original.deleteHistory")));
+            assertNotNull(delete, "Delete History is offered");
+            List<String> asked = new ArrayList<>();
+            FxTestSupport.runOnFx(() -> {
+                history.confirmPurgeAnswer = asked::add; // and answers yes
+                delete.fire();
+            });
+
+            assertEquals(1, asked.size(), "the purge asks first, as it does from Local History");
+            assertEquals(0, (int)
+                    FxTestSupport.callOnFx(() -> PlainHistoryCopies.count(fx.shared.historyByProject(), plain)));
+            assertFalse(FxTestSupport.callOnFx(() -> bannerText(buffer)).contains(copies), "the banner says so");
+            assertNull(FxTestSupport.callOnFx(
+                    () -> bannerButton(buffer, com.editora.i18n.Messages.tr("encryption.original.deleteHistory"))));
+            assertTrue(Files.exists(plain), "the original is still offered for the trash");
+        }
+    }
+
+    /** R12: Decrypt to File onto an existing plain file copies that file to Local History first. */
+    @Test
+    void decryptToFileKeepsTheFileItReplacesInLocalHistory(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            Path file = dir.resolve("notes.md.gpg");
+            Files.write(file, encryptFor("fresh secret\n", List.of(adrian), false));
+            Path target = Files.writeString(dir.resolve("notes.md"), "stale plain\n");
+            EditorBuffer buffer = open(fx, file);
+            awaitUnlocked(buffer);
+
+            FxTestSupport.runOnFx(() -> fx.controller.fileWorkflows.encryption().decryptToFile(buffer, file, target));
+            await("decrypted onto the file", () -> "fresh secret\n".equals(Files.readString(target)));
+
+            com.editora.history.HistoryBlobStore blobs = FxTestSupport.field(fx.shared.historyService(), "blobs");
+            List<String> kept = FxTestSupport.callOnFx(() -> {
+                List<String> texts = new ArrayList<>();
+                String key = com.editora.config.PathKeys.normalizedKey(target);
+                for (var bucket : fx.shared.historyByProject().values()) {
+                    for (var revision : bucket.getOrDefault(key, List.of())) {
+                        texts.add(blobs.get(revision.sha256()));
+                    }
+                }
+                return texts;
+            });
+            assertEquals(List.of("stale plain\n"), kept);
+        }
+    }
+
+    /** R12: Decrypt to File refuses to replace a file open here with unsaved edits. */
+    @Test
+    void decryptToFileRefusesATargetOpenWithUnsavedEdits(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            Path file = dir.resolve("notes.md.gpg");
+            Files.write(file, encryptFor("fresh secret\n", List.of(adrian), false));
+            Path target = Files.writeString(dir.resolve("notes.md"), "on disk\n");
+            EditorBuffer open = open(fx, target);
+            await("loaded", () -> !open.isLoading());
+            FxTestSupport.runOnFx(() -> open.getArea().appendText("unsaved\n"));
+            EditorBuffer buffer = open(fx, file);
+            awaitUnlocked(buffer);
+
+            FxTestSupport.runOnFx(() -> fx.controller.fileWorkflows.encryption().decryptToFile(buffer, file, target));
+            async.awaitFx();
+
+            assertEquals("on disk\n", Files.readString(target), "nothing is written over the open edits");
+            assertTrue(FxTestSupport.callOnFx(open::isDirty));
+        }
+    }
+
+    private static String bannerText(EditorBuffer buffer) {
+        javafx.scene.Node notice = buffer.encryption().notice();
+        if (!(notice instanceof javafx.scene.Parent parent)) {
+            return "";
+        }
+        StringBuilder text = new StringBuilder();
+        for (javafx.scene.Node child : parent.getChildrenUnmodifiable()) {
+            if (child instanceof javafx.scene.control.Label label) {
+                text.append(label.getText());
+            }
+        }
+        return text.toString();
+    }
+
+    private static javafx.scene.control.Button bannerButton(EditorBuffer buffer, String text) {
+        if (!(buffer.encryption().notice() instanceof javafx.scene.Parent parent)) {
+            return null;
+        }
+        for (javafx.scene.Node child : parent.getChildrenUnmodifiable()) {
+            if (child instanceof javafx.scene.control.Button button && text.equals(button.getText())) {
+                return button;
+            }
+        }
+        return null;
+    }
 }
