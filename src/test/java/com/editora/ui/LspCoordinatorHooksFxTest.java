@@ -155,6 +155,14 @@ class LspCoordinatorHooksFxTest {
             super.setLspChangeListener(listener);
         }
 
+        DefinitionProbe definitionProbe;
+
+        @Override
+        public void setDefinitionProbe(DefinitionProbe probe) {
+            definitionProbe = probe;
+            super.setDefinitionProbe(probe);
+        }
+
         @Override
         public void setCodeLensHandler(BiConsumer<Integer, List<EditorBuffer.CodeLens>> handler) {
             codeLens = handler;
@@ -373,6 +381,35 @@ class LspCoordinatorHooksFxTest {
 
         assertFalse(shown.contains(List.of(diagnostic)), "the pre-edit marks were put back: " + shown);
         assertEquals(sentBefore + 1, fx.server().changed.size(), "the edit is sent once");
+    }
+
+    /**
+     * Holding Ctrl/Cmd and moving across code asks for a definition per word: the answer for a word the mouse has
+     * left is never used, so asking about the next one cancels it rather than leaving a slow server to compute it
+     * (perf review 2026-11-23 L6).
+     */
+    @Test
+    void aCtrlHoverProbeForTheNextWordCancelsTheLast() throws Exception {
+        HookedBuffer buffer = wired("D.java");
+        FakeLanguageServer server = fx.server();
+        server.holdDefinitions = true;
+        List<Boolean> answers = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        fx.run(() -> buffer.definitionProbe.probe(0, 6, answers::add)); // "A"
+        fx.run(() -> buffer.definitionProbe.probe(1, 9, answers::add)); // "go"
+
+        assertEquals(2, server.definitions.size(), "each word is asked about");
+        assertTrue(server.held.get(0).isCancelled(), "the first word's question was withdrawn");
+        assertFalse(server.held.get(1).isDone(), "the word under the mouse is still asked");
+        server.holdDefinitions = false;
+        fx.run(() -> buffer.definitionProbe.probe(1, 9, answers::add)); // the same word again: the same question
+        assertEquals(2, server.definitions.size(), "an identical probe joins the one on its way");
+        @SuppressWarnings("unchecked")
+        var second = (java.util.concurrent.CompletableFuture<Object>) server.held.get(1);
+        second.complete(org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(
+                List.of(new Location(buffer.getPath().toUri().toString(), range(1, 9, 11)))));
+        fx.settle();
+        assertEquals(List.of(true), answers, "only the current word's answer arrives");
     }
 
     /** The marks put back include the faded tags ("os is not accessed"), which the Problems list leaves out:

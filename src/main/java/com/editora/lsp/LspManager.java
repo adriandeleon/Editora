@@ -3402,6 +3402,11 @@ public final class LspManager {
         navigation.definition(file, line, character, cb, onError);
     }
 
+    /** See {@link LspNavigationRequests#definitionProbe}. */
+    public void definitionProbe(Path file, int line, int character, Consumer<Boolean> found) {
+        navigation.definitionProbe(file, line, character, found);
+    }
+
     /** See {@link LspNavigationRequests#definitionAt}. */
     public void definitionAt(
             Path anchorFile, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {

@@ -1313,7 +1313,7 @@ public class EditorBuffer implements TabContent {
         }
         if (HtmlLinks.isHtml(language)) {
             long version = docVersion;
-            String text = a.getText();
+            String text = documentTextSnapshot(); // one string per version, not one per word hovered (L6)
             com.editora.perf.OffFx.then(HTML_LINK_HOVER_SITE, () -> HtmlLinks.at(text, offset), found -> {
                 if (docVersion != version || isDisposed()) {
                     answer.accept(null);

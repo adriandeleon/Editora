@@ -4587,7 +4587,7 @@ final class LspCoordinator {
         buffer.setDefinitionProbe((line, character, found) -> {
             Path path = lspPath(buffer);
             if (path != null && lspManager.isManaged(path)) {
-                lspManager.definition(path, line, character, targets -> found.accept(!targets.isEmpty()));
+                lspManager.definitionProbe(path, line, character, found::accept); // a new word cancels the last
             } else {
                 found.accept(false);
             }
