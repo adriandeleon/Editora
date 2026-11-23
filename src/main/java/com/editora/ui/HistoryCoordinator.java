@@ -1353,6 +1353,12 @@ final class HistoryCoordinator {
             publish();
             return;
         }
+        if (completion instanceof Batched batched) {
+            // Listed in memory; the batch writes the index once, at its end.
+            batched.batch().listed = true;
+            completion.accept(true);
+            return;
+        }
         ops.saveHistory(completion);
         ops.historyChanged();
     }
@@ -2278,6 +2284,65 @@ final class HistoryCoordinator {
 
     /** As {@link #captureBeforeOverwriteDurably(Path, Consumer)}, recording under {@code reason}. */
     void captureBeforeOverwriteDurably(Path file, String reason, Consumer<OverwriteCapture> completion) {
+        captureBeforeOverwriteDurably(file, reason, null, completion);
+    }
+
+    /**
+     * {@link #captureBeforeOverwriteDurably} for each of {@code files} in turn, as one publication: every revision is
+     * stored and listed first, and the index is written (and made durable) once at the end, instead of once per
+     * file — a Rollback of a thousand files wrote the whole index a thousand times (F3, perf review 2026-11-23).
+     * Tells {@code done} on the FX thread, as {@link HistoryOverwriteCaptures#captureAll} does: empty when every
+     * file is safe to overwrite, else the file whose copy could not be made.
+     */
+    void captureAllBeforeOverwriteDurably(List<Path> files, Consumer<java.util.Optional<Path>> done) {
+        Objects.requireNonNull(done, "done");
+        PublishBatch batch = new PublishBatch();
+        HistoryOverwriteCaptures.captureAll(
+                files,
+                (file, completion) -> captureBeforeOverwriteDurably(file, HistoryRevision.REASON_EXTERNAL, batch, c -> {
+                    if (c.recorded()) {
+                        batch.last = file;
+                    }
+                    completion.accept(c);
+                }),
+                failed -> {
+                    Path last = batch.last;
+                    if (!batch.listed || last == null) {
+                        done.accept(failed);
+                        return;
+                    }
+                    if (failed.isPresent()) {
+                        publish(); // what was listed before the failure is kept, as it was when each was written
+                        done.accept(failed);
+                        return;
+                    }
+                    // The one write that makes the whole batch durable; until it is, nothing is overwritten.
+                    publish(durable -> onFx(
+                            () -> done.accept(durable ? java.util.Optional.empty() : java.util.Optional.of(last))));
+                });
+    }
+
+    /**
+     * Revisions recorded together whose index write is left to the end ({@link #captureAllBeforeOverwriteDurably}):
+     * a record inside it is listed in memory and told so at once, and {@link #listed} says a write is owed.
+     */
+    private static final class PublishBatch {
+        boolean listed;
+
+        @Nullable
+        Path last;
+    }
+
+    /** A record's durable completion inside a {@link PublishBatch}: {@link #publish(Consumer)} defers to the batch. */
+    private record Batched(PublishBatch batch, Consumer<Boolean> completion) implements Consumer<Boolean> {
+        @Override
+        public void accept(Boolean durable) {
+            completion.accept(durable);
+        }
+    }
+
+    private void captureBeforeOverwriteDurably(
+            Path file, String reason, @Nullable PublishBatch batch, Consumer<OverwriteCapture> completion) {
         Objects.requireNonNull(completion, "completion");
         if (file == null) {
             completion.accept(new OverwriteCapture(false, false, null));
@@ -2314,13 +2379,15 @@ final class HistoryCoordinator {
                 completion.accept(new OverwriteCapture(true, false, bytes));
                 return;
             }
+            Consumer<Boolean> durableCompletion =
+                    durable -> onFx(() -> completion.accept(new OverwriteCapture(durable, durable, bytes)));
             recordFor(
                     file,
                     text,
                     reason,
                     "",
                     false,
-                    durable -> onFx(() -> completion.accept(new OverwriteCapture(durable, durable, bytes))));
+                    batch == null ? durableCompletion : new Batched(batch, durableCompletion));
         });
     }
 
