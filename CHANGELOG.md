@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **PHP web apps and PHPUnit.** Run File and Debug File now run a PHP file as what it is: a script, a web app's
+  `index.php` on PHP's built-in web server, a Laravel app as `artisan serve` serves it, or a PHPUnit test file's tests.
+  Debugging a web app stops at your breakpoints on each request, and F5 in any class file of the app serves it. Debug
+  Test at Caret debugs the PHPUnit test at the caret alone. **Debug: Listen for Xdebug** waits for PHP you start
+  yourself, such as a request to your own web server, without a launch.json.
 - **Conditions on instruction breakpoints.** An instruction breakpoint in the Disassembly view can now have a
   condition and a hit count (Edit Breakpoint… on its row), as a line breakpoint can, where the debugger takes them
   (CodeLLDB, GDB, Delve). The Breakpoints list shows the session's instruction breakpoints too: Enter opens the

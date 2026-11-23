@@ -377,6 +377,7 @@ final class MenuBarModel {
                                                 "debug.attachToProcess",
                                                 "debug.reattach",
                                                 "debug.openCoreDump",
+                                                "debug.listenXdebug",
                                                 SEPARATOR,
                                                 "debug.browser",
                                                 "debug.attachBrowser")),

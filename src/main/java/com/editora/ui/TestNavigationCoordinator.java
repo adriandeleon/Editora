@@ -630,6 +630,12 @@ final class TestNavigationCoordinator {
         if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugJsTestAtCaret(b)) {
             return;
         }
+        // A PHPUnit test at the caret is debugged on Xdebug: PHPUnit runs the file, filtered to it.
+        if (debug
+                && host.debugCoordinator() != null
+                && host.debugCoordinator().php.debugTestAtCaret(b)) {
+            return;
+        }
         // A Dart test file's test or group at the caret is debugged on dart (or flutter) debug_adapter --test.
         if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugDartTestAtCaret(b)) {
             return;

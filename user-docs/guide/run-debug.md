@@ -8,7 +8,7 @@ order: 1
 ## Running files
 
 You can run compact Java files, Python scripts, Node.js scripts, shell scripts,
-Groovy scripts, Kotlin files, Clojure files and Scala files with
+Groovy scripts, Kotlin files, Clojure files, Scala files and PHP files with
 [language services](/docs/lsp) disabled. A green ▶ appears in the gutter of a
 runnable file:
 
@@ -40,6 +40,9 @@ runnable file:
   or an object's `def main(args: Array[String])`, and on the first line of a
   `.sc` script. A build definition (`build.sbt`, `build.mill`, `build.sc`) gets
   none. See [Scala files](#scala-files).
+- a **PHP** script with code of its own, a web app's `index.php`, Laravel's
+  `artisan` (the ▶ on the first line), or a PHPUnit test file (the ▶ on its
+  class). A file of classes alone gets none. See [PHP files](#php-files).
 
 Click the ▶, use the right-click *Run File*, or bind `file.run` (`C-c r`). Output
 streams to the **Run** tool window (`M-9`), which accepts **stdin** so
@@ -422,6 +425,25 @@ passes as `JAVA_HOME`. Editora finds it as `scala-cli` on your `PATH`, then
 `scalacli` and `scala`. When there is none, Run says Scala CLI is not installed
 instead of starting anything. The first run of a Scala version downloads its
 compiler, so it takes longer.
+
+### PHP files
+
+*Run File* on a PHP file runs what it is:
+
+- a **script** runs as `php file` in its folder;
+- a web app's **`index.php`** is served by PHP's built-in web server on its
+  folder: `php -S 127.0.0.1:8000 -t public`. The first free port from 8000 is
+  used, and the address appears in the Run console, ready to click;
+- a **Laravel** app's `artisan` or `public/index.php` is served as
+  `php artisan serve` serves it: the built-in server in `public/`, with
+  Laravel's router. Run `composer install` first: the router is in `vendor/`;
+- a **PHPUnit test file** (`…Test.php` with a `TestCase` class) runs its tests
+  with the project's PHPUnit (`vendor/bin/phpunit`, else `phpunit` on your
+  PATH), in the folder of its `phpunit.xml` or `composer.json`.
+
+**Debug File** (F5) does the same with Xdebug (see
+[Debugging PHP](#debugging-php)). Pressed in a class file of a web app, F5
+serves the app that file is part of.
 
 ### Run with Trace
 
@@ -931,6 +953,7 @@ script as it runs.
 | Attach to a program on this machine ([Attach to Process](#attach-to-process)) | `debug.attachToProcess` | (palette) |
 | Attach again to the last address | `debug.reattach` | `C-c C-d S-a` |
 | Open a [core dump](#opening-a-core-dump) | `debug.openCoreDump` | (palette) |
+| [Listen for Xdebug](#debugging-php) | `debug.listenXdebug` | (palette) |
 | Open the [Evaluate window](#the-evaluate-window) | `debug.evaluate` | `C-c C-d x` |
 | Go to the [evaluate field](#the-evaluate-field-in-variables) in Variables | `debug.focusEvaluate` | (palette) |
 | Pin a value to the caret's line ([pinned values](#pinned-values)) | `debug.pinValue` | (palette) |
@@ -3349,10 +3372,19 @@ script under `bundle exec`, or attach to a program started with `rdbg --open`.
 
 PHP is debugged with [Xdebug](https://xdebug.org), through PHP Debug
 (vscode-php-debug), the adapter VS Code uses. **Debug: Start / Continue**
-(`debug.start`, F5) or **Debug File** starts `php` on the file with Xdebug
-turned on for that run, with the arguments set by **File: Run with
-Arguments…**, and stops at your breakpoints. The program's output reaches the
-Debug console. PHP's [exception breakpoints](#exception-breakpoints)
+(`debug.start`, F5) or **Debug File** runs the file as [Run File](#php-files)
+runs it, with Xdebug turned on for that run, and stops at your breakpoints:
+
+- a **script** runs with the arguments set by **File: Run with Arguments…**;
+- a **web app**: F5 on its `index.php`, Laravel's `artisan`, or any class file
+  of the app starts PHP's built-in web server, as VS Code's *Launch Built-in
+  web server* does. Each request you send it stops at your breakpoints and is
+  a thread of the session. Stop ends the server;
+- a **PHPUnit test file** runs its tests. **Debug Test at Caret** runs only the
+  test the caret is in: a method named `test…`, or marked `#[Test]` or
+  `@test`. Elsewhere in the file, all its tests run.
+
+The program's output reaches the Debug console. PHP's [exception breakpoints](#exception-breakpoints)
 (exceptions, errors, warnings, notices, deprecations, or everything) are off by
 default.
 
@@ -3364,10 +3396,15 @@ install, else in VS Code's PHP Debug extension (`xdebug.php-debug`). The card's
 **Install…** downloads PHP Debug 1.40.2. Editora doesn't install PHP or Xdebug.
 
 PHP has no Attach to Process: Xdebug connects to a debugger that listens for
-it. A [launch.json](#launchjson-configurations) `php` configuration without a
-`program`, VS Code's *Listen for Xdebug*, starts PHP Debug listening, and PHP
-run elsewhere, such as by a web server, with Xdebug set to connect to it stops
-at your breakpoints.
+it. **Debug: Listen for Xdebug** (`debug.listenXdebug`, also in **Run ▸ Launch and
+Attach**) starts PHP Debug listening on Xdebug's port, 9003, without a
+launch.json. PHP you start yourself then stops at your breakpoints: a request
+to your own web server, or a script run with `XDEBUG_SESSION` set, when Xdebug
+is set to connect (`xdebug.mode=debug`, with `xdebug.start_with_request=yes`
+or a trigger). The session listens until you stop it. A
+[launch.json](#launchjson-configurations) `php` configuration without a
+`program`, VS Code's *Listen for Xdebug*, does the same with its own port and
+path mappings.
 
 ### Debugging Bash
 
