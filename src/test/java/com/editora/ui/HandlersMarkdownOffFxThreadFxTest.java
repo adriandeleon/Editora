@@ -216,11 +216,14 @@ class HandlersMarkdownOffFxThreadFxTest {
         SettingsRig.awaitFx(
                 "the load's scan landed", () -> b.markdown().blockMap().current());
         List<Runnable> held = new CopyOnWriteArrayList<>();
+        // The pause's other passes (highlight, TODO, spell…) build the same text when they run; held too, so the
+        // count below sees only what asking for the map's scan cost.
+        List<Runnable> others = new CopyOnWriteArrayList<>();
         OffFx.runnerForTest((name, task) -> {
             if (name.equals(com.editora.editor.markdown.MarkdownBlockMap.SITE)) {
                 held.add(task);
             } else {
-                task.run();
+                others.add(task);
             }
         });
         long before = FxTestSupport.callOnFx(() -> materializations(b));
@@ -239,6 +242,7 @@ class HandlersMarkdownOffFxThreadFxTest {
                 FxTestSupport.callOnFx(() -> materializations(b)),
                 "the scan's text is built on its own thread, not when it is asked for");
         held.forEach(Runnable::run);
+        others.forEach(Runnable::run);
         FxTestSupport.drainFx();
         assertTrue(FxTestSupport.callOnFx(() -> b.markdown().blockMap().current()));
     }
