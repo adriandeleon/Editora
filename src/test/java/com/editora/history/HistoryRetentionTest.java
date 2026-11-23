@@ -299,7 +299,8 @@ class HistoryRetentionTest {
 
     /**
      * The policy written the slow, obvious way: rescan every file once per eviction. First the largest file
-     * above an equal share sheds its oldest evictable row, then the globally oldest evictable row goes.
+     * above an equal share sheds its oldest evictable row, then — unless what is never evicted is over the limit by
+     * itself — the globally oldest evictable row goes.
      */
     private static Map<String, List<HistoryRevision>> referenceBudget(
             Map<String, List<HistoryRevision>> bucket, long maxTotalBytes) {
@@ -332,7 +333,16 @@ class HistoryRetentionTest {
                 total -= out.get(largest).remove(idx).sizeBytes();
             }
         }
-        while (total > maxTotalBytes) {
+        long keptRegardless = 0; // each file's newest row and protected rows: never evicted
+        for (List<HistoryRevision> list : out.values()) {
+            for (int i = 0; i < list.size(); i++) {
+                if (i == 0 || HistoryRetention.isProtected(list.get(i))) {
+                    keptRegardless += list.get(i).sizeBytes();
+                }
+            }
+        }
+        // E2: oldest-first runs only when it can reach the limit
+        while (keptRegardless <= maxTotalBytes && total > maxTotalBytes) {
             String victimFile = null;
             int victimIndex = -1;
             long victimTs = Long.MAX_VALUE;

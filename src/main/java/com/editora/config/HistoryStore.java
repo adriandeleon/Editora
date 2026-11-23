@@ -147,6 +147,53 @@ public class HistoryStore {
         return changed;
     }
 
+    /** How far ahead of the clock a revision's time may be before it is taken for a clock that was wrong. */
+    static final long FUTURE_TOLERANCE_MILLIS = 86_400_000L;
+
+    /**
+     * Brings back to {@code now} every revision stamped more than {@link #FUTURE_TOLERANCE_MILLIS} ahead of it —
+     * captured while the computer's clock was set ahead, then corrected — and reports whether any was. Left as it
+     * was, such a revision was "newest" for good: every list is read newest-first by time, so it stood in front of
+     * every later save (the unchanged-content check and auto-save coalescing compared with it), and with an age
+     * below zero it was never old enough for any limit. Call before {@link #sortNewestFirst}.
+     */
+    boolean clampFutureTimestamps(long now) {
+        boolean changed = false;
+        for (Map<String, List<HistoryRevision>> bucket : byProject.values()) {
+            for (Map.Entry<String, List<HistoryRevision>> file : bucket.entrySet()) {
+                List<HistoryRevision> list = file.getValue();
+                if (list.stream().noneMatch(r -> r.timestamp() - now > FUTURE_TOLERANCE_MILLIS)) {
+                    continue;
+                }
+                file.setValue(list.stream()
+                        .map(r -> r.timestamp() - now > FUTURE_TOLERANCE_MILLIS ? r.withTimestamp(now) : r)
+                        .toList());
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    /**
+     * Adds {@code foreign} — revisions another writer put in the index on disk, per project and file — to this
+     * index, each file's list kept newest-first; a revision already listed is not listed twice.
+     */
+    void adopt(Map<String, Map<String, List<HistoryRevision>>> foreign) {
+        foreign.forEach((project, files) -> {
+            Map<String, List<HistoryRevision>> into = bucket(project);
+            files.forEach((file, rows) -> {
+                List<HistoryRevision> present = into.getOrDefault(file, List.of());
+                java.util.LinkedHashSet<HistoryRevision> all = new java.util.LinkedHashSet<>(present);
+                if (!all.addAll(rows)) {
+                    return;
+                }
+                List<HistoryRevision> merged = new ArrayList<>(all);
+                merged.sort(Comparator.comparingLong(HistoryRevision::timestamp).reversed());
+                into.put(file, merged);
+            });
+        });
+    }
+
     /**
      * This index as it is now, for another thread to serialize: immutable, and sharing with the previous
      * snapshot the copy of every project that has not changed since.
