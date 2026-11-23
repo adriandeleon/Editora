@@ -968,8 +968,8 @@ file (load and edits), opening a 20 MB file, heap per open tab and what closing 
 45 MB, save, and a bare `CodeArea` as a control for machine noise. Runs alternate between the builds (new, base,
 then base, new) and the script prints a markdown table of medians with the change and each metric's spread
 (the larger side's (max − min) / median), marking a metric more than 10 % worse **▲** when the change is larger
-than the spread and **▲?** when it is not (likely noise: re-run that mode, with more reps or on a quieter
-machine); the table goes in the release PR. `PERF_RESUMMARIZE=1 PERF_OUT=<run directory>` prints an earlier
+than the spread and **▲?** when it is not, or when a side has fewer than 3 runs (likely noise: re-run that mode,
+with more reps or on a quieter machine); the table goes in the release PR. `PERF_RESUMMARIZE=1 PERF_OUT=<run directory>` prints an earlier
 run's table again. Run logs, folded FX-thread stacks
 (flame-graph input) and `metrics.tsv` stay under `target/perf-ab/`.
 
@@ -981,6 +981,9 @@ run's table again. Run logs, folded FX-thread stacks
 - **Count frames, not only FX busy time.** The frames-per-key regression was invisible to FX-thread sampling:
   the extra work was in the render pass. The probe counts frames with JavaFX's `PerformanceTracker`
   (`setOnRenderedFrameTask`).
+- **Confirm before chasing.** The first run of this harness, on a loaded machine with 2 reps, flagged highlighting
+  a 79k-line file as settling 56 % slower; 5 reps on a quieter machine and JFR on both builds showed the same work,
+  slightly less of it on the new build. Re-run a flagged mode alone with 5 reps first.
 - **To find the cause** of a flagged metric, re-run that mode alone (`PERF_MODES=typing:2000`), read the
   `by deepest app frame` lines of its run log or the `.folded` stacks, or record JFR:
   `PERF_JAVA_OPTS="-XX:StartFlightRecording -Dprobe.jfr=/tmp/probe.jfr"`.
