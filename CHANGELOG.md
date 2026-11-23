@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Debug Test at Caret for Dart.** In a Dart `_test.dart` file, Debug Test at Caret debugs the `test`,
+  `testWidgets` or `group` the caret is in, alone, on Dart's (or Flutter's) test runner; outside them, every test of
+  the file.
+
 - **Dart and Flutter.** Editora now knows Dart: syntax colouring, comments, indenting and folding, the
   Structure panel and Go to Symbol, snippets, a New File template and its file icon. With the Dart SDK (or
   Flutter's) installed, Dart's own analysis server gives errors, completion, navigation, rename and formatting

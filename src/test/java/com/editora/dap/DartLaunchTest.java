@@ -71,4 +71,19 @@ class DartLaunchTest {
         assertFalse(DebugLanguages.all().contains(DebugLanguages.FLUTTER), "not a language of its own");
         assertNull(DebugLanguages.forLanguage("flutter"));
     }
+
+    @Test
+    void aTestRunsOnTheAdaptersTestModeNarrowedToTheTest() {
+        Path file = APP.resolve("test/calc_test.dart");
+        DartLaunch.Plan plan = DartLaunch.testPlan(file, APP, "name: app\n", new DartTests.Target("calc adds", false));
+        assertEquals(DebugLanguages.DART, plan.language());
+        assertEquals(List.of("--name", "^calc adds$"), plan.launch().get("toolArgs"));
+        assertEquals(false, plan.launch().get("debugSdkLibraries"));
+        assertEquals(List.of("--test"), DartLaunch.TEST_MODE);
+
+        DartLaunch.Plan widget = DartLaunch.testPlan(file, APP, "dependencies:\n  flutter:\n    sdk: flutter\n", null);
+        assertEquals(DebugLanguages.FLUTTER, widget.language(), "flutter test, for a Flutter app's test");
+        assertEquals(
+                null, widget.launch().get("toolArgs"), "the whole file, and no -d: flutter test has its own device");
+    }
 }
