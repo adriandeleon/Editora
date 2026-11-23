@@ -191,6 +191,13 @@ public final class DapClient implements IDebugProtocolClient {
      * thrown exception for Editora to check its type). Not the user's choice, so not in {@link #exceptionFilters}.
      */
     private volatile List<String> extraExceptionFilters = List.of();
+
+    /**
+     * The exception types those exception breakpoints name, when the adapter can be told to stop on them alone
+     * ({@link PythonExceptionTypes}): sent as {@code exceptionOptions}, in place of {@link #extraExceptionFilters}, to
+     * an adapter that supports them. Empty: none, or the types cannot be told.
+     */
+    private volatile List<String> extraExceptionTypes = List.of();
     /** True once the adapter's {@code initialized} event installed the configuration (breakpoints +
      *  exception filters). Before that, a filter change only updates the field — {@link #initialized}
      *  will read it. After it, a change must be sent on the wire itself. */
@@ -319,9 +326,7 @@ public final class DapClient implements IDebugProtocolClient {
         IDebugProtocolServer s = server;
         if (s != null && configured) {
             try {
-                SetExceptionBreakpointsArguments ex = new SetExceptionBreakpointsArguments();
-                ex.setFilters(effectiveExceptionFilters().toArray(new String[0]));
-                ignore(timed(s.setExceptionBreakpoints(ex)));
+                ignore(timed(s.setExceptionBreakpoints(exceptionArguments())));
             } catch (RuntimeException e) {
                 LOG.log(Level.WARNING, "live setExceptionBreakpoints failed", e);
             }
@@ -339,6 +344,32 @@ public final class DapClient implements IDebugProtocolClient {
         List<String> chosen = exceptionFilters;
         List<String> base = chosen != null ? chosen : defaultExceptionFilters(exceptionFilterOptions());
         return withExtras(base, extraExceptionFilters, exceptionFilterOptions());
+    }
+
+    /**
+     * The {@code setExceptionBreakpoints} arguments in force: the filters ({@link #effectiveExceptionFilters}), or —
+     * with exception types to tell an adapter that supports {@code exceptionOptions} — the chosen filters and the
+     * types as options, so that it stops on those types only (perf review 2026-11-23, D1).
+     */
+    SetExceptionBreakpointsArguments exceptionArguments() {
+        SetExceptionBreakpointsArguments ex = new SetExceptionBreakpointsArguments();
+        List<String> types = extraExceptionTypes;
+        Capabilities caps = capabilities;
+        if (!types.isEmpty() && caps != null && Boolean.TRUE.equals(caps.getSupportsExceptionOptions())) {
+            List<String> chosen = exceptionFilters;
+            List<String> base = chosen != null ? chosen : defaultExceptionFilters(exceptionFilterOptions());
+            ex.setFilters(base.toArray(new String[0]));
+            ex.setExceptionOptions(PythonExceptionTypes.options(base, types));
+        } else {
+            ex.setFilters(effectiveExceptionFilters().toArray(new String[0]));
+        }
+        return ex;
+    }
+
+    /** Whether {@code ex} asks the adapter to stop on any exception. */
+    private static boolean stopsOnAny(SetExceptionBreakpointsArguments ex) {
+        return (ex.getFilters() != null && ex.getFilters().length > 0)
+                || (ex.getExceptionOptions() != null && ex.getExceptionOptions().length > 0);
     }
 
     /** {@code base} and {@code extras} together, in the order the adapter lists its filters. Pure. */
@@ -361,14 +392,24 @@ public final class DapClient implements IDebugProtocolClient {
 
     /** Sets {@link #extraExceptionFilters}, and sends the filters again when the session is running. */
     public void setExtraExceptionFilters(List<String> extras) {
+        setExtraExceptionFilters(extras, List.of());
+    }
+
+    /**
+     * Sets {@link #extraExceptionFilters} and {@link #extraExceptionTypes}, and sends the filters again when the
+     * session is running.
+     */
+    public void setExtraExceptionFilters(List<String> extras, List<String> types) {
         List<String> next = extras == null ? List.of() : List.copyOf(extras);
+        List<String> nextTypes = types == null ? List.of() : List.copyOf(types);
         synchronized (configurationLock) { // see setExceptionFilters
-            if (next.equals(extraExceptionFilters)) {
+            if (next.equals(extraExceptionFilters) && nextTypes.equals(extraExceptionTypes)) {
                 return;
             }
             this.extraExceptionFilters = next;
+            this.extraExceptionTypes = nextTypes;
             for (DapClient child : children) {
-                child.setExtraExceptionFilters(next);
+                child.setExtraExceptionFilters(next, nextTypes);
             }
             sendExceptionFiltersIfConfigured();
         }
@@ -882,10 +923,8 @@ public final class DapClient implements IDebugProtocolClient {
                 for (DapModels.FileBreakpoints fb : initialBreakpoints) {
                     configuring.add(setBreakpointsNow(fb));
                 }
-                List<String> filters = effectiveExceptionFilters();
-                if (!filters.isEmpty()) {
-                    SetExceptionBreakpointsArguments ex = new SetExceptionBreakpointsArguments();
-                    ex.setFilters(filters.toArray(new String[0]));
+                SetExceptionBreakpointsArguments ex = exceptionArguments();
+                if (stopsOnAny(ex)) {
                     CompletableFuture<?> sent = timed(server().setExceptionBreakpoints(ex));
                     ignore(sent);
                     configuring.add(sent);
@@ -1380,6 +1419,7 @@ public final class DapClient implements IDebugProtocolClient {
             child.initialBreakpoints = initialBreakpoints;
             child.exceptionFilters = exceptionFilters;
             child.extraExceptionFilters = extraExceptionFilters;
+            child.extraExceptionTypes = extraExceptionTypes;
             child.memberBreakpoints = memberBreakpoints;
             child.terminateOnDisconnect = terminateOnDisconnect; // js-debug's program runs in the child sessions
             children.add(child);

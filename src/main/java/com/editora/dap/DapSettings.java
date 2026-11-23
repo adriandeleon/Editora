@@ -79,6 +79,12 @@ final class DapSettings {
      */
     final Map<String, List<String>> exceptionExtras = new java.util.HashMap<>();
 
+    /**
+     * Language → the exception types its exception breakpoints name, when its adapter can be told them in place of
+     * {@link #exceptionExtras} ({@link PythonExceptionTypes}; {@link DapClient#setExtraExceptionFilters(List, List)}).
+     */
+    final Map<String, List<String>> exceptionTypes = new java.util.HashMap<>();
+
     /** Don't step into: every language's filters, as Settings keeps them ({@link StepFilters}). */
     volatile List<StepFilter> stepFilters = List.of();
 

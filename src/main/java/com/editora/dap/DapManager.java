@@ -422,7 +422,7 @@ public final class DapManager {
         if (client != null) {
             List<String> chosen = shared.exceptionChoices.get(sessionLanguage);
             client.setExceptionFilters(muted ? List.of() : chosen);
-            client.setExtraExceptionFilters(exceptionExtras());
+            client.setExtraExceptionFilters(exceptionExtras(), exceptionTypes());
         }
     }
 
@@ -431,12 +431,28 @@ public final class DapManager {
      * of the window: they are sent besides the user's choice. None while breakpoints are muted.
      */
     public void setExceptionExtras(Map<String, List<String>> extras) {
+        setExceptionExtras(extras, Map.of());
+    }
+
+    /**
+     * As {@link #setExceptionExtras(Map)}, with the exception types ({@code language → types}) an adapter that can be
+     * told them stops on in place of the extra filters (debugpy's {@code exceptionOptions}: {@link
+     * PythonExceptionTypes}).
+     */
+    public void setExceptionExtras(Map<String, List<String>> extras, Map<String, List<String>> types) {
         shared.exceptionExtras.clear();
         extras.forEach((language, filters) -> shared.exceptionExtras.put(language, List.copyOf(filters)));
+        shared.exceptionTypes.clear();
+        types.forEach((language, named) -> shared.exceptionTypes.put(language, List.copyOf(named)));
         DapClient c = client;
         if (c != null) {
-            c.setExtraExceptionFilters(exceptionExtras());
+            c.setExtraExceptionFilters(exceptionExtras(), exceptionTypes());
         }
+    }
+
+    /** The exception types the session's adapter may be told for its language's exception breakpoints. */
+    private List<String> exceptionTypes() {
+        return shared.exceptionsMuted ? List.of() : shared.exceptionTypes.getOrDefault(sessionLanguage, List.of());
     }
 
     /** The extra exception filters for the session's language: none while breakpoints are muted. */
@@ -6712,7 +6728,8 @@ public final class DapManager {
             }
             bashEntryPassed = false; // a new session: bashdb stops at its script's first line again
             candidate.setMemberBreakpoints(shared.memberBreakpoints); // sent on its initialized event
-            candidate.setExtraExceptionFilters(exceptionExtras()); // its language's exception breakpoints need
+            candidate.setExtraExceptionFilters(
+                    exceptionExtras(), exceptionTypes()); // its language's exception breakpoints need
             String language = sessionLanguage;
             List<String> skips = StepFilters.patterns(shared.stepFilters, language);
             int limit = shared.evaluationTimeLimit;

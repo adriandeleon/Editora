@@ -144,7 +144,9 @@ final class ExceptionBreakpointCommands {
     void push() {
         Map<String, List<String>> extras =
                 d.breakpointsMuted() ? Map.of() : ExceptionBreakpoints.extras(ops.exceptionBreakpoints());
-        d.forEachSession(() -> d.dap().setExceptionExtras(extras));
+        Map<String, List<String>> types =
+                d.breakpointsMuted() ? Map.of() : ExceptionBreakpoints.adapterTypes(ops.exceptionBreakpoints());
+        d.forEachSession(() -> d.dap().setExceptionExtras(extras, types));
     }
 
     /**

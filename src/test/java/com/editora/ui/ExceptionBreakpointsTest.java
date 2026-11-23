@@ -132,4 +132,17 @@ class ExceptionBreakpointsTest {
                 ExceptionBreakpoints.label(back.exceptions("p").getFirst(), "any"));
         assertEquals("any", ExceptionBreakpoints.label(bp("java", ""), "any"));
     }
+
+    @Test
+    void pythonBreakpointsOfBuiltinTypesAreToldToTheAdapter() {
+        assertEquals(
+                Map.of("python", List.of("ValueError", "KeyError")),
+                ExceptionBreakpoints.adapterTypes(
+                        List.of(bp("python", "ValueError"), bp("python", "KeyError, ValueError"), bp("java", "X"))));
+        assertEquals(
+                Map.of(),
+                ExceptionBreakpoints.adapterTypes(List.of(bp("python", "ValueError"), bp("python", "app.MyError"))),
+                "one the adapter cannot be told: it stops on every raised exception, as before");
+        assertEquals(Map.of(), ExceptionBreakpoints.adapterTypes(List.of(bp("python", ""))), "any type");
+    }
 }
