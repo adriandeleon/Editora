@@ -949,6 +949,43 @@ the canonical form of the store as loaded — the "nothing changed" check and th
 against it — and a decoded-bytes baseline would change what a merge keeps of another writer's keys. That
 serialization runs on the prefetch thread for every store a launch reads.
 
+## Release A/B review
+
+Every release is measured against the previous release tag before it is tagged ([release](release.md), step 3),
+because regressions ship unnoticed otherwise: the November 2026 review found startup +48 %, heap per tab ×2 and
+rendered frames per keystroke +88 % against October, none of which a test had caught. Everything but startup is
+one command:
+
+```
+scripts/perf-ab.sh v0.28.0 3        # the previous release tag, and the number of repetitions
+```
+
+It checks the tag out in a worktree beside the main checkout (reused on later runs), builds both trees, and runs
+`src/perf/java/com/editora/ui/PerfProbe.java` against each: a headless probe that boots a real window through the
+test fixtures and drives one scenario per run — typing (FX-thread time, process CPU, FX allocation, **rendered
+frames** and pulses per keystroke, newline), smooth scrolling and far jumps, 20 s idle, highlighting a 79k-line
+file (load and edits), opening a 20 MB file, heap per open tab and what closing them leaves behind, Find over
+45 MB, save, and a bare `CodeArea` as a control for machine noise. Runs alternate between the builds (new, base,
+then base, new) and the script prints a markdown table of medians with the change and each metric's spread,
+marking anything more than 10 % worse; the table goes in the release PR. Run logs, folded FX-thread stacks
+(flame-graph input) and `metrics.tsv` stay under `target/perf-ab/`.
+
+- **Both sides run the same probe.** The script compiles the current probe source against each build. What
+  moved between releases is reached by reflection (`searchMethod`, `openPath`, `createFixture`), so keep doing
+  that when the probe needs an API that changes; `PerfProbeCompilesTest` keeps it compiling against the current
+  tree. If it still cannot compile against the baseline, the script falls back to the baseline's own copy and
+  says so.
+- **Count frames, not only FX busy time.** The frames-per-key regression was invisible to FX-thread sampling:
+  the extra work was in the render pass. The probe counts frames with JavaFX's `PerformanceTracker`
+  (`setOnRenderedFrameTask`).
+- **To find the cause** of a flagged metric, re-run that mode alone (`PERF_MODES=typing:2000`), read the
+  `by deepest app frame` lines of its run log or the `.folded` stacks, or record JFR:
+  `PERF_JAVA_OPTS="-XX:StartFlightRecording -Dprobe.jfr=/tmp/probe.jfr"`.
+- It uses a quarter of the machine's cores (2–4, `PERF_CPUS`) and JDK 25 (`~/.jkit/global/jdk`, or
+  `PERF_JAVA_HOME`). A full run of 3 reps takes about an hour.
+- Startup is not covered (it needs a display): measure it with `scripts/measure-startup.sh -n 7` on both builds,
+  interleaved.
+
 ## Packaged-runtime tuning
 
 The dist `<javaOptions>` (mirrored into `javafx:run` so dev == prod) pin heap and GC:

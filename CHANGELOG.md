@@ -120,6 +120,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Before, only F5 started such a file, and Run said it was not runnable. Debug: Debug Current File now also works on
   a file that Run File runs.
 
+- **Internal: a performance A/B against the previous release.** `scripts/perf-ab.sh <tag> [reps]` builds the
+  previous release in a worktree beside the main checkout and runs a headless probe against both builds,
+  interleaved: typing (including rendered frames per keystroke), scrolling, idle, highlighting, a large file, heap
+  per tab, Find and save. It prints a table of medians and marks anything more than 10 % worse. Each release now
+  runs it before the tag (docs/release.md, step 3).
+
 ### Changed
 
 - **Faster typing, startup and large projects** (performance review of 2026-11-23).
