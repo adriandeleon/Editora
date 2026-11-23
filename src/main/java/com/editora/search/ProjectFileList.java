@@ -69,6 +69,11 @@ public final class ProjectFileList {
     private final boolean truncated;
     private volatile boolean stale;
     private @Nullable Snapshot snapshot;
+    /**
+     * When the disk was last known to match the list (wall clock, ms): the start of the walk, then of each
+     * {@link #revalidate}. A folder modified since may have gained or lost an entry no event reported.
+     */
+    private volatile long validatedAt;
 
     private ProjectFileList(
             Path root,
@@ -83,6 +88,11 @@ public final class ProjectFileList {
         this.files = files;
         this.folders = folders;
         this.truncated = truncated;
+    }
+
+    private ProjectFileList at(long when) {
+        validatedAt = when;
+        return this;
     }
 
     /**
@@ -101,6 +111,7 @@ public final class ProjectFileList {
             Path root, Settings settings, @Nullable GitignoreFilter gitignore, BooleanSupplier cancelled) {
         Path normalized = root.toAbsolutePath().normalize();
         BooleanSupplier stop = cancelled == null ? () -> false : cancelled;
+        long started = System.currentTimeMillis();
         if (!Vfs.isLocal(normalized)) {
             ProjectFileList listed = listRemote(normalized, settings);
             if (listed != null) {
@@ -131,7 +142,7 @@ public final class ProjectFileList {
         if (stop.getAsBoolean()) {
             return null;
         }
-        return new ProjectFileList(normalized, settings, ignore, files, folders, outcome.truncated());
+        return new ProjectFileList(normalized, settings, ignore, files, folders, outcome.truncated()).at(started);
     }
 
     /** One command on the host; {@code null} when the host runs none (the caller walks over SFTP then). */
@@ -179,6 +190,120 @@ public final class ProjectFileList {
     /** Whether the cap or the depth limit cut the listing short. */
     public boolean truncated() {
         return truncated;
+    }
+
+    /** What {@link #revalidate} found. */
+    public enum Revalidation {
+        /** Every listed folder is as it was listed. */
+        UNCHANGED,
+        /** Some folders gained or lost entries; the list has been brought up to date. */
+        CHANGED,
+        /** A cheap look could not tell (a remote root, ignore rules changed, too many folders moved): list again. */
+        RELIST
+    }
+
+    /** Beyond this many folders modified since the last look, listing again is cheaper than looking at each. */
+    static final int MAX_REVALIDATED_FOLDERS = 64;
+
+    /**
+     * Allowance for file systems whose modification times are coarse (a second or two): a folder modified this
+     * close before the last look is looked at again.
+     */
+    static final long MTIME_SLACK_MS = 2_000;
+
+    /**
+     * Checks the list against the disk by the folders' modification times — one stat per listed folder instead of
+     * a walk with a stat per file — and looks again at the direct entries of each folder modified since the list
+     * was last known to be current: what something outside the editor added or removed in a folder nobody watches
+     * (a focus regain, F4 of perf review 2026-11-23). A file rewritten in place changes no folder, and no name.
+     * Blocking: off the FX thread.
+     */
+    public Revalidation revalidate(BooleanSupplier cancelled) {
+        if (!Vfs.isLocal(root)) {
+            return Revalidation.RELIST;
+        }
+        long started = System.currentTimeMillis();
+        long since = validatedAt - MTIME_SLACK_MS;
+        if (settings.respectGitignore() && modifiedSince(root.resolve(".gitignore"), since)) {
+            return Revalidation.RELIST; // the rules the list was made by changed
+        }
+        List<String> known;
+        synchronized (this) {
+            known = new ArrayList<>(folders.size() + 1);
+            known.add("");
+            known.addAll(folders);
+        }
+        List<String> moved = new ArrayList<>();
+        for (String rel : known) {
+            if (cancelled.getAsBoolean()) {
+                return Revalidation.UNCHANGED; // nothing was changed; the next look starts from the same time
+            }
+            if (modifiedSince(rel.isEmpty() ? root : root.resolve(rel), since)) {
+                moved.add(rel);
+                if (moved.size() > MAX_REVALIDATED_FOLDERS) {
+                    return Revalidation.RELIST;
+                }
+            }
+        }
+        boolean changed = false;
+        for (String rel : moved) {
+            changed |= relookFolder(rel);
+            if (stale) {
+                return Revalidation.RELIST; // a created folder held too much: listChanged asked for a listing
+            }
+        }
+        validatedAt = started;
+        return changed ? Revalidation.CHANGED : Revalidation.UNCHANGED;
+    }
+
+    private static boolean modifiedSince(Path path, long since) {
+        try {
+            BasicFileAttributes attrs =
+                    Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            return attrs.lastModifiedTime().toMillis() >= since;
+        } catch (IOException | RuntimeException gone) {
+            return false; // a folder that went away: its parent's time moved too, and that look removes it
+        }
+    }
+
+    /** Brings the direct entries of folder {@code rel} ("" for the root) up to date; whether anything changed. */
+    private boolean relookFolder(String rel) {
+        Path dir = rel.isEmpty() ? root : root.resolve(rel);
+        String prefix = rel.isEmpty() ? "" : rel + "/";
+        Set<String> onDisk = new java.util.HashSet<>();
+        try (java.util.stream.Stream<Path> entries = Files.list(dir)) {
+            entries.forEach(p -> onDisk.add(prefix + p.getFileName()));
+        } catch (IOException | RuntimeException unreadable) {
+            return false; // gone or unreadable: its parent's look, or the next listing, says so
+        }
+        List<Path> toLook = new ArrayList<>();
+        List<String> gone = new ArrayList<>();
+        synchronized (this) {
+            for (String name : onDisk) {
+                if (!files.contains(name) && !folders.contains(name)) {
+                    toLook.add(root.resolve(name)); // new here, or left out by the rules: changedOne decides
+                }
+            }
+            for (String file : files) {
+                if (directlyIn(file, prefix) && !onDisk.contains(file)) {
+                    gone.add(file);
+                }
+            }
+            for (String folder : folders) {
+                if (directlyIn(folder, prefix) && !onDisk.contains(folder)) {
+                    gone.add(folder);
+                }
+            }
+        }
+        Snapshot before = snapshot();
+        gone.forEach(this::remove);
+        changed(toLook);
+        return snapshot() != before;
+    }
+
+    /** Whether {@code rel} is a direct entry of the folder whose names start with {@code prefix}. */
+    private static boolean directlyIn(String rel, String prefix) {
+        return rel.startsWith(prefix) && rel.indexOf('/', prefix.length()) < 0;
     }
 
     /** Something may have changed that no event reported (a focus regain, a lost event): list again soon. */

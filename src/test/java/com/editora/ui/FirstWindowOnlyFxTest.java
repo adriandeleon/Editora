@@ -53,11 +53,13 @@ class FirstWindowOnlyFxTest {
     private static final Map<Pattern, String> PART_OF_THE_WINDOW = new LinkedHashMap<>();
 
     static {
-        allow("^mc\\.menuBar\\.", "the rows of the menu bar's menus: the menu bar is on screen");
         allow("\\.stripeButtons\\{", "the stripe's button for a tool window that is not on the stripe right now");
         allow("^mc\\.findBar\\.", "the find bar's options, in the bar's own menu");
         allow("\\.toolbarBaseWidgets\\{", "a toolbar button the toolbar layout in use leaves out");
         allow("^mc\\.welcomePane\\.", "the Welcome page a fresh window shows, before its first layout pass");
+        allow(
+                "^mc\\.projectPanel\\.(placeholderPane|disconnectedPane|disconnectedLabel|reconnectButton)$",
+                "the Project panel's other bodies (no folder, a remote folder disconnected), swapped in by its state");
         allow("\\.expertExitButton$", "the button that leaves Expert mode, placed in the tab strip while it is on");
         // An editor's own parts, when the window opens on a file:
         allow("\\.minimap\\.offscreen$", "the minimap's drawing surface");
@@ -104,6 +106,43 @@ class FirstWindowOnlyFxTest {
         }
     }
 
+    /**
+     * A project window whose Project tool window was open last time builds the Project panel before its first
+     * paint, but not the Project Map in it: the Map, its window and its search row are built on the Map's first open.
+     */
+    @Test
+    void aWindowWithTheProjectPanelOpenBuildsNoMap() throws Exception {
+        List<Window> before = showing();
+        try (FxWindowFixture fx = FxWindowFixture.create()) {
+            Path root = fx.useProject();
+            Files.writeString(root.resolve("a.txt"), "a\n");
+            MainController c = fx.controller;
+            ToolWindowManager manager = FxTestSupport.field(c, "toolWindows");
+            ToolWindow project = FxTestSupport.field(c, "projectToolWindow");
+            FxTestSupport.runOnFx(() -> manager.open(project, false)); // what restoring an open Project does
+            for (int i = 0; i < 3; i++) {
+                FxTestSupport.runOnFx(() -> {});
+            }
+            ProjectPanel panel = (ProjectPanel) FxTestSupport.callOnFx(project::contentIfBuilt);
+            assertTrue(panel != null, "the Project panel is built when its window opens");
+            assertFalse(FxTestSupport.callOnFx(panel::mapBuilt), "the Project Map is built on its first open");
+            assertOnlyTheFirstWindow(fx, before);
+
+            // Opened, the Map has what the window pushed while it was not built: the project's folder.
+            FxTestSupport.runOnFx(() -> panel.openMapWindow(false));
+            try {
+                assertTrue(FxTestSupport.callOnFx(panel::mapBuilt));
+                assertTrue(FxTestSupport.callOnFx(panel::isMapShowing), "the Map's window shows");
+                assertEquals(
+                        root.toAbsolutePath().normalize(),
+                        FxTestSupport.callOnFx(() -> FxTestSupport.<Path>field(panel.mapView(), "root")),
+                        "the root set before the Map was built is the Map's");
+            } finally {
+                FxTestSupport.runOnFx(() -> panel.mapWindow().closeQuietly());
+            }
+        }
+    }
+
     /** The windows showing now: another test class in this JVM may have left one open. */
     private static List<Window> showing() throws Exception {
         return FxTestSupport.callOnFx(() -> List.copyOf(Window.getWindows()));
@@ -136,6 +175,10 @@ class FirstWindowOnlyFxTest {
         assertNull(rawField(settings, "stage"), "the Settings window's stage is made by its first show");
         assertFalse((Boolean) rawField(settings, "built"), "the Settings pages are built by the first show");
         assertNull(rawField(rawField(c, "doctorCoordinator"), "pane"), "the Doctor page");
+        MainMenuBar menuBar = (MainMenuBar) rawField(c, "menuBar");
+        assertTrue(
+                FxTestSupport.callOnFx(() -> menuBar.onSystemMenuBar() || menuBar.rowsUnbuilt()),
+                "the menu bar's rows are built when each menu first opens");
     }
 
     /** A field's value as it is: {@link FxTestSupport#field} would build a panel through its accessor. */

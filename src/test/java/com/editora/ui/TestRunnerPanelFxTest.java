@@ -432,4 +432,65 @@ class TestRunnerPanelFxTest {
                 tr("testrunner.tap.unavailable"),
                 tree.getRoot().getChildren().get(0).getValue().displayName());
     }
+
+    /**
+     * A live update redraws the visible rows in place (perf review P4): the cell keeps its row, and only the
+     * icon and the text change — no {@code tree.refresh()} rebuilding every cell and tooltip at each result.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void aLiveUpdateRedrawsTheRowInPlace() throws Exception {
+        TestRun run = new TestRun(BuildTool.GO, Path.of("."), List.of("test", "./..."), List.of(), 0L);
+        TestTreeBuilder.merge(
+                run.root(),
+                new ParsedSuite(
+                        "ex/pkg",
+                        List.of(new ParsedTest(
+                                "ex/pkg", "TestA", TestStatus.RUNNING, 0, null, null, null, null, null, 0))));
+        Object[] kept = new Object[2];
+        FxTestSupport.runOnFx(() -> {
+            TestRunnerPanel p = new TestRunnerPanel();
+            javafx.stage.Stage stage = new javafx.stage.Stage();
+            stage.setScene(new javafx.scene.Scene(p, 500, 400));
+            stage.show();
+            p.startRun("test ./...");
+            p.update(run);
+            kept[0] = p;
+            kept[1] = stage;
+        });
+        FxTestSupport.runOnFx(() -> {}); // a layout pass: the cells exist
+        TestRunnerPanel panel = (TestRunnerPanel) kept[0];
+        TreeView<TestNode> tree = FxTestSupport.field(panel, "tree");
+        FxTestSupport.runOnFx(() -> {
+            try {
+                tree.layout();
+                TestRunnerPanel.TestTreeCell cell = (TestRunnerPanel.TestTreeCell) tree.lookupAll(".tree-cell").stream()
+                        .filter(n -> n instanceof TestRunnerPanel.TestTreeCell c
+                                && c.getItem() != null
+                                && "TestA".equals(c.getItem().displayName()))
+                        .findFirst()
+                        .orElseThrow();
+                javafx.scene.Node row = cell.getGraphic();
+                javafx.scene.layout.HBox box = (javafx.scene.layout.HBox) row;
+                assertEquals(2, box.getChildren().size(), "icon and name, no duration yet");
+                javafx.scene.Node runningIcon = box.getChildren().get(0);
+
+                TestTreeBuilder.merge(
+                        run.root(),
+                        new ParsedSuite(
+                                "ex/pkg",
+                                List.of(new ParsedTest(
+                                        "ex/pkg", "TestA", TestStatus.PASSED, 12, null, null, null, null, null, 0))));
+                panel.update(run);
+                assertTrue(cell.getGraphic() == row, "the same row, redrawn");
+                assertEquals(3, box.getChildren().size(), "the duration appears");
+                assertEquals("12 ms", ((Label) box.getChildren().get(2)).getText());
+                assertTrue(box.getChildren().get(0) != runningIcon, "the icon follows the status");
+                ((javafx.stage.Stage) kept[1]).hide();
+            } catch (RuntimeException e) {
+                ((javafx.stage.Stage) kept[1]).hide();
+                throw e;
+            }
+        });
+    }
 }

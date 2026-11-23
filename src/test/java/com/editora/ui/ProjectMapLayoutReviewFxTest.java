@@ -457,6 +457,132 @@ class ProjectMapLayoutReviewFxTest {
         });
     }
 
+    // ---- perf review 2026-11-23 S1, S2, S7: no sort on a zoom, a hover or a filter's keystroke --------
+
+    @Test
+    void aZoomAHoverOrAColumnFilterSortsNoColumnAgain() throws Exception {
+        Path root = Files.createDirectory(temp.resolve("p")).toRealPath();
+        Path a = Files.createDirectory(root.resolve("a"));
+        for (int i = 0; i < 40; i++) {
+            Files.writeString(a.resolve(String.format("f%02d.txt", i)), "f");
+        }
+        Files.writeString(root.resolve("README.md"), "# P");
+        Shown map = open(root, 1000, 700);
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(map.view, "toggleDirectory", new Class<?>[] {Path.class}, a));
+        waitForFx(() -> contains(map.surface, a.resolve("f39.txt")));
+        FxTestSupport.drainFx();
+        FxTestSupport.runOnFx(() -> {
+            Map<String, Double> widths = FxTestSupport.field(map.surface, "measuredLabelWidths");
+            assertFalse(widths.isEmpty(), "the labels were measured for the layout");
+            // A zoom pulse: the columns are not grouped and sorted again, and a step that changes no card's header
+            // reuses the geometry too (S2).
+            long columns = FxTestSupport.field(map.surface, "columnsComputed");
+            long layouts = FxTestSupport.field(map.surface, "layoutsComputed");
+            for (double zoom : new double[] {1.0, 1.02, 1.05, 1.1}) {
+                FxTestSupport.call(
+                        map.surface,
+                        "setZoom",
+                        new Class<?>[] {double.class, double.class, double.class},
+                        zoom,
+                        0.0,
+                        0.0);
+                FxTestSupport.invoke(map.surface, "repaint");
+            }
+            assertEquals(layouts, (long) FxTestSupport.field(map.surface, "layoutsComputed"), "no header changed");
+            FxTestSupport.call(
+                    map.surface, "setZoom", new Class<?>[] {double.class, double.class, double.class}, 0.3, 0.0, 0.0);
+            FxTestSupport.invoke(map.surface, "repaint");
+            assertTrue(
+                    (long) FxTestSupport.field(map.surface, "layoutsComputed") > layouts,
+                    "far out the headers lose their controls: the geometry follows");
+            assertEquals(columns, (long) FxTestSupport.field(map.surface, "columnsComputed"), "but nothing is sorted");
+            FxTestSupport.call(
+                    map.surface, "setZoom", new Class<?>[] {double.class, double.class, double.class}, 1.0, 0.0, 0.0);
+            FxTestSupport.invoke(map.surface, "repaint");
+
+            // "Compact rows": the pointer crossing into another column only grows that card's band (S2).
+            map.view.setCompactRows(true);
+            FxTestSupport.invoke(map.surface, "paintNow");
+            select(map.surface, root.resolve("README.md"));
+            long compactLayouts = FxTestSupport.field(map.surface, "layoutsComputed");
+            long compactColumns = FxTestSupport.field(map.surface, "columnsComputed");
+            ProjectMapModel.ColumnId aColumn = columnOf(map.surface, a);
+            double[] rowBefore = rowBox(map.surface, a.resolve("f03.txt"));
+            double[] cardBefore = cardOf(map.surface, a);
+            FxTestSupport.call(map.surface, "layoutHover", new Class<?>[] {ProjectMapModel.ColumnId.class}, aColumn);
+            double[] cardAfter = cardOf(map.surface, a);
+            assertTrue(cardAfter[3] > cardBefore[3], "the hovered card shows its controls");
+            assertEquals(cardBefore[1] + cardBefore[3], cardAfter[1] + cardAfter[3], 0.01, "it grows upward");
+            assertEquals(rowBefore[1], rowBox(map.surface, a.resolve("f03.txt"))[1], 0.01, "its rows stay");
+            FxTestSupport.call(
+                    map.surface, "layoutHover", new Class<?>[] {ProjectMapModel.ColumnId.class}, (Object) null);
+            assertEquals(cardBefore[3], cardOf(map.surface, a)[3], 0.01, "and gives the band back");
+            assertEquals(compactLayouts, (long) FxTestSupport.field(map.surface, "layoutsComputed"));
+            assertEquals(compactColumns, (long) FxTestSupport.field(map.surface, "columnsComputed"));
+            map.view.setCompactRows(false);
+
+            // A column filter that hides the selection: the screen-reader text says where the row would stand
+            // without a pass over every column of the map, and the column is sorted once per listing (S1).
+            select(map.surface, a.resolve("f05.txt"));
+            FxTestSupport.invoke(map.surface, "paintNow");
+            MapColumnOrders orders = FxTestSupport.field(map.surface, "columnOrders");
+            long sorted = orders.sorted;
+            for (String text : new String[] {"f1", "f2", "f3"}) {
+                Map<ProjectMapModel.ColumnId, String> queries = FxTestSupport.field(map.surface, "columnQueries");
+                queries.put(aColumn, text);
+                FxTestSupport.invoke(
+                        map.surface, "repaint"); // the filter's own layout: one pass, as the keystroke does
+                long passes = ProjectMapModel.columnPassesForTest.get();
+                FxTestSupport.invoke(map.surface, "updateAccessibleText");
+                assertTrue(map.surface.getAccessibleText().contains(tr("project.map.accessible.state.filtered")));
+                assertEquals(passes, ProjectMapModel.columnPassesForTest.get(), "no whole-map column pass");
+            }
+            assertTrue(orders.sorted - sorted <= 1, "the column is sorted once: " + (orders.sorted - sorted));
+            Map<ProjectMapModel.ColumnId, String> queries = FxTestSupport.field(map.surface, "columnQueries");
+            queries.clear();
+            FxTestSupport.invoke(map.surface, "repaint");
+
+            // A listing change keeps the label widths: they are keyed by the text (S7).
+            Map<String, Double> kept = FxTestSupport.field(map.surface, "measuredLabelWidths");
+            int size = kept.size();
+            List<ProjectMapModel.Entry> entries = FxTestSupport.field(map.surface, "entries");
+            FxTestSupport.call(
+                    map.surface,
+                    "setEntries",
+                    new Class<?>[] {List.class, Set.class},
+                    new ArrayList<>(entries),
+                    Set.of(a));
+            assertTrue(kept.size() >= size, "the widths stay across a listing");
+        });
+    }
+
+    /** The world box of the card of {@code parent}'s children, {@code {x, y, w, h}} as last projected. */
+    private static double[] cardOf(Region surface, Path parent) {
+        FxTestSupport.invoke(surface, "paintNow");
+        List<?> columns = FxTestSupport.field(surface, "columnBoxes");
+        for (Object box : columns) {
+            if (parent.equals(column(box).parent())) {
+                return new double[] {origin(box, "x"), origin(box, "y"), origin(box, "width"), origin(box, "height")};
+            }
+        }
+        throw new AssertionError("no card for " + parent);
+    }
+
+    private static ProjectMapModel.ColumnId columnOf(Region surface, Path parent) {
+        List<?> columns = FxTestSupport.field(surface, "columnBoxes");
+        for (Object box : columns) {
+            if (parent.equals(column(box).parent())) {
+                return column(box).id();
+            }
+        }
+        throw new AssertionError("no card for " + parent);
+    }
+
+    private static double[] rowBox(Region surface, Path path) {
+        Object box = boxFor(surface, path);
+        return new double[] {origin(box, "x"), origin(box, "y"), origin(box, "width"), origin(box, "height")};
+    }
+
     // ---- D15: the breadcrumb changes only its tail -----------------------------------------------------
 
     @Test

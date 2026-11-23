@@ -144,4 +144,42 @@ class ProjectWatchChangesTest {
         assertEquals(Set.of(), plan.relistDirs());
         assertEquals(1, plan.external().size());
     }
+
+    @Test
+    void structuralChangesWaitForTheThrottleButAnOverflowDoesNot() {
+        assertTrue(ProjectWatchChanges.flushNow(false, 2_000, 2_000), "the first change after a quiet spell");
+        assertFalse(ProjectWatchChanges.flushNow(false, 300, 2_000), "a burst waits for the end of the throttle");
+        assertTrue(ProjectWatchChanges.flushNow(true, 300, 2_000), "an overflow is passed on at once");
+    }
+
+    @Test
+    void changesWhollyInGitignoredPathsLeaveGitAlone() {
+        Path root = Path.of("/proj").toAbsolutePath();
+        com.editora.search.GitignoreFilter ignore = com.editora.search.GitignoreFilter.parse("target/\n*.log\n");
+        List<FsChange> build = List.of(
+                new FsChange(root.resolve("target/classes/A.class"), FsKind.CREATED),
+                new FsChange(root.resolve("target/surefire/x.txt"), FsKind.DELETED),
+                new FsChange(root.resolve("run.log"), FsKind.CHANGED));
+        assertFalse(ProjectWatchChanges.mayChangeGitStatus(build, true, root, ignore));
+
+        List<FsChange> source = List.of(
+                new FsChange(root.resolve("target/classes/A.class"), FsKind.CREATED),
+                new FsChange(root.resolve("src/A.java"), FsKind.CREATED));
+        assertTrue(ProjectWatchChanges.mayChangeGitStatus(source, true, root, ignore), "a source file counts");
+        assertTrue(
+                ProjectWatchChanges.mayChangeGitStatus(
+                        List.of(new FsChange(root.resolve(".gitignore"), FsKind.CHANGED)), true, root, ignore),
+                "the rules themselves count");
+        assertTrue(ProjectWatchChanges.mayChangeGitStatus(build, false, root, ignore), "an incomplete batch counts");
+        assertTrue(
+                ProjectWatchChanges.mayChangeGitStatus(build, true, root, com.editora.search.GitignoreFilter.NONE),
+                "with no rules read, everything counts");
+        assertTrue(
+                ProjectWatchChanges.mayChangeGitStatus(
+                        List.of(new FsChange(Path.of("/elsewhere/target/x").toAbsolutePath(), FsKind.CREATED)),
+                        true,
+                        root,
+                        ignore),
+                "a path outside the root counts");
+    }
 }

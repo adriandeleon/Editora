@@ -105,8 +105,92 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    /** A data row plus its original 0-based index (stable through sort/filter, so edits/jumps map back). */
-    private record Row(int index, List<String> cells) {}
+    /**
+     * A data row plus its original 0-based index (stable through sort/filter, so edits/jumps map back), and its
+     * cells lower-cased once for the filter: a keystroke in the filter field no longer lower-cases every cell
+     * of the file (perf review P3).
+     */
+    static final class Row {
+        private final int index;
+        private final List<String> cells;
+        private String @Nullable [] lower;
+
+        Row(int index, List<String> cells) {
+            this.index = index;
+            this.cells = cells;
+        }
+
+        int index() {
+            return index;
+        }
+
+        List<String> cells() {
+            return cells;
+        }
+
+        /** Whether a cell contains {@code lowerQuery} (already lower-cased), ignoring case. */
+        boolean matches(String lowerQuery) {
+            String[] folded = lower;
+            if (folded == null || folded.length != cells.size()) {
+                folded = new String[cells.size()];
+                for (int i = 0; i < folded.length; i++) {
+                    folded[i] = cells.get(i).toLowerCase(Locale.ROOT);
+                }
+                lower = folded;
+            }
+            for (String cell : folded) {
+                if (cell.contains(lowerQuery)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /** A cell was edited in the grid: the lower-cased copy is out of date. */
+        void edited() {
+            lower = null;
+        }
+    }
+
+    /**
+     * Everything the grid works out from parsed rows — column types, ragged rows, widths, the data rows —
+     * computed by {@link #prepare} off the FX thread for a re-parse while typing (perf review P3), so the FX
+     * thread only sets columns and items.
+     */
+    record Prepared(
+            List<List<String>> rows,
+            boolean header,
+            int cols,
+            List<ColumnType> types,
+            int ragged,
+            int expectedCols,
+            List<Integer> contentLengths,
+            List<Row> dataRows) {}
+
+    /** Works out {@link Prepared} for {@code rows} with or without a header row; any thread. */
+    static Prepared prepare(List<List<String>> rows, boolean header) {
+        int cols = 0;
+        for (List<String> r : rows) {
+            cols = Math.max(cols, r.size());
+        }
+        if (rows.isEmpty() || cols == 0) {
+            return new Prepared(rows, header, 0, List.of(), 0, 0, List.of(), List.of());
+        }
+        int start = header ? 1 : 0;
+        List<Row> data = new ArrayList<>(Math.max(0, rows.size() - start));
+        for (int r = start; r < rows.size(); r++) {
+            data.add(new Row(r - start, rows.get(r)));
+        }
+        return new Prepared(
+                rows,
+                header,
+                cols,
+                CsvColumns.inferTypes(rows, header),
+                CsvColumns.raggedRowCount(rows, header),
+                CsvColumns.expectedColumns(rows, header),
+                CsvColumns.maxContentLengths(rows),
+                data);
+    }
 
     private final Jump jump;
     private final CheckBox headerToggle = new CheckBox(tr("csvgrid.headerRow"));
@@ -235,6 +319,21 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         rebuild();
     }
 
+    /**
+     * As {@link #setData(List)} with the grid's figures already worked out off the FX thread. Worked out for
+     * another header setting than the one now shown (toggled meanwhile), they are worked out again here.
+     */
+    void setPrepared(Prepared prepared) {
+        this.rows = prepared.rows();
+        shownTypes = null;
+        rebuild(prepared.header() == headerToggle.isSelected() ? prepared : null);
+    }
+
+    /** Whether the first row is treated as a header, for {@link #prepare} off the FX thread. */
+    boolean headerRowShown() {
+        return headerToggle.isSelected();
+    }
+
     /** Enables/disables in-place cell editing; when enabled, a committed edit calls {@code onCommit}. Stores
      *  the state only — the caller must follow with {@link #setData} to rebuild the columns. */
     void setEditable(boolean editable, @Nullable EditCommit onCommit) {
@@ -283,62 +382,94 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
     }
 
     private void rebuild() {
-        table.getColumns().clear();
-        headerLabels.clear();
-        baseTitles.clear();
+        rebuild(null);
+    }
+
+    /** What the columns were built for: the same again keeps them and replaces only the rows (perf review P3). */
+    private record ColumnsKey(List<String> titles, boolean header, boolean editable, List<Boolean> numeric) {}
+
+    private @Nullable ColumnsKey builtColumns;
+
+    private void rebuild(@Nullable Prepared ready) {
+        Prepared p = ready != null ? ready : prepare(rows, headerToggle.isSelected());
         allRows.clear();
-        int cols = 0;
-        for (List<String> r : rows) {
-            cols = Math.max(cols, r.size());
-        }
-        if (rows.isEmpty() || cols == 0) {
+        int cols = p.cols();
+        if (cols == 0) {
+            headerLabels.clear();
+            table.getColumns().clear();
+            baseTitles.clear();
+            builtColumns = null;
             table.setItems(FXCollections.observableArrayList());
             summary.setText(tr("csvgrid.empty"));
             return;
         }
-        boolean header = headerToggle.isSelected();
+        boolean header = p.header();
         List<String> headerRow = header ? rows.get(0) : null;
-        List<ColumnType> types = CsvColumns.inferTypes(rows, header);
+        List<ColumnType> types = p.types();
         shownTypes = types;
-        shownRagged = CsvColumns.raggedRowCount(rows, header);
-        expectedCols = CsvColumns.expectedColumns(rows, header);
-        List<Integer> contentLengths = CsvColumns.maxContentLengths(rows);
+        shownRagged = p.ragged();
+        expectedCols = p.expectedCols();
+        List<Integer> contentLengths = p.contentLengths();
 
-        table.getColumns().add(rowNumberColumn(rows.size()));
-        for (int c = 0; c < cols; c++) {
-            final int col = c;
-            String title = headerRow != null
-                            && col < headerRow.size()
-                            && !headerRow.get(col).isBlank()
-                    ? headerRow.get(col)
-                    : tr("csvgrid.column", col + 1);
-            baseTitles.add(title);
-            boolean numeric = col < types.size() && CsvColumns.isNumeric(types.get(col));
-            TableColumn<Row, String> tc = new TableColumn<>();
-            tc.setGraphic(headerNode(tc, col, title, header)); // editable header label (double-click to rename)
-            tc.setCellValueFactory(cd -> new ReadOnlyStringWrapper(
-                    col < cd.getValue().cells().size() ? cd.getValue().cells().get(col) : ""));
-            // Auto-size to the widest of (content, header title + its arrow/rename affordance) so a column
-            // rarely needs a manual resize; the header is bold, so give the title a little extra headroom.
-            int contentChars = col < contentLengths.size() ? contentLengths.get(col) : 0;
-            int chars = Math.max(contentChars, title.length() + HEADER_EXTRA_CHARS);
-            tc.setPrefWidth(UiZoom.px(columnWidthFor(chars)));
-            tc.setSortable(false);
-            tc.setCellFactory(dataCellFactory(numeric));
-            if (editable) {
-                tc.setOnEditCommit(ev -> onCellCommitted(ev.getTablePosition().getRow(), col, ev.getNewValue()));
+        List<String> titles = new ArrayList<>(cols);
+        List<Boolean> numeric = new ArrayList<>(cols);
+        for (int col = 0; col < cols; col++) {
+            titles.add(
+                    headerRow != null
+                                    && col < headerRow.size()
+                                    && !headerRow.get(col).isBlank()
+                            ? headerRow.get(col)
+                            : tr("csvgrid.column", col + 1));
+            numeric.add(col < types.size() && CsvColumns.isNumeric(types.get(col)));
+        }
+        ColumnsKey key = new ColumnsKey(titles, header, editable, numeric);
+        boolean reuse = key.equals(builtColumns) && table.getColumns().size() == cols + 1;
+        if (reuse) {
+            // The same columns: only their widths may move with the content, as a rebuild would set them.
+            setRowNumberWidth(table.getColumns().get(0), rows.size());
+            for (int col = 0; col < cols; col++) {
+                table.getColumns().get(col + 1).setPrefWidth(UiZoom.px(widthFor(col, titles.get(col), contentLengths)));
             }
-            table.getColumns().add(tc);
+        } else {
+            table.getColumns().clear();
+            headerLabels.clear();
+            baseTitles.clear();
+            baseTitles.addAll(titles);
+            builtColumns = key;
+            table.getColumns().add(rowNumberColumn(rows.size()));
+            for (int c = 0; c < cols; c++) {
+                final int col = c;
+                String title = titles.get(col);
+                TableColumn<Row, String> tc = new TableColumn<>();
+                tc.setGraphic(headerNode(tc, col, title, header)); // editable header label (double-click to rename)
+                tc.setCellValueFactory(cd -> new ReadOnlyStringWrapper(
+                        col < cd.getValue().cells().size()
+                                ? cd.getValue().cells().get(col)
+                                : ""));
+                tc.setPrefWidth(UiZoom.px(widthFor(col, title, contentLengths)));
+                tc.setSortable(false);
+                tc.setCellFactory(dataCellFactory(numeric.get(col)));
+                if (editable) {
+                    tc.setOnEditCommit(
+                            ev -> onCellCommitted(ev.getTablePosition().getRow(), col, ev.getNewValue()));
+                }
+                table.getColumns().add(tc);
+            }
         }
-        // Wrap each data row with its original 0-based index (stable through sort/filter).
-        int start = header ? 1 : 0;
-        for (int r = start; r < rows.size(); r++) {
-            allRows.add(new Row(r - start, rows.get(r)));
-        }
+        allRows.addAll(p.dataRows());
         if (sortColumn >= cols) {
             sortColumn = -1;
         }
         applyView();
+    }
+
+    /**
+     * Auto-size to the widest of (content, header title + its arrow/rename affordance) so a column rarely needs a
+     * manual resize; the header is bold, so give the title a little extra headroom.
+     */
+    private static double widthFor(int col, String title, List<Integer> contentLengths) {
+        int contentChars = col < contentLengths.size() ? contentLengths.get(col) : 0;
+        return columnWidthFor(Math.max(contentChars, title.length() + HEADER_EXTRA_CHARS));
     }
 
     /** Applies the current filter + sort to {@link #allRows} → the visible items, and refreshes the summary. */
@@ -348,7 +479,7 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
                 : filterField.getText().trim().toLowerCase(Locale.ROOT);
         List<Row> view = new ArrayList<>();
         for (Row row : allRows) {
-            if (query.isEmpty() || rowMatches(row, query)) {
+            if (query.isEmpty() || row.matches(query)) {
                 view.add(row);
             }
         }
@@ -369,15 +500,6 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
             shownRagged = CsvColumns.raggedRowCount(rows, headerToggle.isSelected());
         }
         summary.setText(summaryText(allRows.size(), view.size(), cols, types, shownRagged));
-    }
-
-    private static boolean rowMatches(Row row, String lowerQuery) {
-        for (String cell : row.cells()) {
-            if (cell.toLowerCase(Locale.ROOT).contains(lowerQuery)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static String cell(Row row, int col) {
@@ -461,14 +583,18 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         return Math.max(MIN_COL_WIDTH, Math.min(MAX_COL_WIDTH, w));
     }
 
+    /** Fit the largest row number (e.g. 5 digits for a 10k-row file) so the gutter never truncates. */
+    private static void setRowNumberWidth(TableColumn<Row, ?> num, int totalPhysicalRows) {
+        num.setPrefWidth(UiZoom.px(Math.max(
+                40, String.valueOf(Math.max(1, totalPhysicalRows)).length() * CHAR_PX + 22)));
+    }
+
     /** A non-editable leading "#" column showing each row's original 1-based data-row number. */
     private TableColumn<Row, String> rowNumberColumn(int totalPhysicalRows) {
         TableColumn<Row, String> num = new TableColumn<>("#");
         num.setSortable(false);
         num.setEditable(false);
-        // Fit the largest row number (e.g. 5 digits for a 10k-row file) so the gutter never truncates.
-        num.setPrefWidth(UiZoom.px(Math.max(
-                40, String.valueOf(Math.max(1, totalPhysicalRows)).length() * CHAR_PX + 22)));
+        setRowNumberWidth(num, totalPhysicalRows);
         num.setReorderable(false);
         num.getStyleClass().add("csv-grid-rownum");
         num.setCellValueFactory(
@@ -602,6 +728,7 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
             cells.add("");
         }
         cells.set(col, value);
+        row.edited();
         table.refresh();
         editCommit.commit(row.index(), col, value);
     }

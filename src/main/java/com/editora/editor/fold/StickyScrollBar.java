@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.function.IntConsumer;
 
 import javafx.geometry.Bounds;
+import javafx.geometry.Point2D;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.input.MouseButton;
@@ -15,6 +16,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Text;
 
+import com.editora.editor.AfterLayoutPaint;
 import com.editora.editor.LazyTooltip;
 import com.editora.text.FoldRegions;
 import org.fxmisc.richtext.CodeArea;
@@ -59,6 +61,16 @@ public final class StickyScrollBar {
     private int rowsBuilt;
     /** The height every row is held to: one visual line of the editor, or 0 before one has been measured. */
     private double rowHeight;
+    /**
+     * Where the text column was (area-local, horizontal scroll added back) when {@link #rowHeight} and the inset
+     * were last measured; NaN forces a new measure. The inset's measure is a RichTextFX character-bounds query,
+     * which dirties the scene and costs the next frame, so a scroll step that moved nothing does not repeat it.
+     */
+    private double measuredAt = Double.NaN;
+    /** Whether the inset was set from a measure, not just left as it was. */
+    private boolean insetKnown;
+    /** Measures of the line height and the inset (tests: none per scroll step once the geometry is known). */
+    private int measures;
 
     private StickyScroll.Index index = StickyScroll.Index.EMPTY;
 
@@ -85,6 +97,7 @@ public final class StickyScrollBar {
     }
 
     public void setFont(String family, int size) {
+        measuredAt = Double.NaN; // a new line height and column width: measured again by the next update
         box.setStyle("-fx-font-family: \"" + family + "\"; -fx-font-size: " + size + "px;");
     }
 
@@ -103,6 +116,10 @@ public final class StickyScrollBar {
 
     int rowsBuiltForTest() {
         return rowsBuilt;
+    }
+
+    int measuresForTest() {
+        return measures;
     }
 
     /**
@@ -150,11 +167,18 @@ public final class StickyScrollBar {
         boolean reusable = area == shownArea && tabSize == shownTabSize;
         shownArea = area;
         shownTabSize = tabSize;
-        double lineHeight = lineHeight(area);
-        if (lineHeight > 0 && lineHeight != rowHeight) {
-            rowHeight = lineHeight;
-            for (Row row : rows) {
-                fixHeight(row.node());
+        // The row height and the inset depend on the font and on where the text column is, not on the scroll:
+        // measured again only when the column moved (gutter, padding), the font changed or the area did.
+        double column = textColumn(area);
+        boolean remeasure = !reusable || Double.isNaN(column) || column != measuredAt || rowHeight <= 0;
+        if (remeasure) {
+            measures++;
+            double lineHeight = lineHeight(area);
+            if (lineHeight > 0 && lineHeight != rowHeight) {
+                rowHeight = lineHeight;
+                for (Row row : rows) {
+                    fixHeight(row.node());
+                }
             }
         }
         int paragraphs = area.getParagraphs().size();
@@ -182,7 +206,19 @@ public final class StickyScrollBar {
             box.getChildren().setAll(nodes);
         }
         box.setVisible(!rows.isEmpty());
-        alignToText(area);
+        if (remeasure || !insetKnown) {
+            alignToText(area);
+            measuredAt = column;
+        }
+    }
+
+    /** The text column's x in {@code area}, horizontal scroll added back, with nothing changed to find it. */
+    private static double textColumn(CodeArea area) {
+        double screen = AfterLayoutPaint.textColumnOnScreen(area);
+        Point2D origin = area.localToScreen(0, 0);
+        return Double.isNaN(screen) || origin == null
+                ? Double.NaN
+                : screen - origin.getX() + area.getEstimatedScrollX();
     }
 
     /**
@@ -192,6 +228,7 @@ public final class StickyScrollBar {
      */
     private void alignToText(CodeArea area) {
         double inset = textStart(area);
+        insetKnown = inset >= 0;
         if (inset < 0) {
             if (!alignPending) { // the bar was just attached: measure once it is in the scene
                 alignPending = true;
@@ -199,6 +236,7 @@ public final class StickyScrollBar {
                     alignPending = false;
                     double later = textStart(area);
                     if (later >= 0) {
+                        insetKnown = true;
                         setInset(later);
                     }
                 });

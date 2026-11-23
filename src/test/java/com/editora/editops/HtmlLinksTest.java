@@ -256,4 +256,16 @@ class HtmlLinksTest {
         assertEquals("a\u00e9", HtmlLinks.decode("a%C3%A9"), "an escape at the end");
         assertEquals("\u00e9b", HtmlLinks.decode("%C3%A9b"));
     }
+
+    @Test
+    void atStopsWalkingAtTheOffsetAndAllStopsAtTheCap() {
+        String many = "<a href=\"x.html\">x</a>\n".repeat(HtmlLinks.MAX_LINKS + 50);
+        assertEquals(HtmlLinks.MAX_LINKS, HtmlLinks.all(many).size());
+        int second = many.indexOf("x.html", many.indexOf("x.html") + 1);
+        HtmlLinks.Link hit = HtmlLinks.at(many, second + 2);
+        assertNotNull(hit);
+        assertEquals(second, hit.start());
+        assertNull(HtmlLinks.at(many, many.indexOf(">x<") + 1), "between two links: none");
+        assertNull(HtmlLinks.at(many, many.lastIndexOf("x.html")), "past the cap, as all() reports it");
+    }
 }

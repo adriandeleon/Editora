@@ -37,7 +37,7 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
     private static final double STEP = 2.0; // half-wavelength (px)
 
     private final CodeArea area;
-    private final java.util.function.Supplier<String> textSnapshot;
+    private final java.util.function.Supplier<com.editora.editor.DocumentText> textSnapshot;
     /** Generation of the latest code-line scan; an older scan's result is dropped (FX thread). */
     private long codeLinesGen;
     /** The last {@link #codeLinesGen} whose scan came back (FX thread only). */
@@ -45,7 +45,7 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
     /** An edit since the debounced code-lines scan last ran (FX thread only). */
     private boolean codeLinesOwed;
 
-    private final Canvas canvas = new Canvas(1, 1);
+    private Canvas canvas = new Canvas(1, 1);
     private @Nullable SpellChecker checker;
     private SpellMode mode = SpellMode.PROSE;
     /** Whether {@link #mode} is Markdown — kept as a field because the fence-skip tests read it. */
@@ -175,14 +175,14 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
     }
 
     public SpellCheckOverlay(CodeArea area) {
-        this(area, area::getText);
+        this(area, () -> com.editora.editor.DocumentText.of(area));
     }
 
     /**
-     * @param textSnapshot the document text for the code-line scan, read on the FX thread and scanned off it:
-     *     the buffer's versioned snapshot, so the scan copies nothing out of RichTextFX
+     * @param textSnapshot the document for the code-line scan, taken in O(1) on the FX thread and read and
+     *     scanned off it: the buffer's versioned snapshot, so the scan copies nothing on the FX thread
      */
-    public SpellCheckOverlay(CodeArea area, java.util.function.Supplier<String> textSnapshot) {
+    public SpellCheckOverlay(CodeArea area, java.util.function.Supplier<com.editora.editor.DocumentText> textSnapshot) {
         this.area = area;
         this.afterLayout = new AfterLayoutPaint(
                 this,
@@ -204,12 +204,7 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
         });
         // Recompute fenced-code line ranges off the debounced edit pulse (O(lines), not per keystroke);
         // only while active, so an inactive overlay (e.g. a large file with spell check off) does no work.
-        area.multiPlainChanges().successionEnds(Duration.ofMillis(300)).subscribe(ignore -> {
-            codeLinesOwed = false;
-            if (active) {
-                recomputeCodeLines();
-            }
-        });
+        settleTimer = area.multiPlainChanges().successionEnds(SETTLE).subscribe(ignore -> editsSettled());
         area.estimatedScrollXProperty().addListener((o, a, b) -> scheduleRedraw());
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
     }
@@ -250,10 +245,10 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
             applyCodeLines(SpellMode.Skips.NONE); // no scan to run: the answer is known without the text
             return;
         }
-        String text = textSnapshot.get();
+        com.editora.editor.DocumentText text = textSnapshot.get();
         SpellMode scanned = mode;
         Thread.ofVirtual().name("editora-spell-code-lines").start(() -> {
-            SpellMode.Skips found = scanned.skips(text);
+            SpellMode.Skips found = scanned.skips(text.text());
             javafx.application.Platform.runLater(() -> {
                 codeLinesLanded = Math.max(codeLinesLanded, gen);
                 if (gen == codeLinesGen) {
@@ -315,12 +310,46 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
     @Override
     public SpellCheckOverlay follower(CodeArea view) {
         SpellCheckOverlay second = new SpellCheckOverlay(view, textSnapshot);
+        if (settledExternally) {
+            second.settleExternally();
+        }
         second.checker = checker;
         second.setMode(mode);
         second.setRenderingActive(rendering);
         second.setActive(active);
         follower = second;
         return second;
+    }
+
+    /** How long after the last edit the code lines are scanned again. */
+    public static final Duration SETTLE = Duration.ofMillis(300);
+
+    /** This overlay's own settle timer, until an owner's settled-edit dispatcher takes over. */
+    private org.reactfx.Subscription settleTimer;
+
+    private boolean settledExternally;
+
+    /**
+     * Drops this overlay's own settle timer (and its follower's): the owner calls {@link #editsSettled}
+     * {@link #SETTLE} after the last edit from the one timer it runs for every such milestone.
+     */
+    public void settleExternally() {
+        settledExternally = true;
+        settleTimer.unsubscribe();
+        if (follower != null) {
+            follower.settleExternally();
+        }
+    }
+
+    /** The edits have settled for {@link #SETTLE}: scans the code lines again while on (and the follower's). */
+    public void editsSettled() {
+        codeLinesOwed = false;
+        if (active) {
+            recomputeCodeLines();
+        }
+        if (follower != null) {
+            follower.editsSettled();
+        }
     }
 
     void setChecker(SpellChecker checker) {
@@ -347,7 +376,7 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
             recomputeCodeLines(); // pick up the current text (it may have changed while inactive)
             scheduleRedraw();
         } else {
-            releaseCanvas(); // off → drop the texture, not just clear it
+            dropCanvas(); // off → drop the texture, not just clear it
         }
     }
 
@@ -422,7 +451,7 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
         if (on) {
             scheduleRedraw();
         } else {
-            releaseCanvas();
+            dropCanvas();
         }
     }
 
@@ -447,13 +476,19 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
         canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
     }
 
-    /** Shrinks the canvas to 1x1, releasing its RTTexture (nothing visible to draw / overlay off). */
+    /**
+     * Shrinks the canvas to 1x1 while nothing is visible to draw. Cheap, so it can flap with scrolling; the texture
+     * itself goes with {@link #dropCanvas}.
+     */
     private void releaseCanvas() {
         hasContent = false;
-        if (canvas.getWidth() != 1 || canvas.getHeight() != 1) {
-            canvas.setWidth(1);
-            canvas.setHeight(1);
-        }
+        CanvasGuards.shrink(canvas);
+    }
+
+    /** Drops the canvas and its viewport-sized texture: the overlay is off or its tab is in the background. */
+    private void dropCanvas() {
+        hasContent = false;
+        canvas = CanvasGuards.released(canvas, getChildren());
     }
 
     private void redraw() {

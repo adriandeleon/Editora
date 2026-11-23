@@ -36,7 +36,7 @@ public final class OccurrenceHighlightOverlay extends Region implements Secondar
     private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
 
     private final CodeArea area;
-    private final Canvas canvas = new Canvas(1, 1);
+    private Canvas canvas = new Canvas(1, 1);
     /** {startOffset, endOffset, write(0/1)} triples, precomputed to offsets by the buffer. */
     private List<int[]> spans = List.of();
 
@@ -100,7 +100,7 @@ public final class OccurrenceHighlightOverlay extends Region implements Secondar
             requestLayout();
             scheduleRedraw();
         } else {
-            CanvasGuards.release(canvas);
+            canvas = CanvasGuards.released(canvas, getChildren());
         }
     }
 
@@ -124,7 +124,7 @@ public final class OccurrenceHighlightOverlay extends Region implements Secondar
             requestLayout();
             scheduleRedraw();
         } else {
-            CanvasGuards.release(canvas); // release the full-viewport texture while hidden
+            canvas = CanvasGuards.released(canvas, getChildren()); // release the full-viewport texture while hidden
         }
     }
 

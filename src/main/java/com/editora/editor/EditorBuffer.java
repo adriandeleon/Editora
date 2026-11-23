@@ -556,7 +556,7 @@ public class EditorBuffer implements TabContent {
     /** Lazily attached when indent guides first turn on — see {@link #indentGuides()}. */
     private @Nullable IndentGuideOverlay indentGuides;
     /** Eager: spell checking is on by default for prose and for the comments and strings of code. */
-    private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area, this::documentTextSnapshot);
+    private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area, this::documentText);
 
     private @Nullable LogHighlightOverlay logOverlay; // lazily attached on first activation — see logOverlay()
     private @Nullable InlineValuesOverlay inlineValues; // lazily attached when a debug session first suspends here
@@ -654,7 +654,7 @@ public class EditorBuffer implements TabContent {
     /** Fired (deferred a pulse) when a signature trigger char is typed; null = disabled. */
     private java.util.function.@Nullable Consumer<Character> signatureHelpRequester;
 
-    final FoldManager folds = new FoldManager(area, this::documentTextSnapshot);
+    final FoldManager folds = new FoldManager(area, this::documentText);
 
     /** The gutter numbers, {@code narrowed} style and banner of a narrowed buffer (see {@link NarrowPresentation}). */
     final NarrowPresentation narrowView = new NarrowPresentation(this, area, logView, folds);
@@ -987,7 +987,8 @@ public class EditorBuffer implements TabContent {
             // their own immutable String; the next settled consumer materializes the new version once.
             documentSnapshots.invalidate();
             if (isMarkdown() || markdownEditing.blockMap().holdsMap()) {
-                // The line map the Markdown keys look up, scanned again off the FX thread (PERF-01).
+                // The line map the Markdown keys look up: notes the edited line; scanned off the FX thread when
+                // typing pauses or a key asks (PERF-01; perf review 2026-11-23 E1).
                 markdownEditing
                         .blockMap()
                         .changed(area.offsetToPosition(c.getPosition(), Bias.Forward)
@@ -1105,11 +1106,20 @@ public class EditorBuffer implements TabContent {
      * The order within a shared delay matches the former independent ReactFX subscriptions.
      */
     private void configureSettledEditDispatcher() {
+        // The fold detection, the minimap's render and the spell checker's code-line scan had a ReactFX timer
+        // each (two more with a split), restarted on every keystroke; they run from this one instead (E10).
+        folds.settleExternally();
+        settledEdits.at(FoldManager.SETTLE, () -> true, folds::editsSettled);
+        minimap.settleExternally();
+        settledEdits.at(Minimap.SETTLE, () -> true, minimap::editsSettled);
+        spellOverlay.settleExternally();
+        settledEdits.at(SpellCheckOverlay.SETTLE, () -> true, spellOverlay::editsSettled);
         settledEdits.at(Duration.ofMillis(150), () -> true, () -> {
             resolveDirty();
             sealBaselineIfDirty();
             highlighter.applyHighlighting();
             runGutter.recomputeRun(true); // re-evaluate the Run glyph when a top-level main / __main__ appears/leaves
+            markdownEditing.blockMap().settled(); // the Markdown line map, scanned per pause, not per key (E1)
         });
         settledEdits.at(
                 Duration.ofMillis(250),
@@ -1247,14 +1257,28 @@ public class EditorBuffer implements TabContent {
                     });
                     return;
                 }
-                if (isLspActive() || HtmlLinks.isHtml(language) && HtmlLinks.at(a.getText(), off) != null) {
-                    // Move the caret to the clicked symbol (an HTML link: B6) + focus this area, then go-to-definition
-                    // (the controller reads getFocusedArea()'s caret). Deferred so focus/caret settle first.
+                if (isLspActive()) {
+                    // Move the caret to the clicked symbol + focus this area, then go-to-definition (the
+                    // controller reads getFocusedArea()'s caret). Deferred so focus/caret settle first.
                     a.moveTo(off);
                     a.requestFocus();
                     Runnable go = lspGotoDefinitionAction;
                     javafx.application.Platform.runLater(go::run);
                     e.consume();
+                } else if (HtmlLinks.isHtml(language)) {
+                    // An HTML link without a server (B6): the page is parsed whole, so the link is looked for off
+                    // the FX thread (perf review 2026-11-23 E11) and followed when it lands, if nothing was typed.
+                    long version = docVersion;
+                    DocumentText page = DocumentText.of(a);
+                    com.editora.perf.OffFx.then(HTML_LINK_CLICK_SITE, () -> HtmlLinks.at(page.text(), off), found -> {
+                        if (docVersion != version || isDisposed() || !found.ok() || found.value() == null) {
+                            return;
+                        }
+                        a.moveTo(off);
+                        a.requestFocus();
+                        Runnable go = lspGotoDefinitionAction;
+                        javafx.application.Platform.runLater(go::run);
+                    });
                 }
             } catch (RuntimeException ignored) {
                 // hit-test off the text — ignore
@@ -1264,6 +1288,9 @@ public class EditorBuffer implements TabContent {
 
     /** The site an HTML page's link under a Ctrl/Cmd-hover is looked for on (the page is parsed whole). */
     public static final String HTML_LINK_HOVER_SITE = "EditorBuffer.htmlLinkHover";
+
+    /** The site an HTML page's link under a Ctrl/Cmd-click is looked for on, without a language server. */
+    public static final String HTML_LINK_CLICK_SITE = "EditorBuffer.htmlLinkClick";
 
     /** Asks the language server whether the symbol at a 0-based line and UTF-16 column has a definition. */
     @FunctionalInterface
@@ -1313,8 +1340,8 @@ public class EditorBuffer implements TabContent {
         }
         if (HtmlLinks.isHtml(language)) {
             long version = docVersion;
-            String text = a.getText();
-            com.editora.perf.OffFx.then(HTML_LINK_HOVER_SITE, () -> HtmlLinks.at(text, offset), found -> {
+            DocumentText text = DocumentText.of(a); // O(1); the page's text is built off the FX thread (E11)
+            com.editora.perf.OffFx.then(HTML_LINK_HOVER_SITE, () -> HtmlLinks.at(text.text(), offset), found -> {
                 if (docVersion != version || isDisposed()) {
                     answer.accept(null);
                     return;
@@ -1547,13 +1574,14 @@ public class EditorBuffer implements TabContent {
                 .getMajor();
         boolean jsx = JsxContext.lineInChildren(
                 grammar, highlighter.highlightLines, line, a.getParagraph(line).getText());
-        String text = a.getText();
+        DocumentText document = DocumentText.of(a); // O(1); the text is built off the FX thread (E11)
         String lang = language;
         java.nio.file.Path file = getPath();
         long version = docVersion;
         OffFx.then(
                 COMMENT_SITE,
                 () -> {
+                    String text = document.text();
                     Commenter.Edit edit = jsx
                             ? Commenter.toggle(text, span[0], span[1], JsxContext.COMMENT) // {/* */} in markup (A103)
                             : Commenter.toggle(text, span[0], span[1], lang, file);
@@ -2773,6 +2801,11 @@ public class EditorBuffer implements TabContent {
         lspChangeListener.accept(documentTextSnapshot());
     }
 
+    /** Whether {@link #sendLspChange} has a sink: the buffer was wired to the language servers. */
+    public boolean sendsLspChanges() {
+        return lspChangeListener != null;
+    }
+
     /** Injects the debounced pull-diagnostics request (fired on the same pulse as didChange); null disables. */
     public void setLspDiagnosticsRequester(Runnable requester) {
         this.lspDiagnosticsRequester = requester;
@@ -3442,6 +3475,21 @@ public class EditorBuffer implements TabContent {
         refreshGutter();
     }
 
+    /**
+     * The distinct blame labels ({@code author + "  " + date}) of {@code lines}: a few dozen to a few hundred
+     * per file, where measuring every line was one text layout per line on the FX thread (perf review
+     * 2026-11-23 E5).
+     */
+    static java.util.Set<String> distinctBlameLabels(java.util.List<BlameInfo> lines) {
+        java.util.Set<String> labels = new java.util.HashSet<>();
+        for (BlameInfo bi : lines) {
+            if (bi != null && !bi.isEmpty()) {
+                labels.add(bi.author() + "  " + bi.date());
+            }
+        }
+        return labels;
+    }
+
     /** Measures the annotation column once: the widest "author + date" across all lines, in the actual
      *  (small) gutter font so the column isn't padded for the larger editor font, capped so a runaway long
      *  author can't let it dominate (it ellipsizes instead), plus a little cell padding. Off-scene
@@ -3450,11 +3498,8 @@ public class EditorBuffer implements TabContent {
         javafx.scene.text.Text probe = new javafx.scene.text.Text();
         probe.setFont(javafx.scene.text.Font.font(fontFamily, BLAME_FONT_SIZE));
         double max = 0;
-        for (BlameInfo bi : lines) {
-            if (bi == null || bi.isEmpty()) {
-                continue;
-            }
-            probe.setText(bi.author() + "  " + bi.date());
+        for (String label : distinctBlameLabels(lines)) {
+            probe.setText(label);
             max = Math.max(max, probe.getLayoutBounds().getWidth());
         }
         if (max <= 0) {
@@ -5748,10 +5793,21 @@ public class EditorBuffer implements TabContent {
 
     /**
      * Immutable whole-document text for the current version. Must be called on the FX thread, like
-     * RichTextFX's {@code getText()}; repeated consumers of the same version receive the same String.
+     * RichTextFX's {@code getText()}; repeated consumers of the same version receive the same String — also the
+     * one a worker built from {@link #documentText()} for this version, if it got there first.
      */
     String documentTextSnapshot() {
-        return documentSnapshots.get(docVersion, area::getText).text();
+        return documentText().text();
+    }
+
+    /**
+     * The current version of the document, taken in O(1) on the FX thread, whose text a consumer that works off
+     * the FX thread reads on its worker ({@link DocumentText#text()}, built once per version and shared with
+     * {@link #documentTextSnapshot()}): a typing pause no longer copies the document on the FX thread (perf
+     * review 2026-11-23 E2).
+     */
+    public DocumentText documentText() {
+        return documentSnapshots.get(docVersion, () -> DocumentText.of(area)::text);
     }
 
     /** Number of whole-document strings this buffer has materialized through the shared cache (tests). */

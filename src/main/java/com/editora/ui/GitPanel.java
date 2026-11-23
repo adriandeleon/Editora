@@ -209,6 +209,13 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     private GitService.CommitTemplate template = GitService.CommitTemplate.NONE;
     /** Lines added and deleted per file, when they have been read for the status on show. */
     private GitNumstat.Changes lineCounts = GitNumstat.Changes.NONE;
+    /**
+     * Whether the rows still show an older status: a status that arrives while the panel is off screen (after it has
+     * been on screen once) is rendered when the panel comes back, not on every refresh meanwhile.
+     */
+    private boolean filesStale;
+    /** Whether the panel has been on screen; before that every status renders at once, as a newly built panel's. */
+    private boolean everShown;
 
     private final Label branchLabel = new Label();
     /** Push indicator: "↑N" (commits to push), "↑ publish" (no upstream), or "✓ pushed". */
@@ -322,6 +329,16 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         filterField.setTooltip(ControlNames.tooltip(tr("gitpanel.spaceHint")));
         tree.setAccessibleHelp(tr("gitpanel.spaceHint"));
         filterField.textProperty().addListener((o, w, n) -> renderFiles());
+        Runnable shown = () -> {
+            if (isOnScreen()) {
+                everShown = true;
+                if (filesStale) {
+                    renderFiles();
+                }
+            }
+        };
+        sceneProperty().addListener((o, was, now) -> shown.run());
+        visibleProperty().addListener((o, was, now) -> shown.run());
         FilterFieldNav.install(filterField, tree, this::openSelected);
         HBox.setHgrow(filterField, Priority.ALWAYS);
         Button clearFilter = new Button("✕");
@@ -810,6 +827,9 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             getChildren().setAll(placeholderPane);
             return;
         }
+        // A refresh that found what the panel already shows (a tab switch, a save, a focus regain) leaves the rows
+        // alone: rebuilding them costs a TreeItem per changed file on the FX thread, each time.
+        boolean same = status.equals(lastStatus);
         lastStatus = status;
         branchLabel.setText("⎇ " + (status.branch().isBlank() ? tr("gitpanel.detached") : status.branch()));
         updatePushIndicator(status);
@@ -833,6 +853,13 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         // Nothing to summarize without a staged diff — grey it out instead of silently no-op'ing on click.
         aiCommitButton.setDisable(!hasStaged);
 
+        if (same && !filesStale) {
+            return;
+        }
+        if (everShown && !isOnScreen()) {
+            filesStale = true; // rendered when the panel is shown again
+            return;
+        }
         renderFiles();
     }
 
@@ -846,6 +873,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         if (lastStatus == null) {
             return;
         }
+        filesStale = false;
         Node header = (Node) getProperties().get("git.header");
         String query = filterQuery();
         // The rows are rebuilt on every status push — tab switch, save, window focus, each stage — so what

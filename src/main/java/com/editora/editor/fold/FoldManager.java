@@ -66,8 +66,9 @@ public final class FoldManager {
     private final CodeArea area;
     private java.util.function.IntSupplier caretLine;
     private Supplier<CodeArea> secondView = () -> null;
-    /** Full-text source; EditorBuffer supplies its per-version shared snapshot. */
-    private final Supplier<String> textSnapshot;
+    /** Full-text source, taken in O(1) on the FX thread and read off it; EditorBuffer supplies its per-version
+     *  shared snapshot. */
+    private final Supplier<com.editora.editor.DocumentText> textSnapshot;
 
     private List<Region> regions = List.of();
     /** Server-supplied regions ({@code textDocument/foldingRange}, #738); null while none have arrived, in
@@ -251,22 +252,39 @@ public final class FoldManager {
     }
 
     public FoldManager(CodeArea area) {
-        this(area, area::getText);
+        this(area, () -> com.editora.editor.DocumentText.of(area));
     }
 
-    public FoldManager(CodeArea area, Supplier<String> textSnapshot) {
+    /** How long after the last edit the regions are detected again. */
+    public static final Duration SETTLE = Duration.ofMillis(250);
+
+    /** This manager's own settle timer, until an owner's settled-edit dispatcher takes over. */
+    private org.reactfx.Subscription settleTimer;
+
+    /**
+     * Drops this manager's own settle timer: the owner calls {@link #editsSettled} {@link #SETTLE} after the last
+     * edit from the one timer it runs for every such milestone (an editor buffer's settled-edit dispatcher).
+     */
+    public void settleExternally() {
+        settleTimer.unsubscribe();
+    }
+
+    /** The edits have settled for {@link #SETTLE}: detects the regions again when they may have changed. */
+    public void editsSettled() {
+        // A load's own insertion settles here too; its restore already scanned (or is scanning) this very
+        // generation, so the pass would only repeat that detection. Any edit since bumps the generation.
+        settles++;
+        if (heuristicEnabled && recomputeGeneration != detectedGeneration) {
+            settleDetections++;
+            recomputeAsync();
+        }
+    }
+
+    public FoldManager(CodeArea area, Supplier<com.editora.editor.DocumentText> textSnapshot) {
         this.area = area;
         this.caretLine = area::getCurrentParagraph;
         this.textSnapshot = textSnapshot;
-        area.multiPlainChanges().successionEnds(Duration.ofMillis(250)).subscribe(ignore -> {
-            // A load's own insertion settles here too; its restore already scanned (or is scanning) this very
-            // generation, so the pass would only repeat that detection. Any edit since bumps the generation.
-            settles++;
-            if (heuristicEnabled && recomputeGeneration != detectedGeneration) {
-                settleDetections++;
-                recomputeAsync();
-            }
-        });
+        settleTimer = area.multiPlainChanges().successionEnds(SETTLE).subscribe(ignore -> editsSettled());
         // Manual regions are anchored to nothing, so they shift through every edit immediately (the
         // BookmarkManager pattern) — the debounced recompute above re-detects, it cannot re-anchor.
         // The empty-list early-out keeps this a single field check per keystroke for every buffer
@@ -590,14 +608,14 @@ public final class FoldManager {
         long generation = ++recomputeGeneration;
         detectedGeneration = generation;
         detecting |= awaited;
-        String text = textSnapshot.get();
+        com.editora.editor.DocumentText text = textSnapshot.get(); // O(1); the String is built on the worker
         String languageSnapshot = language;
         List<Region> serverSnapshot = serverRegions;
         List<Region> manualSnapshot = manualRegions;
         detectionsStarted++;
         com.editora.perf.OffFx.then(
                 DETECT_SITE,
-                () -> detectRegions(text, languageSnapshot, serverSnapshot, manualSnapshot, true),
+                () -> detectRegions(text.text(), languageSnapshot, serverSnapshot, manualSnapshot, true),
                 answer -> {
                     detectionsAnswered++;
                     if (generation == recomputeGeneration && heuristicEnabled) {
@@ -1502,8 +1520,8 @@ public final class FoldManager {
             java.util.function.Consumer<List<Region>> apply,
             int triesLeft) {
         long edits = editCount;
-        String text = textSnapshot.get();
-        com.editora.perf.OffFx.then(KIND_SCAN_SITE, () -> scan.apply(text), answer -> {
+        com.editora.editor.DocumentText text = textSnapshot.get();
+        com.editora.perf.OffFx.then(KIND_SCAN_SITE, () -> scan.apply(text.text()), answer -> {
             if (edits != editCount && triesLeft > 1) {
                 scanKind(scan, apply, triesLeft - 1); // typed meanwhile: its lines moved
                 return;

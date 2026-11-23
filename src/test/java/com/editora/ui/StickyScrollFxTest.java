@@ -414,4 +414,69 @@ class StickyScrollFxTest {
         assertTrue(xs[1] > 20, "the code starts past a gutter: " + xs[1]);
         assertTrue(Math.abs(xs[0] - xs[1]) < 2, "pinned row text at " + xs[0] + ", code text at " + xs[1]);
     }
+    /**
+     * E12 (perf review 2026-11-23): the row height and the inset are measured when the text column moves, not on
+     * every scroll step. The inset's measure is a character-bounds query, which dirties the scene and costs a
+     * frame of its own.
+     */
+    @Test
+    void aScrollStepMeasuresNothingAndAGutterChangeMeasuresAgain() throws Exception {
+        EditorBuffer b = buffer();
+        Object[] host = FxTestSupport.callOnFx(() -> {
+            javafx.scene.layout.StackPane pane = new javafx.scene.layout.StackPane(b.getNode());
+            javafx.scene.Scene scene = new javafx.scene.Scene(pane, 900, 600);
+            scene.getStylesheets()
+                    .add(EditorBuffer.class
+                            .getResource("/com/editora/styles/app.css")
+                            .toExternalForm());
+            javafx.stage.Stage stage = new javafx.stage.Stage();
+            stage.setScene(scene);
+            stage.show();
+            pane.applyCss();
+            pane.layout();
+            b.getArea().showParagraphAtTop(100);
+            pane.layout();
+            call(b, "stickyLinesFor", int.class, 100);
+            pane.applyCss();
+            pane.layout();
+            return new Object[] {pane, stage};
+        });
+        javafx.scene.layout.StackPane pane = (javafx.scene.layout.StackPane) host[0];
+        Object bar = FxTestSupport.callOnFx(() -> FxTestSupport.field(b, "stickyScroll"));
+        try {
+            int before = FxTestSupport.callOnFx(() -> FxTestSupport.<Integer>field(bar, "measures"));
+            double inset = FxTestSupport.callOnFx(() -> ((javafx.scene.layout.Region) call(b, "stickyScrollNode"))
+                    .getPadding()
+                    .getLeft());
+            assertTrue(inset > 20, "precondition: the rows start past the gutter: " + inset);
+            FxTestSupport.runOnFx(() -> {
+                for (int top = 101; top < 140; top++) {
+                    b.getArea().showParagraphAtTop(top);
+                    pane.layout();
+                    call(b, "stickyLinesFor", int.class, top);
+                }
+            });
+            assertEquals(
+                    before,
+                    (int) FxTestSupport.callOnFx(() -> FxTestSupport.<Integer>field(bar, "measures")),
+                    "scrolling inside the method moves no column: nothing is measured");
+
+            FxTestSupport.runOnFx(() -> {
+                b.setLineNumbersVisible(false);
+                pane.applyCss();
+                pane.layout();
+                call(b, "stickyLinesFor", int.class, 140);
+            });
+            FxTestSupport.drainFx();
+            assertTrue(
+                    FxTestSupport.callOnFx(() -> FxTestSupport.<Integer>field(bar, "measures")) > before,
+                    "the gutter changed width: measured again");
+            double narrower = FxTestSupport.callOnFx(() -> ((javafx.scene.layout.Region) call(b, "stickyScrollNode"))
+                    .getPadding()
+                    .getLeft());
+            assertTrue(narrower < inset - 2, "the rows follow the text left: " + inset + " then " + narrower);
+        } finally {
+            FxTestSupport.runOnFx(((javafx.stage.Stage) host[1])::hide);
+        }
+    }
 }

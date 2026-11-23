@@ -88,6 +88,17 @@ class ExceptionBreakpointsTest {
         assertFalse(ExceptionBreakpoints.propagating(List.of(), List.of(caller)));
     }
 
+    @Test
+    void anExceptionPassingUpIsToldFromTheTopFramesOfDeepStacks() {
+        // Stops fetch the top of the stack: 3 of 100 frames, then 3 of 99.
+        List<DapModels.StackFrameInfo> before = List.of(frame(1, "inner"), frame(2, "middle"), frame(3, "outer"));
+        List<DapModels.StackFrameInfo> now = List.of(frame(7, "middle"), frame(8, "outer"), frame(9, "main"));
+        assertTrue(ExceptionBreakpoints.propagating(before, 100, now, 99));
+        assertFalse(ExceptionBreakpoints.propagating(before, 100, now, 100), "not further out");
+        assertFalse(ExceptionBreakpoints.propagating(before, 100, List.of(frame(7, "other"), frame(8, "outer")), 99));
+        assertFalse(ExceptionBreakpoints.propagating(before, 100, now, 90), "no frame in common: cannot be told");
+    }
+
     private static DapModels.StackFrameInfo frame(int id, String name) {
         return new DapModels.StackFrameInfo(id, name, Path.of("/app/m.py"), 1, 0, null, "", null, null);
     }
@@ -120,5 +131,18 @@ class ExceptionBreakpointsTest {
                 "NullPointerException  if x > 1",
                 ExceptionBreakpoints.label(back.exceptions("p").getFirst(), "any"));
         assertEquals("any", ExceptionBreakpoints.label(bp("java", ""), "any"));
+    }
+
+    @Test
+    void pythonBreakpointsOfBuiltinTypesAreToldToTheAdapter() {
+        assertEquals(
+                Map.of("python", List.of("ValueError", "KeyError")),
+                ExceptionBreakpoints.adapterTypes(
+                        List.of(bp("python", "ValueError"), bp("python", "KeyError, ValueError"), bp("java", "X"))));
+        assertEquals(
+                Map.of(),
+                ExceptionBreakpoints.adapterTypes(List.of(bp("python", "ValueError"), bp("python", "app.MyError"))),
+                "one the adapter cannot be told: it stops on every raised exception, as before");
+        assertEquals(Map.of(), ExceptionBreakpoints.adapterTypes(List.of(bp("python", ""))), "any type");
     }
 }

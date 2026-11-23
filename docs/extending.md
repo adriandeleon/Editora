@@ -280,11 +280,13 @@ The discipline that keeps overlays off the hot path (see
   paint runs after the pulse's layout and follows a gutter that changes width);
 - `redraw()` clears, then iterates only `firstVisibleParToAllParIndex … lastVisibleParToAllParIndex`,
   using `CanvasGuards` for dimension/paintability checks;
-- `setActive(false)` clears and **releases the canvas to 1×1** so it holds no full-viewport
-  texture;
-- implement `TabSurface` so `EditorBuffer.setRenderingActive` releases the canvas while the tab is in the
-  background, size it with `CanvasGuards.fit` / `release`, keep it at 1×1 whenever there is nothing to
-  draw (an active feature with an empty list included), and return early from `scheduleRedraw()` in that
+- `setActive(false)` **drops the canvas** (`canvas = CanvasGuards.released(canvas, getChildren())`, which
+  puts a fresh 1×1 canvas in its place) so it holds no full-viewport texture: shrinking a canvas does not
+  free the texture JavaFX already gave it, and a hidden canvas is never rendered, so only dropping the
+  canvas frees it. Hold the canvas in a non-final field and re-add anything you put on it (handlers);
+- implement `TabSurface` so `EditorBuffer.setRenderingActive(false)` drops the canvas the same way while
+  the tab is in the background, size it with `CanvasGuards.fit`, shrink it with `CanvasGuards.shrink`
+  (cheap, keeps the texture) whenever there is nothing to draw (an active feature with an empty list included), and return early from `scheduleRedraw()` in that
   case;
 - the data (diagnostics/marks) is **pushed in** by `EditorBuffer`; the overlay only renders.
 - implement `SecondaryPane.Followed`: `follower(view)` returns a twin for a split's second view, and

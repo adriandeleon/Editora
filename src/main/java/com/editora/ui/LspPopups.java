@@ -227,7 +227,7 @@ final class LspPopups {
             showSmartType(b, List.of(type), expected.afterNew());
             return;
         }
-        lspManager.changeDocument(path, b.text());
+        LspCoordinator.syncText(lspManager, b, path);
         lspManager.signatureHelp(path, area.getCurrentParagraph(), area.getCaretColumn(), null, false, null, help -> {
             if (b != host.activeBuffer()
                     || b.isDisposed()
@@ -308,7 +308,7 @@ final class LspPopups {
                 && signatureRequestVersion == b.docVersion()
                 && signatureRequestCaret == area.getCaretPosition()) return;
         if (signatureArea != null && signatureArea != area) hideSignaturePopup();
-        lspManager.changeDocument(path, b.text()); // sync latest text before the request
+        LspCoordinator.syncText(lspManager, b, path); // sync latest text before the request
         long generation = ++signatureGeneration;
         long version = b.docVersion();
         int caret = area.getCaretPosition();

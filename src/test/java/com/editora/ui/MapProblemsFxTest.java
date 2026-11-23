@@ -44,6 +44,47 @@ class MapProblemsFxTest {
         return new LspDiagnostic(line, 0, line, 1, severity, message, null, "javac", null, false);
     }
 
+    /** Perf review 2026-11-23 S4: diagnostics that arrive while the Map is hidden are counted once, on the show. */
+    @Test
+    void problemsThatArriveWhileTheMapIsHiddenAreCountedOnTheShow() throws Exception {
+        Path project = Files.createDirectories(temp.resolve("hidden")).toRealPath();
+        Path a = Files.writeString(
+                Files.createDirectories(project.resolve("src")).resolve("A.java"), "class A {}\n");
+        ProjectMapView view = FxTestSupport.callOnFx(() -> {
+            ProjectMapView made = new ProjectMapView(path -> {}, path -> false, path -> false);
+            made.setRoot(project);
+            return made;
+        });
+        try {
+            FxTestSupport.runOnFx(() -> {
+                Region surface = FxTestSupport.field(view, "surface");
+                view.setShowing(false);
+                Map<Path, List<LspDiagnostic>> live = new java.util.HashMap<>();
+                live.put(a, List.of(problem(0, LspDiagnostic.Severity.WARNING, "unused")));
+                view.setProblems(live);
+                assertTrue(
+                        ((ProjectMapProblems) FxTestSupport.call(surface, "problems", new Class<?>[0])).isEmpty(),
+                        "nothing is counted while nobody looks");
+                // The Problems window's map changes again before the Map is shown: the show counts what it holds then.
+                live.put(a, List.of(problem(0, LspDiagnostic.Severity.ERROR, "cannot find symbol")));
+                view.setProblems(live);
+                view.setShowing(true);
+                assertEquals(
+                        new ProjectMapProblems.Count(1, 0),
+                        ((ProjectMapProblems) FxTestSupport.call(surface, "problems", new Class<?>[0]))
+                                .of(project.resolve("src")));
+                live.clear(); // the copy taken on the show is the Map's own
+                assertEquals(new ProjectMapProblems.Count(1, 0), view.problems().of(a));
+                // Hidden again: a use (Next Problem) counts them at once.
+                view.setShowing(false);
+                view.setProblems(Map.of(a, List.of(problem(0, LspDiagnostic.Severity.WARNING, "raw"))));
+                assertEquals(new ProjectMapProblems.Count(0, 1), view.problems().of(a));
+            });
+        } finally {
+            FxTestSupport.runOnFx(view::dispose);
+        }
+    }
+
     @Test
     void theRowsTheChipTheTooltipAndNextProblem() throws Exception {
         Path project = Files.createDirectories(temp.resolve("project")).toRealPath();

@@ -3,6 +3,7 @@ package com.editora.editor;
 import java.util.function.IntSupplier;
 
 import javafx.geometry.Bounds;
+import javafx.geometry.Point2D;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
@@ -16,7 +17,8 @@ import org.jspecify.annotations.Nullable;
  * Faint vertical lines at each indentation level of the visible lines (VS Code's indent guides), painted on a
  * {@link Canvas} over the text.
  *
- * <p>Placed from the text as it is laid out: one character-bounds query per redraw finds column 0, and a
+ * <p>Placed from the text as it is laid out: column 0 is the first visible character, measured once per pulse for
+ * every overlay and only when the frame changed ({@link AfterLayoutPaint#firstCharacterOnScreen}), and a
  * repaint measures the width of one column of indentation on the most deeply indented visible line (the font's
  * own metrics, {@link ColumnAdvance}, are only the fallback when no visible line is indented — they measure a
  * digit, and in a proportional font a space is narrower). Each visible line costs one paragraph-bounds query for
@@ -41,7 +43,7 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
     static java.util.@Nullable List<double[]> guidesForTest;
 
     private final CodeArea area;
-    private final Canvas canvas = new Canvas(1, 1);
+    private Canvas canvas = new Canvas(1, 1);
     private final ColumnAdvance advance = new ColumnAdvance();
     /** The indent unit in columns ({@code tabSize} for a tab) and the tab size, read at each redraw. */
     private final IntSupplier unitColumns;
@@ -149,7 +151,7 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
             requestLayout();
             scheduleRedraw();
         } else {
-            CanvasGuards.release(canvas);
+            canvas = CanvasGuards.released(canvas, getChildren());
             painted = 0;
         }
     }
@@ -178,7 +180,7 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
             requestLayout();
             scheduleRedraw();
         } else {
-            CanvasGuards.release(canvas);
+            canvas = CanvasGuards.released(canvas, getChildren());
         }
     }
 
@@ -187,8 +189,8 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
     }
 
     /**
-     * Asks for a repaint after the next layout pass (see {@link AfterLayoutPaint}). Where the text starts is part of the frame key as well, so a
-     * repaint that finds nothing moved costs no layout query beyond that one.
+     * Asks for a repaint after the next layout pass (see {@link AfterLayoutPaint}). Where the text column is
+     * is part of the frame key as well, so a repaint that finds nothing moved costs no layout query.
      */
     private void scheduleRedraw() {
         if (!drawable() || redrawPending) {
@@ -201,7 +203,7 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
     /** Repaints when anything the guides depend on changed; returns whether it painted a new frame. */
     private boolean redraw() {
         if (!drawable() || !CanvasGuards.paintable(getWidth(), getHeight())) {
-            CanvasGuards.release(canvas);
+            CanvasGuards.shrink(canvas);
             painted = 0;
             return false;
         }
@@ -222,16 +224,22 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
             }
             int[] widths =
                     IndentLevels.widths(p -> area.getParagraph(p).getText(), total, first, last, tab, LOOKAROUND);
-            double zero = columnZeroX(first, last);
             // Most keystrokes change no line's indentation and move nothing: the picture is the same, so the
-            // per-line layout queries below are skipped. Everything the picture depends on is in the key —
-            // where the text starts included, which moves without a scroll or an edit when the gutter changes.
-            long key = frameKey(first, last, widths, unit, w, h, zero);
+            // layout queries below are skipped. Everything the picture depends on is in the key — where the text
+            // column is included, which moves without a scroll or an edit when the gutter changes. That is read
+            // with plain transforms; a character-bounds query dirties the scene and costs the next frame.
+            Point2D canvasAt = canvas.localToScreen(0, 0);
+            double column = afterLayout.textColumnOnScreen() - (canvasAt == null ? 0 : canvasAt.getX());
+            long key = frameKey(first, last, widths, unit, w, h, column);
             if (key == painted) {
                 return false;
             }
             g.clearRect(0, 0, w, h);
             painted = 0;
+            // Where column 0 is: the first visible character, measured once this pulse for every overlay.
+            Bounds origin = afterLayout.firstCharacterOnScreen();
+            double zero =
+                    origin == null ? Double.NaN : canvas.screenToLocal(origin).getMinX();
             if (Double.isNaN(zero)) {
                 return false;
             }
@@ -311,13 +319,13 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
     private long painted;
 
     /**
-     * What the guides depend on: where column 0 is, the visible lines and their indentation, the unit, the scroll
+     * What the guides depend on: where the text column is, the visible lines and their indentation, the unit, the scroll
      * position, the document's height (a line that wraps anew, an inlay row), the colour and font, the canvas
      * size, and which lines are folded.
      */
-    private long frameKey(int first, int last, int[] widths, int unit, double w, double h, double zero) {
+    private long frameKey(int first, int last, int[] widths, int unit, double w, double h, double column) {
         long key = 17;
-        key = 31 * key + Double.hashCode(zero);
+        key = 31 * key + Double.hashCode(column);
         key = 31 * key + first;
         key = 31 * key + last;
         key = 31 * key + java.util.Arrays.hashCode(widths);
@@ -336,20 +344,6 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
             }
         }
         return key == 0 ? 1 : key;
-    }
-
-    /** Canvas-local x of column 0, from the first character of a visible line; NaN when none has one. */
-    private double columnZeroX(int first, int last) {
-        for (int p = first; p <= last; p++) {
-            if (area.isFolded(p) || area.getParagraphLength(p) == 0) {
-                continue;
-            }
-            Bounds b = bounds(p, 0);
-            if (b != null) {
-                return b.getMinX();
-            }
-        }
-        return Double.NaN;
     }
 
     /**

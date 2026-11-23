@@ -53,20 +53,72 @@ final class DebugValues {
         if (value == null || (value.indexOf('\n') < 0 && value.indexOf('\r') < 0)) {
             return capped(value);
         }
-        String[] lines = value.split("\\R");
-        String first = "";
-        for (String line : lines) {
-            if (!line.isBlank()) {
-                first = line.stripTrailing();
-                break;
-            }
+        // As value.split("\\R") read it, without splitting the whole value per cell paint (a 1 MB DataFrame repr
+        // was split, line by line, each time its row was drawn): the first non-blank line is the one with the
+        // first character that is neither white space nor a line break; the last line is the last non-empty one.
+        int n = value.length();
+        int at = 0;
+        while (at < n && blank(value.charAt(at))) {
+            at++;
         }
-        if (lines.length == 0) {
+        int lastEnd = n;
+        while (lastEnd > 0 && lineBreak(value.charAt(lastEnd - 1))) {
+            lastEnd--;
+        }
+        if (lastEnd == 0) {
             return " …"; // only line breaks: split leaves nothing
         }
-        String last = lines[lines.length - 1].strip();
-        boolean closes = last.equals("}") || last.equals("};");
-        return capped(first) + (first.endsWith("{") && closes ? " … }" : " …");
+        String first = "";
+        boolean opens = false;
+        if (at < n) {
+            int start = at;
+            while (start > 0 && !lineBreak(value.charAt(start - 1))) {
+                start--;
+            }
+            int end = at;
+            while (end < n && !lineBreak(value.charAt(end))) {
+                end++;
+            }
+            while (end > start && Character.isWhitespace(value.charAt(end - 1))) {
+                end--; // stripTrailing
+            }
+            opens = value.charAt(end - 1) == '{';
+            // Only as much as capped keeps, plus one so that it still knows the line is longer.
+            first = value.substring(start, Math.min(end, start + MAX_SHOWN + 1));
+        }
+        return capped(first) + (opens && closes(value, lastEnd) ? " … }" : " …");
+    }
+
+    /** Whether the line ending at {@code end} (exclusive), stripped, is "}" or "};". */
+    private static boolean closes(String value, int end) {
+        int e = end;
+        while (e > 0 && Character.isWhitespace(value.charAt(e - 1)) && !lineBreak(value.charAt(e - 1))) {
+            e--;
+        }
+        if (e > 0 && value.charAt(e - 1) == ';') {
+            e--;
+        }
+        if (e == 0 || value.charAt(e - 1) != '}') {
+            return false;
+        }
+        e--;
+        while (e > 0 && !lineBreak(value.charAt(e - 1))) {
+            if (!Character.isWhitespace(value.charAt(e - 1))) {
+                return false;
+            }
+            e--;
+        }
+        return true;
+    }
+
+    /** A character {@code \R} matches: a line break. */
+    private static boolean lineBreak(char c) {
+        return (c >= '\n' && c <= '\r') || c == '\u0085' || c == '\u2028' || c == '\u2029';
+    }
+
+    /** A character no non-blank line starts with: white space or a line break. */
+    private static boolean blank(char c) {
+        return lineBreak(c) || Character.isWhitespace(c);
     }
 
     /** The most characters a Variables row shows of one value. */

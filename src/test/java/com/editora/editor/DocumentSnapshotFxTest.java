@@ -47,6 +47,116 @@ class DocumentSnapshotFxTest {
         });
     }
 
+    /**
+     * A typing pause takes the document in O(1) on the FX thread and the highlight pass builds its text on the
+     * pool (perf review 2026-11-23 E2); a consumer on the FX thread afterwards reuses that String.
+     */
+    @Test
+    void aHighlightPassBuildsTheTextOffTheFxThreadAndTheFxThreadReusesIt() throws Exception {
+        EditorBuffer[] holder = new EditorBuffer[1];
+        runOnFx(() -> {
+            EditorBuffer buffer = new EditorBuffer();
+            holder[0] = buffer;
+            buffer.setPath(java.nio.file.Path.of("/tmp/snap/A.java").toAbsolutePath());
+            buffer.setInitialContent("class A {\n  void one() {}\n}\n");
+        });
+        EditorBuffer buffer = holder[0];
+        try {
+            awaitOnFx(() -> !buffer.settlingForTest());
+            long[] before = new long[1];
+            runOnFx(() -> {
+                buffer.getArea().appendText("// edit\n");
+                before[0] = buffer.documentSnapshotMaterializations();
+                buffer.highlighter.applyHighlighting();
+                assertEquals(before[0], buffer.documentSnapshotMaterializations(), "nothing built on the FX thread");
+            });
+            awaitOnFx(() -> !buffer.settlingForTest());
+            runOnFx(() -> {
+                // The pass, the pause's own pass, the Run scan, the spell code lines and the Undo History
+                // checkpoint (on the FX thread) all read this version: its text was built once.
+                assertEquals(before[0] + 1, buffer.documentSnapshotMaterializations(), "built once, and reused");
+            });
+        } finally {
+            runOnFx(buffer::dispose);
+        }
+    }
+
+    /** A pause in a CSV buffer restyles the records an edit changed, not the whole document (E4). */
+    @Test
+    void aCsvPauseRestylesOnlyWhatTheEditChanged() throws Exception {
+        String rows = "name,qty,price\n" + "apple,1,2.5\n".repeat(2_000);
+        EditorBuffer[] holder = new EditorBuffer[1];
+        runOnFx(() -> {
+            EditorBuffer buffer = new EditorBuffer();
+            holder[0] = buffer;
+            buffer.setPath(java.nio.file.Path.of("/tmp/snap/rows.csv").toAbsolutePath());
+            buffer.setCsvRainbowEnabled(true);
+            buffer.setInitialContent(rows);
+        });
+        EditorBuffer buffer = holder[0];
+        try {
+            awaitOnFx(() -> !buffer.settlingForTest() && buffer.highlighter.csvRestyledForTest >= 0);
+            runOnFx(() -> assertEquals(
+                    styles(
+                            rows,
+                            com.editora.editor.highlight.CsvRainbow.buildSpans(
+                                    rows, ',', com.editora.editor.highlight.CsvRainbow.COLORS)),
+                    styles(rows, buffer.getArea().getStyleSpans(0, rows.length())),
+                    "coloured whole once"));
+            int at = rows.indexOf("apple", rows.length() / 2) + 2;
+            runOnFx(() -> {
+                buffer.getArea().insertText(at, ",x"); // a new column in one record
+            });
+            awaitOnFx(() -> !buffer.settlingForTest());
+            runOnFx(() -> {
+                int restyled = buffer.highlighter.csvRestyledForTest;
+                org.junit.jupiter.api.Assertions.assertTrue(
+                        restyled > 0 && restyled < 20, "only that record's tail: " + restyled);
+                String text = buffer.getArea().getText();
+                assertEquals(
+                        styles(
+                                text,
+                                com.editora.editor.highlight.CsvRainbow.buildSpans(
+                                        text,
+                                        com.editora.csv.CsvParser.detectDelimiter(text),
+                                        com.editora.editor.highlight.CsvRainbow.COLORS)),
+                        styles(text, buffer.getArea().getStyleSpans(0, text.length())),
+                        "the document shows the colours a whole restyle would");
+            });
+        } finally {
+            runOnFx(buffer::dispose);
+        }
+    }
+
+    /** Each character's style, line breaks left out (the area gives a break its line's last style). */
+    private static java.util.List<Object> styles(
+            String text, org.fxmisc.richtext.model.StyleSpans<java.util.Collection<String>> spans) {
+        java.util.List<Object> out = new java.util.ArrayList<>();
+        int pos = 0;
+        for (var span : spans) {
+            for (int i = 0; i < span.getLength(); i++, pos++) {
+                if (text.charAt(pos) != '\n') {
+                    out.add(span.getStyle());
+                }
+            }
+        }
+        return out;
+    }
+
+    private static void awaitOnFx(java.util.function.BooleanSupplier condition) throws Exception {
+        com.editora.testkit.Await.until(
+                () -> {
+                    boolean[] ok = {false};
+                    try {
+                        runOnFx(() -> ok[0] = condition.getAsBoolean());
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                    return ok[0];
+                },
+                "the buffer settled");
+    }
+
     private static void runOnFx(Runnable task) throws Exception {
         AtomicReference<Throwable> failure = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);

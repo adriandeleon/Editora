@@ -1294,7 +1294,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             com.editora.config.PathKeys.invalidateCanonicalCache(); // files moved on disk under us (#680)
             indexCoordinator.onExternalChanges(changes, complete);
             previews.lint().onExternalChanges(changes); // a changed .markdownlint* re-lints open buffers
-            git.refresh();
+            if (panel.mayChangeGitStatus(changes, complete)) {
+                git.refresh(); // not for a batch wholly in gitignored paths, a build's output (F2)
+            }
             refreshBuildTools();
             diffCoordinator.refreshOpenDiffs();
             fileWorkflows.checkRemoteExternalChanges(changes); // reported by a remote folder's host

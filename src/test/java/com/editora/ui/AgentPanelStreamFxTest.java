@@ -286,4 +286,53 @@ class AgentPanelStreamFxTest {
 
         assertEquals("Fresh reply", second);
     }
+
+    /** The {@code .md-code-block} nodes under {@code node}. */
+    private static List<Node> codeBlocks(Node node) {
+        List<Node> out = new ArrayList<>();
+        if (node.getStyleClass().contains("md-code-block")) {
+            out.add(node);
+        }
+        if (node instanceof Parent parent) {
+            for (Node child : parent.getChildrenUnmodifiable()) {
+                out.addAll(codeBlocks(child));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * A code fence still streaming is plain code, with no highlighting job queued at every render of the stream
+     * (perf review P5); once it closes it is highlighted like any other.
+     */
+    @Test
+    void anOpenFenceStreamsAsPlainCodeAndIsHighlightedOnceClosed() throws Exception {
+        Object[] result = FxTestSupport.callOnFx(() -> {
+            AgentPanel panel = panel();
+            panel.appendChunk("Writing it:\n\n```java\nclass Main {\n    int field;\n");
+            streamingRender(panel);
+            panel.appendChunk("    int other;\n");
+            streamingRender(panel);
+            List<Node> open = codeBlocks(message(panel));
+            panel.appendChunk("}\n```\n");
+            streamingRender(panel);
+            List<Node> closed = codeBlocks(message(panel));
+            return new Object[] {open, closed};
+        });
+        @SuppressWarnings("unchecked")
+        List<Node> open = (List<Node>) result[0];
+        @SuppressWarnings("unchecked")
+        List<Node> closed = (List<Node>) result[1];
+        assertEquals(1, open.size());
+        assertTrue(open.get(0) instanceof Labeled, "plain while open: " + open.get(0));
+        assertEquals(1, closed.size());
+        assertTrue(closed.get(0) instanceof javafx.scene.text.TextFlow, "highlighted once closed: " + closed.get(0));
+    }
+
+    @Test
+    void newlinesCountsTheLinesOfARange() {
+        assertEquals(0, AgentPanel.newlines("abc", 0, 3));
+        assertEquals(2, AgentPanel.newlines("a\nb\nc\n", 0, 4));
+        assertEquals(2, AgentPanel.newlines("a\nb\nc\n", 2, 6));
+    }
 }

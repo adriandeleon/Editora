@@ -77,6 +77,17 @@ class MenuPopupBoundsFxTest {
             org.junit.jupiter.api.Assumptions.assumeTrue(
                     popup != null, "the headless platform did not map a popup window; run this on a desktop");
 
+            if (!com.editora.command.KeymapManager.isMac()) {
+                // The menu's rows were built by this, its first opening (PERF-14), and are in the popup it shows.
+                FxTestSupport.runOnFx(() -> {}); // one more turn for the popup's skin
+                java.util.List<String> titles =
+                        FxTestSupport.callOnFx(() -> popup.getScene().getRoot().lookupAll(".menu-item-title").stream()
+                                .map(n -> ((javafx.scene.control.Label) n).getText())
+                                .filter(t -> t != null && !t.isBlank())
+                                .toList());
+                assertTrue(titles.size() > 3, "the first opening put the menu's rows in its popup: " + titles);
+            }
+
             double popupTop = FxTestSupport.callOnFx(popup::getY);
             double popupLeft = FxTestSupport.callOnFx(popup::getX);
             double popupRight = FxTestSupport.callOnFx(() -> popup.getX() + popup.getWidth());

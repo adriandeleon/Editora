@@ -2786,7 +2786,7 @@ final class LspCoordinator {
         }
         int[] window = paddedWindow(buffer.visibleLineWindow(), CODE_LENS_WINDOW_PAD, buffer.lineCount());
         long version = buffer.docVersion();
-        lspManager.changeDocument(path, buffer.text()); // the counts are for the text on screen
+        syncText(buffer, path); // the counts are for the text on screen
         lspManager.requestCodeLens(path, window[0], window[1], spans -> {
             if (buffer != host.activeBuffer() || buffer.docVersion() != version) {
                 return;
@@ -4208,6 +4208,11 @@ final class LspCoordinator {
 
     /** Notifies the server of a save (didSave) for a managed file + refreshes pull-model diagnostics. */
     void notifyDocumentSaved(EditorBuffer buffer, String savedText) {
+        notifyDocumentSaved(buffer, savedText, false);
+    }
+
+    /** As above; {@code autoSave}: the save was autosave's, so the project recheck waits for a longer lull. */
+    void notifyDocumentSaved(EditorBuffer buffer, String savedText, boolean autoSave) {
         eslint.saved(buffer);
         if (buffer != null && buffer.getPath() != null && untitledLspPaths.containsKey(buffer)) {
             syncBuffer(buffer); // an untitled buffer saved: its file replaces the made-up document (B14)
@@ -4246,6 +4251,7 @@ final class LspCoordinator {
             if ((projectWideProblems || lspManager.otherJavaDocumentOpen(path))
                     && LspServerRegistry.JAVA_SERVER_ID.equals(lspManager.managedServerId(path))) {
                 pendingProjectRecheck.add(path); // one build per session, saves in two projects both checked
+                projectRecheck.setDuration(javafx.util.Duration.millis(recheckDelayMillis(autoSave)));
                 projectRecheck.playFromStart();
             }
         } else if (path != null && path.toString().endsWith(".java") && lspManager.hasJavaSession(path)) {
@@ -4291,7 +4297,7 @@ final class LspCoordinator {
                 return;
             }
             String before = buffer.getContent();
-            lspManager.changeDocument(path, buffer.text()); // the formatter must see what Organize Imports left
+            syncText(buffer, path); // the formatter must see what Organize Imports left
             lspManager.formatDocument(path, formatRequestIndent(buffer), edits -> {
                 if (!edits.isEmpty() && buffer.getContent().equals(before) && !buffer.isDisposed()) {
                     buffer.applyLspEdits(edits);
@@ -4306,7 +4312,7 @@ final class LspCoordinator {
                 formatThenSave.run();
                 return;
             }
-            lspManager.changeDocument(path, buffer.text()); // after a clean-up, Organize Imports sees its result
+            syncText(buffer, path); // after a clean-up, Organize Imports sees its result
             CodeArea area = buffer.getArea();
             int last = Math.max(0, area.getParagraphs().size() - 1);
             lspManager.organizeImportsQuietly(
@@ -4337,7 +4343,7 @@ final class LspCoordinator {
             host.setStatus(tr("status.lsp.cleanupNoneChosen"));
             return;
         }
-        lspManager.changeDocument(path, b.text());
+        syncText(b, path);
         lspManager.cleanUpJava(
                 path,
                 outcome -> host.setStatus(tr(
@@ -4377,8 +4383,23 @@ final class LspCoordinator {
      */
     private final javafx.animation.PauseTransition projectRecheck = projectRecheck();
 
+    /** How long after a save the project recheck waits: a later save starts the wait again. */
+    static final int RECHECK_DELAY_MILLIS = 1200;
+
+    /**
+     * The wait after an autosave. Autosave "after delay" saves at every pause in typing (1 s at least), and each
+     * recheck re-sends every other open Java file to jdtls, or starts a workspace build: while the user is still
+     * typing, these only pile up. The recheck comes once typing has stopped for this long (perf review 2026-11-23 L4).
+     */
+    static final int AUTOSAVE_RECHECK_DELAY_MILLIS = 5000;
+
+    /** Pure: the recheck's wait after a save. */
+    static int recheckDelayMillis(boolean autoSave) {
+        return autoSave ? AUTOSAVE_RECHECK_DELAY_MILLIS : RECHECK_DELAY_MILLIS;
+    }
+
     private javafx.animation.PauseTransition projectRecheck() {
-        var recheck = new javafx.animation.PauseTransition(javafx.util.Duration.millis(1200));
+        var recheck = new javafx.animation.PauseTransition(javafx.util.Duration.millis(RECHECK_DELAY_MILLIS));
         recheck.setOnFinished(e -> {
             List<Path> saved = List.copyOf(pendingProjectRecheck);
             pendingProjectRecheck.clear();
@@ -4418,6 +4439,25 @@ final class LspCoordinator {
                     });
         });
         return recheck;
+    }
+
+    /**
+     * Sends {@code buffer}'s text to its server before a request, through the buffer when it is wired, so the
+     * version sent is recorded: the typing pause after it then sends nothing. A direct {@code changeDocument}
+     * left the record behind, and the pause, sending the same text again, took it for a net-zero edit and put the
+     * pre-edit marks back on lines the edit had moved (perf review 2026-11-23 L5, the #417 symptom).
+     */
+    static void syncText(LspManager manager, EditorBuffer buffer, Path path) {
+        if (buffer.sendsLspChanges()) {
+            buffer.sendLspChange(); // nothing when this version went out already
+        } else {
+            manager.changeDocument(path, buffer.text());
+        }
+    }
+
+    /** As {@link #syncText(LspManager, EditorBuffer, Path)} with this window's manager. */
+    void syncText(EditorBuffer buffer, Path path) {
+        syncText(lspManager, buffer, path);
     }
 
     /** Wires every LSP hook onto a freshly-added buffer (didChange/diagnostics/completion/format/nav), then
@@ -4568,7 +4608,7 @@ final class LspCoordinator {
         buffer.setDefinitionProbe((line, character, found) -> {
             Path path = lspPath(buffer);
             if (path != null && lspManager.isManaged(path)) {
-                lspManager.definition(path, line, character, targets -> found.accept(!targets.isEmpty()));
+                lspManager.definitionProbe(path, line, character, found::accept); // a new word cancels the last
             } else {
                 found.accept(false);
             }
@@ -4796,7 +4836,7 @@ final class LspCoordinator {
         CodeArea area = b.getFocusedArea();
         int lastLine = Math.max(0, area.getParagraphs().size() - 1);
         int lastChar = area.getParagraph(lastLine).length();
-        lspManager.changeDocument(path, b.text()); // the server organizes the text it has
+        syncText(b, path); // the server organizes the text it has
         lspManager.organizeImportsAny(path, lastLine, lastChar, outcome -> {
             if (outcome == LspManager.OrganizeOutcome.FAILED) {
                 host.setError(tr("status.lsp.importsFailed"));
@@ -4823,7 +4863,7 @@ final class LspCoordinator {
             return;
         }
         CodeArea area = b.getFocusedArea();
-        lspManager.changeDocument(path, b.text());
+        syncText(b, path);
         lspManager.fullyQualifiedName(path, area.getCurrentParagraph(), area.getCaretColumn(), name -> {
             if (name == null) {
                 host.setStatus(tr("status.lsp.noQualifiedName"));
@@ -5247,7 +5287,7 @@ final class LspCoordinator {
         // can leave the server's copy ~300 ms behind, and formatting the STALE server text yields edits whose
         // offsets don't line up with the document on screen (#667). Redundant when already current, but a
         // full-text didChange is cheap next to the formatting round-trip itself.
-        lspManager.changeDocument(path, buffer.text());
+        syncText(buffer, path);
         // The server computes whole-document edits (line/col based) against the text as it is NOW. If the
         // user edits during the async round-trip, those offsets no longer line up — and applyLspEdits only
         // clamps + swallows, so a stale format silently corrupts the file (every line mis-formatted/shifted).
@@ -5400,7 +5440,7 @@ final class LspCoordinator {
         }
         String serverId = lspManager.managedServerId(path);
         CodeArea area = b.getFocusedArea();
-        lspManager.changeDocument(path, b.text()); // sync latest text before the request
+        syncText(b, path); // sync latest text before the request
         var sel = area.getSelection();
         boolean hasSelection = sel.getLength() > 0;
         var start = area.offsetToPosition(

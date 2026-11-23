@@ -32,7 +32,35 @@ public final class Looked<K, V> {
     /** How old an answer the FX thread takes without asking for a fresh one behind it. */
     private static final long FRESH_NANOS = 5_000_000_000L;
 
-    private record Kept<V>(Optional<V> value, long at) {}
+    /** An answer, when it was looked at, and when an ask last used it (what eviction goes by). */
+    private static final class Kept<V> {
+        private final Optional<V> value;
+        private final long at;
+        private volatile long used;
+
+        Kept(Optional<V> value, long at) {
+            this.value = value;
+            this.at = at;
+            this.used = at;
+        }
+
+        Optional<V> value() {
+            return value;
+        }
+
+        long at() {
+            return at;
+        }
+
+        long used() {
+            return used;
+        }
+
+        Kept<V> touch(long now) {
+            used = now;
+            return this;
+        }
+    }
 
     private final @Nullable V coldAnswer;
 
@@ -40,6 +68,14 @@ public final class Looked<K, V> {
     private final Set<K> looking = ConcurrentHashMap.newKeySet();
 
     private volatile @Nullable Consumer<K> learned;
+
+    /** The clock ages go by: {@link System#nanoTime} but in tests. */
+    private volatile java.util.function.LongSupplier clock = System::nanoTime;
+
+    /** Sets the clock ages go by (tests). */
+    void clockForTest(java.util.function.LongSupplier clock) {
+        this.clock = clock;
+    }
 
     /**
      * A memo whose cold key answers null on the FX thread ("unknown": its FX askers check {@link #allKnown} first)
@@ -116,9 +152,18 @@ public final class Looked<K, V> {
         if (onFx()) {
             Kept<V> kept = known.get(key);
             if (kept != null) {
-                if (System.nanoTime() - kept.at() > FRESH_NANOS) {
-                    // Looked at again behind the answer, so the next ask has the disk as it is now.
-                    Thread.ofVirtual().name(name + "-refresh").start(() -> lookNow(key));
+                long now = clock.getAsLong();
+                kept.touch(now);
+                if (now - kept.at() > FRESH_NANOS && looking.add(key)) {
+                    // Looked at again behind the answer, so the next ask has the disk as it is now; one look per key
+                    // at a time, however often the FX thread asks meanwhile.
+                    Thread.ofVirtual().name(name + "-refresh").start(() -> {
+                        try {
+                            lookNow(key);
+                        } finally {
+                            looking.remove(key);
+                        }
+                    });
                 }
                 return kept.value().orElse(null);
             }
@@ -195,7 +240,7 @@ public final class Looked<K, V> {
     private @Nullable V lookNow(K key) {
         BlockingSites.enter(name);
         V value = look.apply(key);
-        long now = System.nanoTime();
+        long now = clock.getAsLong();
         if (known.size() >= MAX) {
             evict(now);
         }
@@ -207,19 +252,33 @@ public final class Looked<K, V> {
     private static final long KEEP_NANOS = 60_000_000_000L;
 
     /**
-     * Makes room: drops the keys not looked at for {@link #KEEP_NANOS}, never one just looked at — an FX command that
-     * found a key missing has it looked at off the thread and then asks again, and must find it — and, if every key
-     * is that fresh and the memo has grown to four times its bound, the older half.
+     * Makes room: drops the keys asked for least recently until the memo is back under three quarters of its bound,
+     * never one used within {@link #KEEP_NANOS} — an FX command that found a key missing has it looked at off the
+     * thread and then asks again, and must find it — and, if every key is that fresh and the memo has grown to four
+     * times its bound, the less recently used half. A working set larger than the bound keeps the keys in use rather
+     * than falling back to cold answers all at once.
      */
     private void evict(long now) {
-        known.entrySet().removeIf(e -> now - e.getValue().at() > KEEP_NANOS);
+        List<Map.Entry<K, Kept<V>>> byUse = new java.util.ArrayList<>(known.entrySet());
+        byUse.sort(java.util.Comparator.comparingLong(e -> e.getValue().used()));
+        int target = MAX * 3 / 4;
+        int size = byUse.size();
+        for (int i = 0; i < byUse.size() && size > target; i++) {
+            Map.Entry<K, Kept<V>> e = byUse.get(i);
+            if (now - e.getValue().used() <= KEEP_NANOS) {
+                break; // sorted by use: every later key is fresher
+            }
+            if (known.remove(e.getKey(), e.getValue())) {
+                size--;
+            }
+        }
         if (known.size() < 4 * MAX) {
             return;
         }
-        List<Map.Entry<K, Kept<V>>> byAge = new java.util.ArrayList<>(known.entrySet());
-        byAge.sort(java.util.Comparator.comparingLong(e -> e.getValue().at()));
-        for (int i = 0; i < byAge.size() / 2; i++) {
-            known.remove(byAge.get(i).getKey(), byAge.get(i).getValue());
+        byUse = new java.util.ArrayList<>(known.entrySet());
+        byUse.sort(java.util.Comparator.comparingLong(e -> e.getValue().used()));
+        for (int i = 0; i < byUse.size() / 2; i++) {
+            known.remove(byUse.get(i).getKey(), byUse.get(i).getValue());
         }
     }
 

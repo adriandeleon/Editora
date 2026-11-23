@@ -204,6 +204,7 @@ class MainControllerChromeFxTest {
         FxTestSupport.runOnFx(() -> {
             settings.setFontZoom(1.0);
             MainMenuBar menuBar = FxTestSupport.field(controller, "menuBar");
+            menuBar.buildAllRows(); // a menu's rows are built when it first opens
             MenuBar bar = (MenuBar) menuBar.node();
             List<MenuItem> all = new ArrayList<>();
             for (Menu menu : bar.getMenus()) {

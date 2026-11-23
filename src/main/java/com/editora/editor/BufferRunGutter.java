@@ -343,8 +343,8 @@ final class BufferRunGutter {
             landed();
             return;
         }
-        String text = b.documentTextSnapshot();
         if (scanInPlaceForTest) {
+            String text = b.documentTextSnapshot();
             runScanInFlight = false;
             RunScan.Result found = RunScan.scan(in, text);
             applyRunScan(found, testIndexOf(text, found));
@@ -353,8 +353,10 @@ final class BufferRunGutter {
         }
         runScanInFlight = true;
         long version = b.docVersion;
+        DocumentText document = b.documentText(); // O(1); its text is built on the pool (perf review 2026-11-23 E2)
         EditorBuffer.HIGHLIGHT_POOL.execute(() -> {
             com.editora.perf.BlockingSites.enter(RUN_SCAN_SITE);
+            String text = document.text();
             RunScan.Result found = RunScan.scan(in, text);
             com.editora.test.JavaTestScanner.CaretIndex index = testIndexOf(text, found);
             Platform.runLater(() -> {

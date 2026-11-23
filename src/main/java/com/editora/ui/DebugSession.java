@@ -222,6 +222,22 @@ final class DebugSession {
     /** The stack and type of the last exception an exception breakpoint showed: the same one passing up is not shown again. */
     List<DapModels.StackFrameInfo> lastExceptionFrames = List.of();
 
+    /** How deep the stack of {@link #lastExceptionFrames} was (they are its top frames). */
+    int lastExceptionDepth;
+
+    /**
+     * A stop the window does not show yet: the session is suspended, and whether the user sees the stop is still being
+     * decided (breakpoint filters, a token logpoint, exception breakpoints, a dump's pause). The window shows it as
+     * running meanwhile, and a resume that ends it changes nothing on screen (perf review 2026-11-23, D4).
+     */
+    boolean suspendHeld;
+
+    /** The state the window last showed for this session. */
+    com.editora.dap.DapManager.State uiState = com.editora.dap.DapManager.State.INACTIVE;
+
+    /** How many times the window showed this session go Suspended (a test's measure of quiet stops). */
+    int suspendsShown;
+
     String lastExceptionType = "";
 
     /** The stop a recording breakpoint made, whose frame is not shown in the editor; -1 for none. */

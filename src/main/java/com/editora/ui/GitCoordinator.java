@@ -435,8 +435,11 @@ final class GitCoordinator {
         if (!isEnabled()) {
             return;
         }
+        coalescer.fullStarted(refreshClock.getAsLong());
+        if (trailingRefresh != null) {
+            trailingRefresh.stop(); // this one covers it
+        }
         EditorBuffer b = host.activeBuffer();
-        Path file = b == null ? null : b.getPath();
         Path context = contextPath();
         // No active file and no project context (e.g. the Welcome tab in a No-Project window): show no Git
         // rather than falling back to the process working directory's repo.
@@ -454,19 +457,98 @@ final class GitCoordinator {
         // Only diff a real, non-huge file (huge files disable the gutter anyway). A narrowed buffer shows
         // region-relative lines, so whole-file change bars would land on the wrong ones: it gets none.
         // An encrypted file's text would be diffed against its ciphertext in the repository: meaningless bars.
-        Path diffFile = (b != null
+        Path diffFile = diffFileOf(b);
+        service.refresh(context, diffFile, this::applyState);
+    }
+
+    /** The active file when its HEAD diff feeds the gutter, else null (see {@link #refresh()}). */
+    private static @Nullable Path diffFileOf(@Nullable EditorBuffer b) {
+        Path file = b == null ? null : b.getPath();
+        return (b != null
                         && file != null
                         && !b.isLargeFile()
                         && !b.isNarrowed()
                         && !b.encryption().isEncrypted())
                 ? file
                 : null;
-        service.refresh(context, diffFile, this::applyState);
+    }
+
+    /** Light refreshes within a moment of a full one keep its status (F2); see {@link GitRefreshCoalescer}. */
+    private final GitRefreshCoalescer coalescer = new GitRefreshCoalescer();
+
+    /** The full refresh that ends a window of light ones; created on first use, on the FX thread. */
+    private javafx.animation.@Nullable PauseTransition trailingRefresh;
+
+    /** The clock the coalescing window is measured on; a test moves it instead of waiting. */
+    java.util.function.LongSupplier refreshClock = System::nanoTime;
+
+    /**
+     * {@link #refresh()} for a tab switch, a save or an autosave. A moment after a full refresh of the same
+     * repository it keeps that status and diffs only the active file for its gutter, and a full refresh follows at
+     * the end of the moment: switching tabs or saving often in a large work tree ran a whole-repository
+     * {@code git status} each time. The first trigger after a quiet spell refreshes in full, at once.
+     */
+    void refreshSoon() {
+        if (!isEnabled()) {
+            return;
+        }
+        long delay = coalescer.lightDelay(refreshClock.getAsLong());
+        Path root = repoRoot;
+        Path context = contextPath();
+        if (delay < 0
+                || root == null
+                || !lastStatus.isRepo()
+                || context == null
+                || !com.editora.vfs.Vfs.isLocal(context)
+                || !RemoteExec.runsFor(context)) {
+            refresh();
+            return;
+        }
+        Path diffFile = diffFileOf(host.activeBuffer());
+        service.refreshDiff(context, root, diffFile, state -> {
+            if (state == null) {
+                refresh(); // another repository: its status is wanted now
+                return;
+            }
+            if (!root.equals(repoRoot) || !lastStatus.isRepo()) {
+                return; // a full refresh landed meanwhile with another answer; it stands
+            }
+            applyState(
+                    new GitService.RepoState(
+                            root,
+                            state.diffFile(),
+                            lastStatus,
+                            state.changes(),
+                            state.hunks(),
+                            "",
+                            state.operation(),
+                            state.hunkList()),
+                    false);
+        });
+        if (trailingRefresh == null) {
+            trailingRefresh = new javafx.animation.PauseTransition();
+            trailingRefresh.setOnFinished(e -> refresh());
+        }
+        if (trailingRefresh.getStatus() != javafx.animation.Animation.Status.RUNNING) {
+            trailingRefresh.setDuration(javafx.util.Duration.millis(Math.max(1, delay / 1_000_000L)));
+            trailingRefresh.playFromStart();
+        }
     }
 
     /** Applies a completed Git refresh to the status bar, tool window, and active buffer's gutter. */
     void applyState(GitService.RepoState state) {
+        applyState(state, true);
+    }
+
+    /**
+     * As {@link #applyState(GitService.RepoState)}; {@code freshStatus} false when the state carries the status
+     * this coordinator already had ({@link #refreshSoon}): what is read per status (the Commit window's line
+     * counts) waits for the full refresh that follows.
+     */
+    private void applyState(GitService.RepoState state, boolean freshStatus) {
         Path root = state.root();
+        Path previousRoot = repoRoot;
+        GitStatus previousStatus = lastStatus;
         repoRoot = root;
         lastStatus = state.isRepo() ? state.status() : GitStatus.NOT_A_REPO;
         // Before the window surfaces below are told: they re-evaluate menu and palette enablement, which asks
@@ -504,8 +586,13 @@ final class GitCoordinator {
         ops.setGitRefusal("");
         ops.setGitOperation(operation, GitConflicts.unmerged(status).size());
         ops.setGitPanelStatus(status);
-        commits.repositoryApplied(repoRoot); // the template of a new repository, the line counts of this status
-        lastStatusByPath = com.editora.git.GitFileStatus.byPath(status, root);
+        if (freshStatus) {
+            commits.repositoryApplied(repoRoot); // the template of a new repository, the line counts of this status
+        }
+        if (!status.equals(previousStatus) || !root.equals(previousRoot)) {
+            // Built only when the status moved: a path resolve and normalize per changed file, each refresh.
+            lastStatusByPath = com.editora.git.GitFileStatus.byPath(status, root);
+        }
         ops.setProjectGitStatus(lastStatusByPath); // color the tree
         if (b != null && b.isNarrowed()) {
             b.setChangeBars(null, null); // line numbers refer to the whole file, the view to the region
@@ -567,6 +654,9 @@ final class GitCoordinator {
 
     void shutdown() {
         autoFetch.stop();
+        if (trailingRefresh != null) {
+            trailingRefresh.stop(); // no full refresh for a window that is going away
+        }
         service.shutdown();
     }
 

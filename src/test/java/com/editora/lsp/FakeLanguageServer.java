@@ -148,6 +148,9 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
      */
     public volatile boolean holdReplies;
 
+    /** As {@link #holdReplies}, for {@code textDocument/definition}: recorded, kept open in {@link #held}. */
+    public volatile boolean holdDefinitions;
+
     public final List<CompletableFuture<?>> held = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     /** Held requests the client has neither cancelled nor had answered. */
@@ -387,6 +390,12 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(
             DefinitionParams params) {
         definitions.add(params);
+        if (holdDefinitions) {
+            CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> open =
+                    new CompletableFuture<>();
+            held.add(open);
+            return open;
+        }
         if (definitionHandler != null && !failEverything) {
             return CompletableFuture.completedFuture(Either.forLeft(definitionHandler.apply(params)));
         }

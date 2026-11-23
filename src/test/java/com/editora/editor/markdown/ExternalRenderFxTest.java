@@ -312,6 +312,107 @@ class ExternalRenderFxTest {
         awaitRendered(again);
     }
 
+    /** The Mermaid hosts under a rendered Markdown node. */
+    private static List<StackPane> mermaidHosts(Node node) {
+        List<StackPane> out = new java.util.ArrayList<>();
+        if (node instanceof StackPane pane && pane.getStyleClass().contains("md-mermaid")) {
+            out.add(pane);
+        }
+        if (node instanceof javafx.scene.Parent parent) {
+            for (Node child : parent.getChildrenUnmodifiable()) {
+                out.addAll(mermaidHosts(child));
+            }
+        }
+        return out;
+    }
+
+    private static Node renderFence(String source, String surface, boolean streaming, boolean closed) {
+        String md = "Intro\n\n```mermaid\n" + source + "\n" + (closed ? "```\n" : "");
+        return MarkdownRenderer.renderDocument(
+                MarkdownRenderer.parseForRender(md),
+                null,
+                null,
+                MarkdownRenderer.ImagePolicy.DATA_ONLY,
+                line -> surface + line,
+                streaming);
+    }
+
+    /**
+     * A Mermaid fence in a Markdown preview or an agent reply is keyed by its line (perf review P1): typing in it
+     * or streaming it queues one render, the newest, not one {@code mmdc} run for every version.
+     */
+    @Test
+    void onlyTheNewestRenderOfAKeyedMarkdownFenceRuns() throws Exception {
+        useMermaid(false, false);
+        ExecutorService pool = EditorFx.staticField(MermaidImages.class, "EXEC");
+        Runnable release = EditorFx.holdPool(pool, 2);
+        String surface = "md-fence-" + System.nanoTime() + ":";
+        List<StackPane> hosts = new java.util.ArrayList<>();
+        try {
+            EditorFx.onFx(() -> {
+                for (int i = 0; i < 5; i++) {
+                    hosts.addAll(mermaidHosts(renderFence(unique("graph TD; A-->B" + i), surface, false, true)));
+                }
+            });
+        } finally {
+            release.run();
+        }
+        assertEquals(5, hosts.size());
+        awaitRendered(hosts.get(4));
+        EditorFx.onFx(() -> {
+            assertInstanceOf(ImageView.class, hosts.get(4).getChildren().get(0));
+            for (int i = 0; i < 4; i++) {
+                assertTrue(rendering(hosts.get(i)), "version " + i + " was superseded before it ran");
+            }
+        });
+    }
+
+    /** A dropped render whose host is still on screen (two fences shared a key) is drawn after all. */
+    @Test
+    void aSupersededDiagramStillOnScreenIsDrawnAnyway() throws Exception {
+        useMermaid(false, false);
+        ExecutorService pool = EditorFx.staticField(MermaidImages.class, "EXEC");
+        Runnable release = EditorFx.holdPool(pool, 2);
+        String surface = "md-shared-" + System.nanoTime();
+        StackPane[] hosts = new StackPane[2];
+        Stage[] stage = new Stage[1];
+        try {
+            EditorFx.onFx(() -> {
+                hosts[0] = (StackPane) MermaidImages.node(unique("graph TD; Shown-->A"), width -> width, surface);
+                stage[0] = new Stage();
+                stage[0].setScene(new javafx.scene.Scene(new VBox(hosts[0]), 200, 200));
+                stage[0].show();
+                hosts[1] = (StackPane) MermaidImages.node(unique("graph TD; Other-->B"), width -> width, surface);
+            });
+        } finally {
+            release.run();
+        }
+        try {
+            awaitRendered(hosts[1]);
+            awaitRendered(hosts[0]);
+            EditorFx.onFx(() ->
+                    assertInstanceOf(ImageView.class, hosts[0].getChildren().get(0)));
+        } finally {
+            EditorFx.onFx(() -> stage[0].hide());
+            MermaidImages.release(surface);
+        }
+    }
+
+    /** A Mermaid fence still streaming is shown as its source, not handed to {@code mmdc} (perf review P1). */
+    @Test
+    void anOpenMermaidFenceInAStreamIsNotRendered() throws Exception {
+        useMermaid(false, false);
+        String surface = "agent-test-" + System.nanoTime() + ":";
+        String source = unique("graph TD; Streaming-->Fence");
+        EditorFx.onFx(() -> {
+            assertTrue(mermaidHosts(renderFence(source, surface, true, false)).isEmpty(), "open: plain code");
+            assertEquals(
+                    1, mermaidHosts(renderFence(source, surface, true, true)).size(), "closed: a diagram");
+            assertEquals(
+                    1, mermaidHosts(renderFence(source, surface, false, false)).size(), "a finished reply draws it");
+        });
+    }
+
     @Test
     void repointingTheToolForgetsTheFailuresOfTheOldOne() throws Exception {
         Path missing = tools.resolve("no-such-mmdc");

@@ -45,6 +45,34 @@ class AppConfigPrefetchTest {
         return m.invoke(boot);
     }
 
+    /**
+     * The keychain is asked on a thread of its own while the prefetch parses the bundled tables (startup R3): what
+     * that thread throws still fails the load, unwrapped, as when it ran inline.
+     */
+    @Test
+    void aStepOnItsOwnThreadFailsTheLoadWithWhatItThrew() {
+        IllegalStateException thrown = new IllegalStateException("the keychain broke");
+        java.util.concurrent.FutureTask<Void> failing = new java.util.concurrent.FutureTask<>(() -> {
+            throw thrown;
+        });
+        Thread.ofVirtual().start(failing);
+        RuntimeException caught = org.junit.jupiter.api.Assertions.assertThrows(
+                RuntimeException.class, () -> App.awaitRethrowing(failing));
+        org.junit.jupiter.api.Assertions.assertSame(thrown, caught);
+
+        StackOverflowError error = new StackOverflowError();
+        java.util.concurrent.FutureTask<Void> erring = new java.util.concurrent.FutureTask<>(() -> {
+            throw error;
+        });
+        Thread.ofVirtual().start(erring);
+        org.junit.jupiter.api.Assertions.assertSame(
+                error, org.junit.jupiter.api.Assertions.assertThrows(Error.class, () -> App.awaitRethrowing(erring)));
+
+        java.util.concurrent.FutureTask<Void> fine = new java.util.concurrent.FutureTask<>(() -> {}, null);
+        Thread.ofVirtual().start(fine);
+        App.awaitRethrowing(fine); // nothing thrown
+    }
+
     @Test
     void thePrefetchLoadsTheCatalogForTheConfiguredLanguage(@TempDir Path dir) throws Exception {
         Files.writeString(dir.resolve("settings.json"), "{\"uiLanguage\":\"es\"}");

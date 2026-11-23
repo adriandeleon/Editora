@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -27,7 +28,6 @@ import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
 import com.editora.dap.DapServerRegistry;
 import com.editora.dap.JsLaunch;
-import com.editora.dap.LogpointTokens;
 import com.editora.dap.RustLaunch;
 import com.editora.dap.TypeRenderer;
 import com.editora.editor.EditorBuffer;
@@ -2035,9 +2035,12 @@ final class DebugCoordinator {
 
     /** Whether the mapping of every file of {@code frames} is known; if not, {@code again} runs once they are. */
     private boolean framesKnown(@Nullable List<DapModels.StackFrameInfo> frames, Runnable again) {
-        for (DapModels.StackFrameInfo f :
-                frames == null || s().launchedLines.isEmpty() ? List.<DapModels.StackFrameInfo>of() : frames) {
-            if (f.file() != null && !linesKnown(ops.bufferForPath(f.file()), again)) {
+        if (frames == null || s().launchedLines.isEmpty()) {
+            return true;
+        }
+        Set<Path> asked = new HashSet<>(); // each file once: a recursion is one file many times (perf review D3)
+        for (DapModels.StackFrameInfo f : frames) {
+            if (f.file() != null && asked.add(f.file()) && !linesKnown(ops.bufferForPath(f.file()), again)) {
                 return false;
             }
         }
@@ -2092,9 +2095,13 @@ final class DebugCoordinator {
             return frames;
         }
         List<DapModels.StackFrameInfo> out = new ArrayList<>(frames.size());
+        Map<Path, LaunchedLines.Mapping> maps = new HashMap<>(); // each file's tab looked up once (perf review D3)
         for (DapModels.StackFrameInfo f : frames) {
-            EditorBuffer b = f.file() == null ? null : ops.bufferForPath(f.file());
-            LaunchedLines.Mapping map = lineMap(b);
+            if (f.file() == null) {
+                out.add(f);
+                continue;
+            }
+            LaunchedLines.Mapping map = maps.computeIfAbsent(f.file(), file -> lineMap(ops.bufferForPath(file)));
             int line = map.changed() ? map.toCurrent(f.line()) : f.line();
             out.add(line >= 0 && line != f.line() ? f.atLine(line) : f);
         }
@@ -2222,6 +2229,46 @@ final class DebugCoordinator {
         return new DapManager.Listener() {
             @Override
             public void onState(DapManager.State state) {
+                DebugSession session = s();
+                if (state == DapManager.State.SUSPENDED
+                        && (session.suspendHeld || session.uiState != DapManager.State.SUSPENDED)) {
+                    // A new stop: shown once onStopped knows it is one the user sees (showSuspended). Filters, token
+                    // logpoints, exception checks and a dump's pause decide quietly, and the window does not go
+                    // Suspended and back for each of them (perf review 2026-11-23, D4).
+                    session.suspendHeld = true;
+                    return;
+                }
+                if (session.suspendHeld) {
+                    session.suspendHeld = false;
+                    if (state == DapManager.State.RUNNING) {
+                        quietlyResumed(); // the window still shows the run the stop interrupted
+                        return;
+                    }
+                }
+                showState(state);
+            }
+
+            /** The stop held by {@link #onState} is the user's: the window shows it as suspended now. */
+            private void showSuspended() {
+                if (s().suspendHeld) {
+                    s().suspendHeld = false;
+                    showState(DapManager.State.SUSPENDED);
+                }
+            }
+
+            /** A held stop went on without being shown: what a run after a stop resets, and nothing on screen. */
+            private void quietlyResumed() {
+                timeRun(DapManager.State.RUNNING);
+                s().stopException = null;
+                s().stopDeferred = false;
+                s().heldExceptionInfo = null;
+            }
+
+            private void showState(DapManager.State state) {
+                if (state == DapManager.State.SUSPENDED && s().uiState != DapManager.State.SUSPENDED) {
+                    s().suspendsShown++;
+                }
+                s().uiState = state;
                 closeSmartStepPicker(state); // review E108
                 timeRun(state);
                 if (state != DapManager.State.SUSPENDED) {
@@ -2268,6 +2315,7 @@ final class DebugCoordinator {
                     s().recordedStops = 0; // the recording breakpoints' limit is per session
                     s().filteredHits.clear(); // and a filtered breakpoint's hit count
                     s().lastExceptionFrames = List.of(); // and the exception an exception breakpoint last showed
+                    s().lastExceptionDepth = 0;
                     s().lastExceptionType = "";
                     nameSession(s().sessionLabel); // ending the replaced session cleared it
                     refreshExceptionToggles(); // the session's language decides what Caught / Uncaught mean
@@ -2358,6 +2406,7 @@ final class DebugCoordinator {
                 long deferral = ++s().stopDeferral; // a newer stop, or the program going on, makes this one stale
                 if (!framesKnown(stopFrames, () -> {
                     if (deferral == s().stopDeferral && dap().state() == DapManager.State.SUSPENDED) {
+                        showSuspended();
                         s().stopDeferred = false;
                         onStopped(threadId, reason, stopFrames);
                         DapModels.ExceptionInfo held = s().heldExceptionInfo;
@@ -2367,6 +2416,7 @@ final class DebugCoordinator {
                         }
                     }
                 })) {
+                    showSuspended(); // as it was: the window says Suspended while the mappings are worked out
                     s().stopDeferred = true;
                     return; // shown once the edited files' line mappings are known
                 }
@@ -2385,6 +2435,31 @@ final class DebugCoordinator {
                     return; // a step into code the user does not step into: out of it again
                 }
                 oldCodeHintFrom(stopFrames); // B209: the stack after a replace names the old-code frames
+                // A recording breakpoint: the stop is kept in Debug History and the program goes on, so the editor
+                // is not taken to it (recordAndContinue).
+                boolean recording = recordingHit(reason, frames);
+                // A logpoint with $FUNCTION, $CALLSTACK…, or any logpoint of an adapter that does not log them
+                // (netcoredbg): Editora writes its message, and the program goes on.
+                String logMessage = recording ? null : logpoints().toWrite(reason, frames);
+                armTriggered(reason, frames); // a breakpoint others wait for: they stop from now on
+                // Thread Dump paused the running program: the pause's stop is the dump's, taken quietly. Another stop
+                // the user sees came first: the dump is of it.
+                boolean dumpWanted = s().dumpPause && !recording && logMessage == null;
+                boolean dumpStop = dumpWanted && "pause".equals(reason);
+                if (dumpWanted) {
+                    s().dumpPause = false;
+                }
+                s().quietStop = recording || logMessage != null || dumpStop ? s().stopSerial : -1;
+                if (logMessage != null) {
+                    logpoints().logAndContinue(threadId, logMessage, frames); // the window never shows it Suspended
+                    return;
+                }
+                if (dumpStop) {
+                    stacks.dumpAndContinue();
+                    return;
+                }
+                // Shown (a recording breakpoint's too: Debug History keeps it through the Call Stack).
+                showSuspended();
                 panel().setStopReason(reason);
                 panel().setStoppedThread(threadId); // Debug History keys this stop's frames by it
                 // The frame that threw: its line is drawn red while it is the one shown (review C13).
@@ -2401,29 +2476,6 @@ final class DebugCoordinator {
                 // that went into library code shows that code (B5): the user asked to go there.
                 int shown =
                         ownCode.isEmpty() ? frameToShow(reason, frames, DebugCoordinator.this::showsOnStop) : crashed;
-                // A recording breakpoint: the stop is kept in Debug History and the program goes on, so the editor
-                // is not taken to it (recordAndContinue).
-                boolean recording = recordingHit(reason, frames);
-                // A logpoint with $FUNCTION, $CALLSTACK…, or any logpoint of an adapter that does not log them
-                // (netcoredbg): Editora writes its message, and the program goes on.
-                String logMessage = recording ? null : logpointToWrite(reason, frames);
-                armTriggered(reason, frames); // a breakpoint others wait for: they stop from now on
-                // Thread Dump paused the running program: the pause's stop is the dump's, taken quietly. Another stop
-                // the user sees came first: the dump is of it.
-                boolean dumpWanted = s().dumpPause && !recording && logMessage == null;
-                boolean dumpStop = dumpWanted && "pause".equals(reason);
-                if (dumpWanted) {
-                    s().dumpPause = false;
-                }
-                s().quietStop = recording || logMessage != null || dumpStop ? s().stopSerial : -1;
-                if (logMessage != null) {
-                    logAndContinue(threadId, logMessage, frames);
-                    return;
-                }
-                if (dumpStop) {
-                    stacks.dumpAndContinue();
-                    return;
-                }
                 if (dumpWanted) {
                     stacks.takeThreadDump(s(), false, null);
                 }
@@ -2436,7 +2488,8 @@ final class DebugCoordinator {
                 if (!recording && !shown()) {
                     focusSession(s()); // another session stopped: it is shown now, as in VS Code and IntelliJ
                 }
-                panel().setCallStack(frames, shown);
+                DapModels.StackPage page = dap().shownStack();
+                panel().setCallStack(frames, shown, page.depth(), page.more());
                 if (recording) {
                     recordAndContinue(frames.getFirst());
                     return;
@@ -2624,6 +2677,18 @@ final class DebugCoordinator {
             }
 
             @Override
+            public void moreFrames(int loaded, java.util.function.Consumer<DapModels.StackPage> cb) {
+                DebugSession session = s();
+                dap().moreFrames(
+                                dap().currentThreadId(),
+                                loaded,
+                                page -> inSession(
+                                        session,
+                                        () -> cb.accept(new DapModels.StackPage(
+                                                currentLines(page.frames()), page.depth(), page.more()))));
+            }
+
+            @Override
             public void selectThread(int threadId) {
                 int previous = dap().currentThreadId();
                 dap().selectThread(threadId, threadFrames -> {
@@ -2632,7 +2697,12 @@ final class DebugCoordinator {
                     }
                     List<DapModels.StackFrameInfo> frames = currentLines(threadFrames);
                     if (!frames.isEmpty() || threadId == previous) {
-                        panel().setCallStack(frames, firstFrameWithSource(frames, DebugCoordinator.this::showsOnStop));
+                        DapModels.StackPage page = dap().shownStack();
+                        panel().setCallStack(
+                                        frames,
+                                        firstFrameWithSource(frames, DebugCoordinator.this::showsOnStop),
+                                        page.depth(),
+                                        page.more());
                         return;
                     }
                     // A thread that is not suspended has no stack to inspect. Stay on the stopped one: showing
@@ -3114,96 +3184,6 @@ final class DebugCoordinator {
         picker.show(host.window());
     }
 
-    // --- logpoints with tokens: Editora writes the message, then goes on ------------------------------
-
-    /**
-     * The message of the logpoint the program stopped on ({@code reason}) at the top frame's line, when Editora writes
-     * it: it uses a token ({@link LogpointTokens}), so the adapter was sent it as a plain breakpoint, or the adapter does
-     * not log logpoints at all (netcoredbg ignores {@code logMessage} and stops, after checking the condition). Null for
-     * any other stop.
-     */
-    private @Nullable String logpointToWrite(String reason, List<DapModels.StackFrameInfo> frames) {
-        if (!"breakpoint".equals(reason) || frames.isEmpty()) {
-            return null;
-        }
-        DapModels.StackFrameInfo top = frames.getFirst();
-        Path file = top.file();
-        if (file == null) {
-            return null;
-        }
-        boolean adapterLogs = dap().supportsLogPoints();
-        DapModels.LineBreakpoint lb = sentBreakpointAt(
-                file,
-                top.line(),
-                b -> b.column() <= 0
-                        && (LogpointTokens.uses(b.logMessage())
-                                || (!adapterLogs || !b.filters().none())
-                                        && b.logMessage() != null
-                                        && !b.logMessage().isBlank()));
-        return lb == null ? null : lb.logMessage();
-    }
-
-    /**
-     * Writes a token logpoint's message to the console as the adapter writes a logpoint's: its {@code {expression}}
-     * parts evaluated in the top frame one after another, the tokens from the stack and the thread. Then the program
-     * goes on, unless the user acted first (a step, Stop) or it stopped again meanwhile.
-     */
-    private void logAndContinue(int threadId, String message, List<DapModels.StackFrameInfo> frames) {
-        // The stopped session's own: another may be in front by the time the answers come.
-        DebugSession session = s();
-        DapManager dap = session.dap;
-        int serial = session.stopSerial;
-        DebugPanel panel = panel();
-        DapModels.StackFrameInfo top = frames.getFirst();
-        List<String> expressions = LogpointTokens.expressions(message);
-        Map<String, String> values = new LinkedHashMap<>();
-        Runnable write = () -> dap.threads(threads -> {
-            if (serial != session.stopSerial || dap.state() != DapManager.State.SUSPENDED) {
-                return;
-            }
-            String threadName = threads.stream()
-                    .filter(t -> t.id() == threadId)
-                    .map(DapModels.ThreadInfo::name)
-                    .findFirst()
-                    .orElse(String.valueOf(threadId));
-            LogpointTokens.Stop stop = new LogpointTokens.Stop(
-                    DebugPanelText.frameName(top.name()),
-                    frames.size() > 1 ? DebugPanelText.frameName(frames.get(1).name()) : "",
-                    frames.stream().map(DebugPanelText::frameText).toList(),
-                    threadId,
-                    threadName);
-            panel.appendOutput(LogpointTokens.expand(message, e -> values.getOrDefault(e, ""), stop) + "\n", "console");
-            dap.resume();
-        });
-        evaluateEach(session, top.id(), serial, expressions, 0, values, write);
-    }
-
-    /**
-     * Evaluates {@code expressions} from {@code index} on in frame {@code frameId} of {@code session} into
-     * {@code values}, then runs {@code then}; stops when the program moved on meanwhile.
-     */
-    private void evaluateEach(
-            DebugSession session,
-            int frameId,
-            int serial,
-            List<String> expressions,
-            int index,
-            Map<String, String> values,
-            Runnable then) {
-        if (index >= expressions.size()) {
-            then.run();
-            return;
-        }
-        if (serial != session.stopSerial) {
-            return;
-        }
-        String expression = expressions.get(index);
-        session.dap.evaluateFull(expression, frameId, "watch", r -> {
-            values.put(expression, r == null ? "" : DebugValues.display(r.result()));
-            evaluateEach(session, frameId, serial, expressions, index + 1, values, then);
-        });
-    }
-
     // --- step timing: how long the program ran to this stop (Visual Studio's PerfTips) ----------------
 
     /**
@@ -3334,12 +3314,7 @@ final class DebugCoordinator {
             instance.run();
             return true;
         }
-        session.dap.threads(threads -> {
-            String name = threads.stream()
-                    .filter(t -> t.id() == threadId)
-                    .map(DapModels.ThreadInfo::name)
-                    .findFirst()
-                    .orElse("");
+        session.dap.threadName(threadId, name -> {
             if (StopFilterCheck.matches(f.thread(), List.of(DebugPanelText.threadName(name), name))) {
                 instance.run();
             } else {
@@ -3358,7 +3333,7 @@ final class DebugCoordinator {
      * The first breakpoint sent for 0-based line {@code line} of {@code file} (open files' and closed ones') that
      * {@code which} accepts, or null.
      */
-    private DapModels.@Nullable LineBreakpoint sentBreakpointAt(
+    DapModels.@Nullable LineBreakpoint sentBreakpointAt(
             Path file, int line, java.util.function.Predicate<DapModels.LineBreakpoint> which) {
         String wanted = key(file);
         List<DapModels.FileBreakpoints> sent =
@@ -8266,6 +8241,18 @@ final class DebugCoordinator {
     }
 
     private @Nullable ExceptionBreakpointCommands exceptionCommands;
+
+    private @Nullable TokenLogpoints tokenLogpoints;
+
+    /** Logpoints whose message Editora writes. */
+    TokenLogpoints logpoints() {
+        TokenLogpoints t = tokenLogpoints;
+        if (t == null) {
+            t = new TokenLogpoints(this);
+            tokenLogpoints = t;
+        }
+        return t;
+    }
 
     /** Exception breakpoints: their stop check, picker rows and form. */
     ExceptionBreakpointCommands exceptions() {

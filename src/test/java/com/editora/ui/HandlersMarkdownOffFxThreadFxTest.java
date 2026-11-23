@@ -188,8 +188,64 @@ class HandlersMarkdownOffFxThreadFxTest {
             now.forEach(Runnable::run);
             FxTestSupport.drainFx();
         }
+        // The scan the key asked for answers the version it saw; the edit after it is scanned at the next pause
+        // (or for whoever waits), not chased at once (perf review 2026-11-23 E1).
+        boolean[] current = {false};
+        FxTestSupport.runOnFx(() -> b.markdown().blockMap().whenCurrent(() -> current[0] = true));
+        while (!held.isEmpty()) {
+            List<Runnable> now = new ArrayList<>(held);
+            held.clear();
+            now.forEach(Runnable::run);
+            FxTestSupport.drainFx();
+        }
+        assertTrue(current[0], "a waiter is answered for the document as it is");
         assertTrue(FxTestSupport.callOnFx(() -> b.markdown().blockMap().current()), "the last scan is current");
         assertNothingOnFx();
+    }
+
+    private static long materializations(EditorBuffer buffer) {
+        return (Long) FxTestSupport.call(buffer, "documentSnapshotMaterializations", new Class<?>[] {});
+    }
+
+    /** Typing copies and scans nothing per keystroke: the map is scanned when typing pauses (E1). */
+    @Test
+    void typingAsksNoScanPerKeystrokeOnlyWhenItPauses() throws Exception {
+        EditorBuffer b = markdown(FAR + "- one\n");
+        CodeArea a = FxTestSupport.callOnFx(b::getArea);
+        // The load's own scan (the first key after opening decides from it) lands before the count is taken.
+        SettingsRig.awaitFx(
+                "the load's scan landed", () -> b.markdown().blockMap().current());
+        List<Runnable> held = new CopyOnWriteArrayList<>();
+        // The pause's other passes (highlight, TODO, spell…) build the same text when they run; held too, so the
+        // count below sees only what asking for the map's scan cost.
+        List<Runnable> others = new CopyOnWriteArrayList<>();
+        // Read when the scan is asked for (the runner is called on the FX thread then): a later pass, such as the Undo
+        // History checkpoint 400 ms into the pause, may build the text by the time the test looks again.
+        java.util.concurrent.atomic.AtomicLong atAsk = new java.util.concurrent.atomic.AtomicLong(-1);
+        OffFx.runnerForTest((name, task) -> {
+            if (name.equals(com.editora.editor.markdown.MarkdownBlockMap.SITE)) {
+                atAsk.compareAndSet(-1, materializations(b));
+                held.add(task);
+            } else {
+                others.add(task);
+            }
+        });
+        long before = FxTestSupport.callOnFx(() -> materializations(b));
+        FxTestSupport.runOnFx(() -> {
+            for (char c : "typed words".toCharArray()) {
+                a.replaceText(a.getLength(), a.getLength(), String.valueOf(c));
+            }
+        });
+        assertTrue(held.isEmpty(), "no scan per keystroke");
+        assertEquals(
+                before, FxTestSupport.callOnFx(() -> materializations(b)), "no copy of the document per keystroke");
+        SettingsRig.awaitFx("the pause asks for one scan", () -> !held.isEmpty());
+        assertEquals(1, held.size());
+        assertEquals(before, atAsk.get(), "the scan's text is built on its own thread, not when it is asked for");
+        held.forEach(Runnable::run);
+        others.forEach(Runnable::run);
+        FxTestSupport.drainFx();
+        assertTrue(FxTestSupport.callOnFx(() -> b.markdown().blockMap().current()));
     }
 
     @Test

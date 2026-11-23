@@ -57,6 +57,24 @@ final class CsvCoordinator {
      * was the price of the equality check, and an unchanged version means an unchanged text.
      */
     private final Map<EditorBuffer, Long> builtVersion = new IdentityHashMap<>();
+    /** Each buffer's latest re-parse: an older one that lands later is dropped (perf review P3). */
+    private final Map<EditorBuffer, Long> generations = new IdentityHashMap<>();
+
+    /** Where a grid's re-parse runs ({@link com.editora.perf.OffFx}). */
+    static final String PARSE_SITE = "CsvCoordinator.parse";
+
+    /** A parse that came back after the text moved on is started again this many times, then shown anyway. */
+    private static final int MAX_REPARSE = 2;
+
+    /** One parse of a CSV's text, everything the grid needs, worked out off the FX thread. */
+    private record Parsed(char delimiter, boolean multiline, CsvGridPanel.Prepared prepared) {
+
+        static Parsed of(String text, boolean header) {
+            char delimiter = CsvParser.detectDelimiter(text);
+            List<List<String>> rows = CsvParser.parse(text, delimiter);
+            return new Parsed(delimiter, CsvParser.hasMultilineField(rows), CsvGridPanel.prepare(rows, header));
+        }
+    }
 
     CsvCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
@@ -110,6 +128,7 @@ final class CsvCoordinator {
             panels.remove(buffer);
             delimiters.remove(buffer);
             builtVersion.remove(buffer);
+            generations.remove(buffer);
         }
     }
 
@@ -144,40 +163,94 @@ final class CsvCoordinator {
         if (closed != null && panels.remove(closed) != null) {
             delimiters.remove(closed);
             builtVersion.remove(closed);
+            generations.remove(closed);
         }
     }
 
     // --- populate / edit / jump ------------------------------------------------------------------------
 
-    /** Re-parses {@code buffer}'s text into its grid (fired by the buffer's debounced preview subscription). */
+    /**
+     * Re-parses {@code buffer}'s text into its grid (fired by the buffer's debounced preview subscription). The
+     * parse, the column types and the widths are worked out off the FX thread (perf review P3: up to 2 MB at
+     * every typing pause was parsed on it); the FX thread only takes the text, which the buffer shares by
+     * version, and sets the grid. A newer re-parse supersedes this one.
+     */
     private void rebuild(EditorBuffer buffer) {
+        rebuild(buffer, 0);
+    }
+
+    private void rebuild(EditorBuffer buffer, int tries) {
         CsvGridPanel panel = panels.get(buffer);
-        if (panel == null) {
+        String text = textToParse(buffer, panel);
+        if (panel == null || text == null) {
             return;
         }
+        long version = buffer.docVersion();
+        long generation = generations.merge(buffer, 1L, Long::sum);
+        boolean header = panel.headerRowShown();
+        com.editora.perf.OffFx.then(PARSE_SITE, () -> Parsed.of(text, header), answer -> {
+            Long latest = generations.get(buffer);
+            if (panels.get(buffer) != panel || latest == null || latest != generation) {
+                return; // closed, turned off, or a newer parse is on its way
+            }
+            Parsed parsed = answer.value();
+            if (parsed == null) {
+                return; // a parse that threw shows what was there before
+            }
+            if (buffer.docVersion() != version && tries < MAX_REPARSE) {
+                rebuild(buffer, tries + 1); // the text moved on meanwhile: a grid built now could not be edited
+                return;
+            }
+            show(buffer, panel, parsed, version);
+        });
+    }
+
+    /** As {@link #rebuild(EditorBuffer)}, here and now: a print or an export needs the grid as the text is. */
+    private void rebuildNow(EditorBuffer buffer) {
+        CsvGridPanel panel = panels.get(buffer);
+        String text = textToParse(buffer, panel);
+        if (panel == null || text == null) {
+            return;
+        }
+        generations.merge(buffer, 1L, Long::sum); // a parse still on its way is older than this
+        show(buffer, panel, Parsed.of(text, panel.headerRowShown()), buffer.docVersion());
+    }
+
+    /**
+     * The text to build {@code buffer}'s grid from, or null when there is none to build — no grid, the feature
+     * off, or a file too large, the grid then emptied — which also drops a parse still on its way.
+     */
+    private @Nullable String textToParse(EditorBuffer buffer, @Nullable CsvGridPanel panel) {
+        if (panel == null) {
+            return null;
+        }
         if (!buffer.isCsv() || !isEnabled()) {
+            generations.merge(buffer, 1L, Long::sum);
             builtVersion.remove(buffer);
             panel.setEditable(false, null);
             panel.setData(List.of());
-            return;
+            return null;
         }
         String text = buffer.getContent();
         if (text.length() > MAX_PREVIEW_CHARS) {
+            generations.merge(buffer, 1L, Long::sum);
             builtVersion.remove(buffer);
             panel.setEditable(false, null);
             panel.setData(List.of()); // too large — the placeholder shows the empty message
             host.setStatus(com.editora.i18n.Messages.tr("status.csv.gridTooLarge"));
-            return;
+            return null;
         }
-        char delimiter = CsvParser.detectDelimiter(text);
-        delimiters.put(buffer, delimiter);
-        builtVersion.put(buffer, buffer.docVersion());
-        List<List<String>> rows = CsvParser.parse(text, delimiter);
+        return text;
+    }
+
+    private void show(EditorBuffer buffer, CsvGridPanel panel, Parsed parsed, long version) {
+        delimiters.put(buffer, parsed.delimiter());
+        builtVersion.put(buffer, version);
         // In-place editing is safe only when each parsed row maps 1:1 to a physical line — i.e. no quoted
         // multi-line field merged two lines — and the buffer is writable. Otherwise the grid stays read-only.
-        boolean canEdit = buffer.isEditable() && !CsvParser.hasMultilineField(rows);
+        boolean canEdit = buffer.isEditable() && !parsed.multiline();
         panel.setEditable(canEdit, (dataRow, field, value) -> commitCell(buffer, dataRow, field, value));
-        panel.setData(rows);
+        panel.setPrepared(parsed.prepared());
     }
 
     /**
@@ -288,7 +361,7 @@ final class CsvCoordinator {
             return null;
         }
         if (!builtFromCurrent(b)) {
-            rebuild(b);
+            rebuildNow(b);
         }
         return panel.shown();
     }

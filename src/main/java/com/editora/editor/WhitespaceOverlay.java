@@ -55,7 +55,7 @@ final class WhitespaceOverlay extends Region implements SecondaryPane.Followed, 
             new java.util.concurrent.atomic.AtomicInteger();
 
     private final CodeArea area;
-    private final Canvas canvas = new Canvas(1, 1);
+    private Canvas canvas = new Canvas(1, 1);
     private boolean active;
     /** What the setting asks for; {@link #active} is this minus the large-file suppression. */
     private boolean requested;
@@ -146,7 +146,7 @@ final class WhitespaceOverlay extends Region implements SecondaryPane.Followed, 
             requestLayout(); // size the canvas up to the viewport, then draw
             scheduleRedraw();
         } else {
-            CanvasGuards.release(canvas); // drop the full-viewport texture while hidden
+            canvas = CanvasGuards.released(canvas, getChildren()); // drop the full-viewport texture while hidden
         }
     }
 
@@ -187,7 +187,7 @@ final class WhitespaceOverlay extends Region implements SecondaryPane.Followed, 
             requestLayout();
             scheduleRedraw();
         } else {
-            CanvasGuards.release(canvas);
+            canvas = CanvasGuards.released(canvas, getChildren());
         }
     }
 
@@ -207,7 +207,7 @@ final class WhitespaceOverlay extends Region implements SecondaryPane.Followed, 
 
     private void redraw() {
         if (!drawable() || !CanvasGuards.paintable(getWidth(), getHeight())) {
-            CanvasGuards.release(canvas);
+            CanvasGuards.shrink(canvas);
             return;
         }
         CanvasGuards.fit(this, canvas); // grown here as well: content can arrive without a layout pass

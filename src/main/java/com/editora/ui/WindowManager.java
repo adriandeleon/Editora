@@ -2640,6 +2640,11 @@ public class WindowManager {
         }
     }
 
+    /** Starts reading the window icons off the FX thread, for the first window ({@link AppIcons#readAhead}). */
+    public static void readAppIconsAhead() {
+        AppIcons.readAhead();
+    }
+
     /** Adds the app icon (multiple sizes) so it shows in the title bar, dock, and taskbar. */
     private static void loadAppIcons(Stage stage) {
         for (int size : AppIcons.WINDOW_SIZES) {

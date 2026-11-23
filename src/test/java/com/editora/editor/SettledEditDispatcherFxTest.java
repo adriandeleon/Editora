@@ -83,11 +83,13 @@ class SettledEditDispatcherFxTest {
         runOnFx(() -> {
             EditorBuffer buffer = new EditorBuffer();
             try {
-                assertEquals(8, buffer.settledEditTaskCount()); // separate LSP and local completion milestones
+                // separate LSP and local completion milestones; the fold detection, the minimap and the spell
+                // checker's code-line scan (each had its own timer, the split's followers two more)
+                assertEquals(11, buffer.settledEditTaskCount());
                 assertTrue(buffer.settledEditSubscriptionActive());
 
                 buffer.setSplit(EditorBuffer.Split.SIDE_BY_SIDE);
-                assertEquals(8, buffer.settledEditTaskCount());
+                assertEquals(11, buffer.settledEditTaskCount(), "the split's followers run from their leaders");
                 assertTrue(buffer.settledEditSubscriptionActive());
             } finally {
                 buffer.dispose();

@@ -1,5 +1,9 @@
 package com.editora.editor;
 
+import java.util.List;
+
+import javafx.beans.InvalidationListener;
+import javafx.beans.Observable;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
@@ -90,14 +94,77 @@ public final class CanvasGuards {
     }
 
     /**
-     * Shrinks {@code canvas} to 1x1 so its viewport-sized backing texture is released. Every overlay does
-     * this while it is switched off, has nothing to draw, or belongs to a tab that is not on screen.
+     * Clears {@code canvas} and shrinks it to 1x1, for an overlay that has nothing to draw for now. This is cheap
+     * and can flap with scrolling or typing, but it does <em>not</em> free the backing texture: JavaFX's
+     * {@code NGCanvas} keeps the largest texture it has rendered until the canvas itself is gone. An overlay that
+     * is switched off or whose tab goes to the background calls {@link #released} instead.
      */
-    public static void release(Canvas canvas) {
+    public static void shrink(Canvas canvas) {
         if (canvas.getWidth() != 1 || canvas.getHeight() != 1) {
             canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
             canvas.setWidth(1);
             canvas.setHeight(1);
         }
+    }
+
+    /**
+     * Frees {@code canvas}'s viewport-sized backing texture, and returns the canvas the owner keeps from now on.
+     * Every overlay does this when it is switched off or its tab goes to the background.
+     *
+     * <p>Shrinking a canvas does not free its texture: {@code NGCanvas} only ever grows the texture it holds, and
+     * only when the canvas is rendered (a background tab never is). The texture goes when the canvas does, so the
+     * canvas is replaced in {@code children}, at its place, by a fresh 1x1 one with the same position, visibility
+     * and mouse transparency, and the old one is collected with its texture. A fresh canvas this returned that has
+     * not been made larger since is returned as it is. The owner holds its canvas in a field it reassigns from the
+     * result, and re-adds anything it put on the canvas itself (event handlers).
+     *
+     * @param children the owner's children, {@code canvas} among them
+     */
+    public static Canvas released(Canvas canvas, List<Node> children) {
+        if (isPlaceholder(canvas)) {
+            return canvas;
+        }
+        Canvas fresh = placeholder();
+        fresh.setLayoutX(canvas.getLayoutX());
+        fresh.setLayoutY(canvas.getLayoutY());
+        fresh.setVisible(canvas.isVisible());
+        fresh.setMouseTransparent(canvas.isMouseTransparent());
+        fresh.setManaged(canvas.isManaged());
+        int at = children.indexOf(canvas);
+        if (at >= 0) {
+            children.set(at, fresh);
+        }
+        return fresh;
+    }
+
+    /** As {@link #released(Canvas, List)}, for a canvas that is not in the scene graph (one only snapshotted). */
+    public static Canvas released(Canvas canvas) {
+        return isPlaceholder(canvas) ? canvas : placeholder();
+    }
+
+    /** Marks a canvas {@link #released} made, until it is first made larger than 1x1. */
+    private static final Object PLACEHOLDER = new Object();
+
+    /** A 1x1 canvas that has held no texture larger than that (the mark goes as soon as it grows). */
+    static boolean isPlaceholder(Canvas canvas) {
+        return canvas.hasProperties() && canvas.getProperties().containsKey(PLACEHOLDER);
+    }
+
+    private static Canvas placeholder() {
+        Canvas fresh = new Canvas(1, 1);
+        fresh.getProperties().put(PLACEHOLDER, Boolean.TRUE);
+        InvalidationListener grown = new InvalidationListener() {
+            @Override
+            public void invalidated(Observable o) {
+                if (fresh.getWidth() != 1 || fresh.getHeight() != 1) {
+                    fresh.getProperties().remove(PLACEHOLDER);
+                    fresh.widthProperty().removeListener(this);
+                    fresh.heightProperty().removeListener(this);
+                }
+            }
+        };
+        fresh.widthProperty().addListener(grown);
+        fresh.heightProperty().addListener(grown);
+        return fresh;
     }
 }

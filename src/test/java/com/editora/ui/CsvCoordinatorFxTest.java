@@ -33,6 +33,17 @@ class CsvCoordinatorFxTest {
         FxTestSupport.bootToolkit();
     }
 
+    /** The grid's re-parse runs in place, so a test reads the grid as soon as the call returns. */
+    @org.junit.jupiter.api.BeforeEach
+    void parseInPlace() {
+        com.editora.perf.OffFx.runnerForTest((name, task) -> task.run());
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void parseOffFx() {
+        com.editora.perf.OffFx.runnerForTest(null);
+    }
+
     private static final class FakeHost extends CoordinatorHostStub {
         final Settings settings = new Settings();
         boolean simpleMode = false;
@@ -284,5 +295,67 @@ class CsvCoordinatorFxTest {
             b.getArea().undo();
         });
         assertEquals("id,code,note\n1,\"007\",\"\"\n2, \"x\" ,\"a\"b\n", FxTestSupport.callOnFx(b::getContent));
+    }
+
+    /**
+     * The re-parse runs off the FX thread (perf review P3), and a parse that lands after a newer one was started
+     * is dropped: the grid shows the newest text, never an older one coming back late.
+     */
+    @Test
+    void aReparseRunsOffFxAndAnOlderOneLandingLateIsDropped() throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setCsvPreview(true);
+        CsvCoordinator c = new CsvCoordinator(host, new FakeOps());
+        EditorBuffer b = csvBuffer("a,b\n1,2\n");
+        List<Runnable> queued = new ArrayList<>();
+        List<String> sites = new ArrayList<>();
+        com.editora.perf.OffFx.runnerForTest((name, task) -> {
+            sites.add(name);
+            queued.add(task);
+        });
+        FxTestSupport.runOnFx(() -> {
+            c.ensureCsvPreview(b);
+            rebuild(c, b); // the first parse: "a,b / 1,2"
+            b.setContent("a,b\n1,2\n3,4\n5,6\n");
+            rebuild(c, b); // the newer parse
+        });
+        assertTrue(sites.stream().allMatch(CsvCoordinator.PARSE_SITE::equals), sites.toString());
+        assertTrue(queued.size() >= 2, "both parses wait for their worker");
+        CsvGridPanel grid = (CsvGridPanel) c.gridNodeFor(b);
+        // The newest lands first, then the older one: the older must not replace it.
+        Runnable newest = queued.get(queued.size() - 1);
+        Runnable older = queued.get(queued.size() - 2);
+        FxTestSupport.runOnFx(() -> {
+            newest.run();
+            older.run();
+        });
+        assertEquals(3, FxTestSupport.callOnFx(grid::rowCount), "the newest text's rows");
+    }
+
+    /** A re-parse that changes no column keeps the columns and replaces only the rows (perf review P3). */
+    @Test
+    void aReparseWithTheSameHeaderKeepsTheColumns() throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setCsvPreview(true);
+        CsvCoordinator c = new CsvCoordinator(host, new FakeOps());
+        EditorBuffer b = csvBuffer("name,qty\nApple,3\n");
+        FxTestSupport.runOnFx(() -> {
+            c.ensureCsvPreview(b);
+            rebuild(c, b);
+        });
+        CsvGridPanel grid = (CsvGridPanel) c.gridNodeFor(b);
+        javafx.scene.control.TableView<?> table = FxTestSupport.field(grid, "table");
+        Object qty = FxTestSupport.callOnFx(() -> table.getColumns().get(2));
+        FxTestSupport.runOnFx(() -> {
+            b.setContent("name,qty\nApple,3\nPear,5\n");
+            rebuild(c, b);
+        });
+        assertSame(qty, FxTestSupport.callOnFx(() -> table.getColumns().get(2)), "the same column");
+        assertEquals(2, FxTestSupport.callOnFx(grid::rowCount));
+        FxTestSupport.runOnFx(() -> {
+            b.setContent("name,count\nApple,3\nPear,5\n");
+            rebuild(c, b);
+        });
+        assertFalse(qty == FxTestSupport.callOnFx(() -> table.getColumns().get(2)), "a renamed header rebuilds");
     }
 }

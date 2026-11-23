@@ -270,6 +270,23 @@ class LazyOverlayFxTest {
     }
 
     @Test
+    void anUnchangedTodoScanIsNotPushedAgain() throws Exception {
+        EditorBuffer b = newBuffer();
+        int[] changed = {0};
+        FxTestSupport.runOnFx(() -> {
+            b.setContent("plain\nTODO: later\n");
+            b.setOnTodoMarksChanged(() -> changed[0]++);
+            Object marker = FxTestSupport.field(b, "todoMarker");
+            FxTestSupport.invokeWith(marker, "applyTodoMarks", List.class, List.of(mark(6, 10)));
+            FxTestSupport.invokeWith(marker, "applyTodoMarks", List.class, List.of(mark(6, 10)));
+        });
+        assertEquals(1, changed[0], "the same marks again: no layout, repaint or tool-window refresh");
+        FxTestSupport.runOnFx(() -> FxTestSupport.invokeWith(
+                FxTestSupport.field(b, "todoMarker"), "applyTodoMarks", List.class, List.of(mark(7, 11))));
+        assertEquals(2, changed[0], "a mark that moved is pushed");
+    }
+
+    @Test
     void todoMarksAttachTheOverlayAndTheStripeOnlyWhenThereAreAny() throws Exception {
         EditorBuffer b = newBuffer();
         FxTestSupport.runOnFx(() -> {

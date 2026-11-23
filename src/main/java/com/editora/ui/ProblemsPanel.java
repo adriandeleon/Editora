@@ -7,7 +7,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.TreeMap;
 
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContextMenu;
@@ -127,9 +126,7 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
         sceneProperty().addListener((o, was, now) -> {
             if (now != null && pendingRebuild) {
                 pendingRebuild = false;
-                if (activeFileChanged || !lastByFile.equals(rendered)) {
-                    rebuild();
-                }
+                refresh();
             }
         });
     }
@@ -217,10 +214,11 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
     }
 
     /**
-     * Shows {@code byFile}, grouped by language → file (called on the FX thread). The tree is rebuilt only
-     * when the content differs from what it already shows: a server re-publishing identical diagnostics —
-     * which most do on every keystroke for every unaffected file — costs a comparison, not a rebuild that
-     * also throws away the selection and scroll position.
+     * Shows {@code byFile}, grouped by language → file (called on the FX thread). Only what differs from what the
+     * tree shows is touched: a server re-publishing identical diagnostics — which most do on every keystroke for
+     * every unaffected file — costs a comparison per file, and a file whose problems changed has its own branch
+     * replaced, not the whole tree rebuilt (perf review 2026-11-23 L1). When many files changed at once the tree is
+     * built afresh, which is then the cheaper way.
      */
     public void setProblems(Map<Path, List<LspDiagnostic>> byFile) {
         lastByFile = byFile == null ? Map.of() : byFile;
@@ -228,20 +226,207 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
             pendingRebuild = true;
             return;
         }
-        if (lastByFile.equals(rendered)) {
-            return;
-        }
-        rebuild();
+        refresh();
     }
 
-    /** A copy of what the tree shows (callers hand in their live map, so it cannot be compared to itself). */
+    /**
+     * What the tree shows, by file: the non-empty lists only, the very lists it was handed (callers hand in their
+     * live map, so it cannot be compared to itself; the lists in it are replaced, never changed).
+     */
     private @Nullable Map<Path, List<LspDiagnostic>> rendered;
 
-    private int rebuilds;
+    /** Each file's header row, and the language it is filed under. */
+    private final Map<Path, TreeItem<Row>> fileItems = new HashMap<>();
 
-    /** How many times the tree has been rebuilt — lets a test show that a burst costs one rebuild. */
+    private final Map<Path, String> fileLanguages = new HashMap<>();
+
+    /** Each language's header row. */
+    private final Map<String, TreeItem<Row>> languageItems = new HashMap<>();
+
+    /** The diagnostics the tree lists. */
+    private int shownTotal;
+
+    private int rebuilds;
+    private int fullRebuilds;
+
+    /** How many times the tree has changed, a file's branch or all of it — a test shows a burst costs one. */
     int rebuildCount() {
         return rebuilds;
+    }
+
+    /** How many times the whole tree was built afresh (tests). */
+    int fullRebuildCount() {
+        return fullRebuilds;
+    }
+
+    /** At most this many changed files are always applied branch by branch (more: see {@link #incremental}). */
+    static final int INCREMENTAL_FILES = 64;
+
+    /**
+     * Pure: whether {@code changed} files' branches are replaced one by one in a tree of {@code shown} files, rather
+     * than the tree built afresh — a few, or under a quarter of what it shows.
+     */
+    static boolean incremental(int changed, int shown) {
+        return changed <= INCREMENTAL_FILES || changed * 4 <= shown;
+    }
+
+    /**
+     * Pure: the files whose problems in {@code latest} differ from {@code shown} (which holds non-empty lists only):
+     * a file with a new list of different content, a file gone or emptied, a file new. An unchanged list — the same
+     * one, or an equal one — is compared without looking further.
+     */
+    static <D> List<Path> changedFiles(Map<Path, List<D>> shown, Map<Path, ? extends @Nullable List<D>> latest) {
+        List<Path> out = new ArrayList<>();
+        int present = 0;
+        for (var e : latest.entrySet()) {
+            List<D> now = e.getValue();
+            List<D> was = shown.get(e.getKey());
+            if (was != null) {
+                present++;
+            }
+            boolean empty = now == null || now.isEmpty();
+            if (empty ? was != null : was != now && !now.equals(was)) {
+                out.add(e.getKey());
+            }
+        }
+        if (present < shown.size()) { // some shown file is no longer in the map at all
+            for (Path p : shown.keySet()) {
+                if (!latest.containsKey(p)) {
+                    out.add(p);
+                }
+            }
+        }
+        return out;
+    }
+
+    /** Brings the tree to {@link #lastByFile}: nothing when it shows that already, else the changed branches. */
+    private void refresh() {
+        Map<Path, List<LspDiagnostic>> shown = rendered;
+        if (shown == null || activeFileChanged) {
+            rebuild();
+            return;
+        }
+        List<Path> changed = changedFiles(shown, lastByFile);
+        if (changed.isEmpty()) {
+            return;
+        }
+        if (!incremental(changed.size(), shown.size())) {
+            rebuild();
+            return;
+        }
+        rebuilds++;
+        for (Path file : changed) {
+            replaceFile(shown, file, lastByFile.get(file));
+        }
+        showSummary();
+    }
+
+    /** Replaces {@code file}'s branch with {@code diagnostics} (none: the branch goes, and an emptied language). */
+    private void replaceFile(
+            Map<Path, List<LspDiagnostic>> shown, Path file, @Nullable List<LspDiagnostic> diagnostics) {
+        List<LspDiagnostic> was = shown.remove(file);
+        if (was != null) {
+            shownTotal -= was.size();
+        }
+        TreeItem<Row> item = fileItems.get(file);
+        String language = diagnostics == null || diagnostics.isEmpty() ? null : languageOf(file);
+        if (item != null && !java.util.Objects.equals(language, fileLanguages.get(file))) {
+            removeFile(file, item);
+            item = null;
+        }
+        if (diagnostics == null || diagnostics.isEmpty() || language == null) {
+            return;
+        }
+        shown.put(file, diagnostics);
+        shownTotal += diagnostics.size();
+        TreeItem<Row> languageItem = languageItems.get(language);
+        if (languageItem == null) {
+            languageItem = new TreeItem<>(new Row(language, null, null));
+            languageItem.setExpanded(true);
+            var languages = tree.getRoot().getChildren();
+            languages.add(insertionPoint(languages, language, Row::language, languageOrder()), languageItem);
+            languageItems.put(language, languageItem);
+        }
+        if (item == null) {
+            item = new TreeItem<>(new Row(null, file, null));
+            item.setExpanded(true);
+            item.getChildren().setAll(diagnosticRows(file, diagnostics));
+            var files = languageItem.getChildren();
+            files.add(insertionPoint(files, file, Row::file, fileOrder()), item);
+            fileItems.put(file, item);
+            fileLanguages.put(file, language);
+        } else {
+            item.getChildren().setAll(diagnosticRows(file, diagnostics));
+            item.setValue(new Row(null, file, null)); // a new value: its cell redraws the count
+        }
+        languageItem.setValue(new Row(language, null, null));
+    }
+
+    private void removeFile(Path file, TreeItem<Row> item) {
+        fileItems.remove(file);
+        String language = fileLanguages.remove(file);
+        TreeItem<Row> languageItem = language == null ? null : languageItems.get(language);
+        if (languageItem == null) {
+            return;
+        }
+        languageItem.getChildren().remove(item);
+        if (languageItem.getChildren().isEmpty()) {
+            tree.getRoot().getChildren().remove(languageItem);
+            languageItems.remove(language);
+        } else {
+            languageItem.setValue(new Row(language, null, null));
+        }
+    }
+
+    /** Where {@code key} goes among {@code items}, sorted by {@code order} on each row's {@code of}. */
+    private static <T> int insertionPoint(
+            List<TreeItem<Row>> items, T key, java.util.function.Function<Row, @Nullable T> of, Comparator<T> order) {
+        int lo = 0;
+        int hi = items.size();
+        while (lo < hi) {
+            int mid = (lo + hi) >>> 1;
+            T at = java.util.Objects.requireNonNull(of.apply(items.get(mid).getValue()));
+            if (order.compare(at, key) < 0) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        return lo;
+    }
+
+    /** Language headers: the active file's language first, then the rest alphabetically. */
+    private Comparator<String> languageOrder() {
+        String activeLanguage = activeFile == null ? null : languageOf(activeFile);
+        return Comparator.comparingInt((String l) -> l.equals(activeLanguage) ? 0 : 1)
+                .thenComparing(Comparator.naturalOrder());
+    }
+
+    /** Files of a language: the active file first, then by name (then by path, so the order is the same each time). */
+    private Comparator<Path> fileOrder() {
+        return ActiveFileOrder.activeFirst(
+                p -> p,
+                activeFile,
+                Comparator.comparing((Path p) -> PathDisplay.fileName(p).toLowerCase(Locale.ROOT))
+                        .thenComparing(Path::toString));
+    }
+
+    /** One row per diagnostic of {@code file}, by position. */
+    private static List<TreeItem<Row>> diagnosticRows(Path file, List<LspDiagnostic> diagnostics) {
+        List<LspDiagnostic> sorted = new ArrayList<>(diagnostics);
+        sorted.sort((a, b) -> a.startLine() != b.startLine()
+                ? Integer.compare(a.startLine(), b.startLine())
+                : Integer.compare(a.startCol(), b.startCol()));
+        List<TreeItem<Row>> rows = new ArrayList<>(sorted.size());
+        for (LspDiagnostic d : sorted) {
+            rows.add(new TreeItem<>(new Row(null, file, d)));
+        }
+        return rows;
+    }
+
+    private void showSummary() {
+        int files = rendered == null ? 0 : rendered.size();
+        summary.setText(shownTotal == 0 ? tr("problems.none") : tr("problems.summary", shownTotal, files));
     }
 
     /**
@@ -272,9 +457,7 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
         if (!visible()) {
             return false;
         }
-        if (!lastByFile.equals(rendered)) {
-            rebuild(); // the paced refresh has not shown the latest diagnostics yet
-        }
+        refresh(); // the paced refresh may not have shown the latest diagnostics yet
         for (TreeItem<Row> lang : tree.getRoot().getChildren()) {
             for (TreeItem<Row> file : lang.getChildren()) {
                 if (!com.editora.config.PathKeys.samePath(file.getValue().file(), canonicalFile)) {
@@ -311,62 +494,53 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
         tree.scrollTo(index);
     }
 
+    /** Builds the whole tree afresh from {@link #lastByFile}. */
     private void rebuild() {
         rebuilds++;
+        fullRebuilds++;
         activeFileChanged = false;
-        rendered = new HashMap<>(lastByFile);
-        // Bucket the non-empty files by display language name (TreeMap keeps the language headers sorted).
-        Map<String, List<Path>> byLanguage = new TreeMap<>();
-        Map<Path, List<LspDiagnostic>> kept = new HashMap<>();
-        int total = 0;
-        int files = 0;
+        Map<Path, List<LspDiagnostic>> shown = new HashMap<>();
+        rendered = shown;
+        fileItems.clear();
+        fileLanguages.clear();
+        languageItems.clear();
+        shownTotal = 0;
+        // Bucket the non-empty files by display language name.
+        Map<String, List<Path>> byLanguage = new HashMap<>();
         for (var entry : lastByFile.entrySet()) {
             List<LspDiagnostic> diags = entry.getValue();
             if (diags == null || diags.isEmpty()) {
                 continue;
             }
-            files++;
-            total += diags.size();
-            kept.put(entry.getKey(), diags);
-            byLanguage
-                    .computeIfAbsent(languageOf(entry.getKey()), k -> new ArrayList<>())
-                    .add(entry.getKey());
+            shown.put(entry.getKey(), diags);
+            shownTotal += diags.size();
+            String language = languageOf(entry.getKey());
+            fileLanguages.put(entry.getKey(), language);
+            byLanguage.computeIfAbsent(language, k -> new ArrayList<>()).add(entry.getKey());
         }
-        // Order language headers: the active file's language first, then the rest alphabetically (TreeMap).
         List<String> langOrder = new ArrayList<>(byLanguage.keySet());
-        String activeLang = activeFile == null ? null : languageOf(activeFile);
-        if (activeLang != null && langOrder.remove(activeLang)) {
-            langOrder.add(0, activeLang);
-        }
+        langOrder.sort(languageOrder());
+        Comparator<Path> fileOrder = fileOrder();
         TreeItem<Row> root = new TreeItem<>();
         for (String language : langOrder) {
             TreeItem<Row> langItem = new TreeItem<>(new Row(language, null, null));
             langItem.setExpanded(true);
-            List<Path> paths = byLanguage.get(language);
-            if (paths == null) {
-                continue; // langOrder holds byLanguage's own keys
-            }
-            // Active file first, then alphabetical by name.
-            paths.sort(ActiveFileOrder.activeFirst(
-                    p -> p,
-                    activeFile,
-                    Comparator.comparing(p -> PathDisplay.fileName(p).toLowerCase(Locale.ROOT))));
+            List<Path> paths = java.util.Objects.requireNonNull(byLanguage.get(language)); // its own keys
+            paths.sort(fileOrder);
+            List<TreeItem<Row>> fileRows = new ArrayList<>(paths.size());
             for (Path file : paths) {
-                List<LspDiagnostic> sorted = new ArrayList<>(kept.get(file));
-                sorted.sort((a, b) -> a.startLine() != b.startLine()
-                        ? Integer.compare(a.startLine(), b.startLine())
-                        : Integer.compare(a.startCol(), b.startCol()));
                 TreeItem<Row> fileItem = new TreeItem<>(new Row(null, file, null));
                 fileItem.setExpanded(true);
-                for (LspDiagnostic d : sorted) {
-                    fileItem.getChildren().add(new TreeItem<>(new Row(null, file, d)));
-                }
-                langItem.getChildren().add(fileItem);
+                fileItem.getChildren().setAll(diagnosticRows(file, java.util.Objects.requireNonNull(shown.get(file))));
+                fileItems.put(file, fileItem);
+                fileRows.add(fileItem);
             }
+            langItem.getChildren().setAll(fileRows);
+            languageItems.put(language, langItem);
             root.getChildren().add(langItem);
         }
         tree.setRoot(root);
-        summary.setText(total == 0 ? tr("problems.none") : tr("problems.summary", total, files));
+        showSummary();
     }
 
     /**

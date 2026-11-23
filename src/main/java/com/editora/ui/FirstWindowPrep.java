@@ -38,11 +38,34 @@ public final class FirstWindowPrep {
      * (the UI font's, which {@code App} owns).
      */
     public static void prepare(SharedConfig shared, List<String> moreSheets) {
-        Settings settings = shared.getSettings();
-        Path configDir = shared.getConfigDir();
+        prepareApart(shared.getConfigDir());
+        prepareWithSettings(shared, moreSheets);
+    }
+
+    /**
+     * The pieces that read neither the settings nor the shared config: the bundled tables and the folders Editora
+     * keeps in {@code configDir}. The launch does them while the keychain is asked for the AI keys on another
+     * thread, which may change the settings ({@code App.loadForFirstWindow}).
+     */
+    public static void prepareApart(Path configDir) {
         // The user's themes, before any sheet is named: a user theme saved as the active one resolves on launch.
         step("user themes", () -> Themes.loadUserThemes(configDir));
         step("keymaps", com.editora.command.KeymapManager::parseAllBundled); // every bundled keymap, for later asks
+        step("emoji table", com.editora.markdown.MarkdownEmoji::warm);
+        step("technical dictionary", com.editora.editor.spell.TechnicalDictionary::words);
+        step("xml schemas", () -> com.editora.lsp.XmlBundledSchemas.ensure(configDir));
+        step(
+                "loose-files root",
+                () -> com.editora.lsp.LspManager.makeLooseRoot(configDir
+                        .resolve(LspCoordinator.LOOSE_ROOT)
+                        .toAbsolutePath()
+                        .normalize()));
+    }
+
+    /** The pieces that read the settings or the shared config; after {@link #prepareApart}. */
+    public static void prepareWithSettings(SharedConfig shared, List<String> moreSheets) {
+        Settings settings = shared.getSettings();
+        Path configDir = shared.getConfigDir();
         step("zoomed stylesheets", () -> {
             List<String> sheets = new ArrayList<>(windowSheets());
             sheets.addAll(moreSheets);
@@ -58,16 +81,7 @@ public final class FirstWindowPrep {
         // What the language servers, the debugger and the configured tools find on disk (their caches).
         step("server copies", () -> LspServerCommands.prepareOwnCopies(settings, configDir));
         step("installed tools", () -> com.editora.install.InstallCatalog.lookAtInstalledTools(configDir));
-        step("emoji table", com.editora.markdown.MarkdownEmoji::warm);
-        step("technical dictionary", com.editora.editor.spell.TechnicalDictionary::words);
         step("java-debug", () -> com.editora.dap.DapManager.prepareLocate(settings.getJavaDebugPluginPath()));
-        step("xml schemas", () -> com.editora.lsp.XmlBundledSchemas.ensure(configDir));
-        step(
-                "loose-files root",
-                () -> com.editora.lsp.LspManager.makeLooseRoot(configDir
-                        .resolve(LspCoordinator.LOOSE_ROOT)
-                        .toAbsolutePath()
-                        .normalize()));
         step(
                 "tool paths",
                 () -> com.editora.process.ConfiguredCommand.prepare(java.util.Arrays.asList(

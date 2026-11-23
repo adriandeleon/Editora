@@ -465,4 +465,29 @@ class CsvGridPanelFxTest {
         assertEquals(600, CsvGridPanel.columnWidthFor(10_000), "never wider than the maximum");
         assertEquals(10 * 7.5 + 22, CsvGridPanel.columnWidthFor(10));
     }
+
+    /** The filter lower-cases a row's cells once, and again after a cell of it is edited (perf review P3). */
+    @Test
+    void aRowLowerCasesItsCellsOnceForTheFilter() {
+        List<String> cells = new ArrayList<>(List.of("Apple", "GREEN"));
+        CsvGridPanel.Row row = new CsvGridPanel.Row(0, cells);
+        assertTrue(row.matches("green"));
+        assertFalse(row.matches("pear"));
+        cells.set(0, "Pear");
+        row.edited();
+        assertTrue(row.matches("pear"), "an edited cell is folded again");
+        assertFalse(row.matches("apple"));
+    }
+
+    /** The figures a re-parse works out off the FX thread: types, ragged rows, widths and the data rows. */
+    @Test
+    void prepareWorksOutTheGridOffTheFxThread() {
+        List<List<String>> parsed = List.of(List.of("name", "qty"), List.of("Apple", "3"), List.of("Pear"));
+        CsvGridPanel.Prepared p = CsvGridPanel.prepare(parsed, true);
+        assertEquals(2, p.cols());
+        assertEquals(2, p.dataRows().size());
+        assertEquals(1, p.ragged());
+        assertEquals(0, p.dataRows().get(0).index());
+        assertEquals(0, CsvGridPanel.prepare(List.of(), true).cols());
+    }
 }

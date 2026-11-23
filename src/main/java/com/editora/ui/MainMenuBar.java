@@ -141,21 +141,81 @@ final class MainMenuBar {
         UiZoom.follow(bar, this::alignChordColumns); // the title column is measured at the zoomed font
     }
 
-    /** (Re)builds every menu from the table for the current mode. */
+    /**
+     * The in-window bar's top-level menus whose rows are not built yet, with what they are built from. A window
+     * builds its menus' rows only when each menu first opens: about 300 rows of nodes per window, with their
+     * measuring and the tooltips of the rows that cannot run, are otherwise made before the first paint for menus
+     * most sessions never open (PERF-14, Pauta 6.2.0). There are no accelerators to register (see the class
+     * javadoc), so a chord works the same whether its menu was ever opened. The macOS system menu bar is built
+     * up front: AppKit draws it and may open a menu without a showing event.
+     */
+    private final Map<Menu, MenuBarModel.MenuSpec> unbuilt = new java.util.IdentityHashMap<>();
+
+    /** Every command row of the current table, built or not, in menu order: what row titles are chosen among. */
+    private final java.util.List<String> commandIds = new java.util.ArrayList<>();
+
+    /** (Re)builds every menu from the table for the current mode: on the system bar whole, in-window each title. */
     private void build() {
         bar.getMenus().clear();
         items.clear();
         menuGroups.clear();
+        unbuilt.clear();
+        commandIds.clear();
         for (MenuBarModel.MenuSpec spec : MenuBarModel.menus(simple)) {
-            Menu menu = menuOf(spec);
+            for (String entry : spec.allEntries()) {
+                if (!MenuBarModel.SEPARATOR.equals(entry)) {
+                    commandIds.add(entry);
+                }
+            }
+            Menu menu = new Menu(tr(spec.titleKey()));
+            if (systemMenu) {
+                fill(menu, spec);
+            } else {
+                // JavaFX opens no menu without items: one hidden row stands in until the first open builds the rest.
+                MenuItem standIn = new MenuItem();
+                standIn.setVisible(false); // nothing for a screen reader to read meanwhile
+                menu.getItems().add(standIn);
+                unbuilt.put(menu, spec);
+            }
             // Recompute enablement as the menu opens, so it can never show a stale answer. The context
             // half of the gate (a repo, an open buffer, a suspended debug session) moves constantly and
             // asynchronously — Git detection alone lands well after the window is built — while refresh()
             // runs only on a settings/keymap apply. On the macOS system menu bar AppKit owns the popup and
             // this may not fire, which is why the state-change sites push refreshEnablement() as well.
-            menu.setOnShowing(e -> refreshEnablement());
+            menu.setOnShowing(e -> {
+                if (!buildRows(menu)) {
+                    refreshEnablement();
+                }
+            });
             bar.getMenus().add(menu);
         }
+    }
+
+    /**
+     * Builds the rows of a top-level menu that has none yet, and labels them: what its first opening does. True
+     * when it built them (their enablement is then current too), false when they were built already.
+     */
+    private boolean buildRows(Menu menu) {
+        MenuBarModel.MenuSpec spec = unbuilt.remove(menu);
+        if (spec == null) {
+            return false;
+        }
+        menu.getItems().clear();
+        fill(menu, spec);
+        refresh();
+        return true;
+    }
+
+    /** Builds every menu's rows now, as if each had been opened: for a test that reads the rows. */
+    void buildAllRows() {
+        for (Menu menu : java.util.List.copyOf(bar.getMenus())) {
+            buildRows(menu);
+        }
+    }
+
+    /** Whether no menu's rows are built: the in-window bar of a window none of whose menus opened yet. */
+    boolean rowsUnbuilt() {
+        return items.isEmpty() && unbuilt.size() == bar.getMenus().size();
     }
 
     /**
@@ -165,6 +225,12 @@ final class MainMenuBar {
      */
     private Menu menuOf(MenuBarModel.MenuSpec spec) {
         Menu menu = new Menu(tr(spec.titleKey()));
+        fill(menu, spec);
+        return menu;
+    }
+
+    /** Puts a menu's rows from its spec into it: see {@link #menuOf}. */
+    private void fill(Menu menu, MenuBarModel.MenuSpec spec) {
         java.util.List<Row> group = new java.util.ArrayList<>();
         java.util.Set<String> inline = new java.util.HashSet<>();
         for (String entry : spec.entries()) {
@@ -198,7 +264,6 @@ final class MainMenuBar {
                 menu.getItems().add(nestedMenu(submenu, group));
             }
         }
-        return menu;
     }
 
     /**
@@ -387,14 +452,15 @@ final class MainMenuBar {
         Map<String, String> chords = chordsByCommand.get();
         menuTitles.clear();
         Map<String, Integer> shortened = new java.util.HashMap<>();
-        for (String id : items.keySet()) {
+        // Over every row of the table, built or not, so a title does not change when another menu first opens.
+        for (String id : new java.util.LinkedHashSet<>(commandIds)) {
             shortened.merge(
                     com.editora.editor.MenuTitles.of(
                             registry.get(id).map(Command::title).orElse(id)),
                     1,
                     Integer::sum);
         }
-        for (String id : items.keySet()) {
+        for (String id : new java.util.LinkedHashSet<>(commandIds)) {
             String full = registry.get(id).map(Command::title).orElse(id);
             String bare = com.editora.editor.MenuTitles.of(full);
             // Two rows that would read the same keep their prefixes: "Rerun Last" twice in Run, "Find in Files"

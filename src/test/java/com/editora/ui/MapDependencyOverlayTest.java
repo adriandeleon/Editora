@@ -87,4 +87,39 @@ class MapDependencyOverlayTest {
         assertFalse(readme.read());
         assertEquals(0, readme.uses() + readme.users());
     }
+
+    /** Perf review 2026-11-23 S5: a row gone back to is a lookup, for as long as the imports read are the same. */
+    @Test
+    void recentOverlaysAreKeptForOneReadingOfTheImports() {
+        ProjectMapDependencies deps = sample(false);
+        MapDependencyOverlay.Recent recent = new MapDependencyOverlay.Recent();
+        Path core = root.resolve("core");
+        assertNull(recent.get(deps, root, core, true));
+        MapDependencyOverlay overlay = MapDependencyOverlay.of(deps, root, core, true);
+        recent.put(deps, root, core, true, overlay);
+        assertSame(overlay, recent.get(deps, root, core, true));
+        assertNull(recent.get(deps, root, core, false), "a file and a folder are told apart");
+        assertNull(recent.get(sample(false), root, core, true), "a new reading of the imports starts afresh");
+        for (int i = 0; i < MapDependencyOverlay.Recent.KEPT + 5; i++) {
+            recent.put(deps, root, root.resolve("f" + i), false, MapDependencyOverlay.NONE);
+        }
+        assertEquals(MapDependencyOverlay.Recent.KEPT, recent.size(), "bounded");
+        recent.put(sample(true), root, core, true, overlay);
+        assertEquals(1, recent.size());
+        recent.clear();
+        assertEquals(0, recent.size());
+    }
+
+    @Test
+    void anInterruptedWorkerStopsEarly() {
+        Thread.currentThread().interrupt();
+        try {
+            assertEquals(
+                    new ProjectMapDependencies.Neighbours(Set.of(), Set.of()),
+                    sample(false).neighbours("core", true),
+                    "superseded: its answer is dropped, so it stops");
+        } finally {
+            Thread.interrupted();
+        }
+    }
 }

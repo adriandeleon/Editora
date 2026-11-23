@@ -149,6 +149,9 @@ public final class FakeDebugAdapter implements AutoCloseable {
      */
     public volatile boolean logPoints;
 
+    /** When set (before the client connects), sessions advertise {@code supportsExceptionOptions}, as debugpy does. */
+    public volatile boolean exceptionOptions;
+
     /** When set (before the client connects), sessions advertise {@code supportsStepInTargetsRequest}. */
     public volatile boolean stepInTargets;
 
@@ -647,6 +650,9 @@ public final class FakeDebugAdapter implements AutoCloseable {
             }
             if (stepInTargets) {
                 capabilities.setSupportsStepInTargetsRequest(true);
+            }
+            if (exceptionOptions) {
+                capabilities.setSupportsExceptionOptions(true);
             }
             if (logPoints) {
                 capabilities.setSupportsLogPoints(true);

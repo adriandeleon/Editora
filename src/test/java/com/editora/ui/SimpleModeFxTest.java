@@ -150,6 +150,7 @@ class SimpleModeFxTest {
                 FxTestSupport.invoke(FxTestSupport.field(fx.controller, "chrome"), "applyChromeVisibility");
             });
             assertTrue(FxTestSupport.callOnFx(bar::isVisible), "the menu bar stays visible in Simple mode");
+            FxTestSupport.runOnFx(menu::buildAllRows); // as if each menu had been opened
             int simpleMenus = FxTestSupport.callOnFx(() -> bar.getMenus().size());
             assertTrue(
                     simpleMenus < fullMenus,

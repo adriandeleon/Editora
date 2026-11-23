@@ -55,7 +55,11 @@ Information panel's word count and disk facts, and the spell checker's code-line
 
 Console output is a special case of "don't flood FX": `process/OutputPump` delivers each drain inside an
 `OutputBatch`, `ui/ConsoleAppender` applies a drain as one append, one style application and one trim, and
-drains start at least 16 ms apart. Text that is kept rather than shown is bounded the same way: a test's
+drains start at least 16 ms apart. A drain's carriage returns are collapsed before the console is touched: the Run
+console and the build tabs write only the last non-empty `\r` segment of a chunk (`RunPanel.Carriage`), so a
+progress counter is one line overwrite and one append, not two edits per segment. The Test Results tree redraws
+its visible cells in place after a live update; it never calls `TreeView.refresh()`, which rebuilds every cell.
+Text that is kept rather than shown is bounded the same way: a test's
 captured output, failure message and stack trace keep their head and tail around a note of the cut
 (`test/OutputCap`, 200,000 chars), and the agent transcript holds at most 200,000 chars per entry and
 1,000,000 in all, oldest entries first (`AgentPanel`). Pipe and socket writes to language servers, debug adapters and the ACP
@@ -182,8 +186,9 @@ are warmed on `bundled-warm`, the About icon comes from `AppIcons`, and zoomed s
 `ui-zoom-sheets` (a copy not made yet answers the 100% sheet, and windows are re-pointed when it lands). A bundled
 font family asked for after the first frame is registered off the thread and `Fonts.whenFamiliesLoaded` re-applies
 it. Settings sync writes the config folder's files on the config writer (`SharedConfig.callWithWrites`, which the sync
-thread waits on, so no store saves meanwhile). A debugger stop's frame files are looked at on the adapter's reader
-thread (`dap/FrameFiles`). The structured previews' print and export parse off the thread (`PreviewSnapshots.parse`),
+thread waits on, so no store saves meanwhile). A debugger stop's frame files are looked at on a thread of their own,
+each file once and not again for five seconds, before the stop reaches the FX thread (`dap/FrameFiles.warmAsync`;
+replies keep their order) — never on the adapter's reader thread, which a stat over SSH would hold up. The structured previews' print and export parse off the thread (`PreviewSnapshots.parse`),
 the `.http` environment files where they are read, the inline results under a per-buffer generation, a binary diff's
 blobs on the diff executor, View As JSON/XML and the data table's pages through `OffFx`, and an agent message is
 encoded on the pipe writer. `ChecksOffFxThreadFxTest` drives a representative set and checks that none of their
@@ -225,7 +230,8 @@ reads the plan's tool, and the pasted-image check after a save searches the text
 Windows after the first are built by `MainView`, the frame `main.fxml` declares written in code (`MainViewFxTest`
 keeps them equal), so no later window parses XML. A `perf/Looked` memo never looks on the FX thread: a cold key
 answers its cold answer (null, "unknown", for a memo made without one, whose FX askers check `Looked.allKnown`) and is
-looked at behind; at its bound it drops keys older than a minute, never one a command just had looked at.
+looked at behind; a stale key asked again on the FX thread is looked at once behind (the same `looking` gate), and
+at its bound the memo drops the least recently used keys, never one used within the last minute.
 Run's save-before-run (`RunCoordinator.saveThen`, `FileWorkflowCoordinator.saveThen`) and Debug File's save write
 off the thread and go on in the save's callback, never in a nested event loop. The start-up fallback, when the
 prefetch failed or `main()` was bypassed, runs `loadForFirstWindow` on a `config-prefetch` thread `start()` does not
@@ -282,16 +288,20 @@ command waiting for one is busy, so a second press is refused.
   fence highlighter's worker and the block is coloured when it lands. Line commands beside a collapsed fold
   (`FoldManager.linesAsUnits`) look only at the hidden runs next to the lines they rewrite.
 - **Markdown editing.** Whether a line is code, front matter or raw HTML depends on every line above it.
-  `editor/markdown/MarkdownBlockMap` keeps that map per buffer: `MarkdownBlocks.scan` (`SCAN_SITE`) runs on a
-  snapshot off the thread after each edit, one scan out at a time. The keys and the list, heading, fence and table
-  commands look their lines up through `MarkdownLines.withKinds`, a scoped value bound for that very text. Until the
-  current version's scan lands, the map answers one version behind without scanning: lines above every edit exactly,
+  `editor/markdown/MarkdownBlockMap` keeps that map per buffer, lazily: an edit only notes its first line, and
+  `MarkdownBlocks.scan` (`SCAN_SITE`) runs off the thread when typing pauses (the 150 ms settle), when a key finds the
+  map behind or when someone waits for it, one scan out at a time, never once per keystroke. The keys and the list,
+  heading, fence and table commands look their lines up through `MarkdownLines.withKinds`, a scoped value bound for
+  that very text. Until the current version's scan lands, the map answers from the version it has: lines above every edit exactly,
   the edited lines from the first one, the lines below from their old place. The whole-document commands work on a
   snapshot through `MarkdownEditing.offFx`: the table of contents (and its update before a save), a footnote, the link
   commands, Format Document/Selection and heading numbers (`MarkdownFormatting.FORMAT_SITE`) and a paste of
   structured HTML. A Ctrl/Cmd-click's link (`LINK_AT_SITE`), the heading crumbs, the agent's streamed reply
   (`AgentPanel.PARSE_SITE`), the preview's Copy and the HTML export's check of the source go the same way. Mermaid
-  completion asks the line map whether the caret is in a mermaid fence.
+  completion asks the line map whether the caret is in a mermaid fence. A Mermaid fence in the preview or an agent
+  reply is keyed by its surface and source line (`RenderContext.diagramKey`), so a newer render of it drops the one
+  still queued for `mmdc`. While an agent reply streams, a fence not yet closed is plain code: no diagram and no
+  highlighting job until it closes.
 - **Editor commands.** Commands that search from the caret take the text, caret and anchor on the FX thread and
   search on a virtual thread through `editor/CaretLook`: Select All Occurrences, Add Caret at Next Occurrence, Skip
   Occurrence, Jump/Select to Matching Bracket, the sexp, defun and paragraph motions, Expand Selection, kill-sexp,
@@ -315,7 +325,11 @@ command waiting for one is busy, so a second press is refused.
   `SESSION_READ_SITE`).
 - **Consoles, Settings, grammars and the terminal.**
   - A console's find bar searches a snapshot once typing pauses for 80 ms (`ConsoleFindBar.SEARCH_SITE`). The latest
-    ask wins, and text the output changed meanwhile is searched again.
+    ask wins, and text the output changed meanwhile is searched again. While the bar is open, output that arrives
+    is searched from the start of the last line not yet searched only: the matches before it are kept current as the
+    console appends, trims and overwrites (`ConsoleKnownMatches`). With an empty query nothing is searched.
+  - The CSV grid parses, infers its column types and measures its widths off the thread under a per-buffer
+    generation (`CsvCoordinator.PARSE_SITE`), and keeps its columns when a re-parse does not change them.
   - A console hover or click reads only the line under the pointer.
   - Settings' modified markers, a row's reset and restore, and a window's re-apply compare and set property values
     through their accessors, with no JSON (`SettingsModified`, `SettingsReapply`).
@@ -330,6 +344,15 @@ command waiting for one is busy, so a second press is refused.
     on a snapshot keyed by document version. The breakpoint send after an edit, a stop, Run to Cursor and Jump to
     Line wait for it; other callers use the last mapping, and the file is sent again when it changes.
   - `DebugTextScans` (a breakpoint line with no code, the test at the caret) runs off the thread per version.
+  - A stop or a step asks for the top 50 frames of the stack (`DapClient.FIRST_FRAMES`); the Call Stack's last row
+    asks for the rest. Thread Dump and Parallel Stacks still ask for up to 1,000 frames per thread.
+  - A stop that may not be shown (breakpoint filters, a token logpoint, an exception breakpoint's check, a step
+    filter, Thread Dump's pause) is decided before the window shows the session suspended
+    (`DebugSession.suspendHeld`): one that goes on changes nothing on screen. Python exception breakpoints of builtin
+    types are told to debugpy as `exceptionOptions`, so it does not stop on every raised exception
+    (`PythonExceptionTypes`).
+  - Debug History and the changed-value marks keep a value's first 4,096 characters with its length and hash
+    (`KeptValue`); a Variables row finds a multi-line value's first line without splitting it.
   - The merge resolver's Save (`MergeViewerPane.SAVE_SITE`, busy meanwhile; a close-save asks for the close again
     once applied), Resolve Conflicts, Open in Diff Viewer and Apply Patch, and the diff viewer's applies parse and
     compose off the thread.
@@ -405,7 +428,9 @@ For text-driven work inside `EditorBuffer`, register a milestone with its shared
 `SettledEditDispatcher` rather than adding another RichTextFX `successionEnds` subscription. One document
 subscription resets one JavaFX timer sequence, which preserves each feature's delay while inactive feature
 milestones are never armed. Standalone controls without that dispatcher should still debounce on their
-RichTextFX stream rather than doing expensive work per change.
+RichTextFX stream rather than doing expensive work per change. A class used both ways keeps its own timer and
+gives it up to the buffer's: `FoldManager`, `Minimap` and `SpellCheckOverlay` have `settleExternally()` and
+`editsSettled()`, and a split's follower runs from its leader's.
 
 A stripe on the minimap follows the same rule one step further: its *data* is not recomputed per repaint
 either. The Git change stripe holds an `int[]` of `{line, count, kind}` triples and asks `GitGutterLines`
@@ -470,8 +495,18 @@ style-only change that still ended a succession — skips the draw and the snaps
   only when a choice is made, Query Replace copies a piece of the document from its offset and searches it off
   the FX thread, a piece twice as long when the answer lies past it (`QueryReplace.piece`, `nextIn`), a snippet or
   template body is coloured once typing pauses, off the FX thread, the Markdown heading crumbs and a large Python file's indent check scan off the FX thread, and a Project Map paint
-  makes and tests the boxes of the rows on screen only (`MapProjectedRows`). A listener on a `CodeArea`'s
-  `textProperty()` builds the whole document per change: use `plainTextChanges()`.
+  makes and tests the boxes of the rows on screen only (`MapProjectedRows`, whose row arrays live as long as the
+  world layout). A listener on a `CodeArea`'s `textProperty()` builds the whole document per change: use
+  `plainTextChanges()`.
+- The Project Map's world layout is cached in two steps (`MapSurface.worldLayout`): the columns (every row grouped,
+  sorted and filtered) are keyed by the rows, filters and folding only, and the geometry by the zoom only through
+  whether each card's controls fit, so a zoom pulse or a "Compact rows" hover sorts nothing and usually lays
+  nothing out. A row's place among its column's rows (the screen-reader text, a step out of a filtered column) comes
+  from `MapColumnOrders`, one column sorted once per listing; never call `ProjectMapModel.columnsById` over every
+  row from a keystroke or a selection path. Label widths are kept across listings (bounded, cleared by a font change).
+  The Map's problem counts are built only while it shows (diagnostics that arrive while hidden are counted on the
+  show), and the dependency overlay is worked out off the FX thread (`LatestOnly`, the latest selection wins, the
+  recent ones kept for revisits).
 - **Never** call `getCharacterBoundsOnScreen` synchronously inside a layout/viewport event.
 - **Never** ask `getCharacterBoundsOnScreen` for an **empty** range — it allocates a blinking
   `CaretNode` whose timer is never stopped, permanently leaking a pulse receiver. Measure a
@@ -484,14 +519,42 @@ style-only change that still ended a succession — skips the draw and the snaps
   `LineNumberText` cache (no `String.format`), its clip is sized in the row's own `layoutChildren` rather
   than through two property bindings, and the empty bookmark and chevron slots are bare `Region`s. The
   per-view scroll features (format bar, AI actions bar, sticky scroll, semantic refresh) share one
-  `estimatedScrollY` listener (`installFormatBarListeners`; `ScrollListenerPolicyTest` pins it).
+  `estimatedScrollY` listener (`installFormatBarListeners`; `ScrollListenerPolicyTest` pins it). Sticky
+  scroll measures its row height and inset only when the text column moved, the font changed or the area did
+  (`StickyScrollBar.measuredAt`): the inset is a character-bounds query, which dirties the scene, and it ran on
+  every scroll step (`StickyScrollFxTest`).
 - Per-keystroke helpers read a bounded window, not the document: Enter/Tab/closer handling goes through
   `IndentWindow` slices, brace matching checks the two adjacent characters before building its window, and
   the find bar holds a `SearchMatches` page (at most 100,000 matches) that overlays binary-search. None of
   them may call `area.getText()`.
+- Whole-document work that runs off the FX thread takes the document, not its text: `DocumentText.of(area)` (or the
+  buffer's per-version `EditorBuffer.documentText()`) holds RichTextFX's immutable `ReadOnlyStyledDocument`, taken in
+  O(1), and `text()` builds the String on the worker, once per handle. The highlight pass, the Run scan, fold
+  detection, the TODO scan, the spell code lines, the Markdown line map, the tag-rename mirror, the caret looks, the
+  structural completion offers, Toggle Comment and the HTML link lookups all work this way; a consumer that needs
+  the String on the FX thread (`documentTextSnapshot()`: the LSP `didChange`, the Undo History checkpoint) reuses
+  the one a worker already built for that version. The fork's lazy caches behind `getText()` are races on
+  immutable values, so a worker reading the text beside an FX-thread `getText()` is safe (see `DocumentText`).
 - The project watcher re-lists only directories whose entries were created or deleted and reconciles the
   rows (`ChildReconciler`); Editora's own saves are registered through `ProjectPanel.noteLocalWrite` so
-  they are not treated as external changes.
+  they are not treated as external changes. The tree re-lists at once, but what an external change costs the
+  rest of the window (`git status`, build-tool detection, open diffs, the index) is passed on at most once per
+  `MODIFY_THROTTLE_MS` (2 s), created and deleted files included, with a flush at the end of the throttle
+  (`ProjectWatchChanges.flushNow`); only an overflow goes at once. A batch wholly inside gitignored paths (a
+  build's `target/`) refreshes no Git at all (`ProjectWatchChanges.mayChangeGitStatus`).
+- A tab switch, save or autosave refreshes Git through `GitCoordinator.refreshSoon`: within
+  `GitRefreshCoalescer.WINDOW_NANOS` (2 s) of a full refresh it diffs only the active file
+  (`GitService.refreshDiff`) and keeps the status, and a full refresh follows at the end of the window. A
+  mutation, a focus regain and a non-ignored external change still run `refresh()`. The Commit window
+  (`GitPanel.setStatus`) leaves its rows alone for an equal status and renders a status that arrives while it is
+  off screen when it is shown again; `TreeViewState` walks the rows once rather than asking `getTreeItem(row)`.
+- A focus regain does not list the project's files again: `ProjectFileIndex.revalidate` stats each listed folder
+  on the index's thread, ahead of the next search, and re-reads the direct entries of the folders modified since
+  (`ProjectFileList.revalidate`). A remote root, a changed root `.gitignore` or more than 64 moved folders still
+  mark the list out of date, listed again in the background.
+- Local History captures for a Git Rollback/Discard go through
+  `HistoryCoordinator.captureAllBeforeOverwriteDurably`: every file is recorded first and the index is written
+  and made durable once for the batch, not once per file.
 - The Markdown preview rebuilds only the **blocks that changed** (`MarkdownPreview`). The document is cut
   into its top-level blocks off the FX thread, each keyed by its exact source text (plus the link
   definitions it could use and the size/mtime of the local images it shows); a render keeps every node
@@ -661,7 +724,12 @@ let GPU-backed resources grow with the number of open files:
 - Every per-buffer Canvas overlay implements `TabSurface` — the search-highlight, occurrence-highlight,
   inline-values and AceJump overlays included, so a find, a word highlight or a suspended debug session left
   on a hidden tab holds no viewport texture; `EditorBuffer.setRenderingActive` releases them all for a
-  background tab, and an overlay with nothing to draw holds a 1×1 canvas (`CanvasGuards.fit` / `release`).
+  background tab, and an overlay with nothing to draw holds a 1×1 canvas (`CanvasGuards.fit` / `shrink`).
+  Shrinking does not free a texture (`NGCanvas` keeps the largest one it rendered, and a hidden tab is never
+  rendered), so switching an overlay off and hiding its tab *replace* the canvas with a fresh 1×1 one
+  (`CanvasGuards.released`), the minimap's two canvases included; the old one goes with its texture.
+  `BackgroundTabCanvasesFxTest` reads each canvas's texture through its peer and checks no background tab
+  holds one (it was ~4.7 MB per indent-guide overlay at 1480×831).
   A jump in progress ends when its tab is hidden (its labels are drawn for one viewport and its keys must
   not stay owned on a tab the user cannot see).
 - A plain buffer builds only what every buffer uses: the note and spell overlays (both on by default), the
@@ -705,7 +773,8 @@ let GPU-backed resources grow with the number of open files:
   a recovery record, an MCP buffer call — gets it built on the spot (`MainController.ensureBuffer`,
   `WindowSessionCoordinator.materialize`); everything else that iterates buffers sees a placeholder as "no
   buffer", like an image tab, and treats the file as on disk, which is what its content is.
-- A Canvas overlay releases its backing canvas to **1×1** when it has nothing to draw.
+- A Canvas overlay shrinks its backing canvas to **1×1** when it has nothing to draw, and drops it (a fresh
+  1×1 canvas in its place) when it is switched off or its tab is hidden.
 
 When you add any per-buffer `Canvas`/`Image`, make sure it is released or bounded. The dist
 build (and `mvn javafx:run`) also raise the caps as a safety net
@@ -733,9 +802,17 @@ diagnostics, …) follows one discipline:
   through `AfterLayoutPaint`. A `Platform.runLater` paint runs between pulses, and when the next pulse moves
   the text (the line numbers widening on the fold recompute's debounce after the 1,000th line, line numbers
   toggled, the font) that pulse shows the old paint for one frame (on macOS the lint squiggles stayed there).
-  `AfterLayoutPaint` paints from a post-layout pulse listener, then looks again at where the first visible
-  character is for three pulses — one character-bounds query per pulse while the checks last.
-  `FrameWatch` (tests) checks every shown frame rather than where a paint settles
+  `AfterLayoutPaint` paints from a post-layout pulse listener, then looks again at where the text is on the
+  three pulses after. The overlays over one area share one listener and one look per pulse
+  (`AfterLayoutPaint.Origin`), and the checks ride on pulses that happen anyway: they never ask for a pulse,
+  and the look changes nothing (the text column's place via a transform, the first visible paragraph's top).
+  **Never use `getCharacterBoundsOnScreen` (or any RichTextFX range-bounds query) to *decide* whether to
+  paint:** RichTextFX answers it by adding a `Path` to the paragraph's text flow and removing it, which
+  dirties the scene and costs the next pulse and frame. The old per-overlay checks did that three pulses in a
+  row after every paint (3.79 rendered frames per key against 2.02 in October). Measure characters only while
+  painting, and key a frame on `AfterLayoutPaint.textColumnOnScreen()` (`IndentGuideOverlay`).
+  `FrameWatch` (tests) checks every shown frame rather than where a paint settles; `AfterLayoutPaintFxTest`
+  pins one look per pulse and no pulses asked for after a paint
 - **no gutter work for what the gutter does not show**: `recreateParagraphGraphic` builds a cell even for a
   line far off screen, so a model that follows edits (Personal Notes, which are painted inline) must not ask
   for gutter repaints per keystroke — notes did, two per note per moved line
@@ -780,11 +857,17 @@ keep the show path free of work the user is not waiting for; measure against the
   `BranchPopup`, `BuildActionsPopup`) is built by its first `show` (`ensureBuilt`); the setters that reach a
   node before then keep the value for the build. The Settings window makes its stage and every control in
   `SettingsWindow.build`, on the first `show`; the Message Log popup, the Doctor page and the Welcome page
-  (when the window opens on a file) are built by the accessor that first shows them. `FirstWindowOnlyFxTest`
-  builds a window, walks everything the controller and the window manager hold, and fails on a window other
-  than the main stage or a node that is not in the scene, apart from the parts of controls the window does
-  show that it names with a reason (menu rows, a right-click menu, a tooltip, a toolbar or stripe button
-  not placed now). A new picker, dialog or secondary window follows the same shape: nothing in the
+  (when the window opens on a file) are built by the accessor that first shows them. The in-window menu bar
+  builds a menu's rows (about 300 in all, each with its nodes, its measured title and, when it cannot run, its
+  tooltip) on that menu's first `onShowing` (`MainMenuBar.buildRows`); there are no accelerators to register,
+  so a chord works whether or not its menu was ever opened, and the macOS system menu bar, which AppKit draws,
+  is still built whole. The Project panel, built before the first paint when it was open last time, does not
+  build the Project Map with it: `ProjectPanel.mapView()` builds the Map, its window and its search row on the
+  Map's first open, and what the window pushes to the Map before then waits in `mapPending` (the last push of
+  each kind, in order). `FirstWindowOnlyFxTest` builds a window, walks everything the controller and the window
+  manager hold, and fails on a window other than the main stage or a node that is not in the scene, apart from
+  the parts of controls the window does show that it names with a reason (a right-click menu, a tooltip, a
+  toolbar or stripe button not placed now); it also opens the Project panel and checks the Map is not built. A new picker, dialog or secondary window follows the same shape: nothing in the
   constructor, everything in the method the first show calls.
 - **Only the fonts the first frame needs are registered before it.** `App.start` calls
   `Fonts.loadForFirstPaint(editorFamily)` — Inter (the chrome), JetBrains Mono (`app.css`'s monospace
@@ -815,7 +898,10 @@ keep the show path free of work the user is not waiting for; measure against the
 - **`start()` waits once, and touches no disk of the user's** (PERF-01, Pauta 6.2.0). The prefetch thread
   (`App.loadForFirstWindow`) also claims the config dir before loading it, opens the session log (what was
   logged before is in memory and written first), reads the process ledgers and reaps a crashed run's servers,
-  removes a stale MCP endpoint (`StartupPrep`), and reads what the first window's set-up used to read
+  removes a stale MCP endpoint (`StartupPrep`), asks the keychain for the AI keys on a thread of its own
+  (`config-prefetch-keys`, joined before the plugins are discovered) while it parses the message catalog, the
+  bundled tables and what reads neither the settings nor the shared config (`FirstWindowPrep.prepareApart`),
+  and reads what the first window's set-up used to read
   (`ui/FirstWindowPrep`): the user's themes, the zoomed copies of the window's sheets (`UiZoom.prepare`), the
   recent files and search history, the build information (`AppInfo.load`), the first window's project settings
   (handed over by `ConfigManager.setStartupProjectSettings`), the bundled XML schemas and the loose-files root,
@@ -826,7 +912,8 @@ keep the show path free of work the user is not waiting for; measure against the
   (`InstallOpsHost.reapplyToolSupport`). The fallback in `takeBootstrap` runs the same `loadForFirstWindow`
   inline. Restored windows after the first have their sessions (and project settings) read on a
   `window-session-read` thread while the first one paints; a window's turn waits for its read without blocking.
-  The window icons are read once (`AppIcons`); the Welcome page checks its recent files and project folders
+  The window icons are read once (`AppIcons`), decoded on a thread of their own that `start()` starts before it
+  waits for the prefetch (`AppIcons.readAhead`); the Welcome page checks its recent files and project folders
   off the thread (`RecentFilesCheck`); `--diff-ui`'s operands, the run configuration's main class and the
   `.gitignore` walk of a window joining a shared Java server are looked at on threads of their own. The places
   name themselves to `perf/BlockingSites`, which `StartupOffFxThreadFxTest` listens to through a real launch.

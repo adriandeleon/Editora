@@ -25,17 +25,17 @@ final class DebugValueChanges {
     static final int MAX_ROWS = 5_000;
 
     /** Values seen at earlier stops, by frame. */
-    private final Map<String, Map<List<String>, String>> previous = lru();
+    private final Map<String, Map<List<String>, KeptValue>> previous = lru();
 
     /** Values seen at this stop, by frame. */
-    private final Map<String, Map<List<String>, String>> current = lru();
+    private final Map<String, Map<List<String>, KeptValue>> current = lru();
 
     private String frame = "";
 
-    private static Map<String, Map<List<String>, String>> lru() {
+    private static Map<String, Map<List<String>, KeptValue>> lru() {
         return new LinkedHashMap<>(16, 0.75f, true) {
             @Override
-            protected boolean removeEldestEntry(Map.Entry<String, Map<List<String>, String>> eldest) {
+            protected boolean removeEldestEntry(Map.Entry<String, Map<List<String>, KeptValue>> eldest) {
                 return size() > MAX_FRAMES;
             }
         };
@@ -66,16 +66,19 @@ final class DebugValueChanges {
 
     /** {@code value} is shown at {@code path} (row names from the top-level node down) in the current frame. */
     void record(List<String> path, String value) {
-        Map<List<String>, String> rows = current.computeIfAbsent(frame, k -> new HashMap<>());
+        Map<List<String>, KeptValue> rows = current.computeIfAbsent(frame, k -> new HashMap<>());
         if (rows.size() < MAX_ROWS || rows.containsKey(path)) {
-            rows.put(path, value);
+            KeptValue before = rows.get(path);
+            if (before == null || !before.same(value)) {
+                rows.put(path, KeptValue.of(value)); // what a later stop compares with: not the whole of a long value
+            }
         }
     }
 
     /** Whether the row at {@code path} showed another value at an earlier stop in this frame. A new row is not. */
     boolean changed(List<String> path, String value) {
-        Map<List<String>, String> rows = previous.get(frame);
-        String before = rows == null ? null : rows.get(path);
-        return before != null && !before.equals(value);
+        Map<List<String>, KeptValue> rows = previous.get(frame);
+        KeptValue before = rows == null ? null : rows.get(path);
+        return before != null && !before.same(value);
     }
 }

@@ -79,8 +79,12 @@ public final class PathKeys {
         }
     }
 
-    /** Bound on the canonical-path cache (entries are a string key + a Path — a few hundred bytes each). */
-    private static final int CANONICAL_CACHE_MAX = 2048;
+    /**
+     * Bound on the canonical-path cache (entries are a string key + a Path — a few hundred bytes each, so about 3 MB
+     * when full). Above the files of a large project: a workspace build publishes problems for every file, and with
+     * 2048 the cache evicted each file before its next publish asked for it again (perf review 2026-11-23 L1).
+     */
+    private static final int CANONICAL_CACHE_MAX = 8192;
 
     /**
      * Successful {@code toRealPath} resolutions, LRU-bounded. {@code toRealPath} is a per-component stat
