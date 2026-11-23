@@ -133,4 +133,53 @@ class DebugValuesTest {
         assertEquals("'one line'", DebugValues.display("'one line'"));
         assertNull(DebugValues.display(null));
     }
+
+    /** What {@link DebugValues#display} gave when it split the whole value (before the perf pass of 2026-11-23). */
+    private static String splitDisplay(String value) {
+        if (value.indexOf('\n') < 0 && value.indexOf('\r') < 0) {
+            return DebugValues.capped(value);
+        }
+        String[] lines = value.split("\\R");
+        String first = "";
+        for (String line : lines) {
+            if (!line.isBlank()) {
+                first = line.stripTrailing();
+                break;
+            }
+        }
+        if (lines.length == 0) {
+            return " …";
+        }
+        String last = lines[lines.length - 1].strip();
+        boolean closes = last.equals("}") || last.equals("};");
+        return DebugValues.capped(first) + (first.endsWith("{") && closes ? " … }" : " …");
+    }
+
+    @Test
+    void aMultiLineValueIsShownAsSplittingItShowedIt() {
+        String[] parts = {
+            "\n", "\r", "\r\n", "\u2028", "\u0085", "\u000B", " ", "\t", "{", "}", ";", "};", "a", "xyz", "é", "😀"
+        };
+        java.util.Random random = new java.util.Random(20261123);
+        for (int i = 0; i < 20_000; i++) {
+            StringBuilder b = new StringBuilder();
+            int n = random.nextInt(12);
+            for (int k = 0; k < n; k++) {
+                b.append(parts[random.nextInt(parts.length)]);
+            }
+            if (random.nextInt(10) == 0) {
+                b.insert(random.nextInt(b.length() + 1), "w".repeat(195 + random.nextInt(10)) + "{ ");
+            }
+            String value = b.toString();
+            assertEquals(
+                    splitDisplay(value),
+                    DebugValues.display(value),
+                    () -> "for "
+                            + value.codePoints()
+                                    .mapToObj(c -> String.format("U+%04X", c))
+                                    .toList());
+        }
+        String big = "df\n" + "1 2 3\n".repeat(200_000) + "}";
+        assertEquals(splitDisplay(big), DebugValues.display(big));
+    }
 }
