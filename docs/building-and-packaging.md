@@ -165,6 +165,9 @@ website's own Astro build, so it is the website's pages exactly, styles, search 
   its index either. A path the copy lacks (News, Features, an older version) is redirected to the website.
   **Help ▸ Online Documentation** opens the website's copy directly.
 - The copy is used only when its `app-docs.json` names this build's release version.
+- **Development builds say so.** When a `-SNAPSHOT` build sends a docs link to the website because it has no copy,
+  or a copy for another version, the status bar says why and points here (`status.docs.notBundled`,
+  `status.docs.otherVersion`). `clean` keeps `.docs-site/`; render it again after a guide change or a version bump.
 
 ## Licences in the artifacts
 
