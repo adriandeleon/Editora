@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 import com.editora.config.ConfigManager;
+import com.editora.config.HistoryPurgeHold;
 import com.editora.config.HistoryRevision;
 
 /**
@@ -48,5 +49,10 @@ abstract class HistoryConfigOps implements HistoryCoordinator.Ops {
     @Override
     public boolean canCollectNow() {
         return config.shared().canCollectHistoryBlobs();
+    }
+
+    @Override
+    public HistoryPurgeHold purgeHold(java.util.Collection<String> sha256s) {
+        return config.shared().historyPurgeHold(sha256s);
     }
 }

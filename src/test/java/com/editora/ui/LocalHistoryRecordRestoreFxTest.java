@@ -508,26 +508,28 @@ class LocalHistoryRecordRestoreFxTest {
                 questions.add(question);
                 return true;
             });
-            // Another process holds the configuration: bodies cannot be collected now.
-            java.lang.reflect.Field intact = win.w().fx.shared.getClass().getDeclaredField("historyIndexIntact");
-            intact.setAccessible(true);
-            intact.setBoolean(win.w().fx.shared, false);
-
             FxTestSupport.runOnFx(() -> win.history().purgeFile(PathKeys.normalizedKey(origin)));
 
             assertEquals(1, questions.size());
             assertTrue(
                     questions.get(0).startsWith(tr("dialog.history.purgeFile.confirm", 1, "secret.env")),
                     questions.get(0));
-            assertTrue(questions.get(0).endsWith(tr("dialog.history.purgeFile.shared", 1)), questions.get(0));
-            assertEquals(tr("status.history.purgedPending", 1), win.w().status());
+            assertTrue(questions.get(0).endsWith(tr("dialog.history.purgeFile.sharedChoice", 1)), questions.get(0));
+            // This file only (the yes of a plain confirmation): the copy still holds the text, as the question said.
+            assertEquals(tr("status.history.purged", 1), win.w().status());
             assertEquals(List.of(), FxTestSupport.callOnFx(() -> revisions(win, origin)));
 
-            intact.setBoolean(win.w().fx.shared, true);
+            // The index cannot be trusted: the body that is now unreferenced cannot be collected, and the status
+            // gives that reason (E4).
+            java.lang.reflect.Field untrusted = win.w().fx.shared.getClass().getDeclaredField("historyLossUnmarked");
+            untrusted.setAccessible(true);
+            untrusted.setBoolean(win.w().fx.shared, true);
             FxTestSupport.runOnFx(() -> win.history().purgeFile(PathKeys.normalizedKey(copy)));
             assertEquals(
                     tr("dialog.history.purgeFile.confirm", 1, "copy.env"), questions.get(1), "nothing shares it now");
-            assertEquals(tr("status.history.purged", 1), win.w().status());
+            assertEquals(
+                    tr("status.history.purgedHeld.indexUntrusted", 1), win.w().status());
+            untrusted.setBoolean(win.w().fx.shared, false);
         }
     }
 

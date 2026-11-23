@@ -29,6 +29,12 @@ final class MavenProjectWindowOps implements MavenProjectCoordinator.Ops {
     }
 
     @Override
+    public void recordBeforeReplace(
+            java.nio.file.Path file, String text, java.util.function.Consumer<Boolean> completion) {
+        c.historyCoordinator.recordBeforeReplace(file, text, completion);
+    }
+
+    @Override
     public void openProject(
             java.nio.file.Path root, String name, com.editora.maven.GeneratedProject.@Nullable MainClass main) {
         if (projectsEnabled()) { // else still generated on disk; just not registered as a project

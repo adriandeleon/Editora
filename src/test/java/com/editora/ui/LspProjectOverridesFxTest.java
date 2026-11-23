@@ -119,6 +119,14 @@ class LspProjectOverridesFxTest {
     void tearDown() throws Exception {
         FxTestSupport.runOnFx(() -> host.buffers.forEach(EditorBuffer::dispose));
         manager.close();
+        // The XML schema cache is written into the config folder on a thread of its own; the temporary folder
+        // can only be deleted once that write is done.
+        FxTestSupport.awaitValue(
+                () -> !com.editora.lsp.XmlBundledSchemas.ensuringInBackground(config.getConfigDir())
+                        ? Boolean.TRUE
+                        : null,
+                "the XML schema cache written",
+                java.time.Duration.ofSeconds(30));
     }
 
     private void projectFile(String json) throws Exception {

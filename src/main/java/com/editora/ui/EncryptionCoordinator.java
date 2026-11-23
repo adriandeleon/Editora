@@ -1141,31 +1141,57 @@ final class EncryptionCoordinator {
 
     private void offerToTrashOriginal(EditorBuffer buffer, Path original, EncryptionState state) {
         background("gpg-original", () -> {
-            if (!Files.exists(original)) {
-                return; // looked at here, off the FX thread (PERF-01)
-            }
-            boolean tracked = isTrackedByGit(original);
-            Platform.runLater(() -> {
-                String message = tr(
-                                "encryption.original.message",
-                                EncryptionViews.readableBy(state),
-                                String.valueOf(original.getFileName()))
-                        + (tracked ? " " + tr("encryption.original.git") : "");
-                Runnable trash = () -> {
-                    buffer.encryption().setNotice(null);
-                    trashOriginal(original);
-                };
-                List<EncryptionViews.BannerAction> actions = List.of(
-                        new EncryptionViews.BannerAction(tr("encryption.original.trash"), trash),
-                        new EncryptionViews.BannerAction(
-                                tr("encryption.original.keep"),
-                                () -> buffer.encryption().setNotice(null)));
-                javafx.scene.Node banner = EncryptionViews.originalStillOnDiskBanner(
-                        message, actions, () -> buffer.encryption().setNotice(null));
-                FocusCommands.bind(banner, "crypto.trashOriginal", trash); // its Move to Trash, from the keyboard
-                buffer.encryption().setNotice(banner);
-            });
+            // looked at here, off the FX thread (PERF-01)
+            boolean onDisk = Files.exists(original);
+            boolean tracked = onDisk && isTrackedByGit(original);
+            Platform.runLater(() -> showOriginalBanner(buffer, original, state, onDisk, tracked));
         });
+    }
+
+    /**
+     * The banner after Encrypt File about what still holds the plain text: the original on disk (Move to Trash),
+     * Git's earlier versions (said, not undone), and the plain copies Local History keeps of it (Delete History,
+     * the per-file purge with its own confirmation). Shown again after either action while something is left.
+     */
+    private void showOriginalBanner(
+            EditorBuffer buffer, Path original, EncryptionState state, boolean onDisk, boolean tracked) {
+        int copies = PlainHistoryCopies.count(host.config(), original);
+        if (!onDisk && copies == 0) {
+            buffer.encryption().setNotice(null);
+            return;
+        }
+        Runnable dismiss = () -> buffer.encryption().setNotice(null);
+        StringBuilder message = new StringBuilder(EncryptionViews.readableBy(state));
+        List<EncryptionViews.BannerAction> actions = new java.util.ArrayList<>();
+        Runnable trash = () -> {
+            trashOriginal(original);
+            showOriginalBanner(buffer, original, state, false, tracked);
+        };
+        if (onDisk) {
+            message.setLength(0);
+            message.append(tr(
+                    "encryption.original.message",
+                    EncryptionViews.readableBy(state),
+                    String.valueOf(original.getFileName())));
+            if (tracked) {
+                message.append(' ').append(tr("encryption.original.git"));
+            }
+            actions.add(new EncryptionViews.BannerAction(tr("encryption.original.trash"), trash));
+        }
+        if (copies > 0) {
+            message.append(' ')
+                    .append(tr("encryption.original.history", copies, String.valueOf(original.getFileName())));
+            actions.add(new EncryptionViews.BannerAction(tr("encryption.original.deleteHistory"), () -> {
+                host.historyCoordinator().purgeFile(com.editora.config.PathKeys.normalizedKey(original));
+                showOriginalBanner(buffer, original, state, onDisk, tracked); // what is left, if anything
+            }));
+        }
+        actions.add(new EncryptionViews.BannerAction(tr("encryption.original.keep"), dismiss));
+        javafx.scene.Node banner = EncryptionViews.originalStillOnDiskBanner(message.toString(), actions, dismiss);
+        if (onDisk) {
+            FocusCommands.bind(banner, "crypto.trashOriginal", trash); // its Move to Trash, from the keyboard
+        }
+        buffer.encryption().setNotice(banner);
     }
 
     /** The trash the plain original goes to; a test puts its own in. */
@@ -1567,6 +1593,33 @@ final class EncryptionCoordinator {
         if (target == null) {
             return;
         }
+        decryptToFile(buffer, source, target);
+    }
+
+    /**
+     * Decrypt to File once {@code target} is chosen (the save dialog has asked about replacing it). Refused while
+     * {@code target} is open here with unsaved edits; an existing file is copied to Local History first.
+     */
+    void decryptToFile(EditorBuffer buffer, Path source, Path target) {
+        // An open tab of the file being replaced would hold edits the decrypted content silently outdates.
+        EditorBuffer openTarget = MainController.bufferOf(host.tabForPath(target));
+        if (openTarget != null && openTarget.isDirty()) {
+            host.services().setError(tr("encryption.status.decryptTargetUnsaved", target.getFileName()));
+            return;
+        }
+        // The file it replaces (often the plain original the encrypted one was made from) goes to Local History
+        // first, as any other overwrite from outside the editor's save does; nothing is written if it cannot.
+        HistoryOverwriteCaptures.captureAll(
+                List.of(target), host.historyCoordinator()::captureBeforeOverwriteDurably, failed -> {
+                    if (failed.isPresent()) {
+                        host.services().setError(tr("encryption.status.decryptHistoryFailed", target.getFileName()));
+                    } else {
+                        decryptInto(buffer, source, target);
+                    }
+                });
+    }
+
+    private void decryptInto(EditorBuffer buffer, Path source, Path target) {
         background("gpg-decrypt-file-read", () -> {
             boolean local = com.editora.vfs.Vfs.isLocal(source);
             Platform.runLater(() -> withSecret(
