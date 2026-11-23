@@ -22,6 +22,7 @@ import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
 
+import com.editora.config.HistoryPurgeHold;
 import com.editora.config.HistoryRevision;
 import com.editora.config.PathKeys;
 import com.editora.config.SharedConfig;
@@ -128,7 +129,11 @@ final class HistoryCoordinator {
         }
     }
 
-    private record TargetState(boolean existed, byte @Nullable [] expectedBytes) {}
+    /** The file a disk restore replaces, looked at off the FX thread: its bytes and its EditorConfig charset. */
+    private record TargetState(
+            boolean existed,
+            byte @Nullable [] expectedBytes,
+            @Nullable String charsetRule) {}
 
     /** Window hooks beyond {@link CoordinatorHost} that the history flows need. */
     interface Ops {
@@ -184,6 +189,35 @@ final class HistoryCoordinator {
          */
         default boolean canCollectNow() {
             return true;
+        }
+
+        /**
+         * What keeps the bodies {@code sha256s} on disk once a purge removed their rows, or
+         * {@link HistoryPurgeHold#NONE} when the collection that follows deletes them.
+         */
+        default HistoryPurgeHold purgeHold(java.util.Collection<String> sha256s) {
+            return canCollectNow() ? HistoryPurgeHold.NONE : HistoryPurgeHold.OTHER_PROCESS;
+        }
+
+        /**
+         * The buffer open for {@code file} in this window or, failing that, in another one, or {@code null}. A
+         * restore of an open file goes into its buffer, whichever window has it (B4).
+         */
+        default @Nullable EditorBuffer openBufferAnywhere(Path file) {
+            return openBufferFor(file);
+        }
+
+        /** Brings {@code buffer}'s tab forward in the window that holds it. */
+        default void revealBuffer(EditorBuffer buffer) {}
+
+        /** Whether the Local History tool window is open now. */
+        default boolean toolWindowOpen() {
+            return false;
+        }
+
+        /** Opens the Local History tool window again without taking the keyboard from the editor. */
+        default void reopenToolWindow() {
+            openToolWindow();
         }
     }
 
@@ -301,9 +335,11 @@ final class HistoryCoordinator {
                     then.accept(open.getContent());
                     return;
                 }
+                // Read as the editor reads it — the file's charset, line feeds only, no byte-order mark — so a
+                // Latin-1 file is not "empty" and a CRLF one does not differ on every line (R17).
                 com.editora.perf.OffFx.then(
                         "HistoryCoordinator.currentText",
-                        () -> Files.readString(target),
+                        () -> closedFileText(target, charsetRuleFor(target)),
                         read -> then.accept(read.or("")));
             }
 
@@ -347,6 +383,12 @@ final class HistoryCoordinator {
                         && b.isDirty();
             }
         };
+    }
+
+    /** A closed file's text in the editor's form, as the revisions hold text. Off the FX thread. */
+    static String closedFileText(Path file, @Nullable String charsetRule) throws IOException {
+        String text = editorForm(decodeCaptured(Files.readAllBytes(file), charsetRule));
+        return text == null ? "" : text;
     }
 
     /** Test seam: answers the "replace unsaved edits?" question instead of the dialog. */
@@ -708,22 +750,101 @@ final class HistoryCoordinator {
             return;
         }
         Path name = Path.of(key).getFileName();
+        String fileName = name == null ? key : name.toString();
         // Save As gives the copy the history of the file it came from, and bodies are stored once by content:
-        // deleting this file's rows does not take the text away from those, and the question says so.
-        Confirm.Question question =
-                purgeFileQuestion(count, name == null ? key : name.toString(), filesSharingSnapshots(key));
-        if (!(confirmPurgeAnswer == null ? confirmPurge(question) : confirmPurgeAnswer.test(question.message()))) {
-            return;
+        // deleting this file's rows does not take the text away from those. The question says so, and offers to
+        // take it from them too (B10) — someone purging a pasted secret wants it gone everywhere.
+        int sharing = filesSharingSnapshots(key);
+        boolean everywhere;
+        if (sharing == 0) {
+            Confirm.Question question = purgeFileQuestion(count, fileName, 0);
+            if (!(confirmPurgeAnswer == null ? confirmPurge(question) : confirmPurgeAnswer.test(question.message()))) {
+                return;
+            }
+            everywhere = false;
+        } else {
+            int answer = askSharedPurge(purgeSharedFileChoice(count, fileName, sharing));
+            if (answer < 0) {
+                return;
+            }
+            everywhere = answer == 1;
         }
         // Re-read after the modal dialog: revisions recorded while it was open are purged too. Every
         // project's bucket, not only this window's: the same file recorded from a No-Project window or an
         // overlapping project kept its revisions (and its content on disk) while the status said "purged".
-        int removed = revisionsInEveryProject(key);
-        ops.historyMap().remove(key);
-        for (Map<String, List<HistoryRevision>> bucket : ops.historyByProject().values()) {
-            bucket.remove(key);
+        java.util.Set<String> bodies = new java.util.HashSet<>();
+        revisionsOf(key).forEach(r -> bodies.add(r.sha256()));
+        int removed = 0;
+        for (Map<String, List<HistoryRevision>> bucket : everyBucket()) {
+            List<HistoryRevision> gone = bucket.remove(key);
+            removed += gone == null ? 0 : gone.size();
+            if (everywhere) {
+                removed += removeRowsWithBodies(bucket, bodies);
+            }
         }
-        finishPurge(removed);
+        finishPurge(removed, bodies);
+    }
+
+    /** Removes from {@code bucket} every row whose body is one of {@code bodies}; drops emptied files. */
+    private static int removeRowsWithBodies(Map<String, List<HistoryRevision>> bucket, java.util.Set<String> bodies) {
+        int removed = 0;
+        for (var it = bucket.entrySet().iterator(); it.hasNext(); ) {
+            Map.Entry<String, List<HistoryRevision>> file = it.next();
+            List<HistoryRevision> kept = file.getValue().stream()
+                    .filter(r -> !bodies.contains(r.sha256()))
+                    .toList();
+            int dropped = file.getValue().size() - kept.size();
+            if (dropped == 0) {
+                continue;
+            }
+            removed += dropped;
+            if (kept.isEmpty()) {
+                it.remove();
+            } else {
+                file.setValue(new ArrayList<>(kept));
+            }
+        }
+        return removed;
+    }
+
+    /**
+     * The question before one file's history is deleted when other files share some of its snapshots: its two
+     * answers are this file only (0) and those snapshots everywhere (1).
+     */
+    static Confirm.Choice purgeSharedFileChoice(int count, String fileName, int sharing) {
+        return Confirm.choice(
+                tr("dialog.history.purge.title"),
+                null,
+                tr("dialog.history.purgeFile.confirm", count, fileName) + "\n\n"
+                        + tr("dialog.history.purgeFile.sharedChoice", sharing),
+                tr("dialog.history.purge.button"),
+                tr("dialog.history.purge.everywhere"));
+    }
+
+    /** Test seam: answers {@link #purgeSharedFileChoice} (given its text) — 0, 1, or -1 for Cancel. */
+    java.util.function.@Nullable ToIntFunction<String> sharedPurgeAnswer;
+
+    private int askSharedPurge(Confirm.Choice choice) {
+        if (sharedPurgeAnswer != null) {
+            return sharedPurgeAnswer.applyAsInt(String.valueOf(choice.message()));
+        }
+        if (confirmPurgeAnswer != null) { // a test that answers yes or no: this file only
+            return confirmPurgeAnswer.test(String.valueOf(choice.message())) ? 0 : -1;
+        }
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
+        alert.initOwner(host.window());
+        alert.setTitle(choice.title());
+        alert.setHeaderText(choice.header());
+        alert.setContentText(choice.message());
+        ButtonType thisFile = new ButtonType(choice.answer(0), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+        ButtonType everywhere = new ButtonType(choice.answer(1), javafx.scene.control.ButtonBar.ButtonData.OTHER);
+        ButtonType cancel = Dialogs.cancel();
+        alert.getButtonTypes().setAll(thisFile, everywhere, cancel);
+        Dialogs.destructive(alert, thisFile);
+        Dialogs.destructive(alert, everywhere);
+        Dialogs.defaultTo(alert, cancel);
+        ButtonType chosen = Dialogs.showAndWait(alert).orElse(cancel);
+        return chosen == thisFile ? 0 : chosen == everywhere ? 1 : -1;
     }
 
     /** Test seam: answers the purge confirmation (given its text) instead of the dialog. */
@@ -759,33 +880,86 @@ final class HistoryCoordinator {
         return count;
     }
 
+    /**
+     * The files "Delete History of Project" deletes: every file of this window's bucket and, with a project,
+     * every file at or under its root in any bucket — reads merge the buckets, so a file of the project recorded
+     * from a No-Project or overlapping-project window would otherwise stay listed after the purge (R8).
+     */
+    private java.util.Set<String> projectKeys() {
+        java.util.Set<String> keys =
+                new java.util.LinkedHashSet<>(ops.historyMap().keySet());
+        Path root = ops.projectRoot();
+        if (root != null && Vfs.isLocal(root)) {
+            String rootKey = historyKey(root);
+            String separator = root.getFileSystem().getSeparator();
+            for (Map<String, List<HistoryRevision>> bucket : everyBucket()) {
+                for (String key : bucket.keySet()) {
+                    if (key.equals(rootKey) || HistoryMoves.renamed(key, rootKey, rootKey, separator) != null) {
+                        keys.add(key);
+                    }
+                }
+            }
+        }
+        return keys;
+    }
+
     /** Deletes every recorded revision of every file in the active project's history, after confirmation. */
     void purgeProject() {
-        int files = ops.historyMap().size();
-        int count = ops.historyMap().values().stream().mapToInt(List::size).sum();
+        java.util.Set<String> keys = projectKeys();
+        int count = 0;
+        for (String key : keys) {
+            count += revisionsInEveryProject(key);
+        }
         if (count == 0) {
             host.setStatus(tr("status.history.nothingToPurge"));
             return;
         }
-        Confirm.Question question = purgeProjectQuestion(count, files);
+        Confirm.Question question = purgeProjectQuestion(count, keys.size());
         if (!(confirmPurgeAnswer == null ? confirmPurge(question) : confirmPurgeAnswer.test(question.message()))) {
             return;
         }
-        Map<String, List<HistoryRevision>> bucket = ops.historyMap();
-        int removed = bucket.values().stream().mapToInt(List::size).sum();
-        bucket.clear();
-        finishPurge(removed);
+        // Re-read after the modal dialog, as purgeFile does.
+        keys = projectKeys();
+        java.util.Set<String> bodies = new java.util.HashSet<>();
+        int removed = 0;
+        for (Map<String, List<HistoryRevision>> bucket : everyBucket()) {
+            for (String key : keys) {
+                List<HistoryRevision> gone = bucket.remove(key);
+                if (gone != null) {
+                    removed += gone.size();
+                    gone.forEach(r -> bodies.add(r.sha256()));
+                }
+            }
+        }
+        finishPurge(removed, bodies);
     }
 
-    private void finishPurge(int removed) {
+    private void finishPurge(int removed, java.util.Set<String> purgedBodies) {
         // The content must leave the disk now, not at the next throttled collection.
         historyService.requestGc();
         publish();
         refresh();
-        // The rows are gone from the index either way. The bodies leave the disk with the collection that
-        // follows — which is refused while another running Editora shares this configuration, or while the
-        // index cannot be trusted. Someone purging a pasted secret has to be told it is still there.
-        host.setStatus(tr(ops.canCollectNow() ? "status.history.purged" : "status.history.purgedPending", removed));
+        // The rows are gone from the index either way. A body another row still uses stays, as the question said;
+        // the rest leave the disk with the collection that follows — unless something holds them, which the user
+        // purging a pasted secret has to be told, with the real reason (E4).
+        java.util.Set<String> orphaned = new java.util.HashSet<>(purgedBodies);
+        for (Map<String, List<HistoryRevision>> bucket : everyBucket()) {
+            for (List<HistoryRevision> rows : bucket.values()) {
+                rows.forEach(r -> orphaned.remove(r.sha256()));
+            }
+        }
+        HistoryPurgeHold hold = orphaned.isEmpty() ? HistoryPurgeHold.NONE : ops.purgeHold(orphaned);
+        host.setStatus(tr(purgedStatusKey(hold), removed));
+    }
+
+    /** The catalog key of the status after a purge whose bodies are held by {@code hold}. */
+    static String purgedStatusKey(HistoryPurgeHold hold) {
+        return switch (hold) {
+            case NONE -> "status.history.purged";
+            case OTHER_PROCESS -> "status.history.purgedHeld.otherProcess";
+            case BACKUP -> "status.history.purgedHeld.backup";
+            case INDEX_UNTRUSTED -> "status.history.purgedHeld.indexUntrusted";
+        };
     }
 
     private boolean confirmPurge(Confirm.Question question) {
@@ -815,7 +989,19 @@ final class HistoryCoordinator {
             }
         }
         folderGroupsShown = null;
+        boolean reopen = false;
+        if (!available) {
+            // Closed by a tab with no local file (a new untitled tab, a diff, Welcome), not by the user: it comes
+            // back with the next file (U4). Turning the feature off is not that.
+            reopenOnNextFile = isEnabled() && (reopenOnNextFile || ops.toolWindowOpen());
+        } else if (reopenOnNextFile) {
+            reopenOnNextFile = false;
+            reopen = !ops.toolWindowOpen();
+        }
         ops.setToolWindowAvailable(available);
+        if (reopen) {
+            ops.reopenToolWindow();
+        }
         watchEditorText(available ? b : null);
         if (panel == null) {
             return; // nothing to fill yet; panel() refreshes when it builds
@@ -829,6 +1015,9 @@ final class HistoryCoordinator {
             panel.setRevisions(List.of(), null, null);
         }
     }
+
+    /** Set when the tool window closed because the active tab has no local file; it reopens on the next file. */
+    private boolean reopenOnNextFile;
 
     /** What the folder view lists now; a refresh that finds the same leaves the tree (and its selection) alone. */
     private @Nullable List<FileHistoryPanel.FileGroup> folderGroupsShown;
@@ -912,15 +1101,33 @@ final class HistoryCoordinator {
                 || buffer == null
                 || buffer.getPath() == null
                 || !host.isLocalBuffer(buffer)
-                || buffer.encryption().isEncrypted()) {
+                || buffer.encryption().isEncrypted()
+                || holdsPart(buffer)) {
             return;
         }
         recordFor(buffer.getPath(), buffer.getContent(), reason, "", false, null);
     }
 
+    /**
+     * Whether {@code buffer} holds only part of its file — a truncated load, or a followed log whose head was
+     * trimmed. Its text is not a revision of the file: restored, it would write the slice over the whole (R4).
+     */
+    static boolean holdsPart(EditorBuffer buffer) {
+        return buffer.isTruncatedLoad() || buffer.isLogTrimmed();
+    }
+
     /** Records caller-captured content, used before a closed-file bulk replacement rewrites the file. */
     void record(@Nullable Path file, String content, String reason) {
         recordFor(file, content, reason, "", false, null);
+    }
+
+    /**
+     * Records what a save wrote, with how it was written ({@code encoding}: charset, byte-order mark, line
+     * ending): a file deleted outside Editora comes back from such a row as the bytes it was, not as UTF-8 with
+     * line feeds (R14).
+     */
+    void recordSaved(Path file, String content, String reason, @Nullable Encoding encoding) {
+        recordFor(file, content, reason, "", false, encoding, false, null);
     }
 
     /** Records and waits for the index snapshot to become durable before acknowledging the caller. */
@@ -929,14 +1136,19 @@ final class HistoryCoordinator {
         recordFor(file, content, reason, "", false, completion);
     }
 
+    /** How long {@link #recordSafetyCopy} lets the FX thread wait for the previous text to reach the disk. */
+    static final long SAFETY_COPY_TIMEOUT_MILLIS = 15_000;
+
+    /** Test seam: the wait {@link #recordSafetyCopy} allows. */
+    long safetyCopyTimeoutMillis = SAFETY_COPY_TIMEOUT_MILLIS;
+
     /**
-     * Takes {@code buffer}'s current text — unsaved edits included — as a labelled (and therefore retention-protected)
-     * revision: the text is copied here, in memory, before the edit that follows changes it, and its write is queued
-     * on the history worker, in order with every other capture (PERF-01, Pauta 6.2.0: the FX thread no longer waits
-     * for the disk). The quit drains the worker, so the copy reaches the disk before Editora exits. This is the
-     * recovery copy {@link NoUndoGuard} requires before a bulk edit in a buffer that has no undo; anything other than
-     * {@link NoUndoGuard.Copy#STORED} means there is none and the edit must not happen. A write that fails later is
-     * said in the status line.
+     * Stores {@code buffer}'s current text — unsaved edits included — as a labelled (and therefore
+     * retention-protected) revision, and returns only once its content is on disk and the revision is in the
+     * index. This is the recovery copy {@link NoUndoGuard} requires before a bulk edit in a buffer that has no
+     * undo; anything other than {@link NoUndoGuard.Copy#STORED} means there is none and the edit must not happen.
+     * The FX thread waits for the body's write, bounded, on purpose: the edit comes after it, and a copy that
+     * was only queued let the edit go ahead when the write then failed (R1).
      */
     NoUndoGuard.Copy recordSafetyCopy(EditorBuffer buffer, String label) {
         if (!isEnabled()) {
@@ -949,12 +1161,31 @@ final class HistoryCoordinator {
                 || buffer.encryption().isEncrypted()) {
             return NoUndoGuard.Copy.NO_LOCAL_FILE; // an encrypted file's text never goes into Local History
         }
-        recordFor(file, buffer.getContent(), HistoryRevision.REASON_LABEL, label, true, stored -> {
-            if (!stored) {
-                onFx(() -> host.setError(tr("status.history.labelFailed", label)));
-            }
-        });
-        return NoUndoGuard.Copy.STORED;
+        if (holdsPart(buffer)) {
+            return NoUndoGuard.Copy.FAILED; // a slice of the file is no copy of it
+        }
+        String key = historyKey(file);
+        Map<String, List<HistoryRevision>> bucket = ops.historyMap();
+        var policy = retentionPolicy();
+        long now = System.currentTimeMillis();
+        boolean[] stored = {false};
+        historyService.snapshotBlocking(
+                file,
+                buffer.getContent(),
+                HistoryRevision.REASON_LABEL,
+                label,
+                now,
+                safetyCopyTimeoutMillis,
+                outcome -> {
+                    if (outcome.successful() && outcome.revision() != null) {
+                        applyRecorded(bucket, key, HistoryMoves.at(key, outcome.revision()), policy, now, null);
+                        stored[0] = true;
+                    }
+                });
+        if (stored[0]) {
+            refresh();
+        }
+        return stored[0] ? NoUndoGuard.Copy.STORED : NoUndoGuard.Copy.FAILED;
     }
 
     /**
@@ -981,7 +1212,7 @@ final class HistoryCoordinator {
     record Encoding(String charset, boolean bom, String lineEnding) {
 
         /** The encoding of {@code bytes}, read the way the editor reads a file under {@code editorConfigCharset}. */
-        static Encoding of(byte[] bytes, String editorConfigCharset) {
+        static Encoding of(byte[] bytes, @Nullable String editorConfigCharset) {
             return of(bytes, DiffSideText.decodeRaw(bytes, editorConfigCharset, null));
         }
 
@@ -1006,19 +1237,23 @@ final class HistoryCoordinator {
             @Nullable Encoding encoding,
             boolean evenWhenOff,
             java.util.function.@Nullable Consumer<Boolean> durableCompletion) {
-        // An encrypted file has no Local History (ADR 0017): its revisions would be its text, unencrypted.
+        // An encrypted file has no Local History (ADR 0017): its revisions would be its text, unencrypted. Nothing
+        // is kept then by contract, as with the feature off; the callers proceed on that.
         if (file == null
                 || content == null
                 || !com.editora.vfs.Vfs.isLocal(file)
                 || !(evenWhenOff || isEnabled())
-                || com.editora.text.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
+                || encrypted(file, content)) {
             if (durableCompletion != null) {
                 durableCompletion.accept(true);
             }
             return;
         }
         String submittedKey = historyKey(file);
-        List<HistoryRevision> existing = ops.historyMap().getOrDefault(submittedKey, List.of());
+        // The bucket of the project this window has now: a project switch before the revision lands must not
+        // file it under the next project (E-L1).
+        Map<String, List<HistoryRevision>> bucket = ops.historyMap();
+        List<HistoryRevision> existing = bucket.getOrDefault(submittedKey, List.of());
         var policy = retentionPolicy();
         long now = System.currentTimeMillis();
         int renamesSeen = renames.size();
@@ -1029,7 +1264,7 @@ final class HistoryCoordinator {
             boolean adopted = outcome.successful() && adoptSaveAsOrigin(key);
             HistoryRevision moved = outcome.revision() == null ? null : HistoryMoves.at(key, outcome.revision());
             HistoryRevision rev = moved == null || encoding == null ? moved : encoding.on(moved);
-            boolean listed = rev != null && applyRecorded(key, rev, policy, now, durableCompletion);
+            boolean listed = rev != null && applyRecorded(bucket, key, rev, policy, now, durableCompletion);
             if (!listed) {
                 if (adopted) {
                     publish();
@@ -1053,6 +1288,41 @@ final class HistoryCoordinator {
                 refresh();
             }
         });
+    }
+
+    /**
+     * Whether {@code content} of {@code file} is an encrypted file's, which Local History never keeps (ADR 0017).
+     * Decided by what the file is, not its name alone (R2): a {@code .asc} file is as often a public key, a
+     * signature or AsciiDoc, which open as ordinary text and are recorded like any other. A name without an
+     * encryption extension is never encrypted; with one, an open buffer says whether it was decrypted, and a
+     * closed file's content whether it is an OpenPGP message.
+     */
+    private boolean encrypted(Path file, String content) {
+        String name = String.valueOf(file.getFileName());
+        if (com.editora.text.EncryptedNames.extensionOf(name) == null) {
+            return false;
+        }
+        EditorBuffer open = ops.openBufferAnywhere(file);
+        if (open != null && open.encryption().isEncrypted()) {
+            return true;
+        }
+        String head = content.substring(0, Math.min(content.length(), 1024));
+        com.editora.crypto.EncryptedFiles.Kind kind =
+                com.editora.crypto.EncryptedFiles.sniff(head.getBytes(java.nio.charset.StandardCharsets.ISO_8859_1));
+        return kind == com.editora.crypto.EncryptedFiles.Kind.ARMORED_MESSAGE
+                || kind == com.editora.crypto.EncryptedFiles.Kind.BINARY_MESSAGE
+                || (open == null && kind == com.editora.crypto.EncryptedFiles.Kind.NONE && !looksLikeText(head));
+    }
+
+    /** No control characters other than whitespace: what a decoded OpenPGP binary packet never is. */
+    private static boolean looksLikeText(String head) {
+        for (int i = 0; i < head.length(); i++) {
+            char c = head.charAt(i);
+            if (c < 0x20 && c != '\n' && c != '\r' && c != '\t' && c != '\f') {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** Whether this window has already said that Local History could not record something. */
@@ -1136,29 +1406,31 @@ final class HistoryCoordinator {
             return;
         }
         Long previous = lastSavedStamps.put(historyKey(target), stamp(written));
+        // No size cap (R5): the save has the bytes in hand already, and from 16 MB the buffer has no undo, so what
+        // the first save replaces would otherwise be in neither history nor undo.
         if (replaced == null
                 || replaced.length == 0 // an empty file has no text to bring back
-                || replaced.length > MAX_CAPTURE_BYTES
                 || (previous != null && previous >>> 32 == replaced.length && previous == stamp(replaced))) {
             return;
         }
         // What the first save of a session replaces is the file as it was before the session; what a later
         // one replaces, when it is not this window's own save, was written by something else meanwhile.
         String reason = previous == null ? REASON_BASELINE : HistoryRevision.REASON_EXTERNAL;
-        Platform.runLater(() -> recordReplaced(target, replaced, reason));
-    }
-
-    /** FX half of {@link #saveReplaced}: the same text contract as a pre-delete capture, in the editor's form. */
-    private void recordReplaced(Path file, byte[] replaced, String reason) {
-        if (!isEnabled()) {
-            return;
-        }
-        String charsetRule = charsetRuleFor(file);
+        // Decoded here, on the save worker: the charset rules are looked at on this thread (on the FX thread a file
+        // nothing has looked at yet answers "no rules"), and a large file's decode costs the FX thread nothing.
+        String charsetRule = charsetRuleFor(target);
         if (isBinary(replaced, charsetRule)) {
             return;
         }
         String text = LineEndings.toLf(decodeCaptured(replaced, charsetRule));
-        recordFor(file, text, reason, "", false, null);
+        Platform.runLater(() -> recordReplaced(target, text, reason));
+    }
+
+    /** FX half of {@link #saveReplaced}: the same text contract as a pre-delete capture, in the editor's form. */
+    private void recordReplaced(Path file, String text, String reason) {
+        if (isEnabled()) {
+            recordFor(file, text, reason, "", false, null);
+        }
     }
 
     /**
@@ -1167,7 +1439,17 @@ final class HistoryCoordinator {
      * ({@code \n} only, no byte-order mark), so that an equal save is recognised as the same content.
      */
     void recordBeforeReplace(Path file, String content, java.util.function.Consumer<Boolean> completion) {
-        recordFor(file, editorForm(content), REASON_BEFORE_REPLACE, "", false, completion);
+        recordBeforeReplace(file, content, REASON_BEFORE_REPLACE, completion);
+    }
+
+    /**
+     * As {@link #recordBeforeReplace(Path, String, java.util.function.Consumer)}, under {@code reason} — a
+     * Markdown link update records {@link HistoryRevision#REASON_LINK_UPDATE}, so its row says what rewrote the
+     * file (F3).
+     */
+    void recordBeforeReplace(
+            Path file, String content, String reason, java.util.function.Consumer<Boolean> completion) {
+        recordFor(file, editorForm(content), reason, "", false, completion);
     }
 
     /** {@code text} as the editor holds it: line feeds only, without a leading byte-order mark. */
@@ -1254,7 +1536,26 @@ final class HistoryCoordinator {
 
     private boolean adoptSaveAsOrigin(String key) {
         String origin = saveAsOrigins.remove(key);
-        return origin != null && HistoryMoves.copy(ops.historyMap(), origin, key);
+        if (origin == null) {
+            return false;
+        }
+        // The origin's history from every bucket, as the panel lists it, not only this window's (R15).
+        List<HistoryRevision> past = revisionsOf(origin);
+        if (past.isEmpty()) {
+            return false;
+        }
+        Map<String, List<HistoryRevision>> bucket = ops.historyMap();
+        Map<String, List<HistoryRevision>> both = new java.util.HashMap<>();
+        both.put(origin, past);
+        List<HistoryRevision> own = bucket.get(key);
+        if (own != null) {
+            both.put(key, own);
+        }
+        if (!HistoryMoves.copy(both, origin, key)) {
+            return false;
+        }
+        bucket.put(key, both.get(key));
+        return true;
     }
 
     /**
@@ -1263,12 +1564,13 @@ final class HistoryCoordinator {
      * record was submitted.
      */
     private boolean applyRecorded(
+            Map<String, List<HistoryRevision>> submittedTo,
             String key,
             HistoryRevision rev,
             HistoryRetention.RetentionPolicy policy,
             long now,
             java.util.function.@Nullable Consumer<Boolean> durableCompletion) {
-        Map<String, List<HistoryRevision>> bucket = ops.historyMap();
+        Map<String, List<HistoryRevision>> bucket = liveBucket(submittedTo);
         List<HistoryRevision> current = bucket.getOrDefault(key, List.of());
         // The worker compared the content with the newest row as it was when the record was submitted. Two
         // records of one text submitted back to back (the text a save replaced, then the save itself, when
@@ -1293,6 +1595,19 @@ final class HistoryCoordinator {
         }
         publish(durableCompletion);
         return true;
+    }
+
+    /**
+     * {@code submittedTo} while it is still one of the index's buckets; this window's current one when it is not
+     * (its project's history was removed meanwhile), so the revision is never filed into a detached map.
+     */
+    private Map<String, List<HistoryRevision>> liveBucket(Map<String, List<HistoryRevision>> submittedTo) {
+        for (Map<String, List<HistoryRevision>> bucket : ops.historyByProject().values()) {
+            if (bucket == submittedTo) {
+                return submittedTo;
+            }
+        }
+        return ops.historyMap();
     }
 
     /** Makes {@code bucket} equal to {@code wanted}, touching only the files whose lists differ. */
@@ -1484,11 +1799,21 @@ final class HistoryCoordinator {
 
     /** Shows the folder-history view: every file under {@code folder} with recorded revisions (incl. deleted). */
     private void showFolderHistory(Path folder) {
+        showFolderHistory(folder, null);
+    }
+
+    /** As {@link #showFolderHistory(Path)}, then selects {@code select} in the listing when it is there (U3). */
+    private void showFolderHistory(Path folder, @Nullable HistoryRevision select) {
         // Which of its files are gone is looked at off the FX thread first (PERF-01, Pauta 6.2.0).
         List<Path> files = HistoryQueries.folderRevisions(mergedIndex(), historyKey(folder)).keySet().stream()
                 .map(Path::of)
                 .toList();
-        com.editora.perf.OffFx.then("history-look", () -> lookGone(files), looked -> showFolderHistoryLooked(folder));
+        com.editora.perf.OffFx.then("history-look", () -> lookGone(files), looked -> {
+            showFolderHistoryLooked(folder);
+            if (select != null && panel != null && folder.equals(panel.folderShown())) {
+                panel.selectInFolder(select);
+            }
+        });
     }
 
     /** Whether each of {@code files} is gone from the disk, looked at now, off the FX thread, and kept. */
@@ -1574,13 +1899,19 @@ final class HistoryCoordinator {
         // Open in this window: the text the user is looking at is the buffer's. Writing the file underneath
         // left the tab on the old text under a "Restored" message — and replaced the disk below unsaved edits
         // without a word about them. Restore into the buffer instead: one undoable edit, nothing written.
-        EditorBuffer open = ops.openBufferFor(file);
+        // In another window, the same (B4): its buffer, not the disk under it — a clean one reloaded silently and
+        // a dirty one kept its edits against a changed disk, nobody asked.
+        EditorBuffer open = ops.openBufferAnywhere(file);
         if (open != null && !open.isDisposed()) {
             if (open.isDirty() && !confirmOverUnsaved(file)) {
                 completion.complete(RestoreResult.CANCELLED);
                 return completion;
             }
-            ops.openPath(file); // bring its tab forward: that is where the restored text appears
+            if (ops.openBufferFor(file) == open) {
+                ops.openPath(file); // bring its tab forward: that is where the restored text appears
+            } else {
+                ops.revealBuffer(open); // its window and tab, where the restored text appears
+            }
             restoreInto(open, revision, completion);
             return completion;
         }
@@ -1589,7 +1920,9 @@ final class HistoryCoordinator {
             final TargetState target;
             try {
                 boolean existed = Files.exists(file);
-                target = new TargetState(existed, existed ? Files.readAllBytes(file) : null);
+                // The charset rule too, here: asked on the FX thread, a file nothing looked at yet has "no rules",
+                // and a BOM-less UTF-16 or Latin-1 file was then restored as UTF-8 (R13).
+                target = new TargetState(existed, existed ? Files.readAllBytes(file) : null, charsetRuleFor(file));
             } catch (IOException | RuntimeException failure) {
                 finishDiskRestore(file, completion, RestoreResult.WRITE_FAILED);
                 return;
@@ -1636,7 +1969,7 @@ final class HistoryCoordinator {
                                         encodingSourceFor(revision),
                                         text,
                                         target.expectedBytes(),
-                                        charsetRuleFor(file));
+                                        target.charsetRule());
                                 // The file is replaced only once what it holds now is safely in history —
                                 // as a delete, Replace in Files and an agent's write already wait.
                                 recordBeforeOverwrite(
@@ -1669,14 +2002,16 @@ final class HistoryCoordinator {
      */
     private void recordBeforeOverwrite(Path file, TargetState target, Consumer<Boolean> kept) {
         byte[] current = target.existed() ? target.expectedBytes() : null;
-        if (current == null || com.editora.diff.BinaryDiff.isProbablyBinary(current)) {
+        String charsetRule = target.charsetRule();
+        // The charset-aware test, as before a delete: BOM-less UTF-16 has a NUL in every ASCII character (R13).
+        if (current == null || isBinary(current, charsetRule)) {
             kept.accept(true); // nothing there, or nothing Local History holds
             return;
         }
-        String text = LineEndings.toLf(decodeCaptured(current, charsetRuleFor(file)));
+        String text = LineEndings.toLf(decodeCaptured(current, charsetRule));
         // Also while the feature is off: this is Local History's own destructive action, offered from a
         // listing that is still open, and the file it replaces may hold what no revision does.
-        recordFor(file, text, HistoryRevision.REASON_EXTERNAL, "", false, null, true, kept);
+        recordFor(file, text, HistoryRevision.REASON_RESTORE, "", false, null, true, kept);
     }
 
     private void commitDiskRestore(
@@ -1708,12 +2043,25 @@ final class HistoryCoordinator {
                 return;
             }
             if (result == RestoreResult.RESTORED && !disposed) {
+                // From the folder view the user is likely restoring several files: the file opens, but the keyboard
+                // stays in the listing they are working through.
+                javafx.scene.Node keep = panel != null && panel.folderShown() != null ? focusOwner() : null;
                 ops.openPath(file);
+                if (keep != null) {
+                    Platform.runLater(keep::requestFocus);
+                }
                 ops.refreshProjectTree();
             }
             reportRestore(file, result);
             completion.complete(result);
         });
+    }
+
+    /** The node with the keyboard in this window, or null. */
+    private javafx.scene.@Nullable Node focusOwner() {
+        javafx.stage.Window window = host.window();
+        javafx.scene.Scene scene = window == null ? null : window.getScene();
+        return scene == null ? null : scene.getFocusOwner();
     }
 
     /** The {@code .editorconfig} charset the editor would use for {@code file}, or {@code null}. */
@@ -1745,6 +2093,11 @@ final class HistoryCoordinator {
         }
         if (!EditorConfigCharset.canEncode(body, name)) {
             name = EditorConfigCharset.UTF_8;
+        }
+        if (existing != null) {
+            // The mark as the file has it: a BOM-less UTF-16 file (its charset from .editorconfig) used to come
+            // back with one, which every tool that read it without a mark then saw as two stray bytes.
+            return EditorConfigCharset.encode(body, name, EditorConfigCharset.detectByBom(existing) != null);
         }
         return EditorConfigCharset.encode(body, name);
     }
@@ -1920,6 +2273,11 @@ final class HistoryCoordinator {
      * safe to replace.
      */
     void captureBeforeOverwriteDurably(Path file, Consumer<OverwriteCapture> completion) {
+        captureBeforeOverwriteDurably(file, HistoryRevision.REASON_HTTP, completion); // its one caller: >>! (F3)
+    }
+
+    /** As {@link #captureBeforeOverwriteDurably(Path, Consumer)}, recording under {@code reason}. */
+    void captureBeforeOverwriteDurably(Path file, String reason, Consumer<OverwriteCapture> completion) {
         Objects.requireNonNull(completion, "completion");
         if (file == null) {
             completion.accept(new OverwriteCapture(false, false, null));
@@ -1941,7 +2299,7 @@ final class HistoryCoordinator {
                 completion.accept(new OverwriteCapture(true, false, null));
                 return;
             }
-            if (!isEnabled() || com.editora.diff.BinaryDiff.isProbablyBinary(bytes)) {
+            if (!isEnabled() || isBinary(bytes, c.charsetRule())) {
                 completion.accept(new OverwriteCapture(true, false, bytes));
                 return;
             }
@@ -1952,10 +2310,14 @@ final class HistoryCoordinator {
                 completion.accept(new OverwriteCapture(false, false, null));
                 return;
             }
+            if (encrypted(file, text)) { // safe to replace, by contract, but not "recorded": nothing was kept
+                completion.accept(new OverwriteCapture(true, false, bytes));
+                return;
+            }
             recordFor(
                     file,
                     text,
-                    HistoryRevision.REASON_EXTERNAL,
+                    reason,
                     "",
                     false,
                     durable -> onFx(() -> completion.accept(new OverwriteCapture(durable, durable, bytes))));
@@ -2094,6 +2456,14 @@ final class HistoryCoordinator {
             host.setStatus(tr("status.history.noFile"));
             return;
         }
+        if (b.encryption().isEncrypted()) {
+            host.setStatus(tr("status.history.encrypted")); // a label would say "stored" and keep nothing
+            return;
+        }
+        if (holdsPart(b)) {
+            host.setStatus(tr("status.history.partialFile", b.getTitle()));
+            return;
+        }
         Path file = b.getPath();
         String content = b.getContent(); // snapshot the state at the moment the command was invoked
         host.promptText(tr("history.label.title"), tr("history.label.prompt"), "", name -> {
@@ -2130,7 +2500,7 @@ final class HistoryCoordinator {
         }
         // One look at the disk per file, not per row, off the FX thread before the picker shows (PERF-01, Pauta
         // 6.2.0).
-        List<HistoryRevision> recent = HistoryQueries.recent(mergedIndex(), 200);
+        List<HistoryRevision> recent = HistoryQueries.recent(recentIndex(), 200);
         List<String> paths =
                 recent.stream().map(HistoryRevision::path).distinct().toList();
         com.editora.perf.OffFx.then(
@@ -2154,13 +2524,38 @@ final class HistoryCoordinator {
         QuickOpen<HistoryRevision> picker = new QuickOpen<>(
                 tr("history.recent.title"),
                 tr("history.recent.prompt"),
-                () -> HistoryQueries.recent(mergedIndex(), 200),
+                () -> HistoryQueries.recent(recentIndex(), 200),
                 label,
                 detail,
                 r -> label.apply(r) + " " + r.path(), // the row leads with the time; people type the file's name
                 this::openRecentChange);
         picker.setOverlayHost(host.overlayHost());
         picker.show(host.window());
+    }
+
+    /**
+     * What Recent Changes lists: the files at or under this window's project root, from every bucket — or, in a
+     * No-Project window, every file (F10).
+     */
+    private Map<String, List<HistoryRevision>> recentIndex() {
+        return projectFiles(mergedIndex(), ops.projectRoot());
+    }
+
+    /** The entries of {@code index} at or under {@code root}; all of them when {@code root} is null. Pure. */
+    static Map<String, List<HistoryRevision>> projectFiles(
+            Map<String, List<HistoryRevision>> index, @Nullable Path root) {
+        if (root == null) {
+            return index;
+        }
+        String rootKey = historyKey(root);
+        String separator = root.getFileSystem().getSeparator();
+        Map<String, List<HistoryRevision>> out = new LinkedHashMap<>();
+        index.forEach((key, revisions) -> {
+            if (key.equals(rootKey) || HistoryMoves.renamed(key, rootKey, rootKey, separator) != null) {
+                out.put(key, revisions);
+            }
+        });
+        return out;
     }
 
     private static boolean isGone(String path) {
@@ -2217,7 +2612,7 @@ final class HistoryCoordinator {
             if (!there.or(false)) {
                 Path parent = file.getParent();
                 if (parent != null) {
-                    showFolderHistory(parent);
+                    showFolderHistory(parent, r); // the row that was picked, with its diff
                 }
                 return;
             }
