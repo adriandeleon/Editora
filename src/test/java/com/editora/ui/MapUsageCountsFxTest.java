@@ -125,6 +125,7 @@ class MapUsageCountsFxTest {
     void countsAreAskedOnceTheOutlineSettlesAndAnOlderAnswerOrAFileNoLongerShownIsDropped() throws Exception {
         Path file = root.resolve("App.java");
         List<Consumer<@Nullable Map<Integer, Integer>>> asked = new CopyOnWriteArrayList<>();
+        List<BooleanSupplier> wanted = new CopyOnWriteArrayList<>();
         List<String> changed = new CopyOnWriteArrayList<>();
         java.util.Set<Path> shown = java.util.concurrent.ConcurrentHashMap.newKeySet();
         shown.add(file);
@@ -136,8 +137,10 @@ class MapUsageCountsFxTest {
             public void usages(
                     Path f,
                     List<MapUsageCounts.Declaration> declarations,
+                    BooleanSupplier stillWanted,
                     Consumer<@Nullable Map<Integer, Integer>> answer) {
                 asked.add(answer);
+                wanted.add(stillWanted);
             }
         };
         MapUsageCounts[] made = new MapUsageCounts[1];
@@ -168,7 +171,9 @@ class MapUsageCountsFxTest {
         });
         waitFor(() -> asked.size() == 2, "asked again once shown");
         FxTestSupport.runOnFx(() -> {
+            assertTrue(wanted.get(1).getAsBoolean(), "wanted while it is the latest ask");
             counts.forget(file);
+            assertFalse(wanted.get(1).getAsBoolean(), "a forgotten file's round sends nothing more (S8)");
             asked.get(1).accept(Map.of(3, 1)); // the answer of a forgotten ask
             assertNull(counts.count(file, 3), "dropped");
             counts.outlineChanged(file, null); // the outline went: nothing kept
@@ -184,7 +189,14 @@ class MapUsageCountsFxTest {
         });
         waitFor(() -> asked.size() == 3, "asked");
         FxTestSupport.runOnFx(() -> {
-            asked.get(2).accept(null); // no server could say
+            counts.outlineChanged(file, outline); // typed on while it is counted: that round stops (S8)
+            assertFalse(wanted.get(2).getAsBoolean(), "a superseded round sends nothing more");
+            asked.get(2).accept(Map.of(3, 9));
+            assertNull(counts.count(file, 3), "and its answer is dropped");
+        });
+        waitFor(() -> asked.size() == 4, "asked again once the outline settled");
+        FxTestSupport.runOnFx(() -> {
+            asked.get(3).accept(null); // no server could say
             assertNull(counts.count(file, 3));
             counts.dispose();
             counts.outlineChanged(file, outline); // after dispose: nothing
@@ -261,7 +273,7 @@ class MapUsageCountsFxTest {
         ProjectMapLinkSearch none = new ProjectMapLinkSearch(null, f.panel.projectIndex());
         List<@Nullable Map<Integer, Integer>> answers = new CopyOnWriteArrayList<>();
         FxTestSupport.runOnFx(
-                () -> none.usages(f.app, List.of(new MapUsageCounts.Declaration(3, "add")), answers::add));
+                () -> none.usages(f.app, List.of(new MapUsageCounts.Declaration(3, "add")), () -> true, answers::add));
         waitFor(() -> answers.size() == 1, "answered");
         assertNull(answers.getFirst());
     }
