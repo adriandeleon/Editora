@@ -703,7 +703,8 @@ class LivePreviewServerTest {
         HttpResponse<String> r = pending.get(10, java.util.concurrent.TimeUnit.SECONDS);
         assertEquals(200, r.statusCode());
         assertTrue(r.body().contains("__editora_livereload") && r.body().contains("x".repeat(10_000)));
-        assertEquals(LivePreviewServer.MAX_BUFFERED, permits.availablePermits(), "released after the answer");
+        // the handler releases its permit after the body is written, which the client may see first
+        Await.until(() -> permits.availablePermits() == LivePreviewServer.MAX_BUFFERED, "released after the answer");
     }
 
     /**
