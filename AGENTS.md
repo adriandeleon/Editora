@@ -66,6 +66,8 @@ worktree so branch switches and commits cannot interfere.
   gutter, highlighting, and overlay paths allocation-light and non-blocking.
 - Prefer a pure decision helper plus unit tests. Use the headless JavaFX harness when controller or
   toolkit behavior is what matters.
+- Every bug fix ships with a regression test in the same pull request: a test that fails before the
+  fix and passes after it. If a bug truly cannot be tested automatically, say why in the pull request.
 - For settings changes, update defaults, persistence, UI synchronization, schema version, and a
   migration. Migrations must preserve existing users' choices.
 - Add or update strings in all six message catalogs. Do not bake key chords into text that can be
