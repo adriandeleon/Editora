@@ -1268,6 +1268,23 @@ configured (`Settings.rubyDebugPath`), else on the PATH, else in the user's gem 
 `gem install --user-install debug` (a system Ruby's own gem folder is root's). Its exception filters (`any`,
 `RuntimeError`) are off by default, as in VS Code.
 
+What a Ruby file runs as is [`run/RubyApps`](../../src/main/java/com/editora/run/RubyApps.java)'s plan, the same for Run
+File (`RunCoordinator`, `FilePlan.ruby`) and F5 ([`ui/RubyDebugLaunch`](../../src/main/java/com/editora/ui/RubyDebugLaunch.java),
+planned off the FX thread, its command after rdbg's `--` in place of `ruby <file>`), in the project's folder (the nearest
+with a `Gemfile`), under `bundle exec` when the bundle is installed (`Gemfile.lock`): an RSpec file under `rspec
+file[:line]`; a Minitest file (`*_test.rb`, `test_*.rb` with a test class) under `ruby bin/rails test file[:line]` in a
+Rails app (`config/application.rb` and `bin/rails`), else `ruby -Itest file [-n name]`
+([`run/RubyTests`](../../src/main/java/com/editora/run/RubyTests.java): `def test_…`, or ActiveSupport's `test "…"`
+made `test_` + its words joined by `_`); a Rails app's file under `app/` or `config/`, its `config.ru` or `bin/rails`
+under `ruby bin/rails server -p <first free from 3000> -b 127.0.0.1`; anything else `ruby file`.
+[`run/RubyRunLines`](../../src/main/java/com/editora/run/RubyRunLines.java) puts the ▶ on specs (their `describe`),
+tests (their class), `config.ru`, `bin/rails`, `Rakefile` and a script with a statement at the left margin that is not a
+declaration; a file of classes, modules and methods has none. Probed under rdbg 1.11 with Ruby 4.0, RSpec 3.13 and Rails
+8.1: a spec's example by `file:line`, `bundle exec` with no `debug` gem in the bundle (rdbg loads it itself), a
+controller under `bin/rails test file:line` and in a request to `bin/rails server` all stop; Stop ends the server.
+`RubyAppsProbeFxTest` (opt-in) drives each, the Rails cases on a copy of a prepared app (`~/.cache/editora/rails-probe`,
+which the full-tests job makes with `rails new --minimal`).
+
 **PHP.** The `php` profile is Xdebug through vscode-php-debug (MIT), `phpDebug.js` on Node.js 20.18 or later over
 stdio. `InstalledAdapter.PHP_DEBUG` finds it as configured (`Settings.phpDebugPath`: the file or its unpacked
 `.vsix`), else in Editora's install (`plugins/dap/php/extension/out/phpDebug.js`), else in VS Code's
@@ -2387,6 +2404,22 @@ the screen. A line drawn only a pulse or two after the stop (a file just opened)
 sends only `exceptionId` and its `toString()` as a quoted string value, so the card strips the quotes and the type in
 front. **Don’t Stop on Caught Exceptions** (a caught exception, with the caught toggle on) turns that toggle off.
 The opt-in `ExceptionCardProbeFxTest` checks a caught then an uncaught exception against java-debug.
+**Attach to Remote Program** (`debug.attachRemote`; [`ui/RemoteAttachLaunch`](../../src/main/java/com/editora/ui/RemoteAttachLaunch.java),
+[`dap/RemoteNativeAttach`](../../src/main/java/com/editora/dap/RemoteNativeAttach.java)) attaches to a native program
+under a debug server elsewhere (`gdbserver host:port program`, `lldb-server gdbserver`), with a local copy for its
+symbols: GDB's DAP `attach` with `program` and `target` when C/C++ is set to GDB, else CodeLLDB's `launch` with
+`targetCreateCommands: ["target create <program>"]` and `processCreateCommands: ["gdb-remote host:port"]` (Rust always
+CodeLLDB). It asks for the address (`RemoteNativeAttach.address`: a port alone is `localhost`) and the program (relative
+to the project; checked off the FX thread), both kept for the next time in the window, and starts beside a running
+session (`sessionForLaunch`). launch.json: a `gdb` attach keeps its `target`, and `cppdbg` with
+`miDebuggerServerAddress` is that attach (GDB, or CodeLLDB with `MIMode: lldb`). Probed with gdbserver 16.3: the server
+holds the program before its first instruction, which GDB reports as a stop with reason `attach` and CodeLLDB as a
+`SIGTRAP` exception (sometimes twice) in the loader; `DapManager.passesRemoteEntry` resumes stops of a remote attach
+(`RemoteNativeAttach.isRemote`, set in `startExternal`) until one is at a breakpoint or in code with a source, so the
+program runs on to its breakpoints as a launched one does. Stop ends the program, and gdbserver with it.
+`RemoteNativeAttachProbeFxTest` drives GDB, CodeLLDB and a `cppdbg` configuration against a real gdbserver. Delve's
+headless server (`go` with `mode: remote`) is not covered yet.
+
 **Attach to Process** (`debug.attachToProcess`; [`dap/LocalProcesses`](../../src/main/java/com/editora/dap/LocalProcesses.java))
 reads every process's command line (`ProcessHandle.Info`; on Windows, where other processes' arguments are not given
 that way, `Win32_Process` through PowerShell) and lists the Java, Node.js and Python ones: a JVM whose

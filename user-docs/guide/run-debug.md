@@ -426,6 +426,23 @@ passes as `JAVA_HOME`. Editora finds it as `scala-cli` on your `PATH`, then
 instead of starting anything. The first run of a Scala version downloads its
 compiler, so it takes longer.
 
+### Ruby files
+
+*Run File* on a Ruby file runs what it is, in the project's folder (the nearest
+with a `Gemfile`) and under `bundle exec` once the bundle is installed:
+
+- an **RSpec** file (`…_spec.rb`) runs `rspec` on it;
+- a **Minitest** file (`…_test.rb`, `test_….rb`) runs `bin/rails test` on it
+  in a Rails app, else `ruby -Itest` on it;
+- a **Rails** app's `config.ru` or `bin/rails` starts the app's development
+  server, `bin/rails server`, on the first free port from 3000;
+- any other file with code of its own runs as `ruby file`. A file of classes,
+  modules and methods alone gets no ▶.
+
+**Debug File** (F5) does the same under the debugger (see
+[Debugging Ruby](#debugging-ruby)). Pressed in any file under a Rails app's
+`app/` or `config/`, such as a controller, F5 serves the app.
+
 ### PHP files
 
 *Run File* on a PHP file runs what it is:
@@ -951,6 +968,7 @@ script as it runs.
 | Debug via build tool | `debug.viaBuild` | (palette) |
 | Attach to a running JVM or Node.js | `debug.attach` | `C-c C-d a` |
 | Attach to a program on this machine ([Attach to Process](#attach-to-process)) | `debug.attachToProcess` | (palette) |
+| Attach to a program under gdbserver elsewhere ([Attach to Remote Program](#attach-to-a-remote-program)) | `debug.attachRemote` | (palette) |
 | Attach again to the last address | `debug.reattach` | `C-c C-d S-a` |
 | Open a [core dump](#opening-a-core-dump) | `debug.openCoreDump` | (palette) |
 | [Listen for Xdebug](#debugging-php) | `debug.listenXdebug` | (palette) |
@@ -1291,6 +1309,27 @@ again.
 - **Rust, C and C++** attach [CodeLLDB](#debugging-rust) to the process by
   its process id. The same `ptrace_scope` setting applies. A macOS program keeps its debug information
   outside the executable, so it isn't listed there.
+
+### Attach to a remote program
+
+**Debug: Attach to Remote Program…** (`debug.attachRemote`, also in **Run ▸
+Launch and Attach**) debugs a C, C++ or Rust program that runs on another
+machine, in a container or on a board under a debug server: start it there
+with `gdbserver :2345 ./app` (or `lldb-server gdbserver :2345 ./app`). Editora
+asks for the server's address, such as `board:2345` (a port alone means this
+machine), then for the program here: the same build, with its debug symbols,
+so the debugger knows its functions and source lines. Both answers are offered
+again the next time.
+
+C and C++ attach with the debugger chosen for them on **Settings →
+Debugging** (CodeLLDB or GDB); Rust with CodeLLDB. The server holds the
+program before its first instruction: Editora lets it run on to your
+breakpoints instead of showing that stop. **Stop** ends the program, and the
+server with it.
+
+A [launch.json](#launchjson-configurations) `cppdbg` configuration with
+`miDebuggerServerAddress`, or a `gdb` attach with a `target`, attaches the
+same way, as in VS Code.
 
 ### Opening a core dump
 
@@ -3379,8 +3418,22 @@ and in `~/.dotnet`, where Microsoft's install script puts it.
 
 Ruby is debugged with rdbg, the debugger of Ruby's `debug` gem, which Ruby 3.1
 and later ship. **Debug: Start / Continue** (`debug.start`, F5) or **Debug
-File** runs the file under rdbg with `ruby`, with the arguments set by **File:
-Run with Arguments…**, and stops at your breakpoints. The program's output
+File** runs the file under rdbg as [Run File](#ruby-files) runs it, and stops at
+your breakpoints:
+
+- a **script** runs with `ruby` and the arguments set by **File: Run with
+  Arguments…**;
+- an **RSpec** or **Minitest** file runs its tests. **Debug Test at Caret**
+  runs only the test at the caret: for RSpec the example or group on that line
+  (`rspec file:line`), in a Rails app the test on that line
+  (`bin/rails test file:line`), and for plain Minitest the `def test_…` or
+  `test "…"` the caret is in (`-n test_name`);
+- a **Rails** app: F5 on a controller, model or other file under `app/` or
+  `config/` starts `bin/rails server`, and each request you send it stops at
+  your breakpoints. Stop ends the server.
+
+rdbg debugs a program run under `bundle exec` even when the `debug` gem isn't
+in the bundle. The program's output
 reaches the Debug console. Ruby's
 [exception breakpoints](#exception-breakpoints), **Ruby: any raised exception**
 and **Ruby: RuntimeError**, are off by default, as in VS Code.

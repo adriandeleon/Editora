@@ -32,8 +32,9 @@
 #
 # Every metric is lower-is-better. Medians of 2 reps are coarse; use 3 or more for a release, and re-run a
 # flagged mode alone (PERF_MODES=typing:2000 ...) before chasing it. The "spread" column is the larger of the two
-# sides' (max - min) / median. A worse change smaller than the spread is marked ▲? (likely noise: re-run that mode,
-# with more reps or on a quieter machine); a worse change larger than the spread is marked ▲.
+# sides' (max - min) / median. A worse change larger than the spread is marked ▲; one within the spread, or measured
+# from fewer than 3 runs a side (two runs give no real idea of the noise), is marked ▲? (likely noise: re-run that
+# mode with more reps, or on a quieter machine).
 set -euo pipefail
 
 die() { echo "perf-ab: $*" >&2; exit 1; }
@@ -184,7 +185,8 @@ fi # PERF_RESUMMARIZE
     echo "Performance A/B: \`$(git rev-parse --short "$NEW_SHA")\` (new) vs \`$BASE_REF\` (base, $(git rev-parse --short "$BASE_SHA"))."
     echo "$REPS reps, interleaved; medians; lower is better everywhere. $CPUS of $NCPU cores, $(java -version 2>&1 | head -1 | tr -d '"');"
     echo "load average $LOAD0 at the start, $LOAD1 at the end. **▲** = more than 10 % worse (and more than 0.5 ms / 20 µs / 1 MB) and more than the"
-    echo "spread; **▲?** = more than 10 % worse but within the spread (likely noise: re-run that mode)."
+    echo "spread, with 3+ runs a side; **▲?** = more than 10 % worse but within the spread, or from fewer than 3 runs a"
+    echo "side (likely noise: re-run that mode with more reps)."
     echo
     echo "| Metric | $BASE_REF | new | Change | Spread | |"
     echo "|---|---:|---:|---:|---:|---|"
@@ -194,6 +196,7 @@ fi # PERF_RESUMMARIZE
             med = (cnt % 2) ? v[(cnt + 1) / 2] : (v[cnt / 2] + v[cnt / 2 + 1]) / 2
             M[key, side] = med
             S[key, side] = med > 0 ? (v[cnt] - v[1]) / med : 0
+            C[key, side] = cnt
             if (!(key in seen)) { seen[key] = 1; order[++nk] = key }
             cnt = 0
         }
@@ -215,7 +218,9 @@ fi # PERF_RESUMMARIZE
                         pct = (n - b) / b * 100
                         change = sprintf("%+.0f %%", pct)
                         if (big && pct > 10) {
-                            if (pct > spread * 100) { flag = "▲"; worse++ } else { flag = "▲?"; noisy++ }
+                            # Two runs a side are too few to know the noise: their spread is one difference.
+                            sure = pct > spread * 100 && C[k, "base"] >= 3 && C[k, "new"] >= 3
+                            if (sure) { flag = "▲"; worse++ } else { flag = "▲?"; noisy++ }
                         } else if (big && pct < -10) flag = "▼"
                     } else if (n > floor) { change = "new > 0"; flag = "▲"; worse++ }
                     else change = "="

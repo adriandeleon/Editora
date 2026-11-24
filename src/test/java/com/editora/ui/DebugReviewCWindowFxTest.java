@@ -694,7 +694,7 @@ class DebugReviewCWindowFxTest {
             return find(graphic, "breakpoint-slot");
         });
         assertNotNull(slot);
-        ContextMenu menu = FxTestSupport.field(debug, "gutterMenu");
+        ContextMenu menu = FxTestSupport.callOnFx(debug::gutterMenu);
         FxTestSupport.runOnFx(() -> slot.fireEvent(
                 new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 1, 1, 100, 100, false, null)));
         FxTestSupport.drainFx();
@@ -762,7 +762,7 @@ class DebugReviewCWindowFxTest {
         FxTestSupport.drainFx();
         Node slot = FxTestSupport.callOnFx(
                 () -> find(b.getArea().getParagraphGraphicFactory().apply(5), "breakpoint-slot"));
-        ContextMenu menu = FxTestSupport.field(debug, "gutterMenu");
+        ContextMenu menu = FxTestSupport.callOnFx(debug::gutterMenu);
         FxTestSupport.runOnFx(() -> slot.fireEvent(
                 new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 1, 1, 100, 100, false, null)));
         FxTestSupport.drainFx();
@@ -902,7 +902,7 @@ class DebugReviewCWindowFxTest {
         // Right-click: the watchpoint's own menu.
         Node slot = FxTestSupport.callOnFx(
                 () -> find(b.getArea().getParagraphGraphicFactory().apply(3), "breakpoint-slot"));
-        ContextMenu menu = FxTestSupport.field(debug, "gutterMenu");
+        ContextMenu menu = FxTestSupport.callOnFx(debug::gutterMenu);
         FxTestSupport.runOnFx(() -> slot.fireEvent(
                 new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 1, 1, 100, 100, false, null)));
         FxTestSupport.drainFx();
@@ -1197,8 +1197,9 @@ class DebugReviewCWindowFxTest {
         assertEquals(2, FxTestSupport.callOnFx(this::completingFields).size(), "the condition and the log message");
         FxTestSupport.runOnFx(overlay::hide);
         assertSame(
-                debug.valuePopup(),
-                FxTestSupport.callOnFx(() -> FxTestSupport.field(FxTestSupport.field(b, "debugHover"), "presenter")));
+                FxTestSupport.field(debug, "valuePresenter"),
+                FxTestSupport.callOnFx(() -> FxTestSupport.field(FxTestSupport.field(b, "debugHover"), "presenter")),
+                "the editor shows values with the window's popup, made when first wanted");
 
         try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
             org.eclipse.lsp4j.debug.CompletionItem names = new org.eclipse.lsp4j.debug.CompletionItem();

@@ -630,6 +630,12 @@ final class TestNavigationCoordinator {
         if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugJsTestAtCaret(b)) {
             return;
         }
+        // An RSpec example or a Minitest test at the caret is debugged under rdbg: RSpec or Rails by its line.
+        if (debug
+                && host.debugCoordinator() != null
+                && host.debugCoordinator().ruby.debugTestAtCaret(b)) {
+            return;
+        }
         // A PHPUnit test at the caret is debugged on Xdebug: PHPUnit runs the file, filtered to it.
         if (debug
                 && host.debugCoordinator() != null

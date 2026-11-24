@@ -337,7 +337,7 @@ class ToolWindowManagerFxTest {
             for (ToolWindow tw : List.of(a, b, c)) {
                 rig.manager().setVisible(tw, true);
             }
-            ContextMenu menu = rig.button(b).getContextMenu();
+            ContextMenu menu = LazyContextMenu.menuOf(rig.button(b));
             MenuItem split = menu.getItems().get(0);
             MenuItem hide = menu.getItems().get(1);
             assertEquals(tr("toolwindow.openInSplit"), split.getText());

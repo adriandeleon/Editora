@@ -339,16 +339,9 @@ public class ToolWindowManager {
         button.setFocusTraversable(false); // a toolbar button: the tool window's command reaches it
         nameStripeButton(tw, button);
         button.setOnAction(e -> pressStripe(tw));
-        // Right-click → Hide the icon (persisted; re-show from Settings → Tool Windows).
-        MenuItem hide = new MenuItem(tr("toolwindow.hide"), Icons.closeSmall());
-        hide.setOnAction(e -> setVisible(tw, false));
-        MenuItem split = new MenuItem(tr("toolwindow.openInSplit"), Icons.splitHorizontal());
-        split.setOnAction(e -> openInSplit(tw));
-        ContextMenu menu = new ContextMenu(split, hide);
-        // Enablement is decided as the menu opens, not when it is built: whether a side can take a second
-        // window depends on what is open there, which changes constantly after this runs.
-        menu.setOnShowing(e -> com.editora.editor.RowReasons.because(split, splitReason(tw)));
-        button.setContextMenu(menu);
+        // Right-click → Hide the icon (persisted; re-show from Settings → Tool Windows). Built on the first
+        // right-click: a window has a few dozen stripe buttons and the menu is a popup window of its own.
+        LazyContextMenu.install(button, () -> stripeMenu(tw));
         enableReorderDrag(tw, button);
         // A retitle (the Project window's "Current Folder" swap) must reach a labeled bottom button.
         tw.titleProperty().addListener((o, was, now) -> {
@@ -360,6 +353,18 @@ public class ToolWindowManager {
             addButtonOrdered(tw, button);
         }
         updateStripeVisibility();
+    }
+
+    private ContextMenu stripeMenu(ToolWindow tw) {
+        MenuItem hide = new MenuItem(tr("toolwindow.hide"), Icons.closeSmall());
+        hide.setOnAction(e -> setVisible(tw, false));
+        MenuItem split = new MenuItem(tr("toolwindow.openInSplit"), Icons.splitHorizontal());
+        split.setOnAction(e -> openInSplit(tw));
+        ContextMenu menu = new ContextMenu(split, hide);
+        // Enablement is decided as the menu opens, not when it is built: whether a side can take a second
+        // window depends on what is open there, which changes constantly after this runs.
+        menu.setOnShowing(e -> com.editora.editor.RowReasons.because(split, splitReason(tw)));
+        return menu;
     }
 
     /**

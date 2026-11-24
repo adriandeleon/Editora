@@ -133,11 +133,10 @@ class FocusCommands {
 
     /** {@link #menu} for a control whose menu is its own context menu, built once and kept. */
     static void ownMenu(Control control) {
-        menu(
-                control,
-                () -> control.getContextMenu() == null
-                        ? null
-                        : control.getContextMenu().getItems());
+        menu(control, () -> {
+            ContextMenu menu = LazyContextMenu.menuOf(control);
+            return menu == null ? null : menu.getItems();
+        });
     }
 
     /**
@@ -147,7 +146,7 @@ class FocusCommands {
      */
     static void shownMenu(Control control) {
         menu(control, () -> {
-            ContextMenu menu = control.getContextMenu();
+            ContextMenu menu = LazyContextMenu.menuOf(control);
             if (menu == null) {
                 return null;
             }

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Ruby tests and Rails apps.** Run File and Debug File now run a Ruby file as what it is: an RSpec or Minitest file's
+  tests (through `bin/rails test` in a Rails app), a Rails app's server, or a script, under `bundle exec` in a bundled
+  project. Debug Test at Caret debugs the RSpec example or Minitest test at the caret alone, and F5 in a Rails
+  controller serves the app so a request stops at your breakpoints.
+- **Attach to a remote program.** **Debug: Attach to Remote Program…** debugs a C, C++ or Rust program running under
+  gdbserver (or lldb-server) on another machine, in a container or on a board, with a copy of the program here for its
+  symbols, on GDB or CodeLLDB. A launch.json `cppdbg` configuration with `miDebuggerServerAddress` attaches the same way.
 - **Electron apps.** F5 on an Electron app's main file, or a file that loads `electron`, debugs the whole app: its
   main process and its windows' scripts, in two sessions started and stopped together, as VS Code's Electron
   configurations do. Run File starts the app.
@@ -159,6 +166,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     other start-up work goes on.
   - A window no longer builds a tooltip for every button, status bar item and tab before it first paints: each
     tooltip is built the first time the pointer rests on its control, and looks and reads the same as before.
+  - Nor does it build a right-click menu for every tool-window button and tab, the toolbar, the breakpoint gutter
+    and the debugger's value popup: each is built when it is first opened, from the mouse or the keyboard.
   - Project Map: typing in a column filter on a very large folder no longer sorts the whole map per keystroke;
     zooming, and with Compact rows moving the pointer between columns, no longer re-sorts or lays out every column;
     problem counts are no longer rebuilt every 100 ms while the Map is hidden; "Show dependencies of the selection"

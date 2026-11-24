@@ -73,7 +73,10 @@ class ToolbarCustomizeModeFxTest {
     @AfterEach
     void tearDown() throws Exception {
         FxTestSupport.runOnFx(() -> {
-            FxTestSupport.<ContextMenu>field(toolbar, "contextMenu").hide();
+            ContextMenu menu = FxTestSupport.field(toolbar, "contextMenu");
+            if (menu != null) {
+                menu.hide(); // made by the first right-click: null when the test never opened it
+            }
             SettingsWindow window = FxTestSupport.field(fx.controller, "settingsWindow");
             javafx.stage.Window shown = window.stageIfShowing(); // null when the test never opened Settings
             if (shown != null) {
@@ -272,9 +275,10 @@ class ToolbarCustomizeModeFxTest {
     @Test
     void theBarsMenuNamesWhatItsFirstItemWillDoAndOpensTheSettingsPage() throws Exception {
         FxTestSupport.runOnFx(() -> {
-            ContextMenu menu = FxTestSupport.field(toolbar, "contextMenu");
+            assertNull(FxTestSupport.field(toolbar, "contextMenu"), "made by the first right-click");
             Event.fireEvent(
                     bar, new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 5, 5, 100, 100, false, null));
+            ContextMenu menu = FxTestSupport.field(toolbar, "contextMenu");
             assertTrue(menu.isShowing());
             List<MenuItem> items = menu.getItems();
             assertEquals(tr("toolbar.menu.customize"), items.get(0).getText());

@@ -160,10 +160,10 @@ class DestructiveMenuRowsFxTest {
             FxTestSupport.runOnFx(() -> {
                 EditorArea area = FxTestSupport.field(fx.controller, "editorArea");
                 Tab tab = area.tabs().stream()
-                        .filter(t -> t.getContextMenu() != null)
+                        .filter(t -> LazyContextMenu.menuOf(t) != null)
                         .findFirst()
                         .orElseThrow();
-                ContextMenu menu = tab.getContextMenu();
+                ContextMenu menu = LazyContextMenu.menuOf(tab);
                 menu.getOnShowing().handle(null); // builds the lazy menu, as its first showing does
                 Menu git = submenu(menu.getItems(), "project.menu.git");
                 assertTrue(danger(row(git.getItems(), "project.menu.git.revert")), "Revert… discards changes");
