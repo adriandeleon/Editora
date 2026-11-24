@@ -115,6 +115,12 @@ final class GitCoordinator {
             return false;
         }
 
+        /**
+         * Whether the merge or rebase in progress holds the uncommitted changes in an autostash, given back when it
+         * finishes: the Commit window's operation banner says so.
+         */
+        default void setGitOperationAutostash(boolean held) {}
+
         /** After a branch switch / pull, silently reload any open buffer whose file changed on disk. */
         void reloadAllFromDiskSilently();
 
@@ -123,6 +129,20 @@ final class GitCoordinator {
          * said those edits go too. The replaced text is kept in Local History.
          */
         default void revertBuffersFromDisk(List<EditorBuffer> buffers) {}
+
+        /**
+         * The open buffers at or under {@code root} in every window, or null for this window's only (test
+         * stand-ins): a discard asked from one window reverts a file that may be open with unsaved edits in another.
+         */
+        default @Nullable List<EditorBuffer> buffersAcrossWindowsUnder(Path root) {
+            return null;
+        }
+
+        /**
+         * Closes {@code buffers}, whose files a confirmed Discard deleted, in whichever window holds them: their unsaved
+         * edits were named in the question, so the tab does not keep them as the only copy.
+         */
+        default void closeDeletedBuffers(List<EditorBuffer> buffers) {}
 
         /**
          * Copies {@code files} into Local History as pre-delete revisions, then reports — on the FX thread —
@@ -409,6 +429,9 @@ final class GitCoordinator {
         ops.setStatusBarGitEnabled(on);
         if (!on) {
             closeMetadataWatch();
+            if (treeRefresh != null) {
+                treeRefresh.stop(); // no refresh for a Git that was switched off
+            }
             service.invalidateRefreshes();
             ops.setCommitWindowAvailable(false);
             ops.setGitLogWindowAvailable(false);
@@ -492,13 +515,16 @@ final class GitCoordinator {
     static final long OWN_ECHO_NANOS = 1_000_000_000L;
 
     /** The watch on the active repository's index, HEAD and branches ({@link GitMetadataWatcher}), or null. */
-    private @Nullable AutoCloseable metadataWatch;
+    private GitMetadataWatcher.@Nullable Handle metadataWatch;
 
     /** The repository {@link #metadataWatch} is on. */
     private @Nullable Path watchedRoot;
 
     /** When this window's last git command finished ({@link #afterMutation(Path)}), on {@link System#nanoTime}. */
     private volatile long lastOwnMutationNanos = System.nanoTime() - OWN_ECHO_NANOS;
+
+    /** When a change was last heard in the watched git folder, on {@link System#nanoTime} (FX thread). */
+    private long lastHeardNanos = System.nanoTime() - 2 * OWN_ECHO_NANOS;
 
     /** The refresh a burst of outside changes ends with; created on first use, on the FX thread. */
     private javafx.animation.@Nullable PauseTransition externalRefresh;
@@ -513,8 +539,9 @@ final class GitCoordinator {
 
     /** Watches {@code root}'s git folder (null: none), the active repository, from now on. */
     private void watchMetadata(@Nullable Path root) {
-        if (java.util.Objects.equals(root, watchedRoot)) {
-            return;
+        GitMetadataWatcher.Handle current = metadataWatch;
+        if (java.util.Objects.equals(root, watchedRoot) && (current == null || !current.stale())) {
+            return; // a stale watch (the git folder made again, a watch the system dropped) is made again below
         }
         closeMetadataWatch();
         watchedRoot = root;
@@ -526,15 +553,11 @@ final class GitCoordinator {
     }
 
     private void closeMetadataWatch() {
-        AutoCloseable watch = metadataWatch;
+        GitMetadataWatcher.Handle watch = metadataWatch;
         metadataWatch = null;
         watchedRoot = null;
         if (watch != null) {
-            try {
-                watch.close();
-            } catch (Exception ignored) {
-                // closing only unregisters a listener
-            }
+            watch.close();
         }
         if (externalRefresh != null) {
             externalRefresh.stop();
@@ -546,10 +569,12 @@ final class GitCoordinator {
         if (!root.equals(watchedRoot) || !isEnabled()) {
             return;
         }
+        lastHeardNanos = System.nanoTime();
         if (externalRefresh == null) {
-            externalRefresh = new javafx.animation.PauseTransition(javafx.util.Duration.millis(EXTERNAL_QUIET_MS));
+            externalRefresh = new javafx.animation.PauseTransition();
             externalRefresh.setOnFinished(e -> externalRefreshDue());
         }
+        externalRefresh.setDuration(javafx.util.Duration.millis(EXTERNAL_QUIET_MS));
         externalRefresh.playFromStart(); // each change in a burst moves the refresh back: one for the burst
     }
 
@@ -573,11 +598,36 @@ final class GitCoordinator {
     }
 
     private void externalRefreshDue() {
-        if (System.nanoTime() - lastOwnMutationNanos < OWN_ECHO_NANOS) {
+        long delay = externalRefreshDelay(System.nanoTime(), lastOwnMutationNanos, lastHeardNanos);
+        if (delay < 0) {
             return; // Editora's own command wrote it, and its completion refreshed already
+        }
+        if (delay > 0 && externalRefresh != null) {
+            // Heard after this window's own command finished, but inside its echo: once the echo is over.
+            externalRefresh.setDuration(javafx.util.Duration.millis(Math.max(1, delay / 1_000_000L)));
+            externalRefresh.playFromStart();
+            return;
         }
         externalRefreshesForTest++;
         refresh();
+    }
+
+    /**
+     * What a burst of outside changes whose quiet period ended at {@code now} does, from when this window's last git
+     * command finished and when the burst's last change was heard: 0 refresh now; a positive count of nanoseconds,
+     * refresh once the command's echo window is over (a change heard after the command finished is not its echo); -1
+     * nothing, when the command explains every change (all heard before it finished, and its own refresh came
+     * after). Pure.
+     */
+    static long externalRefreshDelay(long now, long lastOwnMutation, long lastHeard) {
+        long sinceMutation = now - lastOwnMutation;
+        if (sinceMutation >= OWN_ECHO_NANOS) {
+            return 0;
+        }
+        if (lastHeard - lastOwnMutation <= 0) {
+            return -1;
+        }
+        return OWN_ECHO_NANOS - sinceMutation;
     }
 
     /** The full refresh that ends a window of light ones; created on first use, on the FX thread. */
@@ -690,6 +740,7 @@ final class GitCoordinator {
         ops.setStatusBarBranch(status.branch(), status.ahead(), status.behind());
         ops.setGitRefusal("");
         ops.setGitOperation(operation, GitConflicts.unmerged(status).size());
+        lookForAutostash(root, operation);
         ops.setGitPanelStatus(status);
         if (freshStatus) {
             commits.repositoryApplied(repoRoot); // the template of a new repository, the line counts of this status
@@ -775,6 +826,9 @@ final class GitCoordinator {
         closeMetadataWatch();
         if (trailingRefresh != null) {
             trailingRefresh.stop(); // no full refresh for a window that is going away
+        }
+        if (treeRefresh != null) {
+            treeRefresh.stop();
         }
         service.shutdown();
     }
@@ -1268,7 +1322,7 @@ final class GitCoordinator {
         }
         List<String> untracked = discard.untracked();
         Discard copying = discard.overwriting(root, status);
-        List<EditorBuffer> edited = editedBuffers(root, discard.tracked());
+        List<EditorBuffer> edited = editedBuffers(root, discard);
         // which rows are folders, and which of those are repositories of their own, is looked at off the FX
         // thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then(
@@ -1278,25 +1332,38 @@ final class GitCoordinator {
     }
 
     /**
-     * The open buffers of {@code root} with unsaved edits whose files {@code trackedSpecs} put back: a discard
-     * reverts the disk, and the buffer — had nobody said so — kept the edits and saved them again later.
+     * The open buffers of {@code root}, in every window, with unsaved edits whose files {@code discard} puts back or
+     * deletes (an untracked or intent-to-add file): a discard changes the disk, and the buffer — had nobody said so
+     * — kept the edits and saved them again later.
      */
-    private List<EditorBuffer> editedBuffers(Path root, List<String> trackedSpecs) {
+    private List<EditorBuffer> editedBuffers(Path root, Discard discard) {
+        List<String> specs = discard.affected();
         List<EditorBuffer> edited = new ArrayList<>();
-        if (trackedSpecs.isEmpty()) {
+        if (specs.isEmpty()) {
             return edited;
         }
-        host.forEachBuffer(buffer -> {
-            Path file = buffer.getPath();
-            if (file == null || !buffer.isDirty() || file.getFileSystem() != root.getFileSystem()) {
-                return;
-            }
-            String relative = GitService.repoRelative(root, file);
-            if (relative != null && trackedSpecs.stream().anyMatch(spec -> selects(spec, relative))) {
+        Consumer<EditorBuffer> look = buffer -> {
+            if (buffer.isDirty() && !edited.contains(buffer) && selectedBy(root, buffer, specs)) {
                 edited.add(buffer);
             }
-        });
+        };
+        List<EditorBuffer> everywhere = ops.buffersAcrossWindowsUnder(root);
+        if (everywhere == null) {
+            host.forEachBuffer(look);
+        } else {
+            everywhere.forEach(look);
+        }
         return edited;
+    }
+
+    /** Whether {@code buffer}'s file is one of {@code specs}, paths of the repository at {@code root}, or under one. */
+    private static boolean selectedBy(Path root, EditorBuffer buffer, List<String> specs) {
+        Path file = buffer.getPath();
+        if (file == null || file.getFileSystem() != root.getFileSystem()) {
+            return false; // paths of two filesystems cannot be compared
+        }
+        String relative = GitService.repoRelative(root, file);
+        return relative != null && specs.stream().anyMatch(spec -> selects(spec, relative));
     }
 
     /** What the prompt adds after what is discarded: unsaved edits that go too, nested repositories left alone. */
@@ -1315,17 +1382,24 @@ final class GitCoordinator {
         return notes.toString();
     }
 
+    /** The buffers of {@code edited} whose files {@code discard} still changes. */
+    private static List<EditorBuffer> stillSelected(Path root, List<EditorBuffer> edited, Discard discard) {
+        List<String> specs = discard.affected();
+        return edited.stream().filter(b -> selectedBy(root, b, specs)).toList();
+    }
+
     /** Whether Local History keeps copies of what a discard deletes or overwrites. */
     private boolean historyOn() {
         return host.settings().isLocalHistory() && !host.simpleModeActive();
     }
 
-    private void discardLooked(Path root, Discard all, GitUntrackedDelete.Look look, List<EditorBuffer> edited) {
+    private void discardLooked(Path root, Discard all, GitUntrackedDelete.Look look, List<EditorBuffer> anyEdited) {
         Discard discard = all.keeping(look.nested());
         if (discard.isEmpty()) {
             host.setStatus(tr("status.git.nestedRepoOnly", look.nested().get(0)));
             return;
         }
+        List<EditorBuffer> edited = stillSelected(root, anyEdited, discard); // a nested repository is left alone
         String notes = discardNotes(edited, look.nested());
         List<String> untracked = discard.untracked();
         int folders = look.folders() - look.nested().size();
@@ -1433,11 +1507,14 @@ final class GitCoordinator {
         service.runWorktreeMutation(
                 root,
                 commands,
-                running(commands.get(0), result -> finishDiscard(root, result, successMessage, affected, edited)));
+                running(
+                        commands.get(0),
+                        result -> finishDiscard(root, discard, result, successMessage, affected, edited)));
     }
 
     private void finishDiscard(
             Path root,
+            Discard discard,
             ProcessRunner.Result result,
             String successMessage,
             List<String> affected,
@@ -1452,7 +1529,19 @@ final class GitCoordinator {
         afterMutation(root);
         ops.reloadAllFromDiskSilently();
         if (ok && !edited.isEmpty()) {
-            ops.revertBuffersFromDisk(edited); // the user was told their unsaved edits go too
+            // The user was told their unsaved edits go too: a file put back is read again, a deleted one closed.
+            List<String> deletedSpecs = discard.deleted();
+            List<EditorBuffer> deleted = edited.stream()
+                    .filter(b -> selectedBy(root, b, deletedSpecs))
+                    .toList();
+            List<EditorBuffer> reverted =
+                    edited.stream().filter(b -> !deleted.contains(b)).toList();
+            if (!reverted.isEmpty()) {
+                ops.revertBuffersFromDisk(reverted);
+            }
+            if (!deleted.isEmpty()) {
+                ops.closeDeletedBuffers(deleted);
+            }
         }
     }
 
@@ -1602,7 +1691,7 @@ final class GitCoordinator {
             return;
         }
         List<String> untracked = discard.untracked();
-        List<EditorBuffer> edited = editedBuffers(root, discard.tracked());
+        List<EditorBuffer> edited = editedBuffers(root, discard);
         // which rows are folders or nested repositories is looked at off the FX thread (PERF-01, Pauta 6.2.0)
         com.editora.perf.OffFx.then(
                 "git-untracked-look",
@@ -1610,12 +1699,13 @@ final class GitCoordinator {
                 looked -> discardAllLooked(root, discard, looked.or(GitUntrackedDelete.Look.NONE), edited));
     }
 
-    private void discardAllLooked(Path root, Discard all, GitUntrackedDelete.Look look, List<EditorBuffer> edited) {
+    private void discardAllLooked(Path root, Discard all, GitUntrackedDelete.Look look, List<EditorBuffer> anyEdited) {
         Discard discard = all.keeping(look.nested());
         if (discard.isEmpty()) {
             host.setStatus(tr("status.git.nestedRepoOnly", look.nested().get(0)));
             return;
         }
+        List<EditorBuffer> edited = stillSelected(root, anyEdited, discard);
         if (look.folders() - look.nested().size() > 0) {
             // A wholly untracked folder is one row: ask Git which files deleting it removes, to count and copy them.
             service.untrackedFiles(root, discard.untracked(), files -> {
@@ -1713,9 +1803,31 @@ final class GitCoordinator {
             Consumer<Consumer<ProcessRunner.Result>> operation,
             Consumer<ProcessRunner.Result> report,
             @Nullable Runnable afterReload) {
-        invalidatePendingWrites(root, List.of());
+        aroundWorkingTreeMutation(root, null, operation, report, afterReload);
+    }
+
+    /**
+     * As above, superseding only the pending saves of {@code rewritable} (paths of {@code root}; null: every file of
+     * it, empty: none) — the files the operation may write. A commit writes no file itself, only its hooks may (a
+     * formatter run on the staged files): a save of a file it does not record, made while a slow hook ran, used to
+     * be dropped.
+     */
+    void aroundWorkingTreeMutation(
+            @Nullable Path root,
+            @Nullable List<String> rewritable,
+            Consumer<Consumer<ProcessRunner.Result>> operation,
+            Consumer<ProcessRunner.Result> report,
+            @Nullable Runnable afterReload) {
+        Runnable invalidate = () -> {
+            if (rewritable == null) {
+                invalidatePendingWrites(root, List.of());
+            } else if (!rewritable.isEmpty()) {
+                invalidatePendingWrites(root, rewritable);
+            }
+        };
+        invalidate.run();
         operation.accept(result -> {
-            invalidatePendingWrites(root, List.of());
+            invalidate.run();
             report.accept(result);
             afterMutation(root);
             ops.reloadAllFromDiskSilently();
@@ -1877,10 +1989,14 @@ final class GitCoordinator {
 
     /** One continue / skip / abort in {@code root}: pending saves superseded, buffers reloaded afterwards. */
     private void runOperationStep(Path root, GitOperation op, String[] args, String successMessage) {
+        boolean abort = java.util.Arrays.equals(args, op.abortArgs());
         aroundWorkingTreeMutation(
                 root,
                 done -> service.runWorktreeMutation(root, running(args, done), args),
                 result -> {
+                    if (reportAutostashKept(result, op.kind(), abort)) {
+                        return;
+                    }
                     if (result.ok()) {
                         host.setStatus(successMessage);
                     } else if (!reportConflictStop(result, "status.git.stoppedOnConflicts")) {
@@ -1888,6 +2004,73 @@ final class GitCoordinator {
                     }
                 },
                 null);
+    }
+
+    /**
+     * Whether the command that ended a merge or rebase started with {@code --autostash} (its continue, the merge
+     * commit, its abort — each applies the stashed changes back) said that applying them conflicted: git then
+     * keeps them as a stash entry and exits 0, leaving conflict markers. Pure. Only git's own lines are read
+     * (stderr): a commit's subject, on stdout, could hold the same words.
+     */
+    static boolean autostashKept(ProcessRunner.@Nullable Result result, GitOperation.Kind kind) {
+        if (result == null || (kind != GitOperation.Kind.MERGE && kind != GitOperation.Kind.REBASE)) {
+            return false;
+        }
+        return GitPullMode.autostash(new ProcessRunner.Result(result.exit(), "", result.err()))
+                == GitPullMode.Autostash.KEPT_IN_STASH;
+    }
+
+    /**
+     * Reports {@link #autostashKept} — the stashed changes are still in the stash and the conflicts are in the
+     * Commit window — and returns true, or returns false having done nothing. The refresh that follows every
+     * mutation lists the conflicts.
+     */
+    boolean reportAutostashKept(ProcessRunner.@Nullable Result result, GitOperation.Kind kind, boolean aborted) {
+        if (!autostashKept(result, kind)) {
+            return false;
+        }
+        String name = operationName(kind);
+        conflictsNeedAttention(
+                aborted ? tr("status.git.abortAutostashKept", name) : tr("status.git.opAutostashKept", name));
+        return true;
+    }
+
+    /**
+     * Whether {@code root}'s merge or rebase in progress holds the work tree's uncommitted changes aside: it was
+     * started with {@code --autostash} ({@code MERGE_AUTOSTASH}, {@code rebase-merge/autostash},
+     * {@code rebase-apply/autostash} in the work tree's git folder) and gives them back when it finishes. Reads the
+     * disk.
+     */
+    static boolean holdsAutostash(Path root, GitOperation.Kind kind) {
+        GitMetadataWatcher.GitDirs dirs = GitMetadataWatcher.dirsOf(root);
+        if (dirs == null) {
+            return false;
+        }
+        Path gitDir = dirs.gitDir();
+        return switch (kind) {
+            case MERGE -> Files.exists(gitDir.resolve("MERGE_AUTOSTASH"));
+            case REBASE ->
+                Files.exists(gitDir.resolve("rebase-merge").resolve("autostash"))
+                        || Files.exists(gitDir.resolve("rebase-apply").resolve("autostash"));
+            default -> false;
+        };
+    }
+
+    /** Tells the Commit window whether the operation in progress keeps uncommitted changes in an autostash. */
+    private void lookForAutostash(Path root, GitOperation op) {
+        GitOperation.Kind kind = op.kind();
+        if (!op.inProgress()
+                || (kind != GitOperation.Kind.MERGE && kind != GitOperation.Kind.REBASE)
+                || !com.editora.vfs.Vfs.isLocal(root)) {
+            ops.setGitOperationAutostash(false);
+            return;
+        }
+        // two stats of the git folder, off the FX thread (PERF-01, Pauta 6.2.0)
+        com.editora.perf.OffFx.then("git-autostash-look", () -> holdsAutostash(root, kind), held -> {
+            if (root.equals(repoRoot) && operation.kind() == kind) {
+                ops.setGitOperationAutostash(held.or(false));
+            }
+        });
     }
 
     // --- conflicts -----------------------------------------------------------------------------------

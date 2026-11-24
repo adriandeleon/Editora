@@ -233,7 +233,7 @@ final class DiffCoordinator {
                             root, repoRel, index, index.bytes(), before, ecCharset, openCharset, after, result -> {
                                 if (result.ok()) {
                                     host.setStatus(tr("status.diff.hunkStaged"));
-                                    git.afterMutation();
+                                    git.afterMutation(root);
                                     staged.run();
                                 } else {
                                     host.setStatus(tr("status.diff.hunkStale", result.message()));
@@ -1798,7 +1798,7 @@ final class DiffCoordinator {
         Consumer<com.editora.process.ProcessRunner.Result> done = result -> {
             if (result.ok()) {
                 host.setStatus(tr(stage ? "status.diff.hunkStaged" : "status.diff.hunkUnstaged"));
-                git.afterMutation();
+                git.afterMutation(root);
             } else {
                 host.setStatus(tr("status.diff.hunkStale", result.message()));
             }

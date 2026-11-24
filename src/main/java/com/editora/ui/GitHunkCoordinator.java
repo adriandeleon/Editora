@@ -356,7 +356,8 @@ final class GitHunkCoordinator {
     }
 
     /**
-     * The one hunk of {@code hunks} whose added lines are {@code added}, or {@code null} when none or several are.
+     * The one hunk of {@code hunks} whose added lines are {@code added} (a trailing {@code \r} aside), or
+     * {@code null} when none or several are.
      * A pure deletion has no lines of its own to find it by: {@code added} empty finds nothing.
      */
     static DiffParser.@Nullable Hunk hunkAdding(List<DiffParser.Hunk> hunks, @Nullable List<String> added) {
@@ -365,7 +366,7 @@ final class GitHunkCoordinator {
         }
         DiffParser.Hunk found = null;
         for (DiffParser.Hunk h : hunks) {
-            if (h.added().equals(added)) {
+            if (sameLines(h.added(), added)) {
                 if (found != null) {
                     return null; // two changes add the same lines: which one was meant is not known
                 }
@@ -373,6 +374,26 @@ final class GitHunkCoordinator {
             }
         }
         return found;
+    }
+
+    /**
+     * Whether a diff's added lines are the buffer's {@code typed} lines: a CRLF file's diff lines keep their
+     * {@code \r}, which a buffer paragraph never has. Pure.
+     */
+    static boolean sameLines(List<String> diffLines, List<String> typed) {
+        if (diffLines.size() != typed.size()) {
+            return false;
+        }
+        for (int i = 0; i < typed.size(); i++) {
+            String line = diffLines.get(i);
+            if (line.endsWith("\r")) {
+                line = line.substring(0, line.length() - 1);
+            }
+            if (!line.equals(typed.get(i))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** The hunk of a fresh diff marked on 0-based file line {@code line}, or {@code null}. */
