@@ -31,18 +31,23 @@ public final class SemanticTokensDecoder {
      * trailing group, an out-of-range type index) — such entries are skipped.
      */
     public static List<SemanticToken> decode(List<Integer> data, List<String> typeLegend, List<String> modLegend) {
+        return data == null ? new ArrayList<>() : decode(SemanticTokensSplice.toArray(data), typeLegend, modLegend);
+    }
+
+    /** {@link #decode(List, List, List)} over the unboxed array the whole-document cache holds. */
+    public static List<SemanticToken> decode(int[] data, List<String> typeLegend, List<String> modLegend) {
         List<SemanticToken> out = new ArrayList<>();
-        if (data == null || data.size() < 5 || typeLegend == null) {
+        if (data == null || data.length < 5 || typeLegend == null) {
             return out;
         }
         int line = 0;
         int startChar = 0;
-        for (int i = 0; i + 4 < data.size(); i += 5) {
-            int deltaLine = val(data.get(i));
-            int deltaStart = val(data.get(i + 1));
-            int length = val(data.get(i + 2));
-            int typeIdx = val(data.get(i + 3));
-            int modBits = val(data.get(i + 4));
+        for (int i = 0; i + 4 < data.length; i += 5) {
+            int deltaLine = data[i];
+            int deltaStart = data[i + 1];
+            int length = data[i + 2];
+            int typeIdx = data[i + 3];
+            int modBits = data[i + 4];
 
             line += deltaLine;
             startChar = (deltaLine == 0) ? startChar + deltaStart : deltaStart; // absolute on a new line
@@ -56,9 +61,5 @@ public final class SemanticTokensDecoder {
             }
         }
         return out;
-    }
-
-    private static int val(Integer n) {
-        return n == null ? 0 : n;
     }
 }

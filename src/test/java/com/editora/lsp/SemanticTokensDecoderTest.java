@@ -140,7 +140,8 @@ class SemanticTokensDecoderTest {
 
     @Test
     void malformedInputsAreToleratedNotThrown() {
-        assertTrue(SemanticTokensDecoder.decode(null, TYPES, MODS).isEmpty());
+        assertTrue(
+                SemanticTokensDecoder.decode((List<Integer>) null, TYPES, MODS).isEmpty());
         assertTrue(SemanticTokensDecoder.decode(List.of(), TYPES, MODS).isEmpty());
         assertTrue(SemanticTokensDecoder.decode(List.of(1, 2, 3), TYPES, MODS).isEmpty()); // partial group
         assertTrue(
