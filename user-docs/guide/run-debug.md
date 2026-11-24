@@ -951,6 +951,7 @@ script as it runs.
 | Debug via build tool | `debug.viaBuild` | (palette) |
 | Attach to a running JVM or Node.js | `debug.attach` | `C-c C-d a` |
 | Attach to a program on this machine ([Attach to Process](#attach-to-process)) | `debug.attachToProcess` | (palette) |
+| Attach to a program under gdbserver elsewhere ([Attach to Remote Program](#attach-to-a-remote-program)) | `debug.attachRemote` | (palette) |
 | Attach again to the last address | `debug.reattach` | `C-c C-d S-a` |
 | Open a [core dump](#opening-a-core-dump) | `debug.openCoreDump` | (palette) |
 | [Listen for Xdebug](#debugging-php) | `debug.listenXdebug` | (palette) |
@@ -1291,6 +1292,27 @@ again.
 - **Rust, C and C++** attach [CodeLLDB](#debugging-rust) to the process by
   its process id. The same `ptrace_scope` setting applies. A macOS program keeps its debug information
   outside the executable, so it isn't listed there.
+
+### Attach to a remote program
+
+**Debug: Attach to Remote Program…** (`debug.attachRemote`, also in **Run ▸
+Launch and Attach**) debugs a C, C++ or Rust program that runs on another
+machine, in a container or on a board under a debug server: start it there
+with `gdbserver :2345 ./app` (or `lldb-server gdbserver :2345 ./app`). Editora
+asks for the server's address, such as `board:2345` (a port alone means this
+machine), then for the program here: the same build, with its debug symbols,
+so the debugger knows its functions and source lines. Both answers are offered
+again the next time.
+
+C and C++ attach with the debugger chosen for them on **Settings →
+Debugging** (CodeLLDB or GDB); Rust with CodeLLDB. The server holds the
+program before its first instruction: Editora lets it run on to your
+breakpoints instead of showing that stop. **Stop** ends the program, and the
+server with it.
+
+A [launch.json](#launchjson-configurations) `cppdbg` configuration with
+`miDebuggerServerAddress`, or a `gdb` attach with a `target`, attaches the
+same way, as in VS Code.
 
 ### Opening a core dump
 

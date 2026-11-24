@@ -226,6 +226,14 @@ public final class DapManager {
     private volatile boolean postMortem;
 
     /**
+     * A session attached to a debug server ({@link RemoteNativeAttach}) that has not yet stopped in code with a source:
+     * the server holds the program before its first instruction, and the debugger reports that (GDB: reason
+     * {@code attach}; CodeLLDB: a {@code SIGTRAP}, sometimes twice) as a stop. Those stops are passed over, as a program
+     * started under any other debugger runs to its first breakpoint.
+     */
+    private volatile boolean remoteEntryPending;
+
+    /**
      * GDB records the program's run ({@code record full}): it can go back over what it recorded. Only a GDB session
      * records; a new session starts without.
      */
@@ -2596,6 +2604,7 @@ public final class DapManager {
         goDebugBinary = launch.get("output");
         GoLaunch.holdDebugBinary(goDebugBinary);
         postMortem = CoreDumps.isCore(launch);
+        remoteEntryPending = RemoteNativeAttach.isRemote(launch);
         setState(State.STARTING);
         List<DapModels.FileBreakpoints> bps = shared.breakpointsSupplier.get();
         List<String> filters = filtersFor(language.id());
@@ -5878,6 +5887,9 @@ public final class DapManager {
                 if (event && passesBashEntry(c, threadId, frames)) {
                     return; // bashdb's own stop at the script's first line, where no breakpoint is
                 }
+                if (event && passesRemoteEntry(c, threadId, reason, frames)) {
+                    return; // a debug server's hold on the program before its first instruction
+                }
                 if (event) {
                     if (allThreadsStopped) {
                         stoppedThreads.clear(); // one stop stands for all of them, and so will one continue
@@ -5952,6 +5964,25 @@ public final class DapManager {
      */
     private boolean passesDartPause(@Nullable String reason) {
         return DebugLanguages.DART.id().equals(sessionLanguage) && ("entry".equals(reason) || "exit".equals(reason));
+    }
+
+    /**
+     * Whether a stop of a remote attach is the debug server's hold before the program's first instruction: while no
+     * stop has reached code with a source yet, one at a frame without a file (the loader), for no breakpoint. Resumed,
+     * and true; the first stop in code with a source ends that.
+     */
+    private boolean passesRemoteEntry(
+            DapClient c, int threadId, @Nullable String reason, @Nullable List<DapModels.StackFrameInfo> frames) {
+        if (!remoteEntryPending) {
+            return false;
+        }
+        DapModels.StackFrameInfo top = frames == null || frames.isEmpty() ? null : frames.getFirst();
+        if ("breakpoint".equals(reason) || (top != null && top.file() != null)) {
+            remoteEntryPending = false; // the program's own code: shown from now on
+            return false;
+        }
+        c.resume(threadId);
+        return true;
     }
 
     /** Whether this Bash session has had its first stop (bashdb stops at the script's first line). */

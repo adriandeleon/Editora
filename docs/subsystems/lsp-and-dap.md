@@ -2387,6 +2387,22 @@ the screen. A line drawn only a pulse or two after the stop (a file just opened)
 sends only `exceptionId` and its `toString()` as a quoted string value, so the card strips the quotes and the type in
 front. **Don’t Stop on Caught Exceptions** (a caught exception, with the caught toggle on) turns that toggle off.
 The opt-in `ExceptionCardProbeFxTest` checks a caught then an uncaught exception against java-debug.
+**Attach to Remote Program** (`debug.attachRemote`; [`ui/RemoteAttachLaunch`](../../src/main/java/com/editora/ui/RemoteAttachLaunch.java),
+[`dap/RemoteNativeAttach`](../../src/main/java/com/editora/dap/RemoteNativeAttach.java)) attaches to a native program
+under a debug server elsewhere (`gdbserver host:port program`, `lldb-server gdbserver`), with a local copy for its
+symbols: GDB's DAP `attach` with `program` and `target` when C/C++ is set to GDB, else CodeLLDB's `launch` with
+`targetCreateCommands: ["target create <program>"]` and `processCreateCommands: ["gdb-remote host:port"]` (Rust always
+CodeLLDB). It asks for the address (`RemoteNativeAttach.address`: a port alone is `localhost`) and the program (relative
+to the project; checked off the FX thread), both kept for the next time in the window, and starts beside a running
+session (`sessionForLaunch`). launch.json: a `gdb` attach keeps its `target`, and `cppdbg` with
+`miDebuggerServerAddress` is that attach (GDB, or CodeLLDB with `MIMode: lldb`). Probed with gdbserver 16.3: the server
+holds the program before its first instruction, which GDB reports as a stop with reason `attach` and CodeLLDB as a
+`SIGTRAP` exception (sometimes twice) in the loader; `DapManager.passesRemoteEntry` resumes stops of a remote attach
+(`RemoteNativeAttach.isRemote`, set in `startExternal`) until one is at a breakpoint or in code with a source, so the
+program runs on to its breakpoints as a launched one does. Stop ends the program, and gdbserver with it.
+`RemoteNativeAttachProbeFxTest` drives GDB, CodeLLDB and a `cppdbg` configuration against a real gdbserver. Delve's
+headless server (`go` with `mode: remote`) is not covered yet.
+
 **Attach to Process** (`debug.attachToProcess`; [`dap/LocalProcesses`](../../src/main/java/com/editora/dap/LocalProcesses.java))
 reads every process's command line (`ProcessHandle.Info`; on Windows, where other processes' arguments are not given
 that way, `Win32_Process` through PowerShell) and lists the Java, Node.js and Python ones: a JVM whose

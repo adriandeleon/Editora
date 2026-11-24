@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Attach to a remote program.** **Debug: Attach to Remote Program…** debugs a C, C++ or Rust program running under
+  gdbserver (or lldb-server) on another machine, in a container or on a board, with a copy of the program here for its
+  symbols, on GDB or CodeLLDB. A launch.json `cppdbg` configuration with `miDebuggerServerAddress` attaches the same way.
 - **Electron apps.** F5 on an Electron app's main file, or a file that loads `electron`, debugs the whole app: its
   main process and its windows' scripts, in two sessions started and stopped together, as VS Code's Electron
   configurations do. Run File starts the app.
