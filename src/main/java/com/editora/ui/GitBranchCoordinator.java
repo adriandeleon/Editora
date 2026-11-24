@@ -134,7 +134,7 @@ final class GitBranchCoordinator {
                         root,
                         tracked(args, result -> {
                             report.accept(result);
-                            git().afterMutation();
+                            git().afterMutation(root);
                         }),
                         args);
     }
@@ -152,7 +152,7 @@ final class GitBranchCoordinator {
                         root,
                         tracked(args, result -> {
                             report.accept(result);
-                            git().afterMutation();
+                            git().afterMutation(root);
                         }),
                         args);
     }

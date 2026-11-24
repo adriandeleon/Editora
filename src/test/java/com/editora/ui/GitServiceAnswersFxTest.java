@@ -492,6 +492,34 @@ class GitServiceAnswersFxTest {
             CompletableFuture<Integer> missing = new CompletableFuture<>();
             git.unmergedCount(root, "no-such-branch", missing::complete);
             assertEquals(-1, async.await(missing), "git could not count: unknown, not zero");
+
+            // R4-E3: a pull request ("#5") git cannot name yet. Detached on a commit a branch keeps: nothing lost.
+            repo.git("checkout", "-q", "--detach", "main");
+            CompletableFuture<GitService.LeftBehind> kept = new CompletableFuture<>();
+            git.commitsLeftBehind(root, "#5", false, kept::complete);
+            GitService.LeftBehind keptLeft = async.await(kept);
+            assertTrue(keptLeft.known(), "a pull request target is counted, not unknown");
+            assertEquals(0, keptLeft.unreferenced());
+            // A commit made on the detached HEAD is kept by no ref: checking the pull request out loses it.
+            repo.write("file.txt", "detached\n");
+            repo.commitAll("on a detached head");
+            CompletableFuture<GitService.LeftBehind> own = new CompletableFuture<>();
+            git.commitsLeftBehind(root, "#5", false, own::complete);
+            GitService.LeftBehind ownLeft = async.await(own);
+            assertTrue(ownLeft.known());
+            assertEquals(1, ownLeft.unreferenced());
+            CompletableFuture<GitService.LeftBehind> resetPr = new CompletableFuture<>();
+            git.commitsLeftBehind(root, "#5", true, resetPr::complete);
+            assertFalse(async.await(resetPr).known(), "a reset to an unfetched pull request cannot be counted");
+
+            // The history lane's fingerprint is the status lane's one, read in order with the Git Log.
+            CompletableFuture<String> status = new CompletableFuture<>();
+            git.refsFingerprint(root, status::complete);
+            CompletableFuture<String> history = new CompletableFuture<>();
+            git.refsFingerprintForHistory(root, history::complete);
+            String fingerprint = async.await(status);
+            assertFalse(fingerprint.isEmpty());
+            assertEquals(fingerprint, async.await(history));
         }
     }
 

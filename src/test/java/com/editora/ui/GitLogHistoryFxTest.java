@@ -34,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * rename, and {@code git revert} of a merge failing with git's "no -m option was given".
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(OffFxTracked.class) // settle() waits for File History's folder check
 class GitLogHistoryFxTest {
 
     @BeforeAll
@@ -77,6 +78,7 @@ class GitLogHistoryFxTest {
         /** Waits until every queued git read and mutation, and the FX work they posted, has run. */
         void settle() throws Exception {
             for (int round = 0; round < 3; round++) {
+                OffFxTracked.awaitIdle();
                 for (String lane : List.of("exec", "networkExec", "historyExec")) {
                     ExecutorService worker = FxTestSupport.field(git.service(), lane);
                     async.awaitWorker(worker);

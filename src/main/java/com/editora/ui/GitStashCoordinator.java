@@ -356,7 +356,7 @@ final class GitStashCoordinator {
                             } else {
                                 git.gitError(tr("status.git.opFailed"), result.message());
                             }
-                            git.afterMutation();
+                            git.afterMutation(root);
                         }),
                         args);
     }
@@ -379,6 +379,12 @@ final class GitStashCoordinator {
         if (root == null) {
             return;
         }
+        // The new branch starts at the commit the stash was made on: from a detached HEAD, commits made there
+        // that no branch or tag reaches are left behind, so the same question as every other checkout comes first.
+        GitLeaveDetachedHead.thenMove(git, root, id(entry) + "^1", name, () -> runBranch(root, entry, name));
+    }
+
+    private void runBranch(Path root, StashEntry entry, String name) {
         String[] args = {"stash", "branch", name, entry.ref()};
         git.aroundWorkingTreeMutation(
                 root,

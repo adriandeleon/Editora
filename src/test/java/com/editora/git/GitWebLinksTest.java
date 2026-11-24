@@ -148,15 +148,15 @@ class GitWebLinksTest {
     void sshAliasesAndPort443EndpointsResolveToTheSite() {
         GitWebLinks.Repo github = new GitWebLinks.Repo(GitWebLinks.Host.GITHUB, "https://github.com/o/r");
         assertEquals(github, repo("ssh://git@ssh.github.com:443/o/r.git"));
-        java.util.function.UnaryOperator<String> aliases =
-                h -> h.equals("github-work") || h.equals("github.com-work") ? "github.com" : h;
+        java.util.function.Function<String, SshHosts.Resolved> aliases =
+                h -> SshHosts.Resolved.of(h.equals("github-work") || h.equals("github.com-work") ? "github.com" : h);
         assertEquals(github, GitWebLinks.repo("git@github-work:o/r.git", aliases));
         assertEquals(github, GitWebLinks.repo("git@github.com-work:o/r.git", aliases));
         assertEquals(github, GitWebLinks.repo("ssh://git@github-work/o/r.git", aliases));
         assertNull(GitWebLinks.repo("git@github-work:o/r.git"), "an unresolved alias names no web host");
         assertEquals(
                 "https://github-work.example.com/o/r",
-                GitWebLinks.repo("https://github-work.example.com/o/r.git", h -> "github.com")
+                GitWebLinks.repo("https://github-work.example.com/o/r.git", h -> SshHosts.Resolved.of("github.com"))
                         .base(),
                 "an HTTPS URL is never resolved");
     }
@@ -196,6 +196,50 @@ class GitWebLinksTest {
                 "Cloud stays Cloud");
         assertEquals(
                 GitWebLinks.Host.GITHUB, repo("https://github.com/scm/app.git").host());
+    }
+
+    /** R3-G3: the alias reaches the resolver as written — ssh's Host matching is case-sensitive. */
+    @Test
+    void theAliasIsResolvedInItsOwnCase() {
+        java.util.List<String> asked = new java.util.ArrayList<>();
+        GitWebLinks.Repo repo = GitWebLinks.repo("git@GitHub-Work:o/r.git", h -> {
+            asked.add(h);
+            return SshHosts.Resolved.of(h.equals("GitHub-Work") ? "github.com" : h);
+        });
+        assertEquals(java.util.List.of("GitHub-Work"), asked);
+        assertEquals(new GitWebLinks.Repo(GitWebLinks.Host.GITHUB, "https://github.com/o/r"), repo);
+        assertEquals(
+                "https://git.corp.example/o/r",
+                GitWebLinks.repo("https://Git.Corp.Example/o/r.git").base(),
+                "a web host is still lower-cased");
+    }
+
+    /**
+     * R3-G7: Bitbucket Server's port 7999 is often only in ~/.ssh/config, and a GitLab host's /scm/ path is no
+     * Bitbucket Server.
+     */
+    @Test
+    void bitbucketServersSshPortMayComeFromTheSshConfig() {
+        java.util.function.Function<String, SshHosts.Resolved> bitbucket =
+                h -> h.equals("bb") ? new SshHosts.Resolved("git.corp.example", "7999") : SshHosts.Resolved.of(h);
+        assertEquals(
+                new GitWebLinks.Repo(
+                        GitWebLinks.Host.BITBUCKET_SERVER, "https://git.corp.example/projects/PROJ/repos/app"),
+                GitWebLinks.repo("git@bb:proj/app.git", bitbucket));
+        assertEquals(
+                GitWebLinks.Host.GITHUB,
+                GitWebLinks.repo("git@bb:proj/app.git", h -> new SshHosts.Resolved("git.corp.example", "22"))
+                        .host(),
+                "on port 22 it is no Bitbucket Server");
+        assertEquals(
+                "https://git.corp.example/projects/PROJ/repos/app",
+                GitWebLinks.repo("ssh://git@bb:7999/proj/app.git", h -> new SshHosts.Resolved("git.corp.example", "22"))
+                        .base(),
+                "the URL's own port wins over the config's");
+        assertEquals(
+                new GitWebLinks.Repo(GitWebLinks.Host.GITLAB, "https://gitlab.corp.example/scm/a/b"),
+                repo("https://gitlab.corp.example/scm/a/b.git"),
+                "a GitLab host's /scm/ path is a GitLab group");
     }
 
     /** L9: GitHub renders Markdown and the like; a line anchor needs the source view there. */

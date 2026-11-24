@@ -4,7 +4,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Set;
-import java.util.function.UnaryOperator;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -15,7 +15,7 @@ import org.jspecify.annotations.Nullable;
  * GitLab, Bitbucket Cloud and Bitbucket Server / Data Center, Gitea, Forgejo and Codeberg, sourcehut and Azure DevOps,
  * each in its own URL form; a host it does not know is taken to follow GitHub's, as most do. The host of an SSH remote
  * may be an {@code ~/.ssh/config} alias or an SSH-only endpoint ({@code ssh.github.com}): {@link #repo(String,
- * UnaryOperator)} takes the resolver that maps it to the site ({@link SshHosts#resolver()}). Pure for a pure resolver.
+ * Function)} takes the resolver that maps it to the site ({@link SshHosts#resolver()}). Pure for a pure resolver.
  */
 public final class GitWebLinks {
 
@@ -47,15 +47,16 @@ public final class GitWebLinks {
      * git@host:owner/repo.git} forms; user names, ssh ports and {@code .git} are dropped.
      */
     public static @Nullable Repo repo(String remoteUrl) {
-        return repo(remoteUrl, SshHosts::canonical);
+        return repo(remoteUrl, alias -> SshHosts.Resolved.of(SshHosts.canonical(alias)));
     }
 
     /**
      * {@link #repo(String)}, the host of an SSH remote ({@code ssh://} or scp-like) first mapped by {@code sshHost} —
-     * an {@code ~/.ssh/config} alias ({@code github-work}) to the host it stands for. An HTTPS URL names its host
-     * outright and is never resolved.
+     * an {@code ~/.ssh/config} alias ({@code github-work}) to the host it stands for, and the port ssh uses there
+     * when the URL names none. The alias is handed over as written (ssh's {@code Host} matching is case-sensitive).
+     * An HTTPS URL names its host outright and is never resolved.
      */
-    public static @Nullable Repo repo(String remoteUrl, UnaryOperator<String> sshHost) {
+    public static @Nullable Repo repo(String remoteUrl, Function<String, SshHosts.Resolved> sshHost) {
         String url = remoteUrl.strip();
         String scheme;
         String host;
@@ -78,11 +79,15 @@ public final class GitWebLinks {
         } else {
             return null;
         }
-        host = host.toLowerCase(Locale.ROOT);
         if (scheme.equals("ssh") || scheme.equals("git+ssh")) {
-            String resolved = sshHost.apply(host);
-            host = SshHosts.canonical(resolved == null || resolved.isBlank() ? host : resolved);
+            SshHosts.Resolved resolved = sshHost.apply(host);
+            String to = resolved == null ? null : resolved.host();
+            host = SshHosts.canonical(to == null || to.isBlank() ? host : to);
+            if (port == null && resolved != null) {
+                port = resolved.port(); // the Port of ~/.ssh/config: Bitbucket Server's 7999 is often only there
+            }
         }
+        host = host.toLowerCase(Locale.ROOT);
         path = trimPath(path);
         if (path.isEmpty() || !host.contains(".") && !host.equals("localhost")) {
             return null;

@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The pure {@code git push} argv decision: a branch with no upstream gets {@code --set-upstream <remote>
@@ -89,6 +91,52 @@ class GitPushArgsTest {
                 resolved(GitService.forcePushArgs("topic", ""), config("remote.pushdefault", "fork")));
     }
 
+    /** R3-E2: a remote with push refspecs of its own (Gerrit) keeps them for a forced push, untracked. */
+    @Test
+    void aForcedPushKeepsTheRemotesOwnPushRefspecs() {
+        String gerrit = config(
+                "branch.feat.remote", "origin",
+                "branch.feat.merge", "refs/heads/main",
+                "remote.origin.push", "HEAD:refs/for/main");
+        assertArrayEquals(
+                new String[] {"push", "--force-with-lease", "--force-if-includes"},
+                resolved(GitService.forcePushArgs("feat", "origin/main"), gerrit));
+        String sameName = config(
+                "branch.main.remote", "origin",
+                "branch.main.merge", "refs/heads/main",
+                "remote.origin.push", "HEAD:refs/for/main");
+        assertArrayEquals(
+                new String[] {"push", "--force-with-lease"},
+                GitService.resolvePush(
+                        GitService.forcePushArgs("main", "origin/main"), sameName, List.of("origin"), false));
+        // Untracked: the push remote is named, but neither the branch's ref nor --set-upstream.
+        String untracked = config("remote.origin.push", "HEAD:refs/for/main");
+        assertArrayEquals(
+                new String[] {"push", "--force-with-lease", "--force-if-includes", "origin"},
+                resolved(GitService.forcePushArgs("topic", ""), untracked));
+        assertArrayEquals(new String[] {"push", "origin"}, resolved(GitService.pushArgs("topic", ""), untracked));
+        // A wildcard refspec would force every matching branch: the forced push names its one branch instead.
+        String mirror = config(
+                "branch.feat.remote", "origin",
+                "branch.feat.merge", "refs/heads/feat",
+                "remote.origin.push", "+refs/heads/*:refs/heads/*");
+        assertArrayEquals(
+                new String[] {
+                    "push", "--force-with-lease", "--force-if-includes", "origin", "refs/heads/feat:refs/heads/feat"
+                },
+                resolved(GitService.forcePushArgs("feat", "origin/feat"), mirror));
+        assertArrayEquals(
+                new String[] {"push", "origin", "refs/heads/feat:refs/heads/feat"},
+                resolved(GitService.pushArgs("feat", "origin/feat"), mirror));
+        // Another remote's refspecs do not count.
+        String forkOnly = config("remote.fork.push", "HEAD:refs/for/main");
+        assertArrayEquals(
+                new String[] {
+                    "push", "--force-with-lease", "--force-if-includes", "--set-upstream", "origin", "refs/heads/topic"
+                },
+                resolved(GitService.forcePushArgs("topic", ""), forkOnly));
+    }
+
     @Test
     void blankOrNullBranchNeverSetsUpstream() {
         // Detached HEAD / unknown branch: never emit "--set-upstream origin <empty>".
@@ -117,6 +165,68 @@ class GitPushArgsTest {
         assertArrayEquals(new String[] {"push"}, GitService.pushArgs("a\nb", "", "origin"));
         assertArrayEquals(new String[] {"push"}, GitService.pushArgs("feature", "", "--receive-pack=evil"));
         assertArrayEquals(new String[] {"push"}, GitService.pushArgs("feature", "", ""));
+    }
+
+    /** R4-E1/E2: only refspecs that push HEAD (Gerrit) decide where the branch goes; any other is overridden. */
+    @Test
+    void onlyHeadBasedPushRefspecsDecideWhereTheBranchGoes() {
+        assertTrue(GitService.headBasedPushRefspecs(config("remote.origin.push", "HEAD:refs/for/main"), "origin"));
+        assertTrue(GitService.headBasedPushRefspecs(config("remote.origin.push", "HEAD"), "origin"));
+        assertTrue(GitService.headBasedPushRefspecs(config("remote.origin.push", "+HEAD:refs/heads/x"), "origin"));
+        assertTrue(GitService.headBasedPushRefspecs(
+                config("remote.origin.push", "HEAD:refs/for/main", "remote.origin.push", "HEAD:refs/for/dev"),
+                "origin"));
+        assertFalse(GitService.headBasedPushRefspecs("", "origin"), "no refspecs at all");
+        assertFalse(GitService.headBasedPushRefspecs(config("remote.fork.push", "HEAD"), "origin"), "another remote");
+        assertFalse(GitService.headBasedPushRefspecs(config("remote.Origin.push", "HEAD"), "origin"), "case-kept name");
+        assertFalse(
+                GitService.headBasedPushRefspecs(config("remote.origin.push", "refs/notes/*:refs/notes/*"), "origin"));
+        assertFalse(GitService.headBasedPushRefspecs(
+                config("remote.origin.push", "refs/heads/main:refs/heads/main"), "origin"));
+        assertFalse(
+                GitService.headBasedPushRefspecs(config("remote.origin.push", "+refs/heads/*:refs/heads/*"), "origin"));
+        assertFalse(GitService.headBasedPushRefspecs(config("remote.origin.push", ":refs/heads/gone"), "origin"));
+        // Multi-valued: one non-HEAD value anywhere, first or last, means "not Gerrit-style".
+        assertFalse(GitService.headBasedPushRefspecs(
+                config("remote.origin.push", "HEAD:refs/for/main", "remote.origin.push", "refs/notes/*:refs/notes/*"),
+                "origin"));
+        assertFalse(GitService.headBasedPushRefspecs(
+                config("remote.origin.push", "refs/notes/*:refs/notes/*", "remote.origin.push", "HEAD:refs/for/main"),
+                "origin"));
+
+        String[] firstPush = {"push", "--set-upstream", "origin", "refs/heads/topic"};
+        String[] firstForced = {
+            "push", "--force-with-lease", "--force-if-includes", "--set-upstream", "origin", "refs/heads/topic"
+        };
+        for (String other :
+                List.of("refs/notes/*:refs/notes/*", "refs/heads/main:refs/heads/main", "+refs/heads/*:refs/heads/*")) {
+            String untracked = config("remote.origin.push", other);
+            assertArrayEquals(firstPush, resolved(GitService.pushArgs("topic", ""), untracked), other);
+            assertArrayEquals(firstForced, resolved(GitService.forcePushArgs("topic", ""), untracked), other);
+            String mixed = config("remote.origin.push", "HEAD:refs/for/main", "remote.origin.push", other);
+            assertArrayEquals(firstPush, resolved(GitService.pushArgs("topic", ""), mixed), "mixed with " + other);
+            String tracked = config(
+                    "branch.feat.remote", "origin",
+                    "branch.feat.merge", "refs/heads/feat",
+                    "remote.origin.push", other);
+            assertArrayEquals(
+                    new String[] {
+                        "push", "--force-with-lease", "--force-if-includes", "origin", "refs/heads/feat:refs/heads/feat"
+                    },
+                    resolved(GitService.forcePushArgs("feat", "origin/feat"), tracked),
+                    other);
+            String otherName = config(
+                    "branch.feat.remote", "origin",
+                    "branch.feat.merge", "refs/heads/main",
+                    "remote.origin.push", other);
+            assertArrayEquals(
+                    new String[] {"push", "--set-upstream", "origin", "refs/heads/feat:refs/heads/feat"},
+                    resolved(GitService.pushArgs("feat", "origin/main"), otherName),
+                    "an ordinary push onto another name is named too: " + other);
+        }
+        // Gerrit-style alone keeps deferring: the configuration says where HEAD goes.
+        String gerrit = config("remote.origin.push", "HEAD:refs/for/main");
+        assertArrayEquals(new String[] {"push", "origin"}, resolved(GitService.pushArgs("topic", ""), gerrit));
     }
 
     private static String config(String... keyValues) {

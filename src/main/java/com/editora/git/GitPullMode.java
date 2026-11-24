@@ -75,7 +75,11 @@ public enum GitPullMode {
             return Autostash.NONE;
         }
         String text = (result.err() == null ? "" : result.err()) + '\n' + (result.out() == null ? "" : result.out());
-        if (text.contains("Applying autostash resulted in conflicts") || text.contains("safe in the stash")) {
+        // Up to git 2.5x: "Applying autostash resulted in conflicts. / Your changes are safe in the stash."; newer
+        // git (2.56): "Your local changes are stashed, however applying them / resulted in conflicts."
+        if (text.contains("Applying autostash resulted in conflicts")
+                || text.contains("safe in the stash")
+                || text.contains("local changes are stashed, however")) {
             return Autostash.KEPT_IN_STASH;
         }
         return text.contains("Applied autostash") ? Autostash.APPLIED : Autostash.NONE;

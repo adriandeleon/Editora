@@ -95,12 +95,19 @@ automatically** rows are greyed out; the command path stays editable.
 ### Credentials
 
 Editora never asks for a password, a key passphrase, or a host-key
-confirmation, and Git commands never start an external editor: every Git command
-Editora runs, the ones you start and the ones in the background, runs without
-prompting, so one that would need an answer fails with Git's reason instead. Set up
-authentication outside Editora first: a credential helper for HTTPS remotes, an
-SSH agent holding your key, and one connection from a terminal so the host key
-is known. When a remote refuses to sign you in, the error says what to set up.
+confirmation itself, and Git commands never start an external editor or wait on a
+terminal: a command that would need an answer typed there fails with Git's reason
+instead. Set up authentication outside Editora first: a credential helper for HTTPS
+remotes, an SSH agent holding your key, and one connection from a terminal so the
+host key is known. A graphical askpass program (`SSH_ASKPASS`) still asks in its
+own window when you clone, fetch, pull or push. When a remote refuses to sign you
+in, the error says what to set up.
+
+Signed commits and tags (`commit.gpgSign`, `tag.gpgSign`) need a graphical
+pinentry, such as pinentry-gnome3, pinentry-qt or pinentry-mac. A terminal-only
+pinentry (pinentry-curses or pinentry-tty) may ask in the terminal gpg-agent was
+started from, where nobody is looking, and the commit then waits until it times
+out.
 
 ## The Commit window
 
@@ -216,12 +223,19 @@ forced push always uses `--force-with-lease` (and `--force-if-includes` with Git
 branch has moved since your last fetch, or if a background fetch brought commits
 you never had locally.
 
-Clone, fetch, pull and push never wait for an answer in a terminal: ssh runs in
-batch mode unless you set an ssh command of your own (`core.sshCommand` or
-`GIT_SSH_COMMAND`), and on Linux Git runs without a controlling terminal. A
-host key that is not yet known, or a key whose passphrase is not in your ssh
-agent, fails at once with ssh's message ("Host key verification failed.") —
-connect once from a terminal, or add the key to your agent, then try again.
+Clone, fetch, pull and push never wait for an answer in a terminal, and on
+Linux Git runs without a controlling terminal. When a graphical askpass program
+is set (`SSH_ASKPASS`, with a display on Linux), ssh asks for a key passphrase or
+a new host key in its window. Otherwise ssh runs in batch mode unless you set an
+ssh command of your own (`core.sshCommand` or `GIT_SSH_COMMAND`): a host key that
+is not yet known, or a key whose passphrase is not in your ssh agent, fails at
+once with ssh's message ("Host key verification failed.") — connect once from a
+terminal, or add the key to your agent, then try again. On Windows, batch mode
+uses the ssh that comes with Git for Windows. A remote whose push refspecs
+(`remote.<name>.push`) all push `HEAD`, such as Gerrit's `HEAD:refs/for/main`,
+keeps them, forced pushes included. Other push refspecs (notes, one fixed branch,
+`refs/heads/*`) do not decide where the current branch goes: Editora names the
+branch, so a push never sends only notes or force-pushes every branch.
 
 ### Automatic fetch
 
@@ -241,9 +255,14 @@ Branch, Pull, Fetch, Push, and the like), then **Local** branches with the
 current one first, then **Remote** branches, grouped by remote when there are
 several. It opens with the current branch selected (with a detached HEAD, or
 **Local** folded, nothing that Enter would run is selected). Clicking a row
-checks the branch out. Choosing a remote branch switches to the local branch
-that tracks it; when a local branch of that name tracks something else, it asks
-for a name for a new tracking branch instead. A row's `⋯` button, a
+checks the branch out. Choosing a remote branch switches to a local branch
+that tracks it, whatever that branch is called (the one of the same name
+first). A branch checked out in another [work tree](#remotes-and-worktrees) is passed
+over, since Git will not check out the same branch twice. When no free local
+branch tracks it, a new tracking branch is created under the remote branch's
+name; if a local branch of that name already exists (it tracks something
+else, tracks nothing, or is checked out in another work tree), it asks for a
+name for the new tracking branch instead. A row's `⋯` button, a
 right-click, or the Menu key opens its actions; the same actions are in the
 palette and under **Git ▸ Branches**.
 
@@ -279,7 +298,8 @@ you push it. Merging and rebasing carry uncommitted changes across with
 stash and the conflicts appear in the Commit window. Checking out a tag or a
 commit reports the detached HEAD. Leaving a detached HEAD that has commits no
 branch or tag holds — by switching branch, checking out a revision, a tag, or a
-remote branch, or making a new branch and switching to it — asks first, since
+remote branch, making a new branch and switching to it, or turning a stash into
+a branch — asks first, since
 afterwards only the reflog leads to them.
 
 ## Remotes and worktrees

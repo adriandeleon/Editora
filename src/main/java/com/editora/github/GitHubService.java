@@ -620,6 +620,22 @@ public final class GitHubService {
     }
 
     /**
+     * A PR's head commit as it is now ({@code gh pr view <n> --json headRefOid}), or {@code null} when it could not
+     * be read. Asked again after a review's detail and diff have both arrived, to tell whether a push landed
+     * between them (the diff would then not be the one of the head the detail names).
+     */
+    public ProcessRunner.Cancellation prHead(Path dir, int number, Consumer<@Nullable String> onResult) {
+        return read(
+                null,
+                cancel -> {
+                    ProcessRunner.Result r =
+                            gh(dir, NETWORK, cancel, "pr", "view", String.valueOf(number), "--json", "headRefOid");
+                    return r.ok() ? PrViewParser.headRefOid(r.out()) : null;
+                },
+                onResult);
+    }
+
+    /**
      * Result of a PR diff: the parsed per-file patches, or an error message. {@code truncated} means the diff
      * was larger than {@link ProcessRunner} captures (10 MB): {@code files} then holds only the files whose
      * patch arrived whole, and the review must say that it is incomplete.
@@ -1232,13 +1248,15 @@ public final class GitHubService {
     /**
      * Resolves the SSH host aliases of {@code remoteUrls} ({@code git@github-work:o/r.git} → {@code
      * git@github.com:o/r.git}, {@code ssh.github.com} → {@code github.com}) off the FX thread and posts the
-     * resolved URLs on it, in the same order. HTTPS URLs come back as they are.
+     * resolved URLs on it, in the same order. HTTPS URLs come back as they are. {@code ssh -G} runs on the
+     * machine {@code dir} (the repository) is on — a remote project's own ssh config is the one its git uses.
      */
-    public void resolveRemoteHosts(List<String> remoteUrls, Consumer<List<String>> onResult) {
+    public void resolveRemoteHosts(@Nullable Path dir, List<String> remoteUrls, Consumer<List<String>> onResult) {
         List<String> urls = List.copyOf(remoteUrls);
         submit(ssh, () -> {
-            List<String> resolved =
-                    urls.stream().map(com.editora.git.SshHosts::resolveUrl).toList();
+            List<String> resolved = urls.stream()
+                    .map(url -> com.editora.git.SshHosts.resolveUrl(dir, url))
+                    .toList();
             Platform.runLater(() -> onResult.accept(resolved));
         });
     }

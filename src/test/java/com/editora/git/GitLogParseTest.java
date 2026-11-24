@@ -221,6 +221,15 @@ class GitLogParseTest {
         assertTrue(
                 whole.keep(java.util.Set.of("2222222aaaaaaaaa"), true).searchCapped(),
                 "…unless the search's own listing was cut");
+        assertEquals(
+                2,
+                whole.keep(java.util.Set.of("1111111aaaaaaaaa", "2222222aaaaaaaaa"), true)
+                        .searchedCommits(),
+                "a cut search got no further than its oldest match: not the whole three-commit history");
+        assertEquals(
+                1,
+                history.keep(java.util.Set.of("1111111aaaaaaaaa"), true).searchedCommits(),
+                "both cut: the search's own cut is the nearer one");
         assertEquals(0, new GitLog.Page(List.of(), false).searchedCommits());
     }
 }

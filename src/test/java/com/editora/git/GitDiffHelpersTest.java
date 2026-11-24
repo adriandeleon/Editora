@@ -13,9 +13,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 class GitDiffHelpersTest {
 
     @Test
-    void parseLogReadsTabSeparatedFields() {
-        String out = "abc123def\tabc123d\tJane Doe\t2026-06-01\tFix the parser\n"
-                + "999000aaa\t999000a\tJohn Roe\t2026-05-30\tAdd feature; with tabs?\n";
+    void parseLogReadsUnitSeparatedFields() {
+        String out = "abc123def\u001fabc123d\u001fJane Doe\u001f2026-06-01\u001fFix the parser\n"
+                + "999000aaa\u001f999000a\u001fJohn Roe\u001f2026-05-30\u001fAdd feature; with tabs?\n";
         List<Commit> commits = GitService.parseLog(out);
         assertEquals(2, commits.size());
         Commit c = commits.get(0);
@@ -24,6 +24,16 @@ class GitDiffHelpersTest {
         assertEquals("Jane Doe", c.author());
         assertEquals("2026-06-01", c.date());
         assertEquals("Fix the parser", c.subject());
+    }
+
+    /** R3-H2: a tab in an author's name (or a subject) no longer shifts the date into the subject. */
+    @Test
+    void parseLogKeepsATabInTheAuthorsName() {
+        Commit c = GitService.parseLog("abc\u001fab\u001fJane\tDoe\u001f2026-06-01\u001fA\tsubject\n")
+                .get(0);
+        assertEquals("Jane\tDoe", c.author());
+        assertEquals("2026-06-01", c.date());
+        assertEquals("A\tsubject", c.subject());
     }
 
     @Test

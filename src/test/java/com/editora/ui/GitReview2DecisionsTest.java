@@ -159,12 +159,13 @@ class GitReview2DecisionsTest {
 
     @Test
     void onlyChangesThatMoveTheStatusAreHeard() {
-        assertTrue(GitMetadataWatcher.relevant("index", false));
-        assertTrue(GitMetadataWatcher.relevant("HEAD", false));
-        assertTrue(GitMetadataWatcher.relevant("main", true), "a branch moved");
-        assertFalse(GitMetadataWatcher.relevant("index.lock", false));
-        assertFalse(GitMetadataWatcher.relevant("main.lock", true));
-        assertFalse(GitMetadataWatcher.relevant("FETCH_HEAD", false), "a fetch refreshes itself");
-        assertFalse(GitMetadataWatcher.relevant("objects", false));
+        assertTrue(GitMetadataWatcher.relevant("index", GitMetadataWatcher.Kind.GIT_DIR));
+        assertTrue(GitMetadataWatcher.relevant("HEAD", GitMetadataWatcher.Kind.GIT_DIR));
+        assertTrue(GitMetadataWatcher.relevant("main", GitMetadataWatcher.Kind.REFS), "a branch moved");
+        assertFalse(GitMetadataWatcher.relevant("index.lock", GitMetadataWatcher.Kind.GIT_DIR));
+        assertFalse(GitMetadataWatcher.relevant("main.lock", GitMetadataWatcher.Kind.REFS));
+        assertFalse(
+                GitMetadataWatcher.relevant("FETCH_HEAD", GitMetadataWatcher.Kind.GIT_DIR), "a fetch refreshes itself");
+        assertFalse(GitMetadataWatcher.relevant("objects", GitMetadataWatcher.Kind.GIT_DIR));
     }
 }

@@ -102,6 +102,75 @@ class GitUiDecisionsTest {
     }
 
     @Test
+    void aRemoteBranchSwitchesToALocalBranchOfAnyNameThatTracksIt() {
+        List<String> remotes = List.of("origin", "upstream");
+        assertEquals(
+                new GitWindowCoordinator.RemoteCheckout(GitWindowCoordinator.RemoteCheckout.Kind.SWITCH, "my-feature"),
+                GitWindowCoordinator.remoteCheckout(
+                        "origin/feature",
+                        List.of(new com.editora.git.GitService.BranchInfo("my-feature", "origin/feature", 0, 0, false)),
+                        remotes),
+                "no branch of the same name, but one that tracks it");
+        assertEquals(
+                new GitWindowCoordinator.RemoteCheckout(GitWindowCoordinator.RemoteCheckout.Kind.SWITCH, "up-feature"),
+                GitWindowCoordinator.remoteCheckout(
+                        "upstream/feature",
+                        List.of(
+                                new com.editora.git.GitService.BranchInfo("feature", "origin/feature", 0, 0, false),
+                                new com.editora.git.GitService.BranchInfo(
+                                        "up-feature", "upstream/feature", 0, 0, false)),
+                        remotes),
+                "the same name tracks another remote, but another branch tracks this one: no question");
+        assertEquals(
+                new GitWindowCoordinator.RemoteCheckout(GitWindowCoordinator.RemoteCheckout.Kind.SWITCH, "feature"),
+                GitWindowCoordinator.remoteCheckout(
+                        "origin/feature",
+                        List.of(
+                                new com.editora.git.GitService.BranchInfo("alias", "origin/feature", 0, 0, false),
+                                new com.editora.git.GitService.BranchInfo("feature", "origin/feature", 0, 0, false)),
+                        remotes),
+                "several track it: the one of the same name wins");
+    }
+
+    @Test
+    void theLogKeepsItsRefsFingerprintOnlyForALoadThatWorked() {
+        String refs = "HEAD=refs/heads/main\nabc HEAD\n";
+        assertEquals(refs, GitWindowCoordinator.refsAfterLoad(refs, com.editora.git.GitLog.Page.EMPTY));
+        assertEquals(
+                "",
+                GitWindowCoordinator.refsAfterLoad(refs, com.editora.git.GitLog.Page.failed("fatal: bad revision")),
+                "a failed page keeps no fingerprint, so the next Git command reloads it");
+        assertEquals("", GitWindowCoordinator.refsAfterLoad("", com.editora.git.GitLog.Page.EMPTY));
+    }
+
+    /** R4-B1: a stage or unstage during a long log read does not restart it while the refs it read still hold. */
+    @Test
+    void aCommandDuringALoadComparesAgainstTheLoadsOwnRefs() {
+        String refs = "HEAD=refs/heads/main\nabc HEAD\n";
+        assertEquals(
+                GitWindowCoordinator.MutationCheck.COMPARE,
+                GitWindowCoordinator.mutationCheck(true, true, refs, ""),
+                "the rows on screen have no fingerprint yet, the load in flight has one");
+        assertEquals(
+                GitWindowCoordinator.MutationCheck.WAIT,
+                GitWindowCoordinator.mutationCheck(true, true, null, ""),
+                "its refs may have been read before the command ended: wait for them, do not cancel the read");
+        assertEquals(
+                GitWindowCoordinator.MutationCheck.RELOAD,
+                GitWindowCoordinator.mutationCheck(true, true, "", refs),
+                "the load could not read its refs");
+        assertEquals(
+                GitWindowCoordinator.MutationCheck.COMPARE,
+                GitWindowCoordinator.mutationCheck(true, false, null, refs));
+        assertEquals(
+                GitWindowCoordinator.MutationCheck.RELOAD, GitWindowCoordinator.mutationCheck(true, false, null, ""));
+        assertEquals(
+                GitWindowCoordinator.MutationCheck.RELOAD,
+                GitWindowCoordinator.mutationCheck(false, true, refs, refs),
+                "another repository is always read again");
+    }
+
+    @Test
     void fetchPrunes() {
         assertEquals(
                 List.of("fetch", "--all", "--prune"),

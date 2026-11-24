@@ -165,17 +165,24 @@ public final class GitLog {
 
         /**
          * As {@link #keep(java.util.Set)}; {@code foundTruncated} is whether the search's own listing was cut
-         * short, which also leaves older matches out.
+         * short, which also leaves older matches out. The search then got no further than the oldest commit it
+         * found, so {@link #searchedCommits} counts the history down to that one, not the whole history read.
          */
         public Page keep(java.util.Set<String> hashes, boolean foundTruncated) {
             List<Entry> kept = new ArrayList<>();
-            for (Entry entry : entries) {
+            int oldestFound = -1;
+            for (int i = 0; i < entries.size(); i++) {
+                Entry entry = entries.get(i);
                 if (hashes.contains(entry.hash())) {
                     kept.add(entry);
+                    oldestFound = i;
                 }
             }
-            boolean cut = truncated || searchedCommits > 0 || foundTruncated;
-            return new Page(kept, false, followed, error, cut ? entries.size() : 0);
+            int searched = truncated || searchedCommits > 0 || foundTruncated ? entries.size() : 0;
+            if (foundTruncated && oldestFound >= 0) {
+                searched = oldestFound + 1;
+            }
+            return new Page(kept, false, followed, error, searched);
         }
 
         /** Whether only the newest {@link #searchedCommits} commits were searched. */

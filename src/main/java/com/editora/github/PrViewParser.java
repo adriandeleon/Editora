@@ -45,6 +45,26 @@ public final class PrViewParser {
                 int deletions) {
             this(number, title, body, authorLogin, baseRefName, headRefName, state, url, additions, deletions, "");
         }
+
+        /** This detail without its head commit: a review from a tab showing it is not pinned to a commit. */
+        public PrDetail unpinned() {
+            return new PrDetail(
+                    number, title, body, authorLogin, baseRefName, headRefName, state, url, additions, deletions, "");
+        }
+    }
+
+    /** The {@code headRefOid} of a {@code gh pr view --json headRefOid} answer, or {@code null} when unreadable. */
+    public static @Nullable String headRefOid(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode n = MAPPER.readTree(json);
+            String oid = n == null || !n.isObject() ? "" : text(n, "headRefOid").strip();
+            return oid.isEmpty() ? null : oid;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** Parses the {@code gh pr view --json …} object, or {@code null} on bad/empty input. */

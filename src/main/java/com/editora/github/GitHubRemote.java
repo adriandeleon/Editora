@@ -1,6 +1,7 @@
 package com.editora.github;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -89,6 +90,47 @@ public final class GitHubRemote {
             }
         }
         return "";
+    }
+
+    /** The remotes {@code gh} takes the base repository from first, in its order; any other comes after them. */
+    private static final List<String> GH_REMOTE_ORDER = List.of("upstream", "github", "origin");
+
+    /**
+     * The host whose refused token stops {@code gh} in a repository, or {@code ""} when gh can still work there. A
+     * repository whose remotes are on a refused host and on a signed-in one is refused only when the remote gh
+     * itself would use — among those on a host it has an account on, {@code upstream}, then {@code github}, then
+     * {@code origin}, then the first other one — is on the refused host; one with no remote on a signed-in host
+     * at all is refused too. {@code names} are the remotes' names, parallel to {@code urls} (resolved: no SSH
+     * alias); {@code hosts} the hosts gh is signed in to, {@code rejected} those whose token was refused. Pure.
+     */
+    public static String refusedHost(
+            List<String> names, List<String> urls, Collection<String> hosts, Collection<String> rejected) {
+        if (urls == null || rejected == null || rejected.isEmpty()) {
+            return "";
+        }
+        Collection<String> signedIn = hosts == null ? List.of() : hosts;
+        String ghHost = "";
+        int best = Integer.MAX_VALUE;
+        boolean anySignedIn = false;
+        for (int i = 0; i < urls.size(); i++) {
+            String host = com.editora.git.SshHosts.canonical(hostOf(urls.get(i)));
+            boolean onSignedIn = signedIn.contains(host);
+            anySignedIn |= onSignedIn;
+            if (host.isEmpty() || !onSignedIn && !rejected.contains(host)) {
+                continue; // gh leaves out remotes on hosts it has no account on
+            }
+            String name = names != null && i < names.size() ? names.get(i) : "";
+            int rank = GH_REMOTE_ORDER.indexOf(name);
+            rank = rank < 0 ? GH_REMOTE_ORDER.size() : rank;
+            if (rank < best) {
+                best = rank;
+                ghHost = host;
+            }
+        }
+        if (rejected.contains(ghHost)) {
+            return ghHost;
+        }
+        return anySignedIn ? "" : hostAmong(urls, rejected);
     }
 
     /**

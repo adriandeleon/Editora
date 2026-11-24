@@ -177,7 +177,8 @@ final class GitBlameCoordinator {
         String rel = revision != null ? revision.path() : file != null ? GitService.repoRelative(root, file) : null;
         if (rel != null) {
             // Blame follows renames: a line older than a move belongs to the file's OLD path in its commit.
-            BlameParser.BlameLine line = lineNear(blamed.getOrDefault(b, List.of()), lineIndex, hash);
+            BlameParser.BlameLine line =
+                    lineNear(blamed.getOrDefault(b, List.of()), b.blameDiskLineAt(lineIndex), hash);
             String at = line == null || line.path() == null ? rel : line.path();
             ops.openCommitFileDiff(hash, at, line == null ? null : line.previousPath());
         }
@@ -194,9 +195,12 @@ final class GitBlameCoordinator {
         String hash = b == null ? null : b.blameHashAtCaret();
         Revision current = revisionOf(b);
         Path root = current != null ? current.root() : git.repoRoot();
-        BlameParser.BlameLine line = b == null || hash == null || hash.isBlank()
-                ? null
-                : lineNear(blamed.getOrDefault(b, List.of()), b.getFocusedArea().getCurrentParagraph(), hash);
+        // The focused area's caret line, as the line on disk the blame describes (a folded or narrowed view, and
+        // the split's other area, number their lines otherwise).
+        List<BlameParser.BlameLine> lines = b == null ? List.of() : blamed.getOrDefault(b, List.of());
+        int diskLine = b == null ? -1 : b.blameDiskLineAt(b.getFocusedArea().getCurrentParagraph());
+        BlameParser.BlameLine line =
+                b == null || hash == null || hash.isBlank() ? null : lineNear(lines, diskLine, hash);
         if (b == null || hash == null || line == null || root == null) { // a line means a buffer and a hash
             host.setStatus(tr(isEnabled() ? "status.git.noBlameLine" : "status.git.blameOffForPrevious"));
             return;
@@ -209,7 +213,7 @@ final class GitBlameCoordinator {
         if (open == null) {
             return;
         }
-        int caretLine = b.getArea().getCurrentParagraph();
+        int caretLine = blamedLineIndex(lines, line, diskLine);
         Revision previous = new Revision(root, line.previousHash(), line.previousPath());
         String sourceCharset = b.getEffectiveCharset();
         git.service().showBlob(root, previous.hash() + ":" + previous.path(), blob -> {
@@ -330,24 +334,40 @@ final class GitBlameCoordinator {
     }
 
     /**
-     * The blamed line for buffer line {@code index}, whose annotation names {@code hash}: the line at that
-     * index when it is blamed on {@code hash}, else the nearest line that is (edits since the blame ran
-     * shift buffer lines against blamed ones a little), else null. Pure.
+     * The on-disk line of {@code line} in {@code lines} (the blamed line {@link #lineNear} found, compared by
+     * identity: two lines of one commit are equal records), else {@code diskLine}, else 0. Where the previous
+     * revision opens: the same line number is usually close to it. Pure.
      */
-    static BlameParser.@Nullable BlameLine lineNear(List<BlameParser.BlameLine> lines, int index, String hash) {
-        for (int d = 0; d < lines.size(); d++) {
+    static int blamedLineIndex(List<BlameParser.BlameLine> lines, BlameParser.BlameLine line, int diskLine) {
+        if (diskLine >= 0 && diskLine < lines.size() && lines.get(diskLine) == line) {
+            return diskLine;
+        }
+        for (int i = 0; i < lines.size(); i++) {
+            if (lines.get(i) == line) {
+                return i;
+            }
+        }
+        return Math.max(0, diskLine);
+    }
+
+    /**
+     * The blamed line at on-disk line {@code diskLine} (what the gutter maps the buffer line to, see
+     * {@link EditorBuffer#blameDiskLineAt}), whose annotation names {@code hash}: that line when it is blamed
+     * on {@code hash}, else the nearest line anywhere in the file that is, else null. A {@code diskLine}
+     * outside the list (or -1) searches from the nearest end. Pure.
+     */
+    static BlameParser.@Nullable BlameLine lineNear(List<BlameParser.BlameLine> lines, int diskLine, String hash) {
+        if (lines.isEmpty()) {
+            return null;
+        }
+        int index = Math.clamp(diskLine, 0, lines.size() - 1);
+        for (int d = 0; index - d >= 0 || index + d < lines.size(); d++) {
             int before = index - d;
             int after = index + d;
-            if (before < 0 && after >= lines.size()) {
-                break;
-            }
-            if (before >= 0 && before < lines.size() && lines.get(before).hash().equals(hash)) {
+            if (before >= 0 && lines.get(before).hash().equals(hash)) {
                 return lines.get(before);
             }
-            if (d > 0
-                    && after >= 0
-                    && after < lines.size()
-                    && lines.get(after).hash().equals(hash)) {
+            if (d > 0 && after < lines.size() && lines.get(after).hash().equals(hash)) {
                 return lines.get(after);
             }
         }

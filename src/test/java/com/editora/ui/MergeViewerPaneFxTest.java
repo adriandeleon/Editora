@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 // The debugger's scans, merge and apply texts are worked out off the FX thread (PERF-01): here in place, so
@@ -137,6 +139,123 @@ class MergeViewerPaneFxTest {
         } finally {
             FxTestSupport.runOnFx(stage::close);
         }
+    }
+
+    /** A Result that could not be put together for the last choice is never saved: it is for earlier ones. */
+    @Test
+    void aFailedComposeTurnsSaveOffUntilTheNextOneSucceeds() throws Exception {
+        var merge = ThreeWayMerge.merge("before\nold\nafter\n", "before\nours\nafter\n", "before\ntheirs\nafter\n");
+        AtomicReference<String> applied = new AtomicReference<>();
+        java.util.concurrent.atomic.AtomicBoolean fail = new java.util.concurrent.atomic.AtomicBoolean();
+        MergeViewerPane pane = failingPane(merge.file(), applied, fail);
+        Stage stage = FxTestSupport.callOnFx(() -> {
+            Stage window = new Stage();
+            window.setScene(new Scene(new StackPane(pane.node()), 900, 650));
+            window.show();
+            return window;
+        });
+        try {
+            Button save = button((Parent) pane.node(), "Save resolution");
+            fail.set(true);
+            FxTestSupport.runOnFx(button((Parent) pane.node(), "Accept Ours")::fire);
+            fail.set(false);
+            assertTrue(save.isDisabled(), "the Result shown is stale");
+            FxTestSupport.runOnFx(save::fire);
+            assertNull(applied.get(), "a stale Result is not saved");
+            assertEquals(MergeViewerPane.resultFailedText(new IllegalStateException("boom")), statusText(pane));
+
+            // The close question puts the Result together in place: the one for the choices made.
+            boolean saved = FxTestSupport.callOnFx(pane::saveBeforeClose);
+            assertTrue(saved);
+            assertEquals("before\nours\nafter\n", applied.get());
+            assertFalse(save.isDisabled());
+
+            applied.set(null);
+            fail.set(true);
+            FxTestSupport.runOnFx(button((Parent) pane.node(), "Accept Theirs")::fire);
+            fail.set(false);
+            FxTestSupport.runOnFx(button((Parent) pane.node(), "Accept Ours")::fire); // composes again, fine
+            assertFalse(save.isDisabled());
+            FxTestSupport.runOnFx(save::fire);
+            assertEquals("before\nours\nafter\n", applied.get());
+        } finally {
+            FxTestSupport.runOnFx(stage::close);
+        }
+    }
+
+    /**
+     * R4-H1 / R4-H2: after a failed compose, a Result edited by hand is what the quit saves — it is not put
+     * together again over the edits — and a save queued behind a compose is dropped when the quit saves in place.
+     */
+    @Test
+    void theQuitSavesAHandEditedResultAsShownAfterAFailedCompose() throws Exception {
+        var merge = ThreeWayMerge.merge("before\nold\nafter\n", "before\nours\nafter\n", "before\ntheirs\nafter\n");
+        AtomicReference<String> applied = new AtomicReference<>();
+        java.util.concurrent.atomic.AtomicBoolean fail = new java.util.concurrent.atomic.AtomicBoolean();
+        MergeViewerPane pane = failingPane(merge.file(), applied, fail);
+        Stage stage = FxTestSupport.callOnFx(() -> {
+            Stage window = new Stage();
+            window.setScene(new Scene(new StackPane(pane.node()), 900, 650));
+            window.show();
+            return window;
+        });
+        try {
+            TextArea result = FxTestSupport.field(pane, "resultArea");
+            FxTestSupport.runOnFx(button((Parent) pane.node(), "Accept Ours")::fire);
+            fail.set(true);
+            FxTestSupport.runOnFx(button((Parent) pane.node(), "Accept Theirs")::fire); // fails: ours still shown
+            fail.set(false);
+            FxTestSupport.runOnFx(() -> result.setText("before\nmine by hand\nafter\n"));
+            int[] queued = {0};
+            java.lang.reflect.Field after = MergeViewerPane.class.getDeclaredField("afterComposed");
+            after.setAccessible(true);
+            FxTestSupport.runOnFx(() -> {
+                try {
+                    after.set(pane, (Runnable) () -> queued[0]++);
+                } catch (IllegalAccessException e) {
+                    throw new AssertionError(e);
+                }
+            });
+
+            boolean saved = FxTestSupport.callOnFx(() -> pane.saveBeforeClose());
+            assertTrue(saved);
+            assertEquals("before\nmine by hand\nafter\n", applied.get(), "the user's text, not rebuilt");
+            assertEquals("before\nmine by hand\nafter\n", result.getText());
+            assertNull(FxTestSupport.callOnFx(() -> after.get(pane)), "the queued save is dropped");
+            assertEquals(0, queued[0]);
+        } finally {
+            FxTestSupport.runOnFx(stage::close);
+        }
+    }
+
+    /** A pane whose Result cannot be put together while {@code fail} is set. */
+    private static MergeViewerPane failingPane(
+            com.editora.diff.ConflictParser.ConflictFile file,
+            AtomicReference<String> applied,
+            java.util.concurrent.atomic.AtomicBoolean fail)
+            throws Exception {
+        return FxTestSupport.callOnFx(() -> new MergeViewerPane(
+                "merge",
+                file,
+                "Monospaced",
+                13,
+                "\n",
+                true,
+                (text, done) -> {
+                    applied.set(text);
+                    done.accept(true);
+                },
+                (f, choices, separator, newline) -> {
+                    if (fail.get()) {
+                        throw new IllegalStateException("boom");
+                    }
+                    return MergeViewerPane.resultText(f, choices, separator, newline);
+                }));
+    }
+
+    private static String statusText(MergeViewerPane pane) throws Exception {
+        javafx.scene.control.Label status = FxTestSupport.field(pane, "status");
+        return FxTestSupport.callOnFx(status::getText);
     }
 
     private static Button button(Parent root, String text) {

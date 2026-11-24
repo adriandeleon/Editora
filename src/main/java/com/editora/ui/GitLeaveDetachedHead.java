@@ -11,7 +11,7 @@ import static com.editora.i18n.Messages.tr;
  * The one question every command that moves HEAD to another branch, tag or commit asks first: from a detached
  * HEAD, the commits made there that no branch or tag reaches are left to the reflog. The Git Log's commit
  * checkout asked it; a branch switched from the dropdown, a remote branch checked out, Check Out Revision, a tag
- * checkout and New Branch From with Switch on did not. All of them go through {@link #thenMove} now, with the
+ * checkout, New Branch From with Switch on and a stash's Branch did not. All of them go through {@link #thenMove} now, with the
  * decision and words of {@link GitHeadMoveWarning}.
  */
 final class GitLeaveDetachedHead {
@@ -25,12 +25,22 @@ final class GitLeaveDetachedHead {
      * Cancel the status line says nothing moved.
      */
     static void thenMove(GitCoordinator git, Path root, String target, Runnable move) {
+        thenMove(git, root, target, target, move);
+    }
+
+    /**
+     * {@link #thenMove(GitCoordinator, Path, String, Runnable)} for a move whose destination git counts from
+     * {@code target} but the question names as {@code shownAs} — {@code git stash branch} moves HEAD to a new
+     * branch made at the stash's base commit ({@code <stash>^1}), and the user knows it by the branch name.
+     */
+    static void thenMove(GitCoordinator git, Path root, String target, String shownAs, Runnable move) {
         if (onBranch(git, root)) {
             move.run();
             return;
         }
         git.service().commitsLeftBehind(root, target, false, left -> {
-            if (GitHeadMoveWarning.checkoutNeedsConfirmation(left) && !git.confirmDestructive(question(target, left))) {
+            if (GitHeadMoveWarning.checkoutNeedsConfirmation(left)
+                    && !git.confirmDestructive(question(shownAs, left))) {
                 git.host().setStatus(tr("status.git.headKept"));
                 return;
             }

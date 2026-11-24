@@ -32,4 +32,14 @@ class PrViewParserTest {
         assertNull(PrViewParser.parse("[]")); // array, not an object
         assertNull(PrViewParser.parse("garbage"));
     }
+
+    /** R4-G3: the head asked for again after a review's diff arrived. */
+    @Test
+    void readsTheHeadCommitAlone() {
+        assertEquals("abc123", PrViewParser.headRefOid("{\"headRefOid\":\" abc123 \"}"));
+        assertNull(PrViewParser.headRefOid("{\"headRefOid\":\"\"}"));
+        assertNull(PrViewParser.headRefOid("{}"));
+        assertNull(PrViewParser.headRefOid("not json"));
+        assertNull(PrViewParser.headRefOid(""));
+    }
 }

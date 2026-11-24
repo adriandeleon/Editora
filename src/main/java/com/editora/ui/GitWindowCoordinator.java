@@ -222,8 +222,18 @@ final class GitWindowCoordinator {
      */
     static final int LOG_RELOAD_LIMIT = 5_000;
 
-    /** The refs fingerprint read when the log on screen was loaded; empty until known. */
+    /** The refs fingerprint read just before the log on screen was read; empty until known, or when it failed. */
     private String gitLogRefs = "";
+
+    /**
+     * The refs fingerprint of the load in flight, read just before its page; null while it is not known yet (or
+     * no load is in flight). A Git command that ends during a long read compares against it, so a stage or
+     * unstage does not restart — and cancel — a search that already lists the refs as they are.
+     */
+    private @Nullable String gitLogPendingRefs;
+
+    /** A Git command ended before the load in flight knew its fingerprint: compare once it lands. */
+    private boolean gitLogRecheck;
 
     /** The page size in use; a field so a test can page through a handful of commits. */
     int logPageSize = LOG_PAGE;
@@ -255,19 +265,54 @@ final class GitWindowCoordinator {
                 || !host.toolWindows().isOpen(host.gitLogToolWindow())) {
             return;
         }
-        String before = gitLogRefs;
-        if (!root.equals(host.git().repoRoot()) || before.isEmpty()) {
-            loadGitLog(gitLogFilter);
-            return;
-        }
-        // A stage, unstage or discard moves no ref: re-reading (and re-searching) the history would be wasted.
-        host.git().service().refsFingerprint(root, now -> {
-            if (logNeedsReload(before, now)
-                    && root.equals(gitLogRoot)
-                    && host.toolWindows().isOpen(host.gitLogToolWindow())) {
-                loadGitLog(gitLogFilter);
+        switch (mutationCheck(root.equals(host.git().repoRoot()), gitLogLoading, gitLogPendingRefs, gitLogRefs)) {
+            case RELOAD -> loadGitLog(gitLogFilter);
+            case WAIT -> gitLogRecheck = true; // the in-flight load's fingerprint may predate this command
+            case COMPARE -> {
+                String before = gitLogLoading ? java.util.Objects.requireNonNull(gitLogPendingRefs) : gitLogRefs;
+                long generation = gitLogGeneration;
+                // A stage, unstage or discard moves no ref: re-reading (and re-searching) the history would be
+                // wasted.
+                host.git().service().refsFingerprint(root, now -> {
+                    if (generation == gitLogGeneration // else a load began after this command: it is current
+                            && logNeedsReload(before, now)
+                            && root.equals(gitLogRoot)
+                            && host.toolWindows().isOpen(host.gitLogToolWindow())) {
+                        loadGitLog(gitLogFilter);
+                    }
+                });
             }
-        });
+        }
+    }
+
+    /** What a finished Git command does to an open log; see {@link #mutationCheck}. */
+    enum MutationCheck {
+        /** Read the log again now. */
+        RELOAD,
+        /** Read the refs and reload only if they differ from the log's (on screen, or of the load in flight). */
+        COMPARE,
+        /** The load in flight has not read its refs yet: compare once it has. */
+        WAIT
+    }
+
+    /**
+     * Decides {@link MutationCheck}: another repository, or a log with no known fingerprint, reloads; a load in
+     * flight is compared against the fingerprint read just before its page (it is waited for while unknown, as
+     * it may have been read before the command ended), and a loaded log against the one its rows were read
+     * with. Pure.
+     */
+    static MutationCheck mutationCheck(
+            boolean sameRoot, boolean loading, @Nullable String pendingRefs, String shownRefs) {
+        if (!sameRoot) {
+            return MutationCheck.RELOAD;
+        }
+        if (loading) {
+            if (pendingRefs == null) {
+                return MutationCheck.WAIT;
+            }
+            return pendingRefs.isEmpty() ? MutationCheck.RELOAD : MutationCheck.COMPARE;
+        }
+        return shownRefs.isEmpty() ? MutationCheck.RELOAD : MutationCheck.COMPARE;
     }
 
     /** Whether the log listing must be read again: the refs moved, or either fingerprint is unknown. */
@@ -295,7 +340,7 @@ final class GitWindowCoordinator {
 
     /**
      * What choosing a remote-tracking branch in the dropdown does. {@code kind}: switch to local branch
-     * {@code name} (it tracks this very remote branch); create a local branch that tracks it ({@code name} is
+     * {@code name} (it tracks this very remote branch, whatever its name); create a local branch that tracks it ({@code name} is
      * git's own choice, the remote branch's name); or ask for a name, {@code name} the suggestion — a local
      * branch of the remote branch's name exists but tracks something else, or nothing.
      */
@@ -309,31 +354,73 @@ final class GitWindowCoordinator {
 
     /**
      * Decides {@link RemoteCheckout} for {@code remoteBranch}: split at the longest known remote name (a remote
-     * may itself hold a slash), then the local branch of the rest is reused only when its upstream is this remote
-     * branch — {@code upstream/feature} never switches to a {@code feature} that tracks {@code origin/feature}.
-     * The suggested name is {@code <remote>-<branch>}. Pure.
+     * may itself hold a slash), then any local branch whose upstream is this remote branch is switched to — the
+     * one of the same name first, so {@code origin/feature} reaches a {@code my-feature} that tracks it. A local
+     * branch is never reused for its name alone: {@code upstream/feature} never switches to a {@code feature} that
+     * tracks {@code origin/feature}; with no tracking branch and that name taken, the user is asked for a name,
+     * {@code <remote>-<branch>} suggested. A branch checked out in another work tree is never switched to (git
+     * refuses: "already used by worktree"); it still holds its name. Pure.
      */
     static RemoteCheckout remoteCheckout(
-            String remoteBranch, List<com.editora.git.GitService.BranchInfo> local, List<String> remoteNames) {
+            String remoteBranch,
+            List<com.editora.git.GitService.BranchInfo> local,
+            List<String> remoteNames,
+            java.util.Set<String> heldElsewhere) {
         com.editora.git.GitRemotes.RemoteBranch split = com.editora.git.GitRemotes.split(remoteBranch, remoteNames);
         if (split == null) {
             return new RemoteCheckout(RemoteCheckout.Kind.TRACK, "");
         }
+        com.editora.git.GitService.BranchInfo tracking = null;
+        boolean nameTaken = false;
         for (com.editora.git.GitService.BranchInfo b : local) {
-            if (b.name().equals(split.branch())) {
-                return remoteBranch.equals(b.upstream())
-                        ? new RemoteCheckout(RemoteCheckout.Kind.SWITCH, b.name())
-                        : new RemoteCheckout(RemoteCheckout.Kind.ASK, split.remote() + "-" + split.branch());
+            boolean sameName = b.name().equals(split.branch());
+            nameTaken |= sameName;
+            if (remoteBranch.equals(b.upstream())
+                    && !heldElsewhere.contains(b.name())
+                    && (tracking == null || sameName)) {
+                tracking = b; // the same-named one first, else the first local branch that tracks it
             }
         }
-        return new RemoteCheckout(RemoteCheckout.Kind.TRACK, split.branch());
+        if (tracking != null) {
+            return new RemoteCheckout(RemoteCheckout.Kind.SWITCH, tracking.name());
+        }
+        return nameTaken
+                ? new RemoteCheckout(RemoteCheckout.Kind.ASK, split.remote() + "-" + split.branch())
+                : new RemoteCheckout(RemoteCheckout.Kind.TRACK, split.branch());
     }
 
-    /** A remote-tracking row of the dropdown was chosen: see {@link #remoteCheckout}. */
+    /** {@link #remoteCheckout} with no branch checked out in another work tree. Pure. */
+    static RemoteCheckout remoteCheckout(
+            String remoteBranch, List<com.editora.git.GitService.BranchInfo> local, List<String> remoteNames) {
+        return remoteCheckout(remoteBranch, local, remoteNames, java.util.Set.of());
+    }
+
+    /**
+     * A remote-tracking row of the dropdown was chosen: see {@link #remoteCheckout}. The work trees are listed
+     * now, not taken from the dropdown's own list, which may not have arrived yet.
+     */
     private void checkoutRemoteRow(Path root, String remote, com.editora.git.GitService.Branches branches) {
-        RemoteCheckout choice = remoteCheckout(remote, branches.local(), branches.remoteNames());
+        host.git()
+                .service()
+                .worktrees(
+                        root,
+                        trees -> inRoot(
+                                        root,
+                                        () -> checkoutRemoteRow(
+                                                root,
+                                                remote,
+                                                branches,
+                                                GitBranchCoordinator.checkedOutElsewhere(root, trees)
+                                                        .keySet()))
+                                .run());
+    }
+
+    private void checkoutRemoteRow(
+            Path root, String remote, com.editora.git.GitService.Branches branches, java.util.Set<String> held) {
+        RemoteCheckout choice = remoteCheckout(remote, branches.local(), branches.remoteNames(), held);
         switch (choice.kind()) {
-            case SWITCH -> host.git().checkoutBranch(choice.name());
+            case SWITCH ->
+                inRoot(root, () -> host.git().checkoutBranch(choice.name())).run();
             case TRACK ->
                 GitLeaveDetachedHead.thenMove(
                         host.git(),
@@ -960,23 +1047,69 @@ final class GitWindowCoordinator {
         });
         gitLogLoading = true;
         gitLogRefs = "";
-        host.git().service().refsFingerprint(root, refs -> {
-            if (generation == gitLogGeneration) {
-                gitLogRefs = refs;
+        gitLogPendingRefs = null;
+        gitLogRecheck = false; // this load reads the refs after the command that asked for a re-check
+        // The refs are read BEFORE the page, on the same serial history lane: a fingerprint read after a commit
+        // that the page missed would tell gitMutated the rows are current. Read first, it describes the rows'
+        // state or an older one, and an older one only costs a reload. Both are queued at once, so the page
+        // waits for no other Git work (a commit's hooks, a status read) on the way.
+        host.git().service().cancelHistoryRead(); // the listing this one replaces is of no use any more
+        historyRefsFingerprint(root, refs -> {
+            if (generation != gitLogGeneration) {
+                return;
+            }
+            gitLogPendingRefs = refs;
+            if (gitLogRecheck) {
+                gitLogRecheck = false;
+                gitMutated(); // a command ended before these refs were known: compare against them now
             }
         });
         host.git().service().logPage(root, request, page -> {
             if (generation != gitLogGeneration) {
                 return;
             }
+            // Posted after the fingerprint (same lane, FX queue in order); "" only if that read was lost.
+            String refs = java.util.Objects.requireNonNullElse(gitLogPendingRefs, "");
             if (searchedFile && page.error().isEmpty() && !page.entries().isEmpty()) {
-                searchFileHistory(root, page, query, all, generation, listing, view);
+                searchFileHistory(root, page, query, all, generation, listing, view, refs);
                 return;
             }
-            gitLogLoading = false;
-            gitLogListing = listing;
-            host.gitLogPanel().setLog(page, view);
+            finishLoad(listing, page, view, refs);
         });
+    }
+
+    /**
+     * Shows the page a load read, which is no longer loading. A re-check still waiting means its fingerprint
+     * never came (the read was lost): the log then has none, and the command that waited reloads it.
+     */
+    private void finishLoad(Object listing, com.editora.git.GitLog.Page page, GitLogPanel.View view, String refs) {
+        boolean recheck = gitLogRecheck;
+        gitLogLoading = false;
+        gitLogListing = listing;
+        gitLogRefs = refsAfterLoad(refs, page);
+        gitLogPendingRefs = null;
+        gitLogRecheck = false;
+        host.gitLogPanel().setLog(page, view);
+        if (recheck) {
+            gitMutated();
+        }
+    }
+
+    /**
+     * The refs fingerprint read on the Git history lane, so it is read just before a page queued after it. The
+     * one place the log reads it, so the engine's method can be swapped in without touching the load.
+     */
+    private void historyRefsFingerprint(Path root, java.util.function.Consumer<String> onResult) {
+        host.git().service().refsFingerprintForHistory(root, onResult);
+    }
+
+    /**
+     * The refs fingerprint kept for a log that has just loaded: the one read before its page, or none when the
+     * page failed — the rows on screen are then an error, and the next Git command must read the log again
+     * whether or not it moved a ref. Pure.
+     */
+    static String refsAfterLoad(String fingerprintBefore, com.editora.git.GitLog.Page page) {
+        return page.error().isEmpty() ? fingerprintBefore : "";
     }
 
     /**
@@ -993,16 +1126,16 @@ final class GitWindowCoordinator {
             boolean all,
             long generation,
             Object listing,
-            GitLogPanel.View view) {
+            GitLogPanel.View view,
+            String refs) {
         com.editora.git.GitLog.Request search = new com.editora.git.GitLog.Request(
                 all, null, query.withoutPaths(), com.editora.git.GitLog.followedPaths(history), 0, LOG_RELOAD_LIMIT);
         host.git().service().logPage(root, search, found -> {
             if (generation != gitLogGeneration) {
                 return;
             }
-            gitLogLoading = false;
-            gitLogListing = listing;
-            host.gitLogPanel().setLog(searchedHistory(history, found), view);
+            com.editora.git.GitLog.Page shown = searchedHistory(history, found);
+            finishLoad(listing, shown, view, refs);
         });
     }
 
@@ -1517,6 +1650,8 @@ final class GitWindowCoordinator {
             gitLogGeneration++;
             gitLogLoading = false;
             gitLogLoadingMore = false;
+            gitLogPendingRefs = null;
+            gitLogRecheck = false;
             // A file history belongs to the repository it was opened in. A path prefix cannot tell: the
             // file of a nested repository or a submodule lies under the outer root too, and listing it
             // there answered "No commits".
