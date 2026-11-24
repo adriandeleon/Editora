@@ -309,8 +309,10 @@ class GitHubCommandsFxTest {
                 "the review tab",
                 () -> w.area.selectedTab().getUserData() instanceof PrReviewPane p && p.detail() != null);
         PrReviewPane review = (PrReviewPane) w.activeContent();
+        Object files = FxTestSupport.callOnFx(review::files);
 
         refuse("pr-view", "HTTP 502: Bad gateway\n");
+        answer("pr-diff", "diff --git a/y.txt b/y.txt\n--- a/y.txt\n+++ b/y.txt\n@@ -1 +1 @@\n-old\n+newer\n");
         FxTestSupport.runOnFx(() -> github.reviewPrNumber(21));
         OverlayTestKit.await(
                 async,
@@ -319,6 +321,9 @@ class GitHubCommandsFxTest {
         assertTrue(FxTestSupport.callOnFx(review::notice).contains("Bad gateway"));
         assertEquals("Kept title", FxTestSupport.callOnFx(() -> review.detail().title()));
         assertEquals("abc123", FxTestSupport.callOnFx(() -> review.detail().headRefOid()), "a review is still pinned");
+        // R3-G9: all or nothing — the diff stays the one of the head commit a review would be pinned to.
+        assertTrue(FxTestSupport.callOnFx(review::notice).contains(tr("github.review.notRefreshed")));
+        assertEquals(files, FxTestSupport.callOnFx(review::files), "the diff on screen is kept with its details");
         FxTestSupport.runOnFx(() -> w.area.remove(w.area.selectedTab()));
     }
 

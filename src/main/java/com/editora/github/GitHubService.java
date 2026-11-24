@@ -1232,13 +1232,15 @@ public final class GitHubService {
     /**
      * Resolves the SSH host aliases of {@code remoteUrls} ({@code git@github-work:o/r.git} → {@code
      * git@github.com:o/r.git}, {@code ssh.github.com} → {@code github.com}) off the FX thread and posts the
-     * resolved URLs on it, in the same order. HTTPS URLs come back as they are.
+     * resolved URLs on it, in the same order. HTTPS URLs come back as they are. {@code ssh -G} runs on the
+     * machine {@code dir} (the repository) is on — a remote project's own ssh config is the one its git uses.
      */
-    public void resolveRemoteHosts(List<String> remoteUrls, Consumer<List<String>> onResult) {
+    public void resolveRemoteHosts(@Nullable Path dir, List<String> remoteUrls, Consumer<List<String>> onResult) {
         List<String> urls = List.copyOf(remoteUrls);
         submit(ssh, () -> {
-            List<String> resolved =
-                    urls.stream().map(com.editora.git.SshHosts::resolveUrl).toList();
+            List<String> resolved = urls.stream()
+                    .map(url -> com.editora.git.SshHosts.resolveUrl(dir, url))
+                    .toList();
             Platform.runLater(() -> onResult.accept(resolved));
         });
     }

@@ -15,6 +15,7 @@ import com.editora.ui.GitHubPanel.RowAction;
 import com.editora.ui.GitHubPanel.RowAnswer;
 import org.junit.jupiter.api.Test;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -163,5 +164,43 @@ class GitHubUiDecisionsTest {
         Path active = Path.of("/work/repo-b");
         assertEquals(active, GitHubCoordinator.mutationRoot(active, active));
         assertEquals(active, GitHubCoordinator.mutationRoot(active.resolve("src/main"), active));
+    }
+
+    // --- round 3 ----------------------------------------------------------------------------------
+
+    private static com.editora.github.PrViewParser.PrDetail head(String oid) {
+        return new com.editora.github.PrViewParser.PrDetail(
+                7, "Fix", "", "alice", "main", "fix", "OPEN", "https://github.com/o/r/pull/7", 1, 1, oid);
+    }
+
+    /**
+     * R3-G9: a refresh whose diff came back but whose details did not showed the new diff under the old head commit,
+     * and a review was then pinned to the commit the reviewer had not read. All or nothing.
+     */
+    @Test
+    void aRefreshWithoutDetailsKeepsTheDiffThatBelongsToTheShownHead() {
+        assertTrue(GitHubCoordinator.keepsShownReview(null, head("abc")), "details failed: keep it all");
+        assertFalse(GitHubCoordinator.keepsShownReview(head("def"), head("abc")), "details came back: swap it all");
+        assertFalse(GitHubCoordinator.keepsShownReview(null, null), "nothing pinned on screen: the new diff shows");
+        assertFalse(GitHubCoordinator.keepsShownReview(null, head("")), "no head known: nothing to pin");
+    }
+
+    /** R3-G8: another repository's checks were announced as "none" even when its pull request had some. */
+    @Test
+    void anotherRepositorysChecksAreAnnouncedAsTheyAre() {
+        com.editora.github.GitHubService.BranchChecks some = new com.editora.github.GitHubService.BranchChecks(
+                true,
+                head("abc"),
+                List.of(new CheckRun("build", "CI", "pass", ""), new CheckRun("lint", "CI", "fail", "")));
+        assertEquals(
+                tr("status.github.checksElsewhere", 7, tr("github.checks.summary", 1, 1, 0, 0)),
+                GitHubCoordinator.checksElsewhereLine(some));
+        assertEquals(
+                tr("github.checks.none"),
+                GitHubCoordinator.checksElsewhereLine(com.editora.github.GitHubService.BranchChecks.NONE));
+        assertEquals(
+                tr("status.github.checksFailed") + ": HTTP 502",
+                GitHubCoordinator.checksElsewhereLine(
+                        com.editora.github.GitHubService.BranchChecks.failed("HTTP 502")));
     }
 }

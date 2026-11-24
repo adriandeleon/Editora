@@ -101,4 +101,40 @@ class GitHubRemoteTest {
         assertEquals("", GitHubRemote.hostAmong(java.util.List.of("https://gitlab.com/o/r"), hosts));
         assertEquals("", GitHubRemote.hostAmong(java.util.List.of("https://github.com/o/r"), java.util.List.of()));
     }
+
+    /**
+     * R3-G4: a refused token on one host stopped gh in every repository with a remote there — a fork whose
+     * {@code upstream} is on a signed-in host too. Only the remote gh would use, or no usable remote at all, refuses.
+     */
+    @Test
+    void aRefusedHostStopsGhOnlyWhereGhWouldUseIt() {
+        java.util.List<String> hosts = java.util.List.of("github.com");
+        java.util.List<String> rejected = java.util.List.of("ghe.corp");
+        java.util.List<String> names = java.util.List.of("origin", "origin", "upstream", "upstream");
+        java.util.List<String> fork = java.util.List.of(
+                "git@ghe.corp:me/r.git",
+                "git@ghe.corp:me/r.git",
+                "https://github.com/o/r.git",
+                "https://github.com/o/r.git");
+        assertEquals("", GitHubRemote.refusedHost(names, fork, hosts, rejected), "gh uses upstream, on github.com");
+        java.util.List<String> swapped = java.util.List.of("upstream", "upstream", "origin", "origin");
+        assertEquals("ghe.corp", GitHubRemote.refusedHost(swapped, fork, hosts, rejected), "gh would use upstream");
+        assertEquals(
+                "ghe.corp",
+                GitHubRemote.refusedHost(
+                        java.util.List.of("origin"), java.util.List.of("git@ghe.corp:me/r.git"), hosts, rejected),
+                "no remote on a signed-in host");
+        assertEquals(
+                "",
+                GitHubRemote.refusedHost(names, fork, hosts, java.util.List.of()),
+                "no refused host, nothing refused");
+        assertEquals(
+                "",
+                GitHubRemote.refusedHost(
+                        java.util.List.of("origin", "mirror"),
+                        java.util.List.of("https://github.com/o/r.git", "git@ghe.corp:me/r.git"),
+                        hosts,
+                        rejected),
+                "origin comes before any other name");
+    }
 }

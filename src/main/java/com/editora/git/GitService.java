@@ -1505,7 +1505,7 @@ public final class GitService {
         List<GitRemotes.Remote> remotes = listed.ok() ? GitRemotes.parse(listed.out()) : List.of();
         String url = permalinkRemote(remotes, head.upstream());
         GitWebLinks.Repo repo =
-                url == null ? null : GitWebLinks.repo(url, SshHosts.resolver()); // an ssh alias resolved
+                url == null ? null : GitWebLinks.repo(url, SshHosts.resolver(root)); // an ssh alias, where git runs
         if (repo == null) {
             return Permalink.none(Permalink.Status.NO_REMOTE);
         }

@@ -71,6 +71,7 @@ class GitHubUiFlowsFxTest {
               "repo view") cat "$D/repo.json"; exit 0;;
               "pr view")
                 if [ "$3" = "--json" ]; then
+                  if [ -f "$D/branch.fail" ]; then echo "HTTP 502: Bad Gateway" >&2; exit 1; fi
                   if [ -f "$D/branchpr.json" ]; then cat "$D/branchpr.json"; exit 0; fi
                   echo "no pull requests found for branch" >&2; exit 1
                 fi
@@ -687,6 +688,42 @@ class GitHubUiFlowsFxTest {
     private Object selected() {
         Tab tab = area.selectedTab();
         return tab == null ? null : tab.getUserData();
+    }
+
+    /** R3-G2: the retry of a failed lookup that came due in an unfocused window was dropped for good. */
+    @Test
+    @Order(19)
+    void aFailedLookupsRetryInAnUnfocusedWindowWaitsForTheFocus() throws Exception {
+        Files.writeString(bin.resolve("checks.json"), PASSED);
+        Files.writeString(bin.resolve("branch.fail"), "1");
+        try {
+            FxTestSupport.runOnFx(() -> {
+                github.pollDelayMillisForTest = 40;
+                github.windowFocusedForTest = () -> false;
+                github.refresh();
+            });
+            await(
+                    "the retry to come due and wait for the focus",
+                    () -> FxTestSupport.<Path>field(github, "deferredRetryDir") != null);
+            long asked = logged("pr view");
+            GitFeatureFx.settleGitHub(github);
+            assertEquals(asked, logged("pr view"), "no gh call while the window is unfocused");
+            assertFalse(pollScheduled(), "and no timer will run it meanwhile");
+
+            Files.delete(bin.resolve("branch.fail"));
+            FxTestSupport.runOnFx(() -> {
+                github.windowFocusedForTest = () -> true;
+                github.resumeDeferredPoll(); // what the focus listener does
+            });
+            await(
+                    "the lookup to be retried once the focus is back",
+                    () -> logged("pr view") > asked
+                            && FxTestSupport.<String>field(github, "checksFailure")
+                                    .isEmpty());
+        } finally {
+            Files.deleteIfExists(bin.resolve("branch.fail"));
+            FxTestSupport.runOnFx(() -> github.windowFocusedForTest = () -> true);
+        }
     }
 
     private long logged(String needle) throws Exception {

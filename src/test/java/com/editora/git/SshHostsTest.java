@@ -55,4 +55,32 @@ class SshHostsTest {
         assertEquals("/srv/repo.git", SshHosts.resolveUrl("/srv/repo.git", work));
         assertEquals("C:\\repo", SshHosts.resolveUrl("C:\\repo", work));
     }
+
+    /** R3-G3: ssh matches Host patterns case-sensitively, so the alias is matched as it is written. */
+    @Test
+    void theConfigIsMatchedWithTheAliasAsWritten() {
+        String config = """
+                Host GitHub-Work
+                  HostName GitHub.com
+                  Port 2222
+                """;
+        assertEquals("github.com", SshHosts.fromConfig(config, "GitHub-Work"), "the value is lower-cased");
+        assertNull(SshHosts.fromConfig(config, "github-work"), "another case is another alias");
+        assertEquals("2222", SshHosts.fromConfig(config, "GitHub-Work", "port"));
+    }
+
+    /** R3-G7: ssh -G's port line, for a Bitbucket Server whose 7999 is only in ~/.ssh/config. */
+    @Test
+    void thePortLineOfSshG() {
+        assertEquals("7999", SshHosts.portOf("hostname git.corp.example\nport 7999\n"));
+        assertNull(SshHosts.portOf("hostname x\n"));
+        assertNull(SshHosts.portOf(null));
+    }
+
+    /** R3-G3/G5: a name that is no alias is never handed to ssh, and comes back canonical. */
+    @Test
+    void aNameSshWouldReadAsAnOptionIsNotLookedUp() {
+        assertEquals("-oproxycommand=x", SshHosts.resolve("-oProxyCommand=x"));
+        assertEquals("", SshHosts.lookup(null, " ").host());
+    }
 }

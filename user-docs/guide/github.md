@@ -39,8 +39,11 @@ each command reports the reason.
   including the scp form without a user (`github.example.com:org/repo`).
 - **SSH host aliases and port 443**: a remote such as `git@github-work:org/repo.git`,
   whose host is a `Host` alias in `~/.ssh/config` (two accounts on one site), is
-  recognised by the host the alias stands for, as `ssh -G` reports it. GitHub's
-  SSH-over-443 address, `ssh.github.com`, counts as github.com.
+  recognised by the host the alias stands for, as `ssh -G` reports it (on the
+  machine the repository is on, for a remote folder). GitHub's
+  SSH-over-443 address, `ssh.github.com`, counts as github.com. After you edit
+  `~/.ssh/config`, the new aliases are picked up on their own; **GitHub:
+  Refresh** asks `ssh` again.
 - **GitHub Enterprise**: a host is treated as GitHub when `gh` has an account on
   it, so an Enterprise host you ran `gh auth login --hostname` for works like
   github.com.
@@ -63,7 +66,9 @@ that still can't reach GitHub shows `gh`'s own network error. A sign-in that
 GitHub rejects is reported as such, with the advice to run `gh auth refresh`.
 With accounts on several hosts, a repository on the host whose sign-in was
 rejected says so, with the command for that host (`gh auth refresh -h <host>`),
-instead of the tool window just staying hidden. An organization that requires
+instead of the tool window just staying hidden. A fork with a remote on that host
+and one on a host that is signed in keeps working, unless the remote `gh` would
+use (`upstream` first, then `github`, then `origin`) is the rejected one. An organization that requires
 single sign-on (SAML) for `gh`'s token is reported once, with the advice to
 authorize `gh`; Editora does not keep asking until you run **GitHub: Refresh**.
 
@@ -131,13 +136,18 @@ what you typed if the submission fails.
 
 A review submitted from the review tab applies to the commit the tab showed: if
 new commits were pushed while you read, your approval is for the commit you
-reviewed, not for them. Refresh the tab to review the newest commit.
+reviewed, not for them. Refresh the tab to review the newest commit. If the
+refresh can't read the pull request's details again, the tab keeps the files it
+showed and says so, rather than show new changes under the old commit; refresh
+again before you submit.
 
 ## Working with pull requests
 
 - **GitHub: Check Out Pull Request…** (`github.checkoutPr`) picks an open pull
   request and checks out its branch. Open files that are unmodified reload from
   disk, and the Git surfaces refresh, the same as when you switch branches.
+  From a detached HEAD, Editora first asks whether to leave the commits made
+  there that no branch or tag keeps, as every other checkout does.
 - **GitHub: Create Pull Request…** (`github.createPr`) creates one from the
   current branch. See [Creating a pull request](#creating-a-pull-request).
 - **GitHub: Open File on GitHub** (`github.openOnGitHub`) opens the active file
@@ -326,7 +336,8 @@ Enter, Escape).
 When `gh` can't look the checks up (offline, a rate limit, a rejected sign-in),
 that isn't taken to mean the branch has no pull request: the indicator keeps what
 it showed, the list says why the lookup failed, and Editora tries again after a
-few minutes (three times at most, then on **GitHub: Refresh**).
+few minutes (three times at most, then on **GitHub: Refresh**). A retry that
+comes due while the window is unfocused waits until it has focus again.
 
 ### What Editora asks GitHub on its own
 
