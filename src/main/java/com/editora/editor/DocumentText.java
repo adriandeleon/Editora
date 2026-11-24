@@ -12,7 +12,7 @@ import org.jspecify.annotations.Nullable;
  * built the first time {@link #text()} is asked — on the worker that scans it, not on the FX thread (perf review
  * 2026-11-23 E2). Every reader of the same handle shares that one String.
  *
- * <p>Thread safety, checked in the fork's bytecode ({@code richtextfx-0.11.7-inlay.3}): the document, its
+ * <p>Thread safety, checked in the fork's bytecode ({@code richtextfx-0.11.7-inlay.3}, unchanged in inlay.4): the document, its
  * finger tree and its paragraphs are immutable (final fields); their only writes after construction are lazy
  * caches — {@code ReadOnlyStyledDocument.text}/{@code paragraphs}, {@code Paragraph.text}/{@code length} — of
  * immutable or final-field-only values computed identically by any thread, so racing an FX-thread
