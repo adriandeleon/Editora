@@ -114,7 +114,7 @@ public final class PrReviewArgs {
                 json.toString());
     }
 
-    /** A pull request's host ({@code github.com}, {@code ghe.example.com[:port]}) and {@code owner/name}. */
+    /** A pull request's host ({@code github.com}, {@code ghe.example.com}) and {@code owner/name}. */
     record Target(String host, String repo) {}
 
     /** Safe in a host, an owner or a repository name: nothing gh or a URL path would read otherwise. */
@@ -122,7 +122,9 @@ public final class PrReviewArgs {
 
     /**
      * The host and repository of pull request {@code number}'s web address ({@code https://host/owner/repo/pull/n}),
-     * or {@code null} when {@code prUrl} is not one. Pure.
+     * or {@code null} when {@code prUrl} is not one. Also {@code null} when the address names a port: {@code gh api
+     * --hostname} takes a bare host and rejects {@code host:port}, so such a review goes unpinned through
+     * {@code gh pr review}, which finds the host itself. Pure.
      */
     static @Nullable Target target(@Nullable String prUrl, int number) {
         if (prUrl == null || prUrl.isBlank()) {
@@ -146,8 +148,10 @@ public final class PrReviewArgs {
                     || !NAME.matcher(parts[1]).matches()) {
                 return null;
             }
-            String h = host.toLowerCase(Locale.ROOT) + (uri.getPort() > 0 ? ":" + uri.getPort() : "");
-            return new Target(h, parts[0] + "/" + parts[1]);
+            if (uri.getPort() >= 0) {
+                return null;
+            }
+            return new Target(host.toLowerCase(Locale.ROOT), parts[0] + "/" + parts[1]);
         } catch (URISyntaxException bad) {
             return null;
         }

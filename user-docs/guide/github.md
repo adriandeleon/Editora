@@ -42,7 +42,8 @@ each command reports the reason.
   recognised by the host the alias stands for, as `ssh -G` reports it (on the
   machine the repository is on, for a remote folder). GitHub's
   SSH-over-443 address, `ssh.github.com`, counts as github.com. After you edit
-  `~/.ssh/config`, the new aliases are picked up on their own; **GitHub:
+  `~/.ssh/config`, or a file it pulls in with `Include`, the new aliases are
+  picked up on their own; **GitHub:
   Refresh** asks `ssh` again.
 - **GitHub Enterprise**: a host is treated as GitHub when `gh` has an account on
   it, so an Enterprise host you ran `gh auth login --hostname` for works like
@@ -139,7 +140,11 @@ new commits were pushed while you read, your approval is for the commit you
 reviewed, not for them. Refresh the tab to review the newest commit. If the
 refresh can't read the pull request's details again, the tab keeps the files it
 showed and says so, rather than show new changes under the old commit; refresh
-again before you submit.
+again before you submit. If commits are pushed while the tab is loading, the
+files may belong to another commit than the details: the tab says so, and until
+you refresh it a review from it is not tied to a commit. A review of a pull
+request on a GitHub Enterprise address with a port number is not tied to a
+commit either.
 
 ## Working with pull requests
 

@@ -981,14 +981,15 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     private static final DateTimeFormatter ABSOLUTE_DATE = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM);
 
     /**
-     * A commit time in the user's zone and locale, the zone named: "Oct 3, 2026, 2:22:10 PM CEST". Named because
-     * the row's short date is the author's own, which can be another day.
+     * A commit time in the user's zone and locale, with the zone's offset: "Oct 3, 2026, 2:22:10 PM +02:00". Given
+     * because the row's short date is the author's own, which can be another day; an offset, not a zone name, as
+     * short names are ambiguous and depend on the locale (CST, MEZ).
      */
     static String absoluteDate(long epochSeconds) {
         java.util.Locale locale = java.util.Locale.getDefault(java.util.Locale.Category.FORMAT);
         java.time.ZonedDateTime at = Instant.ofEpochSecond(epochSeconds).atZone(ZoneId.systemDefault());
         return ABSOLUTE_DATE.withLocale(locale).format(at) + " "
-                + DateTimeFormatter.ofPattern("zzz", locale).format(at);
+                + DateTimeFormatter.ofPattern("xxx", locale).format(at);
     }
 
     /**

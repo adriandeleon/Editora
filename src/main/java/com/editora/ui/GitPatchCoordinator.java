@@ -108,11 +108,14 @@ final class GitPatchCoordinator {
         String charset = active.getEffectiveCharset();
         Path path = active.getPath();
         boolean edited = active.isDirty();
+        EditorBuffer.DiskSnapshot loaded = active.diskSnapshot();
         // Whether the tab holds a patch is a parse of its text, and its file is read: off the FX thread
         // (PERF-01, Pauta 6.2.0).
         com.editora.perf.OffFx.then(
                 PATCH_CHECK_SITE,
-                () -> isPatch(title, content) ? tabPatch(readSmall(path), edited, content, ending, charset) : null,
+                () -> isPatch(title, content)
+                        ? tabPatch(readSmall(path), edited, diskMoved(path, loaded), content, ending, charset)
+                        : null,
                 a -> {
                     checkingPatch = false;
                     TabPatch patch = a.value();
@@ -132,7 +135,8 @@ final class GitPatchCoordinator {
     /**
      * What Apply Patch applies from a tab: the bytes; whether the patch file's mixed line endings could not be
      * kept (an edited tab is applied as a save would write it, one line ending throughout); and whether the
-     * tab, unedited, no longer matches its file (changed on disk since it was read), so its text is applied.
+     * tab, unedited, no longer matches its file because the file changed on disk since it was read, so its text
+     * is applied.
      */
     record TabPatch(byte[] bytes, boolean endingsLost, boolean fileChanged) {
         TabPatch(byte[] bytes, boolean endingsLost) {
@@ -146,9 +150,13 @@ final class GitPatchCoordinator {
      * longer fit once written back. So an unedited tab whose file still reads as its text applies the file's
      * own bytes ({@code disk}); an edited one (or one without a readable file) applies its text as a save
      * would write it ({@link #patchBytes(String, String, String)}), and says when that loses the file's
-     * mixed line endings. Pure.
+     * mixed line endings. The file is said to have changed on disk only when its modification time or size is no
+     * longer what the tab recorded when it read it ({@code diskMoved}): an encrypted {@code .patch.gpg} tab, or one
+     * read in another charset, differs from its file's bytes without any change, and applies its text silently.
+     * Pure.
      */
-    static TabPatch tabPatch(byte @Nullable [] disk, boolean edited, String content, String ending, String charset) {
+    static TabPatch tabPatch(
+            byte @Nullable [] disk, boolean edited, boolean diskMoved, String content, String ending, String charset) {
         if (disk != null && !edited && sameText(disk, content, charset)) {
             return new TabPatch(disk, false);
         }
@@ -157,7 +165,22 @@ final class GitPatchCoordinator {
         boolean lost = disk != null
                 && edited
                 && LineEndings.mixed(new String(disk, java.nio.charset.StandardCharsets.ISO_8859_1));
-        return new TabPatch(patchBytes(content, ending, charset), lost, disk != null && !edited);
+        return new TabPatch(patchBytes(content, ending, charset), lost, disk != null && !edited && diskMoved);
+    }
+
+    /**
+     * Whether {@code file}'s modification time or size is no longer what the tab recorded when it read or saved it
+     * ({@code loaded}); false when either is not known. Reads the file's attributes: off the FX thread.
+     */
+    private static boolean diskMoved(@Nullable Path file, EditorBuffer.DiskSnapshot loaded) {
+        try {
+            if (file == null || !Files.isRegularFile(file)) {
+                return false;
+            }
+            return loaded.differsFrom(Files.getLastModifiedTime(file).toMillis(), Files.size(file));
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
     }
 
     /** Whether {@code disk}, decoded as the tab decodes it, is the tab's {@code content} up to line endings. */
