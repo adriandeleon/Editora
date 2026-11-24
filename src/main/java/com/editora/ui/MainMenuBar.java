@@ -456,14 +456,14 @@ final class MainMenuBar {
         // Over every row of the table, built or not, so a title does not change when another menu first opens.
         for (String id : new java.util.LinkedHashSet<>(commandIds)) {
             shortened.merge(
-                    com.editora.editor.MenuTitles.of(
-                            registry.get(id).map(Command::title).orElse(id)),
+                    com.editora.editor.MenuTitles.forCommand(
+                            id, registry.get(id).map(Command::title).orElse(id)),
                     1,
                     Integer::sum);
         }
         for (String id : new java.util.LinkedHashSet<>(commandIds)) {
             String full = registry.get(id).map(Command::title).orElse(id);
-            String bare = com.editora.editor.MenuTitles.of(full);
+            String bare = com.editora.editor.MenuTitles.forCommand(id, full);
             // Two rows that would read the same keep their prefixes: "Rerun Last" twice in Run, "Find in Files"
             // in both Find and Window, where the prefix was all that told them apart (fourth review EF1).
             menuTitles.put(id, shortened.getOrDefault(bare, 0) > 1 ? full : bare);
@@ -624,7 +624,10 @@ final class MainMenuBar {
         }
         String mark = toggle.isOn() ? CHECK : "\u2002\u2002"; // two en spaces ≈ the mark's width
         if (row.title() != null) {
-            row.title().setText(mark + menuTitles.getOrDefault(id, com.editora.editor.MenuTitles.of(command.title())));
+            row.title()
+                    .setText(mark
+                            + menuTitles.getOrDefault(
+                                    id, com.editora.editor.MenuTitles.forCommand(id, command.title())));
         } else {
             String text = row.item().getText();
             String bare = text.startsWith(CHECK) || text.startsWith("\u2002\u2002") ? text.substring(2) : text;

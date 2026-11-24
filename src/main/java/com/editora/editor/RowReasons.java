@@ -401,7 +401,7 @@ public final class RowReasons {
             return text;
         }
         String command = MenuChords.commandOf(item);
-        return command == null ? "" : MenuTitles.of(tr("command." + command));
+        return command == null ? "" : MenuTitles.forCommand(command, tr("command." + command));
     }
 
     /** The menu at the root of {@code item}'s chain of submenus, or null when it is in none. */

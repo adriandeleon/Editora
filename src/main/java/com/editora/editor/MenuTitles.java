@@ -15,6 +15,23 @@ public final class MenuTitles {
 
     private MenuTitles() {}
 
+    /** Where a command's own menu title lives: {@code menutitle.<id>} in the catalogs. */
+    static final String KEY_PREFIX = "menutitle.";
+
+    /**
+     * Command {@code id}'s menu row title: its own {@code menutitle.<id>} when the catalog has one, else {@link
+     * #of(String) title} without its prefix. A row whose bare remainder would be one word ("File: Save", "Edit:
+     * Occur…", "Tool Window: Project") kept its prefix and read unlike its neighbours (smoke test 2026-11-24), so
+     * each of those has a title written for the menu.
+     */
+    public static String forCommand(String id, String title) {
+        String key = KEY_PREFIX + id;
+        if (com.editora.i18n.Messages.keys().contains(key)) {
+            return com.editora.i18n.Messages.tr(key);
+        }
+        return of(title);
+    }
+
     /**
      * {@code title} without its category prefix, first letter capitalized ("extraer variable"), when what is
      * left still says what the row does: two words or more, or any "LSP:" row. "Snippet: Insert…" keeps its prefix,

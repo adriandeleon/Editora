@@ -3154,7 +3154,10 @@ final class RunCoordinator {
             return;
         }
         if (buffer == null || !buffer.isRunnable()) {
-            host.setStatus(tr("status.run.notRunnable"));
+            // A .java with a class and its main reads as runnable to anyone who has run one: say why it is not
+            // (only a compact source runs on its own) and where a class's main does run (smoke test 2026-11-24).
+            boolean java = buffer != null && "java".equals(buffer.getLanguage());
+            host.setStatus(tr(java ? "status.run.javaNotCompact" : "status.run.notRunnable"));
             return;
         }
         if (trace && !traceable(buffer)) {

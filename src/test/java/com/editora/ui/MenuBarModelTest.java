@@ -444,4 +444,50 @@ class MenuBarModelTest {
                 .findFirst()
                 .orElseThrow(() -> new AssertionError(menu.titleKey() + " has no submenu " + titleKey));
     }
+
+    private static Properties catalog(String lang) throws Exception {
+        Properties p = new Properties();
+        String name = "/com/editora/i18n/messages" + (lang.isEmpty() ? "" : "_" + lang) + ".properties";
+        try (InputStream in = MenuBarModelTest.class.getResourceAsStream(name)) {
+            p.load(new java.io.InputStreamReader(in, StandardCharsets.UTF_8));
+        }
+        return p;
+    }
+
+    /**
+     * A menu says where its rows are, so no row repeats the palette's family prefix. A title whose bare remainder
+     * would be one word ("File: Save", "Edit: Occur…", "Tool Window: Project") kept its prefix and read unlike its
+     * neighbours (smoke test 2026-11-24): each such row needs a {@code menutitle.<id>} of its own, in every catalog.
+     */
+    @Test
+    void noMenuRowShowsAPalettePrefixInAnyLanguage() throws Exception {
+        java.util.regex.Pattern prefix = java.util.regex.Pattern.compile("^[\\p{L}]+(?: [\\p{L}]+)?\\s?:\\s+");
+        List<String> prefixed = new ArrayList<>();
+        for (String lang : List.of("", "de", "es", "fr", "it", "pt")) {
+            Properties catalog = catalog(lang);
+            Properties base = messages();
+            for (String id : MenuBarModel.allCommandIds()) {
+                String own = catalog.getProperty("menutitle." + id, base.getProperty("menutitle." + id));
+                String title = catalog.getProperty("command." + id, base.getProperty("command." + id, id));
+                String shown = own != null ? own : com.editora.editor.MenuTitles.of(title);
+                if (prefix.matcher(shown).find()) {
+                    prefixed.add((lang.isEmpty() ? "en" : lang) + " " + id + " = " + shown);
+                }
+            }
+        }
+        assertTrue(prefixed.isEmpty(), "menu rows that still show a palette prefix: " + prefixed);
+    }
+
+    /** A {@code menutitle.<id>} names a command on the menu bar: one for a command no menu shows is left over. */
+    @Test
+    void everyMenuTitleNamesAMenuRow() throws Exception {
+        List<String> all = MenuBarModel.allCommandIds();
+        List<String> stale = new ArrayList<>();
+        for (String key : messages().stringPropertyNames()) {
+            if (key.startsWith("menutitle.") && !all.contains(key.substring("menutitle.".length()))) {
+                stale.add(key);
+            }
+        }
+        assertTrue(stale.isEmpty(), "menu titles for commands no menu shows: " + stale);
+    }
 }

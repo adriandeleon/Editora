@@ -667,7 +667,7 @@ final class LanguageServerSession implements LanguageClient {
                         .withLongLived(true));
             } else {
                 ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(command));
-                pb.directory(root.toFile());
+                pb.directory(launchDirectory(root).toFile());
                 ProcessRunner.applyUserEnv(pb); // the user's locale: under LC_ALL=C jdtls cannot index non-ASCII paths
                 Path prepend = pathPrepend;
                 if (prepend != null) {
@@ -907,6 +907,20 @@ final class LanguageServerSession implements LanguageClient {
      * root ({@code /}, {@code C:\}) has none — {@code getFileName()} is null there — so it is named by its
      * whole path instead of failing the handshake with a NullPointerException.
      */
+    /**
+     * The folder the server process starts in: {@code root} when it exists, else its nearest existing parent. A
+     * new file under a folder not made yet (Find File on {@code new/dir/A.java}) is rooted at that folder, and a
+     * process cannot start in a directory that does not exist (smoke test 2026-11-24: jdtls failed with "Exec
+     * failed, error: 2"). The workspace the server is told about stays {@code root}.
+     */
+    static Path launchDirectory(Path root) {
+        Path dir = root.toAbsolutePath();
+        while (dir != null && !java.nio.file.Files.isDirectory(dir)) {
+            dir = dir.getParent();
+        }
+        return dir != null ? dir : root;
+    }
+
     static String workspaceFolderName(Path root) {
         Path name = root.getFileName();
         return name == null ? root.toString() : name.toString();

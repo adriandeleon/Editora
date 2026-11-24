@@ -496,6 +496,17 @@ class RunCoordinatorFlowsFxTest {
     // --- Run File ---------------------------------------------------------------------------------------
 
     @Test
+    void runFileOnAJavaClassSaysOnlyACompactSourceRunsOnItsOwn() throws Exception {
+        // A classic class with a main is not a compact source: Run File does not run it on its own, and says why
+        // rather than listing Java among what it runs (smoke test 2026-11-24).
+        open("Hello.java", "public class Hello {\n    public static void main(String[] a) {}\n}\n", false);
+        FxTestSupport.runOnFx(run::runActiveFile);
+
+        assertEquals(List.of(tr("status.run.javaNotCompact")), statuses());
+        assertFalse(FxTestSupport.callOnFx(run::consoleInUse));
+    }
+
+    @Test
     void runFileOnSomethingThatIsNotRunnableSaysSo() throws Exception {
         FxTestSupport.runOnFx(run::runActiveFile);
         open("notes.txt", "just text\n", false);
