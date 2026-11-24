@@ -62,6 +62,19 @@ class DebugHistoryTest {
     }
 
     @Test
+    void aFrameIsFoundAtAnotherStopByItsKey() {
+        DebugHistory h = new DebugHistory();
+        DebugHistory.Stop inWork = h.newStop("breakpoint", T, 1, IN_WORK, 0);
+        DebugHistory.Stop inMain = h.newStop("step", T, 1, IN_MAIN, 0);
+        String main = inWork.frameKey(1);
+        assertEquals(1, inWork.frameIndex(main));
+        assertEquals(0, inWork.frameIndex(inWork.frameKey(0)));
+        assertEquals(0, inMain.frameIndex(main), "main is the whole stack there");
+        assertEquals(-1, inMain.frameIndex(inWork.frameKey(0)), "work had returned");
+        assertEquals(-1, inMain.frameIndex("nowhere"));
+    }
+
+    @Test
     void theOldestStopsAreForgottenPastTheCapacity() {
         DebugHistory h = new DebugHistory();
         h.setCapacity(2);

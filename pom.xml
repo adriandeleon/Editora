@@ -35,7 +35,7 @@
         <!-- Personal fork of RichTextFX (adds multiple cursors + column/box selection).
              groupId io.github.adriandeleon, vendored in the in-project m2-repo (see <repositories>).
              Source: https://github.com/adriandeleon/RichTextFX (feat/multi-caret-box-selection). -->
-        <richtextfx.version>0.11.7-inlay.3</richtextfx.version>
+        <richtextfx.version>0.11.7-inlay.4</richtextfx.version>
         <!-- The Pauta edition this app works toward (pauta-project.dev; ABOUT-08): the one source for About, the
              Pauta window and the tests that hold README.md and AGENTS.md to it. Filtered into
              build-info.properties like the version. -->
@@ -165,7 +165,7 @@
             <artifactId>richtextfx</artifactId>
             <version>${richtextfx.version}</version>
             <!-- The fork's pom pins JavaFX 21.0.5 (with the classifier of whichever platform built it baked
-                 in: mac-aarch64 for inlay.1, linux for inlay.2 and inlay.3). Letting that transitively onto the path
+                 in: mac-aarch64 for inlay.1, linux for inlay.2 to inlay.4). Letting that transitively onto the path
                  mixes javafx.base/graphics 21.0.5 with our javafx.controls 27 —
                  e.g. Spinner crashes with NoSuchFieldError AccessibleAttribute.VALUE_STRING. Exclude it so
                  only our JavaFX 27 (declared above) is used. -->

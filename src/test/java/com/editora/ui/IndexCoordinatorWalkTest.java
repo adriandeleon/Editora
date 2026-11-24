@@ -153,4 +153,78 @@ class IndexCoordinatorWalkTest {
                 IndexCoordinator.walk(root, GitignoreFilter.NONE, 100).files().size(),
                 "the control");
     }
+
+    private static void age(Path file) throws Exception {
+        Files.setLastModifiedTime(
+                file, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() - 60_000));
+    }
+
+    private static IndexCoordinator.Prior prior(IndexCoordinator.Walked walked) {
+        com.editora.index.SymbolIndex index = new com.editora.index.SymbolIndex();
+        walked.scanned().forEach(s -> index.put(s.file(), s.symbols()));
+        return new IndexCoordinator.Prior(walked.stamps(), index.freeze());
+    }
+
+    private static List<String> symbolNames(IndexCoordinator.Walked walked) {
+        return walked.scanned().stream()
+                .flatMap(s -> s.symbols().stream())
+                .map(com.editora.index.Symbol::name)
+                .sorted()
+                .toList();
+    }
+
+    /** F5: a re-walk reads only the files whose stamp changed, and takes the rest from the index it replaces. */
+    @Test
+    void aReWalkReadsOnlyWhatChangedOnDisk(@TempDir Path root) throws Exception {
+        Path kept = file(root, "Kept.java", "class Kept {}\n");
+        Path changed = file(root, "Changed.java", "class Before {}\n");
+        Path empty = file(root, "Empty.java", "// nothing declared\n");
+        age(kept);
+        age(changed);
+        age(empty);
+        IndexCoordinator.Walked first = IndexCoordinator.walk(root, GitignoreFilter.NONE, 100, () -> false);
+        assertEquals(0, first.reused());
+        assertEquals(3, first.stamps().size(), "settled files keep their stamps, a file with no symbols too");
+
+        Files.writeString(changed, "class AfterTheCheckout {}\n"); // another size, a new time
+        file(root, "Arrived.java", "class Arrived {}\n");
+        IndexCoordinator.Walked second =
+                IndexCoordinator.walk(root, GitignoreFilter.NONE, 100, () -> false, prior(first));
+
+        assertEquals(2, second.reused(), "Kept and Empty came from the old index");
+        assertEquals(List.of("AfterTheCheckout", "Arrived", "Kept"), symbolNames(second));
+        assertFalse(second.stamps().containsKey(changed), "just written: read again next time too");
+    }
+
+    /** A same-size change keeps a stamp only once the file has settled, so a rewrite in the same tick is reread. */
+    @Test
+    void aJustWrittenFileIsNeverTakenOnItsStamp(@TempDir Path root) throws Exception {
+        file(root, "Fresh.java", "class Fresh {}\n");
+        IndexCoordinator.Walked first = IndexCoordinator.walk(root, GitignoreFilter.NONE, 100, () -> false);
+        assertTrue(first.stamps().isEmpty());
+        IndexCoordinator.Walked second =
+                IndexCoordinator.walk(root, GitignoreFilter.NONE, 100, () -> false, prior(first));
+        assertEquals(0, second.reused());
+        assertEquals(List.of("Fresh"), symbolNames(second));
+    }
+
+    /** F5: a stale index's hits are checked against their files before Go to Definition jumps. */
+    @Test
+    void aStaleHitIsRecheckedAgainstItsFile(@TempDir Path root) throws Exception {
+        Path moved = file(root, "Moved.java", "\n\n\nclass Target {}\n");
+        Path gone = root.resolve("Gone.java");
+        Path renamed = file(root, "Renamed.java", "class Other {}\n");
+        com.editora.index.Symbol stale =
+                new com.editora.index.Symbol("Target", com.editora.index.SymbolKind.TYPE, 0, 6, "");
+        List<com.editora.index.SymbolIndex.Hit> hits = List.of(
+                new com.editora.index.SymbolIndex.Hit(moved, stale, 9),
+                new com.editora.index.SymbolIndex.Hit(gone, stale, 9),
+                new com.editora.index.SymbolIndex.Hit(renamed, stale, 9));
+
+        List<com.editora.index.SymbolIndex.Hit> now = IndexCoordinator.recheck(hits, "Target");
+
+        assertEquals(1, now.size());
+        assertEquals(moved, now.get(0).file());
+        assertEquals(3, now.get(0).symbol().line(), "where the declaration is now, not where it was");
+    }
 }

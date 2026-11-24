@@ -46,6 +46,12 @@ in-project `m2-repo/`** (source: github.com/adriandeleon/RichTextFX). It adds VS
   instead, so paste threw `ClassCastException`. Paste now takes a `byte[]` or a `ByteBuffer`, and unwraps a
   serialized `byte[]` (a filter rejects anything else; a styled document can never start with the
   serialization header). Source: branch `fix/paste-bytebuffer`, cut from `perf/cell-height-cache` (`inlay.2`).
+- **0.11.7-inlay.4** is `inlay.3` plus one render fix. `ParagraphText.getRangeBoundsOnScreen` (behind
+  `getCharacterBoundsOnScreen`) added a `Path` to the text flow and removed it again to measure it; that left the flow
+  CSS-dirty past the pulse's sync, so every bounds query rendered one extra frame that changed no pixel (2.58 → 1.58
+  frames per key when typing on a long line, 1.57 → 1.29 on a short one). The path's bounds now map to the screen
+  through its layout offset without entering the scene. Source: branch `perf/bounds-off-scene`, cut from
+  `fix/paste-bytebuffer` (`inlay.3`).
 
 **To update the fork:** rebuild it (**with JDK 21** — see
 [packaging-notes.md](reference/packaging-notes.md); `./gradlew :richtextfx:test` then

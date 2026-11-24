@@ -94,6 +94,55 @@ public final class HistoryQueries {
         return out;
     }
 
+    /**
+     * As {@link #folderRevisions(Map, String)} over several buckets, each file's lists merged as
+     * {@link #mergedRevisions} merges them, in the order the files are first met (bucket by bucket). Only the
+     * keys under the folder are merged: merging every key of every bucket first, as the folder view did, cost a
+     * lookup per key per bucket on each tab switch.
+     */
+    public static Map<String, List<HistoryRevision>> mergedFolderRevisions(
+            List<Map<String, List<HistoryRevision>>> buckets, String folderKey) {
+        Map<String, List<HistoryRevision>> out = new java.util.LinkedHashMap<>();
+        if (buckets == null || folderKey == null || folderKey.isBlank()) {
+            return out;
+        }
+        for (Map<String, List<HistoryRevision>> bucket : buckets) {
+            for (String key : folderRevisions(bucket, folderKey).keySet()) {
+                out.computeIfAbsent(key, file -> mergedRevisions(buckets, file));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Every revision of the file at {@code key} in {@code buckets}: one list, newest first, a row present in
+     * several listed once. When one bucket alone knows the file its list is returned as it is.
+     */
+    public static List<HistoryRevision> mergedRevisions(List<Map<String, List<HistoryRevision>>> buckets, String key) {
+        List<HistoryRevision> only = null;
+        java.util.Set<HistoryRevision> all = null;
+        for (Map<String, List<HistoryRevision>> bucket : buckets) {
+            List<HistoryRevision> list = bucket.get(key);
+            if (list == null || list.isEmpty()) {
+                continue;
+            }
+            if (only == null && all == null) {
+                only = list;
+                continue;
+            }
+            if (all == null) {
+                all = new java.util.LinkedHashSet<>(only);
+            }
+            all.addAll(list);
+        }
+        if (all == null) {
+            return only == null ? List.of() : only;
+        }
+        List<HistoryRevision> merged = new ArrayList<>(all);
+        merged.sort(Comparator.comparingLong(HistoryRevision::timestamp).reversed()); // stable
+        return merged;
+    }
+
     /** True if {@code key} is a path strictly under directory {@code folder} (segment-boundary aware). */
     static boolean isUnder(String key, String folder) {
         if (key == null || !key.startsWith(folder) || key.length() == folder.length()) {

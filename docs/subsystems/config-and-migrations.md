@@ -29,7 +29,7 @@ Two serialization formats, chosen per file:
 | `bookmarks.json` | JSON | `BookmarkStore` | Per-project buckets. |
 | `notes.json` | JSON | `NoteStore` | Per-project buckets. |
 | `breakpoints.json` | JSON | `BreakpointStore` | Per-project buckets: line breakpoints per file, and the method breakpoints and field watchpoints (`memberBreakpoints`, schema 4). |
-| `history/index.json` + `history/blobs/` | JSON | `HistoryStore` | Local History; blobs gzip'd. The user's files, not configuration; left out of the export. |
+| `history/index.json` + `history/index.json.recent.bak` + `history/blobs/` | JSON | `HistoryStore`, `HistoryDelta` | Local History; blobs gzip'd. The user's files, not configuration; left out of the export. The `.recent.bak` is part of the index (below), not a backup. |
 | `connections.json` | JSON | `ConnectionStore` | SFTP connection metadata, no secrets. |
 | `macros.json` | JSON | `MacroStore` | App-global keyboard macros. |
 | `plugins.json` | JSON | `PluginStore` | Plugin enable-state and, per enabled plugin, the fingerprint of what its consent disclosed (schema 2). |
@@ -165,6 +165,29 @@ released by the operating system when the holder dies, so a crash never leaves a
   empty — keeps every body, for 30 days from when it was made (`INCOMPLETE_BACKUP_GRACE_MILLIS`): the rows
   past the tear are in no index any more, and the body files are the only way back to that text. A backup
   that cannot be read at all refuses collection.
+
+**The Local History index and its delta** (`HistoryIndexFiles`, perf finding F6). Once `index.json` is 256 KiB or
+more, a publication writes only `index.json.recent.bak`: the rows added and removed, per project and file, since
+`index.json` was last written, and the hash of the `index.json` they were taken against (`HistoryDelta`). Both are
+whole JSON documents written atomically and synced, so a crash leaves either file as it was or as it was meant to be,
+never half; a revision is durable once the delta holding it is. The index is `(index.json ∪ added) − removed`, rows
+compared whole, which is idempotent and does not depend on the exact index: a delta left beside an index rewritten
+since (a crash between the two writes of a compaction, an older build that wrote only `index.json`) gives the same
+rows. `index.json` is written whole ("compacted") and the delta emptied when a blob collection is due — a collection
+runs only behind a publication that read both files — when the delta passes 64 KiB and an eighth of the index, when
+the load changed the index (a migration), and at quit (`historyQuitting`; for older builds, not for safety).
+Several processes merge as for any store, with what each last published as the common ancestor, under
+`stores.lock`: while `index.json` is the one a process knows (its attributes, and the hash the delta names), the
+delta files are merged three ways; otherwise, and for every compaction, whole indexes are merged, each file with its
+delta applied — so a row only a delta lists is in every writer's ancestor, and another writer's purge of it is not
+undone. A file or project one side no longer has is merged as one with no rows (`HistoryIndexFiles.mergeRows`): a
+plain merge took it for a conflict that this process won whole, bringing back the rows the other had dropped. A
+delta that cannot be read at load (a transient error) stops collection until a publication reads it, and is not
+replaced before; a damaged one is kept as `.recent.bak.corrupt.bak`, whose hashes the backup scan protects. The
+delta's name ends in `.bak` so that every build since 0.25 protects its bodies from collection (an older build run
+after a crash, before the delta was folded in); this build leaves it out of the backup scan. The first attempt at
+this (an append-only journal, reverted in #1757) is why: its rows were in no merge base, a read error or an
+unreadable line froze its replay, and the quit could leave it unfolded.
 
 A config that was never claimed (tests, embedders) counts as its own sole user, and a filesystem that
 refuses locks degrades to "primary, alone".

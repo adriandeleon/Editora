@@ -23,6 +23,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -267,6 +268,15 @@ class HtmlLinksFxTest {
                 assertEquals(Color.RED, bg.getFills().get(1).getFill());
                 assertTrue(red.getWidth() > 0, "the swatch takes room in the line");
                 assertEquals("a { color: red; }\nb { color: #00ff0080; }\n", b.text(), "never text");
+                // The sheet is the text area's: on the buffer's root it re-styled every node of the buffer (perf E7).
+                javafx.scene.Parent area = b.getFocusedArea();
+                String sheet = area.getStylesheets().stream()
+                        .filter(u -> u.startsWith("data:text/css"))
+                        .findFirst()
+                        .orElseThrow();
+                for (javafx.scene.Parent p = area.getParent(); p != null; p = p.getParent()) {
+                    assertFalse(p.getStylesheets().contains(sheet), p.toString());
+                }
             });
             FxTestSupport.runOnFx(() -> b.setColorSwatches(null));
             w.await("cleared", () -> swatches(b).isEmpty());

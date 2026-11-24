@@ -80,6 +80,22 @@ public final class SymbolIndex {
         public List<Hit> search(String query, int limit) {
             return SymbolIndex.search(entries, query, limit);
         }
+
+        /** By file, built on first {@link #symbolsIn}: a re-walk asks it once per unchanged file. */
+        private volatile @Nullable Map<Path, List<Symbol>> byFile;
+
+        /** As {@link SymbolIndex#symbolsIn}, over this copy. */
+        public List<Symbol> symbolsIn(Path file) {
+            Map<Path, List<Symbol>> map = byFile;
+            if (map == null) {
+                map = new java.util.HashMap<>(entries.size() * 2);
+                for (Map.Entry<Path, List<Symbol>> e : entries) {
+                    map.put(e.getKey(), e.getValue());
+                }
+                byFile = map; // a race builds the same map twice, never a half-built one
+            }
+            return map.getOrDefault(file, List.of());
+        }
     }
 
     /** Replaces {@code file}'s symbols. Returns false when a cap refused the update. */

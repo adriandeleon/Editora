@@ -120,12 +120,21 @@ public final class Fonts {
      * fallback, and the configured editor family when it is a bundled one (a system family needs no load).
      * Pure, so the choice is testable without a toolkit.
      */
-    static List<String> firstPaintFamilies(String editorFamily) {
+    static List<String> firstPaintFamilies(@Nullable String editorFamily) {
         List<String> out = new ArrayList<>(List.of(UI, DEFAULT));
         if (editorFamily != null && FILES.containsKey(editorFamily) && !out.contains(editorFamily)) {
             out.add(editorFamily);
         }
         return out;
+    }
+
+    /**
+     * Registers the first frame's families that no setting picks (the UI chrome's and {@code app.css}'s monospace
+     * fallback): a launch does it while it waits for the settings, so {@link #loadForFirstPaint} then has at most
+     * the configured editor family left to read.
+     */
+    public static void loadSettingsIndependent() {
+        loadFamilies(firstPaintFamilies(null));
     }
 
     /** Registers only the families the first painted frame needs; see {@link #firstPaintFamilies}. */

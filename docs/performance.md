@@ -340,19 +340,28 @@ command waiting for one is busy, so a second press is refused.
   - The terminal's FX handlers never wait for the screen buffer's lock: they try it, and try again 4 ms later while
     the emulator writes (`TerminalView.underLockSoon`).
 - **Debugger, diff and merge.**
-  - The line mapping between the launched text and the document (`LaunchedLines.SITE`, a Myers diff) is worked out
+  - The line mapping between the launched text and the document (`LaunchedLines.SITE`, a Myers diff bounded by
+    `BoundedDiff`) is worked out
     on a snapshot keyed by document version. The breakpoint send after an edit, a stop, Run to Cursor and Jump to
-    Line wait for it; other callers use the last mapping, and the file is sent again when it changes.
+    Line wait for it; other callers use the last mapping, and the file is sent again when it changes. The launched
+    text is a `DocumentText` handle taken in O(1) at session start (its String built off the thread, only for a
+    file that is mapped), and a shift made by typing is mapped once the text has been still for
+    `LaunchedLines.EDIT_PAUSE` (150 ms); a stop or a toggle does not wait. The other tabs' triggered breakpoints are
+    looked at again once such a shift settles, and not at all when the file has no breakpoint another waits for.
   - `DebugTextScans` (a breakpoint line with no code, the test at the caret) runs off the thread per version.
   - A stop or a step asks for the top 50 frames of the stack (`DapClient.FIRST_FRAMES`); the Call Stack's last row
-    asks for the rest. Thread Dump and Parallel Stacks still ask for up to 1,000 frames per thread.
+    asks for the rest. Thread Dump and Parallel Stacks still ask for up to 1,000 frames per thread. Editora's own
+    JVM adapter (Kotlin, Groovy, Scala, Clojure) fetches a page of frames in one JDWP request and looks at each
+    candidate source file at most once in five seconds (`SourceLooks`).
   - A stop that may not be shown (breakpoint filters, a token logpoint, an exception breakpoint's check, a step
     filter, Thread Dump's pause) is decided before the window shows the session suspended
     (`DebugSession.suspendHeld`): one that goes on changes nothing on screen. Python exception breakpoints of builtin
     types are told to debugpy as `exceptionOptions`, so it does not stop on every raised exception
     (`PythonExceptionTypes`).
   - Debug History and the changed-value marks keep a value's first 4,096 characters with its length and hash
-    (`KeptValue`); a Variables row finds a multi-line value's first line without splitting it.
+    (`KeptValue`); a Variables row finds a multi-line value's first line without splitting it. Each kept stop
+    indexes its frames by key, so an old stop's changed marks cost one lookup per kept stop.
+  - With several sessions, a step only sets the strip's tab words (`DebugSessionsView.onlyStatesDiffer`).
   - The merge resolver's Save (`MergeViewerPane.SAVE_SITE`, busy meanwhile; a close-save asks for the close again
     once applied), Resolve Conflicts, Open in Diff Viewer and Apply Patch, and the diff viewer's applies parse and
     compose off the thread.
@@ -465,7 +474,12 @@ style-only change that still ended a succession — skips the draw and the snaps
   from "styled" to "no grammar".
 - A semantic-tokens response is a style-only update: identical tokens restyle nothing, and a different
   list re-tokenizes and restyles only the lines whose tokens differ (`SemanticToken.changedLines`), with the
-  overlay built off the FX thread.
+  overlay built off the FX thread. A whole-document answer (jdtls has no range requests) is kept and spliced as an
+  `int[]`, never a boxed list, and decoded on a thread of its own so the session's reader thread keeps reading.
+- New inlay hints or code lenses swap the area's inlay factory once (`BufferInlays.refreshInlayAreas`), not through
+  the fork's `refreshInlays()`, whose null in between rebuilt every hinted line twice; each line compares its new
+  inlays with the old and only the changed ones rebuild. A code lens under the pointer is found by descending only
+  into nodes whose bounds hold the point, not by a `lookupAll` of the area.
 - Overlays iterate just the **visible paragraphs**
   (`firstVisibleParToAllParIndex … lastVisibleParToAllParIndex`) and skip folded lines.
 - The minimap draws one row per **pixel row**, not per line, once lines are less than a pixel tall
@@ -548,10 +562,26 @@ style-only change that still ended a succession — skips the draw and the snaps
   mutation, a focus regain and a non-ignored external change still run `refresh()`. The Commit window
   (`GitPanel.setStatus`) leaves its rows alone for an equal status and renders a status that arrives while it is
   off screen when it is shown again; `TreeViewState` walks the rows once rather than asking `getTreeItem(row)`.
+- A stale symbol index (a checkout, a watcher overflow, a batch of more than 256 changes) is re-walked by file
+  stamp: `IndexCoordinator.Prior` keeps each file's modification time, size and language from the walk that read
+  it, and the re-walk takes the old symbols of every unchanged file instead of reading it (a file modified within
+  `SETTLE_MILLIS` of its read is never taken on its stamp). Meanwhile the stale index answers: Search Everywhere
+  shows its rows and searches again when the walk lands, Go to Symbol opens its prompt, and Go to Definition reads
+  again the few files its hits name (`IndexCoordinator.recheck`) and waits only to say "not found". Rebuild Index
+  reads every file.
+- `JavaProjectSettings.styleFolders`, which the project watcher asks on every sync, keeps its answer per root with
+  the stamps of the build files, profiles and style folders it read, so an unchanged project costs stats only.
 - A focus regain does not list the project's files again: `ProjectFileIndex.revalidate` stats each listed folder
   on the index's thread, ahead of the next search, and re-reads the direct entries of the folders modified since
   (`ProjectFileList.revalidate`). A remote root, a changed root `.gitignore` or more than 64 moved folders still
   mark the list out of date, listed again in the background.
+- A Local History publication of an index of 256 KiB or more writes only `history/index.json.recent.bak`, the rows
+  added and removed since `index.json` was last written (`HistoryIndexFiles`, `HistoryDelta`), instead of
+  serializing, re-reading, hashing, writing and syncing the whole index (an 8.8 MB index: 42 ms → ~1 ms median per
+  save on the writer thread, 8.8 MB → ~13 KB written; `HistoryIndexWriteProbeTest`, `-Dhistory.probe=true`). The
+  index is written whole when a blob collection is due (about every ten minutes of saving, and on a purge), when the
+  delta passes 64 KiB and an eighth of the index, and at quit. See
+  [config and migrations](subsystems/config-and-migrations.md).
 - Local History captures for a Git Rollback/Discard go through
   `HistoryCoordinator.captureAllBeforeOverwriteDurably`: every file is recorded first and the index is written
   and made durable once for the batch, not once per file.
@@ -810,7 +840,19 @@ diagnostics, …) follows one discipline:
   paint:** RichTextFX answers it by adding a `Path` to the paragraph's text flow and removing it, which
   dirties the scene and costs the next pulse and frame. The old per-overlay checks did that three pulses in a
   row after every paint (3.79 rendered frames per key against 2.02 in October). Measure characters only while
-  painting, and key a frame on `AfterLayoutPaint.textColumnOnScreen()` (`IndentGuideOverlay`).
+  painting, and key a frame on `AfterLayoutPaint.textColumnOnScreen()` (`IndentGuideOverlay`). Even a paint's
+  own query costs a frame: the added `Path` marks its text flow for a CSS pass, the flag outlives the pulse's
+  sync (the paint ran after that pulse's CSS pass), and `Scene` then marks the root dirty, so the next pulse
+  renders a frame that changes no pixel. So a check that the text moved reads the text column, never a word
+  (`SpellCheckOverlay.stale`), and a query that can wait is not made on every keystroke. The real fix belongs in
+  RichTextFX (`ParagraphText.getRangeBoundsOnScreen` can take the bounds of a `Path` it never adds).
+- **one pulse per change, not one per `runLater`**: work queued with `Platform.runLater` from a key handler often
+  runs after the pulse that renders the key, so whatever it changes is laid out and drawn in a pulse and a frame
+  of its own. The column ruler measures from a post-layout pulse listener (`BufferRuler`, through
+  `AfterLayoutPaint`); the status bar's Ln/Col refresh runs in the next pulse's pre-layout listener or its
+  `runLater`, whichever comes first (`StatusBar.scheduleCaretRefresh`); and the scrollbar stripes (TODO,
+  diagnostics, Markdown lint) skip a redraw whose canvas size, line count and content height are unchanged
+  (`StripeFrame`), which is most keystrokes.
   `FrameWatch` (tests) checks every shown frame rather than where a paint settles; `AfterLayoutPaintFxTest`
   pins one look per pulse and no pulses asked for after a paint
 - **no gutter work for what the gutter does not show**: `recreateParagraphGraphic` builds a cell even for a
@@ -854,7 +896,8 @@ keep the show path free of work the user is not waiting for; measure against the
   hands the font to the coordinator (`setOutputFont`/`setConsoleFont`), which applies it when the panel exists.
 - **Nothing else the first window does not show is built before it** (PERF-14, Pauta 6.2.0). A picker's
   overlay card (`QuickOpen`, `CommandPalette`, `FileFinder`, `Switcher`, `SearchEverywherePopup`,
-  `BranchPopup`, `BuildActionsPopup`) is built by its first `show` (`ensureBuilt`); the setters that reach a
+  `BranchPopup`, `BuildActionsPopup`) is built by its first `show` (`ensureBuilt`), and so are the find bar's
+  buttons and layout (`FindReplaceBar.ensureBuilt`; its fields' and options' behaviour is wired at once); the setters that reach a
   node before then keep the value for the build. The Settings window makes its stage and every control in
   `SettingsWindow.build`, on the first `show`; the Message Log popup, the Doctor page and the Welcome page
   (when the window opens on a file) are built by the accessor that first shows them. The in-window menu bar
@@ -869,9 +912,10 @@ keep the show path free of work the user is not waiting for; measure against the
   the parts of controls the window does show that it names with a reason (a right-click menu, a tooltip, a
   toolbar or stripe button not placed now); it also opens the Project panel and checks the Map is not built. A new picker, dialog or secondary window follows the same shape: nothing in the
   constructor, everything in the method the first show calls.
-- **Only the fonts the first frame needs are registered before it.** `App.start` calls
-  `Fonts.loadForFirstPaint(editorFamily)` — Inter (the chrome), JetBrains Mono (`app.css`'s monospace
-  fallback) and the configured editor family — and arms `Fonts.loadRemainingAfterNextPaint()`, which parses the
+- **Only the fonts the first frame needs are registered before it.** `App.start` registers Inter (the chrome)
+  and JetBrains Mono (`app.css`'s monospace fallback) while it waits for the prefetch
+  (`Fonts.loadSettingsIndependent`), then `Fonts.loadForFirstPaint(editorFamily)` adds the configured editor
+  family once the settings are in, and arms `Fonts.loadRemainingAfterNextPaint()`, which parses the
   other bundled families on a daemon thread once a frame has painted (`Font.loadFont` is static and safe off
   the FX thread). Anything that lists or applies a family a user may pick waits for that load first:
   `SettingsWindow.fontFamilyChoices` calls `Fonts.ensureAllLoaded()`, and applying a font setting calls
@@ -885,8 +929,10 @@ keep the show path free of work the user is not waiting for; measure against the
   is parsed as before. See [building and packaging](building-and-packaging.md#precompiled-stylesheets-bss).
 - **The config prefetch starts before the single-instance probe.** `App.main` starts the `config-prefetch`
   thread and only then probes the endpoint file (a stale one can cost up to the connect timeout). Until the
-  probe has decided that this process will run, the thread does only `App.warmConfigLoad` — the JSON mapper,
-  the store classes and the main files' bytes, read and dropped — because a load can move files (a migration
+  probe has decided that this process will run, the thread does only `App.warmConfigLoad` — the JSON mapper
+  and the main files' bytes, read and dropped — beside `App.warmBundledForLoad` on `config-prefetch-warm` (the
+  schema tables, the store classes, the English catalog `Messages.warmBase` and `pauta.json`, bundled files
+  only), because a load can move files (a migration
   backup, a restored set-aside copy, the TOML conversion) and a launch about to be forwarded must not touch
   the running editor's directory. After the gate it loads the shared config and everything the first window
   used to read on the FX thread: the plugin manifests (`WindowManager.discoverPlugins`), the session of the
@@ -898,10 +944,11 @@ keep the show path free of work the user is not waiting for; measure against the
 - **`start()` waits once, and touches no disk of the user's** (PERF-01, Pauta 6.2.0). The prefetch thread
   (`App.loadForFirstWindow`) also claims the config dir before loading it, opens the session log (what was
   logged before is in memory and written first), reads the process ledgers and reaps a crashed run's servers,
-  removes a stale MCP endpoint (`StartupPrep`), asks the keychain for the AI keys on a thread of its own
-  (`config-prefetch-keys`, joined before the plugins are discovered) while it parses the message catalog, the
-  bundled tables and what reads neither the settings nor the shared config (`FirstWindowPrep.prepareApart`),
-  and reads what the first window's set-up used to read
+  removes a stale MCP endpoint (`StartupPrep`), and runs side by side with the settings load what reads neither
+  the settings nor the shared config (`FirstWindowPrep.prepareApart` and the build information, on
+  `config-prefetch-apart`) and the keychain client's set-up (`config-prefetch-keychain`); it asks the keychain
+  for the AI keys on a thread of its own once the settings are in (`config-prefetch-keys`, joined, with the
+  apart step, before the plugins are discovered) while it parses the language's catalog, and reads what the first window's set-up used to read
   (`ui/FirstWindowPrep`): the user's themes, the zoomed copies of the window's sheets (`UiZoom.prepare`), the
   recent files and search history, the build information (`AppInfo.load`), the first window's project settings
   (handed over by `ConfigManager.setStartupProjectSettings`), the bundled XML schemas and the loose-files root,
@@ -913,7 +960,10 @@ keep the show path free of work the user is not waiting for; measure against the
   inline. Restored windows after the first have their sessions (and project settings) read on a
   `window-session-read` thread while the first one paints; a window's turn waits for its read without blocking.
   The window icons are read once (`AppIcons`), decoded on a thread of their own that `start()` starts before it
-  waits for the prefetch (`AppIcons.readAhead`); the Welcome page checks its recent files and project folders
+  waits for the prefetch (`AppIcons.readAhead`); once the theme's stylesheet is named, a throwaway `CodeArea` is
+  built on `editor-warm` so the first editor finds RichTextFX loaded and its call sites linked
+  (`App.warmEditorClassesAsync`); the wiki-links switch the preview settings set lives in `PreviewPrefs`, so applying
+  them builds no Markdown parser; the Welcome page checks its recent files and project folders
   off the thread (`RecentFilesCheck`); `--diff-ui`'s operands, the run configuration's main class and the
   `.gitignore` walk of a window joining a shared Java server are looked at on threads of their own. The places
   name themselves to `perf/BlockingSites`, which `StartupOffFxThreadFxTest` listens to through a real launch.
@@ -925,7 +975,9 @@ keep the show path free of work the user is not waiting for; measure against the
   `LspManager` constructor no longer spawns it), the `rg --version` probe (and none at all while the ripgrep
   setting is off), the `gh` probe, the Hunspell dictionary build (`SpellDictionaries.ensureBuilt` keeps the
   waiting callbacks), the clipboard read behind the Paste button, and the release check, which also waits
-  `UpdateCheckScheduler.DELAY` after that. Outside a launch (tests, a later window) `AfterFirstPaint.run`
+  `UpdateCheckScheduler.DELAY` after that. The minimap's first content render (a snapshot the FX thread waits for)
+  counts its two frames from the release, not from the window's first frames, which paint before the file's text
+  is in. Outside a launch (tests, a later window) `AfterFirstPaint.run`
   runs its task at once, so callers need not know whether a hold exists. Keep the queued tasks starters —
   an executor submit, a thread start — since they run on the FX thread at release.
 - **The focus a window gains by being shown is not a regain.** `MainController.onWindowFocusGained` skips the

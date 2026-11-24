@@ -1351,23 +1351,31 @@ final class LspCoordinator {
         if (root == null) {
             return;
         }
-        // The build folder is looked for off the FX thread, per publish (PERF-01, Pauta 6.2.0); the latest
-        // publish's answer for the file wins.
+        // The build folder is looked for off the FX thread (PERF-01, Pauta 6.2.0), once per folder: every typing
+        // pause publishes, and each walked up the tree again (perf review 2026-11-23 L10). The memo answers at once
+        // and looks again behind an answer older than a few seconds, so a build file added later is found. The
+        // latest publish's answer for the file wins.
         long mine = ++nonProjectLooks;
         nonProjectLook.put(file, mine);
-        com.editora.perf.OffFx.then(
-                "LspCoordinator.buildFolder", () -> java.util.Optional.ofNullable(buildFolder(root, file)), found -> {
-                    if (!Long.valueOf(mine).equals(nonProjectLook.get(file))) {
-                        return; // a later publish for the file is being looked at
-                    }
-                    nonProjectLook.remove(file);
-                    noteNonProjectFile(
-                            file, root, found.or(java.util.Optional.empty()).orElse(null), diagnostics);
-                });
+        Path dir = file.getParent();
+        buildFolders.whenKnown(new BuildFolderKey(root, dir == null ? root : dir), build -> {
+            if (!Long.valueOf(mine).equals(nonProjectLook.get(file))) {
+                return; // a later publish for the file is being looked at
+            }
+            nonProjectLook.remove(file);
+            noteNonProjectFile(file, root, build, diagnostics);
+        });
     }
 
     /** The latest build-folder look per file ({@link #noteNonProjectFile}). */
     private final Map<Path, Long> nonProjectLook = new java.util.HashMap<>();
+
+    /** A Java file's server root and folder: what {@link #buildFolder} goes by. */
+    private record BuildFolderKey(Path root, Path dir) {}
+
+    /** The build folder per root and source folder ({@link #noteNonProjectFile}). */
+    private final com.editora.perf.Looked<BuildFolderKey, Path> buildFolders =
+            new com.editora.perf.Looked<>("LspCoordinator.buildFolder", k -> buildFolderAbove(k.root(), k.dir()));
 
     private long nonProjectLooks;
 
@@ -1393,10 +1401,16 @@ final class LspCoordinator {
      * above the file that has one; null for none.
      */
     private static @Nullable Path buildFolder(Path root, Path file) {
+        Path dir = file.getParent();
+        return buildFolderAbove(root, dir == null ? root : dir);
+    }
+
+    /** {@link #buildFolder} for a file in {@code dir}: the root with a build file, else the nearest one from dir up. */
+    static @Nullable Path buildFolderAbove(Path root, Path dir) {
         if (hasJavaBuildFile(root)) {
             return root;
         }
-        for (Path p = file.getParent(); p != null && p.startsWith(root) && !p.equals(root); p = p.getParent()) {
+        for (Path p = dir; p != null && p.startsWith(root) && !p.equals(root); p = p.getParent()) {
             if (hasJavaBuildFile(p)) {
                 return p;
             }

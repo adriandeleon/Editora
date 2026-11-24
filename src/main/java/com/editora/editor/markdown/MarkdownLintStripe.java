@@ -17,6 +17,7 @@ import com.editora.editor.CanvasGuards;
 import com.editora.editor.ControlNames;
 import com.editora.editor.OverlayPalette;
 import com.editora.editor.SecondaryPane;
+import com.editora.editor.StripeFrame;
 import com.editora.editor.UiZoom;
 import com.editora.markdown.MarkdownLint;
 import org.fxmisc.richtext.CodeArea;
@@ -45,6 +46,8 @@ public final class MarkdownLintStripe extends Region implements SecondaryPane.Fo
     private List<MarkdownLint.Diagnostic> marks = List.of();
     private boolean active;
     private boolean redrawPending;
+    /** What the canvas shows, so an edit that moves no mark does not draw it again (see {@link StripeFrame}). */
+    private final StripeFrame frame = new StripeFrame();
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
     private @Nullable MarkdownLintStripe follower;
 
@@ -68,6 +71,7 @@ public final class MarkdownLintStripe extends Region implements SecondaryPane.Fo
             warning = palette.warning(); // resolved on a theme change, not per paint
             error = palette.error();
             hint = palette.info();
+            frame.forget();
             scheduleRedraw();
         });
         addEventHandler(MouseEvent.MOUSE_MOVED, this::onHover);
@@ -99,6 +103,7 @@ public final class MarkdownLintStripe extends Region implements SecondaryPane.Fo
         setMouseTransparent(!active || marks.isEmpty());
         if (active) {
             requestLayout();
+            frame.forget();
             scheduleRedraw();
         } else {
             hideTooltip();
@@ -114,6 +119,7 @@ public final class MarkdownLintStripe extends Region implements SecondaryPane.Fo
         this.marks = diagnostics == null ? List.of() : diagnostics;
         setMouseTransparent(!active || marks.isEmpty());
         requestLayout();
+        frame.forget();
         scheduleRedraw();
     }
 
@@ -167,18 +173,23 @@ public final class MarkdownLintStripe extends Region implements SecondaryPane.Fo
 
     private void clear() {
         canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+        frame.forget();
     }
 
     private void redraw() {
         GraphicsContext g = canvas.getGraphicsContext2D();
         double w = canvas.getWidth();
         double h = canvas.getHeight();
+        boolean paint = shouldPaint() && CanvasGuards.paintable(getWidth(), getHeight());
+        int total = paint ? area.getParagraphs().size() : 0;
+        if (frame.unchanged(paint, w, h, total, paint ? contentHeight() : 0)) {
+            return; // most keystrokes: same lines, same marks, same pixels
+        }
         g.clearRect(0, 0, w, h);
-        if (!shouldPaint() || !CanvasGuards.paintable(getWidth(), getHeight())) {
+        if (!paint) {
             releaseTexture();
             return;
         }
-        int total = area.getParagraphs().size();
         if (total == 0) {
             return;
         }
@@ -193,6 +204,12 @@ public final class MarkdownLintStripe extends Region implements SecondaryPane.Fo
                 }
             }
         }
+    }
+
+    /** The content height the marks are scaled by (RichTextFX's estimate, read lazily; 0 when unknown). */
+    private double contentHeight() {
+        Double estimate = area.totalHeightEstimateProperty().getValue();
+        return estimate == null ? 0 : estimate;
     }
 
     private double yForLine(int line, double h, int total) {

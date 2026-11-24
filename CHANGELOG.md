@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Homebrew and winget packages** (Pauta REL-12, REL-13, REL-14). A release now writes a Homebrew cask, for
+  `brew install --cask adriandeleon/tap/editora` on Apple Silicon Macs, and opens a winget pull request for
+  `winget install AdrianDeLeon.Editora` on Windows. Both need the `PACKAGES_TOKEN` repository secret; without it a
+  release publishes on GitHub only, as before. A manual dry run of the release workflow renders the cask and the
+  manifests without publishing.
 - **Elixir.** Elixir is a language of its own: highlighting, indentation, folding, the outline, snippets and a new-file
   template, with ElixirLS as its language server. Run File and Debug File run a Mix project's tests (`mix test`), a
   script (`mix run`) or the project, and Debug Test at Caret debugs the ExUnit test at the caret alone, stopping in your
@@ -197,6 +202,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     rows in place during a run; the CSV grid parses off the UI thread and keeps its columns when they don't change;
     Mermaid diagrams in the Markdown preview and agent replies no longer start a renderer for every version of a fence
     being typed or streamed, and a code fence still streaming in an agent reply is highlighted once it closes.
+  - Second pass: start-up paints the first file about 10% sooner (the find bar's buttons are built when Find first
+    opens, the editor component and fonts are prepared while the settings load, and independent settings files are
+    read side by side; the minimap draws just after the file instead of delaying its first frame). Typing renders
+    about a third fewer frames again (1.87 → 1.29 per key on a short line, 2.58 → 1.58 on a long one): finding where
+    a character is on screen no longer costs an extra frame, and the column ruler, the status bar's line and column
+    and the scrollbar marks no longer redraw in a frame of their own after each key.
+  - After a branch switch or a large outside change, the symbol index re-reads only the files that changed, and Go to
+    Symbol and Go to Definition answer at once while it refreshes. The project watcher no longer re-reads the build
+    files to find the Java style folders on every change.
+  - Local History no longer re-checks the permissions of every stored revision at each start, and its folder view no
+    longer merges every project's history and checks every listed file on each tab switch.
+  - Language servers: the Problems window builds a row's menu when you open it; new inlay hints and code lenses
+    re-lay out only the lines that changed, once; hovering a code lens no longer walks the whole editor; Java semantic
+    highlighting keeps its tokens compact and decodes them off the server's reader thread; Java diagnostics no longer
+    look for the build folder on disk at each update; the Project Map's usage counts stop asking for references as
+    soon as you type again.
+  - Debugging: Kotlin, Groovy, Scala and Clojure fetch a stop's call stack in one request and look for each source
+    file once; starting a session no longer copies every open tab; typing above a breakpoint no longer re-reads and
+    compares the whole file at each newline; Variables at an earlier stop in Debug History and the session tabs with
+    several sessions update faster.
+  - Diffs, Resolve Conflicts, writing a diff-view edit back and the debugger's line mapping no longer spend seconds on
+    two texts that share little: past 4,000 line edits they use the coarse comparison. The HTTP response viewer
+    formats only the part of a large JSON body it shows. Finishing a long agent reply keeps the parts already shown.
+    A new colour swatch in a CSS or HTML file no longer restyles the whole editor.
+  - Local History: with a long history, a save no longer rewrites the whole history index. It writes a small file of
+    what changed beside it (an 8.8 MB index: 42 ms and 8.8 MB written per save → about 1 ms and 13 KB), and the index
+    is rewritten every ten minutes or so of saving, when that file grows, and at quit. A crash keeps every saved
+    version, and two Editoras on one configuration folder still keep each other's versions and deletions.
 
 - **Editora's Linux app ID is now `io.github.adriandeleon.Editora`** (it was `com.editora.Editora`), as Pauta asks.
   It is the ID GNOME Software, KDE Discover and other software centres know Editora by. The listing says it replaces
@@ -262,6 +295,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Elixir language server.** ElixirLS crashed on Editora's first request and was restarted again and again, so
   Elixir files had no diagnostics, completion or hover. Editora now sends request ids as numbers, as VS Code does;
   ElixirLS refused them as strings.
+- **A relative config folder stays where you started Editora.** A relative `EDITORA_CONFIG_DIR` or `--config-dir` is
+  now taken relative to the folder Editora was started in, so the Java language server's workspaces are no longer
+  created in whatever folder a later process runs in.
+- **Colour swatches in the split view** are now drawn in their colours.
 - **Git and GitHub, second review.** A second review of Git and GitHub support found about 85 problems, now fixed:
   - *Safety.* The Project Map's Changes card could run a diff program a repository's own config names; it no
     longer can. Force with Lease adds `--force-if-includes` and names the one branch it replaces, so a background

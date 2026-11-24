@@ -48,6 +48,8 @@ final class DiagnosticStripe extends Region implements SecondaryPane.Followed {
     private List<LspDiagnostic> diagnostics = List.of();
     private boolean active;
     private boolean redrawPending;
+    /** What the canvas shows, so an edit that moves no mark does not draw it again (see {@link StripeFrame}). */
+    private final StripeFrame frame = new StripeFrame();
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
     private @Nullable DiagnosticStripe follower;
 
@@ -73,6 +75,7 @@ final class DiagnosticStripe extends Region implements SecondaryPane.Followed {
         getChildren().add(canvas);
         OverlayPalette.track(area, getChildren(), palette -> {
             colors = palette;
+            frame.forget();
             scheduleRedraw();
         });
         // Redraw on content edits (paragraph count shifts the line→y mapping). We deliberately do NOT
@@ -110,6 +113,7 @@ final class DiagnosticStripe extends Region implements SecondaryPane.Followed {
         setMouseTransparent(!active || diagnostics.isEmpty());
         if (active) {
             requestLayout();
+            frame.forget();
             scheduleRedraw();
         } else {
             hideTooltip();
@@ -130,6 +134,7 @@ final class DiagnosticStripe extends Region implements SecondaryPane.Followed {
         // Only intercept mouse events (over the scrollbar) when there are marks to hover/click.
         setMouseTransparent(!active || this.diagnostics.isEmpty());
         requestLayout(); // grow the canvas when marks appear / shrink it to 1x1 when they're gone
+        frame.forget();
         scheduleRedraw();
     }
 
@@ -185,18 +190,23 @@ final class DiagnosticStripe extends Region implements SecondaryPane.Followed {
 
     private void clear() {
         canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+        frame.forget();
     }
 
     private void redraw() {
         GraphicsContext g = canvas.getGraphicsContext2D();
         double w = canvas.getWidth();
         double h = canvas.getHeight();
+        boolean paint = shouldPaint() && CanvasGuards.paintable(getWidth(), getHeight());
+        int total = paint ? area.getParagraphs().size() : 0;
+        if (frame.unchanged(paint, w, h, total, paint ? contentHeight() : 0)) {
+            return; // most keystrokes: same lines, same marks, same pixels
+        }
         g.clearRect(0, 0, w, h);
-        if (!shouldPaint() || !CanvasGuards.paintable(getWidth(), getHeight())) {
+        if (!paint) {
             releaseTexture();
             return;
         }
-        int total = area.getParagraphs().size();
         if (total == 0) {
             return;
         }
@@ -215,6 +225,12 @@ final class DiagnosticStripe extends Region implements SecondaryPane.Followed {
                 g.fillRect(0, Math.min(y, h - markH), w, markH);
             }
         }
+    }
+
+    /** The content height the marks are scaled by (RichTextFX's estimate, read lazily; 0 when unknown). */
+    private double contentHeight() {
+        Double estimate = area.totalHeightEstimateProperty().getValue();
+        return estimate == null ? 0 : estimate;
     }
 
     /**
