@@ -2258,6 +2258,10 @@ final class WindowCommandRegistrar {
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugForceRunToCursor)));
         host.registry()
                 .register(Command.of(
+                        "debug.attachRemote",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().remote::attach)));
+        host.registry()
+                .register(Command.of(
                         "debug.attachToProcess",
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugAttachToProcess)));
         host.registry()

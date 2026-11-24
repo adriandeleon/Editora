@@ -99,6 +99,42 @@ class LaunchRouteTest {
     }
 
     @Test
+    void aDebugServersAddressMakesARemoteAttach() {
+        LaunchRoute.Route gdb = LaunchRoute.of(
+                config("type", "gdb", "request", "attach", "program", "/b/t", "target", "board:2345"), Map.of());
+        assertEquals(RemoteNativeAttach.gdb("/b/t", "board:2345"), gdb.request(), "GDB's own target");
+        LaunchRoute.Route cppdbg = LaunchRoute.of(
+                config(
+                        "type",
+                        "cppdbg",
+                        "request",
+                        "launch",
+                        "program",
+                        "/b/t",
+                        "miDebuggerServerAddress",
+                        "board:2345"),
+                Map.of());
+        assertEquals(LaunchRoute.Kind.GDB, cppdbg.kind());
+        assertTrue(cppdbg.attach());
+        assertEquals(RemoteNativeAttach.gdb("/b/t", "board:2345"), cppdbg.request());
+        LaunchRoute.Route lldb = LaunchRoute.of(
+                config(
+                        "type",
+                        "cppdbg",
+                        "request",
+                        "launch",
+                        "program",
+                        "/b/t",
+                        "MIMode",
+                        "lldb",
+                        "miDebuggerServerAddress",
+                        "board:2345"),
+                Map.of());
+        assertEquals(LaunchRoute.Kind.CODELLDB, lldb.kind());
+        assertEquals(RemoteNativeAttach.codelldb("/b/t", "board:2345", false), lldb.request());
+    }
+
+    @Test
     void gdbAndCppdbgAreToldInGdbsOwnFields() {
         LaunchRoute.Route cppdbg = LaunchRoute.of(
                 config(

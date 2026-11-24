@@ -433,6 +433,7 @@ final class DebugCoordinator {
 
     private final DartDebugLaunch dart = new DartDebugLaunch(this); // Dart, and a Flutter app's Dart
     private final ElectronDebugLaunch electron = new ElectronDebugLaunch(this); // an Electron app: main + renderer
+    final RemoteAttachLaunch remote = new RemoteAttachLaunch(this); // a native program under a debug server elsewhere
     final BrowserDebugLaunch browser = new BrowserDebugLaunch(this); // a page in Chrome, Edge, Firefox…
     final PhpDebugLaunch php = new PhpDebugLaunch(this); // PHP files, web apps, PHPUnit tests, Listen for Xdebug
 

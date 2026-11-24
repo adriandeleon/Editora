@@ -86,6 +86,19 @@ public final class LaunchRoute {
                 return new Route(Kind.GDB, DebugLanguages.GDB, gdbRequest(body, attach), attach, "");
             }
             case "cppdbg" -> {
+                String server = text(body.get("miDebuggerServerAddress"));
+                if (!server.isBlank()) { // a program under gdbserver elsewhere: VS Code's remote cppdbg
+                    String program = text(body.get("program"));
+                    return "lldb".equals(text(body.get("MIMode")))
+                            ? new Route(
+                                    Kind.CODELLDB,
+                                    DebugLanguages.CPP,
+                                    RemoteNativeAttach.codelldb(program, server, false),
+                                    true,
+                                    "")
+                            : new Route(
+                                    Kind.GDB, DebugLanguages.GDB, RemoteNativeAttach.gdb(program, server), true, "");
+                }
                 if ("lldb".equals(text(body.get("MIMode")))) {
                     return new Route(Kind.CODELLDB, DebugLanguages.CPP, codelldbFromCppdbg(body, attach), attach, "");
                 }
@@ -229,15 +242,19 @@ public final class LaunchRoute {
     /**
      * GDB's DAP request: {@code program}, {@code args}, {@code cwd}, {@code env} (an object; {@code cppdbg}'s
      * {@code environment} list too), and {@code stopAtBeginningOfMainSubprogram} for a stop on entry; an attach by
-     * {@code pid} ({@code processId}).
+     * {@code pid} ({@code processId}), or to a debug server by {@code target} ({@code host:port}).
      */
     static Map<String, Object> gdbRequest(Map<String, Object> body, boolean attach) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("type", "gdb");
         out.put("request", attach ? "attach" : "launch");
         if (attach) {
-            Object pid = body.containsKey("pid") ? body.get("pid") : body.get("processId");
-            out.put("pid", number(pid));
+            if (body.get("target") instanceof String target && !target.isBlank()) {
+                out.put("target", target); // a debug server's host:port (gdbserver), as GDB's own DAP takes it
+            } else {
+                Object pid = body.containsKey("pid") ? body.get("pid") : body.get("processId");
+                out.put("pid", number(pid));
+            }
             if (body.get("program") instanceof String program) {
                 out.put("program", program);
             }

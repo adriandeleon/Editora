@@ -374,6 +374,8 @@ jobs:
           cargo --version
           command -v gdb || sudo apt-get install -y --no-install-recommends gdb
           gdb --version | head -1
+          command -v gdbserver || sudo apt-get install -y --no-install-recommends gdbserver
+          gdbserver --version | head -1
           cmake --version | head -1
           cc --version | head -1
           curl -fsSL -o /tmp/codelldb.vsix "https://github.com/vadimcn/codelldb/releases/download/${CODELLDB_VERSION}/codelldb-linux-x64.vsix"
@@ -465,6 +467,8 @@ jobs:
       # to the waiting host, and its breakpoint stops with the test's locals.
       # RubyDebugProbeFxTest: under rdbg, a script stops in a block, steps and ends; and in a window F5 does the same.
       # PhpDebugProbeFxTest: on Xdebug through vscode-php-debug, a script stops, steps and ends; and in a window F5.
+      # RemoteNativeAttachProbeFxTest: a C program under gdbserver, attached to by Attach to Remote Program on GDB and
+      # on CodeLLDB and by a cppdbg configuration with miDebuggerServerAddress, stops at its breakpoint.
       # PhpWebProbeFxTest: F5 on an index.php serves it on PHP's built-in server and a request stops; F5 on a class of a
       # Laravel-shaped app serves it through its router; Debug Test at Caret runs one PHPUnit test; Listen for Xdebug
       # stops in a script started outside; Run File runs a script and a test file's tests.
@@ -528,7 +532,7 @@ jobs:
       # PythonTemplatesProbeFxTest: on debugpy, a breakpoint on a Jinja template's line (Jinja2 in the requirements) and
       # on a Django template's (a manage.py) stops on it with the template's variables, Template breakpoints Automatic.
       - name: Test compact Java language service and debugging
-        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,CsharpTestDebugProbeFxTest,RubyDebugProbeFxTest,PhpDebugProbeFxTest,PhpWebProbeFxTest,BashDebugProbeFxTest,DebugHistoryProbeFxTest#python*+java+javaRecording,SeveralSessionsProbeFxTest,TriggeredBreakpointsProbeFxTest#python+java,LoadedSourcesProbeFxTest#c*+python*,MarkObjectProbeFxTest,DebugSmallWinsProbeFxTest,ThreadDumpProbeFxTest,TypeRenderersProbeFxTest,BreakpointFiltersProbeFxTest,CoreDumpProbeFxTest,DebugTableProbeFxTest,ParallelStacksProbeFxTest,StepBackProbeFxTest,ExceptionBreakpointsProbeFxTest,PythonDataProbeFxTest,StepFiltersProbeFxTest#python+java+go,EvaluationTimeLimitProbeFxTest,WatchSetValueProbeFxTest#python+java+go,ValueFormatsProbeFxTest#java+python+go+gdb+codelldb,GoGoroutinesProbeFxTest,PythonTemplatesProbeFxTest,PythonWebProbeFxTest,InstructionBreakpointProbeFxTest,MemoryWriteProbeFxTest,DartDebugProbeFxTest -Dgroups=probe -Dlsp.probe=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,RemoteNativeAttachProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,CsharpTestDebugProbeFxTest,RubyDebugProbeFxTest,PhpDebugProbeFxTest,PhpWebProbeFxTest,BashDebugProbeFxTest,DebugHistoryProbeFxTest#python*+java+javaRecording,SeveralSessionsProbeFxTest,TriggeredBreakpointsProbeFxTest#python+java,LoadedSourcesProbeFxTest#c*+python*,MarkObjectProbeFxTest,DebugSmallWinsProbeFxTest,ThreadDumpProbeFxTest,TypeRenderersProbeFxTest,BreakpointFiltersProbeFxTest,CoreDumpProbeFxTest,DebugTableProbeFxTest,ParallelStacksProbeFxTest,StepBackProbeFxTest,ExceptionBreakpointsProbeFxTest,PythonDataProbeFxTest,StepFiltersProbeFxTest#python+java+go,EvaluationTimeLimitProbeFxTest,WatchSetValueProbeFxTest#python+java+go,ValueFormatsProbeFxTest#java+python+go+gdb+codelldb,GoGoroutinesProbeFxTest,PythonTemplatesProbeFxTest,PythonWebProbeFxTest,InstructionBreakpointProbeFxTest,MemoryWriteProbeFxTest,DartDebugProbeFxTest -Dgroups=probe -Dlsp.probe=true test
 
   # The Node.js tool chain Editora drives but never ships: typescript-language-server with TypeScript, and
   # vscode-js-debug. Both are user-installed, so the default lanes skip their probes — and a TypeScript release

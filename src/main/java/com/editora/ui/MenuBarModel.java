@@ -375,6 +375,7 @@ final class MenuBarModel {
                                                 "debug.editCompounds",
                                                 SEPARATOR,
                                                 "debug.attachToProcess",
+                                                "debug.attachRemote",
                                                 "debug.reattach",
                                                 "debug.openCoreDump",
                                                 "debug.listenXdebug",
