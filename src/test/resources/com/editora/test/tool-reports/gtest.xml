@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="6" failures="2" disabled="0" errors="0" time="0." timestamp="2026-11-24T16:38:27.945" name="AllTests">
+  <testsuite name="Math" tests="2" failures="1" disabled="0" skipped="0" errors="0" time="0." timestamp="2026-11-24T16:38:27.945">
+    <testcase name="Adds" file="/work/tests/gt_test.cpp" line="3" status="run" result="completed" time="0." timestamp="2026-11-24T16:38:27.945" classname="Math" />
+    <testcase name="Fails" file="/work/tests/gt_test.cpp" line="4" status="run" result="completed" time="0." timestamp="2026-11-24T16:38:27.945" classname="Math">
+      <failure message="/work/tests/gt_test.cpp:4&#x0A;Expected equality of these values:&#x0A;  add(1, 2)&#x0A;    Which is: 3&#x0A;  4&#x0A;oops&#x0A;" type=""><![CDATA[/work/tests/gt_test.cpp:4
+Expected equality of these values:
+  add(1, 2)
+    Which is: 3
+  4
+oops
+]]></failure>
+    </testcase>
+  </testsuite>
+  <testsuite name="Other" tests="1" failures="0" disabled="0" skipped="1" errors="0" time="0." timestamp="2026-11-24T16:38:27.945">
+    <testcase name="Skips" file="/work/tests/gt_test.cpp" line="5" status="run" result="skipped" time="0." timestamp="2026-11-24T16:38:27.945" classname="Other">
+      <skipped message="/work/tests/gt_test.cpp:5&#x0A;not now&#x0A;"><![CDATA[/work/tests/gt_test.cpp:5
+not now
+]]></skipped>
+    </testcase>
+  </testsuite>
+  <testsuite name="Fix" tests="1" failures="0" disabled="0" skipped="0" errors="0" time="0." timestamp="2026-11-24T16:38:27.945">
+    <testcase name="UsesFixture" file="/work/tests/gt_test.cpp" line="7" status="run" result="completed" time="0." timestamp="2026-11-24T16:38:27.945" classname="Fix" />
+  </testsuite>
+  <testsuite name="Nums/P" tests="2" failures="1" disabled="0" skipped="0" errors="0" time="0." timestamp="2026-11-24T16:38:27.945">
+    <testcase name="Even/0" value_param="2" file="/work/tests/gt_test.cpp" line="9" status="run" result="completed" time="0." timestamp="2026-11-24T16:38:27.945" classname="Nums/P" />
+    <testcase name="Even/1" value_param="3" file="/work/tests/gt_test.cpp" line="9" status="run" result="completed" time="0." timestamp="2026-11-24T16:38:27.945" classname="Nums/P">
+      <failure message="/work/tests/gt_test.cpp:9&#x0A;Expected equality of these values:&#x0A;  GetParam() % 2&#x0A;    Which is: 1&#x0A;  0&#x0A;" type=""><![CDATA[/work/tests/gt_test.cpp:9
+Expected equality of these values:
+  GetParam() % 2
+    Which is: 1
+  0
+]]></failure>
+    </testcase>
+  </testsuite>
+</testsuites>

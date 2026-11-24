@@ -252,7 +252,7 @@ public final class JUnitXmlParser implements TestResultParser {
 
     // --- DOM helpers (XXE-hardened; mirrors maven/PomParser) ------------------------------------------
 
-    private static Element document(String xml) throws IOException, SAXException, ParserConfigurationException {
+    static Element document(String xml) throws IOException, SAXException, ParserConfigurationException {
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
         dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
         dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);

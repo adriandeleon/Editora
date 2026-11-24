@@ -648,6 +648,10 @@ final class TestNavigationCoordinator {
             pythonTests.run(buffer.getPath(), buffer.getContent(), target);
             return;
         }
+        if (buffer != null && isCppTest(buffer)) {
+            host.runCoordinator().runCppTest(buffer, target); // its program, with the test's filter
+            return;
+        }
         for (BuildCoordinator c : host.buildCoordinators()) {
             if ((c.tool() == BuildTool.MAVEN || c.tool() == BuildTool.GRADLE) && c.isEnabled() && c.isDetected()) {
                 c.runTask(
@@ -658,6 +662,11 @@ final class TestNavigationCoordinator {
             }
         }
         host.setStatus(tr("status.testrunner.noBuildTool"));
+    }
+
+    /** A C or C++ buffer: its ▶ glyphs are tests only when it includes a test framework (RunScan). */
+    private static boolean isCppTest(EditorBuffer b) {
+        return "c".equals(b.getLanguage()) || "cpp".equals(b.getLanguage());
     }
 
     /** Runs/debugs a test method (or its whole class) at the caret. */
@@ -705,6 +714,13 @@ final class TestNavigationCoordinator {
         if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugGoTestAtCaret(b)) {
             return;
         }
+        // A C or C++ test at the caret (GoogleTest, Catch2, doctest): its program debugged, filtered to it.
+        if (debug
+                && host.debugCoordinator() != null
+                && host.debugCoordinator()
+                        .debugCppTestAtCaret(b, () -> runTestAtCaretAfterCsharp(b, classLevel, debug))) {
+            return;
+        }
         // A C# test at the caret: dotnet test runs it, its host waiting, and netcoredbg attaches to it.
         if (debug
                 && host.debugCoordinator() != null
@@ -749,6 +765,10 @@ final class TestNavigationCoordinator {
         EditorBuffer b = host.activeBuffer();
         if (b != null && b.isPython() && host.debugCoordinator() != null) {
             host.debugCoordinator().debugPythonGlyph(b, target);
+            return;
+        }
+        if (b != null && isCppTest(b) && host.debugCoordinator() != null) {
+            host.debugCoordinator().debugCppGlyph(b, target);
             return;
         }
         for (BuildCoordinator c : host.buildCoordinators()) {

@@ -41,11 +41,24 @@ final class ToolTestRunner {
 
     /**
      * A run: {@code argv} as Run File or Run Test at Caret planned it, in {@code dir}, of test file {@code file}.
+     * {@code rebuild}, for a built test program (C, C++), builds it again before each later run (Rerun, Rerun Failed,
+     * Run This Test), then goes on; null for a runner that reads the sources itself.
      */
-    record Spec(ToolTestKind kind, String label, Path dir, List<String> argv, Map<String, String> env, Path file) {
+    record Spec(
+            ToolTestKind kind,
+            String label,
+            Path dir,
+            List<String> argv,
+            Map<String, String> env,
+            Path file,
+            java.util.function.@Nullable Consumer<Runnable> rebuild) {
+
+        Spec(ToolTestKind kind, String label, Path dir, List<String> argv, Map<String, String> env, Path file) {
+            this(kind, label, dir, argv, env, file, null);
+        }
 
         Spec narrowed(List<String> names) {
-            return new Spec(kind, label, dir, kind.filtered(kind.wholeFile(argv), names), env, file);
+            return new Spec(kind, label, dir, kind.filtered(kind.wholeFile(argv), names), env, file, rebuild);
         }
     }
 
@@ -57,6 +70,16 @@ final class ToolTestRunner {
 
     /** Runs {@code spec} into Test Results. */
     void run(Spec spec) {
+        launchOrBuild(spec, false);
+    }
+
+    /** {@link #run}; {@code again}: a later run, of a program that is built again first ({@link Spec#rebuild}). */
+    private void launchOrBuild(Spec spec, boolean again) {
+        java.util.function.Consumer<Runnable> rebuild = spec.rebuild();
+        if (again && rebuild != null) {
+            rebuild.accept(() -> launchOrBuild(spec, false));
+            return;
+        }
         if (spec.kind() != ToolTestKind.RSPEC) {
             launch(spec, List.of());
             return;
@@ -119,7 +142,7 @@ final class ToolTestRunner {
                         spec.env(),
                         spec.file(),
                         hooks,
-                        () -> run(spec),
+                        () -> launchOrBuild(spec, true),
                         () -> shown[0] = !launchFailed[0]
                                 && host.testRunCoordinator().startExternalRun(spec.label(), spec.dir(), driver(spec)));
     }
@@ -175,17 +198,18 @@ final class ToolTestRunner {
         return new TestRunCoordinator.ExternalRun() {
             @Override
             public void rerun() {
-                run(spec);
+                launchOrBuild(spec, true);
             }
 
             @Override
             public void rerunFailed(List<TestNode> failed) {
-                run(spec.narrowed(names(failed)));
+                launchOrBuild(spec.narrowed(names(failed)), true);
             }
 
             @Override
             public void runOne(TestNode node) {
-                run(spec.narrowed(names(node.kind() == TestNodeKind.TEST ? List.of(node) : node.children())));
+                launchOrBuild(
+                        spec.narrowed(names(node.kind() == TestNodeKind.TEST ? List.of(node) : node.children())), true);
             }
 
             @Override

@@ -1322,6 +1322,18 @@ final class RunCoordinator {
 
     /** A C or C++ file: {@link com.editora.dap.NativeBuild}'s plan for it, then the program that made. */
     private void runNative(CompiledRun run, boolean cpp) {
+        runNative(run, cpp, null);
+    }
+
+    /** What a native Run read off the FX thread: the build's plan, and the test framework the file uses. */
+    private record NativeRead(
+            com.editora.dap.NativeBuild.@Nullable Plan plan, com.editora.test.@Nullable ToolTestKind tests) {}
+
+    /**
+     * As above; a test file's program ({@link com.editora.test.CppTests}: GoogleTest, Catch2, doctest) runs into Test
+     * Results — of framework {@code tests}, or the one the file includes when null.
+     */
+    private void runNative(CompiledRun run, boolean cpp, com.editora.test.@Nullable ToolTestKind tests) {
         Path source = run.source();
         Path programs = builtProgramsDir();
         // The project's build files are looked for off the FX thread (PERF-01, Pauta 6.2.0).
@@ -1331,13 +1343,20 @@ final class RunCoordinator {
                     com.editora.perf.BlockingSites.enter("NativeBuild.plan");
                     Path cmake = com.editora.dap.NativeBuild.cmakeRoot(source);
                     Path make = cmake == null ? com.editora.dap.NativeBuild.makeRoot(source) : null;
-                    return java.util.Optional.ofNullable(
-                            com.editora.dap.NativeBuild.plan(source, cpp, cmake, make, programs));
+                    com.editora.test.ToolTestKind kind = tests;
+                    if (kind == null && java.nio.file.Files.size(source) <= 1 << 20) {
+                        kind = com.editora.test.CppTests.framework(java.nio.file.Files.readString(source));
+                    }
+                    return new NativeRead(com.editora.dap.NativeBuild.plan(source, cpp, cmake, make, programs), kind);
                 },
-                planned -> runNativePlanned(run, source, planned.orElse(null)));
+                read -> runNativePlanned(run, source, read.plan(), read.tests()));
     }
 
-    private void runNativePlanned(CompiledRun run, Path source, com.editora.dap.NativeBuild.@Nullable Plan plan) {
+    private void runNativePlanned(
+            CompiledRun run,
+            Path source,
+            com.editora.dap.NativeBuild.@Nullable Plan plan,
+            com.editora.test.@Nullable ToolTestKind tests) {
         if (plan == null) {
             host.setStatus(tr("status.run.compiledHeaderAlone", source.getFileName()));
             return;
@@ -1373,7 +1392,8 @@ final class RunCoordinator {
                             plan.steps(),
                             "status.run.compiledBuild",
                             () -> Built.of(com.editora.dap.NativeBuild.executable(plan, source), missing),
-                            plan.root()));
+                            plan.root(),
+                            tests));
         });
     }
 
@@ -1639,6 +1659,21 @@ final class RunCoordinator {
             String statusKey,
             java.util.function.Supplier<Built> find,
             Path defaultDir) {
+        buildThenRun(run, root, steps, statusKey, find, defaultDir, null);
+    }
+
+    /**
+     * As above; a test program of framework {@code tests} runs into Test Results, which build it again before their
+     * Rerun, Rerun Failed and Run This Test.
+     */
+    private void buildThenRun(
+            CompiledRun run,
+            Path root,
+            List<List<String>> steps,
+            String statusKey,
+            java.util.function.Supplier<Built> find,
+            Path defaultDir,
+            com.editora.test.@Nullable ToolTestKind tests) {
         runBuildSteps(run, root, steps, 0, statusKey, () -> {
             locatingProgram = true;
             long generation = ++locateGeneration;
@@ -1667,8 +1702,19 @@ final class RunCoordinator {
                     command.addAll(built.firstArgs());
                     command.addAll(run.args());
                     pendingRerun = run.again(); // Rerun builds an edited file again rather than replaying the program
-                    streamRun(
-                            run.label(), run.dir() != null ? run.dir() : defaultDir, command, run.env(), run.source());
+                    Path dir = run.dir() != null ? run.dir() : defaultDir;
+                    if (tests != null) {
+                        streamTests(
+                                tests,
+                                run.label(),
+                                dir,
+                                command,
+                                run.env(),
+                                run.source(),
+                                then -> runBuildSteps(run, root, steps, 0, statusKey, then));
+                    } else {
+                        streamRun(run.label(), dir, command, run.env(), run.source());
+                    }
                 });
             });
         });
@@ -4184,6 +4230,7 @@ final class RunCoordinator {
             case "php" -> com.editora.run.PhpApps.isTestFile(name, text);
             case "elixir" -> com.editora.run.ElixirRun.isTest(name);
             case "csharp" -> com.editora.dap.DotnetTests.testAt(text, caret) != null;
+            case "c", "cpp" -> com.editora.test.CppTests.framework(text) != null;
             default ->
                 "javascript".equals(com.editora.dap.DapServerRegistry.adapterLanguage(language))
                         && com.editora.dap.JsLaunch.isTestFile(path);
@@ -4203,6 +4250,57 @@ final class RunCoordinator {
         return true;
     }
 
+    /**
+     * A C or C++ test file's ▶ — one test's ({@code target}'s method name), or the whole file's: its program built
+     * and run with the test's filter, into Test Results.
+     */
+    void runCppTest(EditorBuffer b, com.editora.test.JavaTestScanner.TestTarget target) {
+        Path path = b.getPath();
+        if (path == null || !com.editora.process.ExecTargets.runsHere(path)) {
+            return;
+        }
+        if (consoleRunning() || deploying) {
+            beginRunRequest(); // says the Run is busy
+            return;
+        }
+        String text = b.getContent();
+        com.editora.test.ToolTestKind kind = com.editora.test.CppTests.framework(text);
+        if (kind == null) {
+            return;
+        }
+        String filter = null;
+        if (target.methodName() != null) {
+            for (com.editora.test.CppTests.Test t : com.editora.test.CppTests.scan(kind, text)) {
+                if (t.line() == target.line()) {
+                    filter = t.filter();
+                }
+            }
+        }
+        String only = filter;
+        boolean cpp = "cpp".equals(b.getLanguage());
+        saveThen(List.of(b), () -> {
+            if (beginRunRequest()) {
+                runNativeTests(path, cpp, kind, only);
+            }
+        });
+    }
+
+    /** A C or C++ test file's program, built and run with {@code filter} (null: every test), into Test Results. */
+    private void runNativeTests(Path path, boolean cpp, com.editora.test.ToolTestKind kind, @Nullable String filter) {
+        Path source = path.toAbsolutePath();
+        List<String> args = com.editora.test.CppTests.filterArgs(kind, filter == null ? List.of() : List.of(filter));
+        CompiledRun run = new CompiledRun(
+                String.valueOf(source.getFileName()),
+                source,
+                args,
+                java.util.Map.of(),
+                null,
+                () -> runNativeTests(source, cpp, kind, filter),
+                false,
+                -1);
+        runNative(run, cpp, kind);
+    }
+
     private void testAtCaret(String language, Path path, String text, int caret) {
         Path project = ops.projectRoot();
         String label = path.getFileName() + ":" + (caret + 1);
@@ -4215,6 +4313,14 @@ final class RunCoordinator {
                         test == null ? List.of("-test.v") : List.of("-test.run", "^" + test + "$", "-test.v"));
             }
             case "rust" -> launchCompiledFile(ScriptRunCommand.RUST, path, List.of(), caret);
+            case "c", "cpp" -> {
+                com.editora.test.ToolTestKind kind = com.editora.test.CppTests.framework(text);
+                com.editora.test.CppTests.Test test =
+                        kind == null ? null : com.editora.test.CppTests.at(kind, text, caret);
+                if (kind != null) {
+                    runNativeTests(path, "cpp".equals(language), kind, test == null ? null : test.filter());
+                }
+            }
             case "dart" -> runDartTestAtCaret(path, com.editora.dap.DartTests.at(text, caret), label);
             case "ruby" ->
                 offFx(
@@ -4381,10 +4487,22 @@ final class RunCoordinator {
             List<String> command,
             java.util.Map<String, String> env,
             Path script) {
+        streamTests(kind, label, cwd, command, env, script, null);
+    }
+
+    /** As above; {@code rebuild} builds a test program again before Test Results run it again. */
+    private void streamTests(
+            com.editora.test.@Nullable ToolTestKind kind,
+            String label,
+            @Nullable Path cwd,
+            List<String> command,
+            java.util.Map<String, String> env,
+            Path script,
+            java.util.function.@Nullable Consumer<Runnable> rebuild) {
         if (kind != null
                 && cwd != null
                 && com.editora.process.ExecTargets.runsHere(script)
-                && ops.runToolTests(new ToolTestRunner.Spec(kind, label, cwd, command, env, script))) {
+                && ops.runToolTests(new ToolTestRunner.Spec(kind, label, cwd, command, env, script, rebuild))) {
             return;
         }
         streamRun(label, cwd, command, env, script);
