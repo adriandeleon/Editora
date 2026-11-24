@@ -84,10 +84,26 @@ class FindReplaceBarFxTest {
         });
     }
 
+    /** Startup R3: a window's bar starts hidden, so its controls are built when it is first shown, not with it. */
+    @Test
+    void theControlsAreBuiltOnTheFirstShow() throws Exception {
+        Harness h = harness("one two one");
+        FxTestSupport.runOnFx(() -> {
+            assertTrue(h.bar.getChildren().isEmpty(), "nothing is built for a bar that was never shown");
+            h.bar.show(false);
+            assertFalse(h.bar.getChildren().isEmpty(), "the first show builds the controls");
+            int built = h.bar.lookupAll(".find-bar-icon").size();
+            h.bar.hideBar();
+            h.bar.show(false);
+            assertEquals(built, h.bar.lookupAll(".find-bar-icon").size(), "a second show builds nothing again");
+        });
+    }
+
     @Test
     void navigationAndCloseActionsAreNamedIconButtons() throws Exception {
         Harness h = harness("one two");
         FxTestSupport.runOnFx(() -> {
+            h.bar.ensureBuilt(); // its controls are built on its first show
             // The bar nests its controls in wrapping groups, so look through the whole subtree.
             List<Button> iconButtons = h.bar.lookupAll(".find-bar-icon").stream()
                     .filter(Button.class::isInstance)
