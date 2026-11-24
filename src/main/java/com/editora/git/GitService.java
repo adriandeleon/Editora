@@ -2963,14 +2963,15 @@ public final class GitService {
     public void commitsLeftBehind(Path root, String target, boolean movesBranch, Consumer<LeftBehind> onResult) {
         submit(exec, () -> {
             LeftBehind result = LeftBehind.UNKNOWN;
-            if (gitAvailable(root) && root != null) {
+            boolean pullRequest = target != null && target.matches("#[0-9]+");
+            if (gitAvailable(root) && root != null && (pullRequest || GitSafety.isSafeRevision(target))) {
                 if (!movesBranch && onBranchNow(root)) {
                     // A checkout from a branch leaves nothing: the branch keeps its commits.
                     result = new LeftBehind(true, 0, false, 0, 0);
                 } else if (GitSafety.isSafeRevision(target)) {
                     result = leftBehindNow(root, target, movesBranch);
                 } else if (!movesBranch) {
-                    // A destination git cannot name yet (a pull request not fetched): what no ref keeps is at stake.
+                    // A pull request git cannot name yet (not fetched): what no ref keeps is at stake.
                     result = unreferencedNow(root);
                 }
             }
