@@ -3060,6 +3060,23 @@ public final class GitService {
     }
 
     /**
+     * TEMPORARY stub (fix/git4-branches): the engine agent adds the real method. {@link #refsFingerprint(Path,
+     * Consumer)} read on the history lane, so it is read just before a {@link #logPage} queued after it.
+     */
+    public void refsFingerprintForHistory(Path root, Consumer<String> onResult) {
+        submit(historyExec, () -> {
+            String fingerprint = "";
+            if (gitAvailable(root) && root != null) {
+                ProcessRunner.Result head = git(root, QUICK, "symbolic-ref", "-q", "HEAD");
+                ProcessRunner.Result refs = git(root, QUICK, "show-ref", "--head");
+                fingerprint = refsFingerprint(head, refs, shallowState(root));
+            }
+            String posted = fingerprint;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    /**
      * The fingerprint of {@code symbolic-ref -q HEAD}, {@code show-ref --head} and the shallow state, or
      * {@code ""} (unknown: the log reloads) when a read did not give a real answer. {@code show-ref} exits 1
      * with no output at all when there are no refs (an unborn repository), which is an answer; a failure
