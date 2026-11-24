@@ -489,6 +489,9 @@ uploads `target/surefire-reports` as an artifact (the Linux shards always, the o
   just keep the catalogs complete.
 - Controller-visible behavior → a `@Tag("fx")` test via `FxWindowFixture` if it can't be reduced
   to a pure helper.
+- A change on a hot path → `PerfBudgetFxTest` must stay green, and the pull request carries a
+  `perf-ab.sh` table ([per-change check](performance.md#per-change-check)). A fix for a slowdown or a
+  leak pins it with a count (frames, allocation, reachable objects), never a time.
 
 ## Live Java editing probe
 
