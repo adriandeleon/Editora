@@ -147,11 +147,9 @@ class ConfigManagerWindowTest {
 
     @Test
     void theCommandLineFolderWinsOverTheEnvironmentAndTheHomeFolder() {
-        assertEquals(
-                Path.of("custom", "cfg"), ConfigManager.configDirFor("  " + Path.of("custom", "cfg") + " ", false));
-        assertEquals(
-                Path.of("custom", "cfg"),
-                ConfigManager.configDirFor(Path.of("custom", "cfg").toString(), true));
+        Path custom = Path.of("custom", "cfg").toAbsolutePath();
+        assertEquals(custom, ConfigManager.configDirFor("  " + Path.of("custom", "cfg") + " ", false));
+        assertEquals(custom, ConfigManager.configDirFor(Path.of("custom", "cfg").toString(), true));
         assertEquals(ConfigManager.defaultConfigDir(false), ConfigManager.configDirFor(null, false));
         assertEquals(ConfigManager.defaultConfigDir(true), ConfigManager.configDirFor("   ", true));
         assertEquals(ConfigManager.defaultConfigDir(false), ConfigManager.defaultConfigDir());
@@ -159,5 +157,22 @@ class ConfigManagerWindowTest {
         assertEquals(Path.of(".", ".editora"), ConfigManager.resolveConfigDir(null, null, false));
         assertEquals(Path.of(".", ".editora-dev"), ConfigManager.resolveConfigDir("  ", " ", true));
         assertEquals(Path.of("home", ".editora"), ConfigManager.resolveConfigDir(null, "home"));
+    }
+
+    /**
+     * A relative {@code EDITORA_CONFIG_DIR} or {@code --config-dir} is made absolute against the working directory
+     * where it is read: kept relative, the folders derived from it (the Java server's workspaces) were made relative
+     * to whatever directory a later process ran in.
+     */
+    @Test
+    void aRelativeConfigFolderIsMadeAbsoluteWhereItIsRead() {
+        Path cwd = Path.of("").toAbsolutePath();
+        assertEquals(cwd.resolve("cfg"), ConfigManager.configDirFor("cfg", false));
+        assertEquals(cwd.resolve("cfg"), ConfigManager.configDirFor("./x/../cfg", false));
+        assertEquals(cwd.resolve("cfg"), ConfigManager.absolute(Path.of("cfg")));
+        Path absolute = cwd.resolve("abs-cfg");
+        assertEquals(absolute, ConfigManager.absolute(absolute));
+        assertTrue(ConfigManager.defaultConfigDir(false).isAbsolute(), "the variable or the home folder, absolute");
+        assertTrue(ConfigManager.defaultConfigDir(true).isAbsolute());
     }
 }
