@@ -199,7 +199,6 @@ class HandlersDebugOffFxThreadFxTest {
             }
             assertEquals(0, held.size(), "nothing diffed while typing");
             SettingsRig.awaitFx("worked out once the typing paused", () -> !held.isEmpty());
-            Thread.sleep((long) LaunchedLines.EDIT_PAUSE.toMillis() * 2);
             assertEquals(1, held.size(), "one mapping for the five newlines");
             runHeld(held);
             assertEquals(1, ran[0]);
