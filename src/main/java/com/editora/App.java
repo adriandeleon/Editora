@@ -99,7 +99,10 @@ public class App extends Application {
     private static void warmEditorClassesAsync() {
         Thread.ofPlatform().daemon().name("editor-warm").start(() -> {
             try {
-                new org.fxmisc.flowless.VirtualizedScrollPane<>(new org.fxmisc.richtext.CodeArea("warm\n"));
+                org.fxmisc.richtext.CodeArea area = new org.fxmisc.richtext.CodeArea("warm\nup\n");
+                new org.fxmisc.flowless.VirtualizedScrollPane<>(area);
+                area.selectRange(0, 2); // what a file's open does to the caret, first used here
+                area.moveTo(0);
             } catch (RuntimeException | LinkageError e) {
                 LOG.log(Level.FINE, "Editor warm-up failed", e);
             }
