@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Summary of a log.** **Log: Summarize** opens a Markdown report of the active log: its records per level, a
   records-over-time table with warnings and errors and a bar per interval, the most frequent messages counted with
   their numbers and ids masked, and the longest silences.
+- **Merge logs by time.** **Log: Merge Logs…** opens two or more logs as one read-only log, their records in the order
+  they were written (stack traces stay with theirs, each file keeps its own order), each line tagged with its file's
+  colour and name.
 - **Test Results for more test runners.** Running a test file under Jest, Vitest, Deno, RSpec, Minitest (and
   `bin/rails test`), PHPUnit, ExUnit or `dart test` fills Test Results: each test passed, failed or skipped, a
   failure's message and stack, a row that opens the test where it failed. Rerun Failed and Rerun This Test run
@@ -326,6 +329,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A window closed in the first seconds of a session no longer lingers in memory.** Each open file asks for its
+  spell-check dictionary (and prose completion for its word list), and the first one built in a session takes a few
+  seconds; a window closed before it was ready stayed in memory (about 20 MB) until it was. It is now released at
+  once.
 - **Elixir language server.** ElixirLS crashed on Editora's first request and was restarted again and again, so
   Elixir files had no diagnostics, completion or hover. Editora now sends request ids as numbers, as VS Code does;
   ElixirLS refused them as strings.

@@ -13,6 +13,11 @@ public final class SshConfigDescribe {
 
     private SshConfigDescribe() {}
 
+    /** What a host's summary names: read in one walk of the file ({@link SshConfig#effective(java.util.List,
+     *  String, java.util.List)}). */
+    private static final java.util.List<String> SUMMARY_KEYS =
+            java.util.List.of("HostName", "Port", "User", "IdentityFile", "ProxyJump");
+
     /**
      * A one-line summary of {@code b}'s intent within the whole config {@code blocks}. For a {@code Host} block
      * whose argument is a single concrete host name, the connection values are resolved with ssh's
@@ -30,8 +35,13 @@ public final class SshConfigDescribe {
         }
         boolean concrete = SshConfig.isConcreteHost(b.argument());
         String host = b.argument().strip();
-        java.util.function.Function<String, @Nullable String> value =
-                concrete ? key -> SshConfig.effective(blocks, host, key) : b::first;
+        java.util.function.Function<String, @Nullable String> value;
+        if (concrete) {
+            java.util.Map<String, String> effective = SshConfig.effective(blocks, host, SUMMARY_KEYS);
+            value = effective::get;
+        } else {
+            value = b::first;
+        }
 
         String hostName = value.apply("HostName");
         String port = value.apply("Port");

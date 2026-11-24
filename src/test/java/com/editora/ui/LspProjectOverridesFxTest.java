@@ -119,6 +119,9 @@ class LspProjectOverridesFxTest {
     void tearDown() throws Exception {
         FxTestSupport.runOnFx(() -> host.buffers.forEach(EditorBuffer::dispose));
         manager.close();
+        // Trusting a folder writes the trusted-folders file on the config writer's thread (saveTrust on the FX
+        // thread does not wait for it): the temporary folder can only be deleted once that write is done.
+        config.shared().awaitWrites();
         // The XML schema cache is written into the config folder on a thread of its own; the temporary folder
         // can only be deleted once that write is done.
         FxTestSupport.awaitValue(

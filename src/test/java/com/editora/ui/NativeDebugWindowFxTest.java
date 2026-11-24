@@ -162,6 +162,14 @@ class NativeDebugWindowFxTest {
     }
 
     /**
+     * The line the launcher's SIGTERM would have put in the console. Not a bare "143": the console also shows the
+     * temporary folder's path and the adapter's port, random numbers that hold "143" about one run in fifty.
+     */
+    private static String launchersSigterm() {
+        return com.editora.i18n.Messages.tr("run.exited", 143);
+    }
+
+    /**
      * adl's report: the console said "Process exited with code 0." (CodeLLDB) then "Process finished with exit code
      * 143", and the status bar 143. The 143 was CodeLLDB's launcher's, SIGTERMed once the program had ended; the
      * program's code is the adapter's exited event's, and the launcher's end still ends the session.
@@ -180,7 +188,7 @@ class NativeDebugWindowFxTest {
         Files.createFile(release);
         await("the session's end", () -> !call(manager::isActive));
         assertTrue(console().contains(com.editora.i18n.Messages.tr("run.exited", 0)), console());
-        assertFalse(console().contains("143"), console());
+        assertFalse(console().contains(launchersSigterm()), console());
         assertEquals(com.editora.i18n.Messages.tr("run.exited", 0), status());
     }
 
@@ -198,7 +206,7 @@ class NativeDebugWindowFxTest {
         Files.createFile(release);
         await("the session's end", () -> !call(manager::isActive));
         assertTrue(console().contains(com.editora.i18n.Messages.tr("debug.console.programEnded")), console());
-        assertFalse(console().contains("143"), console());
+        assertFalse(console().contains(launchersSigterm()), console());
     }
 
     @Test

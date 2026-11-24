@@ -131,10 +131,18 @@ that go forward. `ui/LogSummaryReport` writes it as Markdown in the user's langu
 `LogViewerCoordinator.summarize` runs both off the FX thread on `logFilterSource()` (the whole log,
 not the filtered view) and opens an untitled `… summary.md` tab.
 
+**A merge is a merge of runs, not a sort.** `LogMerge` splits each file into records (a line with a
+`LogTimes` time plus the untimed lines after it) and repeatedly takes the earliest head record, the
+earlier file on a tie, so no file's own order changes. The text is left as it was; `LogSources`
+(the file of each line of the whole text) goes to `LogHighlightOverlay.setSources`, which paints a
+strip at the right edge and a name chip, mapping a filtered paragraph back through
+`LevelSource.lineAt`. `LogViewerCoordinator.mergeFiles` reads the files off the FX thread (gzip
+through `GzipText`, else the last `LARGE_FILE_BYTES` from a line start).
+
 ## Not done
 
 - The summary's line numbers are text, not links that jump to the line.
-
+- A merged tab cannot follow its files: it is a snapshot (open a stream per file to watch them).
 - No time ruler beside the overview stripe, and no time slider: the range is typed or set from the caret.
 - The time range is not remembered across sessions with the rest of the filter.
 - A stream that ended cannot be restarted in place (it would repeat its last 1000 lines); open it again.

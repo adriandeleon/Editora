@@ -178,6 +178,22 @@ in a new tab, of the whole log even while a filter is on:
 The report is an ordinary Markdown file: preview it, edit it, or save it to
 keep it.
 
+## Merging logs
+
+**Log: Merge Logs…** (`log.mergeLogs`) opens two or more log files as one,
+read-only, with their records in the order they were written: an API's log
+and its database's, or the same service on two machines. Each line has a
+strip in its file's colour at the right edge and the file's name beside it.
+
+Editora places records by their timestamps (see **Times** below), so a stack
+trace stays with the line that logged it. Each file keeps its own order: a
+line a thread wrote a little late isn't moved ahead of the lines above it.
+When two records have the same time, the file chosen first comes first. Lines
+above a file's first timestamp have no time and come at the top. A compressed
+log (`.gz`) is read decompressed, and of a big file the last 16 MB is used.
+
+The merged tab filters, searches and steps through problems like any log.
+
 ## Live filtering
 
 Filter as you type by a **level floor**, a pattern of records to **show** and a
@@ -277,6 +293,7 @@ The keys are F8 and Shift+F8, F2 and Shift+F2 in the IntelliJ keymaps, and
 | Clear the time range | `log.clearTimeRange` | |
 | Open a live log from a container, pod, unit, SSH or a command | `log.openStream` | |
 | Summarize the log (levels, over time, repeated messages, silences) | `log.summarize` | |
+| Merge several logs into one, by time | `log.mergeLogs` | |
 | Next / previous line at warning level or higher (**Log: Next Warning or Error**, **Log: Previous Warning or Error**) | `log.nextError` / `log.previousError` | Next / Previous Problem |
 | Show the file as a log, or stop (toggle) | `log.viewAsLog` |
 | Enable/disable the feature | `view.toggleLogViewer` |

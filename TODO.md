@@ -1417,7 +1417,8 @@ A backlog of planned features and improvements. Unordered within each section.
       Log: Open Log Stream… shows `docker`/`kubectl`/`journalctl`/`ssh tail -F`/any command as a live log tab.
       Timestamps read as times (`LogTimes`): Go to Time…, Filter by Time…, Show From/Up To Caret Line.
       Log: Summarize opens a Markdown report: levels, records over time, repeated messages, silences.
-      *Deferred: multi-file merged tail, a dedicated Logs tool window, a time ruler/slider,
+      Log: Merge Logs… shows several logs as one, by time, lines tagged with their file.
+      *Deferred: following a merged log, a dedicated Logs tool window, a time ruler/slider,
       remembering the time range across sessions*
 - [x] Markdown support improvements — preview **CommonMark extensions** (YAML front matter, footnotes,
       heading anchors, `++inserted++`); **heading outline** in the Structure tool window; **Markdown lint**

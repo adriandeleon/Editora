@@ -1,7 +1,5 @@
 package com.editora.sshconfig;
 
-import java.util.regex.Pattern;
-
 /**
  * SSH client-config {@code Host} pattern matching, matching OpenSSH's rules (verified against {@code ssh -G}):
  * a {@code Host} line carries one or more whitespace-separated patterns, each an optional {@code !}-negation
@@ -19,17 +17,29 @@ public final class SshPattern {
         if (patterns == null || host == null) {
             return false;
         }
+        // No regex: the preview's summaries call this for every block above every host (quadratic in the number
+        // of hosts), and a split plus a Pattern compiled per glob kept the FX thread busy for seconds on a
+        // 1,000-host config.
         boolean anyPositive = false;
-        for (String token : patterns.trim().split("\\s+")) {
-            if (token.isEmpty()) {
+        int n = patterns.length();
+        int i = 0;
+        while (i < n) {
+            while (i < n && isSpace(patterns.charAt(i))) {
+                i++;
+            }
+            int start = i;
+            while (i < n && !isSpace(patterns.charAt(i))) {
+                i++;
+            }
+            if (start == i) {
+                break;
+            }
+            boolean negated = patterns.charAt(start) == '!';
+            int from = negated ? start + 1 : start;
+            if (from == i) {
                 continue;
             }
-            boolean negated = token.startsWith("!");
-            String glob = negated ? token.substring(1) : token;
-            if (glob.isEmpty()) {
-                continue;
-            }
-            if (globMatches(glob, host)) {
+            if (globMatches(patterns, from, i, host)) {
                 if (negated) {
                     return false; // a matched negation disqualifies the whole line
                 }
@@ -41,15 +51,41 @@ public final class SshPattern {
 
     /** A single glob ({@code *} = any run incl. dots, {@code ?} = one char) against {@code host}, case-sensitive. */
     static boolean globMatches(String glob, String host) {
-        StringBuilder re = new StringBuilder(glob.length() + 8);
-        for (int i = 0; i < glob.length(); i++) {
-            char c = glob.charAt(i);
-            switch (c) {
-                case '*' -> re.append(".*");
-                case '?' -> re.append('.');
-                default -> re.append(Pattern.quote(String.valueOf(c)));
+        return globMatches(glob, 0, glob.length(), host);
+    }
+
+    /**
+     * {@code glob[from, to)} against the whole of {@code host}: the usual wildcard walk, going back only to the
+     * last {@code *} (linear for the patterns ssh configs hold, never exponential).
+     */
+    private static boolean globMatches(String glob, int from, int to, String host) {
+        int g = from;
+        int h = 0;
+        int star = -1;
+        int resume = 0;
+        int hn = host.length();
+        while (h < hn) {
+            if (g < to && glob.charAt(g) == '*') {
+                star = g++;
+                resume = h;
+            } else if (g < to && (glob.charAt(g) == '?' || glob.charAt(g) == host.charAt(h))) {
+                g++;
+                h++;
+            } else if (star >= 0) {
+                g = star + 1;
+                h = ++resume;
+            } else {
+                return false;
             }
         }
-        return Pattern.matches(re.toString(), host);
+        while (g < to && glob.charAt(g) == '*') {
+            g++;
+        }
+        return g == to;
+    }
+
+    /** The whitespace {@code \s} stands for: space, tab, newline, vertical tab, form feed, carriage return. */
+    private static boolean isSpace(char c) {
+        return c == ' ' || c == '\t' || c == '\n' || c == 0x0B || c == '\f' || c == '\r';
     }
 }
