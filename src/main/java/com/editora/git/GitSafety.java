@@ -142,7 +142,9 @@ public final class GitSafety {
         env.put("GIT_EDITOR", ":");
         // gpg hands GPG_TTY to the agent as the terminal to ask for a passphrase on: launched from a shell, a
         // commit with commit.gpgsign=true put pinentry-curses in that shell and waited there. Without it a GUI
-        // pinentry still asks, and a terminal-only one fails with git's "gpg failed to sign the data".
+        // pinentry asks as usual. A terminal-only pinentry is not stopped by this: gpg-agent then falls back
+        // to the terminal it was itself started from, and may still ask there (the guide recommends a GUI
+        // pinentry for signing from Editora).
         env.put("GPG_TTY", null);
         String all = inherited == null ? null : inherited.get("LC_ALL");
         if (all != null && !all.isEmpty()) {
@@ -159,6 +161,9 @@ public final class GitSafety {
      */
     static final List<String> AUTO_FETCH_CONFIG = List.of("-c", "core.askPass=", "-c", "credential.interactive=false");
 
+    /** ssh in batch mode where the {@code ssh} on the path is the one git runs (everywhere but Windows). */
+    static final String BATCH_SSH = "ssh -o BatchMode=yes";
+
     /**
      * Environment of the automatic background fetch: a background read's, plus everything that keeps a
      * command nobody asked for from asking for anything. {@code GIT_ASKPASS} and {@code SSH_ASKPASS} are set
@@ -166,43 +171,131 @@ public final class GitSafety {
      * to {@code never} (OpenSSH 8.4+), and Git Credential Manager is told not to interact.
      *
      * <p>ssh itself is put in batch mode — no passphrase or host-key question, it fails instead — through
-     * {@code GIT_SSH_COMMAND}, but only when the user has not chosen an ssh command of their own:
-     * {@code GIT_SSH_COMMAND} outranks {@code core.sshCommand}, so setting it would replace theirs.
-     * {@code userSshCommand} says the repository or the user's configuration has one; an exported
-     * {@code GIT_SSH_COMMAND} or {@code GIT_SSH} is read from {@code inherited}. Pure.
+     * {@code GIT_SSH_COMMAND} ({@code batchSsh}, from {@link #batchSshCommand}; null: none can be named), but
+     * only when the user has not chosen an ssh command of their own: {@code GIT_SSH_COMMAND} outranks
+     * {@code core.sshCommand}, so setting it would replace theirs. {@code userSshCommand} says the repository
+     * or the user's configuration has one; an exported {@code GIT_SSH_COMMAND} or {@code GIT_SSH} is read
+     * from {@code inherited}. Pure.
      */
-    static Map<String, String> autoFetchEnv(Map<String, String> inherited, boolean userSshCommand) {
+    static Map<String, String> autoFetchEnv(
+            Map<String, String> inherited, boolean userSshCommand, @Nullable String batchSsh) {
         Map<String, String> env = new java.util.LinkedHashMap<>(BACKGROUND_ENV);
         env.put("GIT_ASKPASS", "");
         env.put("SSH_ASKPASS", "");
         env.put("SSH_ASKPASS_REQUIRE", "never");
         env.put("GCM_INTERACTIVE", "never");
-        boolean exported =
-                inherited != null && (notBlank(inherited.get("GIT_SSH_COMMAND")) || notBlank(inherited.get("GIT_SSH")));
-        if (!userSshCommand && !exported) {
-            env.put("GIT_SSH_COMMAND", "ssh -o BatchMode=yes");
+        if (batchSsh != null && !userSsh(inherited, userSshCommand)) {
+            env.put("GIT_SSH_COMMAND", batchSsh);
         }
         return java.util.Collections.unmodifiableMap(env);
     }
 
+    /** {@link #autoFetchEnv(Map, boolean, String)} with {@link #BATCH_SSH}. Pure. */
+    static Map<String, String> autoFetchEnv(Map<String, String> inherited, boolean userSshCommand) {
+        return autoFetchEnv(inherited, userSshCommand, BATCH_SSH);
+    }
+
     /**
-     * Environment of a clone, fetch, pull or push the <em>user</em> asked for: {@link #userEnv}, plus ssh in
-     * batch mode ({@code -o BatchMode=yes}) unless the user chose an ssh command of their own — the same rule
-     * as {@link #autoFetchEnv}. Editora has no terminal to answer ssh on: launched from a shell, a host-key
-     * question or a key passphrase was asked in that shell and the push waited there, up to the network
-     * ceiling. In batch mode ssh fails at once, and git's stderr ("Host key verification failed.",
-     * "Permission denied (publickey)") is what the user is shown. A key in ssh-agent (or the macOS keychain)
-     * still works; askpass and credential helpers for HTTPS are untouched. Pure.
+     * Environment of a clone, fetch, pull or push the <em>user</em> asked for: {@link #userEnv}, kept from
+     * asking anything on a terminal. Editora has no terminal to answer ssh on: launched from a shell, a
+     * host-key question or a key passphrase was asked in that shell and the push waited there, up to the
+     * network ceiling.
+     *
+     * <ul>
+     *   <li>When a graphical askpass program can ask instead ({@link #guiAskpassUsable}: {@code SSH_ASKPASS}
+     *       is set and, on Linux, there is a display), ssh is told to use it rather than a terminal
+     *       ({@code SSH_ASKPASS_REQUIRE=force}, OpenSSH 8.4+) and is <em>not</em> put in batch mode, which
+     *       would also switch the askpass off: its window asks for the passphrase or the host key.</li>
+     *   <li>Otherwise ssh is put in batch mode ({@code GIT_SSH_COMMAND}, {@code batchSsh}) unless the user
+     *       chose an ssh command of their own — the same rule as {@link #autoFetchEnv}. It then fails at once,
+     *       and git's stderr ("Host key verification failed.", "Permission denied (publickey)") is what the
+     *       user is shown.</li>
+     * </ul>
+     *
+     * A key in ssh-agent (or the macOS keychain) works either way, and HTTPS credential helpers are left as
+     * they are. Pure.
      */
     static Map<String, String> userNetworkEnv(
-            Map<String, String> userEnv, Map<String, String> inherited, boolean userSshCommand) {
+            Map<String, String> userEnv,
+            Map<String, String> inherited,
+            boolean userSshCommand,
+            @Nullable String batchSsh,
+            boolean linux) {
         Map<String, String> env = new java.util.LinkedHashMap<>(userEnv);
-        boolean exported =
-                inherited != null && (notBlank(inherited.get("GIT_SSH_COMMAND")) || notBlank(inherited.get("GIT_SSH")));
-        if (!userSshCommand && !exported) {
-            env.put("GIT_SSH_COMMAND", "ssh -o BatchMode=yes");
+        if (guiAskpassUsable(inherited, linux)) {
+            env.put("SSH_ASKPASS_REQUIRE", "force");
+        } else if (batchSsh != null && !userSsh(inherited, userSshCommand)) {
+            env.put("GIT_SSH_COMMAND", batchSsh);
         }
         return java.util.Collections.unmodifiableMap(env);
+    }
+
+    /** {@link #userNetworkEnv(Map, Map, boolean, String, boolean)} with {@link #BATCH_SSH} on Linux. Pure. */
+    static Map<String, String> userNetworkEnv(
+            Map<String, String> userEnv, Map<String, String> inherited, boolean userSshCommand) {
+        return userNetworkEnv(userEnv, inherited, userSshCommand, BATCH_SSH, true);
+    }
+
+    /**
+     * Whether ssh can ask through a graphical askpass program: {@code SSH_ASKPASS} names one, the user has not
+     * forbidden it ({@code SSH_ASKPASS_REQUIRE=never}), and — on Linux, where an askpass needs an X or
+     * Wayland session — {@code DISPLAY} or {@code WAYLAND_DISPLAY} is set. On macOS and Windows a set
+     * {@code SSH_ASKPASS} is taken as usable. Pure.
+     */
+    static boolean guiAskpassUsable(@Nullable Map<String, String> inherited, boolean linux) {
+        if (inherited == null || !notBlank(inherited.get("SSH_ASKPASS"))) {
+            return false;
+        }
+        if ("never".equals(strip(inherited.get("SSH_ASKPASS_REQUIRE")))) {
+            return false;
+        }
+        return !linux || notBlank(inherited.get("DISPLAY")) || notBlank(inherited.get("WAYLAND_DISPLAY"));
+    }
+
+    /**
+     * The {@code GIT_SSH_COMMAND} that puts ssh in batch mode, or null when Editora should not name one.
+     * Outside Windows that is {@link #BATCH_SSH}. On Windows a bare {@code ssh} could be the system's
+     * ({@code System32\OpenSSH}) rather than the one Git for Windows bundles and would otherwise run, with
+     * its own agent and known hosts; so the bundled {@code ssh.exe} is named by its path, found from
+     * {@code git --exec-path} ({@code <git>/mingw64/libexec/git-core} → {@code <git>/usr/bin/ssh.exe}). When it
+     * cannot be found, null: ssh is left as git would run it, and {@code GIT_TERMINAL_PROMPT=0} with no
+     * console is relied on. Pure; {@code isFile} answers whether a path is a file.
+     */
+    static @Nullable String batchSshCommand(
+            boolean windows, @Nullable String gitExecPath, java.util.function.Predicate<String> isFile) {
+        if (!windows) {
+            return BATCH_SSH;
+        }
+        if (gitExecPath == null || gitExecPath.isBlank()) {
+            return null;
+        }
+        String dir = gitExecPath.strip().replace('\\', '/');
+        while (dir.endsWith("/")) {
+            dir = dir.substring(0, dir.length() - 1);
+        }
+        // <git>/mingw64/libexec/git-core (64-bit), <git>/mingw32/libexec/git-core, or <git>/libexec/git-core.
+        for (int up = 3; up >= 2; up--) {
+            String base = dir;
+            for (int i = 0; i < up && base.lastIndexOf('/') > 0; i++) {
+                base = base.substring(0, base.lastIndexOf('/'));
+            }
+            String ssh = base + "/usr/bin/ssh.exe";
+            if (isFile.test(ssh)) {
+                // Run by git through its sh: double quotes keep a path with spaces ("Program Files") one word.
+                return ssh.contains("\"") ? null : "\"" + ssh + "\" -o BatchMode=yes";
+            }
+        }
+        return null;
+    }
+
+    private static boolean userSsh(@Nullable Map<String, String> inherited, boolean userSshCommand) {
+        return userSshCommand
+                || (inherited != null
+                        && (notBlank(inherited.get("GIT_SSH_COMMAND")) || notBlank(inherited.get("GIT_SSH"))));
+    }
+
+    private static String strip(@Nullable String value) {
+        return value == null ? "" : value.strip();
     }
 
     private static boolean notBlank(@Nullable String value) {

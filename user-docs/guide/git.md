@@ -95,12 +95,19 @@ automatically** rows are greyed out; the command path stays editable.
 ### Credentials
 
 Editora never asks for a password, a key passphrase, or a host-key
-confirmation, and Git commands never start an external editor: every Git command
-Editora runs, the ones you start and the ones in the background, runs without
-prompting, so one that would need an answer fails with Git's reason instead. Set up
-authentication outside Editora first: a credential helper for HTTPS remotes, an
-SSH agent holding your key, and one connection from a terminal so the host key
-is known. When a remote refuses to sign you in, the error says what to set up.
+confirmation itself, and Git commands never start an external editor or wait on a
+terminal: a command that would need an answer typed there fails with Git's reason
+instead. Set up authentication outside Editora first: a credential helper for HTTPS
+remotes, an SSH agent holding your key, and one connection from a terminal so the
+host key is known. A graphical askpass program (`SSH_ASKPASS`) still asks in its
+own window when you clone, fetch, pull or push. When a remote refuses to sign you
+in, the error says what to set up.
+
+Signed commits and tags (`commit.gpgSign`, `tag.gpgSign`) need a graphical
+pinentry, such as pinentry-gnome3, pinentry-qt or pinentry-mac. A terminal-only
+pinentry (pinentry-curses or pinentry-tty) may ask in the terminal gpg-agent was
+started from, where nobody is looking, and the commit then waits until it times
+out.
 
 ## The Commit window
 
@@ -216,12 +223,17 @@ forced push always uses `--force-with-lease` (and `--force-if-includes` with Git
 branch has moved since your last fetch, or if a background fetch brought commits
 you never had locally.
 
-Clone, fetch, pull and push never wait for an answer in a terminal: ssh runs in
-batch mode unless you set an ssh command of your own (`core.sshCommand` or
-`GIT_SSH_COMMAND`), and on Linux Git runs without a controlling terminal. A
-host key that is not yet known, or a key whose passphrase is not in your ssh
-agent, fails at once with ssh's message ("Host key verification failed.") —
-connect once from a terminal, or add the key to your agent, then try again.
+Clone, fetch, pull and push never wait for an answer in a terminal, and on
+Linux Git runs without a controlling terminal. When a graphical askpass program
+is set (`SSH_ASKPASS`, with a display on Linux), ssh asks for a key passphrase or
+a new host key in its window. Otherwise ssh runs in batch mode unless you set an
+ssh command of your own (`core.sshCommand` or `GIT_SSH_COMMAND`): a host key that
+is not yet known, or a key whose passphrase is not in your ssh agent, fails at
+once with ssh's message ("Host key verification failed.") — connect once from a
+terminal, or add the key to your agent, then try again. On Windows, batch mode
+uses the ssh that comes with Git for Windows. A remote with push refspecs of its
+own (`remote.<name>.push`, such as Gerrit's `HEAD:refs/for/main`) keeps them,
+forced pushes included.
 
 ### Automatic fetch
 

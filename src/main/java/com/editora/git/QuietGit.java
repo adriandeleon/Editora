@@ -126,6 +126,6 @@ public final class QuietGit {
         probe.addAll(List.of("config", "--get", "core.sshCommand"));
         boolean ownSsh = ProcessRunner.run(dir, Duration.ofSeconds(10), probe, GitSafety.BACKGROUND_ENV)
                 .ok();
-        return GitSafety.autoFetchEnv(System.getenv(), ownSsh);
+        return GitSafety.autoFetchEnv(System.getenv(), ownSsh, GitService.batchSsh(dir));
     }
 }

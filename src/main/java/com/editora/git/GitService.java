@@ -1206,7 +1206,7 @@ public final class GitService {
 
     /**
      * Lists up to {@code max} commits touching {@code file} (most recent first) via one {@code git log},
-     * tab-separated fields parsed by the pure {@link #parseLog}. Posts on the FX thread.
+     * unit-separated fields parsed by the pure {@link #parseLog}. Posts on the FX thread.
      */
     public void log(Path root, @Nullable Path file, int max, Consumer<List<Commit>> onResult) {
         submit(exec, () -> {
@@ -1216,7 +1216,7 @@ public final class GitService {
                         GitSafety.LITERAL_PATHSPECS,
                         "log",
                         "--no-color",
-                        "--pretty=format:%H%x09%h%x09%an%x09%ad%x09%s",
+                        "--pretty=format:%H%x1f%h%x1f%an%x1f%ad%x1f%s",
                         "--date=short",
                         "-n",
                         String.valueOf(max)));
@@ -1928,14 +1928,18 @@ public final class GitService {
         });
     }
 
-    /** Parses {@code %H\t%h\t%an\t%ad\t%s} log lines into {@link Commit}s. Pure — unit-tested. */
+    /**
+     * Parses {@code %H %h %an %ad %s} log lines, separated by the unit separator ({@code %x1f},
+     * {@link GitLog#SEPARATOR}) into {@link Commit}s: a tab in an author's name stays in the name. Pure —
+     * unit-tested.
+     */
     static List<Commit> parseLog(String out) {
         List<Commit> commits = new ArrayList<>();
         for (String line : out.split("\n")) {
             if (line.isBlank()) {
                 continue;
             }
-            String[] f = line.split("\t", 5);
+            String[] f = line.split(String.valueOf(GitLog.SEPARATOR), 5);
             if (f.length >= 5) {
                 commits.add(new Commit(f[0].strip(), f[1].strip(), f[4], f[2], f[3].strip()));
             }
@@ -2586,9 +2590,11 @@ public final class GitService {
      * anyone looking at it; {@code --force-if-includes} also requires that tip to have been part of this branch
      * at some point, and is dropped for a git older than 2.30 ({@link #resolvePush}).
      *
-     * <p>The destination is always explicit ({@link #PUSH_UPSTREAM} for a tracked branch): with no refspec,
-     * {@code push.default=matching} or a {@code remote.<name>.push} refspec would force other branches too.
-     * An untracked branch is pushed, and tracked, like a first {@link #pushArgs push}. Empty for a detached
+     * <p>The destination is explicit ({@link #PUSH_UPSTREAM} for a tracked branch): with no refspec,
+     * {@code push.default=matching} would force other branches too. A remote with push refspecs of its own
+     * ({@code remote.<name>.push}, Gerrit's {@code HEAD:refs/for/main}) is the exception: there the configured
+     * refspec decides, as for an ordinary push, and {@code --force-with-lease} guards every ref it updates
+     * ({@link #resolvePush}). An untracked branch is pushed, and tracked, like a first {@link #pushArgs push}. Empty for a detached
      * HEAD or an unusable name: there is no branch to force. Pure — unit-tested.
      */
     public static String[] forcePushArgs(String branch, String upstream, String remote) {
@@ -2625,9 +2631,15 @@ public final class GitService {
      *   <li>an ordinary push of {@code feat} tracking {@code origin/main} — which fails under
      *       {@code push.default=simple} and lands on {@code main} under {@code upstream} — pushes {@code feat}
      *       to {@code origin/feat} and tracks it ({@code --set-upstream});</li>
-     *   <li>a forced push always names the remote and {@code refs/heads/<b>:refs/heads/<b>}, also tracking it
-     *       when the upstream had another name.</li>
+     *   <li>a forced push names the remote and {@code refs/heads/<b>:refs/heads/<b>}, also tracking it when the
+     *       upstream had another name — unless the remote has push refspecs of its own: then, as for an
+     *       ordinary push, git's configuration decides where it goes (Gerrit's {@code HEAD:refs/for/main}),
+     *       and nothing is tracked.</li>
      * </ul>
+     *
+     * <p>{@link #PUSH_REMOTE} (a first push, forced or not) is resolved to the push remote; when that remote
+     * has push refspecs of its own the branch's ref and {@code --set-upstream} are dropped too, so
+     * {@code push <remote>} goes where its configuration says rather than to a new branch of the same name.
      */
     static String[] resolvePush(
             String[] args, String configListZ, List<String> remotes, boolean forceIfIncludesSupported) {
@@ -2640,7 +2652,12 @@ public final class GitService {
             String branch = at + 1 < out.size() && out.get(at + 1).startsWith("refs/heads/")
                     ? out.get(at + 1).substring("refs/heads/".length())
                     : "";
-            out.set(at, pushRemote(configListZ, branch, remotes));
+            String remote = pushRemote(configListZ, branch, remotes);
+            out.set(at, remote);
+            if (!branch.isEmpty() && hasPushRefspecs(configListZ, remote)) {
+                out.remove(at + 1);
+                out.remove("--set-upstream");
+            }
         }
         at = out.indexOf(PUSH_UPSTREAM);
         if (at >= 0) {
@@ -2653,7 +2670,8 @@ public final class GitService {
             boolean sameRemote = remote.equals(branchRemote);
             boolean sameName = merge.equals(ref);
             boolean force = out.contains("--force-with-lease");
-            if (!force && (sameName || !sameRemote || config.containsKey("remote." + remote + ".push"))) {
+            boolean ownRefspecs = config.containsKey("remote." + remote + ".push");
+            if (ownRefspecs || (!force && (sameName || !sameRemote))) {
                 out.remove(at + 1);
                 out.remove(at);
             } else {
@@ -2669,6 +2687,11 @@ public final class GitService {
             }
         }
         return out.toArray(String[]::new);
+    }
+
+    /** Whether {@code remote} has {@code remote.<name>.push} refspecs of its own in {@code configListZ}. Pure. */
+    private static boolean hasPushRefspecs(String configListZ, String remote) {
+        return lastValues(configListZ, "remote." + remote + ".").containsKey("remote." + remote + ".push");
     }
 
     /** The last value of each key in {@code configListZ} that starts with one of {@code prefixes}. Pure. */
@@ -2976,9 +2999,10 @@ public final class GitService {
     }
 
     /**
-     * A cheap fingerprint of what a history listing shows — HEAD (symbolic and resolved) and every ref with
-     * its commit — posted on the FX thread; {@code ""} when it cannot be read. Two equal fingerprints mean the
-     * Git Log would list the same commits with the same decorations, so a stage or unstage need not reload it.
+     * A cheap fingerprint of what a history listing shows — HEAD (symbolic and resolved), every ref with its
+     * commit, and the shallow boundary — posted on the FX thread; {@code ""} when it cannot be read. Two equal
+     * fingerprints mean the Git Log would list the same commits with the same decorations, so a stage or
+     * unstage need not reload it ({@link #refsFingerprint(ProcessRunner.Result, ProcessRunner.Result, String)}).
      */
     public void refsFingerprint(Path root, Consumer<String> onResult) {
         submit(exec, () -> {
@@ -2986,14 +3010,68 @@ public final class GitService {
             if (gitAvailable(root) && root != null) {
                 ProcessRunner.Result head = git(root, QUICK, "symbolic-ref", "-q", "HEAD");
                 ProcessRunner.Result refs = git(root, QUICK, "show-ref", "--head");
-                // show-ref exits 1 when there are no refs at all (an unborn repository): still a stable answer.
-                if (refs.ok() || refs.out().isBlank()) {
-                    fingerprint = "HEAD=" + head.out().strip() + "\n" + refs.out();
-                }
+                fingerprint = refsFingerprint(head, refs, shallowState(root));
             }
             String posted = fingerprint;
             Platform.runLater(() -> onResult.accept(posted));
         });
+    }
+
+    /**
+     * The fingerprint of {@code symbolic-ref -q HEAD}, {@code show-ref --head} and the shallow state, or
+     * {@code ""} (unknown: the log reloads) when a read did not give a real answer. {@code show-ref} exits 1
+     * with no output at all when there are no refs (an unborn repository), which is an answer; a failure
+     * that only looks like one — output too large for the capture, a timeout, an error on stderr — is not,
+     * or the fingerprint would never change again and the Git Log never reload. The refs are hashed, so a
+     * repository with tens of thousands of them keeps a short string. Pure.
+     */
+    static String refsFingerprint(ProcessRunner.Result head, ProcessRunner.Result refs, String shallow) {
+        boolean headKnown = head.ok() || (head.exit() == 1 && head.err().isBlank() && !head.outTruncated());
+        boolean refsKnown = refs.ok()
+                ? !refs.outTruncated()
+                : refs.exit() == 1
+                        && refs.out().isEmpty()
+                        && refs.err().isBlank()
+                        && !refs.outTruncated()
+                        && !refs.errTruncated();
+        if (!headKnown || !refsKnown) {
+            return "";
+        }
+        return "HEAD=" + head.out().strip() + "\nshallow=" + shallow + "\nrefs=" + sha256(refs.out());
+    }
+
+    private static String sha256(String text) {
+        try {
+            return java.util.HexFormat.of()
+                    .formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                            .digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            return text; // every JDK has SHA-256
+        }
+    }
+
+    /**
+     * The shallow boundary of {@code root}'s repository: a hash of its {@code shallow} file (which
+     * {@code fetch --deepen} and {@code --unshallow} rewrite without moving a ref), {@code "-"} when it has
+     * none. For a repository on a remote host, whose file is not at hand, only whether it is shallow.
+     */
+    private static String shallowState(Path root) {
+        ProcessRunner.Result r = git(root, QUICK, "rev-parse", "--is-shallow-repository", "--git-path", "shallow");
+        if (!r.ok()) {
+            return "?";
+        }
+        List<String> lines = r.out().lines().map(String::strip).toList();
+        if (lines.isEmpty() || !"true".equals(lines.get(0))) {
+            return "-";
+        }
+        if (!isLocal(root) || lines.size() < 2) {
+            return "shallow";
+        }
+        try {
+            return sha256(Files.readString(root.resolve(lines.get(1))));
+        } catch (java.io.IOException | RuntimeException unreadable) {
+            return "shallow";
+        }
     }
 
     /** Lists tag short-names, sorted as returned by Git, and posts them on the FX thread. */
@@ -3472,7 +3550,7 @@ public final class GitService {
                     argv.addAll(GitSafety.AUTO_FETCH_CONFIG);
                     argv.addAll(List.of("fetch", "--prune", "--quiet"));
                     result = ProcessRunner.run(
-                            root, AUTO_FETCH, argv, GitSafety.autoFetchEnv(inherited, ownSsh), cancel);
+                            root, AUTO_FETCH, argv, GitSafety.autoFetchEnv(inherited, ownSsh, batchSsh(root)), cancel);
                 }
             } finally {
                 autoFetchCommand = null;
@@ -4421,7 +4499,33 @@ public final class GitService {
         Map<String, String> inherited = isLocal(dir)
                 ? System.getenv()
                 : (hostExportsSsh(dir) ? Map.of("GIT_SSH_COMMAND", "(the host's)") : Map.of());
-        return GitSafety.userNetworkEnv(userEnv(dir), inherited, ownSsh);
+        return GitSafety.userNetworkEnv(
+                userEnv(dir), inherited, ownSsh, batchSsh(dir), isLocal(dir) ? com.editora.Os.isLinux() : true);
+    }
+
+    /** The resolved batch-mode ssh of the local Git for Windows ({@link GitSafety#batchSshCommand}); "" unknown. */
+    private static volatile @Nullable String windowsBatchSsh;
+
+    private static volatile boolean windowsBatchSshResolved;
+
+    /**
+     * The {@code GIT_SSH_COMMAND} that puts ssh in batch mode for a command on {@code dir}'s host, or null when
+     * none should be named ({@link GitSafety#batchSshCommand}: on Windows, only Git for Windows' own ssh by
+     * its path). A remote host is a Unix one. Asked off the FX thread; the Windows lookup runs once.
+     */
+    static @Nullable String batchSsh(@Nullable Path dir) {
+        if (!isLocal(dir) || !com.editora.Os.isWindows()) {
+            return GitSafety.BATCH_SSH;
+        }
+        if (!windowsBatchSshResolved) {
+            List<String> argv = new ArrayList<>(command());
+            argv.add("--exec-path");
+            ProcessRunner.Result r = ProcessRunner.run(null, QUICK, argv, READ_ENV);
+            windowsBatchSsh = GitSafety.batchSshCommand(
+                    true, r.ok() ? r.out() : null, path -> Files.isRegularFile(Path.of(path)));
+            windowsBatchSshResolved = true;
+        }
+        return windowsBatchSsh;
     }
 
     /** {@code setsid} on this machine, or null (Windows, macOS, or a Linux without util-linux). */

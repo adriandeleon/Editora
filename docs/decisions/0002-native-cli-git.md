@@ -148,10 +148,25 @@ gutter work behind it. Working-tree mutations are serialised across both.
   `GitService.withoutTerminal`). Launched from a shell, a clone, fetch, pull or push inherited that
   shell's terminal: ssh asked about a host key or a passphrase there, pinentry-curses (through
   `GPG_TTY`) asked for a signing passphrase there, and the command hung until its ceiling. Every user
-  command now drops `GPG_TTY`, starts under `setsid` where `/usr/bin/setsid` exists (Linux; the child is
-  never a group leader, so the pid and exit code stay git's), and a network command gets the same
-  batch-mode `GIT_SSH_COMMAND` rule as the automatic fetch. HTTPS askpass programs and credential
-  helpers are untouched; a failure shows git's stderr.
+  command now drops `GPG_TTY` and starts under `setsid` where `/usr/bin/setsid` exists (Linux; the child
+  is never a group leader, so the pid and exit code stay git's). For ssh a network command then takes one
+  of two routes. When a graphical askpass can ask (`GitSafety.guiAskpassUsable`: `SSH_ASKPASS` is set,
+  not forbidden by `SSH_ASKPASS_REQUIRE=never`, and on Linux `DISPLAY` or `WAYLAND_DISPLAY` is set; on
+  macOS and Windows a set `SSH_ASKPASS` is enough), `SSH_ASKPASS_REQUIRE=force` (OpenSSH 8.4+) sends
+  ssh's questions to that window instead of a terminal, and ssh is **not** put in batch mode —
+  `BatchMode=yes` would switch the askpass off too. Otherwise it gets the same batch-mode
+  `GIT_SSH_COMMAND` rule as the automatic fetch. HTTPS askpass programs and credential helpers are left
+  as they are; a failure shows git's stderr.
+  *On Windows* a bare `ssh` in `GIT_SSH_COMMAND` can resolve to the system's `System32\OpenSSH` rather
+  than the ssh Git for Windows bundles (another agent, other known hosts), so there the batch-mode command
+  names the bundled `usr/bin/ssh.exe` by its path, found from `git --exec-path`
+  (`GitSafety.batchSshCommand`); when it cannot be found no `GIT_SSH_COMMAND` is set and
+  `GIT_TERMINAL_PROMPT=0` (with no console to prompt on) is relied on. Untested on a Windows machine.
+  *GPG signing is only partly covered.* Dropping `GPG_TTY` stops gpg pointing the agent at Editora's
+  shell, and a GUI pinentry asks as usual. A terminal-only pinentry (pinentry-curses or -tty) is not
+  stopped: gpg-agent falls back to the terminal it was itself started from and may still ask there,
+  so a signed commit, tag, merge or rebase can wait until its ceiling. The user guide recommends a
+  graphical pinentry for signing from Editora.
   Untested: the askpass/credential-manager suppression on Windows and macOS (the variables are the
   documented ones; an empty environment value is "unset" on Windows, which is why `core.askPass=` is
   passed as configuration as well).

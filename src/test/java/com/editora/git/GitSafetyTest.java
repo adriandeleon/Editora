@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The pure rules behind hardened background git commands and repository-supplied revision names. */
@@ -96,6 +97,59 @@ class GitSafetyTest {
         assertEquals(":", env.get("GIT_EDITOR"));
         assertEquals("0", env.get("GIT_TERMINAL_PROMPT"));
         assertTrue(env.containsKey("GPG_TTY") && env.get("GPG_TTY") == null, "GPG_TTY is removed");
+    }
+
+    /** R3-E4: batch mode would also switch off a graphical askpass, so where one can ask, ssh uses it. */
+    @Test
+    void aUsableGraphicalAskpassReplacesBatchMode() {
+        java.util.Map<String, String> base = GitSafety.userEnv(java.util.Map.of());
+        java.util.Map<String, String> x11 = java.util.Map.of("SSH_ASKPASS", "/usr/bin/ksshaskpass", "DISPLAY", ":0");
+        java.util.Map<String, String> env = GitSafety.userNetworkEnv(base, x11, false, GitSafety.BATCH_SSH, true);
+        assertFalse(env.containsKey("GIT_SSH_COMMAND"));
+        assertEquals("force", env.get("SSH_ASKPASS_REQUIRE"));
+        assertTrue(GitSafety.guiAskpassUsable(
+                java.util.Map.of("SSH_ASKPASS", "/usr/bin/ksshaskpass", "WAYLAND_DISPLAY", "wayland-0"), true));
+        // Linux without a display, a blank askpass, or one the user forbade: batch mode as before.
+        java.util.Map<String, String> headless = java.util.Map.of("SSH_ASKPASS", "/usr/bin/ksshaskpass");
+        assertFalse(GitSafety.guiAskpassUsable(headless, true));
+        assertEquals(
+                GitSafety.BATCH_SSH,
+                GitSafety.userNetworkEnv(base, headless, false, GitSafety.BATCH_SSH, true)
+                        .get("GIT_SSH_COMMAND"));
+        assertFalse(GitSafety.guiAskpassUsable(java.util.Map.of("SSH_ASKPASS", " ", "DISPLAY", ":0"), true));
+        assertFalse(GitSafety.guiAskpassUsable(
+                java.util.Map.of("SSH_ASKPASS", "/a", "DISPLAY", ":0", "SSH_ASKPASS_REQUIRE", "never"), true));
+        assertFalse(GitSafety.guiAskpassUsable(java.util.Map.of("DISPLAY", ":0"), true));
+        // macOS and Windows: a set SSH_ASKPASS is enough; unset keeps batch mode.
+        assertTrue(GitSafety.guiAskpassUsable(headless, false));
+        assertEquals(
+                GitSafety.BATCH_SSH,
+                GitSafety.userNetworkEnv(base, java.util.Map.of(), false, GitSafety.BATCH_SSH, false)
+                        .get("GIT_SSH_COMMAND"));
+        assertFalse(GitSafety.userNetworkEnv(base, java.util.Map.of(), false, GitSafety.BATCH_SSH, false)
+                .containsKey("SSH_ASKPASS_REQUIRE"));
+    }
+
+    /** R3-E5: on Windows only Git for Windows' own ssh is put in batch mode, by its path; else none. */
+    @Test
+    void onWindowsBatchModeNamesGitsOwnSsh() {
+        assertEquals(GitSafety.BATCH_SSH, GitSafety.batchSshCommand(false, null, path -> false));
+        java.util.Set<String> files = java.util.Set.of("C:/Program Files/Git/usr/bin/ssh.exe");
+        assertEquals(
+                "\"C:/Program Files/Git/usr/bin/ssh.exe\" -o BatchMode=yes",
+                GitSafety.batchSshCommand(
+                        true, "C:\\Program Files\\Git\\mingw64\\libexec\\git-core\n", files::contains));
+        assertEquals(
+                "\"C:/Program Files/Git/usr/bin/ssh.exe\" -o BatchMode=yes",
+                GitSafety.batchSshCommand(true, "C:/Program Files/Git/libexec/git-core/", files::contains));
+        assertNull(GitSafety.batchSshCommand(true, "C:/Other/git/cmd", files::contains), "not found: none");
+        assertNull(GitSafety.batchSshCommand(true, null, files::contains));
+        java.util.Map<String, String> base = GitSafety.userEnv(java.util.Map.of());
+        assertFalse(GitSafety.userNetworkEnv(base, java.util.Map.of(), false, null, false)
+                .containsKey("GIT_SSH_COMMAND"));
+        assertFalse(GitSafety.autoFetchEnv(java.util.Map.of(), false, null).containsKey("GIT_SSH_COMMAND"));
+        assertEquals(
+                "never", GitSafety.autoFetchEnv(java.util.Map.of(), false, null).get("SSH_ASKPASS_REQUIRE"));
     }
 
     @Test
