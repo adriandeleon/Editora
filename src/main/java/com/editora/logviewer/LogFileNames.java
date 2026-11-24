@@ -29,6 +29,9 @@ public final class LogFileNames {
             return false;
         }
         String name = fileName.toLowerCase(Locale.ROOT);
+        if (compressed(name)) {
+            return isLog(name.substring(0, name.length() - 3)); // app.log.2.gz: logrotate's compressed copy
+        }
         return name.endsWith(".log")
                 || ROTATED.matcher(name).matches()
                 || APACHE.matcher(name).matches()
@@ -46,8 +49,16 @@ public final class LogFileNames {
             return false;
         }
         String name = fileName.toLowerCase(Locale.ROOT);
+        if (compressed(name)) {
+            return mayBeLog(name.substring(0, name.length() - 3));
+        }
         int dot = name.lastIndexOf('.');
         return dot <= 0 || name.endsWith(".out") || name.endsWith(".err");
+    }
+
+    /** One gzip-compressed file ({@code x.gz}), which opens decompressed; not an archive ({@code x.tar.gz}). */
+    private static boolean compressed(String lowerName) {
+        return lowerName.endsWith(".gz") && lowerName.length() > 3 && !lowerName.endsWith(".tar.gz");
     }
 
     /** {@code syslog.1} → {@code syslog}. */
