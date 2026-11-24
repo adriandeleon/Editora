@@ -1729,7 +1729,10 @@ Settings names it or it is the only browser found, never because the HTML previe
 separate install). Its requests differ from js-debug's: `file` for a `file:` page (the adapter maps those itself),
 `url` and `webRoot` otherwise — the adapter refuses a `webRoot` without a `url` — `pathMappings` of whole URLs
 (`http://127.0.0.1:<port>/<token>/` → the site), `firefoxExecutable`, and Editora's profile as `profileDir` with
-`keepProfileChanges` (made on first use, kept). Its exception filters are the adapter's: `all`, `uncaught`, and
+`keepProfileChanges` (made on first use, kept), a free `port` for Firefox's debugger server (the adapter's own 6000 can be
+held by another Firefox under a debugger, which the adapter then connects to instead: its pages never load the files
+asked for), `timeout` 30 s for the adapter to connect (its own 5 s were too few for a CI runner's first start, and the
+failed launch left Firefox running on the port) and `reAttach: false`. Its exception filters are the adapter's: `all`, `uncaught`, and
 `debugger` statements, on by default as `debugger;` stops in Chrome. Attach to Browser attaches to Firefox's debugger
 server (`-start-debugger-server`, port 6000) when Firefox is the chosen browser; a launch.json `firefox` configuration
 is `LaunchRoute.Kind.FIREFOX` (`FirefoxLaunch.configured`). Probed with Firefox 160: a stop by `file:` and through a

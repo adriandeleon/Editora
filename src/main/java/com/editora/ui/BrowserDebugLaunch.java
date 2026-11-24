@@ -57,8 +57,8 @@ final class BrowserDebugLaunch {
         if (!firefoxReady()) {
             return;
         }
-        java.util.Map<String, Object> request =
-                FirefoxLaunch.configured(body, workspace, browserProfile(FirefoxLaunch.TYPE));
+        java.util.Map<String, Object> request = FirefoxLaunch.configured(
+                body, workspace, browserProfile(FirefoxLaunch.TYPE), ElectronDebugLaunch.freePort());
         d.ops.openToolWindow();
         d.nameSession(name);
         d.s().relaunch = null;
@@ -78,6 +78,9 @@ final class BrowserDebugLaunch {
 
     /** More command-line arguments for a debugged Firefox ({@code -headless} in a test). */
     List<String> firefoxArgs = List.of();
+
+    /** More of vscode-firefox-debug's launch options (a test's {@code log}, to see what it did). */
+    java.util.Map<String, Object> firefoxOptions = java.util.Map.of();
 
     /** The Debug in Browser picker's row for the active HTML file (no URL can look like it). */
     private static final String THIS_PAGE_ROW = "\u0000page";
@@ -221,10 +224,15 @@ final class BrowserDebugLaunch {
         if (firefox && !firefoxReady()) {
             return; // said why
         }
-        java.util.Map<String, Object> request = firefox
-                ? FirefoxLaunch.launch(url, webRoot, served, exe, browserProfile(id), firefoxArgs)
+        java.util.Map<String, Object> planned = firefox
+                ? FirefoxLaunch.launch(
+                        url, webRoot, served, exe, browserProfile(id), firefoxArgs, ElectronDebugLaunch.freePort())
                 : com.editora.dap.BrowserLaunch.launch(
                         type, url, webRoot, served, exe, browserProfile(id), browserArgs);
+        java.util.Map<String, Object> request = new java.util.LinkedHashMap<>(planned);
+        if (firefox) {
+            request.putAll(firefoxOptions);
+        }
         if (pageFile == null) {
             d.ops.persistDebugBrowserUrls(DebugAttach.rememberAttachTarget(d.ops.debugBrowserUrls(), url));
         }

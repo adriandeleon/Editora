@@ -28,6 +28,13 @@ public final class FirefoxLaunch {
     public static final int DEFAULT_PORT = 6000;
 
     /**
+     * How long the adapter waits for a Firefox it started to accept its connection, in seconds: the adapter's own 5 are
+     * too few for a first start on a fresh profile (a CI runner's took longer, and the launch failed leaving Firefox
+     * running), as js-debug's 10 s were for Chrome ({@link BrowserLaunch#LAUNCH_TIMEOUT_MILLIS}).
+     */
+    public static final int CONNECT_TIMEOUT_SECONDS = 30;
+
+    /**
      * The {@code launch} request that opens {@code url} in Firefox under the debugger.
      *
      * @param webRoot where the page's files are (the project); null for none
@@ -36,6 +43,9 @@ public final class FirefoxLaunch {
      * @param profileDir the Firefox profile Editora keeps for debugging, made on first use and kept; null for a
      *     temporary one
      * @param firefoxArgs more command-line arguments for Firefox ({@code -headless} in tests)
+     * @param port the port Firefox's debugger server listens on: a free one, not the adapter's fixed 6000, which another
+     *     Firefox under a debugger (another session's, one left running) may hold — the adapter then connects to that
+     *     one, whose pages never load the files asked for
      */
     public static Map<String, Object> launch(
             String url,
@@ -43,7 +53,8 @@ public final class FirefoxLaunch {
             BrowserLaunch.@Nullable Served served,
             @Nullable String executable,
             @Nullable Path profileDir,
-            List<String> firefoxArgs) {
+            List<String> firefoxArgs,
+            int port) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("type", TYPE);
         m.put("name", "Editora (Firefox)");
@@ -74,6 +85,9 @@ public final class FirefoxLaunch {
         if (!firefoxArgs.isEmpty()) {
             m.put("firefoxArgs", List.copyOf(firefoxArgs));
         }
+        m.put("port", port);
+        m.put("timeout", CONNECT_TIMEOUT_SECONDS);
+        m.put("reAttach", false); // Stop ends the Firefox it started; a next launch starts its own
         return m;
     }
 
@@ -98,10 +112,11 @@ public final class FirefoxLaunch {
      * A launch.json {@code firefox} configuration ({@code body}, without VS Code's own fields) as the adapter is sent
      * it: {@code webRoot} defaulting to {@code workspace} where a {@code url} is opened or attached to (the adapter
      * refuses a {@code webRoot} without one: a {@code file} maps itself), a launch's profile to Editora's ({@code profileDir}, kept),
-     * an attach's port to {@link #DEFAULT_PORT} — what the configuration says wins.
+     * a launch's debugger port to {@code port} and its connect timeout to {@link #CONNECT_TIMEOUT_SECONDS}, an attach's
+     * port to {@link #DEFAULT_PORT} — what the configuration says wins.
      */
     public static Map<String, Object> configured(
-            Map<String, Object> body, @Nullable Path workspace, @Nullable Path profileDir) {
+            Map<String, Object> body, @Nullable Path workspace, @Nullable Path profileDir, int port) {
         Map<String, Object> m = new LinkedHashMap<>(body);
         m.put("type", TYPE);
         boolean attach = "attach".equals(body.get("request"));
@@ -112,6 +127,8 @@ public final class FirefoxLaunch {
             m.putIfAbsent("port", DEFAULT_PORT);
         } else {
             m.putIfAbsent("request", "launch");
+            m.putIfAbsent("port", port); // a free one unless it names its own ({@link #launch}'s reason)
+            m.putIfAbsent("timeout", CONNECT_TIMEOUT_SECONDS);
             if (profileDir != null && !body.containsKey("profile")) {
                 m.putIfAbsent("profileDir", profileDir.toString());
                 m.putIfAbsent("keepProfileChanges", true);
