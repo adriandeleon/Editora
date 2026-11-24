@@ -77,6 +77,12 @@ worktree so branch switches and commits cannot interfere.
 - A new Java package starts `@NullMarked` (its own `package-info.java`). In a marked package, put JSpecify's
   `@Nullable` on what may be null and fix what NullAway reports rather than suppressing it
   ([null annotations](docs/conventions.md#null-annotations-jspecify-checked-by-nullaway)).
+- No change may make Editora slower ([per-change check](docs/performance.md#per-change-check)). A change on a
+  hot path (typing, rendering, scrolling, highlighting, open/save, Find, per-tab state, startup, or a new
+  listener, timer or background task) is measured before the pull request opens:
+  `PERF_MODES="<modes it can affect>" scripts/perf-ab.sh origin/master 3`, table in the pull request, a ▲ fixed
+  or justified. Any other change says "no hot path touched". `PerfBudgetFxTest` (in CI) fails on extra frames,
+  allocation, memory per tab or leaks; raise a budget there only with the reason and the table.
 - Run `mvn spotless:apply` after Java edits, then the narrow tests for what you changed
   (`mvn -Dtest='Foo*Test' test`). Before every push, also run the guard tests (`mvn test -Dgroups=guard`):
   they check the repository itself (stacked Javadoc, store shapes, message catalogs, licence notices), no

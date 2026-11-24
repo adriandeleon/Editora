@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Warnings and errors on a log's scrollbar.** A stripe over the scrollbar marks a log's WARN lines in amber and its
   ERROR and FATAL lines in red; hover a mark to read the line, click it to go there. A filtered log marks what the
   filter kept.
+- **Live logs from containers, Kubernetes, systemd and SSH.** **Log: Open Log Stream…** opens a read-only log tab fed
+  by `docker logs -f`, `kubectl logs -f`, `journalctl -f -u`, `ssh host tail -F` or any command you type, with level
+  colors, filters and Follow (off pauses it). Closing the tab stops the command.
 - **Compressed logs open directly.** A `.gz` file such as logrotate's `app.log.2.gz` opens decompressed and read-only,
   in the log viewer when its name is a log's, so it can be filtered without unpacking it. A large one shows its last
   16 MB (a log) or first 16 MB.
