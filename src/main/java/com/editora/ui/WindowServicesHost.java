@@ -27,6 +27,16 @@ final class WindowServicesHost implements CoordinatorHost {
     }
 
     @Override
+    public void openTab(com.editora.editor.EditorBuffer buffer) {
+        mc.addBuffer(buffer, true);
+    }
+
+    @Override
+    public @org.jspecify.annotations.Nullable Path projectRoot() {
+        return mc.windowProjectRoot();
+    }
+
+    @Override
     public com.editora.config.WorkspaceState workspaceState() {
         return mc.config.getWorkspaceState();
     }

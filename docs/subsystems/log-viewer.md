@@ -87,7 +87,19 @@ started; past that the oldest lines go and the buffer becomes unsaveable (`trimm
 a log of `LogViewerCoordinator.ASYNC_FILTER_CHARS` or more is computed off the FX thread and
 installed only if the text has done nothing but grow since (`LogView.epoch()`).
 
+**A stream is a tab without a file.** `LogViewerCoordinator.startStream` builds the command from a
+`LogStreamSource` (the typed text, shell words except for SSH's `host:/path`, whose path is quoted for
+the remote shell), opens an untitled read-only buffer forced into log mode and feeds it through
+`appendLogText`, as a follow does. `LogStream` reads stdout and stderr line by line on two daemon
+threads (a line is never split between them) and drains to the FX thread in coalesced batches.
+Follow off pauses delivery, not the command; the held text is capped at `LogView.FOLLOW_CAP`. Closing
+the tab (`onBufferClosed`) and `shutdown` stop the command. COMMAND and JOURNAL run on
+`ExecTargets.forPath(projectRoot)`; CONTAINER, KUBERNETES and SSH_FILE are clients on this machine.
+
 ## Not done
+
+- A stream that ended cannot be restarted in place (it would repeat its last 1000 lines); open it again.
+- Streams are not reopened with the session.
 
 - The level filter, pattern filter, hide filter and clear filter commands have no default keys.
 - The hide pattern's matches are not highlighted (only the show pattern's are).
