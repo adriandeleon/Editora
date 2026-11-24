@@ -186,7 +186,8 @@ replaces their artifacts with the signed files ([Linux signing](#linux-signing))
 
 A final job hands everything to **JReleaser** (`jreleaser.yml`, via `jreleaser/release-action`),
 which creates the GitHub release with all installers + fat jars + `checksums_sha256.txt`, and the
-release notes ([Release notes](#release-notes)).
+release notes ([Release notes](#release-notes)), then updates the package managers
+([Homebrew and winget](#homebrew-and-winget)).
 JReleaser only *orchestrates the release* — it does not build (the existing `dist` profile is
 reused as-is). The experimental `native` profile is opt-in, so the normal build is unaffected.
 
@@ -285,13 +286,55 @@ gh attestation verify Editora-0.28.0-linux-x64.deb --repo adriandeleon/Editora -
 - **Keyless.** Sigstore signs with the job's short-lived OIDC identity, so there is no key or secret
   to store, rotate or leak. The repository is public, so the statements go to Sigstore's public
   transparency log, which shows the file names and digests, both already public on the release.
-- **The subject list is `jreleaser.yml`'s `files.globs`.** `ReleaseSupplyChainTest` fails when the
-  two lists differ, so a new asset type is either attested or the build says why not.
+- **The subject list is `jreleaser.yml`'s `files.globs` plus its distributions' files** (the Apple
+  Silicon DMG and the MSI, which the package managers take). `ReleaseSupplyChainTest` fails when the
+  lists differ, so a new asset type is either attested or the build says why not.
 - **A dry run attests too.** That is how the step is tested before a tag. Its statements name the
   branch, not a tag, so `--source-ref refs/tags/…` keeps a dry-run build from verifying as a
   release.
 - `checksums_sha256.txt` (and `RELEASE.md`) are written by JReleaser after the step and are not
   attested themselves; every file the checksums list is.
+
+### Homebrew and winget
+
+Pauta REL-12, REL-13 and REL-14. `jreleaser.yml` has two distributions, because a Homebrew cask takes
+exactly one file:
+
+- **`editora`**, the Apple Silicon DMG, with the `brew` packager. It writes `Casks/editora.rb` to
+  [`adriandeleon/homebrew-tap`](https://github.com/adriandeleon/homebrew-tap), the tap the adl apps
+  share, so `brew install --cask adriandeleon/tap/editora` installs Editora. Intel Macs use the
+  `macos-x64` DMG from the release. The cask template is
+  [`src/jreleaser/distributions/editora/brew/cask.rb.tpl`](../src/jreleaser/README.md): JReleaser's
+  own always says `auto_updates true`, which makes `brew upgrade` skip the cask, and Editora does not
+  update itself.
+- **`editora-windows`**, the MSI, with the `winget` packager. It opens a pull request on
+  [`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs) from the `adriandeleon/winget-pkgs`
+  fork for package `AdrianDeLeon.Editora` (moniker `editora`), so `winget install AdrianDeLeon.Editora`
+  installs it once Microsoft merges the pull request. The first submission for a publisher is
+  reviewed by a person. The manifest's `ProductCode` is the MSI's own: the **Read the MSI's
+  ProductCode** step reads it with `msiinfo` (jpackage makes a new one for every version).
+
+Neither file is in `files.globs`: a distribution's file is attached to the release anyway, and listed
+in both it would appear twice in `checksums_sha256.txt`.
+
+**The token.** Both packagers write to other repositories, which the workflow's own token cannot do.
+They read the repository secret `PACKAGES_TOKEN`, a classic personal access token with `repo` scope.
+The **Decide what JReleaser runs** step leaves both packagers out of a tag's release while the secret
+is unset (a notice on the run says so) and the GitHub release still publishes; once the secret exists
+they run, with no other change. Both are `continueOnError`, so an expired token costs the cask and the
+pull request, never the release.
+
+**Checking without releasing.** A manual dispatch runs `full-release --dry-run`: it renders the cask
+and the manifests into the `jreleaser-output` artifact (`out/jreleaser/package/`) and pushes nothing.
+Locally, with the two files in place under `artifacts/Editora-X.Y.Z-macos-arm64/` and
+`artifacts/Editora-X.Y.Z-windows-x64/`:
+
+```
+EDITORA_BUILD_VERSION=X.Y.Z JRELEASER_PROJECT_VERSION=X.Y.Z JRELEASER_GITHUB_TOKEN=unused \
+EDITORA_MSI_PRODUCT_CODE='{…}' jreleaser package --basedir .
+```
+
+Run it in a plain clone: JReleaser's git library cannot read a worktree's `.git` file.
 
 ### Linux signing
 

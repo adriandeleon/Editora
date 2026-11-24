@@ -59,7 +59,9 @@ already-correct `Info.plist` (it only uses `--app-version` for its own CLI valid
 Finder "Get Info" / `mdls` / System Settings, plus the in-app `--version`/About dialog, all show the real
 semver — never the placeholder. A final job
 hands them to **JReleaser** (`jreleaser.yml`, via `jreleaser/release-action`) which creates the
-GitHub release with all installers + fat jars + `checksums.txt` + a changelog. JReleaser only *orchestrates the release* — it does not
+GitHub release with all installers + fat jars + `checksums_sha256.txt` + the release notes, and
+updates the Homebrew tap and the winget pull request when `PACKAGES_TOKEN` is set
+([release.md](../release.md#homebrew-and-winget)). JReleaser only *orchestrates the release* — it does not
 build (the existing `dist` profile is reused as-is). The experimental `native` Maven profile is
 opt-in; separate best-effort native jobs attempt Linux x64, macOS x64/arm64 and Windows x64
 portable archives after extracted-archive smoke tests. The normal build is unaffected.
