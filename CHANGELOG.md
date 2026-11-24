@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Merge logs by time.** **Log: Merge Logs…** opens two or more logs as one read-only log, their records in the order
+  they were written (stack traces stay with theirs, each file keeps its own order), each line tagged with its file's
+  colour and name.
 - **Times in logs.** The log viewer reads each line's timestamp (ISO, Logback, Tomcat, syslog, klog, access logs, and
   JSON `time`/`ts` fields, also as epoch numbers). **Log: Go to Time…** jumps to the first line written at or after a
   time, **Log: Filter by Time…** shows the records between two times (`10:05 - 10:20`), and **Show From/Up To Caret

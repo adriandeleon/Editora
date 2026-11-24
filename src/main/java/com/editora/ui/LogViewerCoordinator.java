@@ -390,6 +390,99 @@ final class LogViewerCoordinator {
         return stream == null ? 0 : stream.heldChars();
     }
 
+    // --- merging --------------------------------------------------------------------------------------
+
+    /** Asks for two or more log files and opens them merged by time in a new tab. */
+    void mergeLogs() {
+        if (!isEnabled()) {
+            host.setStatus(tr("status.log.disabled"));
+            return;
+        }
+        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
+        chooser.setTitle(tr("log.merge.choose"));
+        EditorBuffer active = host.activeBuffer();
+        Path here = active == null ? null : active.getPath();
+        ChooserStart.set(chooser, here != null && Vfs.isLocal(here) ? here.getParent() : host.projectRoot());
+        List<java.io.File> files = chooser.showOpenMultipleDialog(host.window());
+        if (files != null) {
+            mergeFiles(files.stream().map(java.io.File::toPath).toList());
+        }
+    }
+
+    /** Opens {@code files} merged by time in a new read-only tab, each line tagged with its file. */
+    void mergeFiles(List<Path> files) {
+        if (files.size() < 2) {
+            host.setStatus(tr("status.log.mergeNeedsTwo"));
+            return;
+        }
+        LogTimes.Context context = LogTimes.Context.local();
+        java.util.concurrent.CompletableFuture.supplyAsync(
+                        () -> {
+                            List<com.editora.logviewer.LogMerge.Input> inputs = new java.util.ArrayList<>();
+                            for (Path file : files) {
+                                inputs.add(new com.editora.logviewer.LogMerge.Input(
+                                        String.valueOf(file.getFileName()), readForMerge(file)));
+                            }
+                            return com.editora.logviewer.LogMerge.merge(inputs, context);
+                        },
+                        filterExecutor)
+                .whenComplete((merged, failure) -> Platform.runLater(() -> {
+                    if (failure != null) {
+                        Throwable cause = failure.getCause() != null ? failure.getCause() : failure;
+                        host.setStatus(tr("status.log.mergeFailed", String.valueOf(cause.getMessage())));
+                        return;
+                    }
+                    openMerged(merged);
+                }));
+    }
+
+    /** A log's text for merging: decompressed when it is gzip, its last {@link EditorBuffer#LARGE_FILE_BYTES}. */
+    private static String readForMerge(Path file) {
+        try {
+            int cap = (int) EditorBuffer.LARGE_FILE_BYTES;
+            byte[] bytes;
+            if (com.editora.io.GzipText.isGzip(file)) {
+                bytes = com.editora.io.GzipText.read(file, cap, true).bytes();
+            } else {
+                long size = java.nio.file.Files.size(file);
+                try (var channel = java.nio.channels.FileChannel.open(file)) {
+                    long from = Math.max(0, size - cap);
+                    java.nio.ByteBuffer buffer = java.nio.ByteBuffer.allocate((int) (size - from));
+                    channel.position(from);
+                    while (buffer.hasRemaining() && channel.read(buffer) >= 0) {
+                        // reads until full or the end
+                    }
+                    bytes = java.util.Arrays.copyOf(buffer.array(), buffer.position());
+                    if (from > 0) { // started mid-line: from the next line on
+                        int nl = 0;
+                        while (nl < bytes.length && bytes[nl] != '\n') {
+                            nl++;
+                        }
+                        bytes = java.util.Arrays.copyOfRange(bytes, Math.min(bytes.length, nl + 1), bytes.length);
+                    }
+                }
+            }
+            return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(file.getFileName() + ": " + e.getMessage(), e);
+        }
+    }
+
+    private void openMerged(com.editora.logviewer.LogMerge.Merged merged) {
+        EditorBuffer buffer = new EditorBuffer();
+        buffer.setDisplayName(tr("log.merge.tabName", String.join(" + ", merged.names())));
+        buffer.setInitialContent(merged.text());
+        buffer.setLogViewForced(true);
+        buffer.setReadOnly(true);
+        host.openTab(buffer);
+        ensureControl(buffer);
+        buffer.setLogSources(new com.editora.logviewer.LogSources(merged.names(), merged.sources()));
+        host.setStatus(
+                merged.untimed() > 0
+                        ? tr("status.log.mergedUntimed", merged.names().size(), merged.lines(), merged.untimed())
+                        : tr("status.log.merged", merged.names().size(), merged.lines()));
+    }
+
     /** Whether {@code buffer} shows a running stream (tests). */
     boolean isStreaming(EditorBuffer buffer) {
         return streams.containsKey(buffer);
