@@ -351,6 +351,10 @@ public class SettingsWindow {
     private final java.util.Map<BuildTool, CheckBox> buildToolChecks = new java.util.EnumMap<>(BuildTool.class);
     private final java.util.Map<BuildTool, TextField> buildToolCommandFields = new java.util.EnumMap<>(BuildTool.class);
     private ComboBox<JdkChoice> mavenJdkCombo;
+    /** Build Tools ▸ jkit: the jkit program (blank: found on PATH) and whether it is there. */
+    private TextField jkitPathField;
+
+    private final ToolStatusRow jkitStatus = new ToolStatusRow("jkit");
     private TextField mavenArchetypeCatalogField;
     private final java.util.Map<BuildTool, Label> buildToolStatusLabels = new java.util.EnumMap<>(BuildTool.class);
     private CheckBox ripgrepCheck;
@@ -968,6 +972,17 @@ public class SettingsWindow {
         trustedFoldersList = new ListView<>();
         javaCleanupsCount = new Label();
         mavenJdkCombo = new ComboBox<>();
+        jkitPathField = new TextField();
+        jkitPathField.setPromptText(tr("settings.jkit.path.prompt"));
+        jkitPathField.setId("settings-jkit-path");
+        commitOnEnterOrBlur(jkitPathField, () -> config.getSettings().getJkitPath(), now -> {
+            config.getSettings().setJkitPath(now.strip());
+            apply();
+            refreshJkitStatus();
+        });
+        jkitStatus.link(tr("settings.jkit.settings"), () -> runAppCommand("toolchain.jkit.settings"));
+        jkitStatus.link(tr("settings.jkit.doctor"), () -> runAppCommand("toolchain.jkit.doctor"));
+        jkitStatus.linkWhenMissing(tr("settings.jkit.get"), () -> runAppCommand("toolchain.jkit.website"));
         mavenArchetypeCatalogField = new TextField();
         scopeUi = new ProjectScopeSettings(
                 this::projectScope, this::apply, this::isLoading, this::load, this::trustProject, () -> stage);
@@ -3150,6 +3165,16 @@ public class SettingsWindow {
                 buildBeforeRunCheck,
                 tr("settings.buildBeforeRun.hint"),
                 "java build before run debug compile maven gradle launch main class stale");
+        Card jkitCard = card(p, "jkit");
+        toolRows(
+                jkitCard,
+                Category.BUILD_TOOLS,
+                tr("settings.jkit.path"),
+                tr("settings.jkit.path.hint"),
+                jkitPathField,
+                null,
+                jkitStatus,
+                "jkit jdk maven gradle sbt graalvm install toolchain sdkman jkit.toml version manager");
         for (BuildTool bt : BuildTool.enabled()) {
             if (bt == BuildTool.NPM) {
                 // One Node.js for Run, npm scripts, Debug, the language servers and HTTP scripts (review E102):
@@ -4571,11 +4596,13 @@ public class SettingsWindow {
                 }
                 refreshBuildCommandStatus(bt);
                 if (bt == BuildTool.MAVEN) {
+                    jkitPathField.setText(settings.getJkitPath());
                     JdkChoice.select(mavenJdkCombo, settings.getMavenJdkHome());
                     mavenArchetypeCatalogField.setText(settings.getMavenArchetypeCatalogUrl());
                 }
             }
             refreshBuildToolStatus();
+            refreshJkitStatus();
             encryptionGpgPathField.setText(settings.getEncryptionGpgPath());
             encryptionIncludeSelfCheck.setSelected(settings.isEncryptionIncludeSelf());
             encryptionPromptCombo.setValue(settings.getEncryptionPassphrasePrompt());
@@ -4625,6 +4652,24 @@ public class SettingsWindow {
         if (toolWindowSettings != null) {
             toolWindowSettings.refresh();
         }
+    }
+
+    /** Runs an app command from a Settings link (jkit Settings…, Check Setup), when the window was given a runner. */
+    private void runAppCommand(String id) {
+        if (runCommand != null) {
+            runCommand.accept(id);
+        }
+    }
+
+    /** Looks for the jkit program (off the FX thread) and shows its version, or that it is missing. */
+    private void refreshJkitStatus() {
+        jkitStatus.checking();
+        com.editora.process.BlockingTasks.named("settings-jkit-probe").execute(() -> {
+            String jkit = com.editora.toolchain.JkitCli.locate();
+            String version = jkit == null ? null : com.editora.toolchain.JkitCli.version(jkit);
+            javafx.application.Platform.runLater(() -> jkitStatus.show(
+                    jkit != null, jkit == null ? "" : (version == null ? "" : version + " — ") + jkit, false));
+        });
     }
 
     /**

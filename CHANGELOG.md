@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Full jkit support.** Editora drives [jkit](https://jkit-project.dev/) for every command it has: the project's pins
+  come from jkit itself (`jkit status`: `jkit.toml`, `.sdkmanrc`, `.tool-versions`, `.java-version`), **Set Project
+  JDK…** can keep the choice in `jkit.toml` (`jkit pin`), and sbt and GraalVM join JDK, Maven and Gradle. New **Java
+  Toolchain** commands sync the project (`jkit sync`), show jkit's status, check its setup (`jkit doctor`), remove
+  older builds (`jkit prune`), browse installs, set jkit's default vendors and switching on `cd` (`jkit config`), add
+  jkit's hook to your shell, and update jkit. **Settings → Build Tools → jkit** names the jkit program and opens jkit's
+  own settings; Doctor has a jkit row.
 - **launch.json `serverReadyAction` and `postDebugTask`.** A configuration's `serverReadyAction` watches the
   program's output for the server's address (VS Code's pattern and `uriFormat`), then opens it in the browser, debugs
   it in Chrome or Edge beside the server, or starts another configuration; `killOnServerStop` stops that session with
