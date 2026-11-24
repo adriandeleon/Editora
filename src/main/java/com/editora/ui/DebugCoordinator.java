@@ -435,6 +435,7 @@ final class DebugCoordinator {
     private final ElectronDebugLaunch electron = new ElectronDebugLaunch(this); // an Electron app: main + renderer
     final RemoteAttachLaunch remote = new RemoteAttachLaunch(this); // a native program under a debug server elsewhere
     final BrowserDebugLaunch browser = new BrowserDebugLaunch(this); // a page in Chrome, Edge, Firefox…
+    final RubyDebugLaunch ruby = new RubyDebugLaunch(this); // Ruby scripts, RSpec, Minitest, a Rails app's server
     final PhpDebugLaunch php = new PhpDebugLaunch(this); // PHP files, web apps, PHPUnit tests, Listen for Xdebug
 
     /** The build facts a launch asks: looked at off the FX thread first when not known ({@link DebugFacts}). */
@@ -5650,7 +5651,11 @@ final class DebugCoordinator {
             php.debug(path, b.getContent(), fileArgs); // a script, a web app's server, a PHPUnit test file
             return;
         }
-        if (java.util.Set.of("ruby", "bash", "lua").contains(language)) {
+        if ("ruby".equals(language)) {
+            ruby.debug(path, b.getContent(), fileArgs); // a script, a spec or test file, a Rails app's server
+            return;
+        }
+        if (java.util.Set.of("bash", "lua").contains(language)) {
             debugScriptFile(path, language, fileArgs);
             return;
         }

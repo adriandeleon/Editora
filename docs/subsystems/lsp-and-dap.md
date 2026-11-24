@@ -1268,6 +1268,23 @@ configured (`Settings.rubyDebugPath`), else on the PATH, else in the user's gem 
 `gem install --user-install debug` (a system Ruby's own gem folder is root's). Its exception filters (`any`,
 `RuntimeError`) are off by default, as in VS Code.
 
+What a Ruby file runs as is [`run/RubyApps`](../../src/main/java/com/editora/run/RubyApps.java)'s plan, the same for Run
+File (`RunCoordinator`, `FilePlan.ruby`) and F5 ([`ui/RubyDebugLaunch`](../../src/main/java/com/editora/ui/RubyDebugLaunch.java),
+planned off the FX thread, its command after rdbg's `--` in place of `ruby <file>`), in the project's folder (the nearest
+with a `Gemfile`), under `bundle exec` when the bundle is installed (`Gemfile.lock`): an RSpec file under `rspec
+file[:line]`; a Minitest file (`*_test.rb`, `test_*.rb` with a test class) under `ruby bin/rails test file[:line]` in a
+Rails app (`config/application.rb` and `bin/rails`), else `ruby -Itest file [-n name]`
+([`run/RubyTests`](../../src/main/java/com/editora/run/RubyTests.java): `def test_…`, or ActiveSupport's `test "…"`
+made `test_` + its words joined by `_`); a Rails app's file under `app/` or `config/`, its `config.ru` or `bin/rails`
+under `ruby bin/rails server -p <first free from 3000> -b 127.0.0.1`; anything else `ruby file`.
+[`run/RubyRunLines`](../../src/main/java/com/editora/run/RubyRunLines.java) puts the ▶ on specs (their `describe`),
+tests (their class), `config.ru`, `bin/rails`, `Rakefile` and a script with a statement at the left margin that is not a
+declaration; a file of classes, modules and methods has none. Probed under rdbg 1.11 with Ruby 4.0, RSpec 3.13 and Rails
+8.1: a spec's example by `file:line`, `bundle exec` with no `debug` gem in the bundle (rdbg loads it itself), a
+controller under `bin/rails test file:line` and in a request to `bin/rails server` all stop; Stop ends the server.
+`RubyAppsProbeFxTest` (opt-in) drives each, the Rails cases on a copy of a prepared app (`~/.cache/editora/rails-probe`,
+which the full-tests job makes with `rails new --minimal`).
+
 **PHP.** The `php` profile is Xdebug through vscode-php-debug (MIT), `phpDebug.js` on Node.js 20.18 or later over
 stdio. `InstalledAdapter.PHP_DEBUG` finds it as configured (`Settings.phpDebugPath`: the file or its unpacked
 `.vsix`), else in Editora's install (`plugins/dap/php/extension/out/phpDebug.js`), else in VS Code's

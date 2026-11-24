@@ -426,6 +426,23 @@ passes as `JAVA_HOME`. Editora finds it as `scala-cli` on your `PATH`, then
 instead of starting anything. The first run of a Scala version downloads its
 compiler, so it takes longer.
 
+### Ruby files
+
+*Run File* on a Ruby file runs what it is, in the project's folder (the nearest
+with a `Gemfile`) and under `bundle exec` once the bundle is installed:
+
+- an **RSpec** file (`…_spec.rb`) runs `rspec` on it;
+- a **Minitest** file (`…_test.rb`, `test_….rb`) runs `bin/rails test` on it
+  in a Rails app, else `ruby -Itest` on it;
+- a **Rails** app's `config.ru` or `bin/rails` starts the app's development
+  server, `bin/rails server`, on the first free port from 3000;
+- any other file with code of its own runs as `ruby file`. A file of classes,
+  modules and methods alone gets no ▶.
+
+**Debug File** (F5) does the same under the debugger (see
+[Debugging Ruby](#debugging-ruby)). Pressed in any file under a Rails app's
+`app/` or `config/`, such as a controller, F5 serves the app.
+
 ### PHP files
 
 *Run File* on a PHP file runs what it is:
@@ -3401,8 +3418,22 @@ and in `~/.dotnet`, where Microsoft's install script puts it.
 
 Ruby is debugged with rdbg, the debugger of Ruby's `debug` gem, which Ruby 3.1
 and later ship. **Debug: Start / Continue** (`debug.start`, F5) or **Debug
-File** runs the file under rdbg with `ruby`, with the arguments set by **File:
-Run with Arguments…**, and stops at your breakpoints. The program's output
+File** runs the file under rdbg as [Run File](#ruby-files) runs it, and stops at
+your breakpoints:
+
+- a **script** runs with `ruby` and the arguments set by **File: Run with
+  Arguments…**;
+- an **RSpec** or **Minitest** file runs its tests. **Debug Test at Caret**
+  runs only the test at the caret: for RSpec the example or group on that line
+  (`rspec file:line`), in a Rails app the test on that line
+  (`bin/rails test file:line`), and for plain Minitest the `def test_…` or
+  `test "…"` the caret is in (`-n test_name`);
+- a **Rails** app: F5 on a controller, model or other file under `app/` or
+  `config/` starts `bin/rails server`, and each request you send it stops at
+  your breakpoints. Stop ends the server.
+
+rdbg debugs a program run under `bundle exec` even when the `debug` gem isn't
+in the bundle. The program's output
 reaches the Debug console. Ruby's
 [exception breakpoints](#exception-breakpoints), **Ruby: any raised exception**
 and **Ruby: RuntimeError**, are off by default, as in VS Code.

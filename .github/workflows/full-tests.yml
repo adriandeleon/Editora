@@ -419,6 +419,17 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends ruby ruby-dev php-cli php-xdebug phpunit
           ruby --version
           gem install --user-install --no-document debug -v 1.11.0
+          # RSpec, Minitest and a Rails app for RubyAppsProbeFxTest: the user gems' programs on the PATH, and a
+          # minimal app with its bundle installed where the probe copies it from.
+          gem install --user-install --no-document bundler rspec minitest sqlite3 'rails:8.1.4.1'
+          gems_bin="$(ruby -e 'print Gem.user_dir')/bin"
+          echo "$gems_bin" >> "$GITHUB_PATH"
+          export PATH="$gems_bin:$PATH"
+          rspec --version | head -1
+          app="$HOME/.cache/editora/rails-probe"
+          mkdir -p "$(dirname "$app")"
+          rails new "$app" --minimal --skip-git --skip-bundle --skip-docker --quiet
+          (cd "$app" && bundle config set --local path vendor/bundle && bundle install --quiet)
           php --version | head -1
           php -m | grep -x Xdebug
           phpunit --version
@@ -467,6 +478,8 @@ jobs:
       # to the waiting host, and its breakpoint stops with the test's locals.
       # RubyDebugProbeFxTest: under rdbg, a script stops in a block, steps and ends; and in a window F5 does the same.
       # PhpDebugProbeFxTest: on Xdebug through vscode-php-debug, a script stops, steps and ends; and in a window F5.
+      # RubyAppsProbeFxTest: under rdbg, Debug Test at Caret runs an RSpec example and a Minitest test alone and stops
+      # in them, a Rails test stops in its controller, and F5 in a Rails controller serves the app and a request stops.
       # RemoteNativeAttachProbeFxTest: a C program under gdbserver, attached to by Attach to Remote Program on GDB and
       # on CodeLLDB and by a cppdbg configuration with miDebuggerServerAddress, stops at its breakpoint.
       # PhpWebProbeFxTest: F5 on an index.php serves it on PHP's built-in server and a request stops; F5 on a class of a
@@ -532,7 +545,7 @@ jobs:
       # PythonTemplatesProbeFxTest: on debugpy, a breakpoint on a Jinja template's line (Jinja2 in the requirements) and
       # on a Django template's (a manage.py) stops on it with the template's variables, Template breakpoints Automatic.
       - name: Test compact Java language service and debugging
-        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,RemoteNativeAttachProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,CsharpTestDebugProbeFxTest,RubyDebugProbeFxTest,PhpDebugProbeFxTest,PhpWebProbeFxTest,BashDebugProbeFxTest,DebugHistoryProbeFxTest#python*+java+javaRecording,SeveralSessionsProbeFxTest,TriggeredBreakpointsProbeFxTest#python+java,LoadedSourcesProbeFxTest#c*+python*,MarkObjectProbeFxTest,DebugSmallWinsProbeFxTest,ThreadDumpProbeFxTest,TypeRenderersProbeFxTest,BreakpointFiltersProbeFxTest,CoreDumpProbeFxTest,DebugTableProbeFxTest,ParallelStacksProbeFxTest,StepBackProbeFxTest,ExceptionBreakpointsProbeFxTest,PythonDataProbeFxTest,StepFiltersProbeFxTest#python+java+go,EvaluationTimeLimitProbeFxTest,WatchSetValueProbeFxTest#python+java+go,ValueFormatsProbeFxTest#java+python+go+gdb+codelldb,GoGoroutinesProbeFxTest,PythonTemplatesProbeFxTest,PythonWebProbeFxTest,InstructionBreakpointProbeFxTest,MemoryWriteProbeFxTest,DartDebugProbeFxTest -Dgroups=probe -Dlsp.probe=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,RemoteNativeAttachProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,CsharpTestDebugProbeFxTest,RubyDebugProbeFxTest,RubyAppsProbeFxTest,PhpDebugProbeFxTest,PhpWebProbeFxTest,BashDebugProbeFxTest,DebugHistoryProbeFxTest#python*+java+javaRecording,SeveralSessionsProbeFxTest,TriggeredBreakpointsProbeFxTest#python+java,LoadedSourcesProbeFxTest#c*+python*,MarkObjectProbeFxTest,DebugSmallWinsProbeFxTest,ThreadDumpProbeFxTest,TypeRenderersProbeFxTest,BreakpointFiltersProbeFxTest,CoreDumpProbeFxTest,DebugTableProbeFxTest,ParallelStacksProbeFxTest,StepBackProbeFxTest,ExceptionBreakpointsProbeFxTest,PythonDataProbeFxTest,StepFiltersProbeFxTest#python+java+go,EvaluationTimeLimitProbeFxTest,WatchSetValueProbeFxTest#python+java+go,ValueFormatsProbeFxTest#java+python+go+gdb+codelldb,GoGoroutinesProbeFxTest,PythonTemplatesProbeFxTest,PythonWebProbeFxTest,InstructionBreakpointProbeFxTest,MemoryWriteProbeFxTest,DartDebugProbeFxTest -Dgroups=probe -Dlsp.probe=true test
 
   # The Node.js tool chain Editora drives but never ships: typescript-language-server with TypeScript, and
   # vscode-js-debug. Both are user-installed, so the default lanes skip their probes — and a TypeScript release
