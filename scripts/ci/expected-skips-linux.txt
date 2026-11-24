@@ -72,6 +72,7 @@ com.editora.ui.SourcelessFramesProbeFxTest
 com.editora.ui.MarkObjectProbeFxTest
 com.editora.ui.BrowserDebugProbeFxTest
 com.editora.ui.FirefoxDebugProbeFxTest
+com.editora.ui.ElectronDebugProbeFxTest
 com.editora.ui.DebugSmallWinsProbeFxTest
 com.editora.ui.ThreadDumpProbeFxTest
 com.editora.ui.TypeRenderersProbeFxTest

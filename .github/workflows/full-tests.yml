@@ -573,6 +573,17 @@ jobs:
             | tar -xz -C "$dest"
           test -f "$dest/js-debug/src/dapDebugServer.js"
 
+      # Electron for ElectronDebugProbeFxTest, pinned, where the probe looks for it (its app links node_modules/electron
+      # there).
+      - name: Install Electron
+        run: |
+          dest="$HOME/.cache/editora/electron-probe"
+          mkdir -p "$dest"
+          cd "$dest"
+          npm init -y >/dev/null
+          npm install --no-fund --no-audit --save-dev electron@45.4.1
+          test -f node_modules/electron/path.txt
+
       # vscode-firefox-debug for FirefoxDebugProbeFxTest, pinned as Editora's installer fetches it, where it puts it; the
       # runner's own Firefox.
       - name: Install vscode-firefox-debug
@@ -609,5 +620,7 @@ jobs:
       # in a script it loads; a launch.json chrome configuration opens a file: URL and stops.
       # FirefoxDebugProbeFxTest: on vscode-firefox-debug and a headless Firefox, F5 on an HTML file stops in its script;
       # a launch.json firefox configuration opens a page and stops; Attach to Browser joins Firefox's debugger server.
+      # ElectronDebugProbeFxTest: headless Electron, F5 on an app's main file stops in the main process, then in its
+      # window's script, and Stop ends the app; Run File starts the app.
       - name: Test the TypeScript server, JavaScript debugging and Pyright
-        run: ./mvnw -B --no-transfer-progress -Dtest=TypeScriptServerNodeProbeFxTest,JsDebugProbeFxTest,PyrightProbeFxTest,AttachToProcessProbeFxTest#aNode*,DebugHistoryProbeFxTest#javascript*,JsColumnBreakpointsProbeFxTest,StepFiltersProbeFxTest#javascript,WatchSetValueProbeFxTest#javascript,ValueFormatsProbeFxTest#javascript,TriggeredBreakpointsProbeFxTest#javascript,LoadedSourcesProbeFxTest#javascript*,SourcelessFramesProbeFxTest,BrowserDebugProbeFxTest,FirefoxDebugProbeFxTest -Dgroups=node,probe -Dnode.probe=true -Dlsp.probe=true -Djacoco.skip=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=TypeScriptServerNodeProbeFxTest,JsDebugProbeFxTest,PyrightProbeFxTest,AttachToProcessProbeFxTest#aNode*,DebugHistoryProbeFxTest#javascript*,JsColumnBreakpointsProbeFxTest,StepFiltersProbeFxTest#javascript,WatchSetValueProbeFxTest#javascript,ValueFormatsProbeFxTest#javascript,TriggeredBreakpointsProbeFxTest#javascript,LoadedSourcesProbeFxTest#javascript*,SourcelessFramesProbeFxTest,BrowserDebugProbeFxTest,FirefoxDebugProbeFxTest,ElectronDebugProbeFxTest -Dgroups=node,probe -Dnode.probe=true -Dlsp.probe=true -Djacoco.skip=true test
