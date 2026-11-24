@@ -259,6 +259,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Elixir language server.** ElixirLS crashed on Editora's first request and was restarted again and again, so
+  Elixir files had no diagnostics, completion or hover. Editora now sends request ids as numbers, as VS Code does;
+  ElixirLS refused them as strings.
 - **Git and GitHub, second review.** A second review of Git and GitHub support found about 85 problems, now fixed:
   - *Safety.* The Project Map's Changes card could run a diff program a repository's own config names; it no
     longer can. Force with Lease adds `--force-if-includes` and names the one branch it replaces, so a background

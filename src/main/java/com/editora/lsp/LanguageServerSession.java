@@ -1754,7 +1754,7 @@ final class LanguageServerSession implements LanguageClient {
                 .setExecutorService(executor)
                 // LSP4J wraps both directions with this; only its stream writer is the outgoing end.
                 .wrapMessages(consumer -> consumer instanceof org.eclipse.lsp4j.jsonrpc.json.StreamMessageConsumer
-                        ? new DeferredSyncConsumer(consumer, out, json::get)
+                        ? new IntegerRequestIds(new DeferredSyncConsumer(consumer, out, json::get)) // ElixirLS
                         : new AfterRequestConsumer(consumer, "workspace/configuration", this::configurationAnswered))
                 .create();
         this.launcher = launcher;
