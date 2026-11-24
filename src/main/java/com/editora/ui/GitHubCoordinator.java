@@ -116,6 +116,9 @@ final class GitHubCoordinator {
      */
     private List<String> remoteUrls = List.of();
 
+    /** The name of the remote each of {@link #remoteUrls} belongs to, in the same order. */
+    private List<String> remoteNames = List.of();
+
     /** The repo root whose open-PR/issue activity has been probed (so the async check runs once per root). */
     private @Nullable Path activityCheckedRoot;
     /** Whether {@link #activityCheckedRoot} has at least one open PR or issue (gates the tool-window stripe). */
@@ -373,22 +376,29 @@ final class GitHubCoordinator {
             return false;
         }
         if (!root.equals(remoteCheckedRoot) || remoteStale) {
-            List<String> previous = root.equals(remoteCheckedRoot) ? remoteUrls : List.of(); // see hasOpenActivity()
+            boolean same = root.equals(remoteCheckedRoot); // see hasOpenActivity()
+            List<String> previous = same ? remoteUrls : List.of();
+            remoteNames = same ? remoteNames : List.of();
             remoteCheckedRoot = root;
             remoteStale = false;
             remoteUrls = previous;
             git.service().remotes(root, remotes -> {
                 if (root.equals(remoteCheckedRoot)) { // still the current root
                     List<String> urls = new java.util.ArrayList<>();
+                    List<String> names = new java.util.ArrayList<>();
                     for (com.editora.git.GitRemotes.Remote remote : remotes) {
                         urls.add(remote.fetchUrl());
                         urls.add(remote.pushUrl());
+                        names.add(remote.name());
+                        names.add(remote.name());
                     }
                     remoteUrls = urls;
+                    remoteNames = List.copyOf(names);
                     applyGating();
                     // An SSH remote may name an ~/.ssh/config alias (git@github-work:o/r.git): ssh -G says which
-                    // host it stands for — off the FX thread, once per alias — and the surfaces are gated again.
-                    service.resolveRemoteHosts(urls, resolved -> {
+                    // host it stands for — off the FX thread, on the repository's machine — and the surfaces are
+                    // gated again.
+                    service.resolveRemoteHosts(root, urls, resolved -> {
                         if (root.equals(remoteCheckedRoot) && remoteUrls == urls && !resolved.equals(urls)) {
                             remoteUrls = resolved;
                             applyGating();
@@ -402,15 +412,17 @@ final class GitHubCoordinator {
     }
 
     /**
-     * The host of the current repository's GitHub remote whose {@code gh} token was refused, or {@code ""}: with
-     * another host signed in gh still reads as signed in, so without this the window just stayed hidden.
+     * The host whose refused {@code gh} token stops gh in the current repository, or {@code ""}: with another host
+     * signed in gh still reads as signed in, so without this the window just stayed hidden. A fork whose other
+     * remote is on a signed-in host is not refused unless gh would use the remote on the refused one
+     * ({@link GitHubRemote#refusedHost}).
      */
     private String rejectedRepoHost() {
         GitHubService.Availability a = service.availability();
         if (a == null || a.rejectedHosts().isEmpty() || git.repoRoot() == null) {
             return "";
         }
-        return GitHubRemote.hostAmong(remoteUrls, a.rejectedHosts());
+        return GitHubRemote.refusedHost(remoteNames, remoteUrls, a.hosts(), a.rejectedHosts());
     }
 
     /** The repository root the refused-token notice was last given for, so it is said once per repository. */
@@ -523,6 +535,7 @@ final class GitHubCoordinator {
         // Their last answers stand until the new ones arrive, so an open tool window is not closed meanwhile.
         remoteStale = true;
         activityStale = true;
+        com.editora.git.SshHosts.invalidate(); // an edited ~/.ssh/config, or a slow ssh answered for: ask again
         ifEnabled(() -> service.detect(a -> {
             applyGating();
             host.setStatus(
@@ -590,7 +603,6 @@ final class GitHubCoordinator {
     }
 
     private void doCheckout(Path dir, int number) {
-        host.setStatus(tr("status.github.checkingOut", number));
         // `gh pr checkout` switches branches just as `git checkout` does, so it goes through the same
         // boundary: saves queued for files in the repository are superseded before and after it (a pending
         // save must not write the old branch's text over the checked-out file), then the Git UI refreshes
@@ -598,19 +610,30 @@ final class GitHubCoordinator {
         // In `dir`'s repository, not the active tab's: a row of the tool window (or a review tab's link)
         // checks out in the repository it was listed from, and it is that repository's pending saves that
         // must not land on the switched files.
-        git.aroundWorkingTreeMutation(
-                mutationRoot(dir, git.repoRoot()),
-                done -> service.prCheckout(dir, number, done),
-                r -> {
-                    if (r.ok()) {
-                        host.setStatus(tr("status.github.checkedOut", number));
-                        javafx.application.Platform.runLater(ops::checkExternalChanges);
-                        refreshChecks(dir); // the checked-out branch's PR may have CI checks
-                    } else {
-                        ghError(tr("status.github.checkoutFailed"), r.message());
-                    }
-                },
-                null);
+        // From a detached HEAD the commits made there that no branch keeps would be left to the reflog: asked
+        // first, as every other command that moves HEAD does. The pull request's head is usually not fetched
+        // yet, so git may not be able to count them — then the question says it could not tell.
+        Path root = mutationRoot(dir, git.repoRoot());
+        GitLeaveDetachedHead.thenMove(
+                git,
+                root,
+                "#" + number,
+                () -> git.aroundWorkingTreeMutation(
+                        root,
+                        done -> {
+                            host.setStatus(tr("status.github.checkingOut", number));
+                            service.prCheckout(dir, number, done);
+                        },
+                        r -> {
+                            if (r.ok()) {
+                                host.setStatus(tr("status.github.checkedOut", number));
+                                javafx.application.Platform.runLater(ops::checkExternalChanges);
+                                refreshChecks(dir); // the checked-out branch's PR may have CI checks
+                            } else {
+                                ghError(tr("status.github.checkoutFailed"), r.message());
+                            }
+                        },
+                        null));
     }
 
     /**
@@ -670,7 +693,7 @@ final class GitHubCoordinator {
                 reviewLoads.remove(key, calls);
                 // A diff cut off at the capture limit lost its last files: the tab and the status bar say so.
                 String cut = res.truncated() ? tr("status.github.diffCannotShowAll") : "";
-                openReview(dir, number, view.detail(), res.files(), joinNotice(cut, detailError));
+                openReview(dir, number, view.detail(), res.files(), cut, detailError);
                 if (res.truncated()) {
                     host.setStatus(cut);
                 }
@@ -688,7 +711,7 @@ final class GitHubCoordinator {
                     if (files.truncated()) { // the API's answer itself passed the capture limit
                         notice += " " + tr("status.github.diffCannotShowAll");
                     }
-                    openReview(dir, number, view.detail(), files.files().files(), joinNotice(notice, detailError));
+                    openReview(dir, number, view.detail(), files.files().files(), notice, detailError);
                 }));
             } else {
                 reviewLoads.remove(key, calls);
@@ -736,12 +759,21 @@ final class GitHubCoordinator {
             int number,
             PrViewParser.@Nullable PrDetail detail,
             List<PatchParser.FilePatch> files,
-            String notice) {
+            String diffNotice,
+            String detailError) {
+        String notice = joinNotice(diffNotice, detailError);
         ReviewKey key = new ReviewKey(dir, number);
         PrReviewPane existing = reviewPanes.get(key);
         if (existing != null && ops.selectTabOf(existing)) {
-            // Refresh of an already-open tab: a detail that could not be read again leaves the one on screen
-            // (and its head commit, which a review is pinned to) — the notice says it was not refreshed.
+            // Refresh of an already-open tab. All or nothing: a review is pinned to the head commit of the detail
+            // on screen, so a new diff shown under the old detail would let the reviewer approve the old head
+            // having read the new one. A detail that could not be read again keeps the diff too, and says so.
+            if (keepsShownReview(detail, existing.detail())) {
+                existing.update(
+                        existing.detail(), existing.files(), joinNotice(tr("github.review.notRefreshed"), detailError));
+                host.setStatus(tr("github.review.notRefreshed"));
+                return;
+            }
             existing.update(detail != null ? detail : existing.detail(), files, notice);
             return;
         }
@@ -764,11 +796,20 @@ final class GitHubCoordinator {
                 () -> readyIn(dir, d -> {
                     PrReviewPane p = reviewPanes.get(key);
                     PrViewParser.PrDetail seen = p == null ? null : p.detail();
-                    submitReviewForm(d, number, seen == null ? "" : seen.headRefOid());
+                    submitReviewForm(d, number, seen == null ? "" : seen.headRefOid(), seen == null ? "" : seen.url());
                 }));
         pane.update(detail, files, notice);
         reviewPanes.put(key, pane);
         ops.addReviewTab(pane);
+    }
+
+    /**
+     * Whether a refresh of an open review tab keeps what it shows, diff included: its details ({@code fresh}) could
+     * not be read again while the ones on screen ({@code shown}) carry the head commit a review would be pinned to.
+     * Pure.
+     */
+    static boolean keepsShownReview(PrViewParser.@Nullable PrDetail fresh, PrViewParser.@Nullable PrDetail shown) {
+        return fresh == null && shown != null && !shown.headRefOid().isBlank();
     }
 
     /** Drops a closed review tab from the map (called by {@code MainController} on tab disposal). */
@@ -1112,6 +1153,9 @@ final class GitHubCoordinator {
     /** A poll came due while the window was not focused; it runs when the focus returns. */
     private boolean pollDeferred;
 
+    /** The directory of a failed lookup's retry that came due while the window was unfocused ({@code null}: none). */
+    private @Nullable Path deferredRetryDir;
+
     private boolean focusWatched;
     /** Test seam: the wait before a poll, in milliseconds, instead of {@link ChecksPoll#delaySeconds}. */
     long pollDelayMillisForTest = -1;
@@ -1188,16 +1232,25 @@ final class GitHubCoordinator {
             pollTimer.stop();
         }
         pollDeferred = false;
+        deferredRetryDir = null;
     }
 
     /** Fetches the current branch's PR checks and pushes the roll-up to the status bar (null hides it). */
     private void refreshChecks(@Nullable Path dir) {
+        if (dir != null && elsewhere(dir)) {
+            checksElsewhere(dir);
+            return;
+        }
         pollAttempt = 0;
         checksFailures = 0;
         fetchChecks(dir);
     }
 
     private void fetchChecks(@Nullable Path dir) {
+        if (dir != null && elsewhere(dir)) {
+            checksElsewhere(dir);
+            return;
+        }
         long gen = ++checksGen;
         stopPolling();
         checksInFlight = false;
@@ -1222,11 +1275,8 @@ final class GitHubCoordinator {
             return;
         }
         checksWanted = true;
-        // The branch the answer belongs to is the one checked out in `dir`: the active repository's branch is
-        // only known for the active repository. An answer for another one (a row's checkout in a repository
-        // whose tab is not active) is neither cached under the active branch nor put in its status bar.
-        boolean active = seenRoot == null || dir.equals(seenRoot);
-        ChecksKey key = new ChecksKey(dir, active ? seenBranch : "");
+        // Another repository's lookup went to checksElsewhere: this one is the active repository's.
+        ChecksKey key = new ChecksKey(dir, seenBranch);
         checksAsked = key;
         checksInFlight = true;
         service.branchChecks(dir, res -> {
@@ -1241,13 +1291,6 @@ final class GitHubCoordinator {
             checksFailure = "";
             checksFailures = 0;
             GitHubService.BranchChecks kept = res.ok() && !res.runs().isEmpty() ? res : GitHubService.BranchChecks.NONE;
-            if (!active) {
-                if (checksAnnounce) {
-                    checksAnnounce = false;
-                    host.setStatus(tr("github.checks.none"));
-                }
-                return;
-            }
             checksCache.put(key, kept);
             schedulePoll(dir, showChecksResult(dir, kept));
             if (checksAnnounce) {
@@ -1260,6 +1303,51 @@ final class GitHubCoordinator {
                 }
             }
         });
+    }
+
+    /**
+     * Whether {@code dir} is another repository than the active one, whose roll-up is on screen: the branch an
+     * answer there belongs to is not known, so it is neither cached, shown, nor polled.
+     */
+    private boolean elsewhere(@Nullable Path dir) {
+        return dir != null && seenRoot != null && !dir.equals(seenRoot);
+    }
+
+    /**
+     * The checks of another repository than the active one (a tool-window row's checkout there, or the context of
+     * a command): asked for only when a command waits to be told, and then told what came back — the active
+     * repository's roll-up, its poll and its generation are left alone.
+     */
+    private void checksElsewhere(Path dir) {
+        if (!checksAnnounce) {
+            return; // nothing on screen belongs to it, and nobody asked
+        }
+        checksAnnounce = false;
+        GitHubService.Availability gh = service.availability();
+        if (gh != null && !gh.supportsChecks()) {
+            host.setStatus(tr(
+                    "status.github.checksCannotUseGh",
+                    com.editora.github.GhVersion.number(gh.version()),
+                    com.editora.github.GhVersion.MINIMUM));
+            return;
+        }
+        service.branchChecks(dir, res -> host.setStatus(checksElsewhereLine(res)));
+    }
+
+    /** What a lookup of another repository's checks says in the status line. Pure but for the catalogs. */
+    static String checksElsewhereLine(GitHubService.BranchChecks res) {
+        if (res.failed()) {
+            return failureLine(tr("status.github.checksFailed"), res.error());
+        }
+        if (!res.ok() || res.runs().isEmpty()) {
+            return tr("github.checks.none");
+        }
+        ChecksParser.ChecksSummary sum = ChecksParser.ChecksSummary.of(res.runs());
+        int number = res.pr() == null ? 0 : res.pr().number();
+        return tr(
+                "status.github.checksElsewhere",
+                number,
+                tr("github.checks.summary", sum.pass(), sum.fail(), sum.pending(), sum.skipped()));
     }
 
     /** Why the last checks lookup failed ({@code ""} when it did not); the open card says it. */
@@ -1292,9 +1380,17 @@ final class GitHubCoordinator {
                     : ChecksPoll.delaySeconds(checksFailures + 1) * 1000L;
             long gen = checksGen;
             pollTimer = new javafx.animation.PauseTransition(javafx.util.Duration.millis(Math.max(1, millis)));
+            watchFocus();
             pollTimer.setOnFinished(e -> {
-                if (gen == checksGen && isEnabled() && windowFocused()) {
+                if (gen != checksGen || !isEnabled()) {
+                    return;
+                }
+                if (windowFocused()) {
                     fetchChecks(dir);
+                } else {
+                    // Like a poll: nobody is looking, so the retry waits for the focus — it is not dropped.
+                    pollDeferred = true;
+                    deferredRetryDir = dir;
                 }
             });
             pollTimer.play();
@@ -1355,8 +1451,18 @@ final class GitHubCoordinator {
         });
     }
 
-    /** Runs the poll that came due while the window was unfocused (also the test's "focus returned"). */
+    /**
+     * Runs the poll — or the retry of a failed lookup — that came due while the window was unfocused (also the
+     * test's "focus returned").
+     */
     void resumeDeferredPoll() {
+        Path retry = deferredRetryDir;
+        if (pollDeferred && retry != null && isEnabled()) {
+            pollDeferred = false;
+            deferredRetryDir = null;
+            fetchChecks(retry); // a failed lookup's retry: not a poll, so the poll count stays
+            return;
+        }
         if (pollDeferred && shownChecksDir != null && isEnabled()) {
             pollDeferred = false;
             pollAttempt++;
@@ -1732,16 +1838,17 @@ final class GitHubCoordinator {
     /** Picks a PR then opens the submit-review form (the {@code github.submitReview} palette command). */
     void submitReviewPicked() {
         // Picked from a list, the pull request's head was never shown: the review is not pinned to a commit.
-        ready(dir -> pickPr(dir, tr("github.picker.reviewTitle"), pr -> submitReviewForm(dir, pr.number(), "")));
+        ready(dir -> pickPr(dir, tr("github.picker.reviewTitle"), pr -> submitReviewForm(dir, pr.number(), "", "")));
     }
 
     /**
      * The submit-review form. It starts on Comment, which needs a body, so a stray submit cannot approve a pull
      * request in public: Approve is chosen in so many words, and only then may the body be empty. From a review
      * tab ({@code commitId}, the head commit the tab loaded) the review is pinned to that commit, so commits
-     * pushed while the reviewer read are not approved with them.
+     * pushed while the reviewer read are not approved with them; {@code prUrl}, the pull request's address, says
+     * which host and repository the pinned call goes to.
      */
-    private void submitReviewForm(Path dir, int number, String commitId) {
+    private void submitReviewForm(Path dir, int number, String commitId, String prUrl) {
         KeymapManager keymap = ops.keymap();
         javafx.scene.control.ComboBox<PrReviewArgs.ReviewAction> actionBox = new javafx.scene.control.ComboBox<>();
         actionBox.getItems().setAll(PrReviewArgs.ReviewAction.values());
@@ -1799,7 +1906,7 @@ final class GitHubCoordinator {
                 valid,
                 submission -> {
                     com.editora.github.GhInvocation call =
-                            PrReviewArgs.invocation(number, actionBox.getValue(), body.getText(), commitId);
+                            PrReviewArgs.invocation(number, actionBox.getValue(), body.getText(), commitId, prUrl);
                     host.setStatus(tr("status.github.reviewing", number));
                     service.prReview(dir, call, r -> {
                         if (r.ok()) {
