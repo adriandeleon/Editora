@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Run Test at Caret everywhere Debug Test at Caret works.** In a Go, Rust, Dart, JavaScript/TypeScript (node:test,
+  Deno, Jest, Vitest), RSpec, Minitest, PHPUnit, ExUnit or C# test file, Run Test at Caret now runs the test at the
+  caret alone, without the debugger, as Run File runs the file: before, only Java and Python tests ran at the caret.
 - **Elixir.** Elixir is a language of its own: highlighting, indentation, folding, the outline, snippets and a new-file
   template, with ElixirLS as its language server. Run File and Debug File run a Mix project's tests (`mix test`), a
   script (`mix run`) or the project, and Debug Test at Caret debugs the ExUnit test at the caret alone, stopping in your
