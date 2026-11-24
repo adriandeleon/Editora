@@ -238,6 +238,10 @@ class SettingsLayoutFxTest {
                 }
             }
             open(stage, sidebar, scroll, "LSP");
+            SettingsLanguagePicker servers = FxTestSupport.field(FxTestSupport.field(window, "lspPage"), "languages");
+            servers.show("python"); // the Python card sits under the Python server's
+            stage.getScene().getRoot().applyCss();
+            stage.getScene().getRoot().layout();
             TextField python = debugFields.get("python");
             assertTrue(python.getWidth() >= 300, "the Python interpreter field is " + python.getWidth() + "px wide");
         });
