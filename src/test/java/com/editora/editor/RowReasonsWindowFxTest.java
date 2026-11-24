@@ -191,7 +191,7 @@ class RowReasonsWindowFxTest {
             assertEquals("Nothing.", RowReasons.spoken(" ", "Nothing."));
             assertEquals("Cut", RowReasons.title(new MenuItem("Cut")));
             MenuItem untitled = MenuChords.tag(new MenuItem(), "edit.copy");
-            assertEquals(MenuTitles.of(tr("command.edit.copy")), RowReasons.title(untitled));
+            assertEquals(MenuTitles.forCommand("edit.copy", tr("command.edit.copy")), RowReasons.title(untitled));
             assertEquals("", RowReasons.title(new MenuItem()));
             MenuItem none = RowReasons.placeholder(new MenuItem("(none)"));
             assertTrue(RowReasons.isPlaceholder(none));
@@ -222,7 +222,7 @@ class RowReasonsWindowFxTest {
 
                 // A row with no words is named by its command; blank words count as none.
                 MenuItem blank = MenuChords.tag(new MenuItem(" "), "edit.copy");
-                assertEquals(MenuTitles.of(tr("command.edit.copy")), RowReasons.title(blank));
+                assertEquals(MenuTitles.forCommand("edit.copy", tr("command.edit.copy")), RowReasons.title(blank));
 
                 // A menu of a popup says why in the window the popup belongs to.
                 ContextMenu outer = new ContextMenu(new MenuItem("a"));

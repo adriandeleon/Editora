@@ -4776,6 +4776,11 @@ public class EditorBuffer implements TabContent {
         runGutter.setDebugFileHandler(handler, shown);
     }
 
+    /** Whether the editor menu offers Debug File beside Run File for this file now. */
+    public boolean debugFileOffered() {
+        return runGutter.debugFileHandler != null && runGutter.debugFileShown.getAsBoolean();
+    }
+
     /** Callback fired after any note change (for persistence + the Notes panel). */
     public void setOnNotesChanged(Runnable callback) {
         notes.setOnChanged(callback);

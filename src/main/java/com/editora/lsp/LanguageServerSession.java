@@ -903,11 +903,6 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /**
-     * The display name sent for the workspace folder: the root's last path element. A filesystem or drive
-     * root ({@code /}, {@code C:\}) has none — {@code getFileName()} is null there — so it is named by its
-     * whole path instead of failing the handshake with a NullPointerException.
-     */
-    /**
      * The folder the server process starts in: {@code root} when it exists, else its nearest existing parent. A
      * new file under a folder not made yet (Find File on {@code new/dir/A.java}) is rooted at that folder, and a
      * process cannot start in a directory that does not exist (smoke test 2026-11-24: jdtls failed with "Exec
@@ -921,6 +916,11 @@ final class LanguageServerSession implements LanguageClient {
         return dir != null ? dir : root;
     }
 
+    /**
+     * The display name sent for the workspace folder: the root's last path element. A filesystem or drive
+     * root ({@code /}, {@code C:\}) has none — {@code getFileName()} is null there — so it is named by its
+     * whole path instead of failing the handshake with a NullPointerException.
+     */
     static String workspaceFolderName(Path root) {
         Path name = root.getFileName();
         return name == null ? root.toString() : name.toString();

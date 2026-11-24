@@ -444,6 +444,13 @@ final class MainMenuBar {
         return true;
     }
 
+    /** A row's menu title: its command's ({@link com.editora.editor.MenuTitles#forCommand}), or its id for one not registered. */
+    private String menuTitle(String id) {
+        return registry.get(id)
+                .map(command -> com.editora.editor.MenuTitles.forCommand(id, command.title()))
+                .orElse(id);
+    }
+
     /**
      * Re-labels every item with its current title and keybinding, and enables or disables it for the current
      * state. Called after a keymap switch (chords move) and after any settings apply (features come and go),
@@ -455,15 +462,11 @@ final class MainMenuBar {
         Map<String, Integer> shortened = new java.util.HashMap<>();
         // Over every row of the table, built or not, so a title does not change when another menu first opens.
         for (String id : new java.util.LinkedHashSet<>(commandIds)) {
-            shortened.merge(
-                    com.editora.editor.MenuTitles.forCommand(
-                            id, registry.get(id).map(Command::title).orElse(id)),
-                    1,
-                    Integer::sum);
+            shortened.merge(menuTitle(id), 1, Integer::sum);
         }
         for (String id : new java.util.LinkedHashSet<>(commandIds)) {
             String full = registry.get(id).map(Command::title).orElse(id);
-            String bare = com.editora.editor.MenuTitles.forCommand(id, full);
+            String bare = menuTitle(id);
             // Two rows that would read the same keep their prefixes: "Rerun Last" twice in Run, "Find in Files"
             // in both Find and Window, where the prefix was all that told them apart (fourth review EF1).
             menuTitles.put(id, shortened.getOrDefault(bare, 0) > 1 ? full : bare);
