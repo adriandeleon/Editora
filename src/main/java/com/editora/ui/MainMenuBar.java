@@ -171,9 +171,11 @@ final class MainMenuBar {
             if (systemMenu) {
                 fill(menu, spec);
             } else {
-                // JavaFX opens no menu without items: one hidden row stands in until the first open builds the rest.
+                // JavaFX opens no menu without items, and the menu bar's skin counts only visible ones (a click on
+                // a title whose rows are all hidden does nothing): one blank, grayed row stands in until the first
+                // open replaces it with the real rows, before the popup is laid out, so it is never seen or read.
                 MenuItem standIn = new MenuItem();
-                standIn.setVisible(false); // nothing for a screen reader to read meanwhile
+                standIn.setDisable(true);
                 menu.getItems().add(standIn);
                 unbuilt.put(menu, spec);
             }
