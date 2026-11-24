@@ -125,7 +125,9 @@ class GitPushArgsTest {
                     "push", "--force-with-lease", "--force-if-includes", "origin", "refs/heads/feat:refs/heads/feat"
                 },
                 resolved(GitService.forcePushArgs("feat", "origin/feat"), mirror));
-        assertArrayEquals(new String[] {"push"}, resolved(GitService.pushArgs("feat", "origin/feat"), mirror));
+        assertArrayEquals(
+                new String[] {"push", "origin", "refs/heads/feat:refs/heads/feat"},
+                resolved(GitService.pushArgs("feat", "origin/feat"), mirror));
         // Another remote's refspecs do not count.
         String forkOnly = config("remote.fork.push", "HEAD:refs/for/main");
         assertArrayEquals(

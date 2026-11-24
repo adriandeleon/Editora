@@ -2677,7 +2677,10 @@ public final class GitService {
             // ("refs/notes/*:refs/notes/*", "+refs/heads/*:refs/heads/*") would push something else than the branch
             // asked for, or force every matching branch.
             boolean headBased = headBasedPushRefspecs(configListZ, remote);
-            if (headBased || (!force && (sameName || !sameRemote))) {
+            // Other refspecs of its own: even an ordinary push of a same-named branch names the branch, or git
+            // would push what those refspecs say instead (only notes, or every branch, forced by a "+").
+            boolean otherRefspecs = !headBased && config.containsKey("remote." + remote + ".push");
+            if (headBased || (!force && !otherRefspecs && (sameName || !sameRemote))) {
                 out.remove(at + 1);
                 out.remove(at);
             } else {
