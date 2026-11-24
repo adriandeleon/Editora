@@ -183,7 +183,7 @@ class GitCommitWindowReview2FxTest {
 
             javafx.application.Platform.runLater(() -> w.git.discardChanges(List.of("a.txt"), List.of()));
             assertEquals(
-                    tr("dialog.discard.tracked", "a.txt") + "\n\n" + tr("dialog.discard.unsavedEdits", 1),
+                    tr("dialog.discard.tracked", "a.txt") + "\n\n" + tr("dialog.discard.unsavedEditsNamed", "a.txt"),
                     answerDialog(ButtonBar.ButtonData.OK_DONE));
 
             GitFeatureFx.await(

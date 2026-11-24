@@ -8,6 +8,8 @@ import javafx.application.Platform;
 import com.editora.editor.EditorBuffer;
 import org.jspecify.annotations.Nullable;
 
+import static com.editora.i18n.Messages.tr;
+
 /**
  * What {@link GitCoordinator} needs from a window, resolved from {@link MainController} when called. It
  * lived inside {@code MainController} as an anonymous class; it is a file of its own only because of that
@@ -152,18 +154,64 @@ final class GitOpsHost implements GitCoordinator.WindowOps {
 
     @Override
     public void closeDeletedBuffers(List<EditorBuffer> buffers) {
+        java.util.function.Predicate<EditorBuffer> approved = buffers::contains;
         for (EditorBuffer buffer : buffers) {
             Path file = buffer.getPath();
             if (buffer.isDisposed() || file == null) {
                 continue;
             }
-            java.util.function.Predicate<EditorBuffer> approved = buffers::contains;
-            if (mc.windowManager != null) {
-                mc.windowManager.fileDeletedAcrossWindows(file, approved);
-            } else {
-                mc.removeProjectFileLocal(file, approved);
-            }
+            // The discard copied the file on disk into Local History, not the unsaved text of its tab: keep that
+            // too (as Revert does, REASON_REVERT) before the tab closes, so the edits the question named can be
+            // brought back from the file's history. The tab closes only once the copy is durable; when it could
+            // not be made the tab stays, marked unsaved, as the only copy left.
+            MainController owner = mc.windowManager == null ? mc : mc.windowManager.ownerOf(buffer, mc);
+            keepUnsavedTextThen(owner.historyCoordinator, buffer, file, kept -> {
+                java.util.function.Predicate<EditorBuffer> closable = kept ? approved : approved.and(b -> b != buffer);
+                if (mc.windowManager != null) {
+                    mc.windowManager.fileDeletedAcrossWindows(file, closable);
+                } else {
+                    mc.removeProjectFileLocal(file, closable);
+                }
+                if (!kept) {
+                    owner.setStatus(tr("status.git.discardUnsavedNotKept", file.getFileName()));
+                }
+            });
         }
+    }
+
+    /**
+     * Records {@code buffer}'s text — unsaved edits included — in Local History as a revert revision of
+     * {@code file}, then reports on the FX thread whether it is durably kept. Reports {@code true} when there is
+     * nothing to keep (Local History off, a remote or encrypted file) and for a buffer holding only part of its
+     * file, whose slice is no revision of it.
+     */
+    static void keepUnsavedTextThen(
+            HistoryCoordinator history, EditorBuffer buffer, Path file, java.util.function.Consumer<Boolean> then) {
+        if (!buffer.isDirty() || HistoryCoordinator.holdsPart(buffer)) {
+            then.accept(true);
+            return;
+        }
+        history.recordDurably(file, buffer.getContent(), com.editora.config.HistoryRevision.REASON_REVERT, kept -> {
+            if (Platform.isFxApplicationThread()) {
+                then.accept(kept);
+            } else {
+                Platform.runLater(() -> then.accept(kept));
+            }
+        });
+    }
+
+    @Override
+    public @Nullable String otherWindowOf(EditorBuffer buffer) {
+        if (mc.windowManager == null || mc.holdsBufferLocal(buffer)) {
+            return null;
+        }
+        MainController owner = mc.windowManager.ownerOf(buffer, mc);
+        if (owner == mc) {
+            return null;
+        }
+        Path root = owner.windowProjectRoot();
+        Path name = root == null ? null : root.getFileName();
+        return name == null ? "" : name.toString();
     }
 
     @Override

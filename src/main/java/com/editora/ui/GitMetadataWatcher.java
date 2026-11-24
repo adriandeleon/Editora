@@ -51,6 +51,28 @@ final class GitMetadataWatcher {
     /** Whether a folder that could not be watched has been logged at INFO (once: the watch limit is the usual cause). */
     private static final AtomicBoolean LOGGED_UNWATCHABLE = new AtomicBoolean();
 
+    /** Whether a repository with more branch folders than {@link #MAX_REF_FOLDERS} has been logged at INFO (once). */
+    private static final AtomicBoolean LOGGED_REF_CAP = new AtomicBoolean();
+
+    /**
+     * At most this many folders under {@code refs/heads} ({@code refs/heads} itself included) are watched per
+     * repository: each is a watch of the user's few thousand (inotify {@code max_user_watches}), shared by every
+     * application. Beyond it, a branch moved from outside in a folder not watched is still heard through
+     * {@code logs/HEAD} when it is the checked-out one, and through {@code packed-refs} after a pack.
+     */
+    static final int MAX_REF_FOLDERS = 256;
+
+    /**
+     * Whether folders under {@code refs/heads} are watched one by one. Not on Windows: a watched folder there is held
+     * open, and git cannot delete {@code refs/heads/feature/} when its last branch goes, or make it again, while the
+     * watch holds it. {@code refs/heads} itself (never deleted) is still watched, and a move of the checked-out branch
+     * is heard through {@code logs/HEAD}; other {@code feature/} branches are seen at the next refresh (focus, a
+     * command of this window).
+     */
+    static boolean watchesRefSubfolders(boolean windows) {
+        return !windows;
+    }
+
     /** The application's watcher. */
     static final GitMetadataWatcher SHARED = new GitMetadataWatcher();
 
@@ -90,6 +112,14 @@ final class GitMetadataWatcher {
          * when they exist. Reads the disk.
          */
         Map<Path, Kind> watched() {
+            return watched(watchesRefSubfolders(com.editora.Os.isWindows()), MAX_REF_FOLDERS);
+        }
+
+        /**
+         * As {@link #watched()}, with the folders under {@code refs/heads} watched one by one or not
+         * ({@code refSubfolders}, false on Windows) and at most {@code maxRefFolders} of them. Reads the disk.
+         */
+        Map<Path, Kind> watched(boolean refSubfolders, int maxRefFolders) {
             Map<Path, Kind> dirs = new LinkedHashMap<>();
             dirs.put(gitDir, Kind.GIT_DIR);
             dirs.putIfAbsent(commonDir, Kind.COMMON_DIR);
@@ -98,7 +128,13 @@ final class GitMetadataWatcher {
                 dirs.putIfAbsent(logs, Kind.LOGS);
             }
             Path heads = commonDir.resolve("refs").resolve("heads");
-            for (Path folder : foldersUnder(heads)) {
+            List<Path> refFolders =
+                    refSubfolders ? foldersUnder(heads) : (Files.isDirectory(heads) ? List.of(heads) : List.<Path>of());
+            if (refFolders.size() > maxRefFolders) {
+                logRefCap(commonDir, refFolders.size(), maxRefFolders);
+                refFolders = refFolders.subList(0, maxRefFolders); // the walk lists refs/heads first
+            }
+            for (Path folder : refFolders) {
                 dirs.putIfAbsent(folder, Kind.REFS);
             }
             Path reftable = commonDir.resolve("reftable");
@@ -106,6 +142,14 @@ final class GitMetadataWatcher {
                 dirs.putIfAbsent(reftable, Kind.REFTABLE);
             }
             return dirs;
+        }
+    }
+
+    /** Says once, at INFO, that a repository has more branch folders than are watched. */
+    private static void logRefCap(Path commonDir, int folders, int cap) {
+        if (LOGGED_REF_CAP.compareAndSet(false, true)) {
+            LOG.info("Watching " + cap + " of the " + folders + " folders under refs/heads of " + commonDir
+                    + "; branches in the others are heard through logs/HEAD and packed-refs");
         }
     }
 
@@ -208,6 +252,20 @@ final class GitMetadataWatcher {
     private final Object lock = new Object();
     private @Nullable WatchService service;
     private final Map<Path, Registration> registrations = new HashMap<>();
+    /** Whether folders under {@code refs/heads} are watched one by one ({@link #watchesRefSubfolders}). */
+    private final boolean refSubfolders;
+    /** At most this many folders under {@code refs/heads} per handle ({@link #MAX_REF_FOLDERS}). */
+    private final int maxRefFolders;
+
+    GitMetadataWatcher() {
+        this(watchesRefSubfolders(com.editora.Os.isWindows()), MAX_REF_FOLDERS);
+    }
+
+    /** A watcher that watches the folders under {@code refs/heads} or not, and at most so many of them (tests). */
+    GitMetadataWatcher(boolean refSubfolders, int maxRefFolders) {
+        this.refSubfolders = refSubfolders;
+        this.maxRefFolders = maxRefFolders;
+    }
 
     /**
      * Tells {@code onChange} — on the watcher's thread, possibly several times for one git command — whenever the
@@ -227,6 +285,8 @@ final class GitMetadataWatcher {
         final List<Path> dirs = new ArrayList<>();
         /** The folders found at registration; losing one of them makes the handle stale. */
         final Set<Path> roots = new HashSet<>();
+        /** How many folders under {@code refs/heads} this handle watches (at most the watcher's cap). */
+        int refFolders;
 
         boolean closed;
         private volatile boolean stale;
@@ -261,6 +321,7 @@ final class GitMetadataWatcher {
                     }
                 }
                 dirs.clear();
+                refFolders = 0;
             }
         }
     }
@@ -270,7 +331,10 @@ final class GitMetadataWatcher {
         if (dirs == null) {
             return; // GIT_DIR elsewhere, or a layout this does not know: focus regain still refreshes
         }
-        Map<Path, Kind> watched = dirs.watched();
+        Map<Path, Kind> watched = dirs.watched(refSubfolders, maxRefFolders);
+        // Registered under the lock: a close() or another handle sharing a folder must not see half of it. Each
+        // registration is one system call and MAX_REF_FOLDERS bounds how many there are, so the drain thread waits
+        // that long at most.
         synchronized (lock) {
             if (handle.closed) {
                 return;
@@ -286,11 +350,24 @@ final class GitMetadataWatcher {
 
     /** Registers {@code entry}'s interest in {@code dir}; false when the folder cannot be watched. Holds {@link #lock}. */
     private boolean registerLocked(Path dir, Entry entry) {
-        if (entry.handle().closed || entry.handle().dirs.contains(dir)) {
-            return !entry.handle().closed;
+        Handle handle = entry.handle();
+        if (handle.closed) {
+            return false;
         }
         Registration registration = registrations.get(dir);
-        if (registration == null || !registration.key.isValid()) {
+        boolean live = registration != null && registration.key.isValid();
+        if (handle.dirs.contains(dir)) {
+            if (live) {
+                return true;
+            }
+            // Listed, but its watch is dead: the folder deleted and made again (a branch folder emptied, then a
+            // branch put back in it) before the drain thread heard the old key go. Watched again, not skipped.
+            forgetLocked(handle, dir, entry.kind());
+            if (registration != null) {
+                registration.entries.removeIf(e -> e.handle() == handle);
+            }
+        }
+        if (registration == null || !live) {
             try {
                 WatchKey watchKey = WatchServices.register(
                         dir,
@@ -312,8 +389,18 @@ final class GitMetadataWatcher {
             }
         }
         registration.entries.add(entry);
-        entry.handle().dirs.add(dir);
+        handle.dirs.add(dir);
+        if (entry.kind() == Kind.REFS) {
+            handle.refFolders++;
+        }
         return true;
+    }
+
+    /** {@code handle} no longer watches {@code dir}, a folder of {@code kind}. Holds {@link #lock}. */
+    private static void forgetLocked(Handle handle, Path dir, Kind kind) {
+        if (handle.dirs.remove(dir) && kind == Kind.REFS) {
+            handle.refFolders--;
+        }
     }
 
     /** The watch service, opened with its drain thread on first use. Holds {@link #lock}. */
@@ -383,8 +470,14 @@ final class GitMetadataWatcher {
             }
             Path child = dir.resolve(name);
             if (entry.kind() == Kind.REFS && Files.isDirectory(child)) {
-                for (Path folder : foldersUnder(child)) { // mkdir -p may have made more than one already
-                    registerLocked(folder, new Entry(entry.handle(), Kind.REFS));
+                if (refSubfolders) {
+                    for (Path folder : foldersUnder(child)) { // mkdir -p may have made more than one already
+                        if (entry.handle().refFolders >= maxRefFolders) {
+                            logRefCap(dir, entry.handle().refFolders + 1, maxRefFolders);
+                            break;
+                        }
+                        registerLocked(folder, new Entry(entry.handle(), Kind.REFS));
+                    }
                 }
                 told.add(entry.handle().listener); // a branch may have landed in it before its watch
             } else if (entry.kind() == Kind.GIT_DIR && "logs".equals(name) && Files.isDirectory(child)) {
@@ -402,7 +495,7 @@ final class GitMetadataWatcher {
         registrations.remove(dir);
         for (Entry entry : registration.entries) {
             Handle handle = entry.handle();
-            handle.dirs.remove(dir);
+            forgetLocked(handle, dir, entry.kind());
             if (handle.roots.contains(dir)) {
                 handle.stale = true;
             }
@@ -414,6 +507,13 @@ final class GitMetadataWatcher {
         synchronized (lock) {
             Registration registration = registrations.get(dir.toAbsolutePath().normalize());
             return registration != null && registration.key.isValid();
+        }
+    }
+
+    /** How many folders under {@code refs/heads} {@code handle} watches (tests). */
+    int refFoldersForTest(Handle handle) {
+        synchronized (lock) {
+            return handle.refFolders;
         }
     }
 
