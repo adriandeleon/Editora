@@ -54,7 +54,9 @@ host, and the repository has something to show.
   `~/.ssh/config` (`Host` / `HostName` / `Port`, globs, `!` negation; not `Match` or `Include`) when ssh
   cannot be run. The alias goes to ssh as written (ssh's `Host` matching is case-sensitive); only the answer is
   lower-cased. An `ssh -G` answer is cached per (machine, alias) until `github.refresh` (`SshHosts.invalidate`)
-  or until the local `~/.ssh/config` changes (its modification time); a fallback answer (ssh failed or timed
+  or until the local `~/.ssh/config`, or a file its `Include` lines pull in (globs, `~/`, relative to `~/.ssh`,
+  followed into included files, at most 32 files), changes (path, modification time and size:
+  `SshHosts.configFingerprint`); a fallback answer (ssh failed or timed
   out) for 60 s. The lookup does not hold the map's lock while ssh runs. `ssh -G`'s `port` also reaches
   `GitWebLinks`: a Bitbucket Server is recognised by port 7999 from the config as well as from the URL. Only `ssh://` and scp-style remotes are resolved; an HTTPS URL names its host outright. The
   gating runs first on the raw URLs and again when the resolved ones arrive.
@@ -87,7 +89,11 @@ Single-thread lanes, so one slow call cannot hold up the rest:
 - `GitHubService.activeCallsProperty()` (`GitHubCoordinator.callsInFlightProperty()`) is the number of the
   user's calls queued or running; `GitHubPanel.setBusy` follows it. Background polls and probes do not spin
   it and are not written to the Output ▸ GitHub transcript.
-- A review tab's load (`pr view` + `pr diff`, and the files API after an HTTP 406) is cancelled by the next
+- A review tab's load runs in order: `pr view`, then `pr diff` (or the files API after an HTTP 406), then
+  `pr view --json headRefOid` again (`GitHubService.prHead`). When the head moved meanwhile
+  (`GitHubCoordinator.headMovedWhileLoading`) the diff may be another head's than the detail's: the tab opens
+  with `github.review.headMoved` and its detail unpinned (`PrDetail.unpinned`). A head that cannot be read
+  again keeps the pin. The load is cancelled by the next
   load of the same pull request (Refresh pressed again) and by closing the tab. A Refresh whose `pr view` fails
   keeps the title, description and head commit on screen and says so in the tab's notice.
 - The command log records what ran: on a remote host (SSH, WSL, a container) the line starts with
@@ -119,7 +125,8 @@ Single-thread lanes, so one slow call cannot hold up the rest:
   focus) — the one bounded exception to "no background polling". The key's branch is the one checked out in the
   repository asked about. Another repository than the active one (`checksElsewhere`) is looked up only when a
   command waits to be told, and then told its real result (`status.github.checksElsewhere`); it is neither
-  cached, shown, nor polled, and it leaves the active repository's poll and `checksGen` alone.
+  cached, shown, nor polled, and it leaves the active repository's poll, `checksGen` and pending announcement
+  (`checksAnnounce`, the active fetch's only: `github.showChecks` calls `checksElsewhere` directly) alone.
 - `BranchChecks.failed()` tells a failed lookup (gh error, rate limit, 401, single sign-on, timeout) from "no
   pull request" (`noPullRequest`: gh's "no pull requests found") and "no checks" (`noChecks`). A failure is not
   cached; the roll-up on screen stays, the open checks card and a `github.showChecks` that asked say why
@@ -135,7 +142,8 @@ Single-thread lanes, so one slow call cannot hold up the rest:
   repos/<owner>/<repo>/pulls/<n>/reviews --input -` with `commit_id`, `event` and `body` as JSON on standard
   input, so commits pushed while the reviewer read are not approved with them. Host and repository come from
   the pull request's own `url` (`PrReviewArgs.target`): `gh api` goes to `github.com` without `--hostname`
-  whatever the remote, and `{owner}/{repo}` may name another remote's repository. Without a readable `url` the
+  whatever the remote, and `{owner}/{repo}` may name another remote's repository. Without a readable `url`, or
+  with one that names a port (`gh api --hostname` takes a bare host and rejects `host:port`), the
   review falls back to `gh pr review`, unpinned, as does one picked from a list (`github.submitReview`). A
   refresh of the review tab is all or nothing (`keepsShownReview`): when the details (and so the head commit)
   could not be read again, the diff on screen is kept too (`github.review.notRefreshed`).

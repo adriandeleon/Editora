@@ -665,11 +665,13 @@ final class GitHubCoordinator {
             new java.util.HashMap<>();
 
     /**
-     * Fetches the PR's diff + metadata, then opens the review tab. The two run at the same time — the detail on
-     * the read lane, the diff on the download lane — and both deliver on the FX thread, so the two-slot join uses
-     * plain fields (no synchronization). The metadata ({@code gh pr view}) is optional — if it fails, the tab
-     * still opens with a number-only header, and a tab already open keeps the details it shows and says the
-     * refresh of them failed; only a failed diff aborts. A newer load of the same pull request cancels this one.
+     * Fetches the PR's metadata, then its diff, then opens the review tab. The order matters: a review from the tab
+     * is pinned to the head commit the detail names, so the detail is read first, the diff after it, and the head
+     * asked for once more when the diff has arrived ({@link #headMovedWhileLoading}). A push in between would pair
+     * the diff of one head with another: the tab then says so and its review is not pinned. The metadata
+     * ({@code gh pr view}) is optional — if it fails, the tab still opens with a number-only header, and a tab
+     * already open keeps the details it shows and says the refresh of them failed; only a failed diff aborts. A
+     * newer load of the same pull request cancels this one. Every step delivers on the FX thread.
      */
     private void doPrDiff(Path dir, int number) {
         ReviewKey key = new ReviewKey(dir, number);
@@ -679,53 +681,112 @@ final class GitHubCoordinator {
         }
         List<com.editora.process.ProcessRunner.Cancellation> calls = new java.util.ArrayList<>();
         reviewLoads.put(key, calls);
-        GitHubService.PrViewResult[] detailSlot = new GitHubService.PrViewResult[1];
-        GitHubService.DiffResult[] diffSlot = new GitHubService.DiffResult[1];
-        Runnable join = () -> {
-            if (detailSlot[0] == null || diffSlot[0] == null) {
+        // A step that lands after a newer load (or the tab's closing) took over starts nothing more.
+        java.util.function.BooleanSupplier current = () -> reviewLoads.get(key) == calls;
+        calls.add(service.prView(dir, number, view -> {
+            if (current.getAsBoolean()) {
+                calls.add(service.prDiff(dir, number, res -> {
+                    if (current.getAsBoolean()) {
+                        reviewDiffArrived(dir, number, key, calls, view, res);
+                    }
+                }));
+            }
+        }));
+    }
+
+    /** The second step of {@link #doPrDiff}: the diff (or the files API's answer) arrived after the detail. */
+    private void reviewDiffArrived(
+            Path dir,
+            int number,
+            ReviewKey key,
+            List<com.editora.process.ProcessRunner.Cancellation> calls,
+            GitHubService.PrViewResult view,
+            GitHubService.DiffResult res) {
+        String detailError = view.detail() == null ? failureLine(tr("github.review.detailFailed"), view.error()) : "";
+        if (res.ok()) {
+            // A diff cut off at the capture limit lost its last files: the tab and the status bar say so.
+            String cut = res.truncated() ? tr("status.github.diffCannotShowAll") : "";
+            confirmHeadThenOpen(dir, number, key, calls, view.detail(), res.files(), cut, detailError, res.truncated());
+        } else if (com.editora.github.PrFilesParser.diffTooLarge(res.error())) {
+            // GitHub refuses the whole diff above 300 files / 20,000 lines; the files API still lists
+            // every file with its own hunks, so the review opens from that and says so.
+            host.setStatus(tr("status.github.prDiffFallback", number));
+            calls.add(service.prFiles(dir, number, files -> {
+                if (reviewLoads.get(key) != calls) {
+                    return;
+                }
+                if (!files.ok()) {
+                    reviewLoads.remove(key, calls);
+                    ghError(tr("status.github.diffFailed"), files.error());
+                    return;
+                }
+                String notice = fallbackNotice(files.files());
+                if (files.truncated()) { // the API's answer itself passed the capture limit
+                    notice += " " + tr("status.github.diffCannotShowAll");
+                }
+                confirmHeadThenOpen(
+                        dir, number, key, calls, view.detail(), files.files().files(), notice, detailError, false);
+            }));
+        } else {
+            reviewLoads.remove(key, calls);
+            ghError(tr("status.github.diffFailed"), res.error());
+        }
+    }
+
+    /**
+     * The last step of {@link #doPrDiff}: when the detail names a head commit, asks for the head once more and
+     * opens the tab — unpinned, saying new commits were pushed meanwhile, when it moved. {@code cut}: the diff
+     * stopped at the capture limit, which the status bar says too.
+     */
+    private void confirmHeadThenOpen(
+            Path dir,
+            int number,
+            ReviewKey key,
+            List<com.editora.process.ProcessRunner.Cancellation> calls,
+            PrViewParser.@Nullable PrDetail detail,
+            List<PatchParser.FilePatch> files,
+            String diffNotice,
+            String detailError,
+            boolean cut) {
+        if (detail == null || detail.headRefOid().isBlank()) {
+            reviewLoads.remove(key, calls);
+            openReview(dir, number, detail, files, diffNotice, detailError);
+            announceCut(cut);
+            return;
+        }
+        calls.add(service.prHead(dir, number, head -> {
+            if (!reviewLoads.remove(key, calls)) {
+                return; // a newer load (or the tab's closing) took over
+            }
+            if (headMovedWhileLoading(detail, head)) {
+                String moved = tr("github.review.headMoved");
+                openReview(dir, number, detail.unpinned(), files, joinNotice(moved, diffNotice), detailError);
+                host.setStatus(moved);
                 return;
             }
-            GitHubService.PrViewResult view = detailSlot[0];
-            String detailError =
-                    view.detail() == null ? failureLine(tr("github.review.detailFailed"), view.error()) : "";
-            GitHubService.DiffResult res = diffSlot[0];
-            if (res.ok()) {
-                reviewLoads.remove(key, calls);
-                // A diff cut off at the capture limit lost its last files: the tab and the status bar say so.
-                String cut = res.truncated() ? tr("status.github.diffCannotShowAll") : "";
-                openReview(dir, number, view.detail(), res.files(), cut, detailError);
-                if (res.truncated()) {
-                    host.setStatus(cut);
-                }
-            } else if (com.editora.github.PrFilesParser.diffTooLarge(res.error())) {
-                // GitHub refuses the whole diff above 300 files / 20,000 lines; the files API still lists
-                // every file with its own hunks, so the review opens from that and says so.
-                host.setStatus(tr("status.github.prDiffFallback", number));
-                calls.add(service.prFiles(dir, number, files -> {
-                    reviewLoads.remove(key, calls);
-                    if (!files.ok()) {
-                        ghError(tr("status.github.diffFailed"), files.error());
-                        return;
-                    }
-                    String notice = fallbackNotice(files.files());
-                    if (files.truncated()) { // the API's answer itself passed the capture limit
-                        notice += " " + tr("status.github.diffCannotShowAll");
-                    }
-                    openReview(dir, number, view.detail(), files.files().files(), notice, detailError);
-                }));
-            } else {
-                reviewLoads.remove(key, calls);
-                ghError(tr("status.github.diffFailed"), res.error());
-            }
-        };
-        calls.add(service.prView(dir, number, d -> {
-            detailSlot[0] = d;
-            join.run();
+            openReview(dir, number, detail, files, diffNotice, detailError);
+            announceCut(cut);
         }));
-        calls.add(service.prDiff(dir, number, r -> {
-            diffSlot[0] = r;
-            join.run();
-        }));
+    }
+
+    private void announceCut(boolean truncated) {
+        if (truncated) {
+            host.setStatus(tr("status.github.diffCannotShowAll"));
+        }
+    }
+
+    /**
+     * Whether the pull request's head moved while its review loaded: the head asked for after the diff arrived
+     * ({@code headNow}, {@code null} when it could not be read) is not the one the detail was read at. A head that
+     * could not be read again counts as not moved — the review stays pinned to the head the detail names, as it
+     * was before this check. Pure.
+     */
+    static boolean headMovedWhileLoading(PrViewParser.@Nullable PrDetail detail, @Nullable String headNow) {
+        return detail != null
+                && !detail.headRefOid().isBlank()
+                && headNow != null
+                && !headNow.isBlank()
+                && !headNow.strip().equalsIgnoreCase(detail.headRefOid().strip());
     }
 
     /** Two notices for the review tab, either of which may be blank. Pure. */
@@ -1238,8 +1299,7 @@ final class GitHubCoordinator {
     /** Fetches the current branch's PR checks and pushes the roll-up to the status bar (null hides it). */
     private void refreshChecks(@Nullable Path dir) {
         if (dir != null && elsewhere(dir)) {
-            checksElsewhere(dir);
-            return;
+            return; // nothing on screen belongs to it; github.showChecks asks checksElsewhere itself
         }
         pollAttempt = 0;
         checksFailures = 0;
@@ -1248,8 +1308,7 @@ final class GitHubCoordinator {
 
     private void fetchChecks(@Nullable Path dir) {
         if (dir != null && elsewhere(dir)) {
-            checksElsewhere(dir);
-            return;
+            return; // only the active repository's roll-up is fetched, cached and polled
         }
         long gen = ++checksGen;
         stopPolling();
@@ -1315,14 +1374,11 @@ final class GitHubCoordinator {
 
     /**
      * The checks of another repository than the active one (a tool-window row's checkout there, or the context of
-     * a command): asked for only when a command waits to be told, and then told what came back — the active
-     * repository's roll-up, its poll and its generation are left alone.
+     * a command): asked for only by a command that waits to be told ({@code github.showChecks}), which is then
+     * told what came back — the active repository's roll-up, its poll, its generation and its pending
+     * announcement ({@link #checksAnnounce}) are left alone.
      */
     private void checksElsewhere(Path dir) {
-        if (!checksAnnounce) {
-            return; // nothing on screen belongs to it, and nobody asked
-        }
-        checksAnnounce = false;
         GitHubService.Availability gh = service.availability();
         if (gh != null && !gh.supportsChecks()) {
             host.setStatus(tr(
@@ -1473,7 +1529,10 @@ final class GitHubCoordinator {
     /** The open checks list ({@code null} when closed), kept so a poll updates it in place. */
     private @Nullable ChecksListCard checksCard;
 
-    /** {@code github.showChecks} was run with no roll-up on screen: report the answer of the fetch it started. */
+    /**
+     * {@code github.showChecks} was run with no roll-up on screen: report the answer of the fetch it started. The
+     * active repository's only; a lookup in another repository announces its own answer and never reads this.
+     */
     private boolean checksAnnounce;
 
     /**
@@ -1486,6 +1545,10 @@ final class GitHubCoordinator {
             if (shownChecks == null) {
                 readyIn(null, dir -> {
                     host.setStatus(tr("status.github.checksLoading"));
+                    if (elsewhere(dir)) {
+                        checksElsewhere(dir); // says what came back itself: the active repository's flag stays
+                        return;
+                    }
                     checksAnnounce = true; // say what came back: the list, or that there is none
                     refreshChecks(dir);
                 });

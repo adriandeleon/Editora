@@ -26,7 +26,8 @@ import org.jspecify.annotations.Nullable;
  * URL names its host outright).
  *
  * <p>The alias is passed to ssh as it is written: ssh matches {@code Host} patterns case-sensitively. An answer of
- * {@code ssh -G} is kept until {@link #invalidate} ({@code github.refresh}) or until {@code ~/.ssh/config} changes; an
+ * {@code ssh -G} is kept until {@link #invalidate} ({@code github.refresh}) or until {@code ~/.ssh/config}, or a file it
+ * pulls in with {@code Include}, changes; an
  * answer that is only a fallback (ssh failed or timed out) is kept for {@link #FALLBACK_TTL}, so a slow ssh is asked
  * again rather than believed for the session.
  *
@@ -60,8 +61,14 @@ public final class SshHosts {
     /** Each (machine, alias)'s answer. Keyed by the alias as written: ssh's Host matching is case-sensitive. */
     private static final Map<String, Entry> CACHE = new ConcurrentHashMap<>();
 
-    /** The modification time of {@code ~/.ssh/config} the cache was filled under ({@code -2}: not looked at yet). */
-    private static volatile long configStamp = -2;
+    /**
+     * The modification times of {@code ~/.ssh/config} and the files it includes that the cache was filled under
+     * ({@code null}: not looked at yet).
+     */
+    private static volatile @Nullable String configStamp;
+
+    /** Most files ({@code ~/.ssh/config} and what it includes) whose modification times are watched. */
+    static final int MAX_WATCHED_FILES = 32;
 
     /** The SSH-only endpoints of the big sites, and the site each serves. */
     private static final Map<String, String> ENDPOINTS = Map.of(
@@ -102,10 +109,10 @@ public final class SshHosts {
         }
         boolean local = ExecTargets.runsHere(dir);
         if (local) {
-            long stamp = configModified();
-            if (stamp != configStamp) {
+            String stamp = configFingerprint(Path.of(System.getProperty("user.home")));
+            if (!stamp.equals(configStamp)) {
                 configStamp = stamp;
-                CACHE.clear(); // ~/.ssh/config changed (or was first looked at): every answer may be stale
+                CACHE.clear(); // the config or an included file changed (or was first looked at): answers may be stale
             }
         }
         String key = (local ? "" : ExecTargets.forPath(dir).id()) + "\n" + a;
@@ -162,14 +169,99 @@ public final class SshHosts {
         return new Lookup(new Resolved(canonical(found), port), fromSsh);
     }
 
-    private static long configModified() {
-        try {
-            Path config = Path.of(System.getProperty("user.home"), ".ssh", "config");
-            return Files.isRegularFile(config)
-                    ? Files.getLastModifiedTime(config).toMillis()
-                    : -1;
+    /**
+     * What tells whether {@code home}'s {@code ~/.ssh/config} changed: the path, modification time and size of it
+     * and of every file its {@code Include} lines pull in (followed into those files too), up to
+     * {@link #MAX_WATCHED_FILES} files. A file that appears or goes changes it as well.
+     */
+    static String configFingerprint(Path home) {
+        Path sshDir = home.resolve(".ssh");
+        StringBuilder stamp = new StringBuilder();
+        java.util.Set<Path> seen = new java.util.LinkedHashSet<>();
+        java.util.ArrayDeque<Path> queue = new java.util.ArrayDeque<>();
+        queue.add(sshDir.resolve("config"));
+        while (!queue.isEmpty() && seen.size() < MAX_WATCHED_FILES) {
+            Path file = queue.poll();
+            if (!seen.add(file)) {
+                continue;
+            }
+            try {
+                if (!Files.isRegularFile(file)) {
+                    stamp.append(file).append(" -\n");
+                    continue;
+                }
+                stamp.append(file)
+                        .append(' ')
+                        .append(Files.getLastModifiedTime(file).toMillis())
+                        .append(' ')
+                        .append(Files.size(file))
+                        .append('\n');
+                for (String pattern : includes(Files.readString(file))) {
+                    queue.addAll(expand(home, sshDir, pattern));
+                }
+            } catch (Exception unreadable) {
+                stamp.append(file).append(" ?\n");
+            }
+        }
+        return stamp.toString();
+    }
+
+    /**
+     * The paths of {@code Include} lines in {@code config}, unquoted, in order (several may share a line). Pure.
+     */
+    static List<String> includes(String config) {
+        List<String> out = new java.util.ArrayList<>();
+        if (config == null) {
+            return out;
+        }
+        for (String raw : config.split("\\R")) {
+            String line = raw.strip();
+            String[] kv = line.split("[\\s=]+", 2);
+            if (kv.length < 2 || !kv[0].equalsIgnoreCase("include")) {
+                continue;
+            }
+            java.util.regex.Matcher m = INCLUDE_TOKEN.matcher(kv[1]);
+            while (m.find()) {
+                out.add(m.group(1) != null ? m.group(1) : m.group(2));
+            }
+        }
+        return out;
+    }
+
+    /** One path of an {@code Include} line: quoted, or up to the next blank. */
+    private static final Pattern INCLUDE_TOKEN = Pattern.compile("\"([^\"]*)\"|(\\S+)");
+
+    /**
+     * The files an {@code Include} path names, as ssh reads it: {@code ~/} is the home directory, a relative path
+     * is relative to {@code ~/.ssh}, and {@code *} / {@code ?} / {@code [..]} are globs (in any part of it). Sorted;
+     * at most {@link #MAX_WATCHED_FILES}.
+     */
+    private static List<Path> expand(Path home, Path sshDir, String pattern) {
+        String p = pattern.startsWith("~/") ? home + pattern.substring(1) : pattern;
+        Path path = sshDir.resolve(p).normalize();
+        if (!p.matches(".*[*?\\[].*")) {
+            return List.of(path);
+        }
+        // The deepest ancestor without a wildcard is walked, as deep as the pattern has parts below it.
+        Path root = path.getRoot() == null ? sshDir : path.getRoot();
+        int fixed = 0;
+        for (Path part : path) {
+            if (part.toString().matches(".*[*?\\[].*")) {
+                break;
+            }
+            root = root.resolve(part);
+            fixed++;
+        }
+        int depth = path.getNameCount() - fixed;
+        java.nio.file.PathMatcher matcher =
+                path.getFileSystem().getPathMatcher("glob:" + path.toString().replace("\\", "\\\\"));
+        try (var walk = Files.walk(root, depth)) {
+            return walk.filter(f -> f.getNameCount() == path.getNameCount() && matcher.matches(f))
+                    .sorted()
+                    .limit(MAX_WATCHED_FILES)
+                    .toList();
         } catch (Exception unreadable) {
-            return -1;
+            return List.of();
         }
     }
 

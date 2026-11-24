@@ -620,6 +620,22 @@ public final class GitHubService {
     }
 
     /**
+     * A PR's head commit as it is now ({@code gh pr view <n> --json headRefOid}), or {@code null} when it could not
+     * be read. Asked again after a review's detail and diff have both arrived, to tell whether a push landed
+     * between them (the diff would then not be the one of the head the detail names).
+     */
+    public ProcessRunner.Cancellation prHead(Path dir, int number, Consumer<@Nullable String> onResult) {
+        return read(
+                null,
+                cancel -> {
+                    ProcessRunner.Result r =
+                            gh(dir, NETWORK, cancel, "pr", "view", String.valueOf(number), "--json", "headRefOid");
+                    return r.ok() ? PrViewParser.headRefOid(r.out()) : null;
+                },
+                onResult);
+    }
+
+    /**
      * Result of a PR diff: the parsed per-file patches, or an error message. {@code truncated} means the diff
      * was larger than {@link ProcessRunner} captures (10 MB): {@code files} then holds only the files whose
      * patch arrived whole, and the review must say that it is incomplete.

@@ -185,6 +185,22 @@ class GitHubUiDecisionsTest {
         assertFalse(GitHubCoordinator.keepsShownReview(null, head("")), "no head known: nothing to pin");
     }
 
+    /**
+     * R4-G3: the head is asked for again once the diff has arrived; a push between the detail and the diff pairs
+     * the diff of one head with another, and the tab's review is then not pinned.
+     */
+    @Test
+    void aPushWhileTheReviewLoadsIsNoticed() {
+        assertTrue(GitHubCoordinator.headMovedWhileLoading(head("abc"), "def"), "a new head");
+        assertFalse(GitHubCoordinator.headMovedWhileLoading(head("abc"), "abc"), "the same head");
+        assertFalse(GitHubCoordinator.headMovedWhileLoading(head("abc"), "ABC "), "case and spaces do not count");
+        assertFalse(GitHubCoordinator.headMovedWhileLoading(head("abc"), null), "not readable: stays pinned");
+        assertFalse(GitHubCoordinator.headMovedWhileLoading(head(""), "def"), "nothing pinned anyway");
+        assertFalse(GitHubCoordinator.headMovedWhileLoading(null, "def"), "no detail");
+        assertEquals("", head("abc").unpinned().headRefOid(), "the tab's review is then not pinned");
+        assertEquals(head("abc").title(), head("abc").unpinned().title());
+    }
+
     /** R3-G8: another repository's checks were announced as "none" even when its pull request had some. */
     @Test
     void anotherRepositorysChecksAreAnnouncedAsTheyAre() {

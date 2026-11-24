@@ -266,6 +266,28 @@ class GitHubRepositoryBindingFxTest {
                 () -> "finished".equals(Files.readString(state).strip()));
     }
 
+    /**
+     * R4-G4: a lookup in another repository must not consume the active repository's pending announcement
+     * ({@code github.showChecks} waiting on its fetch): only the active fetch says what came back.
+     */
+    @Test
+    @Order(8)
+    void aLookupElsewhereLeavesTheActiveRepositorysAnnouncementAlone() throws Exception {
+        java.lang.reflect.Field flag = GitHubCoordinator.class.getDeclaredField("checksAnnounce");
+        flag.setAccessible(true);
+        Path elsewhere = Files.createDirectories(base.resolve("elsewhere"));
+        FxTestSupport.runOnFx(() -> {
+            try {
+                flag.setBoolean(github, true);
+                FxTestSupport.invokeWith(github, "refreshChecks", Path.class, elsewhere);
+                assertTrue(flag.getBoolean(github), "the active repository's announcement is still pending");
+                flag.setBoolean(github, false);
+            } catch (IllegalAccessException e) {
+                throw new AssertionError(e);
+            }
+        });
+    }
+
     private Object selected() {
         Tab tab = area.selectedTab();
         return tab == null ? null : tab.getUserData();

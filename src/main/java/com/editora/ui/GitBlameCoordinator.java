@@ -195,12 +195,12 @@ final class GitBlameCoordinator {
         String hash = b == null ? null : b.blameHashAtCaret();
         Revision current = revisionOf(b);
         Path root = current != null ? current.root() : git.repoRoot();
-        BlameParser.BlameLine line = b == null || hash == null || hash.isBlank()
-                ? null
-                : lineNear(
-                        blamed.getOrDefault(b, List.of()),
-                        b.blameDiskLineAt(b.getFocusedArea().getCurrentParagraph()),
-                        hash);
+        // The focused area's caret line, as the line on disk the blame describes (a folded or narrowed view, and
+        // the split's other area, number their lines otherwise).
+        List<BlameParser.BlameLine> lines = b == null ? List.of() : blamed.getOrDefault(b, List.of());
+        int diskLine = b == null ? -1 : b.blameDiskLineAt(b.getFocusedArea().getCurrentParagraph());
+        BlameParser.BlameLine line =
+                b == null || hash == null || hash.isBlank() ? null : lineNear(lines, diskLine, hash);
         if (b == null || hash == null || line == null || root == null) { // a line means a buffer and a hash
             host.setStatus(tr(isEnabled() ? "status.git.noBlameLine" : "status.git.blameOffForPrevious"));
             return;
@@ -213,7 +213,7 @@ final class GitBlameCoordinator {
         if (open == null) {
             return;
         }
-        int caretLine = b.getArea().getCurrentParagraph();
+        int caretLine = blamedLineIndex(lines, line, diskLine);
         Revision previous = new Revision(root, line.previousHash(), line.previousPath());
         String sourceCharset = b.getEffectiveCharset();
         git.service().showBlob(root, previous.hash() + ":" + previous.path(), blob -> {
@@ -331,6 +331,23 @@ final class GitBlameCoordinator {
                     bl.hash()));
         }
         return out;
+    }
+
+    /**
+     * The on-disk line of {@code line} in {@code lines} (the blamed line {@link #lineNear} found, compared by
+     * identity: two lines of one commit are equal records), else {@code diskLine}, else 0. Where the previous
+     * revision opens: the same line number is usually close to it. Pure.
+     */
+    static int blamedLineIndex(List<BlameParser.BlameLine> lines, BlameParser.BlameLine line, int diskLine) {
+        if (diskLine >= 0 && diskLine < lines.size() && lines.get(diskLine) == line) {
+            return diskLine;
+        }
+        for (int i = 0; i < lines.size(); i++) {
+            if (lines.get(i) == line) {
+                return i;
+            }
+        }
+        return Math.max(0, diskLine);
     }
 
     /**

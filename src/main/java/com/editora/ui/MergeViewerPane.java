@@ -113,6 +113,20 @@ public final class MergeViewerPane implements TabContent {
             String lineSeparator,
             boolean finalNewline,
             java.util.function.BiConsumer<String, Consumer<Boolean>> onSave) {
+        this(title, file, fontFamily, fontSize, lineSeparator, finalNewline, onSave, MergeViewerPane::resultText);
+    }
+
+    /** With the {@link Composer} that puts the Result together ({@link #resultText} but in tests). */
+    MergeViewerPane(
+            String title,
+            ConflictFile file,
+            String fontFamily,
+            int fontSize,
+            String lineSeparator,
+            boolean finalNewline,
+            java.util.function.BiConsumer<String, Consumer<Boolean>> onSave,
+            Composer composer) {
+        this.composer = composer;
         this.title = title;
         this.file = file;
         this.onSave = onSave == null ? (text, done) -> done.accept(false) : onSave;
@@ -326,9 +340,9 @@ public final class MergeViewerPane implements TabContent {
         }
         choices.set(index, choice);
         chosen.setText(text);
-        refreshResult();
         draftDirty = true;
         refreshStatus();
+        refreshResult(); // last: a compose that fails says so in the status line, even when it lands at once
     }
 
     /** Where the Result's text is put together from the choices: heard off the FX thread (PERF-01). */
@@ -342,13 +356,23 @@ public final class MergeViewerPane implements TabContent {
 
     private @Nullable Runnable afterComposed;
 
+    /** Puts the Result together for the choices made: {@link #resultText}, or a stand-in that fails in tests. */
+    @FunctionalInterface
+    interface Composer {
+        String compose(ConflictFile file, List<Choice> choices, String lineSeparator, boolean finalNewline);
+    }
+
+    private final Composer composer;
+
     /** The Result for the choices made, put together off the FX thread (PERF-01, Pauta 6.2.0) and shown when it lands. */
     private void refreshResult() {
         List<Choice> now = List.copyOf(choices);
         long mine = ++resultGeneration;
         composing = true;
         com.editora.perf.OffFx.then(
-                RESULT_SITE, () -> resultText(file, now, lineSeparator, finalNewline), a -> resultLanded(mine, a));
+                RESULT_SITE,
+                () -> composer.compose(file, now, lineSeparator, finalNewline),
+                a -> resultLanded(mine, a));
     }
 
     private void resultLanded(long mine, com.editora.perf.OffFx.Answer<String> a) {
@@ -372,11 +396,6 @@ public final class MergeViewerPane implements TabContent {
         if (after != null) {
             after.run();
         }
-    }
-
-    /** Lands a failed compose for the last choices, as {@link #refreshResult} would. Test accessor. */
-    void failComposeForTest(Throwable failure) {
-        resultLanded(resultGeneration, new com.editora.perf.OffFx.Answer<>(null, failure));
     }
 
     /** What the status line says when the Result could not be put together or turned into text. Pure. */
@@ -522,17 +541,28 @@ public final class MergeViewerPane implements TabContent {
         return draftDirty ? resultArea.getText() : null;
     }
 
-    /** The quit's close question, which may wait: the text is worked out in place. */
+    /**
+     * The quit's close question, which may wait: the text is worked out in place. A Result edited by hand is saved
+     * as it is shown — the user's text — and never put together again over the edits; one that is not is put
+     * together for the choices made when a compose is under way or failed. Either way a save queued behind the
+     * compose is dropped: this one is it.
+     */
     @Override
     public boolean saveBeforeClose() {
         if (saving) {
             return false;
         }
+        afterComposed = null;
         if (composing || resultFailure != null) { // the quit may wait: put together in place
-            resultGeneration++;
+            resultGeneration++; // a compose still under way lands to nothing
             composing = false;
+            if (manuallyEdited && !resultArea.getText().equals(shownResult)) {
+                saving = true;
+                return apply(
+                        resultTextForSave(resultArea.getText(), generatedResult, shownResult, lineSeparator), null);
+            }
             try {
-                showResult(resultText(file, List.copyOf(choices), lineSeparator, finalNewline));
+                showResult(composer.compose(file, List.copyOf(choices), lineSeparator, finalNewline));
             } catch (RuntimeException e) {
                 resultFailure = resultFailedText(e);
                 save.setDisable(true);

@@ -37,10 +37,13 @@ class PrReviewArgsTest {
                         "--input",
                         "-"),
                 call.args());
+        // gh api --hostname rejects host:port, so an address with a port is not pinned.
+        assertNull(PrReviewArgs.target("https://ghe.example.com:8443/team/app/pull/5", 5), "a port");
         assertEquals(
-                "ghe.example.com:8443",
-                PrReviewArgs.target("https://ghe.example.com:8443/team/app/pull/5", 5)
-                        .host());
+                List.of("pr", "review", "5", "--approve"),
+                PrReviewArgs.invocation(
+                                5, ReviewAction.APPROVE, "", "abc", "https://ghe.example.com:8443/team/app/pull/5")
+                        .args());
         assertNull(PrReviewArgs.target("https://ghe.example.com/team/app/pull/6", 5), "another pull request");
         assertNull(PrReviewArgs.target("https://ghe.example.com/team/app/issues/5", 5));
         assertNull(PrReviewArgs.target("https://ghe.example.com/-x/app/pull/5", 5), "nothing gh would take as a flag");
