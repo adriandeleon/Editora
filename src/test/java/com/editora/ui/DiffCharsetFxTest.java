@@ -71,7 +71,14 @@ class DiffCharsetFxTest {
         FxTestSupport.runOnFx(() -> FxTestSupport.call(diff, "diffPathVsHead", new Class<?>[] {Path.class}, file));
 
         Object pane = awaitNewPane(ops, before);
-        assertNotNull(pane, "a diff pane should be created");
+        // It sometimes never came on macOS CI (after exportedPatchAppliesToACrlfFile in the same window, then fine
+        // alone), and nothing reproduces it here: say what the window held when it did not.
+        if (pane == null) {
+            String state = FxTestSupport.callOnFx(() -> "repoRoot=" + FxTestSupport.field(git, "repoRoot")
+                    + ", diff panes=" + ((List<?>) FxTestSupport.call(ops, "openDiffPanes", new Class<?>[] {})).size()
+                    + " (before: " + before + ")");
+            assertNotNull(pane, "a diff pane should be created; " + state);
+        }
         String left = FxTestSupport.field(pane, "leftText");
         assertNotNull(left, "HEAD side text");
         assertTrue(left.contains("café"), "HEAD side must decode as Latin-1, was: [" + left + "]");
