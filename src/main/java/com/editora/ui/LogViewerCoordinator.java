@@ -20,6 +20,7 @@ import com.editora.logviewer.LogNavigation;
 import com.editora.logviewer.LogPatterns;
 import com.editora.logviewer.LogQuery;
 import com.editora.logviewer.LogTailService;
+import com.editora.logviewer.LogTimes;
 import com.editora.text.LanguageRegistry;
 import com.editora.vfs.Vfs;
 import org.jspecify.annotations.Nullable;
@@ -67,6 +68,8 @@ final class LogViewerCoordinator {
     private final Map<EditorBuffer, LogControlBar> logBars = new IdentityHashMap<>();
     /** The newest filter asked of each buffer: an older one still being computed is dropped when it returns. */
     private final Map<EditorBuffer, Integer> filterRequests = new IdentityHashMap<>();
+    /** The tabs showing a command's output as a live log (Open Log Stream…), with that command. */
+    private final Map<EditorBuffer, LogStream> streams = new IdentityHashMap<>();
     /** Buffers whose remembered view was put back already: a reload keeps what the user has now. */
     private final Set<EditorBuffer> restored = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
 
@@ -266,8 +269,139 @@ final class LogViewerCoordinator {
         host.requestSave();
     }
 
+    // --- live streams ---------------------------------------------------------------------------------
+
+    /** Stream tabs whose command has ended: nothing to resume. */
+    private final java.util.Set<EditorBuffer> ended = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+
+    /** Asks where a live log comes from, then what to show of it, and opens it in a new tab. */
+    void openLogStream() {
+        if (!isEnabled()) {
+            host.setStatus(tr("status.log.disabled"));
+            return;
+        }
+        List<LogStreamSource> kinds = List.of(LogStreamSource.values());
+        QuickOpen<LogStreamSource> picker = new QuickOpen<>(
+                tr("log.stream.pick"),
+                tr("log.stream.pickPrompt"),
+                () -> kinds,
+                k -> tr("log.stream.kind." + k.id()),
+                k -> tr("log.stream.hint." + k.id()),
+                this::askStreamTarget);
+        picker.setOverlayHost(host.overlayHost());
+        picker.show(host.window());
+    }
+
+    private void askStreamTarget(LogStreamSource kind) {
+        if (kind != LogStreamSource.CONTAINER) {
+            promptStreamTarget(kind);
+            return;
+        }
+        com.editora.container.ContainerEngine engine =
+                com.editora.container.ContainerEngine.of(host.settings().getContainerEngine());
+        java.util.concurrent.CompletableFuture.supplyAsync(engine::runningContainers, filterExecutor)
+                .thenAccept(names -> Platform.runLater(() -> {
+                    if (names.isEmpty()) {
+                        promptStreamTarget(kind); // no engine answer, or nothing running: type a name
+                        return;
+                    }
+                    QuickOpen<String> picker = new QuickOpen<>(
+                            tr("log.stream.kind.container"),
+                            tr("log.stream.label.container"),
+                            () -> names,
+                            n -> n,
+                            n -> "",
+                            n -> startStream(kind, n));
+                    picker.setOverlayHost(host.overlayHost());
+                    picker.show(host.window());
+                }));
+    }
+
+    private void promptStreamTarget(LogStreamSource kind) {
+        host.promptText(
+                tr("log.stream.kind." + kind.id()),
+                tr("log.stream.label." + kind.id()),
+                "",
+                typed -> startStream(kind, typed));
+    }
+
+    /** Opens a tab showing {@code kind}'s command for {@code typed}, following it from the start. */
+    void startStream(LogStreamSource kind, String typed) {
+        List<String> argv;
+        try {
+            argv = kind.argv(
+                    typed,
+                    com.editora.container.ContainerEngine.of(host.settings().getContainerEngine())
+                            .command());
+        } catch (IllegalArgumentException e) {
+            host.setStatus(tr("status.log.streamNotUnderstood", typed.strip()));
+            return;
+        }
+        // A command, or the journal of a unit, runs where the project's tools run: on its server, for a remote
+        // project. The other sources are clients on this machine (docker, kubectl, ssh).
+        Path root = host.projectRoot();
+        boolean onProjectHost = kind == LogStreamSource.COMMAND || kind == LogStreamSource.JOURNAL;
+        com.editora.process.ExecTarget target =
+                onProjectHost ? com.editora.process.ExecTargets.forPath(root) : com.editora.process.ExecTargets.local();
+        Path dir = onProjectHost && root != null && target.isLocal() ? root : null;
+        com.editora.process.ExecSpec spec = com.editora.process.ExecSpec.of(
+                        argv, dir, Map.of(), com.editora.process.ExecSpec.Locale.USER)
+                .withLongLived(true);
+
+        EditorBuffer buffer = new EditorBuffer();
+        buffer.setDisplayName(kind.title(typed));
+        buffer.setLogViewForced(true);
+        buffer.setReadOnly(true);
+        host.openTab(buffer);
+        ensureControl(buffer);
+        String shown = String.join(" ", argv);
+        LogStream stream = new LogStream(target, spec, new LogStream.Sink() {
+            @Override
+            public void text(String text) {
+                if (streams.containsKey(buffer)) {
+                    buffer.appendLogText(text);
+                }
+            }
+
+            @Override
+            public void ended(int exit, @Nullable String error) {
+                if (streams.remove(buffer) == null) {
+                    return; // stopped by closing the tab
+                }
+                ended.add(buffer);
+                buffer.setLogFollowing(false);
+                syncBar(buffer);
+                host.setStatus(
+                        error != null
+                                ? tr("status.log.streamFailed", shown, error)
+                                : tr("status.log.streamEnded", shown, exit));
+            }
+        });
+        streams.put(buffer, stream);
+        buffer.setLogFollowing(true);
+        syncBar(buffer);
+        stream.start();
+        host.setStatus(tr("status.log.streamStarted", shown));
+    }
+
+    /** Characters of {@code buffer}'s stream held back while paused (tests). */
+    int heldStreamChars(EditorBuffer buffer) {
+        LogStream stream = streams.get(buffer);
+        return stream == null ? 0 : stream.heldChars();
+    }
+
+    /** Whether {@code buffer} shows a running stream (tests). */
+    boolean isStreaming(EditorBuffer buffer) {
+        return streams.containsKey(buffer);
+    }
+
     /** Cancels a buffer's follow + drops its per-buffer state (called when its tab closes). */
     void onBufferClosed(EditorBuffer buffer) {
+        LogStream stream = streams.remove(buffer);
+        if (stream != null) {
+            stream.stop();
+        }
+        ended.remove(buffer);
         restored.remove(buffer);
         stopFollow(buffer);
         logBars.remove(buffer);
@@ -277,6 +411,8 @@ final class LogViewerCoordinator {
 
     /** Stops the tail-follow poll thread and the filter worker (window dispose). */
     void shutdown() {
+        streams.values().forEach(LogStream::stop);
+        streams.clear();
         logTailService.shutdown();
         filterExecutor.shutdownNow();
     }
@@ -284,6 +420,19 @@ final class LogViewerCoordinator {
     // --- follow ----------------------------------------------------------------------------------
 
     private void toggleFollow(EditorBuffer buffer, boolean follow) {
+        LogStream stream = streams.get(buffer);
+        if (stream != null) {
+            stream.setPaused(!follow); // the command keeps running; its lines wait for the resume
+            buffer.setLogFollowing(follow);
+            syncBar(buffer);
+            host.setStatus(tr(follow ? "status.log.streamResumed" : "status.log.streamPaused"));
+            return;
+        }
+        if (follow && ended.contains(buffer)) {
+            host.setStatus(tr("status.log.streamOver"));
+            syncBar(buffer);
+            return;
+        }
         if (follow) {
             startFollow(buffer);
         } else {
@@ -540,6 +689,99 @@ final class LogViewerCoordinator {
 
     void clearFilter() {
         ifLog(b -> applyFilter(b, null, LogQuery.NONE, true));
+    }
+
+    // --- time ---------------------------------------------------------------------------------------
+
+    /** The day a time typed without a date is on: the caret line's, or else the log's first. */
+    private static java.time.@Nullable LocalDate referenceDay(org.fxmisc.richtext.CodeArea area, LogTimes.Context ctx) {
+        java.util.function.IntFunction<String> line = i -> area.getParagraph(i).getText();
+        long t = LogTimes.timeAt(line, area.getCurrentParagraph(), ctx);
+        if (t == LogTimes.NONE) {
+            t = LogTimes.firstTimeFrom(line, area.getParagraphs().size(), 0, ctx);
+        }
+        return t == LogTimes.NONE ? null : LogTimes.dateOf(t, ctx);
+    }
+
+    /** Asks for a time and moves the caret to the first line written then or later. */
+    void goToTime() {
+        ifLog(b -> {
+            var area = b.getFocusedArea();
+            LogTimes.Context ctx = LogTimes.Context.local();
+            long here = LogTimes.timeAt(i -> area.getParagraph(i).getText(), area.getCurrentParagraph(), ctx);
+            String initial = here == LogTimes.NONE ? "" : LogTimes.format(here, ctx);
+            host.promptText(tr("log.time.goTitle"), tr("log.time.goLabel"), initial, text -> {
+                long target = LogTimes.parseTyped(text, referenceDay(area, ctx), ctx);
+                if (target == LogTimes.NONE) {
+                    host.setStatus(tr("status.log.timeNotUnderstood", text.strip()));
+                    return;
+                }
+                int line = LogTimes.firstAtOrAfter(
+                        i -> area.getParagraph(i).getText(),
+                        area.getParagraphs().size(),
+                        target,
+                        ctx);
+                if (line < 0) {
+                    host.setStatus(tr("status.log.noLineAfter", LogTimes.format(target, ctx)));
+                    return;
+                }
+                b.jumpToLine(line);
+            });
+        });
+    }
+
+    /** Asks for a time range ("10:05 - 10:20") and shows only the records written in it. */
+    void setTimeRange() {
+        ifLog(b -> {
+            var area = b.getFocusedArea();
+            LogTimes.Context ctx = LogTimes.Context.local();
+            LogQuery query = b.getLogQuery();
+            String initial = typedRange(query.from(), query.to(), ctx);
+            host.promptText(tr("log.time.rangeTitle"), tr("log.time.rangeLabel"), initial, text -> {
+                LogTimes.Typed range = LogTimes.parseRange(text, referenceDay(area, ctx), ctx);
+                if (range == null) {
+                    host.setStatus(tr("status.log.timeNotUnderstood", text.strip()));
+                    return;
+                }
+                applyFilter(b, b.getLogMinLevel(), b.getLogQuery().withTimeRange(range.from(), range.to()), true);
+            });
+        });
+    }
+
+    private static String typedRange(@Nullable Long from, @Nullable Long to, LogTimes.Context ctx) {
+        if (from == null && to == null) {
+            return "";
+        }
+        return (from == null ? "" : LogTimes.format(from, ctx)) + " .. " + (to == null ? "" : LogTimes.format(to, ctx));
+    }
+
+    /** Keeps the records written from the caret line's time on ({@code fromCaret}), or up to it. */
+    void timeRangeAtCaret(boolean fromCaret) {
+        ifLog(b -> {
+            var area = b.getFocusedArea();
+            LogTimes.Context ctx = LogTimes.Context.local();
+            long t = LogTimes.timeAt(i -> area.getParagraph(i).getText(), area.getCurrentParagraph(), ctx);
+            if (t == LogTimes.NONE) {
+                host.setStatus(tr("status.log.noTimeAtCaret"));
+                return;
+            }
+            LogQuery query = b.getLogQuery();
+            Long from = fromCaret ? Long.valueOf(t) : query.from();
+            Long to = fromCaret ? query.to() : Long.valueOf(t);
+            if (from != null && to != null && to < from) { // the other end is on the wrong side: drop it
+                if (fromCaret) {
+                    to = null;
+                } else {
+                    from = null;
+                }
+            }
+            applyFilter(b, b.getLogMinLevel(), query.withTimeRange(from, to), true);
+        });
+    }
+
+    /** Drops the time range, keeping the rest of the filter. */
+    void clearTimeRange() {
+        ifLog(b -> applyFilter(b, b.getLogMinLevel(), b.getLogQuery().withTimeRange(null, null), true));
     }
 
     void jumpToNextError() {

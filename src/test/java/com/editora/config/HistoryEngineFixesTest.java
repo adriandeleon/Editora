@@ -41,8 +41,8 @@ class HistoryEngineFixesTest {
 
     private SharedConfig open() {
         SharedConfig config = new SharedConfig(dir, false);
-        // No FX thread here, even when another test in the fork started one: the rows another writer added are
-        // taken in through it, and through Platform.runLater they landed after the assertion that looks for them.
+        // Results meant for the FX thread run here: in a JVM where another test started the toolkit they would
+        // land on it later, after the assertions (the other writer's rows, adoptForeignRows).
         config.setFxThreadForTest(Runnable::run);
         config.load();
         open.add(config);

@@ -63,6 +63,14 @@ Outside those positions a level word has to be upper case, so the word "error"
 inside a message doesn't recolor an INFO line. A line with no level, such as a
 stack-trace frame, belongs to the record above it and takes that record's color.
 
+### Warnings and errors on the scrollbar
+
+A thin stripe over the scrollbar marks every WARN line in amber and every
+ERROR or FATAL line in red, with the whole log mapped to its height, so you can
+see where the trouble is without scrolling. Hover a mark to read its line, and
+click it to go there. When a filter is on, the stripe marks the lines the filter
+kept. A stack trace is marked once, at its record's first line.
+
 ## The control bar
 
 Log mode adds a bar above the text with these controls, all reachable with Tab:
@@ -127,6 +135,29 @@ lines are dropped and the control bar notes *older lines dropped*.
 A tab that has dropped lines holds only the end of the log, so Editora refuses to
 save it: saving would truncate the file on disk.
 
+## Live logs from other places
+
+**Log: Open Log Stream…** (`log.openStream`) shows a log that a command
+prints as it grows, in a new read-only tab with the log viewer's level colors,
+filters and Follow. Pick where it comes from:
+
+| Source | What runs | What you type |
+| --- | --- | --- |
+| Container… | `docker logs -f --tail 1000` (or the container engine set in Settings) | a running container, picked from a list |
+| Kubernetes… | `kubectl logs -f --tail=1000` | `pod/name`, `deploy/api -n shop` |
+| systemd Unit… | `journalctl -f -n 1000 -o short-iso -u` | `nginx` |
+| File over SSH… | `ssh host tail -n 1000 -F path` | `user@host:/var/log/app.log` |
+| Command… | the command you type | `docker compose logs -f api` |
+
+Each one starts with the last 1000 lines. A command and a systemd unit run where
+the project's tools run, which is the server for a remote project; the others
+run on this computer. File over SSH uses your system's `ssh` with
+`BatchMode=yes`, so it needs a key or agent, not a password.
+
+Follow off pauses the tab: the command keeps running and its new lines wait
+(up to 12 MB) until you follow again. Closing the tab stops the command. When
+the command ends, the status bar says so with its exit code.
+
 ## Live filtering
 
 Filter as you type by a **level floor**, a pattern of records to **show** and a
@@ -178,6 +209,33 @@ Filtered lines keep their real line numbers in the gutter, and applying or
 clearing a filter keeps you on the line you were on. Filtering works together
 with Follow: new records are filtered as they arrive.
 
+## Times
+
+Editora reads the time each line was written from its timestamp: ISO and
+Logback dates (`2026-11-24 10:05:30,123`, `2026-11-24T10:05:30Z`), Tomcat's
+`24-Nov-2026 10:05:30.123`, syslog's `Nov 24 10:05:30`, klog's
+`I1124 10:05:30.000000`, an access log's `[24/Nov/2026:10:05:30 +0000]`, and a
+JSON line's `time`, `timestamp` or `ts`, as text or as an epoch number. A line
+without a timestamp, such as a stack-trace frame, was written at the time of the
+line above it. A time with no zone is in your computer's zone, and a syslog date
+with no year is in the current year.
+
+- **Log: Go to Time…** asks for a time and moves to the first line written then
+  or later. Type a time of day (`10:05`, `10:05:30.250`), which is on the caret
+  line's date, or a full date and time.
+- **Log: Filter by Time…** shows only the records written between two times:
+  `10:05 - 10:20`, `2026-11-24 22:00 .. 2026-11-25 02:00`. Leave a side empty
+  for no limit (`10:05 ..`). The end covers all of what it names, so `10:20`
+  runs to 10:20:59. The control bar shows the range next to the line count.
+- **Log: Show From Caret Line** and **Log: Show Up To Caret Line** set one end
+  of the range to the time of the line at the caret.
+- **Log: Clear Time Range** removes the range and keeps the rest of the filter;
+  **Log: Clear Filter** removes everything.
+
+The time range works with the level floor and the patterns: a record has to
+pass all of them. Lines above the first timestamp have no time, so a range
+hides them.
+
 ## Commands
 
 In a log, **Next Problem** and **Previous Problem** step through the lines at
@@ -193,6 +251,11 @@ The keys are F8 and Shift+F8, F2 and Shift+F2 in the IntelliJ keymaps, and
 | Filter by pattern | `log.setRegexFilter` | |
 | Hide records matching a pattern | `log.setHideFilter` | |
 | Clear the filter | `log.clearFilter` | |
+| Go to the first line at a time | `log.goToTime` | |
+| Filter by time range | `log.setTimeRange` | |
+| Show from / up to the caret line's time | `log.showFromCaret` / `log.showUpToCaret` | |
+| Clear the time range | `log.clearTimeRange` | |
+| Open a live log from a container, pod, unit, SSH or a command | `log.openStream` | |
 | Next / previous line at warning level or higher (**Log: Next Warning or Error**, **Log: Previous Warning or Error**) | `log.nextError` / `log.previousError` | Next / Previous Problem |
 | Show the file as a log, or stop (toggle) | `log.viewAsLog` |
 | Enable/disable the feature | `view.toggleLogViewer` |

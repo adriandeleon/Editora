@@ -18,6 +18,44 @@ class LogRecordFilterTest {
         return out.text.toString();
     }
 
+    private static LogFilter.Patterns between(String from, String to) {
+        LogTimes.Context utc = new LogTimes.Context(java.time.ZoneOffset.UTC, 2026);
+        return new LogFilter.Patterns(
+                null, null, new LogFilter.TimeRange(LogTimes.of(from, utc), LogTimes.of(to, utc), utc));
+    }
+
+    @Test
+    void aTimeRangeKeepsTheRecordsWrittenInItWithTheirTraces() {
+        LogRecordFilter filter = new LogRecordFilter(null, between("2026-11-24 10:01:00", "2026-11-24 10:02:00"));
+        assertEquals(
+                "2026-11-24 10:01:00 ERROR b\n\tat y\n2026-11-24 10:02:00 INFO c\n",
+                feed(
+                        filter,
+                        "header without a time",
+                        "2026-11-24 10:00:00 ERROR a",
+                        "\tat x",
+                        "2026-11-24 10:01:00 ERROR b",
+                        "\tat y",
+                        "2026-11-24 10:02:00 INFO c",
+                        "2026-11-24 10:03:00 INFO d"),
+                "both ends included; a line before any time is not kept");
+        assertFalse(filter.wouldKeep("\tat z"), "an unfinished trace line takes the last time seen, 10:03");
+        assertTrue(filter.wouldKeep("2026-11-24 10:01:30 INFO late thread"), "its own time, in the range");
+    }
+
+    @Test
+    void aTimeRangeAndALevelFloorBothApply() {
+        LogRecordFilter filter =
+                new LogRecordFilter(LogLevel.ERROR, between("2026-11-24 10:01:00", "2026-11-24 10:09:00"));
+        assertEquals(
+                "2026-11-24 10:02:00 ERROR b\n",
+                feed(
+                        filter,
+                        "2026-11-24 10:00:00 ERROR a",
+                        "2026-11-24 10:01:00 INFO x",
+                        "2026-11-24 10:02:00 ERROR b"));
+    }
+
     @Test
     void anUnmatchedRecordIsDroppedWhenTheNextOneStarts() {
         LogRecordFilter filter = new LogRecordFilter(null, Pattern.compile("timeout"));

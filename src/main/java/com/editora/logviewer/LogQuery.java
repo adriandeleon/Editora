@@ -14,8 +14,16 @@ import org.jspecify.annotations.Nullable;
  * @param include the records to keep, or {@code null} for all of them
  * @param exclude the records to hide, or {@code null} for none
  * @param matchCase match both patterns case-sensitively (by default case is ignored)
+ * @param from keep only records written at or after this time (epoch milliseconds, see {@link LogTimes}), or
+ *     {@code null} for no lower bound
+ * @param to keep only records written at or before this time, or {@code null} for no upper bound
  */
-public record LogQuery(@Nullable String include, @Nullable String exclude, boolean matchCase) {
+public record LogQuery(
+        @Nullable String include,
+        @Nullable String exclude,
+        boolean matchCase,
+        @Nullable Long from,
+        @Nullable Long to) {
 
     /** No text filter. */
     public static final LogQuery NONE = new LogQuery(null, null, false);
@@ -25,14 +33,29 @@ public record LogQuery(@Nullable String include, @Nullable String exclude, boole
         exclude = exclude == null || exclude.isEmpty() ? null : exclude;
     }
 
+    /** A query by patterns alone, with no time range. */
+    public LogQuery(@Nullable String include, @Nullable String exclude, boolean matchCase) {
+        this(include, exclude, matchCase, null, null);
+    }
+
+    /** Whether a time range is set (either end). */
+    public boolean hasTimeRange() {
+        return from != null || to != null;
+    }
+
+    /** The same query with the time range replaced ({@code null} ends are open). */
+    public LogQuery withTimeRange(@Nullable Long from, @Nullable Long to) {
+        return new LogQuery(include, exclude, matchCase, from, to);
+    }
+
     /** A query that only keeps what matches {@code include}, ignoring case. */
     public static LogQuery including(@Nullable String include) {
         return new LogQuery(include, null, false);
     }
 
-    /** Whether neither pattern is set, so the query filters nothing (whatever {@link #matchCase} says). */
+    /** Whether neither pattern nor a time range is set, so the query filters nothing (whatever {@link #matchCase} says). */
     public boolean isEmpty() {
-        return include == null && exclude == null;
+        return include == null && exclude == null && !hasTimeRange();
     }
 
     /** This query, or {@link #NONE} when it filters nothing: the form a view stores and compares. */
@@ -42,6 +65,6 @@ public record LogQuery(@Nullable String include, @Nullable String exclude, boole
 
     /** The same query with {@code include} replaced. */
     public LogQuery withInclude(@Nullable String text) {
-        return new LogQuery(text, exclude, matchCase);
+        return new LogQuery(text, exclude, matchCase, from, to);
     }
 }

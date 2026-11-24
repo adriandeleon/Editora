@@ -37,6 +37,16 @@ interface CoordinatorHost {
         return null;
     }
 
+    /** Opens {@code buffer} in a new tab of this window and makes it the active one. */
+    default void openTab(EditorBuffer buffer) {
+        throw new UnsupportedOperationException("this host opens no tabs");
+    }
+
+    /** This window's project folder, or null when it has none. */
+    default java.nio.file.@Nullable Path projectRoot() {
+        return null;
+    }
+
     boolean simpleModeActive();
 
     /** Whether the app/editor theme is dark (e.g. Mermaid renders a dark diagram to match). */
