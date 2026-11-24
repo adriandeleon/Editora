@@ -12,7 +12,8 @@ package com.editora.ui;
  * only before a complete, unindented line that follows a blank line outside a fenced code block, and that
  * does not continue the list or the quote before it. Rendering the two sides separately then gives the same blocks as
  * rendering them together. The constructs this cannot see (a reference definition that arrives later, an
- * HTML block with blank lines in it) are why the panel still renders the finished reply once as a whole.
+ * HTML block with blank lines in it, a footnote, display math) make the panel render a finished reply that
+ * holds them once as a whole ({@link #needsWholeRender}); any other finished reply keeps its settled blocks.
  */
 final class AgentStreamSplit {
 
@@ -63,6 +64,61 @@ final class AgentStreamSplit {
             lineStart = lineEnd + 1;
         }
         return best;
+    }
+
+    /**
+     * Whether a finished reply must be rendered whole rather than keep its blocks before {@code settled} (an
+     * offset {@link #settledEnd} returned) and render only the rest: when it holds what spans the split — a
+     * link reference definition (which any block may use), a footnote (numbered across the reply), display
+     * math ({@code $$}, which may hold blank lines) — or an HTML line before the split (an HTML block may run
+     * across blank lines). Cautious: a false alarm only costs the whole render the reply always had.
+     */
+    static boolean needsWholeRender(CharSequence markdown, int settled) {
+        if (settled <= 0) {
+            return false; // nothing is kept: the rest is the whole reply
+        }
+        int length = markdown.length();
+        for (int i = 0; i + 1 < length; i++) {
+            char c = markdown.charAt(i);
+            char next = markdown.charAt(i + 1);
+            if ((c == '[' && next == '^') || (c == '^' && next == '[') || (c == '$' && next == '$')) {
+                return true;
+            }
+        }
+        int lineStart = 0;
+        while (lineStart < length) {
+            int lineEnd = indexOfNewline(markdown, lineStart);
+            int end = lineEnd < 0 ? length : lineEnd;
+            int i = firstNonSpace(markdown, lineStart, end);
+            if (i - lineStart <= 3 && i < end) {
+                char c = markdown.charAt(i);
+                if (c == '<' && lineStart < settled) {
+                    return true;
+                }
+                if (c == '[' && isReferenceDefinition(markdown, i, end)) {
+                    return true;
+                }
+            }
+            if (lineEnd < 0) {
+                break;
+            }
+            lineStart = lineEnd + 1;
+        }
+        return false;
+    }
+
+    /** Whether the line from {@code open} (a {@code [}) to {@code end} starts like {@code [label]:}. */
+    private static boolean isReferenceDefinition(CharSequence s, int open, int end) {
+        for (int i = open + 1; i + 1 < end; i++) {
+            char c = s.charAt(i);
+            if (c == ']') {
+                return i > open + 1 && s.charAt(i + 1) == ':';
+            }
+            if (c == '[') {
+                return false;
+            }
+        }
+        return false;
     }
 
     private static final int PLAIN = 0;
