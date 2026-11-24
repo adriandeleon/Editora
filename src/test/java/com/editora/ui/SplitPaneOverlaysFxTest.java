@@ -166,6 +166,23 @@ class SplitPaneOverlaysFxTest {
         return twin;
     }
 
+    /** Waits until the buffer's caret-idle timer (document highlight, #675) has fired: the caret is at rest. */
+    private static void caretAtRest(EditorBuffer b) throws Exception {
+        javafx.animation.PauseTransition idle = FxTestSupport.callOnFx(
+                () -> FxTestSupport.field(FxTestSupport.field(b, "lspAssists"), "occurrenceIdle"));
+        com.editora.testkit.Await.until(
+                () -> {
+                    try {
+                        return FxTestSupport.callOnFx(
+                                () -> idle.getStatus() != javafx.animation.Animation.Status.RUNNING);
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                },
+                "the caret-idle timer to fire");
+        settle();
+    }
+
     private static void scrollTo(CodeArea view, int line) throws Exception {
         FxTestSupport.runOnFx(() -> view.showParagraphAtTop(line));
         settle();
@@ -224,7 +241,9 @@ class SplitPaneOverlaysFxTest {
         });
         Node values = drawn(b, "inline-values-overlay");
         drawn(b, "whitespace-overlay");
-        // (Set once the caret has come to rest: a caret move asks the language server again and clears them.)
+        // (Set once the caret has come to rest: setExecutionLine moved it, and 300 ms after a move the idle timer
+        // asks the language server again, which with none here clears them. Set before it fired, they are gone.)
+        caretAtRest(b);
         FxTestSupport.runOnFx(() -> b.setOccurrenceSpans(
                 List.of(new OccurrenceSpan(4, 8, 4, 13, true), new OccurrenceSpan(1, 8, 1, 13, false))));
         Node occurrences = drawn(b, "occurrence-overlay");
