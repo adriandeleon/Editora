@@ -921,7 +921,7 @@ squiggle overlay (`HttpVariableMarks.MarkupCheck`, gated on `!isLspActive()`; th
 and runs the first whose gate is open — JSON Lines' one-value-per-line check, `ui.JsonLinesMarks`, is the other,
 since no server reads that format). `textDocument/documentColor` (any server with a
 `colorProvider`: html, css) rides `requestFoldingRanges`' pulses; `EditorBuffer.setColorSwatches` draws an inlay per
-colour, painted by a per-buffer `data:` stylesheet with one class per colour (`ColorSwatchInlays`). Between answers
+colour, painted by a per-buffer `data:` stylesheet with one class per colour (`ColorSwatchInlays`), on the text areas, not the buffer root (adding a colour re-styles only them). Between answers
 the cached colours move with each edit (`ColorSwatch.shifted`, on the area's `plainTextChanges`), so a swatch stays
 before its literal while the user types.
 

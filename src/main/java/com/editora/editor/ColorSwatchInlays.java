@@ -20,10 +20,11 @@ import org.jspecify.annotations.Nullable;
  * the glyphs, never text — per colour the language server reported, merged into each line's other inlays.
  *
  * <p>An inlay carries a style class but no colour, so each colour gets a class of its own
- * ({@code swatch-ff0000ff}) and the buffer a small stylesheet that paints those classes. The sheet only grows
+ * ({@code swatch-ff0000ff}) and the text areas a small stylesheet that paints those classes. The sheet only grows
  * while colours are added (typing {@code #abc} one character at a time adds three), so it changes — and the
- * buffer's CSS is re-applied — only when a colour it has never shown appears; past {@link #MAX_CLASSES} it is
- * rebuilt from the colours on screen.
+ * areas' CSS is re-applied — only when a colour it has never shown appears; past {@link #MAX_CLASSES} it is
+ * rebuilt from the colours on screen. The sheet sits on the areas, not the buffer's root: a change of it
+ * re-styled the whole buffer — gutter stripes, overlays, minimap, bars — as well (perf review E7).
  */
 public final class ColorSwatchInlays {
 
@@ -40,10 +41,11 @@ public final class ColorSwatchInlays {
     private @Nullable String sheet;
 
     /**
-     * Replaces the swatches with {@code swatches} (null or empty clears them) and keeps {@code root}'s stylesheet
-     * in step. True when what is drawn changed, so the caller refreshes its inlays.
+     * Replaces the swatches with {@code swatches} (null or empty clears them) and keeps the stylesheet of each of
+     * {@code hosts} (the text areas the swatches are drawn in) in step. True when what is drawn changed, so the
+     * caller refreshes its inlays.
      */
-    public boolean set(@Nullable List<ColorSwatch> swatches, Parent root) {
+    public boolean set(@Nullable List<ColorSwatch> swatches, List<? extends Parent> hosts) {
         Map<Integer, List<Inlay>> next = new HashMap<>();
         Set<String> colours = new LinkedHashSet<>();
         if (swatches != null) {
@@ -64,13 +66,23 @@ public final class ColorSwatchInlays {
             }
             painted.addAll(colours);
             String url = sheetUrl(painted);
-            if (sheet != null) {
-                root.getStylesheets().remove(sheet);
+            for (Parent host : hosts) {
+                if (sheet != null) {
+                    host.getStylesheets().remove(sheet);
+                }
+                host.getStylesheets().add(url);
             }
-            root.getStylesheets().add(url);
             sheet = url;
         }
         return true;
+    }
+
+    /** Gives {@code host} (a text area opened since, the split view's) the sheet the others have. */
+    public void attach(Parent host) {
+        String s = sheet;
+        if (s != null && !host.getStylesheets().contains(s)) {
+            host.getStylesheets().add(s);
+        }
     }
 
     /** {@code others} (a line's hints, null for none) with the line's swatches added; null when there are neither. */
