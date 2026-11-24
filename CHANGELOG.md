@@ -302,6 +302,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Elixir language server.** ElixirLS crashed on Editora's first request and was restarted again and again, so
+  Elixir files had no diagnostics, completion or hover. Editora now sends request ids as numbers, as VS Code does;
+  ElixirLS refused them as strings.
 - **A relative config folder stays where you started Editora.** A relative `EDITORA_CONFIG_DIR` or `--config-dir` is
   now taken relative to the folder Editora was started in, so the Java language server's workspaces are no longer
   created in whatever folder a later process runs in.
