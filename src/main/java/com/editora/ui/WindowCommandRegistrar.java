@@ -1140,6 +1140,13 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("log.setHideFilter", host.logViewer()::setHideFilter));
         host.registry().register(Command.of("log.focusFilter", host.logViewer()::focusFilter));
         host.registry().register(Command.of("log.clearFilter", host.logViewer()::clearFilter));
+        host.registry().register(Command.of("log.goToTime", host.logViewer()::goToTime));
+        host.registry().register(Command.of("log.setTimeRange", host.logViewer()::setTimeRange));
+        host.registry()
+                .register(Command.of("log.showFromCaret", () -> host.logViewer().timeRangeAtCaret(true)));
+        host.registry()
+                .register(Command.of("log.showUpToCaret", () -> host.logViewer().timeRangeAtCaret(false)));
+        host.registry().register(Command.of("log.clearTimeRange", host.logViewer()::clearTimeRange));
         host.registry().register(Command.of("log.nextError", host.logViewer()::jumpToNextError));
         host.registry().register(Command.of("log.previousError", host.logViewer()::jumpToPreviousError));
         host.registry().register(Command.of("view.toggleLogViewer", host.logViewer()::toggleViewer));

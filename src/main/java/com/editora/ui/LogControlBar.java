@@ -166,8 +166,15 @@ public class LogControlBar extends HBox {
         follow.setSelected(following);
     }
 
+    /** The active filter's time range, which the bar has no field for: kept so typing a pattern does not drop it. */
+    private @Nullable Long from;
+
+    private @Nullable Long to;
+
     /** Shows {@code min}/{@code text} as the active filter (without reporting it back). */
     public void showFilter(@Nullable LogLevel min, LogQuery text) {
+        from = text.from();
+        to = text.to();
         showing = true;
         try {
             level.getSelectionModel().select(Math.max(0, LEVELS.indexOf(min)));
@@ -195,7 +202,11 @@ public class LogControlBar extends HBox {
      * whether a pattern was too slow on some lines (which were then taken as not matching it).
      */
     public void showState(boolean filtered, int visible, int total, boolean trimmed, boolean slow) {
-        java.util.List<String> parts = new java.util.ArrayList<>(3);
+        java.util.List<String> parts = new java.util.ArrayList<>(4);
+        String range = rangeText(from, to);
+        if (filtered && range != null) {
+            parts.add(range);
+        }
         if (filtered) {
             parts.add(tr("log.state.filtered", visible, total));
         }
@@ -222,9 +233,27 @@ public class LogControlBar extends HBox {
         return LEVELS.get(Math.max(0, level.getSelectionModel().getSelectedIndex()));
     }
 
-    /** The text filter as typed. Not trimmed: a pattern may be about its spaces. */
+    /** The text filter as typed, with the active time range. Not trimmed: a pattern may be about its spaces. */
     public LogQuery query() {
-        return new LogQuery(pattern.getText(), hide.getText(), matchCase.isSelected());
+        return new LogQuery(pattern.getText(), hide.getText(), matchCase.isSelected(), from, to);
+    }
+
+    /** A time range as the state note says it, or null for none. */
+    static @Nullable String rangeText(@Nullable Long from, @Nullable Long to) {
+        com.editora.logviewer.LogTimes.Context context = com.editora.logviewer.LogTimes.Context.local();
+        if (from != null && to != null) {
+            return tr(
+                    "log.state.between",
+                    com.editora.logviewer.LogTimes.format(from, context),
+                    com.editora.logviewer.LogTimes.format(to, context));
+        }
+        if (from != null) {
+            return tr("log.state.from", com.editora.logviewer.LogTimes.format(from, context));
+        }
+        if (to != null) {
+            return tr("log.state.to", com.editora.logviewer.LogTimes.format(to, context));
+        }
+        return null;
     }
 
     /** What the state note reads (for tests). */

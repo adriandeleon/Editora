@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Times in logs.** The log viewer reads each line's timestamp (ISO, Logback, Tomcat, syslog, klog, access logs, and
+  JSON `time`/`ts` fields, also as epoch numbers). **Log: Go to Time…** jumps to the first line written at or after a
+  time, **Log: Filter by Time…** shows the records between two times (`10:05 - 10:20`), and **Show From/Up To Caret
+  Line** set one end from the line at the caret. The control bar shows the range.
 - **Hide records in the log viewer.** The log control bar has a second field, for the records to hide: a record whose
   first line matches is hidden with its stack trace, and any other matching line on its own, so `at org.springframework`
   shortens traces and `HealthCheck` drops the health checks. **Aa** makes both patterns match case, the show pattern's

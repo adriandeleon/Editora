@@ -29,6 +29,9 @@ import org.jspecify.annotations.Nullable;
  * dropped). The filter is therefore incremental by construction: a followed log feeds its new lines into the
  * same instance that filtered the document.
  *
+ * <p>A time range keeps the lines written in it: a line's time is its own timestamp ({@link LogTimes}), or that
+ * of the last line above it that had one. Lines before the first timestamp have no time and are not kept.
+ *
  * <p>Patterns run through a {@link LogMatcher}, so one that backtracks without end cannot hang the filter:
  * a line that takes too long counts as not matching, and {@link #slow()} says it happened.
  */
@@ -46,6 +49,9 @@ public final class LogRecordFilter {
     private final @Nullable LogLevel minLevel;
     private final @Nullable LogMatcher include;
     private final @Nullable LogMatcher exclude;
+    private final LogFilter.@Nullable TimeRange time;
+    /** The time of the last line that carried one: lines without a timestamp were written with it. */
+    private long carryTime = LogTimes.NONE;
 
     private @Nullable LogLevel carry;
     /** A record has started: lines without a level belong to it rather than standing alone. */
@@ -69,6 +75,7 @@ public final class LogRecordFilter {
         Pattern out = patterns.exclude();
         this.include = in == null ? null : new LogMatcher(in);
         this.exclude = out == null ? null : new LogMatcher(out);
+        this.time = patterns.time();
     }
 
     /** The inherited level after the last line fed in. */
@@ -91,7 +98,13 @@ public final class LogRecordFilter {
             recordHidden = false;
             heldLines.clear();
         }
-        if (!passesLevel(carry)) {
+        if (time != null) {
+            long written = LogTimes.of(line, time.context());
+            if (written != LogTimes.NONE) {
+                carryTime = written;
+            }
+        }
+        if (!passesLevel(carry) || !passesTime(carryTime)) {
             return;
         }
         if (hidden(line, own != null)) {
@@ -147,6 +160,12 @@ public final class LogRecordFilter {
         if (!passesLevel(effective)) {
             return false;
         }
+        if (time != null) {
+            long written = LogTimes.of(line, time.context());
+            if (!passesTime(written != LogTimes.NONE ? written : carryTime)) {
+                return false;
+            }
+        }
         if (exclude != null && ((own == null && recordHidden) || exclude.find(line))) {
             return false;
         }
@@ -157,6 +176,11 @@ public final class LogRecordFilter {
     public @Nullable LogLevel levelIfNext(String line) {
         LogLevel own = LogPatterns.levelOf(line);
         return own != null ? own : carry;
+    }
+
+    /** With a time range, a line passes when the time it was written (its own or inherited) is in it. */
+    private boolean passesTime(long written) {
+        return time == null || time.contains(written);
     }
 
     private boolean passesLevel(@Nullable LogLevel effective) {

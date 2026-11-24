@@ -305,6 +305,63 @@ class LogViewerCoordinatorFxTest {
     }
 
     @Test
+    void aTimeRangeFiltersShowsInTheBarAndSurvivesTypingAPattern() throws Exception {
+        FakeHost host = new FakeHost();
+        LogViewerCoordinator c = new LogViewerCoordinator(host);
+        EditorBuffer log = sampleLog(host, c);
+        LogControlBar bar = barOf(c, log);
+
+        host.promptAnswer = "09:00:01 - 09:00:02";
+        FxTestSupport.runOnFx(c::setTimeRange);
+        assertEquals(
+                "2026-10-06 09:00:01 to 2026-10-06 09:00:02.999 · 4 of 6 lines",
+                FxTestSupport.callOnFx(bar::stateText),
+                "the WARN and the ERROR with its trace; a time without a date is on the caret line's day");
+
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.control.TextField pattern = (javafx.scene.control.TextField) bar.lookup(".log-filter-field");
+            pattern.setText("payment");
+            pattern.getOnAction().handle(new javafx.event.ActionEvent());
+        });
+        assertTrue(FxTestSupport.callOnFx(() -> log.getLogQuery().hasTimeRange()), "typing a pattern keeps the range");
+        assertTrue(FxTestSupport.callOnFx(bar::stateText).endsWith("3 of 6 lines"));
+
+        host.promptAnswer = null;
+        FxTestSupport.runOnFx(c::setTimeRange);
+        assertEquals("2026-10-06 09:00:01 .. 2026-10-06 09:00:02.999", host.promptInitial, "the prompt opens on it");
+
+        FxTestSupport.runOnFx(c::clearTimeRange);
+        assertEquals("payment", FxTestSupport.callOnFx(() -> log.getLogQuery().include()), "the pattern stays");
+        assertFalse(FxTestSupport.callOnFx(() -> log.getLogQuery().hasTimeRange()));
+
+        host.promptAnswer = "09:00:00 - soon";
+        FxTestSupport.runOnFx(c::setTimeRange);
+        assertTrue(host.lastStatus.contains("09:00:00 - soon"), "a range it cannot read is said, not applied");
+        FxTestSupport.runOnFx(c::clearFilter);
+    }
+
+    @Test
+    void goToTimeAndShowFromTheCaretLine() throws Exception {
+        FakeHost host = new FakeHost();
+        LogViewerCoordinator c = new LogViewerCoordinator(host);
+        EditorBuffer log = sampleLog(host, c);
+        LogControlBar bar = barOf(c, log);
+
+        host.promptAnswer = "09:00:02.500";
+        FxTestSupport.runOnFx(c::goToTime);
+        assertEquals(
+                5, FxTestSupport.callOnFx(() -> log.getFocusedArea().getCurrentParagraph()), "first line at or after");
+
+        FxTestSupport.runOnFx(() -> log.getFocusedArea().moveTo(4, 0)); // a stack-trace line: its record's time
+        FxTestSupport.runOnFx(() -> c.timeRangeAtCaret(true));
+        assertTrue(FxTestSupport.callOnFx(bar::stateText).endsWith("4 of 6 lines"), "from 09:00:02 on");
+
+        host.promptAnswer = "11:00";
+        FxTestSupport.runOnFx(c::goToTime);
+        assertTrue(host.lastStatus.startsWith("No line"), host.lastStatus);
+    }
+
+    @Test
     void nextProblemStepsThroughWarningsAndErrorsInALog() throws Exception {
         FakeHost host = new FakeHost();
         LogViewerCoordinator c = new LogViewerCoordinator(host);

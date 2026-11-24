@@ -14,6 +14,7 @@ Level tints, tail-follow and filtering for log files. Back to [the docs index](.
   - `LogRecordFilter` / `LogFilter` — the filter. Stateful, fed one complete line at a time.
   - `LogTail` / `LogTailService` — reading what a file gained, and the poll that does it.
   - `LogNavigation` — next/previous line at a level.
+  - `LogTimes` — the time a line was written (epoch ms), typed times and ranges, and the line at a time.
 - [`editor/LogView`](../../src/main/java/com/editora/editor/logviewer/LogView.java) — one buffer's filter and
   follow state, and the full text a filter hides.
 - [`editor/LogHighlightOverlay`](../../src/main/java/com/editora/editor/logviewer/LogHighlightOverlay.java) —
@@ -78,7 +79,19 @@ started; past that the oldest lines go and the buffer becomes unsaveable (`trimm
 a log of `LogViewerCoordinator.ASYNC_FILTER_CHARS` or more is computed off the FX thread and
 installed only if the text has done nothing but grow since (`LogView.epoch()`).
 
+**Times are epoch milliseconds, completed by a `LogTimes.Context`.** A timestamp with no zone is in
+the context's zone, a date with no year in its year; `LogFilter.compile` uses `Context.local()`. The
+range lives in `LogQuery.from/to` (absolute, so a typed time of day is resolved against the caret
+line's date when it is typed) and compiles to `LogFilter.TimeRange` in `Patterns`. `LogRecordFilter`
+parses a line's time only while a range is set, carries it to the lines below like the level, and
+does not keep a line with no time known. The control bar has no field for the range but keeps it in
+`query()`, so typing a pattern does not drop it. `LogTimes.firstAtOrAfter` reads from the top: logs
+are only nearly ordered.
+
 ## Not done
+
+- No time ruler beside the overview stripe, and no time slider: the range is typed or set from the caret.
+- The time range is not remembered across sessions with the rest of the filter.
 
 - "View as Log" and the active filter are not remembered across sessions.
 - The level filter, pattern filter, hide filter and clear filter commands have no default keys.
