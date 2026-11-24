@@ -43,7 +43,9 @@ So: a toolbar with no snapshot badge means you are running a real release build.
    Any metric more than **10 % worse** than the previous release is a regression: find its cause
    (a JFR recording or `EDITORA_PERF_SAMPLE=1` usually names it) and fix it before the tag, or record
    in the release PR why it is accepted. Put the before/after table in the release PR. See
-   [Performance](performance.md#release-ab-review) for the harness and the rules the review checks against.
+   [Performance](performance.md#release-ab-review) for the harness and the rules the review checks against. The
+   nightly A/B (`perf-nightly.yml`) has been measuring master against the same tag all along: an open
+   `perf-regression` issue is a regression to settle before the tag.
 4. **Make a screen-reader pass** on a build of the commit you will tag, on Windows with **Narrator**
    (Ctrl+Win+Enter) and on macOS with **VoiceOver** (Cmd+F5): open the Command Palette and hear the
    field and the selected row read; run a command from it; open Settings and move through a page

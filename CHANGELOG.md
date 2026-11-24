@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failure's message and stack, a row that opens the test where it failed. Rerun Failed and Rerun This Test run
   just those tests with the runner's own filter. The Run console keeps the runner's usual report. Run File on a
   Dart test file now runs `dart test`.
+- **Live logs from containers, Kubernetes, systemd and SSH.** **Log: Open Log Stream…** opens a read-only log tab fed
+  by `docker logs -f`, `kubectl logs -f`, `journalctl -f -u`, `ssh host tail -F` or any command you type, with level
+  colors, filters and Follow (off pauses it). Closing the tab stops the command.
 - **Compressed logs open directly.** A `.gz` file such as logrotate's `app.log.2.gz` opens decompressed and read-only,
   in the log viewer when its name is a log's, so it can be filtered without unpacking it. A large one shows its last
   16 MB (a log) or first 16 MB.
