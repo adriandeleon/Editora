@@ -1,0 +1,134 @@
+name: Nightly performance
+
+# Master measured against the last release, every night: scripts/perf-ab.sh, the same A/B harness as the
+# pre-release review (docs/release.md, step 3), headless, three interleaved runs a side. It catches what the
+# per-pull-request gate (PerfBudgetFxTest, in ci.yml's suite) cannot: time — FX-thread milliseconds per key,
+# scrolling, highlighting a big file, opening, Find, saving — which is too noisy to fail a pull request on.
+#
+# The verdict goes to one issue labelled `perf-regression`: opened (or updated) when the table has a metric
+# more than 10 % worse beyond its spread (▲), closed when a night comes back clean. A regression therefore
+# surfaces the morning after the merge that caused it, with a day's commits to look through, instead of at
+# release time with a whole release's. The run itself stays green unless a probe run fails: a slower metric
+# is reported, not a broken build.
+#
+# A shared runner is noisier than a quiet desktop: a ▲ here is a reason to re-run that mode locally
+# (PERF_MODES=<mode> scripts/perf-ab.sh v<previous> 5) before chasing it (docs/performance.md).
+on:
+  # 02:41 UTC, off the hour and before full-tests.yml (05:23), so the two do not share the account's runners.
+  # GitHub mails a failed scheduled run to whoever last changed this cron line.
+  schedule:
+    - cron: '41 2 * * *'
+  # On demand: `gh workflow run perf-nightly.yml [-f baseline=v0.27.0] [-f modes='typing:2000 idle']`.
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: 'Ref to compare against (default: the newest v* tag)'
+        required: false
+        default: ''
+      modes:
+        description: 'PERF_MODES (default: every mode)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf-nightly
+  cancel-in-progress: false
+
+jobs:
+  ab:
+    name: A/B against the last release
+    runs-on: ubuntu-latest
+    # A full run of 3 reps is about an hour on four cores.
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the baseline tag and its tree
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          # Maven runs inside perf-ab.sh for two trees, the baseline's dependencies among them: what this job
+          # downloads is not what the CI jobs' key should hold, so it only reads the cache.
+          cache-read-only: true
+
+      - name: Pick the baseline
+        id: base
+        env:
+          INPUT_BASELINE: ${{ inputs.baseline }}
+        run: |
+          base=${INPUT_BASELINE:-$(git tag --list 'v*' --sort=-v:refname | head -1)}
+          echo "ref=$base" >>"$GITHUB_OUTPUT"
+          echo "Baseline: $base ($(git rev-parse --short "$base^{commit}")); master: $(git rev-parse --short HEAD)"
+
+      # The runner is the job's alone, so the runs may have all four cores (PERF_CPUS; the default is a
+      # quarter of the machine, for the shared desktop).
+      - name: Run the A/B
+        env:
+          PERF_JAVA_HOME: ${{ env.JAVA_HOME }}
+          PERF_CPUS: '4'
+          PERF_OUT: ${{ github.workspace }}/target/perf-ab/nightly
+          PERF_MODES_INPUT: ${{ inputs.modes }}
+          BASE: ${{ steps.base.outputs.ref }}
+        run: |
+          if [ -n "$PERF_MODES_INPUT" ]; then export PERF_MODES=$PERF_MODES_INPUT; fi
+          scripts/perf-ab.sh "$BASE" 3
+
+      - name: Report
+        if: ${{ always() && hashFiles('target/perf-ab/nightly/summary.md') != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ steps.base.outputs.ref }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          summary=target/perf-ab/nightly/summary.md
+          cat "$summary" >>"$GITHUB_STEP_SUMMARY"
+          worse=$(sed -nE 's/^([0-9]+) metric\(s\) more than 10 % worse beyond the spread.*/\1/p' "$summary" | tail -1)
+          worse=${worse:-0}
+          label=perf-regression
+          gh label create "$label" --color B60205 \
+              --description "Nightly perf A/B: master slower than the last release" 2>/dev/null || true
+          open=$(gh issue list --label "$label" --state open --json number --jq '.[0].number // empty')
+          body=$(mktemp)
+          {
+            echo "The nightly A/B ([run]($RUN_URL)) measured master ($(git rev-parse --short HEAD)) against $BASE"
+            echo "and found **$worse metric(s) more than 10 % worse beyond the spread (▲)**."
+            echo
+            echo "Look through the pull requests merged since the last clean night; re-run a flagged mode locally"
+            echo "before chasing it: \`PERF_MODES=<mode> scripts/perf-ab.sh $BASE 5\` (docs/performance.md)."
+            echo
+            cat "$summary"
+          } >"$body"
+          if [ "$worse" -gt 0 ]; then
+            if [ -n "$open" ]; then
+              gh issue edit "$open" --body-file "$body"
+              gh issue comment "$open" --body "Still slower on $(git rev-parse --short HEAD) ($worse ▲): [run]($RUN_URL)."
+            else
+              gh issue create --label "$label" --title "Nightly perf: master is slower than $BASE" --body-file "$body"
+            fi
+          elif [ -n "$open" ]; then
+            gh issue close "$open" --comment "Clean on $(git rev-parse --short HEAD) against $BASE: no ▲ ([run]($RUN_URL))."
+          fi
+
+      - name: Keep the run's numbers
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: perf-ab-nightly
+          path: |
+            target/perf-ab/nightly/summary.md
+            target/perf-ab/nightly/metrics.tsv
+            target/perf-ab/nightly/runs/
+          retention-days: 30
+          if-no-files-found: ignore
