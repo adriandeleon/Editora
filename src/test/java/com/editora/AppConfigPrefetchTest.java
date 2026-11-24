@@ -73,6 +73,33 @@ class AppConfigPrefetchTest {
         App.awaitRethrowing(fine); // nothing thrown
     }
 
+    /**
+     * The first window's pieces that read no setting run beside the settings load (startup R3): when the load fails,
+     * it waits for them before letting the directory go, and reports its own failure rather than theirs.
+     */
+    @Test
+    void aFailingLoadWaitsForTheStepBesideItQuietly() throws Exception {
+        CountDownLatch release = new CountDownLatch(1);
+        java.util.concurrent.FutureTask<Void> slowFailing = new java.util.concurrent.FutureTask<>(() -> {
+            release.await();
+            throw new IllegalStateException("the side step broke");
+        });
+        Thread.ofVirtual().start(slowFailing);
+        CompletableFuture<Void> waited = CompletableFuture.runAsync(() -> App.awaitQuietly(slowFailing));
+        assertFalse(waited.isDone(), "it waits for the step to end");
+        release.countDown();
+        waited.get(10, TimeUnit.SECONDS); // ended; what the step threw is not rethrown
+        assertTrue(slowFailing.isDone());
+    }
+
+    /** The warm-up beside the JSON warm-up reads only bundled files, and leaves the catalog init uses. */
+    @Test
+    void theBundledWarmUpLeavesTheEnglishCatalogParsed() {
+        App.warmBundledForLoad();
+        Messages.init("en");
+        assertEquals("File: New", Messages.tr("command.file.new"), "the catalog the warm-up parsed is the one in use");
+    }
+
     @Test
     void thePrefetchLoadsTheCatalogForTheConfiguredLanguage(@TempDir Path dir) throws Exception {
         Files.writeString(dir.resolve("settings.json"), "{\"uiLanguage\":\"es\"}");

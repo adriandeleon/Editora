@@ -56,9 +56,23 @@ public final class Messages {
         return generation;
     }
 
+    /** The English base catalog parsed ahead by {@link #warmBase}; null until then. A bundled file: never stale. */
+    private static volatile @Nullable Map<String, String> parsedBase;
+
+    /**
+     * Parses the English base catalog now, on the calling thread, for the next {@link #init} to use: a launch does it
+     * on a thread of its own while the settings that pick the language are still being read (startup R3).
+     */
+    public static void warmBase() {
+        if (parsedBase == null) {
+            parsedBase = load("en");
+        }
+    }
+
     /** Loads the English base + the chosen language overlay (falling back to English for an unknown code). */
     public static synchronized void init(String lang) {
-        base = load("en");
+        Map<String, String> warmed = parsedBase;
+        base = warmed != null ? warmed : load("en");
         currentLang = LANGUAGES.containsKey(lang) ? lang : "en";
         active = "en".equals(currentLang) ? base : load(currentLang);
         generation++;
