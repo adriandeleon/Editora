@@ -630,10 +630,17 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
                             "search-file-row", "problem-lang-row", "problem-error", "problem-warning", "problem-info");
             if (empty || row == null) {
                 setText(null);
-                setContextMenu(null);
+                LazyContextMenu.clear(this);
                 return;
             }
-            setContextMenu(row.diag() == null ? null : contextMenuFor(row.diag()));
+            // Built on the right-click, not here: this runs for every visible row on each scroll and rebuild, and
+            // a ContextMenu is a popup window of its own (perf review 2026-11-23 L7).
+            LspDiagnostic menuFor = row.diag();
+            if (menuFor == null) {
+                LazyContextMenu.clear(this);
+            } else {
+                LazyContextMenu.install(this, () -> contextMenuFor(menuFor));
+            }
             if (row.diag() != null) {
                 LspDiagnostic d = row.diag();
                 setText(glyph(d.severity()) + "  " + rowText(d));

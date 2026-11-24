@@ -232,15 +232,20 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
     /**
      * Usage counts for a file's declarations (Map code browser gap 11): {@code file} lent to its running server while
      * it answers — its references code lens when it has one, else its references counted for the first {@link
-     * MapUsageCounts#MAX_COUNTED} declarations, one after another. Null without a running server that can say.
+     * MapUsageCounts#MAX_COUNTED} declarations, one after another, stopped as soon as they are no longer {@code
+     * wanted}. Null without a running server that can say.
      */
     @Override
     public void usages(
             Path file,
             List<MapUsageCounts.Declaration> declarations,
+            java.util.function.BooleanSupplier wanted,
             Consumer<java.util.@Nullable Map<Integer, Integer>> answer) {
         MapCardLinks.Request read = new MapCardLinks.Request(MapCardLinks.Kind.REFERENCES, file, 0, -1, null, null);
         withText(read, unreadable -> answer.accept(null), text -> {
+            if (!wanted.getAsBoolean()) {
+                return; // asked again while the text was read
+            }
             LspManager servers = lsp;
             Runnable loan = servers == null ? null : lend(servers, file, text);
             if (servers == null || loan == null) {
@@ -257,7 +262,7 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
                 List<MapUsageCounts.Declaration> counted = declarations.size() > MapUsageCounts.MAX_COUNTED
                         ? declarations.subList(0, MapUsageCounts.MAX_COUNTED)
                         : declarations;
-                countReferences(servers, file, text, counted, 0, new java.util.HashMap<>(), loan, answer);
+                countReferences(servers, file, text, counted, 0, new java.util.HashMap<>(), wanted, loan, answer);
             } else {
                 loan.run();
                 answer.accept(null);
@@ -265,7 +270,12 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
         });
     }
 
-    /** Counts the references of {@code declarations} from {@code index} on, one at a time, then answers. FX thread. */
+    /**
+     * Counts the references of {@code declarations} from {@code index} on, one at a time, then answers. Stops, giving
+     * the file back, once they are no longer {@code wanted}: typing on in the file asks for them all again, and the
+     * rest of a superseded round only kept the server from the edited file's own requests (perf review 2026-11-23
+     * S8). FX thread.
+     */
     private void countReferences(
             LspManager servers,
             Path file,
@@ -273,8 +283,13 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
             List<MapUsageCounts.Declaration> declarations,
             int index,
             java.util.Map<Integer, Integer> counts,
+            java.util.function.BooleanSupplier wanted,
             Runnable loan,
             Consumer<java.util.@Nullable Map<Integer, Integer>> answer) {
+        if (!wanted.getAsBoolean()) {
+            loan.run();
+            return;
+        }
         if (index >= declarations.size()) {
             loan.run();
             answer.accept(counts);
@@ -285,7 +300,8 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
                 new MapCardLinks.Request(
                         MapCardLinks.Kind.REFERENCES, file, declaration.line(), -1, declaration.name(), text),
                 text);
-        Runnable next = () -> countReferences(servers, file, text, declarations, index + 1, counts, loan, answer);
+        Runnable next =
+                () -> countReferences(servers, file, text, declarations, index + 1, counts, wanted, loan, answer);
         if (at == null || at.column() < 0) {
             next.run();
             return;

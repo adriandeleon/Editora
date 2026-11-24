@@ -115,6 +115,40 @@ class ProblemsPanelFxTest {
         });
     }
 
+    /**
+     * Showing and scrolling the rows builds no menus: each row's is made when it is asked for, and a header row
+     * reusing a problem's cell opens none (perf review 2026-11-23 L7).
+     */
+    @Test
+    void rowMenusAreBuiltOnlyWhenAskedFor() throws Exception {
+        Path java = Path.of("/proj/Main.java");
+        FxTestSupport.runOnFx(() -> {
+            ProblemsPanel p = new ProblemsPanel(NOOP);
+            javafx.stage.Stage stage = new javafx.stage.Stage();
+            stage.setScene(new javafx.scene.Scene(new javafx.scene.layout.StackPane(p), 300, 400));
+            stage.show();
+            p.setProblems(Map.of(java, List.of(diag(2, Severity.ERROR, "boom"), diag(1, Severity.WARNING, "meh"))));
+            p.applyCss();
+            p.layout();
+            List<javafx.scene.control.TreeCell<?>> cells = tree(p).lookupAll(".tree-cell").stream()
+                    .filter(n -> n instanceof javafx.scene.control.TreeCell<?> c && !c.isEmpty())
+                    .<javafx.scene.control.TreeCell<?>>map(n -> (javafx.scene.control.TreeCell<?>) n)
+                    .toList();
+            assertEquals(4, cells.size(), "language, file and two problems");
+            for (javafx.scene.control.TreeCell<?> c : cells) {
+                assertEquals(null, c.getContextMenu(), "no menu before it is asked for: " + c.getText());
+                c.fireEvent(new javafx.scene.input.ContextMenuEvent(
+                        javafx.scene.input.ContextMenuEvent.CONTEXT_MENU_REQUESTED, 0, 0, 0, 0, false, null));
+                boolean problem = c.getText().contains("boom") || c.getText().contains("meh");
+                assertEquals(problem, c.getContextMenu() != null, "a menu only for a problem row: " + c.getText());
+                if (c.getContextMenu() != null) {
+                    c.getContextMenu().hide();
+                }
+            }
+            stage.hide();
+        });
+    }
+
     /** Next / Previous Problem select their row, opening a folded header; a closed window is left alone. */
     @Test
     void revealSelectsTheDiagnosticsRowAndOpensItsFoldedHeader() throws Exception {

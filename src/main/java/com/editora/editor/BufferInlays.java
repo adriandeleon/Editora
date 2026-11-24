@@ -195,12 +195,32 @@ final class BufferInlays {
         if (codeLensByLine.isEmpty() || !codeLensByLine.containsKey(lensLineAt(a, e))) {
             return null;
         }
-        for (Node n : a.lookupAll("." + CODE_LENS_STYLE)) {
-            // Not the gap that sets the lens apart from the code: a click there places the caret.
-            javafx.geometry.Point2D at = n.sceneToLocal(e.getSceneX(), e.getSceneY());
+        return labelAt(a, e.getSceneX(), e.getSceneY(), CODE_LENS_STYLE);
+    }
+
+    /**
+     * The node of style class {@code styleClass} under the scene point, past its left inset (the gap that sets a
+     * lens apart from the code: a click there places the caret), or null. Descends only into nodes whose bounds
+     * hold the point: a {@code lookupAll} walked every Text node of every visible line on each mouse move over a
+     * lens's line (perf review 2026-11-23 L8).
+     */
+    static @Nullable Node labelAt(Node n, double sceneX, double sceneY, String styleClass) {
+        javafx.geometry.Point2D at = n.sceneToLocal(sceneX, sceneY);
+        if (at == null || !n.getBoundsInLocal().contains(at)) {
+            return null; // a parent's bounds hold its children's, so nothing under it can be at the point
+        }
+        if (n.getStyleClass().contains(styleClass)) {
             double gap = n instanceof Region r ? r.snappedLeftInset() : 0;
             if (at.getX() >= gap && n.contains(at)) {
                 return n;
+            }
+        }
+        if (n instanceof javafx.scene.Parent p) {
+            for (Node child : p.getChildrenUnmodifiable()) {
+                Node found = labelAt(child, sceneX, sceneY, styleClass);
+                if (found != null) {
+                    return found;
+                }
             }
         }
         return null;
@@ -222,13 +242,19 @@ final class BufferInlays {
         hoveredLens = lens;
     }
 
+    /**
+     * Has every visible line ask the factory again. A new factory object rather than {@code refreshInlays()}, which
+     * sets the factory to null and back: the null clears every hinted line and the real one rebuilds it, two text-run
+     * rebuilds per line per answer. With one change each line compares its new list with the old one and only those
+     * that differ rebuild (perf review 2026-11-23 E6).
+     */
     void refreshInlayAreas() {
         if (!inlayFactoryInstalled) {
             return;
         }
-        b.area.refreshInlays();
+        b.area.setInlayFactory(line -> inlaysOn(line));
         if (b.area2 != null) {
-            b.area2.refreshInlays();
+            b.area2.setInlayFactory(line -> inlaysOn(line));
         }
     }
 }
