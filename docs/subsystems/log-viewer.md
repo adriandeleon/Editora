@@ -97,9 +97,17 @@ does not keep a line with no time known. The control bar has no field for the ra
 `query()`, so typing a pattern does not drop it. `LogTimes.firstAtOrAfter` reads from the top: logs
 are only nearly ordered.
 
+**A `.gz` file opens decompressed and read-only.** `FileWorkflowCoordinator.prepareGzip` reads it
+through `io/GzipText` (at most `EditorBuffer.LARGE_FILE_BYTES`; a log keeps its end, from a line
+start, anything else its start) and marks the load `truncated`, which makes the tab read-only and
+keeps Save from writing text over the compressed bytes. `LogFileNames.isLog` looks through `.gz`
+(not `.tar.gz`), so `app.log.2.gz` is a log by name; `startFollow` refuses a compressed file. A file
+that is not gzip after all falls back to the plain read.
+
 ## Not done
 
 - No time ruler beside the overview stripe, and no time slider: the range is typed or set from the caret.
 - The time range is not remembered across sessions with the rest of the filter.
+- Archives (`.zip`, `.tar`, `.tar.gz`) have no entry picker; only single-file gzip opens.
 - The level filter, pattern filter, hide filter and clear filter commands have no default keys.
 - The hide pattern's matches are not highlighted (only the show pattern's are).

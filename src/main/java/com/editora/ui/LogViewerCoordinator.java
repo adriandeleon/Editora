@@ -301,6 +301,11 @@ final class LogViewerCoordinator {
             syncBar(buffer);
             return;
         }
+        if (com.editora.io.GzipText.isGzip(file)) {
+            host.setStatus(tr("status.log.followCompressed")); // its bytes are compressed: nothing to tail
+            syncBar(buffer);
+            return;
+        }
         stopFollow(buffer);
         long start = resumeOffset(buffer, file);
         buffer.setLogFollowing(true);
