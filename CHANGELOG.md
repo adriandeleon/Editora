@@ -202,6 +202,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     rows in place during a run; the CSV grid parses off the UI thread and keeps its columns when they don't change;
     Mermaid diagrams in the Markdown preview and agent replies no longer start a renderer for every version of a fence
     being typed or streamed, and a code fence still streaming in an agent reply is highlighted once it closes.
+  - Local History: with a long history, a save no longer rewrites the whole history index. It writes a small file of
+    what changed beside it (an 8.8 MB index: 42 ms and 8.8 MB written per save → about 1 ms and 13 KB), and the index
+    is rewritten every ten minutes or so of saving, when that file grows, and at quit. A crash keeps every saved
+    version, and two Editoras on one configuration folder still keep each other's versions and deletions.
 
 - **Editora's Linux app ID is now `io.github.adriandeleon.Editora`** (it was `com.editora.Editora`), as Pauta asks.
   It is the ID GNOME Software, KDE Discover and other software centres know Editora by. The listing says it replaces

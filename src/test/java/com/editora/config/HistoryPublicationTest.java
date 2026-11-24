@@ -126,15 +126,17 @@ class HistoryPublicationTest {
         publish(secondary);
         secondary.shutdown();
 
-        // The primary has nothing to write, so it does not read the file — and must not collect on what it
-        // knew before the other process wrote.
+        // The primary has nothing of its own to write. A collection is due, so the publication reads the index
+        // whole (HistoryIndexFiles) — and must not collect on what it knew before the other process wrote.
         primary.historyService().requestGc();
         publish(primary);
         assertEquals("saved in the secondary", blobs().get(theirs.sha256()));
+        assertTrue(index().contains(theirs.sha256()), "the other process's row is still listed");
 
-        // Its next real save merges, learns of the other rows, and the pending collection runs then.
+        // A later save, with a collection asked for again: the other rows are known, and the orphan goes.
         String later = blobs().put("unreferenced, later");
         record(primary, "/w/a.txt", "saved again", 3000);
+        primary.historyService().requestGc();
         publish(primary);
         assertNull(blobs().get(later));
         assertEquals("saved in the secondary", blobs().get(theirs.sha256()));

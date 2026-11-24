@@ -6,7 +6,6 @@ import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -165,15 +164,12 @@ class HistoryEngineFixesTest {
 
         record(primary, "/w/c.txt", "and a later save", 4000);
         publish(primary);
-        Field field = SharedConfig.class.getDeclaredField("sync");
+        Field field = SharedConfig.class.getDeclaredField("historyFiles");
         field.setAccessible(true);
-        StoreSync sync = (StoreSync) field.get(primary);
-        Field states = StoreSync.class.getDeclaredField("states");
-        states.setAccessible(true);
-        Object state = ((Map<?, ?>) states.get(sync)).get(index());
-        Field pure = state.getClass().getDeclaredField("pure");
+        HistoryIndexFiles files = (HistoryIndexFiles) field.get(primary);
+        Field pure = HistoryIndexFiles.class.getDeclaredField("pure");
         pure.setAccessible(true);
-        assertTrue((Boolean) pure.get(state), "the file holds this process's index and nothing else again");
+        assertTrue((Boolean) pure.get(files), "the file holds this process's index and nothing else again");
     }
 
     // --- E4 --------------------------------------------------------------------------------------------------

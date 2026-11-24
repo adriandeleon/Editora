@@ -552,6 +552,13 @@ style-only change that still ended a succession — skips the draw and the snaps
   on the index's thread, ahead of the next search, and re-reads the direct entries of the folders modified since
   (`ProjectFileList.revalidate`). A remote root, a changed root `.gitignore` or more than 64 moved folders still
   mark the list out of date, listed again in the background.
+- A Local History publication of an index of 256 KiB or more writes only `history/index.json.recent.bak`, the rows
+  added and removed since `index.json` was last written (`HistoryIndexFiles`, `HistoryDelta`), instead of
+  serializing, re-reading, hashing, writing and syncing the whole index (an 8.8 MB index: 42 ms → ~1 ms median per
+  save on the writer thread, 8.8 MB → ~13 KB written; `HistoryIndexWriteProbeTest`, `-Dhistory.probe=true`). The
+  index is written whole when a blob collection is due (about every ten minutes of saving, and on a purge), when the
+  delta passes 64 KiB and an eighth of the index, and at quit. See
+  [config and migrations](subsystems/config-and-migrations.md).
 - Local History captures for a Git Rollback/Discard go through
   `HistoryCoordinator.captureAllBeforeOverwriteDurably`: every file is recorded first and the index is written
   and made durable once for the batch, not once per file.
