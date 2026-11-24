@@ -105,7 +105,7 @@ kept crashing, and for a Node.js server (bash-language-server, Pyright, the
 JSON, YAML and other npm servers) when no `node` is found. The rows of
 npm-installed servers show the installed package version. A language server
 that exits as soon as it starts shows what it printed, rather than *OK*; for lemminx on a Linux older than glibc 2.34, see
-[Installing lemminx](/docs/lsp#installing-lemminx). A server that keeps
+[Installing lemminx](/docs/xml#installing-lemminx). A server that keeps
 failing while it runs a command you set in Settings gets no **Install…**,
 since installing would not change that command: its tip says to fix the
 command or clear it to use the default, then run **Restart Language Servers**.
@@ -158,8 +158,8 @@ the project's own `node_modules` and its version from the tool's
 - **Off**: **Check with ESLint** is off in Settings (the ESLint row only).
 
 Their **Settings…** button opens Settings → LSP; see
-[ESLint](/docs/lsp#eslint) and
-[Formatting JavaScript and TypeScript](/docs/lsp#formatting-javascript-and-typescript).
+[ESLint](/docs/javascript-typescript#eslint) and
+[Formatting JavaScript and TypeScript](/docs/javascript-typescript#formatting-javascript-and-typescript).
 
 ### Update… for servers older than Editora's
 
@@ -211,7 +211,7 @@ HashiCorp) for its latest release. It covers Pyright, the YAML, Dockerfile, TOML
 and Astro servers, gopls, clangd, lua-language-server, tinymist, terraform-ls
 and the Mermaid CLI (`mmdc`), and only the ones that are installed and working.
 typescript-language-server is not looked up: Editora installs it at 5.3.0 with
-TypeScript 5.9.3 (see [TypeScript and JavaScript](/docs/lsp#typescript-and-javascript)),
+TypeScript 5.9.3 (see [TypeScript and JavaScript](/docs/javascript-typescript#language-server)),
 and **Install…** replaces Editora's own copy when it is older than that.
 
 Nothing is looked up until you click the button: opening Doctor or clicking
@@ -288,7 +288,7 @@ HTML, CSS, JSON, YAML and Bash servers, Pyright and the others. Left blank,
 they run on `node` on the `PATH`. A project's `.nvmrc` or `.node-version` does
 not change them, so an old Node.js pinned for the project cannot break them;
 only the TypeScript server follows the project's version file (from nvm), as
-[Run](/docs/run-debug#nodejs-scripts) does. A server row that would warn about
+[Run](/docs/javascript-typescript#running-nodejs-scripts) does. A server row that would warn about
 a missing Node.js does not, when that setting names one that exists.
 
 Install uses the npm beside that Node.js when there is one, so npm-installed
@@ -326,7 +326,7 @@ newer TypeScript globally to fix the server:
 In both cases, click **Update…** on Doctor's row, or **Install…** on the card.
 Editora's own TypeScript is then used even by a server you installed yourself,
 except in a trusted folder that has its own. Which TypeScript runs, and in
-what order, is under [TypeScript and JavaScript](/docs/lsp#typescript-and-javascript).
+what order, is under [TypeScript and JavaScript](/docs/javascript-typescript#language-server).
 
 When the status bar says *the only TypeScript here is this folder's own, and
 the folder is not trusted*, either trust the folder with *Project: Trust This
@@ -380,7 +380,7 @@ means Pyright is looking at a different Python than the one the package is in.
   and why it was chosen. Its **Settings…** opens the Python card on
   **Settings → LSP**, where the fallback interpreter is set.
 
-See [the Python interpreter](/docs/lsp#the-python-interpreter).
+See [the Python interpreter](/docs/python#the-python-interpreter).
 
 ## Python Format Document changes nothing
 
@@ -444,11 +444,11 @@ with **Install**, and the **Bash / Shell** card in **Settings → LSP** and the
 Doctor show whether each is found. Install them with the Install… buttons
 there, or with **Install: ShellCheck and shfmt** (`install.shellTools`) in the
 palette. If you turned **Lint with ShellCheck** or **Format with shfmt** off on
-the Bash / Shell card, turn it back on. See [ShellCheck and shfmt](/docs/lsp#shellcheck-and-shfmt).
+the Bash / Shell card, turn it back on. See [ShellCheck and shfmt](/docs/shell#shellcheck-and-shfmt).
 
 If ShellCheck runs but ignores a `.shellcheckrc`, the file is probably in a
 subfolder of the project; ShellCheck reads it only from the project folder or
-above. See [Where ShellCheck finds .shellcheckrc](/docs/lsp#where-shellcheck-finds-shellcheckrc).
+above. See [Where ShellCheck finds .shellcheckrc](/docs/shell#where-shellcheck-finds-shellcheckrc).
 
 A script whose ShellCheck problems seem to be missing, while others show
 theirs, may be a zsh script: ShellCheck cannot check zsh, and the problem
