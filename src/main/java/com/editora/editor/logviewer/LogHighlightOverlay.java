@@ -393,13 +393,16 @@ public final class LogHighlightOverlay extends Region implements SecondaryPane.F
         if (b == null || b.getMaxY() < 0 || b.getMinY() > canvas.getHeight()) {
             return;
         }
+        // The text's right edge, not the overlay's: the overlay also spans the vertical scrollbar and the overview
+        // stripes over it, which would cover the tag.
+        double edge = area.getWidth() > 0 ? Math.min(w, area.getWidth()) : w;
         Color color = sourceColors[source];
         g.setFill(color);
-        g.fillRect(w - SOURCE_STRIP_WIDTH, b.getMinY(), SOURCE_STRIP_WIDTH, b.getHeight());
+        g.fillRect(edge - SOURCE_STRIP_WIDTH, b.getMinY(), SOURCE_STRIP_WIDTH, b.getHeight());
         double rowHeight = Math.min(b.getHeight(), com.editora.editor.UiZoom.px(16));
         double chipW = sourceWidths[source] + 2 * CHIP_PAD;
-        double x = w - SOURCE_STRIP_WIDTH - chipW - CHIP_PAD;
-        if (x < w / 2) {
+        double x = edge - SOURCE_STRIP_WIDTH - chipW - CHIP_PAD;
+        if (x < edge / 2) {
             return; // a narrow view: the strip alone
         }
         g.setFill(color.deriveColor(0, 1, 1, 0.16));

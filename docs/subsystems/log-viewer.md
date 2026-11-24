@@ -19,6 +19,8 @@ Level tints, tail-follow and filtering for log files. Back to [the docs index](.
   follow state, and the full text a filter hides.
 - [`editor/LogHighlightOverlay`](../../src/main/java/com/editora/editor/logviewer/LogHighlightOverlay.java) —
   the gutter bar and row wash, painted on a canvas over the visible lines only.
+- [`editor/LogStripe`](../../src/main/java/com/editora/editor/logviewer/LogStripe.java) and
+  `logviewer/LogMarks` — the WARN/ERROR overview over the scrollbar, and the scan that finds its lines.
 - [`ui/LogControlBar`](../../src/main/java/com/editora/ui/LogControlBar.java) and
   [`ui/LogViewerCoordinator`](../../src/main/java/com/editora/ui/LogViewerCoordinator.java) — the bar
   docked above a log's text, and the feature's commands and wiring.
@@ -87,6 +89,13 @@ with a rename and copies them on Save As.
 started; past that the oldest lines go and the buffer becomes unsaveable (`trimmed()`). A filter on
 a log of `LogViewerCoordinator.ASYNC_FILTER_CHARS` or more is computed off the FX thread and
 installed only if the text has done nothing but grow since (`LogView.epoch()`).
+
+**The overview stripe scans the lines in view.** `LogStripe` runs `LogMarks.scan` over the area's text
+250 ms after the last change (a follow appends in bursts), inline up to 256 KB and on one shared
+daemon thread above that; a scan whose generation is stale is dropped, and one that finds the same
+marks repaints nothing. It paints one mark per pixel row, the worst, so cost does not grow with the
+number of marks. It shares the Markdown-lint stripe's slot (a log is never Markdown) and pushes the
+TODO stripe left by its width. A split's copy takes the original's marks instead of scanning.
 
 **Times are epoch milliseconds, completed by a `LogTimes.Context`.** A timestamp with no zone is in
 the context's zone, a date with no year in its year; `LogFilter.compile` uses `Context.local()`. The
