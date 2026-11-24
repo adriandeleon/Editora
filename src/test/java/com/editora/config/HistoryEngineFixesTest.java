@@ -41,6 +41,9 @@ class HistoryEngineFixesTest {
 
     private SharedConfig open() {
         SharedConfig config = new SharedConfig(dir, false);
+        // The other writer's rows are taken in where the publication hands them: right here, not on an FX thread
+        // another test in this JVM may have started, which settle() does not wait for.
+        config.setFxThreadForTest(Runnable::run);
         config.load();
         open.add(config);
         return config;
