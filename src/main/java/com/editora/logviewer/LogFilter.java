@@ -56,11 +56,18 @@ public final class LogFilter {
      *
      * @param include records to keep, or {@code null} for all
      * @param exclude records to hide, or {@code null} for none
+     * @param time the time range records must fall in, or {@code null} for any time
      */
     public record Patterns(
-            @Nullable Pattern include, @Nullable Pattern exclude) {
+            @Nullable Pattern include,
+            @Nullable Pattern exclude,
+            @Nullable TimeRange time) {
         /** Filters nothing. */
-        public static final Patterns NONE = new Patterns(null, null);
+        public static final Patterns NONE = new Patterns(null, null, null);
+
+        public Patterns(@Nullable Pattern include, @Nullable Pattern exclude) {
+            this(include, exclude, null);
+        }
 
         /** Only a pattern of records to keep. */
         public static Patterns including(@Nullable Pattern include) {
@@ -68,7 +75,18 @@ public final class LogFilter {
         }
 
         public boolean isEmpty() {
-            return include == null && exclude == null;
+            return include == null && exclude == null && time == null;
+        }
+    }
+
+    /**
+     * The times a record must be written between, both ends included, in epoch milliseconds; an open end is
+     * {@link Long#MIN_VALUE} or {@link Long#MAX_VALUE}. A line's time is read with {@code context}.
+     */
+    public record TimeRange(long from, long to, LogTimes.Context context) {
+        /** Whether {@code millis} — a time, or {@link LogTimes#NONE} for none known — is in the range. */
+        public boolean contains(long millis) {
+            return millis != LogTimes.NONE && millis >= from && millis <= to;
         }
     }
 
@@ -77,8 +95,18 @@ public final class LogFilter {
         if (query.isEmpty()) {
             return Patterns.NONE;
         }
+        Long from = query.from();
+        Long to = query.to();
+        TimeRange time = query.hasTimeRange()
+                ? new TimeRange(
+                        from == null ? Long.MIN_VALUE : from,
+                        to == null ? Long.MAX_VALUE : to,
+                        LogTimes.Context.local())
+                : null;
         return new Patterns(
-                compileFilter(query.include(), query.matchCase()), compileFilter(query.exclude(), query.matchCase()));
+                compileFilter(query.include(), query.matchCase()),
+                compileFilter(query.exclude(), query.matchCase()),
+                time);
     }
 
     /**

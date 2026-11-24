@@ -31,4 +31,15 @@ class LogQueryTest {
         assertNull(matching.exclude());
         assertSame(LogFilter.Patterns.NONE, LogFilter.compile(LogQuery.NONE));
     }
+
+    @Test
+    void aTimeRangeAloneIsAFilterAndSurvivesAPatternChange() {
+        LogQuery ranged = LogQuery.NONE.withTimeRange(1000L, null);
+        org.junit.jupiter.api.Assertions.assertFalse(ranged.isEmpty());
+        org.junit.jupiter.api.Assertions.assertEquals(ranged, ranged.normalized());
+        LogQuery typed = ranged.withInclude("timeout");
+        org.junit.jupiter.api.Assertions.assertEquals(1000L, typed.from());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                ranged.withTimeRange(null, null).isEmpty());
+    }
 }
