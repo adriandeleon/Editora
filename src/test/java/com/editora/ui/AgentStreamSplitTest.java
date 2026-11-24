@@ -3,6 +3,8 @@ package com.editora.ui;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Where {@link AgentStreamSplit} lets a streaming reply be cut into "final" and "may still change". */
 class AgentStreamSplitTest {
@@ -114,5 +116,23 @@ class AgentStreamSplitTest {
 
         String grown = md + "```\n\nC.\n";
         assertEquals(grown.length() - "C.\n".length(), AgentStreamSplit.settledEnd(grown, first));
+    }
+
+    /** What a split render cannot show as a whole one does makes the finished reply render whole (perf P10). */
+    @Test
+    void aFinishedReplyKeepsItsSettledBlocksUnlessSomethingSpansTheSplit() {
+        String plain = "One.\n\nTwo `a/b`.\n\nThree\n";
+        int split = AgentStreamSplit.settledEnd(plain, 0);
+        assertTrue(split > 0);
+        assertFalse(AgentStreamSplit.needsWholeRender(plain, split));
+        assertFalse(AgentStreamSplit.needsWholeRender("[x]: http://e\n", 0), "nothing kept");
+
+        assertTrue(AgentStreamSplit.needsWholeRender("See [x].\n\nTail\n\n[x]: http://e\n", 10), "a reference");
+        assertTrue(AgentStreamSplit.needsWholeRender("Note[^1].\n\nTail\n\n[^1]: text\n", 11), "a footnote");
+        assertTrue(AgentStreamSplit.needsWholeRender("Inline^[note].\n\nTail\n", 16), "an inline footnote");
+        assertTrue(AgentStreamSplit.needsWholeRender("$$\nx\n\ny\n$$\n\nTail\n", 5), "display math");
+        assertTrue(AgentStreamSplit.needsWholeRender("<!--\n\nhidden\n-->\n\nTail\n", 6), "HTML before the split");
+        assertFalse(AgentStreamSplit.needsWholeRender("One.\n\n<b>tail</b>\n", 6), "HTML only in the tail");
+        assertFalse(AgentStreamSplit.needsWholeRender("A [link](x) and [b] [c]\n\nTail\n", 25));
     }
 }

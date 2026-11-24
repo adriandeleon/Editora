@@ -474,9 +474,25 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         }
     }
 
+    /**
+     * The finished reply's parse: of the part past the settled blocks when {@code tailOnly} (those blocks are
+     * kept), else of the whole reply.
+     */
+    private record FinalParse(boolean tailOnly, org.commonmark.node.@Nullable Node doc) {}
+
+    /** Finished replies that kept their settled blocks and rebuilt only the rest (perf review P10). */
+    private int finishTailRenders;
+
+    int finishTailRenderCount() {
+        return finishTailRenders;
+    }
+
     /** Renders the current message in full and stops streaming it (the next {@link #appendChunk} starts a new
-     *  one): the whole reply is parsed off the JavaFX thread and lands in its wrapper, which keeps what the
-     *  stream showed until then. A no-op when nothing is streaming. */
+     *  one): the reply is parsed off the JavaFX thread and lands in its wrapper, which keeps what the stream
+     *  showed until then. The blocks the stream already settled are kept and only the rest is parsed and built
+     *  again (perf review P10), unless the reply holds what a split render cannot show the same way
+     *  ({@link AgentStreamSplit#needsWholeRender}) or the stream was not block-shaped: then it is rendered
+     *  whole. A no-op when nothing is streaming. */
     private void finalizeCurrentMessage() {
         renderThrottle.cancel();
         streamParse.cancel();
@@ -489,12 +505,36 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
             String md = currentAgentMarkdown.toString();
             boolean math = MathImages.isEnabled();
             String surface = diagramSurface;
+            javafx.scene.layout.Pane blocks = streamBlocks;
+            int from = settledLength;
+            int fromLine = settledLines;
+            int keep = settledBlocks;
             finalParses++;
-            com.editora.perf.OffFx.then(PARSE_SITE, () -> parsed(md, math), answer -> {
-                finalParses--;
-                wrapper.getChildren().setAll(rendered(md, answer.value(), surface, 0, false));
-                wholeRenders++;
-            });
+            com.editora.perf.OffFx.then(
+                    PARSE_SITE,
+                    () -> blocks != null && !AgentStreamSplit.needsWholeRender(md, from)
+                            ? new FinalParse(true, parsed(md.substring(from), math))
+                            : new FinalParse(false, parsed(md, math)),
+                    answer -> {
+                        finalParses--;
+                        FinalParse parse = answer.value();
+                        if (parse == null || !parse.tailOnly() || blocks == null) {
+                            wrapper.getChildren()
+                                    .setAll(rendered(md, parse == null ? null : parse.doc(), surface, 0, false));
+                            wholeRenders++;
+                            return;
+                        }
+                        List<Node> tail = renderBlocks(md.substring(from), parse.doc(), surface, fromLine, false);
+                        if (tail == null) {
+                            renderWhole(wrapper, md, math, surface); // the tail is not block-shaped
+                            return;
+                        }
+                        List<Node> children = blocks.getChildren();
+                        children.subList(Math.min(keep, children.size()), children.size())
+                                .clear();
+                        children.addAll(tail);
+                        finishTailRenders++;
+                    });
             account(wrapper, md.length());
             currentAgentWrapper = null;
             currentAgentMarkdown.setLength(0);
@@ -503,13 +543,23 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         }
     }
 
+    /** Parses {@code md} whole off the JavaFX thread and puts its render in {@code wrapper}. */
+    private void renderWhole(VBox wrapper, String md, boolean math, String surface) {
+        finalParses++;
+        com.editora.perf.OffFx.then(PARSE_SITE, () -> parsed(md, math), answer -> {
+            finalParses--;
+            wrapper.getChildren().setAll(rendered(md, answer.value(), surface, 0, false));
+            wholeRenders++;
+        });
+    }
+
     /**
      * Brings {@link #currentAgentWrapper} up to date with {@link #currentAgentMarkdown}: the text is parsed off
      * the JavaFX thread and the nodes are built on it when the parse lands ({@link MarkdownRenderer#renderDocument}
      * builds FX nodes), if the message is still the one streaming and nothing settled meanwhile.
      *
      * <p>While the message is streaming only its unsettled tail is parsed and rebuilt; the first render parses
-     * it whole. The finished reply is rendered whole by {@link #finalizeCurrentMessage}.
+     * it whole. The finished reply's unsettled part is rendered by {@link #finalizeCurrentMessage}.
      */
     private void renderCurrentMarkdown(boolean complete) {
         VBox wrapper = currentAgentWrapper;
@@ -648,7 +698,13 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
 
     /** The top-level block nodes of {@code md}, detached from their own container; null if not block-shaped. */
     private @Nullable List<Node> renderBlocks(String md, org.commonmark.node.@Nullable Node doc, int firstLine) {
-        javafx.scene.layout.Pane rendered = blocksOf(rendered(md, doc, diagramSurface, firstLine, true));
+        return renderBlocks(md, doc, diagramSurface, firstLine, true);
+    }
+
+    /** As {@link #renderBlocks(String, org.commonmark.node.Node, int)} for the message keyed by {@code surface}. */
+    private @Nullable List<Node> renderBlocks(
+            String md, org.commonmark.node.@Nullable Node doc, String surface, int firstLine, boolean streaming) {
+        javafx.scene.layout.Pane rendered = blocksOf(rendered(md, doc, surface, firstLine, streaming));
         if (rendered == null) {
             return null;
         }

@@ -784,7 +784,7 @@ public final class Minimap extends Region {
         // A pulse's handle() runs at the start of a pulse, before that pulse renders, so two ticks is what
         // proves a frame carrying the editor's content actually completed. Same reasoning as the startup
         // instrumentation's first-paint mark.
-        new AnimationTimer() {
+        AnimationTimer afterTwoFrames = new AnimationTimer() {
             private int ticks;
 
             @Override
@@ -794,7 +794,12 @@ public final class Minimap extends Region {
                     renderNow();
                 }
             }
-        }.start();
+        };
+        // During a launch the window paints frames before the file's text is in (its chrome, an empty editor
+        // while the file is read), so two of them prove nothing: the render (a snapshot the FX thread waits for)
+        // landed just before the file's first frame. The launch's first-paint gate counts from that frame
+        // (startup R3); outside a launch it is open and the frames count from now, as before.
+        com.editora.perf.AfterFirstPaint.run(afterTwoFrames::start);
     }
 
     /**

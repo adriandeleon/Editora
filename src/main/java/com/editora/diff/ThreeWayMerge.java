@@ -9,7 +9,6 @@ import com.editora.diff.ConflictParser.ConflictFile;
 import com.editora.diff.ConflictParser.ConflictSegment;
 import com.editora.diff.ConflictParser.PlainSegment;
 import com.editora.diff.ConflictParser.Segment;
-import com.github.difflib.DiffUtils;
 import com.github.difflib.patch.AbstractDelta;
 
 /**
@@ -171,7 +170,8 @@ public final class ThreeWayMerge {
         // Index i + 1 holds line i; the two extra slots are sentinels that are never "changed".
         boolean[] baseChanged = new boolean[base.size() + 2];
         boolean[] sideChanged = new boolean[side.size() + 2];
-        for (AbstractDelta<String> delta : DiffUtils.diff(base, side).getDeltas()) {
+        for (AbstractDelta<String> delta :
+                BoundedDiff.orChangedMiddle(base, side).getDeltas()) {
             int start = delta.getSource().getPosition();
             Arrays.fill(baseChanged, start + 1, start + delta.getSource().size() + 1, true);
             int targetStart = delta.getTarget().getPosition();

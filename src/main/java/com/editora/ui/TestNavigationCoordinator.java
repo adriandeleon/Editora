@@ -198,6 +198,16 @@ final class TestNavigationCoordinator {
         return true;
     }
 
+    /** Runs a Node.js test file's tests narrowed by {@code nodeFlags} into Test Results; false when it is off. */
+    boolean runNodeTestFile(Path file, List<String> nodeFlags) {
+        if (!host.config().getSettings().isTestRunner()
+                || host.coordinatorHost().simpleModeActive()) {
+            return false;
+        }
+        nodeTests.run(file, nodeFlags);
+        return true;
+    }
+
     /** Runs the tests of a Python test file (Run File on {@code test_*.py}); false when it has none. */
     boolean runPythonTestFile(Path file, String text) {
         if (file == null
@@ -618,6 +628,10 @@ final class TestNavigationCoordinator {
     /** Runs/debugs a test method (or its whole class) at the caret. */
     void runTestAtCaret(boolean classLevel, boolean debug) {
         EditorBuffer b = host.activeBuffer();
+        // Run (not debug) in another runner's test file: as Run File runs it, narrowed to the test at the caret.
+        if (!debug && !classLevel && host.runCoordinator().runTestAtCaret(b)) {
+            return;
+        }
         // A live or starting debug launch: the same check as F5's — said, or asked about (review 3, A208).
         if (debug && host.debugCoordinator() != null && !host.debugCoordinator().clearToDebugTest()) {
             return;

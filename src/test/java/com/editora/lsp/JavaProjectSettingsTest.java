@@ -179,4 +179,38 @@ class JavaProjectSettingsTest {
         assertTrue(JavaProjectSettings.isStyleSource(root.resolve("config")));
         assertTrue(!JavaProjectSettings.isStyleSource(root.resolve("src")));
     }
+
+    private static void age(Path p) throws Exception {
+        Files.setLastModifiedTime(p, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() - 60_000));
+    }
+
+    /** F7: the answer is kept while nothing it was read from changed, and worked out again when something did. */
+    @Test
+    void theStyleFoldersAreKeptUntilABuildFileOrProfileChanges() throws Exception {
+        JavaProjectSettings.forgetStyleFolders();
+        Path style = Files.createDirectories(root.resolve("style"));
+        Path profile = Files.writeString(style.resolve("acme.xml"), PROFILE);
+        Path pom = Files.writeString(
+                root.resolve("pom.xml"),
+                "<project><eclipse><file>${project.basedir}/style/acme.xml</file></eclipse></project>");
+        Path other = Files.createDirectories(root.resolve("other"));
+        Files.writeString(other.resolve("acme.xml"), PROFILE);
+        for (Path p : List.of(style, profile, pom, other, other.resolve("acme.xml"), root)) {
+            age(p);
+        }
+
+        List<Path> first = JavaProjectSettings.styleFolders(root);
+        assertEquals(List.of(style), first);
+        org.junit.jupiter.api.Assertions.assertSame(
+                first, JavaProjectSettings.styleFolders(root), "nothing changed: nothing read again");
+
+        Files.writeString(pom, "<project><eclipse><file>other/acme.xml</file></eclipse></project>");
+        assertEquals(List.of(other), JavaProjectSettings.styleFolders(root), "the build names another profile");
+
+        Files.createDirectories(root.resolve(".settings"));
+        assertEquals(
+                List.of(root.resolve(".settings"), other),
+                JavaProjectSettings.styleFolders(root),
+                "a style folder that arrives is watched");
+    }
 }

@@ -267,7 +267,15 @@ public final class JavaProjectSettings {
 
     /** The Eclipse formatter profile {@code root}'s build or root folder names, or null. */
     static @Nullable Path formatterProfile(Path root) {
-        for (String build : List.of("pom.xml", "build.gradle", "build.gradle.kts")) {
+        return formatterProfile(root, new ArrayList<>());
+    }
+
+    /** The build files a formatter profile is named in, in the order they are asked. */
+    private static final List<String> BUILD_FILES = List.of("pom.xml", "build.gradle", "build.gradle.kts");
+
+    /** As {@link #formatterProfile(Path)}, adding to {@code named} each profile file a build names. */
+    private static @Nullable Path formatterProfile(Path root, List<Path> named) {
+        for (String build : BUILD_FILES) {
             String text = read(root.resolve(build));
             if (text == null) {
                 continue;
@@ -276,6 +284,7 @@ public final class JavaProjectSettings {
             if (m.find()) {
                 String name = m.group(1).replace("${project.basedir}/", "").replace("${basedir}/", "");
                 Path file = root.resolve(name).normalize();
+                named.add(file);
                 if (isEclipseProfile(file)) {
                     return file;
                 }
@@ -297,15 +306,97 @@ public final class JavaProjectSettings {
      */
     public static List<Path> styleFolders(Path root) {
         com.editora.perf.BlockingSites.enter("JavaProjectSettings.styleFolders");
+        StyleFolders cached = STYLE_FOLDERS.get(root);
+        if (cached != null && cached.stamps().equals(stamps(cached.inputs()))) {
+            return cached.folders();
+        }
+        List<Path> named = new ArrayList<>();
         java.util.Set<Path> out = new java.util.LinkedHashSet<>();
         out.add(root.resolve(".settings"));
         out.add(root.resolve("config"));
-        Path profile = formatterProfile(root);
+        Path profile = formatterProfile(root, named);
         if (profile != null && profile.getParent() != null) {
             out.add(profile.getParent());
         }
         out.remove(root);
-        return out.stream().filter(Files::isDirectory).toList();
+        List<Path> folders = out.stream().filter(Files::isDirectory).toList();
+        List<Path> inputs = styleInputs(root, named);
+        // Stamped after the read: a change made meanwhile is recent, so the answer is not kept (settled).
+        List<@Nullable Stamp> stamps = stamps(inputs);
+        if (settled(stamps)) {
+            if (STYLE_FOLDERS.size() >= 16) {
+                STYLE_FOLDERS.clear(); // a window watches one root; a few windows a few
+            }
+            STYLE_FOLDERS.put(root, new StyleFolders(inputs, stamps, folders));
+        } else {
+            STYLE_FOLDERS.remove(root);
+        }
+        return folders;
+    }
+
+    /**
+     * {@link #styleFolders} answers by root, kept while every file and folder it depends on has the same stamp (perf
+     * review F7): the project watcher asks on every tick, folder listing and expansion, and each answer read the
+     * three build files, ran a regular expression over each and read every formatter candidate.
+     */
+    private static final Map<Path, StyleFolders> STYLE_FOLDERS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** One {@link #styleFolders} answer, and the stamps of the {@code inputs} it was worked out from. */
+    private record StyleFolders(List<Path> inputs, List<@Nullable Stamp> stamps, List<Path> folders) {}
+
+    /** A file or folder as it was: its modification time, size and kind; null in a stamp list for a missing one. */
+    private record Stamp(java.nio.file.attribute.FileTime modified, long size, boolean directory) {}
+
+    /**
+     * Everything {@link #styleFolders} reads or tests under {@code root}: the build files, the conventional profile
+     * names, the profiles the builds name ({@code named}), and the two style folders.
+     */
+    private static List<Path> styleInputs(Path root, List<Path> named) {
+        List<Path> inputs = new ArrayList<>();
+        BUILD_FILES.forEach(b -> inputs.add(root.resolve(b)));
+        FORMATTER_NAMES.forEach(n -> inputs.add(root.resolve(n)));
+        inputs.addAll(named);
+        inputs.add(root.resolve(".settings"));
+        inputs.add(root.resolve("config"));
+        named.forEach(f -> {
+            if (f.getParent() != null) {
+                inputs.add(f.getParent());
+            }
+        });
+        return List.copyOf(inputs);
+    }
+
+    private static List<@Nullable Stamp> stamps(List<Path> paths) {
+        List<@Nullable Stamp> out = new ArrayList<>(paths.size());
+        for (Path p : paths) {
+            try {
+                java.nio.file.attribute.BasicFileAttributes a =
+                        Files.readAttributes(p, java.nio.file.attribute.BasicFileAttributes.class);
+                out.add(new Stamp(a.lastModifiedTime(), a.size(), a.isDirectory()));
+            } catch (java.io.IOException | RuntimeException missing) {
+                out.add(null);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Whether no stamp is recent enough that a second change in the same clock tick could leave it unchanged (Git's
+     * "racily clean" rule): such an answer is not kept.
+     */
+    private static boolean settled(List<@Nullable Stamp> stamps) {
+        long now = System.currentTimeMillis();
+        for (Stamp s : stamps) {
+            if (s != null && now - s.modified().toMillis() <= 2_000) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Forgets every kept {@link #styleFolders} answer. A test's. */
+    static void forgetStyleFolders() {
+        STYLE_FOLDERS.clear();
     }
 
     /** Whether {@code file} is an Eclipse formatter export (a {@code <profiles>} of JDT formatter settings). */

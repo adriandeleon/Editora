@@ -36,7 +36,7 @@ final class LazyContextMenu {
     /** Set on a control or tab pane once it has the filter that builds a pending menu. */
     private static final Object ARMED = new Object();
 
-    private record Pending(Supplier<ContextMenu> build) {}
+    private record Pending(Supplier<? extends @Nullable ContextMenu> build) {}
 
     private LazyContextMenu() {}
 
@@ -44,12 +44,21 @@ final class LazyContextMenu {
      * Gives {@code control} the menu {@code build} makes, built when it is first asked for: a right-click, the
      * Menu key or Shift+F10. A filter builds and sets it, so the control's own handler then shows it as before.
      */
-    static void install(Control control, Supplier<ContextMenu> build) {
+    static void install(Control control, Supplier<? extends @Nullable ContextMenu> build) {
         control.setContextMenu(null); // a menu it had is replaced, as setContextMenu would
         control.getProperties().put(PENDING, new Pending(build));
         if (control.getProperties().putIfAbsent(ARMED, Boolean.TRUE) == null) {
             control.addEventFilter(ContextMenuEvent.CONTEXT_MENU_REQUESTED, e -> menuOf(control));
         }
+    }
+
+    /**
+     * Takes away {@code control}'s menu, built or still to build: a reused cell whose new row has none must not open
+     * the menu its previous row would have built.
+     */
+    static void clear(Control control) {
+        control.getProperties().remove(PENDING);
+        control.setContextMenu(null);
     }
 
     /** {@code control}'s context menu, built now if it was still to be built ({@link #install(Control, Supplier)}). */

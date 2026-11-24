@@ -77,6 +77,28 @@ class InlayHintRenderFxTest {
         assertTrue(changes[1] > 0, "a different one refreshes them");
     }
 
+    /**
+     * A different answer swaps the factory once, never through null: the null in between cleared every hinted line
+     * and the real factory rebuilt it, two re-layouts per line per answer (perf review 2026-11-23 E6).
+     */
+    @Test
+    void aNewAnswerRefreshesOnceWithoutANullFactory() throws Exception {
+        EditorBuffer b = buffer();
+        List<Object> seen = FxTestSupport.callOnFx(() -> {
+            b.setInlayHints(List.of(new EditorBuffer.InlayHint(0, 5, "overwrite:")));
+            List<Object> values = new java.util.ArrayList<>();
+            b.getArea().inlayFactoryProperty().addListener((o, was, now) -> values.add(now == null ? "null" : now));
+            b.setInlayHints(List.of(new EditorBuffer.InlayHint(0, 5, "other:")));
+            return values;
+        });
+        assertEquals(1, seen.size(), "one change per answer: " + seen);
+        assertTrue(!"null".equals(seen.get(0)), "never through a null factory");
+        assertEquals(
+                "other:",
+                FxTestSupport.callOnFx(
+                        () -> b.getArea().getInlayFactory().apply(0).get(0).getText()));
+    }
+
     @Test
     void clearingRemovesThem() throws Exception {
         EditorBuffer b = buffer();

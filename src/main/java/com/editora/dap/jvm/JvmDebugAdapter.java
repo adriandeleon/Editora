@@ -165,6 +165,9 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
     private volatile List<String> stepFilters = JvmSourceMap.stepFilters("");
     private volatile List<Path> sourceRoots = List.of();
 
+    /** Looks at candidate source files under {@link #sourceRoots}, each at most once in a few seconds (D5). */
+    private final SourceLooks sourceLooks = new SourceLooks();
+
     /** Files the program is made of that may have no breakpoint (the launched file): frames find their source. */
     private volatile List<Path> sourceFiles = List.of();
 
@@ -283,6 +286,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
             roots.add(Path.of(cwd));
         }
         sourceRoots = List.copyOf(roots);
+        sourceLooks.clear();
         List<Path> files = new ArrayList<>();
         for (String file : strings(args.get("sourceFiles"))) {
             files.add(Path.of(file).toAbsolutePath().normalize());
@@ -837,7 +841,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
                                 knownFiles(),
                                 this::packageOf,
                                 sourceRoots,
-                                Files::isRegularFile,
+                                sourceLooks::exists,
                                 language)
                         != null;
             } catch (AbsentInformationException | RuntimeException | InternalError e) {
@@ -1207,8 +1211,10 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
             int end = Math.min(total, start + levels);
             List<Path> known = knownFiles();
             List<StackFrame> out = new ArrayList<>();
+            // One JDWP round trip for the whole page: frame(i) fetches and caches one frame at a time (D5).
+            List<com.sun.jdi.StackFrame> page = start < end ? thread.frames(start, end - start) : List.of();
             for (int i = start; i < end; i++) {
-                Location at = thread.frame(i).location();
+                Location at = page.get(i - start).location();
                 StackFrame f = new StackFrame();
                 f.setId(handle(new FrameHandle(thread, i)));
                 f.setName(JvmSourceMap.frameName(
@@ -1238,7 +1244,7 @@ public final class JvmDebugAdapter implements IDebugProtocolServer {
     private @Nullable Path sourceOf(Location at, List<Path> known) {
         try {
             return JvmSourceMap.resolve(
-                    at.sourcePath(null), known, this::packageOf, sourceRoots, Files::isRegularFile, language);
+                    at.sourcePath(null), known, this::packageOf, sourceRoots, sourceLooks::exists, language);
         } catch (AbsentInformationException | InternalError e) {
             return null;
         }

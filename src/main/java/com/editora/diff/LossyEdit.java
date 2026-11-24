@@ -17,8 +17,6 @@ public final class LossyEdit {
 
     private LossyEdit() {}
 
-    private static final int MAX_EDITS = 20_000;
-
     /**
      * {@code edited} with every line the user left alone restored from {@code exact}. {@code shown} must be
      * the control's rendering of {@code exact}, line for line; when it is not (or the edit is too large to
@@ -28,7 +26,7 @@ public final class LossyEdit {
         if (exact.size() != shown.size()) {
             return edited;
         }
-        Patch<String> patch = BoundedDiff.diff(shown, edited, MAX_EDITS);
+        Patch<String> patch = BoundedDiff.diff(shown, edited, BoundedDiff.MAX_LINE_EDITS);
         if (patch == null) {
             return edited;
         }

@@ -7,11 +7,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import javafx.animation.PauseTransition;
 import javafx.application.Platform;
+import javafx.util.Duration;
 
+import com.editora.diff.BoundedDiff;
+import com.editora.editor.DocumentText;
 import com.editora.editor.EditorBuffer;
 import com.editora.perf.OffFx;
-import com.github.difflib.DiffUtils;
 import com.github.difflib.patch.AbstractDelta;
 import com.github.difflib.patch.Patch;
 import org.jspecify.annotations.Nullable;
@@ -39,19 +42,23 @@ final class LaunchedLines {
     /** Where the mapping is worked out: heard off the FX thread (PERF-01). */
     static final String SITE = "LaunchedLines.mapping";
 
-    /** A file's launched text; its lines are split off the FX thread, the first time a mapping needs them. */
+    /**
+     * A file's launched text: a handle on the document's version taken in O(1) at launch, its String built and its
+     * lines split off the FX thread, the first time a mapping needs them. A tab never edited during the session is
+     * never copied; one that is shares the unchanged parts with the live document (perf review 2026-11-23, D7).
+     */
     private static final class Launched {
-        final String text;
+        final DocumentText text;
         private volatile @Nullable List<String> lines;
 
-        Launched(String text) {
+        Launched(DocumentText text) {
             this.text = text;
         }
 
         List<String> lines() {
             List<String> l = lines;
             if (l == null) {
-                l = LaunchedLines.lines(text);
+                l = LaunchedLines.lines(text.text());
                 lines = l;
             }
             return l;
@@ -61,9 +68,20 @@ final class LaunchedLines {
     /** A mapping worked out for one version of the document. */
     private record Known(long version, Mapping mapping) {}
 
+    /**
+     * How long the text must stay unchanged before a mapping is worked out for an edit: holding Enter above a
+     * breakpoint diffs the file once typing pauses, not once per newline (perf review 2026-11-23, D8). Asks that
+     * are not typing (a stop, a toggle) do not wait.
+     */
+    static final Duration EDIT_PAUSE = Duration.millis(150);
+
     /** A mapping being worked out for a file, and who waits for it (keyed so a repeated ask waits once). */
     private static final class Pending {
         final Map<Object, Runnable> waiters = new LinkedHashMap<>();
+
+        /** Waiting for the typing to pause ({@link #EDIT_PAUSE}) before the work starts; null when not waiting. */
+        @Nullable
+        PauseTransition quiet;
     }
 
     /** The launched text of each file of the session; keyed by {@link DebugCoordinator#key}. */
@@ -74,6 +92,11 @@ final class LaunchedLines {
 
     /** Forgets every file (a session ended, or a new one is starting); mappings in flight are dropped. */
     void clear() {
+        pending.values().forEach(p -> {
+            if (p.quiet != null) {
+                p.quiet.stop();
+            }
+        });
         launched.clear();
         known.clear();
         pending.clear();
@@ -85,6 +108,13 @@ final class LaunchedLines {
 
     /** Records {@code text} as what {@code file}'s program was built from, unless a text is already recorded. */
     void snapshotIfAbsent(Path file, String text) {
+        if (text != null) {
+            snapshotIfAbsent(file, DocumentText.of(text));
+        }
+    }
+
+    /** As {@link #snapshotIfAbsent(Path, String)}, from a handle whose text is built only when a mapping needs it. */
+    void snapshotIfAbsent(Path file, DocumentText text) {
         if (file != null && text != null) {
             launched.putIfAbsent(DebugCoordinator.key(file), new Launched(text));
         }
@@ -92,6 +122,13 @@ final class LaunchedLines {
 
     /** The program now runs {@code text} for {@code file} (a hot code replace succeeded): map from it from now on. */
     void rebaseline(Path file, String text) {
+        if (text != null) {
+            rebaseline(file, DocumentText.of(text));
+        }
+    }
+
+    /** As {@link #rebaseline(Path, String)}, from a handle on the document's version. */
+    void rebaseline(Path file, DocumentText text) {
         if (file != null && text != null) {
             String key = DebugCoordinator.key(file);
             launched.put(key, new Launched(text));
@@ -157,10 +194,44 @@ final class LaunchedLines {
         if (onKnown != null) {
             p.waiters.put(tag != null ? tag : onKnown, onKnown);
         }
+        Pending mine = p;
+        boolean typing = b.getBreakpointManager().isEditDriven();
         if (!started) {
-            Pending mine = p;
-            Platform.runLater(() -> start(b, key, mine)); // after the edit in progress: its version and text
+            // after the edit in progress: its version and text; an edit's once the typing pauses
+            Platform.runLater(() -> {
+                if (typing) {
+                    startWhenQuiet(b, key, mine);
+                } else {
+                    start(b, key, mine);
+                }
+            });
+        } else if (!typing && p.quiet != null) {
+            p.quiet.stop(); // someone not typing waits (a stop, a toggle): worked out now
+            p.quiet = null;
+            Platform.runLater(() -> start(b, key, mine));
         }
+    }
+
+    /** On the FX thread: {@link #start} once {@code b}'s text has not changed for {@link #EDIT_PAUSE}. */
+    private void startWhenQuiet(EditorBuffer b, String key, Pending p) {
+        if (pending.get(key) != p) {
+            return; // the session was cleared meanwhile
+        }
+        long version = b.docVersion();
+        PauseTransition quiet = new PauseTransition(EDIT_PAUSE);
+        p.quiet = quiet;
+        quiet.setOnFinished(e -> {
+            if (p.quiet != quiet) {
+                return; // started meanwhile, or waiting again
+            }
+            p.quiet = null;
+            if (b.docVersion() != version || b.getBreakpointManager().isEditDriven()) {
+                startWhenQuiet(b, key, p); // still typing
+            } else {
+                start(b, key, p);
+            }
+        });
+        quiet.play();
     }
 
     /** On the FX thread: snapshots the document and works the mapping out off it. */
@@ -170,8 +241,9 @@ final class LaunchedLines {
             return; // the session was cleared meanwhile
         }
         long version = b.docVersion();
-        String text = b.getContent();
-        OffFx.then(SITE, () -> Mapping.between(from.lines(), lines(text)), a -> land(b, key, p, from, version, a));
+        DocumentText text = textOf(b); // O(1): the String is built off the FX thread (D8)
+        OffFx.then(
+                SITE, () -> Mapping.between(from.lines(), lines(text.text())), a -> land(b, key, p, from, version, a));
     }
 
     private void land(EditorBuffer b, String key, Pending p, Launched from, long version, OffFx.Answer<Mapping> a) {
@@ -184,11 +256,20 @@ final class LaunchedLines {
         }
         known.put(key, new Known(version, a.or(Mapping.IDENTITY)));
         if (b.docVersion() != version || b.getBreakpointManager().isEditDriven()) {
-            Platform.runLater(() -> start(b, key, p)); // the text moved on meanwhile: worked out again
+            // the text moved on meanwhile: worked out again, once the typing pauses
+            Platform.runLater(() -> startWhenQuiet(b, key, p));
             return;
         }
         pending.remove(key);
         p.waiters.values().forEach(Runnable::run);
+    }
+
+    /**
+     * {@code b}'s whole text as a handle taken in O(1) on the FX thread; a narrowed or log-filtered tab, whose
+     * document is a part of the file, is copied whole ({@link EditorBuffer#getContent()}).
+     */
+    static DocumentText textOf(EditorBuffer b) {
+        return b.isNarrowed() || b.isLogFiltered() ? DocumentText.of(b.getContent()) : b.documentText();
     }
 
     private static List<String> lines(String text) {
@@ -239,7 +320,8 @@ final class LaunchedLines {
             int[] toCurrent = new int[launched.size()];
             Arrays.fill(toLaunched, -1);
             Arrays.fill(toCurrent, -1);
-            Patch<String> patch = DiffUtils.diff(launched, current);
+            // bounded: past the budget the changed middle is one region, paired by content below (P7)
+            Patch<String> patch = BoundedDiff.orChangedMiddle(launched, current);
             int l = 0;
             int c = 0;
             for (AbstractDelta<String> delta : patch.getDeltas()) {

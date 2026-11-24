@@ -284,4 +284,44 @@ class ScrollbarStripesFxTest {
             stage.close();
         });
     }
+
+    @Test
+    void anEditThatMovesNoMarkDoesNotRedrawTheStripes() throws Exception {
+        EditorFx.onFx(() -> {
+            CodeArea area = hundredLines();
+            TodoStripe todo = new TodoStripe(area);
+            DiagnosticStripe diagnostics = new DiagnosticStripe(area);
+            HBox box = new HBox(area, todo, diagnostics);
+            HBox.setHgrow(area, Priority.ALWAYS);
+            Stage stage = new Stage();
+            stage.setScene(new Scene(box, 420, 300));
+            stage.show();
+            todo.setMarks(List.of(new TodoMark(0, 4, 10, "// TODO tidy", "#ffaa00")));
+            todo.setActive(true);
+            diagnostics.setDiagnostics(List.of(new LspDiagnostic(
+                    20, 0, 20, 4, LspDiagnostic.Severity.ERROR, "cannot find symbol", "E1", "javac")));
+            diagnostics.setActive(true);
+            resize(todo, stage);
+            for (Region stripe : List.<Region>of(todo, diagnostics)) {
+                StripeFrame frame = EditorFx.field(stripe, "frame");
+                EditorFx.call(stripe, "redraw");
+                int drawn = frame.drawsForTest();
+                assertTrue(drawn > 0, "the marks are drawn");
+
+                area.insertText(area.getAbsolutePosition(30, 2), "typed"); // same lines: every mark stays put
+                EditorFx.call(stripe, "redraw");
+                assertEquals(drawn, frame.drawsForTest(), "a keystroke inside a line leaves the stripe as it is");
+
+                area.insertText(0, "\n"); // one more line: every mark moves up a little
+                EditorFx.call(stripe, "redraw");
+                assertEquals(drawn + 1, frame.drawsForTest(), "a new line moves the marks");
+            }
+            todo.setMarks(List.of(new TodoMark(0, 4, 50, "// TODO later", "#ffaa00")));
+            StripeFrame frame = EditorFx.field(todo, "frame");
+            int drawn = frame.drawsForTest();
+            EditorFx.call(todo, "redraw");
+            assertEquals(drawn + 1, frame.drawsForTest(), "new marks are drawn");
+            stage.close();
+        });
+    }
 }

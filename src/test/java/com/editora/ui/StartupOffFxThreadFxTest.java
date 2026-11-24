@@ -204,9 +204,11 @@ class StartupOffFxThreadFxTest {
         return out;
     }
 
+    /** On the prefetch thread, or one of the threads it runs its independent steps on ({@code config-prefetch-*}). */
     private boolean heardOnPrefetch(String site) {
         return heard.stream()
-                .anyMatch(h -> h.site().startsWith(site) && h.thread().equals("config-prefetch"));
+                .anyMatch(h -> h.site().startsWith(site)
+                        && (h.thread().equals("config-prefetch") || h.thread().startsWith("config-prefetch-")));
     }
 
     private List<String> windowKeys() throws Exception {

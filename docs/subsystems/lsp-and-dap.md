@@ -921,7 +921,7 @@ squiggle overlay (`HttpVariableMarks.MarkupCheck`, gated on `!isLspActive()`; th
 and runs the first whose gate is open — JSON Lines' one-value-per-line check, `ui.JsonLinesMarks`, is the other,
 since no server reads that format). `textDocument/documentColor` (any server with a
 `colorProvider`: html, css) rides `requestFoldingRanges`' pulses; `EditorBuffer.setColorSwatches` draws an inlay per
-colour, painted by a per-buffer `data:` stylesheet with one class per colour (`ColorSwatchInlays`). Between answers
+colour, painted by a per-buffer `data:` stylesheet with one class per colour (`ColorSwatchInlays`), on the text areas, not the buffer root (adding a colour re-styles only them). Between answers
 the cached colours move with each edit (`ColorSwatch.shifted`, on the area's `plainTextChanges`), so a swatch stays
 before its literal while the user types.
 
@@ -2825,7 +2825,9 @@ when it has settings of its own.
   when its tokens are current.
 - **Diagnostics.** In open-files scope, publishes for files not open on the publishing server are dropped
   in `LspManager` on the reader thread. The Problems tree rebuilds at most once per 100 ms and not at all
-  while its window is closed (it catches up on show).
+  while its window is closed (it catches up on show); a row's context menu is built when it is asked for
+  (`LazyContextMenu.install`), not on each cell update. The build folder a Java publish's non-project check
+  needs is memoized per server root and folder (`LspCoordinator.buildFolders`, a `perf/Looked`).
 - **One ordered writer.** `AsyncPipeWriter` is public and also used by `DapClient` and `AcpClient`, so no
   pipe or socket write happens on the FX thread. `didOpen` / `didChange` / `didSave` are JSON-encoded on the
   writer thread (`DeferredSyncConsumer`); the incremental diff is still computed by the caller.

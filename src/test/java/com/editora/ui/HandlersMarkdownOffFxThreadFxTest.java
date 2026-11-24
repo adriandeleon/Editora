@@ -452,9 +452,11 @@ class HandlersMarkdownOffFxThreadFxTest {
             panel.appendChunk("Second step.");
         });
         SettingsRig.awaitFx("a streaming render", () -> panel.wholeRenderCount() + panel.tailRenderCount() > 0);
-        int before = FxTestSupport.callOnFx(panel::wholeRenderCount);
-        FxTestSupport.runOnFx(() -> panel.setBusy(false)); // the turn ends: the reply is rendered whole
-        SettingsRig.awaitFx("the whole render", () -> panel.wholeRenderCount() > before);
+        int before = FxTestSupport.callOnFx(() -> panel.wholeRenderCount() + panel.finishTailRenderCount());
+        // the turn ends: the reply's tail is rendered after the streamed blocks (or the whole reply, when it must be)
+        FxTestSupport.runOnFx(() -> panel.setBusy(false));
+        SettingsRig.awaitFx(
+                "the finishing render", () -> panel.wholeRenderCount() + panel.finishTailRenderCount() > before);
         awaitHeard(AgentPanel.PARSE_SITE);
         assertNothingOnFx();
     }

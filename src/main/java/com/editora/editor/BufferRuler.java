@@ -2,7 +2,6 @@ package com.editora.editor;
 
 import java.util.List;
 
-import javafx.application.Platform;
 import javafx.geometry.Bounds;
 
 import com.editora.config.RulerColumns;
@@ -91,7 +90,7 @@ final class BufferRuler {
     /**
      * Coalesces a ruler re-measurement onto the next pulse. Measuring queries character bounds, which
      * must not happen synchronously inside a layout/viewport event (it re-enters layout and blanks the
-     * editor), so we always defer it via {@link Platform#runLater}.
+     * editor), so it is always deferred to after the next layout pass (see {@link #afterLayout()}).
      */
     void scheduleRulerMeasure() {
         // Measuring queries the viewport (a forced VirtualFlow layout) + character bounds. A background tab
@@ -102,10 +101,34 @@ final class BufferRuler {
             return;
         }
         rulerMeasurePending = true;
-        Platform.runLater(() -> {
-            rulerMeasurePending = false;
+        afterLayout().request();
+    }
+
+    /**
+     * Runs the measure after the layout pass of the pulse that asked for it, not from {@code runLater}. The
+     * character-bounds query adds a shape to the paragraph's text flow and takes it off again, which dirties the
+     * scene: between pulses that cost a pulse and a frame of its own (typing past the right edge scrolls sideways
+     * on every key, so it was one more frame per keystroke); after the layout it is synced with the frame the
+     * pulse renders anyway. Created on first use: a buffer without a visible ruler never registers it.
+     */
+    private AfterLayoutPaint afterLayout() {
+        AfterLayoutPaint a = afterLayout;
+        if (a == null) {
+            a = new AfterLayoutPaint(
+                    b.columnRuler, b.area, this::measureFromPulse, () -> rulerVisible && b.renderingActive);
+            afterLayout = a;
+        }
+        return a;
+    }
+
+    private @Nullable AfterLayoutPaint afterLayout;
+
+    /** The measure as the post-layout pulse runs it: also the checks after it, when the text has moved. */
+    private void measureFromPulse() {
+        rulerMeasurePending = false;
+        if (rulerVisible && b.renderingActive) {
             measureAndPlaceRuler();
-        });
+        }
     }
 
     /**

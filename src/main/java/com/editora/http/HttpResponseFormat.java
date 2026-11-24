@@ -28,12 +28,17 @@ public final class HttpResponseFormat {
 
     /**
      * What the response viewer shows for a body: the (pretty-printed) {@code text}, cut to the viewer's limit
-     * when {@code clipped} — {@code totalChars} is the uncut length, for the visible "truncated" line — or no
-     * text at all for a {@code binary} payload.
+     * when {@code clipped} — {@code totalChars} is then the length of the body as received (a JSON body is only
+     * re-indented as far as the view shows, so its formatted length is not known), for the visible "truncated"
+     * line — or no text at all for a {@code binary} payload.
      */
     public record BodyView(String text, int totalChars, boolean clipped, boolean binary) {}
 
-    /** Builds the viewer's body for {@code r}, showing at most {@code maxChars} characters. Pure. */
+    /**
+     * Builds the viewer's body for {@code r}, showing at most {@code maxChars} characters. A JSON body is
+     * re-indented only up to that limit: a 50 MB response used to be formatted whole (about 250 MB of string)
+     * for its first 400,000 characters. Pure.
+     */
     public static BodyView view(HttpResult r, int maxChars) {
         if (r.failed()) {
             return new BodyView("", 0, false, false);
@@ -41,15 +46,16 @@ public final class HttpResponseFormat {
         if (r.binary()) {
             return new BodyView("", 0, false, true);
         }
-        String pretty = prettyBody(r.body(), r.contentType());
+        String body = r.body() == null ? "" : r.body();
+        String pretty = prettyBody(body, r.contentType(), Math.max(0, maxChars));
         if (pretty.length() <= maxChars) {
             return new BodyView(pretty, pretty.length(), false, false);
         }
-        int cut = maxChars;
+        int cut = Math.max(0, maxChars);
         if (cut > 0 && Character.isHighSurrogate(pretty.charAt(cut - 1))) {
             cut--; // never split a surrogate pair
         }
-        return new BodyView(pretty.substring(0, cut), pretty.length(), true, false);
+        return new BodyView(pretty.substring(0, cut), body.length(), true, false);
     }
 
     private HttpResponseFormat() {}
@@ -112,6 +118,15 @@ public final class HttpResponseFormat {
      * does not parse, are returned unchanged.
      */
     public static String prettyBody(String body, String contentType) {
+        return prettyBody(body, contentType, Integer.MAX_VALUE);
+    }
+
+    /**
+     * As {@link #prettyBody(String, String)}, but formatting stops once more than {@code limit} characters
+     * are out: the result is then longer than {@code limit} (by up to the generator's buffer) and only its
+     * first {@code limit} characters are meaningful. A body that is not JSON comes back whole, as it is.
+     */
+    static String prettyBody(String body, String contentType, int limit) {
         if (body == null) {
             return "";
         }
@@ -119,7 +134,7 @@ public final class HttpResponseFormat {
                 && contentType.toLowerCase(java.util.Locale.ROOT).contains("json")
                 && !body.isBlank()) {
             try {
-                return reindentJson(body);
+                return reindentJson(body, limit);
             } catch (Exception e) {
                 return body; // not valid JSON after all — show as-is
             }
@@ -131,10 +146,12 @@ public final class HttpResponseFormat {
      * Copies the JSON token stream through a pretty-printing generator. Going through a tree (the old
      * {@code readValue(Object.class)}) parsed every number into a {@code double}/{@code int} and every object
      * into a map, so {@code 10.50} became {@code 10.5}, {@code 1e2} became {@code 100.0}, long decimals lost
-     * digits and a repeated key vanished — the viewer showed data the server never sent.
+     * digits and a repeated key vanished — the viewer showed data the server never sent. Stops once more than
+     * {@code limit} characters are out.
      */
-    private static String reindentJson(String body) throws IOException {
-        StringWriter out = new StringWriter(body.length() + body.length() / 4);
+    private static String reindentJson(String body, int limit) throws IOException {
+        int expected = body.length() + body.length() / 4;
+        StringWriter out = new StringWriter((int) Math.min(expected, (long) limit + 1));
         try (JsonParser parser = JSON.createParser(body);
                 JsonGenerator gen = JSON.createGenerator(out)) {
             gen.setPrettyPrinter(new ViewPrinter());
@@ -143,6 +160,9 @@ public final class HttpResponseFormat {
                     gen.writeNumber(parser.getText()); // the number's own text, verbatim
                 } else {
                     gen.copyCurrentEvent(parser);
+                }
+                if (gen.getOutputBuffered() + out.getBuffer().length() > limit) {
+                    break; // the view has what it shows: the rest of the body is not formatted
                 }
             }
         }

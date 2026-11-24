@@ -110,6 +110,11 @@ final class RunOpsHost implements RunCoordinator.Ops {
     }
 
     @Override
+    public boolean runNodeTestFile(java.nio.file.Path file, java.util.List<String> nodeFlags) {
+        return mc.testNavigation.runNodeTestFile(file, nodeFlags);
+    }
+
+    @Override
     public boolean runNodeTestFile(java.nio.file.Path file) {
         return mc.testNavigation.runNodeTestFile(file);
     }
