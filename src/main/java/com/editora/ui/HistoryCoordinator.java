@@ -417,6 +417,10 @@ final class HistoryCoordinator {
 
     void shutdown() {
         disposed = true;
+        javafx.animation.PauseTransition later = folderLookLater;
+        if (later != null) {
+            later.stop();
+        }
         watchEditorText(null);
         restoreExecutor.shutdownNow();
         if (ownsHistoryService) {
@@ -1046,29 +1050,7 @@ final class HistoryCoordinator {
 
     /** {@link #revisionsOf} over {@code buckets}: one list, newest first, a row present in several listed once. */
     static List<HistoryRevision> mergedRevisions(List<Map<String, List<HistoryRevision>>> buckets, String key) {
-        List<HistoryRevision> only = null;
-        java.util.Set<HistoryRevision> all = null;
-        for (Map<String, List<HistoryRevision>> bucket : buckets) {
-            List<HistoryRevision> list = bucket.get(key);
-            if (list == null || list.isEmpty()) {
-                continue;
-            }
-            if (only == null && all == null) {
-                only = list; // the usual case: one bucket knows the file, and its list is handed on as it is
-                continue;
-            }
-            if (all == null) {
-                all = new java.util.LinkedHashSet<>(only);
-            }
-            all.addAll(list);
-        }
-        if (all == null) {
-            return only == null ? List.of() : only;
-        }
-        List<HistoryRevision> merged = new ArrayList<>(all);
-        merged.sort(
-                java.util.Comparator.comparingLong(HistoryRevision::timestamp).reversed()); // stable
-        return merged;
+        return HistoryQueries.mergedRevisions(buckets, key);
     }
 
     /** Every file with history, each with its revisions from every bucket (see {@link #revisionsOf}). */
@@ -1811,7 +1793,7 @@ final class HistoryCoordinator {
     /** As {@link #showFolderHistory(Path)}, then selects {@code select} in the listing when it is there (U3). */
     private void showFolderHistory(Path folder, @Nullable HistoryRevision select) {
         // Which of its files are gone is looked at off the FX thread first (PERF-01, Pauta 6.2.0).
-        List<Path> files = HistoryQueries.folderRevisions(mergedIndex(), historyKey(folder)).keySet().stream()
+        List<Path> files = HistoryQueries.mergedFolderRevisions(everyBucket(), historyKey(folder)).keySet().stream()
                 .map(Path::of)
                 .toList();
         com.editora.perf.OffFx.then("history-look", () -> lookGone(files), looked -> {
@@ -1860,7 +1842,7 @@ final class HistoryCoordinator {
 
     /** The files under {@code folder} that have history in any project's bucket, with their revisions. */
     private List<FileHistoryPanel.FileGroup> folderGroups(Path folder) {
-        var folderRevs = HistoryQueries.folderRevisions(mergedIndex(), historyKey(folder));
+        var folderRevs = HistoryQueries.mergedFolderRevisions(everyBucket(), historyKey(folder));
         List<FileHistoryPanel.FileGroup> groups = new ArrayList<>();
         Map<Path, Boolean> shown = new java.util.HashMap<>();
         for (var e : folderRevs.entrySet()) {
@@ -1872,15 +1854,80 @@ final class HistoryCoordinator {
             groups.add(new FileHistoryPanel.FileGroup(e.getKey(), display, deleted, e.getValue()));
         }
         if (!shown.isEmpty()) {
-            // Looked at again off the FX thread (PERF-01, Pauta 6.2.0): a file restored or deleted since is shown so
-            // once the look lands.
-            com.editora.perf.OffFx.then("history-look", () -> lookGone(shown), changed -> {
-                if (changed.or(false)) {
-                    Platform.runLater(this::refresh); // after the refresh that asked, which is still showing
-                }
-            });
+            lookAgainSoon(shown);
         }
         return groups;
+    }
+
+    /**
+     * Minimum spacing of the folder view's looks at its files. Each tab switch and save refreshes the view, and
+     * each refresh looked at every listed file again: thousands of stats per switch for a project-root view.
+     */
+    static final long FOLDER_LOOK_SPACING_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(2);
+
+    /** When the folder view last looked at its files ({@link System#nanoTime}); FX thread. */
+    private long lastFolderLookNanos;
+
+    private boolean folderLookedYet;
+
+    /** What the look waiting for the end of the spacing will look at; FX thread. */
+    private @Nullable Map<Path, Boolean> folderLookWanted;
+
+    private javafx.animation.@Nullable PauseTransition folderLookLater;
+
+    /**
+     * Whether a look asked for at {@code now} goes ahead at once: the first one, and one at least
+     * {@code spacing} after the previous one that went ahead. Pure.
+     */
+    static boolean lookNow(boolean lookedYet, long lastNanos, long now, long spacing) {
+        return !lookedYet || now - lastNanos >= spacing;
+    }
+
+    /**
+     * Looks at each of {@code shown} again off the FX thread (PERF-01, Pauta 6.2.0), so a file restored or
+     * deleted since is shown so once the look lands — at once when the last look is older than
+     * {@link #FOLDER_LOOK_SPACING_NANOS}, otherwise once at the end of that spacing, for what the newest refresh
+     * showed (F10).
+     */
+    private void lookAgainSoon(Map<Path, Boolean> shown) {
+        long now = System.nanoTime();
+        if (lookNow(folderLookedYet, lastFolderLookNanos, now, FOLDER_LOOK_SPACING_NANOS)) {
+            folderLookedYet = true;
+            lastFolderLookNanos = now;
+            folderLookWanted = null;
+            startFolderLook(shown);
+            return;
+        }
+        boolean waiting = folderLookWanted != null;
+        folderLookWanted = shown;
+        if (waiting) {
+            return; // the look already waiting takes this listing instead
+        }
+        javafx.animation.PauseTransition later = folderLookLater;
+        if (later == null) {
+            later = new javafx.animation.PauseTransition();
+            later.setOnFinished(e -> {
+                Map<Path, Boolean> wanted = folderLookWanted;
+                folderLookWanted = null;
+                if (wanted != null && !disposed) {
+                    folderLookedYet = true;
+                    lastFolderLookNanos = System.nanoTime();
+                    startFolderLook(wanted);
+                }
+            });
+            folderLookLater = later;
+        }
+        long wait = Math.max(0, FOLDER_LOOK_SPACING_NANOS - (now - lastFolderLookNanos));
+        later.setDuration(javafx.util.Duration.millis(Math.max(1, wait / 1_000_000)));
+        later.playFromStart();
+    }
+
+    private void startFolderLook(Map<Path, Boolean> shown) {
+        com.editora.perf.OffFx.then("history-look", () -> lookGone(shown), changed -> {
+            if (changed.or(false)) {
+                Platform.runLater(this::refresh); // after the refresh that asked, which is still showing
+            }
+        });
     }
 
     /**
@@ -2052,6 +2099,7 @@ final class HistoryCoordinator {
                 // From the folder view the user is likely restoring several files: the file opens, but the keyboard
                 // stays in the listing they are working through.
                 javafx.scene.Node keep = panel != null && panel.folderShown() != null ? focusOwner() : null;
+                folderLookedYet = false; // the listing's next look is not held back: a file in it just came back
                 ops.openPath(file);
                 if (keep != null) {
                     Platform.runLater(keep::requestFocus);

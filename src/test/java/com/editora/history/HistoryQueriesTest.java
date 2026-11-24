@@ -86,6 +86,28 @@ class HistoryQueriesTest {
         assertEquals(2, HistoryQueries.folderRevisions(bucket, "/proj/src/").size());
     }
 
+    /** F10: the folder view merges only the keys under the folder, from every bucket, in first-met order. */
+    @Test
+    void mergedFolderRevisionsMergesOnlyTheFolderKeysOfEveryBucket() {
+        HistoryRevision a1 = rev("/proj/src/A.java", 10, "SAVE", "");
+        HistoryRevision a2 = rev("/proj/src/A.java", 20, "SAVE", "");
+        HistoryRevision b = rev("/proj/src/B.java", 5, "SAVE", "");
+        Map<String, List<HistoryRevision>> own = new LinkedHashMap<>();
+        own.put("/elsewhere/X.java", List.of(rev("/elsewhere/X.java", 1, "SAVE", "")));
+        own.put("/proj/src/A.java", List.of(a1));
+        Map<String, List<HistoryRevision>> other = new LinkedHashMap<>();
+        other.put("/proj/src/B.java", List.of(b));
+        other.put("/proj/src/A.java", List.of(a2, a1));
+
+        Map<String, List<HistoryRevision>> merged =
+                HistoryQueries.mergedFolderRevisions(List.of(own, other), "/proj/src");
+        assertEquals(List.of("/proj/src/A.java", "/proj/src/B.java"), List.copyOf(merged.keySet()));
+        assertEquals(List.of(a2, a1), merged.get("/proj/src/A.java"));
+        assertEquals(List.of(b), merged.get("/proj/src/B.java"));
+        assertTrue(HistoryQueries.mergedFolderRevisions(List.of(own, other), "").isEmpty());
+        assertTrue(HistoryQueries.mergedFolderRevisions(List.of(), "/proj").isEmpty());
+    }
+
     @Test
     void folderRevisionsEmptyForNullOrBlank() {
         Map<String, List<HistoryRevision>> bucket = new LinkedHashMap<>();

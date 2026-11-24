@@ -13,6 +13,7 @@ import com.editora.ui.HistoryCoordinator.RestoreResult;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -85,5 +86,14 @@ class HistoryCoordinatorTextTest {
                 "one bucket knows the file: its list, not a copy");
         assertEquals(List.of(), HistoryCoordinator.mergedRevisions(List.of(own, other), "/w/none.txt"));
         assertTrue(HistoryCoordinator.mergedRevisions(List.of(), "/w/f.txt").isEmpty());
+    }
+
+    /** F10: the folder view looks at its files again at most once per spacing. */
+    @Test
+    void theFolderViewLooksAgainOnlyAfterTheSpacing() {
+        long spacing = HistoryCoordinator.FOLDER_LOOK_SPACING_NANOS;
+        assertTrue(HistoryCoordinator.lookNow(false, 0, 5, spacing), "the first look goes ahead");
+        assertFalse(HistoryCoordinator.lookNow(true, 1_000, 1_000 + spacing - 1, spacing));
+        assertTrue(HistoryCoordinator.lookNow(true, 1_000, 1_000 + spacing, spacing));
     }
 }
