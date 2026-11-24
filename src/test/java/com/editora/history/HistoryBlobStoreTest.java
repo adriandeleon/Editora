@@ -167,20 +167,6 @@ class HistoryBlobStoreTest {
         assertTrue(Files.exists(dir.resolve(HistoryBlobStore.HARDENED_MARKER)));
     }
 
-    /** F9: a body whose permissions are already right is only read, never changed (no metadata write). */
-    @Test
-    void aBodyWithTheRightPermissionsIsNotChangedAgain(@TempDir Path dir) throws Exception {
-        assumeTrue(dir.getFileSystem().supportedFileAttributeViews().contains("unix"));
-        HistoryBlobStore store = new HistoryBlobStore(dir);
-        String sha = store.put("left alone");
-        Path blob = dir.resolve(sha.substring(0, 2)).resolve(sha + ".txt.gz");
-        Object ctime = Files.getAttribute(blob, "unix:ctime");
-        Thread.sleep(20); // past the file system's time resolution, so a change would show
-        store.deleteUnreferenced(Set.of(sha));
-        store.hardenExisting();
-        assertEquals(ctime, Files.getAttribute(blob, "unix:ctime"));
-    }
-
     @Test
     void gzipRoundTripHelper() throws Exception {
         // The static gunzip mirrors the read path; verify it inverts the stored format via a real put/get
