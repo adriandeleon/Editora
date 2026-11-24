@@ -281,7 +281,7 @@ final class GitPatchCoordinator {
         } else {
             operation.accept(result -> {
                 report.accept(result);
-                git.afterMutation();
+                git.afterMutation(root);
             });
         }
     }

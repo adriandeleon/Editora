@@ -11,13 +11,17 @@ import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
 
 import com.editora.io.WatchServices;
 import org.jspecify.annotations.Nullable;
@@ -32,12 +36,20 @@ import org.jspecify.annotations.Nullable;
  * thread, that something relevant changed; it coalesces and refreshes on the FX thread itself.
  *
  * <p>What is watched, for a work tree at {@code root}: its git folder ({@code .git}, or the folder a {@code .git}
- * file names for a linked worktree or a submodule) — {@code index}, {@code HEAD}, the operation markers — and the
- * common folder's {@code packed-refs} and {@code refs/heads}, where a commit moves the branch.
+ * file names for a linked worktree or a submodule) — {@code index}, {@code HEAD}, the operation markers — and its
+ * {@code logs/HEAD}, the reflog git appends to whenever {@code HEAD} moves (the most reliable "HEAD moved" signal);
+ * the common folder's {@code packed-refs}, every folder under {@code refs/heads} (a {@code feature/x} branch lives in
+ * {@code refs/heads/feature}), and {@code reftable} for a reftable repository. A linked worktree never hears the main
+ * work tree's {@code index} or {@code HEAD}, which share its common folder. A folder whose watch dies (the git folder
+ * deleted and made again, the watch limit) is dropped, and the handle says it is {@link Handle#stale()} so the owner
+ * watches again.
  */
 final class GitMetadataWatcher {
 
     private static final Logger LOG = Logger.getLogger(GitMetadataWatcher.class.getName());
+
+    /** Whether a folder that could not be watched has been logged at INFO (once: the watch limit is the usual cause). */
+    private static final AtomicBoolean LOGGED_UNWATCHABLE = new AtomicBoolean();
 
     /** The application's watcher. */
     static final GitMetadataWatcher SHARED = new GitMetadataWatcher();
@@ -56,18 +68,56 @@ final class GitMetadataWatcher {
             "rebase-apply",
             "sequencer");
 
+    /** What a watched folder is to a work tree, which decides the names in it that matter. */
+    enum Kind {
+        /** The work tree's own git folder: {@code index}, {@code HEAD}, the operation markers. */
+        GIT_DIR,
+        /** A linked worktree's common folder: only {@code packed-refs} (its index and HEAD are another tree's). */
+        COMMON_DIR,
+        /** {@code refs/heads} or a folder under it: any branch. */
+        REFS,
+        /** The git folder's {@code logs}: {@code HEAD}'s reflog. */
+        LOGS,
+        /** A reftable repository's {@code reftable} folder: any table. */
+        REFTABLE
+    }
+
     /** Where a work tree keeps its git data: its own folder, and the one its refs live in. */
     record GitDirs(Path gitDir, Path commonDir) {
-        /** The folders to watch, without repeats; {@code refs/heads} when it exists. */
-        List<Path> watched() {
-            Set<Path> dirs = new LinkedHashSet<>();
-            dirs.add(gitDir);
-            dirs.add(commonDir);
-            Path heads = commonDir.resolve("refs").resolve("heads");
-            if (Files.isDirectory(heads)) {
-                dirs.add(heads);
+        /**
+         * The folders to watch and what each is, without repeats (a folder that is both the git folder and the
+         * common one is the git folder); every folder under {@code refs/heads}, {@code logs} and {@code reftable}
+         * when they exist. Reads the disk.
+         */
+        Map<Path, Kind> watched() {
+            Map<Path, Kind> dirs = new LinkedHashMap<>();
+            dirs.put(gitDir, Kind.GIT_DIR);
+            dirs.putIfAbsent(commonDir, Kind.COMMON_DIR);
+            Path logs = gitDir.resolve("logs");
+            if (Files.isDirectory(logs)) {
+                dirs.putIfAbsent(logs, Kind.LOGS);
             }
-            return new ArrayList<>(dirs);
+            Path heads = commonDir.resolve("refs").resolve("heads");
+            for (Path folder : foldersUnder(heads)) {
+                dirs.putIfAbsent(folder, Kind.REFS);
+            }
+            Path reftable = commonDir.resolve("reftable");
+            if (Files.isDirectory(reftable)) {
+                dirs.putIfAbsent(reftable, Kind.REFTABLE);
+            }
+            return dirs;
+        }
+    }
+
+    /** {@code top} and every folder under it, or nothing when it is not a folder. Reads the disk. */
+    static List<Path> foldersUnder(Path top) {
+        if (!Files.isDirectory(top)) {
+            return List.of();
+        }
+        try (Stream<Path> walk = Files.walk(top)) {
+            return walk.filter(Files::isDirectory).toList();
+        } catch (IOException | RuntimeException unreadable) {
+            return List.of(top);
         }
     }
 
@@ -125,26 +175,33 @@ final class GitMetadataWatcher {
     }
 
     /**
-     * Whether a change to {@code name} in a watched folder can change the status: in a git folder one of
-     * {@link #GIT_DIR_NAMES}, under {@code refs/heads} any branch; never a {@code .lock} file (git writes
-     * {@code index.lock} and renames it over {@code index}, which is heard on its own). Pure.
+     * Whether a change to {@code name} in a watched folder of {@code kind} can change the status: in a git folder one
+     * of {@link #GIT_DIR_NAMES}, in a linked worktree's common folder {@code packed-refs}, under {@code refs/heads}
+     * any branch, in {@code logs} {@code HEAD}'s reflog, in {@code reftable} any table; never a {@code .lock} file
+     * (git writes {@code index.lock} and renames it over {@code index}, which is heard on its own). Pure.
      */
-    static boolean relevant(String name, boolean refsFolder) {
+    static boolean relevant(@Nullable String name, Kind kind) {
         if (name == null || name.endsWith(".lock")) {
             return false;
         }
-        return refsFolder || GIT_DIR_NAMES.contains(name);
+        return switch (kind) {
+            case GIT_DIR -> GIT_DIR_NAMES.contains(name);
+            case COMMON_DIR -> "packed-refs".equals(name);
+            case LOGS -> "HEAD".equals(name);
+            case REFS, REFTABLE -> true;
+        };
     }
 
-    /** A watched folder: its key, whether it is a refs folder, and who is told about it. */
+    /** One handle's interest in a watched folder. */
+    private record Entry(Handle handle, Kind kind) {}
+
+    /** A watched folder: its key and who is told about it, each with what the folder is to them. */
     private static final class Registration {
         final WatchKey key;
-        final boolean refs;
-        final List<Runnable> listeners = new CopyOnWriteArrayList<>();
+        final List<Entry> entries = new CopyOnWriteArrayList<>();
 
-        Registration(WatchKey key, boolean refs) {
+        Registration(WatchKey key) {
             this.key = key;
-            this.refs = refs;
         }
     }
 
@@ -158,20 +215,32 @@ final class GitMetadataWatcher {
      * calling thread. Closing the returned handle stops it; a handle closed before its registration is done
      * registers nothing.
      */
-    AutoCloseable watch(Path root, Runnable onChange) {
+    Handle watch(Path root, Runnable onChange) {
         Handle handle = new Handle(onChange);
         Thread.ofVirtual().name("git-metadata-register").start(() -> register(root, handle));
         return handle;
     }
 
-    /** One {@link #watch}: what it registered, and whether it has been closed. */
-    private final class Handle implements AutoCloseable {
+    /** One {@link #watch}: what it registered, and whether it has been closed or lost a folder. */
+    final class Handle implements AutoCloseable {
         final Runnable listener;
         final List<Path> dirs = new ArrayList<>();
+        /** The folders found at registration; losing one of them makes the handle stale. */
+        final Set<Path> roots = new HashSet<>();
+
         boolean closed;
+        private volatile boolean stale;
 
         Handle(Runnable listener) {
             this.listener = listener;
+        }
+
+        /**
+         * Whether one of the folders this handle watched stopped being watched (deleted, its git folder made again,
+         * the watch cancelled by the system): the owner closes it and watches again to hear the repository.
+         */
+        boolean stale() {
+            return stale;
         }
 
         @Override
@@ -184,8 +253,8 @@ final class GitMetadataWatcher {
                 for (Path dir : dirs) {
                     Registration registration = registrations.get(dir);
                     if (registration != null) {
-                        registration.listeners.remove(listener);
-                        if (registration.listeners.isEmpty()) {
+                        registration.entries.removeIf(entry -> entry.handle() == this);
+                        if (registration.entries.isEmpty()) {
                             registration.key.cancel();
                             registrations.remove(dir);
                         }
@@ -201,34 +270,50 @@ final class GitMetadataWatcher {
         if (dirs == null) {
             return; // GIT_DIR elsewhere, or a layout this does not know: focus regain still refreshes
         }
-        Path heads = dirs.commonDir().resolve("refs").resolve("heads");
+        Map<Path, Kind> watched = dirs.watched();
         synchronized (lock) {
             if (handle.closed) {
                 return;
             }
-            for (Path dir : dirs.watched()) {
+            watched.forEach((dir, kind) -> {
                 Path key = dir.toAbsolutePath().normalize();
-                Registration registration = registrations.get(key);
-                if (registration == null) {
-                    try {
-                        WatchKey watchKey = WatchServices.register(
-                                key,
-                                serviceLocked(),
-                                StandardWatchEventKinds.ENTRY_CREATE,
-                                StandardWatchEventKinds.ENTRY_MODIFY,
-                                StandardWatchEventKinds.ENTRY_DELETE);
-                        registration = new Registration(
-                                watchKey, key.equals(heads.toAbsolutePath().normalize()));
-                        registrations.put(key, registration);
-                    } catch (IOException | RuntimeException unwatchable) {
-                        LOG.log(Level.FINE, "Not watching " + key, unwatchable);
-                        continue;
-                    }
+                if (registerLocked(key, new Entry(handle, kind))) {
+                    handle.roots.add(key);
                 }
-                registration.listeners.add(handle.listener);
-                handle.dirs.add(key);
+            });
+        }
+    }
+
+    /** Registers {@code entry}'s interest in {@code dir}; false when the folder cannot be watched. Holds {@link #lock}. */
+    private boolean registerLocked(Path dir, Entry entry) {
+        if (entry.handle().closed || entry.handle().dirs.contains(dir)) {
+            return !entry.handle().closed;
+        }
+        Registration registration = registrations.get(dir);
+        if (registration == null || !registration.key.isValid()) {
+            try {
+                WatchKey watchKey = WatchServices.register(
+                        dir,
+                        serviceLocked(),
+                        StandardWatchEventKinds.ENTRY_CREATE,
+                        StandardWatchEventKinds.ENTRY_MODIFY,
+                        StandardWatchEventKinds.ENTRY_DELETE);
+                Registration fresh = new Registration(watchKey);
+                if (registration != null) {
+                    fresh.entries.addAll(registration.entries); // a dead key's listeners carry over
+                }
+                registration = fresh;
+                registrations.put(dir, registration);
+            } catch (IOException | RuntimeException unwatchable) {
+                // Usually the system's watch limit (inotify max_user_watches): said once, so it can be found.
+                Level level = LOGGED_UNWATCHABLE.compareAndSet(false, true) ? Level.INFO : Level.FINE;
+                LOG.log(level, "Not watching " + dir + " for git changes: " + unwatchable, unwatchable);
+                return false;
             }
         }
+        registration.entries.add(entry);
+        entry.handle().dirs.add(dir);
+        return true;
     }
 
     /** The watch service, opened with its drain thread on first use. Holds {@link #lock}. */
@@ -253,33 +338,82 @@ final class GitMetadataWatcher {
             } catch (InterruptedException | ClosedWatchServiceException stopped) {
                 return;
             }
-            boolean relevant = false;
-            List<Runnable> listeners = List.of();
+            Set<Runnable> told = new LinkedHashSet<>();
             synchronized (lock) {
                 Object watchable = key.watchable();
-                Registration registration = watchable instanceof Path dir ? registrations.get(dir) : null;
-                if (registration != null && registration.key == key) {
+                Path dir = watchable instanceof Path path ? path : null;
+                Registration registration = dir != null ? registrations.get(dir) : null;
+                if (dir != null && registration != null && registration.key == key) {
                     for (WatchEvent<?> event : key.pollEvents()) {
-                        if (event.kind() == StandardWatchEventKinds.OVERFLOW
-                                || relevant(String.valueOf(event.context()), registration.refs)) {
-                            relevant = true;
-                        }
+                        heardLocked(dir, registration, event, told);
                     }
-                    listeners = List.copyOf(registration.listeners);
+                    if (!key.reset()) {
+                        droppedLocked(dir, registration);
+                    }
                 } else {
                     key.pollEvents();
+                    key.reset();
                 }
             }
-            key.reset();
-            if (relevant) {
-                for (Runnable listener : listeners) {
-                    try {
-                        listener.run();
-                    } catch (RuntimeException failed) {
-                        LOG.log(Level.FINE, "git metadata listener failed", failed);
-                    }
+            for (Runnable listener : told) {
+                try {
+                    listener.run();
+                } catch (RuntimeException failed) {
+                    LOG.log(Level.FINE, "git metadata listener failed", failed);
                 }
             }
+        }
+    }
+
+    /**
+     * One event in {@code dir}: adds the listeners it matters to to {@code told}; a folder made under
+     * {@code refs/heads} (a {@code feature/} branch) or a {@code logs} folder made in a git folder is watched too, for
+     * the handles that watch its parent that way. Holds {@link #lock}.
+     */
+    private void heardLocked(Path dir, Registration registration, WatchEvent<?> event, Set<Runnable> told) {
+        boolean overflow = event.kind() == StandardWatchEventKinds.OVERFLOW;
+        String name = overflow ? null : String.valueOf(event.context());
+        boolean created = event.kind() == StandardWatchEventKinds.ENTRY_CREATE;
+        for (Entry entry : registration.entries) {
+            if (overflow || relevant(name, entry.kind())) {
+                told.add(entry.handle().listener);
+            }
+            if (!created || name == null) {
+                continue;
+            }
+            Path child = dir.resolve(name);
+            if (entry.kind() == Kind.REFS && Files.isDirectory(child)) {
+                for (Path folder : foldersUnder(child)) { // mkdir -p may have made more than one already
+                    registerLocked(folder, new Entry(entry.handle(), Kind.REFS));
+                }
+                told.add(entry.handle().listener); // a branch may have landed in it before its watch
+            } else if (entry.kind() == Kind.GIT_DIR && "logs".equals(name) && Files.isDirectory(child)) {
+                registerLocked(child, new Entry(entry.handle(), Kind.LOGS));
+            }
+        }
+    }
+
+    /**
+     * {@code dir}'s watch is dead (the folder deleted, the git folder made again, the system cancelled it): it is
+     * forgotten, so a later {@link #watch} registers it again, and a handle that lost one of its first folders is
+     * {@link Handle#stale()}. Holds {@link #lock}.
+     */
+    private void droppedLocked(Path dir, Registration registration) {
+        registrations.remove(dir);
+        for (Entry entry : registration.entries) {
+            Handle handle = entry.handle();
+            handle.dirs.remove(dir);
+            if (handle.roots.contains(dir)) {
+                handle.stale = true;
+            }
+        }
+    }
+
+    /** Whether {@code dir} is being watched (tests). */
+    boolean watchingForTest(Path dir) {
+        synchronized (lock) {
+            Registration registration = registrations.get(dir.toAbsolutePath().normalize());
+            return registration != null && registration.key.isValid();
         }
     }
 

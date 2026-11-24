@@ -158,8 +158,19 @@ public final class GitPanel extends VBox implements ToolWindowContent {
      * @param amend replace the last commit instead of adding one
      * @param signOff add a {@code Signed-off-by} trailer ({@code -s})
      * @param push push the branch once the commit is made
+     * @param amendOf the hash of the commit Amend was armed against (checked again just before amending), or null
      */
-    public record CommitRequest(String message, boolean amend, boolean signOff, boolean push) {}
+    public record CommitRequest(
+            String message,
+            boolean amend,
+            boolean signOff,
+            boolean push,
+            @Nullable String amendOf) {
+        /** A request with no amend target recorded. */
+        public CommitRequest(String message, boolean amend, boolean signOff, boolean push) {
+            this(message, amend, signOff, push, null);
+        }
+    }
 
     /** Which group a file row sits under. */
     private enum Group {
@@ -251,6 +262,8 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     private int conflicts;
     /** The merge / rebase / cherry-pick / revert the repository is in the middle of. */
     private GitOperation operation = GitOperation.NONE;
+    /** Whether {@link #operation} holds the uncommitted changes in an autostash ({@link #setOperationAutostash}). */
+    private boolean operationAutostash;
     /** The merge message this panel put in the box itself; cleared again if the merge ends with it untouched. */
     private @Nullable String prefilledMessage;
 
@@ -505,8 +518,10 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         }
         committing = true;
         updateCommitEnabled();
-        boolean amend = amending != null;
-        actions.commit(new CommitRequest(msg, amend, signOffCheck.isSelected(), push), committed -> {
+        GitService.HeadCommit amended = amending;
+        boolean amend = amended != null;
+        String amendOf = amended == null ? null : amended.hash();
+        actions.commit(new CommitRequest(msg, amend, signOffCheck.isSelected(), push, amendOf), committed -> {
             committing = false;
             if (committed) {
                 // One amend per tick of the box: the next commit is an ordinary one again.
@@ -664,6 +679,16 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         });
     }
 
+    /**
+     * Switches Amend off and keeps the box's text: a commit refused because HEAD moved since Amend was armed
+     * ({@code status.git.amendOffHeadMoved} says so).
+     */
+    void amendOff() {
+        amendPrefill = null;
+        clearAmend();
+        updateCommitEnabled();
+    }
+
     private void clearAmend() {
         amending = null;
         amendCheck.setSelected(false);
@@ -712,12 +737,23 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         return current;
     }
 
-    /** Replaces the box's text with {@code draft} (a message kept for this repository), or empties it. */
+    /**
+     * Replaces the box's text with {@code draft} (a message kept for this repository), or, without one, with what
+     * this repository's operation offers (a merge's prepared message, as {@link #setOperation} offers it) or the
+     * template. Called after a switch to another repository, whose operation {@link #setOperation} has already
+     * been told: the message it offered then went with the box's previous text.
+     */
     void replaceDraft(@Nullable String draft) {
         prefilledMessage = null;
         if (draft == null || draft.isEmpty()) {
             message.clear();
-            applyTemplate();
+            if (operation.kind() == GitOperation.Kind.MERGE
+                    && !operation.message().isEmpty()) {
+                prefilledMessage = operation.message();
+                setCommitMessage(prefilledMessage);
+            } else {
+                applyTemplate();
+            }
         } else {
             setCommitMessage(draft);
         }
@@ -824,6 +860,22 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     }
 
     /**
+     * Whether the merge or rebase in progress was started with {@code --autostash} and holds the uncommitted changes
+     * aside until it finishes: the banner says so, since they are not in the list meanwhile.
+     */
+    public void setOperationAutostash(boolean held) {
+        if (operationAutostash != held) {
+            operationAutostash = held;
+            updateBanner();
+        }
+    }
+
+    /** The operation banner's text (tests). */
+    String operationTextForTest() {
+        return operationLabel.getText();
+    }
+
+    /**
      * Git's reason for refusing to work in this folder ({@code ""} when there is none): the placeholder then
      * says that instead of "Not a Git repository", and does not offer to clone into a folder that already
      * holds a repository.
@@ -845,6 +897,9 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             text = conflicts > 0
                     ? tr("gitpanel.operation.conflicts", name, conflicts)
                     : tr("gitpanel.operation.inProgress", name);
+            if (operationAutostash) {
+                text = text + "\n" + tr("gitpanel.operation.autostash");
+            }
         } else {
             // Unmerged files with no operation: a stash pop or apply that conflicted. There is nothing to
             // continue or abort — resolving and staging the files is the whole of it.

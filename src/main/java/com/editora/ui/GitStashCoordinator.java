@@ -356,7 +356,7 @@ final class GitStashCoordinator {
                             } else {
                                 git.gitError(tr("status.git.opFailed"), result.message());
                             }
-                            git.afterMutation();
+                            git.afterMutation(root);
                         }),
                         args);
     }

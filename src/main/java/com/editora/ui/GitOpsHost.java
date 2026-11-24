@@ -68,6 +68,13 @@ final class GitOpsHost implements GitCoordinator.WindowOps {
     }
 
     @Override
+    public void setGitOperationAutostash(boolean held) {
+        if (mc.gitPanel != null) {
+            mc.gitPanel.setOperationAutostash(held);
+        }
+    }
+
+    @Override
     public void setGitRefusal(String reason) {
         mc.statusBar.setGitRefusal(reason);
         mc.lastGitRefusal = reason;
@@ -130,9 +137,32 @@ final class GitOpsHost implements GitCoordinator.WindowOps {
             if (buffer.isDisposed() || buffer.getPath() == null) {
                 continue;
             }
+            // The window whose tab holds it: a discard asked here may revert a file open in another window.
+            MainController owner = mc.windowManager == null ? mc : mc.windowManager.ownerOf(buffer, mc);
             // REASON_REVERT: the unsaved text the discard replaces stays in Local History, and the edit is undoable.
-            mc.fileWorkflows.reloadFromDisk(
-                    mc.tabFor(buffer), buffer, com.editora.config.HistoryRevision.REASON_REVERT, applied -> {});
+            owner.fileWorkflows.reloadFromDisk(
+                    owner.tabFor(buffer), buffer, com.editora.config.HistoryRevision.REASON_REVERT, applied -> {});
+        }
+    }
+
+    @Override
+    public List<EditorBuffer> buffersAcrossWindowsUnder(Path root) {
+        return mc.windowManager == null ? mc.buffersAtOrUnderLocal(root) : mc.windowManager.buffersAtOrUnder(root);
+    }
+
+    @Override
+    public void closeDeletedBuffers(List<EditorBuffer> buffers) {
+        for (EditorBuffer buffer : buffers) {
+            Path file = buffer.getPath();
+            if (buffer.isDisposed() || file == null) {
+                continue;
+            }
+            java.util.function.Predicate<EditorBuffer> approved = buffers::contains;
+            if (mc.windowManager != null) {
+                mc.windowManager.fileDeletedAcrossWindows(file, approved);
+            } else {
+                mc.removeProjectFileLocal(file, approved);
+            }
         }
     }
 

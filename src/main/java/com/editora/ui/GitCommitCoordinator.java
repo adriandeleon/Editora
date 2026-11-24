@@ -252,11 +252,40 @@ final class GitCommitCoordinator {
         // unsaved buffer of the repository wrote files the user was still editing and had not chosen to commit.
         List<String> staged = stagedPaths(git.status());
         if (staged.isEmpty()) {
-            commitSaved(root, request, onDone);
+            commitChecked(root, request, staged, onDone);
             return;
         }
         // Saved first, off the FX thread; a save that fails says why and commits nothing (PERF-01, Pauta 6.2.0).
-        git.saveUnsaved(root, staged, () -> commitSaved(root, request, onDone), () -> onDone.accept(false));
+        git.saveUnsaved(root, staged, () -> commitChecked(root, request, staged, onDone), () -> onDone.accept(false));
+    }
+
+    /**
+     * {@link #commitSaved}, once an amend is known to replace the commit it was armed against: HEAD is read again
+     * right before, and a HEAD moved meanwhile (a commit from a terminal since the last refresh) amends nothing —
+     * Amend goes off, the message stays, and the user is told.
+     */
+    private void commitChecked(
+            Path root, GitPanel.CommitRequest request, List<String> staged, Consumer<Boolean> onDone) {
+        String armed = request.amendOf();
+        if (!request.amend() || armed == null) {
+            commitSaved(root, request, staged, onDone);
+            return;
+        }
+        git.service().headCommit(root, head -> {
+            if (head != null && armed.equals(head.hash())) {
+                commitSaved(root, request, staged, onDone);
+                return;
+            }
+            GitPanel p = panel;
+            if (p != null && root.equals(git.repoRoot())) {
+                p.amendOff();
+            }
+            host.setStatus(
+                    head == null
+                            ? tr("status.git.nothingToAmend")
+                            : tr("status.git.amendOffHeadMoved", head.shortHash()));
+            onDone.accept(false);
+        });
     }
 
     /** The paths a commit of {@code status}'s index records: its staged files. Pure. */
@@ -273,20 +302,26 @@ final class GitCommitCoordinator {
         return List.copyOf(paths);
     }
 
-    private void commitSaved(Path root, GitPanel.CommitRequest request, Consumer<Boolean> onDone) {
+    private void commitSaved(Path root, GitPanel.CommitRequest request, List<String> staged, Consumer<Boolean> onDone) {
         String[] args = commitArgs(request, templateConfigured && root.equals(templateRoot));
-        // A commit runs the repository's hooks, and a pre-commit hook may rewrite files (a formatter): like every
-        // other working-tree mutation, saves queued meanwhile are superseded and clean buffers reload afterwards.
+        // A commit runs the repository's hooks, and a pre-commit hook may rewrite files (a formatter run on what is
+        // staged): saves of the staged files queued meanwhile are superseded, and clean buffers reload afterwards.
+        // A save of any other file, made while a slow hook ran, is the user's and is kept.
         boolean[] committed = {false};
+        // A commit that concludes a merge started with --autostash applies the stashed changes back.
+        com.editora.git.GitOperation.Kind concluding = git.operation().kind();
         git.aroundWorkingTreeMutation(
                 root,
+                staged,
                 done -> git.service().runWorktreeMutation(root, git.running(args, done), args),
                 result -> {
                     committed[0] = result.ok();
                     onDone.accept(result.ok());
                     if (result.ok()) {
                         remember(root, request.message());
-                        host.setStatus(tr(request.amend() ? "status.git.amended" : "status.committed"));
+                        if (!git.reportAutostashKept(result, concluding, false)) {
+                            host.setStatus(tr(request.amend() ? "status.git.amended" : "status.committed"));
+                        }
                     } else {
                         git.gitError(tr("status.git.commitFailed"), result.message());
                     }
@@ -422,34 +457,60 @@ final class GitCommitCoordinator {
                     undoCommitQuestion(head.pushed(), head.shortHash(), head.subject(), head.upstream()))) {
                 return;
             }
-            // The commit confirmed is the one taken off: HEAD is moved from it to its parent only if HEAD is still
-            // it (update-ref checks the old value under the ref's lock) — a commit made meanwhile, in a terminal or
-            // another window, is never the one undone. This is what "reset --soft" does to the branch.
-            String parent = head.parents().get(0);
-            String[] args = {
-                "update-ref", "-m", "reset: moving to " + head.shortHash() + "~1", "HEAD", parent, head.hash()
-            };
-            git.service()
-                    .runWorktreeMutation(
-                            root,
-                            git.running(args, result -> {
-                                if (result.ok()) {
-                                    remember(root, head.message());
-                                    ops.openCommitWindow();
-                                    boolean restored = panel != null
-                                            && root.equals(git.repoRoot())
-                                            && panel.restoreCommitMessage(head.message());
-                                    host.setStatus(tr(
-                                            restored ? "status.git.undoCommit.done" : "status.git.undoCommit.doneKept",
-                                            head.shortHash()));
-                                } else if (movedFrom(result, head.hash())) {
-                                    host.setStatus(tr("status.git.undoCommit.moved", head.shortHash()));
-                                } else {
-                                    git.gitError(tr("status.git.opFailed"), result.message());
-                                }
-                                git.afterMutation(root);
-                            }),
-                            args);
+            // The commit confirmed is the one taken off: the branch HEAD is on (read first; HEAD itself when
+            // detached) is moved from it to its parent only if it is still there (update-ref checks the old value
+            // under the ref's lock) — a commit made meanwhile, in a terminal or another window, is never the one
+            // undone, nor another branch checked out meanwhile. ORIG_HEAD then names the commit, as "reset --soft"
+            // leaves it.
+            String[] which = {"symbolic-ref", "-q", "HEAD"};
+            git.service().runWorktreeMutation(root, symbolic -> undoOn(root, head, undoRef(symbolic)), which);
         });
+    }
+
+    /** The ref an undo moves: the branch {@code symbolic-ref -q HEAD} named, or {@code HEAD} when detached. Pure. */
+    static String undoRef(com.editora.process.ProcessRunner.@Nullable Result symbolic) {
+        String ref = symbolic != null && symbolic.ok() ? symbolic.out().strip() : "";
+        return ref.startsWith("refs/heads/") ? ref : "HEAD";
+    }
+
+    /** The argv that moves {@code ref} from {@code head} to its first parent, only while it is still there. Pure. */
+    static String[] undoArgs(String ref, GitService.HeadCommit head) {
+        return new String[] {
+            "update-ref",
+            "-m",
+            "reset: moving to " + head.shortHash() + "~1",
+            ref,
+            head.parents().get(0),
+            head.hash()
+        };
+    }
+
+    private void undoOn(Path root, GitService.HeadCommit head, String ref) {
+        String[] args = undoArgs(ref, head);
+        git.service()
+                .runWorktreeMutation(
+                        root,
+                        git.running(args, result -> {
+                            if (result.ok()) {
+                                // As reset leaves it: ORIG_HEAD names the commit undone (git reset ORIG_HEAD redoes).
+                                git.service()
+                                        .runWorktreeMutation(
+                                                root, origHead -> {}, "update-ref", "ORIG_HEAD", head.hash());
+                                remember(root, head.message());
+                                ops.openCommitWindow();
+                                boolean restored = panel != null
+                                        && root.equals(git.repoRoot())
+                                        && panel.restoreCommitMessage(head.message());
+                                host.setStatus(tr(
+                                        restored ? "status.git.undoCommit.done" : "status.git.undoCommit.doneKept",
+                                        head.shortHash()));
+                            } else if (movedFrom(result, head.hash())) {
+                                host.setStatus(tr("status.git.undoCommit.moved", head.shortHash()));
+                            } else {
+                                git.gitError(tr("status.git.opFailed"), result.message());
+                            }
+                            git.afterMutation(root);
+                        }),
+                        args);
     }
 }
