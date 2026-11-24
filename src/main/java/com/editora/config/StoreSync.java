@@ -233,8 +233,28 @@ final class StoreSync {
         return merged == null || merged.equals(mineTree) ? null : merged;
     }
 
+    /** An action that may fail with an {@link IOException}, run by {@link #locked}. */
+    @FunctionalInterface
+    interface LockedAction<T> {
+        T run() throws IOException;
+    }
+
+    /**
+     * Runs {@code action} holding what {@link #write} holds for its read-merge-write: this JVM's lock and the lock
+     * across processes. For an owner that reads, merges and writes more than one file as one change (the Local
+     * History index and its delta, {@link HistoryIndexFiles}).
+     */
+    <T> T locked(LockedAction<T> action) throws IOException {
+        JVM_LOCK.lock();
+        try (Held ignored = lockAcrossProcesses()) {
+            return action.run();
+        } finally {
+            JVM_LOCK.unlock();
+        }
+    }
+
     /** The file's bytes; {@code null} when it does not exist. */
-    private static byte @Nullable [] readIfPresent(Path file) throws IOException {
+    static byte @Nullable [] readIfPresent(Path file) throws IOException {
         try {
             return Files.readAllBytes(file);
         } catch (NoSuchFileException absent) {
@@ -247,7 +267,7 @@ final class StoreSync {
         }
     }
 
-    private static byte @Nullable [] hash(byte @Nullable [] bytes) {
+    static byte @Nullable [] hash(byte @Nullable [] bytes) {
         if (bytes == null) {
             return null;
         }

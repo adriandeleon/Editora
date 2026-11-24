@@ -73,6 +73,18 @@ public class SharedConfig {
      */
     private volatile Set<String> foreignHistoryHashes = Set.of();
 
+    /** {@link #foreignHistoryHashes} as found in {@code index.json} by the last whole-index merge. */
+    private volatile Set<String> foreignIndexHashes = Set.of();
+
+    /** {@link #foreignHistoryHashes} as found in the index's delta by the last delta write. */
+    private volatile Set<String> foreignDeltaHashes = Set.of();
+
+    /** {@code index.json} and its delta (perf finding F6): see {@link HistoryIndexFiles}. */
+    private final HistoryIndexFiles historyFiles;
+
+    /** The app is quitting: every index publication from here writes the index whole, for older builds. */
+    private volatile boolean historyQuitting;
+
     /** The body hashes listed by the backups kept beside the index ({@link HistoryIndexGuard#backupHashes}). */
     private volatile Set<String> backupHistoryHashes = Set.of();
 
@@ -200,6 +212,7 @@ public class SharedConfig {
         this.configDir = configDir;
         this.dev = dev;
         this.sync = new StoreSync(configDir, json);
+        this.historyFiles = new HistoryIndexFiles(getHistoryFile(), json, sync);
         this.projects = new ProjectManager(configDir);
         this.projects.setOnWriteError(writer::reportWriteError);
         this.projects.useWriter(writer);
@@ -255,7 +268,7 @@ public class SharedConfig {
      * hash — except, for a grace period, when it is not a whole index and so cannot say what it once listed.
      */
     boolean mayCollectHistoryBlobs() {
-        if (historyLossUnmarked || historyEmptyAtLoad || historyBackupsUnreadable) {
+        if (historyLossUnmarked || historyEmptyAtLoad || historyBackupsUnreadable || !historyFiles.deltaReadable()) {
             return false;
         }
         long incompleteSince = incompleteHistoryBackupSince;
@@ -301,7 +314,11 @@ public class SharedConfig {
         long incompleteSince = incompleteHistoryBackupSince;
         boolean inGrace = incompleteSince != Long.MIN_VALUE
                 && System.currentTimeMillis() - incompleteSince <= HistoryIndexGuard.INCOMPLETE_BACKUP_GRACE_MILLIS;
-        if (historyLossUnmarked || historyEmptyAtLoad || historyBackupsUnreadable || inGrace) {
+        if (historyLossUnmarked
+                || historyEmptyAtLoad
+                || historyBackupsUnreadable
+                || inGrace
+                || !historyFiles.deltaReadable()) {
             return HistoryPurgeHold.INDEX_UNTRUSTED;
         }
         if (sha256s == null || sha256s.isEmpty()) {
@@ -316,6 +333,11 @@ public class SharedConfig {
             return HistoryPurgeHold.OTHER_PROCESS; // another writer's rows on disk still list them
         }
         return HistoryPurgeHold.NONE;
+    }
+
+    /** The Local History index files (tests). */
+    HistoryIndexFiles historyIndexFiles() {
+        return historyFiles;
     }
 
     /** The app-wide local-history worker. Sharing it coordinates blob publication and GC across windows. */
@@ -959,7 +981,13 @@ public class SharedConfig {
         awaitHttpHistoryWork();
         // Then: the history worker finishes the records still in flight (the save made from the quit prompt)
         // and hands them over, which queues the index — so the writer has to be running still.
+        historyQuitting = true; // read on the writer thread: every publication from here writes the index whole
         historyService.shutdown();
+        if (historyFileSeen) {
+            // Fold the delta into the index (HistoryIndexFiles): an older build reads only index.json. Not needed
+            // for the rows to be safe — the delta is as durable as the index — so it may find nothing to do.
+            saveHistory();
+        }
         boolean durable = writer.shutdown(); // retries, a last time, every write that failed earlier
         InstanceLock lock = instanceLock;
         if (lock != null) {
@@ -1911,20 +1939,31 @@ public class SharedConfig {
             loaded = ConfigMigrations.readVersioned(
                     index, json, new HistoryStore(), ConfigSchema.HISTORY, problems::add);
         }
+        // Judged on the index file alone (below): a delta lists only what changed since it was written.
+        boolean listedNothingOnDisk = loaded.ledger().listsNothing();
+        // Then what changed since the index was written whole (HistoryIndexFiles), as it was read: what the files
+        // hold together is the common ancestor of the next merge. A delta that cannot be read now stops blob
+        // collection until a publication reads it; a damaged one was kept as a copy, which keeps its bodies.
+        HistoryIndexFiles.LoadedDelta delta = historyFiles.loaded(loaded.snapshot());
+        if (delta.delta() != null) {
+            applyHistoryDelta(loaded, delta.delta());
+        }
+        if (delta.damagedCopy() != null) {
+            problems.add(new ConfigLoadProblem(
+                    HistoryIndexFiles.deltaFile(index),
+                    ConfigLoadProblem.Kind.UNREADABLE,
+                    List.of(),
+                    delta.damagedCopy()));
+        }
+        historyFiles.loadedIndex(loaded.snapshot(), delta.delta());
         // A list merged from two writers is not newest-first on disk (StoreMerge keeps this process's rows
         // first); everything that reads one takes row 0 for the newest. Null rows and lists — legal JSON, a
-        // hand edit or damage — were dropped as the store took the lists in.
+        // hand edit or damage — were dropped as the store took the lists in. What these change is a change
+        // this load made, and the next save writes it.
         long now = System.currentTimeMillis();
         loaded.clampFutureTimestamps(now);
         loaded.sortNewestFirst();
         historyStore = loaded;
-        // What the file holds, as this build writes it: a list that had to be re-ordered is a change this
-        // load made, and the next save writes it.
-        try {
-            sync.loaded(index, json.writeValueAsBytes(loaded.snapshot()));
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            throw new UncheckedIOException("Failed to serialize " + index.getFileName(), e);
-        }
         for (ConfigLoadProblem problem : problems) {
             if (problem.kind() == ConfigLoadProblem.Kind.NEWER_COPY_KEPT && alreadyReported(problem.backup())) {
                 continue;
@@ -1951,7 +1990,7 @@ public class SharedConfig {
         // An index that lists no revision at all while bodies are stored is not trusted either, however it
         // came to be that way ("{}", an index rewritten from defaults, the empty one a failed load leaves):
         // collecting against it deletes every body.
-        boolean emptyBesideBodies = loaded.ledger().listsNothing() && HistoryIndexGuard.hasBlobs(getHistoryBlobsDir());
+        boolean emptyBesideBodies = listedNothingOnDisk && HistoryIndexGuard.hasBlobs(getHistoryBlobsDir());
         historyEmptyAtLoad = emptyBesideBodies;
         // A loss with no copy of what was lost — the index missing or zero-length beside bodies, bytes that could
         // not be kept, or an index that lists nothing beside bodies with no problem reported ("{}") — keeps every
@@ -1962,12 +2001,45 @@ public class SharedConfig {
         historyLossUnmarked = loss && !HistoryIndexGuard.markLoss(index, now);
         historyBackupsUnreadable = !readHistoryBackups(index);
         foreignHistoryHashes = Set.of();
+        foreignIndexHashes = Set.of();
+        foreignDeltaHashes = Set.of();
         HistoryStore.Limits limits = loaded.getAcknowledgedLimits();
         historyService.restoreAcknowledged(
                 limits == null
                         ? null
                         : new HistoryRetention.RetentionPolicy(
                                 limits.maxPerFile(), limits.maxAgeMillis(), limits.maxTotalBytesPerProject()));
+    }
+
+    /** Applies a delta read at load to the index just read, through the store's own maps (its books stay right). */
+    private static void applyHistoryDelta(HistoryStore store, HistoryDelta delta) {
+        java.util.Set<String> projects =
+                new java.util.LinkedHashSet<>(delta.removed().keySet());
+        projects.addAll(delta.added().keySet());
+        for (String project : projects) {
+            Map<String, List<HistoryRevision>> plus = delta.added().getOrDefault(project, Map.of());
+            Map<String, List<HistoryRevision>> minus = delta.removed().getOrDefault(project, Map.of());
+            java.util.Set<String> files = new java.util.LinkedHashSet<>(minus.keySet());
+            files.addAll(plus.keySet());
+            Map<String, List<HistoryRevision>> bucket = store.bucket(project);
+            for (String file : files) {
+                List<HistoryRevision> present = bucket.get(file);
+                List<HistoryRevision> rows = HistoryDelta.applyToFile(
+                        present == null ? List.of() : present,
+                        plus.getOrDefault(file, List.of()),
+                        minus.getOrDefault(file, List.of()));
+                if (rows.isEmpty()) {
+                    if (present != null && !present.isEmpty()) {
+                        bucket.remove(file);
+                    }
+                } else if (rows != present) {
+                    bucket.put(file, rows);
+                }
+            }
+        }
+        if (delta.acknowledgedLimits() != null) {
+            store.setAcknowledgedLimits(delta.acknowledgedLimits());
+        }
     }
 
     /**
@@ -2032,63 +2104,45 @@ public class SharedConfig {
         HistoryStore store = historyStore;
         HistoryStore.Snapshot snapshot = store.snapshot();
         long publication = store.ledger().publish();
-        // Whether this publication's write looked at the file on disk: only then is what this process knows
-        // of the other writers' revisions current. Written and read on the writer thread.
+        // Whether this publication looked at every row on disk (it wrote the index whole): only then is what
+        // this process knows of the other writers' revisions current. Written and read on the writer thread.
         boolean[] sawDisk = new boolean[1];
         writer.enqueue(
                 getHistoryFile(),
                 () -> {
-                    // Another process's revisions are kept in the index on disk but are not in this process's
-                    // memory, so their bodies are protected from this process's collection by hash.
-                    Set<String>[] foreign = newHashSetHolder();
-                    boolean written = sync.write(
-                            getHistoryFile(), json.writeValueAsBytes(snapshot), ConfigSchema.HISTORY, merged -> {
-                                foreign[0] = foreignHashes(merged, snapshot);
-                                adoptForeignRows(store, merged, snapshot);
-                            });
-                    if (written) {
-                        // Not merged: the file now holds this process's rows and nothing else.
-                        foreignHistoryHashes = foreign[0] == null ? Set.of() : foreign[0];
-                        refreshHistoryBackups();
-                        sawDisk[0] = true;
-                    } else {
-                        // Nothing to persist, so the file was not read. What this process knows of it is
-                        // still current only if nobody else has written it since.
-                        sawDisk[0] = sync.unchangedOnDisk(getHistoryFile());
+                    // A blob collection runs only behind a publication that read both files, which a whole
+                    // write does: one that is due asks for it. So does the quit, for older builds.
+                    boolean compact = historyQuitting || historyService.gcDue();
+                    HistoryIndexFiles.Published done = historyFiles.publish(snapshot, compact);
+                    // Another process's revisions are kept on disk but are not in this process's memory, so
+                    // their bodies are protected from this process's collection by hash.
+                    if (done.foreignInIndex() != null) {
+                        foreignIndexHashes = done.foreignInIndex();
+                        foreignDeltaHashes = Set.of(); // that merge covered the delta too
+                    } else if (done.written()) {
+                        foreignDeltaHashes = done.foreignInDelta();
                     }
-                    return written ? null : ConfigWriter.UNCHANGED;
+                    Set<String> foreign = new java.util.HashSet<>(foreignIndexHashes);
+                    foreign.addAll(foreignDeltaHashes);
+                    foreignHistoryHashes = Set.copyOf(foreign);
+                    adoptForeignRows(store, done.foreignRows());
+                    if (done.written()) {
+                        refreshHistoryBackups();
+                    }
+                    sawDisk[0] = done.sawDisk();
+                    return done.written() ? null : ConfigWriter.UNCHANGED;
                 },
                 outcome -> finishHistoryPublication(store, publication, outcome, sawDisk, completion));
     }
 
     /**
-     * Takes the rows another writer added to the index on disk ({@code merged} holds them beside this process's
-     * own) into this process's index, on the FX thread that owns it. Left out, every later save had to re-read
-     * and three-way merge the whole index again, for the rest of the session: this process's copy never again
-     * equalled the file. Taken in, the next save writes the file plainly — and the other writer's revisions are
-     * listed here too, which is what the user expects of one shared history.
+     * Takes the rows another writer added to the index on disk into this process's index, on the FX thread that
+     * owns it. Left out, every later save had to read and merge the files again, for the rest of the session:
+     * this process's copy never again equalled them. Taken in, the next save writes plainly — and the other
+     * writer's revisions are listed here too, which is what the user expects of one shared history. (A row this
+     * build cannot read is not among them: it stays on disk, protected by hash.)
      */
-    private void adoptForeignRows(HistoryStore store, JsonNode merged, HistoryStore.Snapshot mine) {
-        Map<String, Map<String, List<HistoryRevision>>> foreign = new LinkedHashMap<>();
-        for (Map.Entry<String, JsonNode> project : merged.path("byProject").properties()) {
-            Map<String, List<HistoryRevision>> own = mine.byProject().getOrDefault(project.getKey(), Map.of());
-            for (Map.Entry<String, JsonNode> file : project.getValue().properties()) {
-                List<HistoryRevision> ownRows = own.getOrDefault(file.getKey(), List.of());
-                for (JsonNode row : file.getValue()) {
-                    HistoryRevision revision;
-                    try {
-                        revision = json.treeToValue(row, HistoryRevision.class);
-                    } catch (com.fasterxml.jackson.core.JsonProcessingException | IllegalArgumentException bad) {
-                        continue; // not a row this build can read: it stays on disk, protected by hash
-                    }
-                    if (revision != null && !ownRows.contains(revision)) {
-                        foreign.computeIfAbsent(project.getKey(), k -> new LinkedHashMap<>())
-                                .computeIfAbsent(file.getKey(), k -> new ArrayList<>())
-                                .add(revision);
-                    }
-                }
-            }
-        }
+    private void adoptForeignRows(HistoryStore store, Map<String, Map<String, List<HistoryRevision>>> foreign) {
         if (!foreign.isEmpty()) {
             fxThread.execute(() -> {
                 if (store == historyStore) {
@@ -2096,11 +2150,6 @@ public class SharedConfig {
                 }
             });
         }
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Set<String>[] newHashSetHolder() {
-        return (Set<String>[]) new Set<?>[1];
     }
 
     private void finishHistoryPublication(
