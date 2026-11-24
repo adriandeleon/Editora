@@ -136,7 +136,7 @@ opens nothing.
 
 With the language server off, completion in a shell script offers the script's
 own function and variable names after the snippets, and only variables after
-`$` or `${`. With the [Bash server](/docs/lsp#shell-scripts) on, completion
+`$` or `${`. With the [Bash server](/docs/shell#language-server) on, completion
 comes from the server, and Editora's shell snippets stay in the list.
 
 Shell blocks also [fold](/docs/navigation#folding): functions (from the line

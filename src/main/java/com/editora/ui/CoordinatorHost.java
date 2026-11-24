@@ -32,6 +32,11 @@ interface CoordinatorHost {
         return null;
     }
 
+    /** This window's session state (per-file view choices live here); null for a host that keeps none. */
+    default com.editora.config.@Nullable WorkspaceState workspaceState() {
+        return null;
+    }
+
     boolean simpleModeActive();
 
     /** Whether the app/editor theme is dark (e.g. Mermaid renders a dark diagram to match). */

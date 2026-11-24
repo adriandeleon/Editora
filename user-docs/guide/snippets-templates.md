@@ -305,7 +305,7 @@ Editora ships 37 templates:
 - **XML:** an XML Schema (XSD) with a target namespace and one element, an XSLT
   stylesheet with the identity template, and an XML document bound to a schema
   (`xsi:noNamespaceSchemaLocation`), so the
-  [XML server](/docs/lsp#xml) validates and completes it from the start.
+  [XML server](/docs/xml#language-server) validates and completes it from the start.
 - **Files Editora previews or runs:** a Markdown document, a Typst document
   (on its own, or with its page setup in a reusable `template.typ`), a Mermaid
   diagram, a Markwhen timeline, and HTTP requests with `@assert` and `@capture`
@@ -318,7 +318,7 @@ Editora ships 37 templates:
   `.editorconfig`, GitHub issue and pull request templates, and a multi-stage
   Java Dockerfile, on its own or with a `compose.yaml` and `.dockerignore`.
 - **Projects:** a Python project and a Node.js TypeScript project (which installs
-  TypeScript 5.9; see [why](/docs/lsp#typescript-and-javascript)). The
+  TypeScript 5.9; see [why](/docs/javascript-typescript#language-server)). The
   TypeScript project's `npm start` runs `tsx src/index.ts`, and its `npm test`
   runs `node --import tsx --test` on the `src/**/*.test.ts` files; `tsx`,
   `typescript` and `@types/node` are its dev dependencies, and `npm run build` compiles to
@@ -380,7 +380,7 @@ because bash cannot run a script with CRLF line endings.
 The **Node.js Script** template writes a `.js` file with a `#!/usr/bin/env node`
 shebang and an `async function main(args)`. An error thrown from `main` is
 printed and sets a non-zero exit code. It runs from its gutter ▶ (see
-[Node.js scripts](/docs/run-debug#nodejs-scripts)). **New ▸ Scripts ▸
+[Node.js scripts](/docs/javascript-typescript#running-nodejs-scripts)). **New ▸ Scripts ▸
 Node.js** in the Project tree's right-click menu creates the same kind of file
 without the wizard.
 

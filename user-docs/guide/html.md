@@ -180,7 +180,7 @@ running, its folding ranges are used (see
   span several lines, plus one-line headings (`<h1>` to `<h6>`) and elements
   with an `id`. Omitted end tags, void elements and script content are handled.
   The XML server's **Structure element limit** (see
-  [XML settings](/docs/lsp#xml-settings), 5,000 by default) caps how many are
+  [XML settings](/docs/xml#xml-settings), 5,000 by default) caps how many are
   listed.
 
 ![widget.html with the Structure tool window open and no language server: html, head, body, main.widget, h1, p#count.count and div.buttons, each with its line](/screenshots/docs/html-structure.png "Structure without the language server: elements labelled tag, then #id, then .class.")

@@ -27,8 +27,9 @@ by content: it opens as a log when enough of its first lines carry a level or
 start with a timestamp.
 
 For anything else, **Log: View as Log** (`log.viewAsLog`) shows the current file
-as a log. It's a toggle: run it again to go back to the plain view. The choice
-lasts for the session.
+as a log. It's a toggle: run it again to go back to the plain view. Editora
+remembers the choice for that file, also when you turn off a file that was
+recognised by its content.
 
 ## Severity highlighting
 
@@ -141,6 +142,10 @@ with `|`: `timeout|refused`.
 
 While a filter shows records by a pattern, its matches are highlighted in the
 visible lines, as Find highlights its matches.
+
+Each log keeps its level floor and patterns: when you open it again, in this
+session or the next one, it opens filtered the way you left it. Clear the
+filter and it opens in full again.
 
 ### Filtering by record
 

@@ -98,7 +98,7 @@ a jar built some other way, use a shell script configuration that runs it.
 program there under the debugger, listening only on the host's own loopback.
 Editora tunnels that port through the SSH connection and attaches to it, so
 breakpoints, stepping, variables and the call stack work on the local files, as
-in any [Java debug session](/docs/run-debug#debugging-java). The tunnel closes
+in any [Java debug session](/docs/java#debugging). The tunnel closes
 when the program ends.
 
 Debug needs a Java file of the project open in a tab, which the debugger works
