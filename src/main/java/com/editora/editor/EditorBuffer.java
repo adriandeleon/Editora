@@ -560,6 +560,9 @@ public class EditorBuffer implements TabContent {
     private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area, this::documentText);
 
     private @Nullable LogHighlightOverlay logOverlay; // lazily attached on first activation — see logOverlay()
+    /** A log's WARN/ERROR overview over the scrollbar, attached with the log overlay — see logStripe(). */
+    private com.editora.editor.logviewer.@Nullable LogStripe logStripe;
+
     private @Nullable InlineValuesOverlay inlineValues; // lazily attached when a debug session first suspends here
     /** Git change bars + blame column, kept on the right lines through unsaved edits. */
     final GitGutterLines gitLines = new GitGutterLines(area, dirty, this::refreshGutter, minimap);
@@ -2068,6 +2071,20 @@ public class EditorBuffer implements TabContent {
         return logOverlay;
     }
 
+    private com.editora.editor.logviewer.LogStripe logStripe() {
+        if (logStripe == null) {
+            logStripe = attachLazyStripe(new com.editora.editor.logviewer.LogStripe(area), OverlayLayer.LOG_STRIPE);
+            logStripe.setOnActivateIn(jumps::revealLine);
+            UiZoom.follow(logStripe, this::updateMarkdownLintStripe); // its inset, and the TODO stripe's beside it
+        }
+        return logStripe;
+    }
+
+    /** The log overview stripe, or null while this buffer has never been shown as a log (tests). */
+    public com.editora.editor.logviewer.@Nullable LogStripe logStripeIfAttached() {
+        return logStripe;
+    }
+
     private MermaidLintOverlay lintOverlay() {
         if (lintOverlay == null) {
             lintOverlay = attachLazyOverlay(new MermaidLintOverlay(area), OverlayLayer.MERMAID_LINT);
@@ -3254,6 +3271,9 @@ public class EditorBuffer implements TabContent {
             AnchorPane.setRightAnchor(stripe, base + (lspActive ? UiZoom.px(DiagnosticStripe.WIDTH) : 0d));
             stripe.setActive(on);
         }
+        if (logStripe != null) { // a log is never Markdown: the two share a slot
+            AnchorPane.setRightAnchor(logStripe, base + (lspActive ? UiZoom.px(DiagnosticStripe.WIDTH) : 0d));
+        }
         updateTodoStripe();
     }
 
@@ -3263,7 +3283,8 @@ public class EditorBuffer implements TabContent {
         boolean minimapShown = minimapVisible && !largeFile && !heavyFile;
         double base = minimapShown ? Minimap.WIDTH : 0d;
         double offset = UiZoom.px((lspActive ? DiagnosticStripe.WIDTH : 0d)
-                + (markdownLintEnabled && !largeFile && !minimapShown ? MarkdownLintStripe.WIDTH : 0d));
+                + (markdownLintEnabled && !largeFile && !minimapShown ? MarkdownLintStripe.WIDTH : 0d)
+                + (logStripe != null && logStripe.isActive() ? com.editora.editor.logviewer.LogStripe.WIDTH : 0d));
         if (todoStripe != null) { // attached with the first marks (todoStripe()), positioned from then on
             AnchorPane.setRightAnchor(todoStripe, base + offset);
             todoStripe.setActive(todoMarker.todoEnabled && !largeFile);
@@ -3662,6 +3683,10 @@ public class EditorBuffer implements TabContent {
         boolean want = on && isLog();
         if (want || logOverlay != null) {
             logOverlay().setActive(want);
+        }
+        if (want || logStripe != null) {
+            logStripe().setActive(want);
+            updateMarkdownLintStripe();
         }
     }
 

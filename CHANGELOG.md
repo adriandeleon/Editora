@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Warnings and errors on a log's scrollbar.** A stripe over the scrollbar marks a log's WARN lines in amber and its
+  ERROR and FATAL lines in red; hover a mark to read the line, click it to go there. A filtered log marks what the
+  filter kept.
 - **Times in logs.** The log viewer reads each line's timestamp (ISO, Logback, Tomcat, syslog, klog, access logs, and
   JSON `time`/`ts` fields, also as epoch numbers). **Log: Go to Time…** jumps to the first line written at or after a
   time, **Log: Filter by Time…** shows the records between two times (`10:05 - 10:20`), and **Show From/Up To Caret
