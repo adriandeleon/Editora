@@ -3567,8 +3567,29 @@ final class RunCoordinator {
         planNode(path, root, args);
     }
 
-    /** Plans and streams Run File on {@code path} (a Node.js or Deno script). */
+    /**
+     * Plans and streams Run File on {@code path} (a Node.js or Deno script); a main-process file of an Electron app
+     * starts the app, Electron's program on its folder ({@link com.editora.run.ElectronApps}), looked for off the FX
+     * thread first.
+     */
     private void planNode(Path path, @Nullable Path root, List<String> args) {
+        com.editora.perf.OffFx.then("run-electron-plan", () -> ElectronDebugLaunch.appOf(path), a -> {
+            java.util.Optional<com.editora.run.ElectronApps.App> app = a.value();
+            String missing = app == null || app.isEmpty() ? null : ElectronDebugLaunch.notDownloaded(app.get());
+            if (missing != null) {
+                host.setStatus(missing);
+            } else if (app != null && app.isPresent()) {
+                List<String> argv =
+                        new ArrayList<>(List.of(String.valueOf(app.get().electron())));
+                argv.addAll(com.editora.run.ElectronApps.args(0, args));
+                streamRun(path.getFileName().toString(), app.get().root(), argv, java.util.Map.of(), path);
+            } else {
+                planNodeFile(path, root, args);
+            }
+        });
+    }
+
+    private void planNodeFile(Path path, @Nullable Path root, List<String> args) {
         NodeRunLauncher.plan(
                 new NodeRunLauncher.Spec(
                         path,

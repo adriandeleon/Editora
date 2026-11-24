@@ -432,6 +432,7 @@ final class DebugCoordinator {
     private final MemoryEdits memoryEdits = new MemoryEdits(this);
 
     private final DartDebugLaunch dart = new DartDebugLaunch(this); // Dart, and a Flutter app's Dart
+    private final ElectronDebugLaunch electron = new ElectronDebugLaunch(this); // an Electron app: main + renderer
     final BrowserDebugLaunch browser = new BrowserDebugLaunch(this); // a page in Chrome, Edge, Firefox…
     final PhpDebugLaunch php = new PhpDebugLaunch(this); // PHP files, web apps, PHPUnit tests, Listen for Xdebug
 
@@ -7593,6 +7594,14 @@ final class DebugCoordinator {
      * naming Deno or Bun — falls back to the file under the resolved Node.js.
      */
     private void debugJsFile(Path file, List<String> fileArgs, List<String> nodeArgs) {
+        if (nodeArgs.isEmpty()) { // an Electron app's main-process file starts the app, else Node.js runs the file
+            electron.debugOr(file, fileArgs, () -> debugNodeFile(file, fileArgs, nodeArgs));
+        } else {
+            debugNodeFile(file, fileArgs, nodeArgs);
+        }
+    }
+
+    private void debugNodeFile(Path file, List<String> fileArgs, List<String> nodeArgs) {
         String problem = com.editora.dap.JsLaunch.launchProblemKey(String.valueOf(file.getFileName()), null);
         NodeRunLauncher.plan(
                 new NodeRunLauncher.Spec(

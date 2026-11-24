@@ -1693,6 +1693,19 @@ Node.js v24.18.1)*.
 - **Node.js script** and **npm script** [run configurations](#run-configurations)
   can be debugged, started the way Run starts them.
 
+**Electron apps.** In a package whose dependencies name `electron`, with
+Electron installed in `node_modules`, F5 on the app's main file (the
+package's `main`) or on any file that loads `electron` (a window module, a
+preload script) debugs the whole app, as VS Code's *Electron: Main* and
+*Electron: Renderer* configurations do together: the main process under the
+debugger, and the app's windows attached to, in a second session. Breakpoints
+stop in the main process's files and in the pages' scripts alike, and **Stop**
+ends both sessions and the app. The arguments set by **File: Run with
+Arguments…** go to Electron. *Run File* on the same files starts the app, as
+`npm start` (`electron .`) does. Electron downloads its program the first time
+it starts, not on `npm install`; until then Editora says so, and
+`npx install-electron` in the app's folder (or one `npm start`) fetches it.
+
 **Attach to a running program.** Start Node.js with `--inspect` (for example
 `node --inspect server.js`), then run **Debug: Attach to Running Program…**
 (`debug.attach`) on a JavaScript or TypeScript file. It asks for the

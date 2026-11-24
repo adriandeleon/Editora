@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Electron apps.** F5 on an Electron app's main file, or a file that loads `electron`, debugs the whole app: its
+  main process and its windows' scripts, in two sessions started and stopped together, as VS Code's Electron
+  configurations do. Run File starts the app.
 - **Debugging in Firefox.** Choose Firefox under **Debug web pages in** on **Settings → Debugging** and F5 on an HTML
   file, **Debug in Browser…** and **Attach to Browser…** debug the page in Firefox, as VS Code's Debugger for Firefox
   does, with breakpoints in its scripts, stepping, values and the console. A launch.json `firefox` configuration
