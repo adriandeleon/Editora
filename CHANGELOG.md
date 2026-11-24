@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A pattern that backtracks without end (`(a+)+$`) gives up after 50 ms a line instead of freezing the window.
   **Log: Focus Filter** and **Log: Toggle Follow** have default keys (Ctrl+Alt+Shift+F and Ctrl+Alt+Shift+L), and
   Next/Previous Problem steps through a log's warnings and errors; the CUA and Sublime keymaps bind it to F8.
-
+- **Run Test at Caret everywhere Debug Test at Caret works.** In a Go, Rust, Dart, JavaScript/TypeScript (node:test,
+  Deno, Jest, Vitest), RSpec, Minitest, PHPUnit, ExUnit or C# test file, Run Test at Caret now runs the test at the
+  caret alone, without the debugger, as Run File runs the file: before, only Java and Python tests ran at the caret.
 - **Homebrew and winget packages** (Pauta REL-12, REL-13, REL-14). A release now writes a Homebrew cask, for
   `brew install --cask adriandeleon/tap/editora` on Apple Silicon Macs, and opens a winget pull request for
   `winget install AdrianDeLeon.Editora` on Windows. Both need the `PACKAGES_TOKEN` repository secret; without it a
