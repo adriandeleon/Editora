@@ -703,7 +703,8 @@ class LivePreviewServerTest {
         HttpResponse<String> r = pending.get(10, java.util.concurrent.TimeUnit.SECONDS);
         assertEquals(200, r.statusCode());
         assertTrue(r.body().contains("__editora_livereload") && r.body().contains("x".repeat(10_000)));
-        assertEquals(LivePreviewServer.MAX_BUFFERED, permits.availablePermits(), "released after the answer");
+        // the handler releases its permit after the body is written, which the client may see first
+        Await.until(() -> permits.availablePermits() == LivePreviewServer.MAX_BUFFERED, "released after the answer");
     }
 
     /**
@@ -743,7 +744,7 @@ class LivePreviewServerTest {
                     "the stalled clients hold every permit",
                     java.time.Duration.ofSeconds(10));
             long t0 = System.nanoTime();
-            HttpResponse<String> busy = get(url);
+            HttpResponse<String> busy = getOrDumpThreads(url, permits);
             long waited = (System.nanoTime() - t0) / 1_000_000;
             assertEquals(503, busy.statusCode(), "a page that cannot be built in time is refused, not left hanging");
             assertEquals("1", busy.headers().firstValue("Retry-After").orElse(null));
@@ -874,6 +875,27 @@ class LivePreviewServerTest {
             }
             assertFalse(lines.isEmpty(), "the server answered");
             return lines;
+        }
+    }
+
+    /**
+     * {@link #get}, but a timeout dumps every thread (virtual ones included) first. On Linux CI the busy request of
+     * {@link #clientsThatStopReadingCannotStallEveryPage} sometimes got no answer at all (three tries in one fork,
+     * then fine on a fresh runner) and nothing here reproduces it: the dump says where the request's handler was.
+     */
+    private HttpResponse<String> getOrDumpThreads(String url, java.util.concurrent.Semaphore permits) throws Exception {
+        try {
+            return get(url);
+        } catch (java.net.http.HttpTimeoutException timedOut) {
+            Path dump = Files.createTempFile("live-preview-threads", ".txt");
+            Files.delete(dump); // dumpThreads makes the file itself
+            java.lang.management.ManagementFactory.getPlatformMXBean(com.sun.management.HotSpotDiagnosticMXBean.class)
+                    .dumpThreads(
+                            dump.toString(), com.sun.management.HotSpotDiagnosticMXBean.ThreadDumpFormat.TEXT_PLAIN);
+            System.err.println("LivePreviewServerTest: no answer in 5 s with " + permits.availablePermits()
+                    + " permits free, " + Runtime.getRuntime().availableProcessors() + " CPUs; threads:\n"
+                    + Files.readString(dump));
+            throw timedOut;
         }
     }
 

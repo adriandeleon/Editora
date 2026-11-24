@@ -161,7 +161,7 @@ public final class BufferSpell {
     public void applyActive() {
         boolean active = enabled && !isLanguageDisabled() && !largeFile.getAsBoolean();
         if (active && !overlay.isActive()) {
-            SpellDictionaries.ensureBuilt(langId, this::dictionaryBuilt);
+            SpellDictionaries.ensureBuilt(langId, whenBuilt(this));
         }
         overlay.setActive(active);
     }
@@ -172,8 +172,23 @@ public final class BufferSpell {
             return;
         }
         langId = id;
-        checker.setLanguage(id, this::dictionaryBuilt);
+        checker.setLanguage(id, whenBuilt(this));
         overlay.refresh();
+    }
+
+    /**
+     * The callback handed to {@link SpellDictionaries#ensureBuilt}, which keeps it in a static list until the
+     * build lands. It holds this buffer only weakly: the first build in a session takes seconds, and a window
+     * closed meanwhile stayed in memory through its buffers' callbacks until it finished.
+     */
+    private static Runnable whenBuilt(BufferSpell spell) {
+        java.lang.ref.WeakReference<BufferSpell> ref = new java.lang.ref.WeakReference<>(spell);
+        return () -> {
+            BufferSpell live = ref.get();
+            if (live != null) {
+                live.dictionaryBuilt();
+            }
+        };
     }
 
     /** The dictionary this buffer asked for finished building — or failed to, which is reported. */

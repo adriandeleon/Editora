@@ -1,7 +1,9 @@
 package com.editora.sshconfig;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.jspecify.annotations.Nullable;
 
@@ -43,12 +45,7 @@ public final class SshConfig {
             return null;
         }
         for (Block b : blocks) {
-            boolean applies = switch (b.type()) {
-                case "global" -> true;
-                case "Host" -> SshPattern.matches(b.argument(), host);
-                default -> false; // Match blocks: criteria not modelled
-            };
-            if (applies) {
+            if (applies(b, host)) {
                 String v = b.first(key);
                 if (v != null) {
                     return v; // first obtained value wins
@@ -56,6 +53,39 @@ public final class SshConfig {
             }
         }
         return null;
+    }
+
+    /**
+     * {@link #effective(List, String, String)} for several (distinct) keys in one walk of the blocks: the
+     * preview sums up every host with five of them, and walking the file once per key made that five times
+     * the cost of a cost already quadratic in the number of hosts. A key nothing sets is absent. Pure.
+     */
+    public static Map<String, String> effective(List<Block> blocks, String host, List<String> keys) {
+        Map<String, String> out = new HashMap<>();
+        for (Block b : blocks) {
+            if (out.size() == keys.size()) {
+                break;
+            }
+            if (applies(b, host)) {
+                for (String key : keys) {
+                    if (!out.containsKey(key)) {
+                        String v = b.first(key);
+                        if (v != null) {
+                            out.put(key, v); // first obtained value wins
+                        }
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    private static boolean applies(Block b, String host) {
+        return switch (b.type()) {
+            case "global" -> true;
+            case "Host" -> SshPattern.matches(b.argument(), host);
+            default -> false; // Match blocks: criteria not modelled
+        };
     }
 
     /** Whether a {@code Host} block's argument is a single concrete host name (one token, no {@code * ? !}) —

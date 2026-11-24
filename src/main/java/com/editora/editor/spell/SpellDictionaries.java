@@ -136,6 +136,44 @@ public final class SpellDictionaries {
         }));
     }
 
+    /** What {@link #holdBuildForTest} hands back: closing it ends the hold. */
+    public interface BuildHold extends AutoCloseable {
+        /** How many callbacks are waiting for the held language. */
+        int waiting();
+
+        @Override
+        void close();
+    }
+
+    /**
+     * TEST SEAM — until the hold is closed, {@code langId} is "being built": a caller's callback waits in
+     * {@link #PENDING}, as during the first build of a session, which takes seconds. Closing puts back the engine
+     * that was built, if any, and runs the waiting callbacks.
+     */
+    public static BuildHold holdBuildForTest(String langId) {
+        Hunspell kept = CACHE.remove(langId);
+        BUILDING.add(langId);
+        return new BuildHold() {
+            @Override
+            public int waiting() {
+                List<Runnable> waiting = PENDING.get(langId);
+                return waiting == null ? 0 : waiting.size();
+            }
+
+            @Override
+            public void close() {
+                if (kept != null) {
+                    CACHE.put(langId, kept);
+                }
+                BUILDING.remove(langId);
+                List<Runnable> waiting = PENDING.remove(langId);
+                if (waiting != null) {
+                    waiting.forEach(Platform::runLater);
+                }
+            }
+        };
+    }
+
     /** Builds (and caches) a language synchronously — for tests/headless use. Empty on failure. */
     static Optional<Hunspell> buildBlocking(String langId) {
         Hunspell cached = CACHE.get(langId);

@@ -11,7 +11,9 @@ import javafx.scene.input.MouseButton;
 import javafx.scene.robot.Robot;
 import javafx.stage.Stage;
 
+import com.editora.command.KeymapManager;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -55,6 +57,8 @@ class MenuBarClickFxTest {
 
     @Test
     void clickingEachTitleOpensItsMenuWithItsRows() throws Exception {
+        // macOS uses the system menu bar: its rows are built up front and the in-window bar is never clicked
+        Assumptions.assumeFalse(KeymapManager.isMac(), "the system menu bar opens its own menus");
         MainMenuBar menuBar = FxTestSupport.field(fx.controller, "menuBar");
         // macOS: the menus are the system's, built whole up front, and have no title buttons in the window.
         assumeFalse(FxTestSupport.callOnFx(menuBar::onSystemMenuBar), "the in-window menu bar");
