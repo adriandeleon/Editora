@@ -139,6 +139,31 @@ class HttpResponseFormatTest {
         assertEquals("ab", HttpResponseFormat.view(emoji, 3).text());
     }
 
+    /** A large JSON body is re-indented only as far as the view shows (perf P8); the cut matches a whole format. */
+    @Test
+    void viewFormatsOnlyTheShownPrefixOfALargeJsonBody() {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < 20_000; i++) {
+            sb.append(i == 0 ? "" : ",").append("{\"id\":").append(i).append(",\"v\":10.50}");
+        }
+        String body = sb.append(']').toString();
+        HttpResult r = HttpFixtures.text(200, java.util.List.of(), body, "application/json", 1, body.length(), null);
+        String whole = HttpResponseFormat.prettyBody(body, "application/json");
+
+        HttpResponseFormat.BodyView view = HttpResponseFormat.view(r, 1_000);
+        assertTrue(view.clipped());
+        assertEquals(whole.substring(0, 1_000), view.text());
+        assertEquals(body.length(), view.totalChars(), "the body's own length: the formatted total is not worked out");
+        assertTrue(
+                HttpResponseFormat.prettyBody(body, "application/json", 1_000).length() < 20_000);
+
+        HttpResponseFormat.BodyView all = HttpResponseFormat.view(r, Integer.MAX_VALUE);
+        assertFalse(all.clipped());
+        assertEquals(whole, all.text());
+        // Save and Open in tab use the body as received, never the view.
+        assertTrue(HttpResponseFormat.render(r).contains(body));
+    }
+
     @Test
     void binaryResponsesHaveNoTextView() {
         byte[] png = {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D};
