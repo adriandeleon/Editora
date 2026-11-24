@@ -161,4 +161,26 @@ class DialogsFxTest {
                         new Confirm.Question("Reset", "Reset settings?", "All of them.", "Reset")),
                 asked);
     }
+
+    @Test
+    void aQuestionThatIsAllHeaderShowsNoEmptyBody() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            // "Quit Editora?" with nothing running: header only. Its empty content label took a padded row, a blank
+            // band between the header and the buttons (smoke test 2026-11-24).
+            Alert quit = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
+            quit.setHeaderText("Quit Editora?");
+            quit.setContentText(null);
+            Dialogs.collapseEmptyBody(quit);
+            javafx.scene.Node body = quit.getDialogPane().getContent();
+            assertTrue(body != null && body.prefHeight(-1) == 0, "the header-only question still has a body row");
+
+            // A question with words of its own keeps them.
+            Alert busy = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
+            busy.setHeaderText("Quit Editora?");
+            busy.setContentText("Quitting ends: Terminal 1 (vim)");
+            Dialogs.collapseEmptyBody(busy);
+            assertNull(busy.getDialogPane().getContent());
+            assertEquals("Quitting ends: Terminal 1 (vim)", busy.getDialogPane().getContentText());
+        });
+    }
 }

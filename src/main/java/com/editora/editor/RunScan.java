@@ -35,6 +35,8 @@ final class RunScan {
      * @param mainEligible a Java file in a project whose {@code main} methods get gutter glyphs
      * @param name the file's name (a compact source file is recognized by it)
      * @param javaShebang whether the file starts with a {@code java --source N} shebang
+     * @param jvmProject the file belongs to a Maven or Gradle project, whose classes run through the build (the
+     *     project main ▶), never as one source file
      */
     record Inputs(
             boolean eligible,
@@ -43,7 +45,8 @@ final class RunScan {
             boolean mainEligible,
             String language,
             @Nullable String name,
-            boolean javaShebang) {
+            boolean javaShebang,
+            boolean jvmProject) {
 
         /** Whether any scan reads the text — otherwise the document need not be materialized at all. */
         boolean needsText() {
@@ -54,6 +57,11 @@ final class RunScan {
     /**
      * @param runnable the file can be run as one file, script or test (project mains do not count)
      * @param line the single entry line, or -1 when there is none or the glyphs come from a line set
+     * @param javaRelease the JDK a single-file Java program needs: 25 for a compact source file (or one whose main
+     *     only JDK 25's launcher accepts), 11 for a classic class with a {@code public static void main}; 0 for
+     *     anything else
+     * @param classicJava the entry is a classic class's {@code main}, run as {@code java File.java} (not a compact
+     *     source file)
      */
     record Result(
             boolean runnable,
@@ -61,7 +69,9 @@ final class RunScan {
             List<Integer> httpLines,
             Map<Integer, String> makeTargets,
             Map<Integer, JavaTestScanner.TestTarget> testLines,
-            Map<Integer, MainMethodScanner.MainMethod> mainLines) {}
+            Map<Integer, MainMethodScanner.MainMethod> mainLines,
+            int javaRelease,
+            boolean classicJava) {}
 
     static Result scan(Inputs in, String text) {
         boolean runnable;
@@ -70,6 +80,9 @@ final class RunScan {
         Map<Integer, String> makeTargets = Map.of();
         Map<Integer, JavaTestScanner.TestTarget> pythonTests = Map.of();
         String language = in.language();
+        int javaRelease = 0;
+        boolean classicJava = false;
+        MainMethodScanner.@Nullable SourceLaunch classic = null;
         if (in.httpEligible()) {
             httpLines = HttpFile.parse(text).stream()
                     .map(HttpFile.Request::startLine)
@@ -128,6 +141,13 @@ final class RunScan {
             // A .java compact source, or an extensionless file with a `java --source N` shebang.
             runnable = true;
             line = CompactSource.mainLine(text);
+            javaRelease = 25;
+        } else if (in.eligible() && "java".equals(language) && (classic = classicLaunch(in, text)) != null) {
+            // A classic single-file program outside a build: `java File.java` runs its first class's main (JEP 330).
+            runnable = true;
+            line = classic.line();
+            javaRelease = classic.jdk25() ? 25 : 11;
+            classicJava = true;
         } else if (in.eligible() && "ruby".equals(language)) {
             // A script, a spec or test file, a Rails app's entry; a file of classes and methods has none.
             line = com.editora.run.RubyRunLines.runLine(in.name() == null ? "" : in.name(), text);
@@ -167,7 +187,19 @@ final class RunScan {
             }
             mainLines = ml;
         }
-        return new Result(runnable, line, httpLines, makeTargets, testLines, mainLines);
+        return new Result(runnable, line, httpLines, makeTargets, testLines, mainLines, javaRelease, classicJava);
+    }
+
+    /**
+     * The entry of a classic single-file Java program: a {@code .java} file outside a Maven or Gradle project whose
+     * first top-level class has a {@code static void main(String[])}. Null for anything else: a file of a build
+     * runs through its project, and a class without a main is a library.
+     */
+    private static MainMethodScanner.@Nullable SourceLaunch classicLaunch(Inputs in, String text) {
+        if (in.jvmProject() || in.name() == null || !in.name().endsWith(".java")) {
+            return null;
+        }
+        return MainMethodScanner.sourceLaunch(text);
     }
 
     /** A {@code static void main(…)} at the start of a line — a Groovy class run as a program. */

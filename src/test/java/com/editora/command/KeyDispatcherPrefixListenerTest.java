@@ -65,4 +65,18 @@ class KeyDispatcherPrefixListenerTest {
         d.handle(press(KeyCode.A, false)); // typing
         assertTrue(heard.isEmpty(), "no prefix started or ended: " + heard);
     }
+
+    @Test
+    void aCompletedChordClearsItsEchoBeforeTheCommandRuns() {
+        List<String> status = new ArrayList<>();
+        KeymapManager km = new KeymapManager();
+        km.loadNamed("emacs", false);
+        CommandRegistry registry = new CommandRegistry();
+        String id = km.commandFor("C-x C-f");
+        registry.register(Command.of(id, "Find File", () -> status.add("ran")));
+        KeyDispatcher d = new KeyDispatcher(registry, km, status::add, false);
+        d.handle(press(KeyCode.X, true)); // C-x: "C-x -"
+        d.handle(press(KeyCode.F, true)); // C-x C-f: the chord runs
+        assertEquals(List.of("C-x -", "", "ran"), status);
+    }
 }

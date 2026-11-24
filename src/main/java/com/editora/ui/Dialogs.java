@@ -131,6 +131,7 @@ final class Dialogs {
         Function<Asked, @Nullable Answer> answer = answerer;
         if (answer == null) {
             adoptOwner(dialog);
+            collapseEmptyBody(dialog);
             return dialog.showAndWait();
         }
         return Optional.ofNullable(answered(dialog, answer));
@@ -154,6 +155,7 @@ final class Dialogs {
         if (answer == null) {
             dialog.setOnHidden(hidden -> onResult.accept(dialog.getResult()));
             adoptOwner(dialog);
+            collapseEmptyBody(dialog);
             dialog.show();
             return;
         }
@@ -179,6 +181,27 @@ final class Dialogs {
         } catch (IllegalStateException shownBefore) {
             // JavaFX refuses an owner once the dialog's window has been visible: it opens where it did before
         }
+    }
+
+    /**
+     * A question that is all header ("Quit Editora?" with nothing running) has no body: the pane's empty content
+     * label still took its padded row, an empty band between the header and the buttons (smoke test 2026-11-24).
+     * It gets an empty node in its place, which takes no room. A dialog with a body, or with no header, is left as
+     * it is.
+     */
+    static void collapseEmptyBody(Dialog<?> dialog) {
+        DialogPane pane = dialog.getDialogPane();
+        String header = pane.getHeaderText();
+        String text = pane.getContentText();
+        if (pane.getContent() != null || header == null || header.isBlank() || text != null && !text.isBlank()) {
+            return;
+        }
+        javafx.scene.layout.Region none = new javafx.scene.layout.Region();
+        none.setMinSize(0, 0);
+        none.setPrefSize(0, 0);
+        none.setMaxSize(0, 0);
+        none.getStyleClass().add("dialog-no-body");
+        pane.setContent(none);
     }
 
     /** {@link #show(Dialog, java.util.function.Consumer)} for a dialog whose answer nobody reads (an error). */

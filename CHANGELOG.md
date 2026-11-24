@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Run File runs single-file Java programs.** A `.java` outside a Maven or Gradle project whose first class has a
+  `static void main(String[] args)` gets a ▶ on that `main`, and Run File runs it with the source launcher
+  (`java Hello.java`): no project, no build. A `public` main runs on JDK 11 or newer; Run File says when the JDK is
+  older. Until now only compact source files (a top-level `void main`) ran on their own.
 - **launch.json `serverReadyAction` and `postDebugTask`.** A configuration's `serverReadyAction` watches the
   program's output for the server's address (VS Code's pattern and `uriFormat`), then opens it in the browser, debugs
   it in Chrome or Edge beside the server, or starts another configuration; `killOnServerStop` stops that session with
@@ -197,6 +201,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Run File says why a Java file does not run on its own.** On a `.java` that is neither a single-file program nor a
+  compact source file (a library class, a class of a Maven or Gradle project), Run File now says what runs as one
+  file and that a project class's `main` runs from its ▶. Its other "Not a runnable file" message no longer lists a
+  few languages of the many it runs.
+
 - **Typing allocates about two thirds less.** Each keystroke in a 2,000-line Java file made the UI thread allocate
   about 7 MB, and now about 2.4 MB, so the garbage collector runs less often while you type. The editor's scrolling
   layer (Flowless, now a vendored fork like RichTextFX) measured every visible line again on each layout pass and
@@ -337,6 +346,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OpenPGP signature beside it (`<file>.asc`), by the key attached to the release as `editora-signing-key.asc`.
 
 ### Fixed
+
+- **Menu rows read alike.** Rows that kept their palette prefix because one word would be left ("File: Save",
+  "Edit: Occur…", "Tool Window: Project", "Git: Push") have menu titles of their own ("Save", "List Matching
+  Lines…", "Project", "Push"), in every language.
+- **The C-x echo goes when the chord ends.** After C-x C-f or another chord the status bar kept showing "C-x -" until
+  something else replaced it.
+- **A new file in a folder not made yet gets its language server.** The server was started in the missing folder
+  and failed to launch.
+- **A question with nothing more to say has no empty band.** "Quit Editora?" with no terminal running showed a blank
+  row between the question and its buttons.
 
 - **A window closed in the first seconds of a session no longer lingers in memory.** Each open file asks for its
   spell-check dictionary (and prose completion for its word list), and the first one built in a session takes a few
