@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Summary of a log.** **Log: Summarize** opens a Markdown report of the active log: its records per level, a
+  records-over-time table with warnings and errors and a bar per interval, the most frequent messages counted with
+  their numbers and ids masked, and the longest silences.
 - **Warnings and errors on a log's scrollbar.** A stripe over the scrollbar marks a log's WARN lines in amber and its
   ERROR and FATAL lines in red; hover a mark to read the line, click it to go there. A filtered log marks what the
   filter kept.

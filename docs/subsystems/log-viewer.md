@@ -122,7 +122,18 @@ keeps Save from writing text over the compressed bytes. `LogFileNames.isLog` loo
 (not `.tar.gz`), so `app.log.2.gz` is a log by name; `startFollow` refuses a compressed file. A file
 that is not gzip after all falls back to the plain read.
 
+**The summary counts records, by template.** `LogSummary.of` (pure) walks the whole text once:
+record starts as the filter has them (a leveled line, or any timed line in a log with no levels),
+times through `LogTimes`, a template per record (`LogSummary.template`: UUIDs, quoted values, hex
+ids and numbers masked, then the masked timestamp dropped), the histogram's bucket width from a
+fixed list (1 s … 1 day, at most 40 rows), and the five longest gaps between consecutive times
+that go forward. `ui/LogSummaryReport` writes it as Markdown in the user's language;
+`LogViewerCoordinator.summarize` runs both off the FX thread on `logFilterSource()` (the whole log,
+not the filtered view) and opens an untitled `… summary.md` tab.
+
 ## Not done
+
+- The summary's line numbers are text, not links that jump to the line.
 
 - No time ruler beside the overview stripe, and no time slider: the range is typed or set from the caret.
 - The time range is not remembered across sessions with the rest of the filter.
