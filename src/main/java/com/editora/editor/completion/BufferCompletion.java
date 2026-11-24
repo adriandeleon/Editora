@@ -998,6 +998,23 @@ public final class BufferCompletion {
         triggerCompletion();
     }
 
+    /**
+     * The retry handed to {@link com.editora.completion.DictionaryWords#ensureLoaded}, which keeps it in a static
+     * list until the word list lands. It holds this buffer's completion and its area only weakly: the first load
+     * of a session takes a while, and a window closed meanwhile stayed in memory through the callback.
+     */
+    private static Runnable whenWordsLoaded(BufferCompletion completion, CodeArea area, boolean manual) {
+        java.lang.ref.WeakReference<BufferCompletion> completionRef = new java.lang.ref.WeakReference<>(completion);
+        java.lang.ref.WeakReference<CodeArea> areaRef = new java.lang.ref.WeakReference<>(area);
+        return () -> {
+            BufferCompletion live = completionRef.get();
+            CodeArea a = areaRef.get();
+            if (live != null && a != null && a.isFocused()) {
+                live.updateCompletion(a, manual);
+            }
+        };
+    }
+
     /** Recomputes the word at the caret and shows/refreshes/hides the popup. {@code manual} lowers the
      *  minimum prefix length so an explicit invoke works on a single character. */
     public void updateCompletion(CodeArea a, boolean manual) {
@@ -1111,11 +1128,7 @@ public final class BufferCompletion {
             String dl = host.getSpellLanguage();
             if (com.editora.completion.DictionaryWords.isAvailable(dl)
                     && !com.editora.completion.DictionaryWords.isReady(dl)) {
-                com.editora.completion.DictionaryWords.ensureLoaded(dl, () -> {
-                    if (a.isFocused()) {
-                        updateCompletion(a, manual);
-                    }
-                });
+                com.editora.completion.DictionaryWords.ensureLoaded(dl, whenWordsLoaded(this, a, manual));
             }
             return;
         }

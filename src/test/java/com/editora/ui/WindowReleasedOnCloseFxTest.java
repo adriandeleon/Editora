@@ -107,6 +107,43 @@ class WindowReleasedOnCloseFxTest {
         }
     }
 
+    /**
+     * Prose completion asks for the dictionary's word list when a word is typed before it is loaded, and the retry
+     * waited in a static list until the load landed: a window closed meanwhile stayed in memory through it.
+     */
+    @Test
+    void aWindowClosedWhileItsCompletionWordsLoadIsReleased(@TempDir Path dir) throws Exception {
+        try (com.editora.completion.DictionaryWords.LoadHold hold =
+                com.editora.completion.DictionaryWords.holdLoadForTest(
+                        com.editora.editor.spell.SpellDictionaries.DEFAULT)) {
+            WeakReference<MainController> closed =
+                    openAndClose(dir, false, fx -> completeAWordIn(fx, dir.resolve("notes.txt")));
+            assertTrue(hold.waiting() > 0, "the prose buffer is waiting for the word list");
+            assertTrue(collected(closed), "a window closed while its completion words loaded is still reachable");
+        }
+    }
+
+    /** Opens {@code file}, a prose file ending in a word, and asks for completion at its end. */
+    private static void completeAWordIn(FxWindowFixture fx, Path file) throws Exception {
+        Files.writeString(file, "qzx");
+        FxTestSupport.runOnFx(() -> fx.controller.openAndNavigate(file, 0));
+        Await.until(
+                () -> onFx(() -> {
+                    EditorBuffer b =
+                            (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
+                    return b != null && file.equals(b.getPath());
+                }),
+                "notes.txt in front",
+                Duration.ofSeconds(5));
+        FxTestSupport.runOnFx(() -> {
+            EditorBuffer b = (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
+            var area = b.getArea();
+            area.moveTo(area.getLength());
+            com.editora.editor.completion.BufferCompletion completion = FxTestSupport.field(b, "completionActions");
+            completion.updateCompletion(area, true);
+        });
+    }
+
     @Test
     void aWindowThatShowedTheProjectMapIsReleased(@TempDir Path dir) throws Exception {
         assertTrue(

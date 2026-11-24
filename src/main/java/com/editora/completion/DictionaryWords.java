@@ -95,6 +95,44 @@ public final class DictionaryWords {
         });
     }
 
+    /** What {@link #holdLoadForTest} hands back: closing it ends the hold. */
+    public interface LoadHold extends AutoCloseable {
+        /** How many callbacks are waiting for the held language. */
+        int waiting();
+
+        @Override
+        void close();
+    }
+
+    /**
+     * TEST SEAM — until the hold is closed, {@code langId} is "loading": a caller's callback waits in
+     * {@link #PENDING}, as during the first load of a session. Closing puts back the word list that was loaded, if
+     * any, and runs the waiting callbacks when there is one.
+     */
+    public static LoadHold holdLoadForTest(String langId) {
+        String[] kept = CACHE.remove(langId);
+        BUILDING.add(langId);
+        return new LoadHold() {
+            @Override
+            public int waiting() {
+                java.util.List<Runnable> waiting = PENDING.get(langId);
+                return waiting == null ? 0 : waiting.size();
+            }
+
+            @Override
+            public void close() {
+                if (kept != null) {
+                    CACHE.put(langId, kept);
+                }
+                BUILDING.remove(langId);
+                java.util.List<Runnable> waiting = PENDING.remove(langId);
+                if (waiting != null && kept != null) {
+                    waiting.forEach(Platform::runLater);
+                }
+            }
+        };
+    }
+
     private static String @Nullable [] load(String langId) throws IOException {
         try (InputStream in = DictionaryWords.class.getResourceAsStream(BASE + langId + "/index.dic")) {
             if (in == null) {
