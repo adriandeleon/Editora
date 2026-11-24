@@ -288,6 +288,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     passphrase dialog (`SSH_ASKPASS`) still asks for an ssh key's passphrase. ssh aliases written with capitals
     resolve, and an expired token on one host no longer blocks a repository whose other remote is fine. Branch from
     Stash and Check Out PR ask before leaving a detached HEAD's commits behind.
+  - *A fourth look:* a push to a remote with push refspecs of its own names the branch unless they push `HEAD`
+    (Gerrit), so a notes or mirror refspec can no longer push something else or force every branch. Discarding a
+    file with unsaved edits keeps those edits in Local History before the tab closes, and the question names the
+    files. Staging while the Git Log is still loading no longer restarts it, and the log no longer waits behind a slow
+    commit hook. Choosing a remote branch skips local branches checked out in another worktree. A review tab notices
+    a push made while it loaded, and an Enterprise address with a port is not pinned.
 
 - **`${fileDirnameBasename}` in `launch.json` is empty for a file at the root of a drive.** It used to read
   `null`, as did `${relativeFileDirname}` when the file had no folder; both are now empty, as in VS Code.
