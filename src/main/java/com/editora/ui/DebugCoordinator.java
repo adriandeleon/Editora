@@ -2078,7 +2078,7 @@ final class DebugCoordinator {
             return;
         }
         if (!b.isDirty()) {
-            s().launchedLines.snapshotIfAbsent(file, b.getContent());
+            s().launchedLines.snapshotIfAbsent(file, LaunchedLines.textOf(b)); // O(1): copied only if mapped (D7)
             return;
         }
         DebugSession session = s(); // the file on disk is read off the FX thread (PERF-01), for this session
@@ -2140,7 +2140,7 @@ final class DebugCoordinator {
         if (b == null || b.getPath() == null || !dap().isActive()) {
             return; // a buffer found by its path always has one
         }
-        s().launchedLines.rebaseline(file, b.getContent());
+        s().launchedLines.rebaseline(file, LaunchedLines.textOf(b));
         if (linesKnown(b, () -> resendLines(b))) { // its mapping is worked out again off the FX thread
             resendLines(b);
         }
