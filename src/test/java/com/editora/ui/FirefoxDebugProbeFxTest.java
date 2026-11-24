@@ -68,7 +68,58 @@ class FirefoxDebugProbeFxTest {
                                 DebugLanguages.FIREFOX, System.getProperty("firefoxdebug.path", ""))
                         != null,
                 "needs vscode-firefox-debug");
+        warmUp(exe);
         return exe;
+    }
+
+    private static boolean warmedUp;
+
+    /**
+     * Starts Firefox once, before the first test's debug launch, and waits for it to load a {@code file:} page and quit:
+     * Firefox's first start on a fresh CI runner (nothing of it in the page cache yet) took 10 s to accept the adapter's
+     * connection where a later one takes 1-2 s, and in that cold launch the page's tab was never reported to the adapter
+     * — only the extension pages and about:newtab — so its breakpoint never bound and the first test (always the
+     * launch.json one) timed out. The probe tests debugging, not how fast a cold Firefox starts.
+     */
+    private static synchronized void warmUp(String exe) {
+        if (warmedUp) {
+            return;
+        }
+        warmedUp = true;
+        try {
+            Path dir = Files.createTempDirectory("firefox-warm-up");
+            Path profile = Files.createDirectory(dir.resolve("profile"));
+            Path page = Files.writeString(dir.resolve("warm.html"), "<!doctype html><p>warm</p>");
+            Process firefox = new ProcessBuilder(
+                            exe,
+                            "-headless",
+                            "-no-remote",
+                            "-profile",
+                            profile.toString(),
+                            "-screenshot",
+                            dir.resolve("warm.png").toString(),
+                            page.toUri().toString())
+                    .redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+            try {
+                if (!firefox.waitFor(90, java.util.concurrent.TimeUnit.SECONDS)) {
+                    System.err.println("FirefoxDebugProbeFxTest: the warm-up Firefox did not quit in 90 s");
+                }
+            } finally {
+                firefox.descendants().forEach(ProcessHandle::destroyForcibly);
+                firefox.destroyForcibly();
+                firefox.waitFor(30, java.util.concurrent.TimeUnit.SECONDS);
+                try (var paths = Files.walk(dir)) {
+                    paths.sorted(java.util.Comparator.reverseOrder())
+                            .forEach(p -> p.toFile().delete());
+                }
+            }
+        } catch (java.io.IOException e) {
+            System.err.println("FirefoxDebugProbeFxTest: no warm-up Firefox: " + e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static FxWindowFixture window(Path dir, Path... open) throws Exception {
