@@ -277,6 +277,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     SAML refusal, is explained. The filter can search GitHub when no loaded row matches.
   - Smaller fixes in blame, relative dates, the merge viewer, patch tabs, Load More errors and the remotes
     manager.
+  - *A third look* at these fixes: a review from the review tab on GitHub Enterprise goes to that server, not to
+    github.com. Conflicts from changes stashed by a merge or rebase are reported when it finishes, and the banner says
+    they are stashed meanwhile. Commits made in a terminal on branches like `feature/x` refresh the Commit window, and
+    switching to a repository in the middle of a merge keeps its merge message. Show Commit from blame works after
+    unsaved edits above the line. A forced push to a Gerrit remote keeps its `refs/for/…` refspec. A desktop
+    passphrase dialog (`SSH_ASKPASS`) still asks for an ssh key's passphrase. ssh aliases written with capitals
+    resolve, and an expired token on one host no longer blocks a repository whose other remote is fine. Branch from
+    Stash and Check Out PR ask before leaving a detached HEAD's commits behind.
 
 - **`${fileDirnameBasename}` in `launch.json` is empty for a file at the root of a drive.** It used to read
   `null`, as did `${relativeFileDirname}` when the file had no folder; both are now empty, as in VS Code.

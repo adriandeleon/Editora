@@ -2654,7 +2654,10 @@ public final class GitService {
                     : "";
             String remote = pushRemote(configListZ, branch, remotes);
             out.set(at, remote);
-            if (!branch.isEmpty() && hasPushRefspecs(configListZ, remote)) {
+            boolean forced = out.contains("--force-with-lease");
+            if (!branch.isEmpty()
+                    && hasPushRefspecs(configListZ, remote)
+                    && !(forced && wildcardPushRefspec(configListZ, remote))) {
                 out.remove(at + 1);
                 out.remove("--set-upstream");
             }
@@ -2671,12 +2674,15 @@ public final class GitService {
             boolean sameName = merge.equals(ref);
             boolean force = out.contains("--force-with-lease");
             boolean ownRefspecs = config.containsKey("remote." + remote + ".push");
-            if (ownRefspecs || (!force && (sameName || !sameRemote))) {
+            // A forced push defers to the remote's own refspecs (Gerrit's HEAD:refs/for/main) only when none is a
+            // wildcard: "+refs/heads/*:refs/heads/*" would force every matching branch, not the one asked for.
+            boolean wildcard = force && ownRefspecs && wildcardPushRefspec(configListZ, remote);
+            if ((ownRefspecs && !wildcard) || (!force && (sameName || !sameRemote))) {
                 out.remove(at + 1);
                 out.remove(at);
             } else {
                 List<String> target = new ArrayList<>();
-                if (sameRemote && !sameName && !out.contains("--set-upstream")) {
+                if (sameRemote && !sameName && !wildcard && !out.contains("--set-upstream")) {
                     target.add("--set-upstream");
                 }
                 target.add(remote);
@@ -2687,6 +2693,18 @@ public final class GitService {
             }
         }
         return out.toArray(String[]::new);
+    }
+
+    /** Whether any of {@code remote}'s {@code remote.<name>.push} refspecs is a wildcard. Pure. */
+    private static boolean wildcardPushRefspec(String configListZ, String remote) {
+        String key = "remote." + remote + ".push";
+        for (String record : configListZ == null ? new String[0] : configListZ.split("\u0000", -1)) {
+            int newline = record.indexOf('\n');
+            if (newline > 0 && record.substring(0, newline).equalsIgnoreCase(key) && record.indexOf('*', newline) > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Whether {@code remote} has {@code remote.<name>.push} refspecs of its own in {@code configListZ}. Pure. */
@@ -2945,12 +2963,35 @@ public final class GitService {
     public void commitsLeftBehind(Path root, String target, boolean movesBranch, Consumer<LeftBehind> onResult) {
         submit(exec, () -> {
             LeftBehind result = LeftBehind.UNKNOWN;
-            if (gitAvailable(root) && root != null && GitSafety.isSafeRevision(target)) {
-                result = leftBehindNow(root, target, movesBranch);
+            if (gitAvailable(root) && root != null) {
+                if (!movesBranch && onBranchNow(root)) {
+                    // A checkout from a branch leaves nothing: the branch keeps its commits.
+                    result = new LeftBehind(true, 0, false, 0, 0);
+                } else if (GitSafety.isSafeRevision(target)) {
+                    result = leftBehindNow(root, target, movesBranch);
+                } else if (!movesBranch) {
+                    // A destination git cannot name yet (a pull request not fetched): what no ref keeps is at stake.
+                    result = unreferencedNow(root);
+                }
             }
             LeftBehind posted = result;
             Platform.runLater(() -> onResult.accept(posted));
         });
+    }
+
+    /** Whether HEAD of {@code root} is on a branch right now ({@code symbolic-ref} answers). */
+    private static boolean onBranchNow(Path root) {
+        ProcessRunner.Result head = git(root, QUICK, "symbolic-ref", "-q", "HEAD");
+        return head.ok() && !head.out().isBlank();
+    }
+
+    /** The commits of a detached HEAD that no branch, tag or remote branch keeps, as a left-behind count. */
+    private static LeftBehind unreferencedNow(Path root) {
+        Integer unreferenced = revCount(root, "HEAD", "--not", "--branches", "--tags", "--remotes");
+        if (unreferenced == null) {
+            return LeftBehind.UNKNOWN;
+        }
+        return new LeftBehind(true, unreferenced, false, unreferenced, unreferenced);
     }
 
     static LeftBehind leftBehindNow(Path root, String target, boolean movesBranch) {

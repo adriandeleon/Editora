@@ -113,6 +113,17 @@ class GitPushArgsTest {
                 new String[] {"push", "--force-with-lease", "--force-if-includes", "origin"},
                 resolved(GitService.forcePushArgs("topic", ""), untracked));
         assertArrayEquals(new String[] {"push", "origin"}, resolved(GitService.pushArgs("topic", ""), untracked));
+        // A wildcard refspec would force every matching branch: the forced push names its one branch instead.
+        String mirror = config(
+                "branch.feat.remote", "origin",
+                "branch.feat.merge", "refs/heads/feat",
+                "remote.origin.push", "+refs/heads/*:refs/heads/*");
+        assertArrayEquals(
+                new String[] {
+                    "push", "--force-with-lease", "--force-if-includes", "origin", "refs/heads/feat:refs/heads/feat"
+                },
+                resolved(GitService.forcePushArgs("feat", "origin/feat"), mirror));
+        assertArrayEquals(new String[] {"push"}, resolved(GitService.pushArgs("feat", "origin/feat"), mirror));
         // Another remote's refspecs do not count.
         String forkOnly = config("remote.fork.push", "HEAD:refs/for/main");
         assertArrayEquals(
