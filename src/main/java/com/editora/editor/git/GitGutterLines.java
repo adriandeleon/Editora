@@ -296,9 +296,17 @@ public final class GitGutterLines implements LineMarks.Carrier {
         return blame;
     }
 
+    /**
+     * The on-disk line (the index into the blame list) that area line {@code line} shows, or -1 when it has
+     * none (a line typed since the blame ran, or the mapping was lost) — what {@link #blameAt} reads.
+     */
+    public int diskLineAt(int line) {
+        return map.diskLine(line + hiddenAbove);
+    }
+
     @Nullable
     public BlameInfo blameAt(int line) {
-        int disk = map.diskLine(line + hiddenAbove);
+        int disk = diskLineAt(line);
         return blame != null && disk >= 0 && disk < blame.size() ? blame.get(disk) : null;
     }
 

@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 // The debugger's scans, merge and apply texts are worked out off the FX thread (PERF-01): here in place, so
@@ -137,6 +139,51 @@ class MergeViewerPaneFxTest {
         } finally {
             FxTestSupport.runOnFx(stage::close);
         }
+    }
+
+    /** A Result that could not be put together for the last choice is never saved: it is for earlier ones. */
+    @Test
+    void aFailedComposeTurnsSaveOffUntilTheNextOneSucceeds() throws Exception {
+        var merge = ThreeWayMerge.merge("before\nold\nafter\n", "before\nours\nafter\n", "before\ntheirs\nafter\n");
+        AtomicReference<String> applied = new AtomicReference<>();
+        MergeViewerPane pane = FxTestSupport.callOnFx(
+                () -> new MergeViewerPane("merge", merge.file(), "Monospaced", 13, "\n", true, applied::set));
+        Stage stage = FxTestSupport.callOnFx(() -> {
+            Stage window = new Stage();
+            window.setScene(new Scene(new StackPane(pane.node()), 900, 650));
+            window.show();
+            return window;
+        });
+        try {
+            Button save = button((Parent) pane.node(), "Save resolution");
+            FxTestSupport.runOnFx(button((Parent) pane.node(), "Accept Ours")::fire);
+            FxTestSupport.runOnFx(() -> pane.failComposeForTest(new IllegalStateException("boom")));
+            assertTrue(save.isDisabled(), "the Result shown is stale");
+            FxTestSupport.runOnFx(save::fire);
+            assertNull(applied.get(), "a stale Result is not saved");
+            assertEquals(MergeViewerPane.resultFailedText(new IllegalStateException("boom")), statusText(pane));
+
+            // The close question puts the Result together in place: the one for the choices made.
+            boolean saved = FxTestSupport.callOnFx(pane::saveBeforeClose);
+            assertTrue(saved);
+            assertEquals("before\nours\nafter\n", applied.get());
+            assertFalse(save.isDisabled());
+
+            applied.set(null);
+            FxTestSupport.runOnFx(button((Parent) pane.node(), "Accept Theirs")::fire);
+            FxTestSupport.runOnFx(() -> pane.failComposeForTest(new IllegalStateException("boom")));
+            FxTestSupport.runOnFx(button((Parent) pane.node(), "Accept Ours")::fire); // composes again, fine
+            assertFalse(save.isDisabled());
+            FxTestSupport.runOnFx(save::fire);
+            assertEquals("before\nours\nafter\n", applied.get());
+        } finally {
+            FxTestSupport.runOnFx(stage::close);
+        }
+    }
+
+    private static String statusText(MergeViewerPane pane) throws Exception {
+        javafx.scene.control.Label status = FxTestSupport.field(pane, "status");
+        return FxTestSupport.callOnFx(status::getText);
     }
 
     private static Button button(Parent root, String text) {

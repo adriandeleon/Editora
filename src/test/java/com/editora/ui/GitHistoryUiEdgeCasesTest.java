@@ -37,6 +37,35 @@ class GitHistoryUiEdgeCasesTest {
         assertNull(GitBlameCoordinator.lineNear(List.of(), 0, "c"));
     }
 
+    /** 50 blamed lines on commit "a", except {@code owned} on {@code hash} (each with its own path). */
+    private static List<BlameLine> blame(String hash, int... owned) {
+        java.util.ArrayList<BlameLine> out = new java.util.ArrayList<>();
+        for (int i = 0; i < 50; i++) {
+            out.add(line("a", "f.txt", "f.txt"));
+        }
+        for (int i : owned) {
+            out.set(i, line(hash, "f" + i + ".txt", "f.txt"));
+        }
+        return out;
+    }
+
+    @Test
+    void linesPastedAboveStillFindTheLineTheGutterNames() {
+        List<BlameLine> lines = blame("x", 10);
+        // 50 lines pasted at the top: buffer line 60 shows disk line 10, which the gutter blames on x.
+        assertSame(lines.get(10), GitBlameCoordinator.lineNear(lines, 10, "x"), "indexed by the disk line");
+        // Even from the buffer line (or no disk line) the search covers the whole file: it was capped at 50 steps.
+        assertSame(lines.get(10), GitBlameCoordinator.lineNear(lines, 60, "x"));
+        assertSame(lines.get(10), GitBlameCoordinator.lineNear(lines, -1, "x"));
+    }
+
+    @Test
+    void aNarrowedBufferPicksTheBlockAtItsDiskLine() {
+        // Commit x owns disk lines 5 and 25 (two blocks); narrowed with 20 lines hidden, area line 5 is disk 25.
+        List<BlameLine> lines = blame("x", 5, 25);
+        assertSame(lines.get(25), GitBlameCoordinator.lineNear(lines, 25, "x"), "not the block at area line 5");
+    }
+
     @Test
     void anUneditedPatchTabAppliesTheFileBytesWithItsMixedLineEndings() {
         // LF headers, CRLF hunk lines: what a patch of a CRLF file made on Linux looks like.
@@ -55,6 +84,10 @@ class GitHistoryUiEdgeCasesTest {
         GitPatchCoordinator.TabPatch changed =
                 GitPatchCoordinator.tabPatch(disk, false, tab + "+more\n", "LF", "utf-8");
         assertArrayEquals((tab + "+more\n").getBytes(StandardCharsets.UTF_8), changed.bytes(), "the file moved on");
+        assertFalse(changed.endingsLost(), "not edited: the edit warning would be wrong");
+        assertTrue(changed.fileChanged(), "…it says the file changed on disk instead");
+        assertFalse(unedited.fileChanged());
+        assertFalse(edited.fileChanged());
 
         GitPatchCoordinator.TabPatch untitled = GitPatchCoordinator.tabPatch(null, false, tab, "LF", "utf-8");
         assertArrayEquals(tab.getBytes(StandardCharsets.UTF_8), untitled.bytes());
@@ -88,6 +121,25 @@ class GitHistoryUiEdgeCasesTest {
         assertEquals(tr("blame.future"), GitLogPanel.relativeDate(now + 86_400, "", now));
         assertEquals(tr("blame.future"), GitBlameCoordinator.relativeTimeLabel(now + 86_400, now));
         assertEquals(tr("blame.now"), GitBlameCoordinator.relativeTimeLabel(now + 60, now));
+    }
+
+    @Test
+    void theDetailsAndTooltipOfAFutureCommitSayInTheFutureNotTheDateTwice() {
+        long now = 1_800_000_000L;
+        var future = new com.editora.git.GitLog.Entry("h", "h", "s", "Ada", now + 86_400, "2027-01-15", List.of());
+        assertEquals("2027-01-15 (" + tr("blame.future") + ")", GitLogPanel.tooltipDate(future, now));
+        assertEquals(
+                GitLogPanel.absoluteDate(now + 86_400) + " (" + tr("blame.future") + ")",
+                GitLogPanel.detailsDate(future, now));
+        var undated = new com.editora.git.GitLog.Entry("h", "h", "s", "Ada", 0, "2027-01-15", List.of());
+        assertEquals("2027-01-15", GitLogPanel.tooltipDate(undated, now));
+        assertEquals("2027-01-15", GitLogPanel.detailsDate(undated, now));
+        assertTrue(
+                GitLogPanel.absoluteDate(now)
+                        .endsWith(java.time.format.DateTimeFormatter.ofPattern(
+                                        "zzz", java.util.Locale.getDefault(java.util.Locale.Category.FORMAT))
+                                .format(java.time.Instant.ofEpochSecond(now).atZone(java.time.ZoneId.systemDefault()))),
+                "the details name the zone their time is in");
     }
 
     @Test

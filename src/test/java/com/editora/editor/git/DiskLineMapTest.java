@@ -141,4 +141,14 @@ class DiskLineMapTest {
         map.lose();
         assertEquals(DiskLineMap.UNKNOWN, map.bufferLine(1));
     }
+
+    /** Show Commit and Annotate Previous Revision index blame by this, not by the buffer line. */
+    @Test
+    void thirtyLinesPastedAtTheTopShiftTheDiskLineOfEveryLineBelow() {
+        DiskLineMap map = new DiskLineMap();
+        assertTrue(map.edit(0, true, "", "x\n".repeat(30)));
+        assertEquals(DiskLineMap.UNKNOWN, map.diskLine(29), "a pasted line");
+        assertEquals(0, map.diskLine(30));
+        assertEquals(40, map.diskLine(70));
+    }
 }
