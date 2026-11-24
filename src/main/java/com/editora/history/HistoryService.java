@@ -392,18 +392,6 @@ public final class HistoryService {
     }
 
     /**
-     * Whether the next {@link #gcIfDue} would collect: none has run this session, one was asked for, or the
-     * interval has passed. Changes nothing. The index writer asks it to know when a publication has to be a
-     * whole write of the index (a collection runs only behind one).
-     */
-    public boolean gcDue() {
-        long now = nanoClock.getAsLong();
-        synchronized (publicationLock) {
-            return !gcHasRun || gcRequested || now - lastGcNanos >= GC_MIN_INTERVAL_NANOS;
-        }
-    }
-
-    /**
      * Makes the next {@link #gcIfDue} run regardless of the throttle. Called when the user purges history:
      * the snapshots they asked to delete must leave the disk now, not at the next scheduled collection.
      */

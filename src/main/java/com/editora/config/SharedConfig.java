@@ -149,12 +149,6 @@ public class SharedConfig {
     /** Tells a superseded index publication what became of the publication that replaced it. */
     private final HistoryPublicationAnswers historyAnswers = new HistoryPublicationAnswers();
 
-    /** The Local History index's journal (F6): what changed since {@code index.json} was written whole. */
-    private final HistoryJournal historyJournal;
-
-    /** The body hashes of journal lines this build could not apply; kept for as long as the journal is. */
-    private volatile Set<String> journalHistoryHashes = Set.of();
-
     /** What {@link #load()} could not read as written, held until a window shows it (see {@link #takeLoadProblems}). */
     // Synchronized: a restored window's session is read on a thread of its own while the FX thread takes these.
     private final List<ConfigLoadProblem> loadProblems = java.util.Collections.synchronizedList(new ArrayList<>());
@@ -206,7 +200,6 @@ public class SharedConfig {
         this.configDir = configDir;
         this.dev = dev;
         this.sync = new StoreSync(configDir, json);
-        this.historyJournal = new HistoryJournal(getHistoryFile(), json);
         this.projects = new ProjectManager(configDir);
         this.projects.setOnWriteError(writer::reportWriteError);
         this.projects.useWriter(writer);
@@ -315,8 +308,7 @@ public class SharedConfig {
             return HistoryPurgeHold.NONE;
         }
         Set<String> backup = backupHistoryHashes;
-        Set<String> journal = journalHistoryHashes;
-        if (sha256s.stream().anyMatch(hash -> backup.contains(hash) || journal.contains(hash))) {
+        if (sha256s.stream().anyMatch(backup::contains)) {
             return HistoryPurgeHold.BACKUP;
         }
         Set<String> foreign = foreignHistoryHashes;
@@ -968,10 +960,6 @@ public class SharedConfig {
         // Then: the history worker finishes the records still in flight (the save made from the quit prompt)
         // and hands them over, which queues the index — so the writer has to be running still.
         historyService.shutdown();
-        // The journal is folded into the index at quit (F6): a build from before the journal reads only index.json.
-        if (historyJournal.hasLines()) {
-            saveHistory(null, true);
-        }
         boolean durable = writer.shutdown(); // retries, a last time, every write that failed earlier
         InstanceLock lock = instanceLock;
         if (lock != null) {
@@ -1932,24 +1920,11 @@ public class SharedConfig {
         historyStore = loaded;
         // What the file holds, as this build writes it: a list that had to be re-ordered is a change this
         // load made, and the next save writes it.
-        long indexBytes;
         try {
-            byte[] asWritten = json.writeValueAsBytes(loaded.snapshot());
-            indexBytes = asWritten.length;
-            sync.loaded(index, asWritten);
+            sync.loaded(index, json.writeValueAsBytes(loaded.snapshot()));
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new UncheckedIOException("Failed to serialize " + index.getFileName(), e);
         }
-        // Then what the journal adds (F6). After sync.loaded on purpose: the rows it brings back are this
-        // process's changes to the file on disk, which the next whole write keeps whatever else is there.
-        boolean listedNothingOnDisk = loaded.ledger().listsNothing();
-        HistoryJournal.Replayed replayed = historyJournal.replay(loaded);
-        if (replayed.applied() > 0) {
-            loaded.clampFutureTimestamps(now);
-            loaded.sortNewestFirst();
-        }
-        journalHistoryHashes = replayed.keptHashes();
-        historyJournal.loaded(loaded.snapshot(), indexBytes, replayed);
         for (ConfigLoadProblem problem : problems) {
             if (problem.kind() == ConfigLoadProblem.Kind.NEWER_COPY_KEPT && alreadyReported(problem.backup())) {
                 continue;
@@ -1976,8 +1951,7 @@ public class SharedConfig {
         // An index that lists no revision at all while bodies are stored is not trusted either, however it
         // came to be that way ("{}", an index rewritten from defaults, the empty one a failed load leaves):
         // collecting against it deletes every body.
-        // Judged on the index file alone: a journal is only kept beside an index that lists plenty.
-        boolean emptyBesideBodies = listedNothingOnDisk && HistoryIndexGuard.hasBlobs(getHistoryBlobsDir());
+        boolean emptyBesideBodies = loaded.ledger().listsNothing() && HistoryIndexGuard.hasBlobs(getHistoryBlobsDir());
         historyEmptyAtLoad = emptyBesideBodies;
         // A loss with no copy of what was lost — the index missing or zero-length beside bodies, bytes that could
         // not be kept, or an index that lists nothing beside bodies with no problem reported ("{}") — keeps every
@@ -2054,14 +2028,6 @@ public class SharedConfig {
      * counted ({@link HistoryHashLedger}), and serializing happens on the writer thread.
      */
     public void saveHistory(@Nullable Consumer<Boolean> completion) {
-        saveHistory(completion, false);
-    }
-
-    /**
-     * As {@link #saveHistory(Consumer)}; {@code whole} writes the index whole even when the change could go
-     * to the journal ({@link HistoryJournal}).
-     */
-    private void saveHistory(@Nullable Consumer<Boolean> completion, boolean whole) {
         historyFileSeen = true;
         HistoryStore store = historyStore;
         HistoryStore.Snapshot snapshot = store.snapshot();
@@ -2069,39 +2035,22 @@ public class SharedConfig {
         // Whether this publication's write looked at the file on disk: only then is what this process knows
         // of the other writers' revisions current. Written and read on the writer thread.
         boolean[] sawDisk = new boolean[1];
-        // Whether the index itself was written (not only the journal): only then is what it no longer lists
-        // gone from the disk. Written and read on the writer thread.
-        boolean[] wroteIndex = new boolean[1];
         writer.enqueue(
                 getHistoryFile(),
                 () -> {
-                    // A blob collection runs only behind a whole write (it looks at the file on disk for the
-                    // other writers' rows), so one that is due asks for one.
-                    HistoryJournal.Outcome journalled = historyJournal.publish(
-                            snapshot, publication, aloneOnConfig(), whole || historyService.gcDue());
-                    if (journalled == HistoryJournal.Outcome.APPENDED) {
-                        return null; // durable: the line is synced
-                    }
-                    if (journalled == HistoryJournal.Outcome.NOTHING) {
-                        return ConfigWriter.UNCHANGED;
-                    }
-                    boolean mayDelete = isPrimaryInstance();
-                    historyJournal.beforeWhole(snapshot, mayDelete);
-                    byte[] bytes = json.writeValueAsBytes(snapshot);
                     // Another process's revisions are kept in the index on disk but are not in this process's
                     // memory, so their bodies are protected from this process's collection by hash.
                     Set<String>[] foreign = newHashSetHolder();
-                    boolean written = sync.write(getHistoryFile(), bytes, ConfigSchema.HISTORY, merged -> {
-                        foreign[0] = foreignHashes(merged, snapshot);
-                        adoptForeignRows(store, merged, snapshot);
-                    });
-                    wroteIndex[0] = true;
+                    boolean written = sync.write(
+                            getHistoryFile(), json.writeValueAsBytes(snapshot), ConfigSchema.HISTORY, merged -> {
+                                foreign[0] = foreignHashes(merged, snapshot);
+                                adoptForeignRows(store, merged, snapshot);
+                            });
                     if (written) {
                         // Not merged: the file now holds this process's rows and nothing else.
                         foreignHistoryHashes = foreign[0] == null ? Set.of() : foreign[0];
                         refreshHistoryBackups();
                         sawDisk[0] = true;
-                        historyJournal.compacted(snapshot, publication, bytes.length, mayDelete);
                     } else {
                         // Nothing to persist, so the file was not read. What this process knows of it is
                         // still current only if nobody else has written it since.
@@ -2109,17 +2058,7 @@ public class SharedConfig {
                     }
                     return written ? null : ConfigWriter.UNCHANGED;
                 },
-                outcome -> finishHistoryPublication(store, publication, outcome, sawDisk, wroteIndex, completion));
-    }
-
-    /**
-     * Whether this process may append to the Local History journal: it is the primary instance and no other
-     * process is on the config directory now. A config that was never claimed (a test, a tool) never appends,
-     * since it cannot tell. Asked on the writer thread, where the presence probe is a live one.
-     */
-    private boolean aloneOnConfig() {
-        InstanceLock lock = instanceLock;
-        return lock != null && lock.primary() && !lock.othersPresent();
+                outcome -> finishHistoryPublication(store, publication, outcome, sawDisk, completion));
     }
 
     /**
@@ -2169,7 +2108,6 @@ public class SharedConfig {
             long publication,
             ConfigWriter.WriteOutcome outcome,
             boolean[] sawDisk,
-            boolean[] wroteIndex,
             @Nullable Consumer<Boolean> completion) {
         if (outcome == ConfigWriter.WriteOutcome.SUPERSEDED) {
             // Not written by itself: the snapshot that replaced it holds its rows and answers for it.
@@ -2185,8 +2123,7 @@ public class SharedConfig {
         List<Consumer<Boolean>> superseded;
         synchronized (historyPublicationLock) {
             superseded = historyAnswers.finished(publication, durable);
-            if (durable && wroteIndex[0]) {
-                // Only for the index itself: a body dropped by a journal line is still listed by index.json.
+            if (durable) {
                 store.ledger().durable(publication);
             }
             // Collect only behind a publication that looked at the disk. One that was superseded before its
@@ -2213,7 +2150,6 @@ public class SharedConfig {
         Set<String> hashes = store.ledger().protectedHashes();
         hashes.addAll(foreignHistoryHashes);
         hashes.addAll(backupHistoryHashes);
-        hashes.addAll(journalHistoryHashes);
         return hashes;
     }
 
