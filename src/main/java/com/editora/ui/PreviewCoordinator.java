@@ -922,7 +922,7 @@ final class PreviewCoordinator {
         com.editora.editor.markdown.PreviewImageLoader.setRemotePolicy(
                 com.editora.editor.markdown.PreviewImageLoader.RemotePolicy.of(s.getMarkdownRemoteImagePolicy()));
         com.editora.editor.markdown.PreviewScrollSync.setEnabled(s.isMarkdownScrollSync());
-        com.editora.editor.markdown.MarkdownRenderer.setWikiLinks(s.isMarkdownWikiLinks());
+        com.editora.editor.markdown.PreviewPrefs.setWikiLinks(s.isMarkdownWikiLinks()); // builds no parser
         com.editora.editor.markdown.PreviewPrefs.set(
                 s.getMarkdownPreviewFontSize(), s.getMarkdownPreviewWidth(), s.isMarkdownHideFrontMatter());
         for (Tab tab : host.editorArea().tabs()) {

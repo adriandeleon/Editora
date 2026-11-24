@@ -224,9 +224,12 @@ class AgentPanelStreamFxTest {
         assertEquals(List.of(), mismatches);
     }
 
-    /** The finished message is one whole render, whatever the stream was split into on the way. */
+    /**
+     * The finished message shows what one whole render shows, but keeps the blocks the stream settled and
+     * builds only the rest again (perf review P10).
+     */
     @Test
-    void theFinishedMessageIsRenderedWholeAndKeepsItsClickablePaths() throws Exception {
+    void theFinishedMessageKeepsItsSettledBlocksAndItsClickablePaths() throws Exception {
         Object[] result = FxTestSupport.callOnFx(() -> {
             List<String> opened = new ArrayList<>();
             AgentPanel panel = new AgentPanel(() -> {}, () -> {}, () -> {}, () -> {}, () -> {}, () -> {}, opened::add);
@@ -235,6 +238,8 @@ class AgentPanelStreamFxTest {
                 streamingRender(panel);
             }
             int wholeBefore = panel.wholeRenderCount();
+            Pane blocks = FxTestSupport.field(panel, "streamBlocks");
+            Node firstBlock = blocks.getChildren().get(0);
             panel.appendLine("next entry"); // finalizes the message
             Node finished = ((VBox) transcript(panel).getChildren().get(0))
                     .getChildren()
@@ -245,15 +250,44 @@ class AgentPanelStreamFxTest {
                 textOf(finished).equals(textOf(wholeRender(REPLY))),
                 blockKinds(finished).equals(blockKinds(wholeRender(REPLY))),
                 pathWired,
-                transcript(panel).getChildren().size()
+                transcript(panel).getChildren().size(),
+                panel.finishTailRenderCount(),
+                ((Pane) ((Parent) finished).getChildrenUnmodifiable().get(0))
+                                .getChildren()
+                                .get(0)
+                        == firstBlock
             };
         });
 
-        assertEquals(1, result[0], "one whole render on completion");
+        assertEquals(0, result[0], "no whole render on completion");
         assertTrue((Boolean) result[1]);
         assertTrue((Boolean) result[2]);
         assertTrue((Boolean) result[3], "inline-code paths stay clickable");
         assertEquals(2, result[4], "the message and the line after it");
+        assertEquals(1, result[5], "only the unsettled part is built again");
+        assertTrue((Boolean) result[6], "the first block's node is kept");
+    }
+
+    /** A reply whose blocks depend on each other (a link reference defined at its end) is rendered whole. */
+    @Test
+    void aFinishedReplyWithAReferenceDefinitionIsRenderedWhole() throws Exception {
+        String reply = "See [the docs][d].\n\nMore text.\n\nAnd more.\n\n[d]: https://example.com\n";
+        Object[] result = FxTestSupport.callOnFx(() -> {
+            AgentPanel panel = panel();
+            for (int i = 0; i < reply.length(); i += 5) {
+                panel.appendChunk(reply.substring(i, Math.min(reply.length(), i + 5)));
+                streamingRender(panel);
+            }
+            int wholeBefore = panel.wholeRenderCount();
+            panel.setBusy(false);
+            Node finished = message(panel);
+            return new Object[] {
+                panel.wholeRenderCount() - wholeBefore, textOf(finished).equals(textOf(wholeRender(reply)))
+            };
+        });
+
+        assertEquals(1, result[0]);
+        assertTrue((Boolean) result[1]);
     }
 
     private static boolean hasClickablePath(Node node) {

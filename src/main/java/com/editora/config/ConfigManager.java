@@ -541,8 +541,8 @@ public class ConfigManager {
     }
 
     /**
-     * The config directory: the {@code EDITORA_CONFIG_DIR} environment variable if set (used verbatim as the
-     * config folder), otherwise {@code ~/.editora} (or {@code ~/.editora-dev} in dev mode). Works on
+     * The config directory, absolute: the {@code EDITORA_CONFIG_DIR} environment variable if set (as the config
+     * folder, a relative one against the working directory), otherwise {@code ~/.editora} (or {@code ~/.editora-dev} in dev mode). Works on
      * macOS, Linux, and Windows.
      */
     static Path defaultConfigDir() {
@@ -550,7 +550,18 @@ public class ConfigManager {
     }
 
     static Path defaultConfigDir(boolean dev) {
-        return resolveConfigDir(System.getenv("EDITORA_CONFIG_DIR"), System.getProperty("user.home", "."), dev);
+        return absolute(
+                resolveConfigDir(System.getenv("EDITORA_CONFIG_DIR"), System.getProperty("user.home", "."), dev));
+    }
+
+    /**
+     * {@code dir} made absolute against the working directory the launch was started in, and normalized. A relative
+     * {@code EDITORA_CONFIG_DIR} or {@code --config-dir} names a folder relative to where it was typed; kept relative,
+     * every path derived from it (the language servers' workspaces among them) would follow whatever folder a
+     * process spawned later runs in instead.
+     */
+    static Path absolute(Path dir) {
+        return dir.toAbsolutePath().normalize();
     }
 
     /**
@@ -566,7 +577,9 @@ public class ConfigManager {
      * production editor.
      */
     public static Path configDirFor(@Nullable String cliConfigDir, boolean dev) {
-        return cliConfigDir != null && !cliConfigDir.isBlank() ? Path.of(cliConfigDir.trim()) : defaultConfigDir(dev);
+        return cliConfigDir != null && !cliConfigDir.isBlank()
+                ? absolute(Path.of(cliConfigDir.trim()))
+                : defaultConfigDir(dev);
     }
 
     static Path resolveConfigDir(String editoraHome, String userHome) {

@@ -124,6 +124,16 @@ final class IndexCoordinator {
     private @Nullable Path indexedRoot;
     private boolean building;
 
+    /**
+     * What each file the last walk read looked like on disk when it was read, so the next walk of the same project
+     * reads only the files that changed since (perf review F5): a branch switch marks the whole index stale, and
+     * re-reading up to {@link #MAX_VISIT} files to find the few that changed made the next symbol search wait.
+     */
+    private java.util.Map<Path, Stamp> stamps = java.util.Map.of();
+
+    /** How many files the last walk took from the index it replaced instead of reading them. A test's. */
+    int lastReused;
+
     /** The last walk stopped at {@link #maxFiles} files, so the index covers only part of the project. */
     private boolean truncated;
 
@@ -210,6 +220,7 @@ final class IndexCoordinator {
             projectFiles = List.of();
             projectRelPaths = List.of();
             indexedRoot = null;
+            stamps = java.util.Map.of();
             truncated = false;
         }
     }
@@ -223,6 +234,7 @@ final class IndexCoordinator {
         projectFiles = List.of();
         projectRelPaths = List.of();
         indexedRoot = null;
+        stamps = java.util.Map.of();
     }
 
     /**
@@ -471,6 +483,7 @@ final class IndexCoordinator {
         projectFiles = List.of();
         projectRelPaths = List.of();
         indexedRoot = null;
+        stamps = java.util.Map.of(); // asked for by name: every file is read again
         build(() -> host.setStatus(tr("status.index.built", index.symbolCount(), index.fileCount())));
     }
 
@@ -542,29 +555,105 @@ final class IndexCoordinator {
             host.setStatus(tr("status.definition.notFound", name));
             return;
         }
+        if (staleButUsable()) {
+            // A stale index answers now, each hit checked against its file as it is on disk, while the re-walk runs
+            // behind it (perf review F5). Only "not found" waits for the re-walk: the name may have just arrived.
+            Corpus corpus = corpus();
+            refreshInBackground();
+            definitionBusy = true;
+            com.editora.perf.OffFx.then(SEARCH_SITE, () -> recheck(exactHits(corpus, name), name), answer -> {
+                definitionBusy = false;
+                List<SymbolIndex.Hit> exact = answer.or(List.of());
+                if (exact.isEmpty()) {
+                    definitionFromIndex(name);
+                } else {
+                    showDefinitions(name, exact);
+                }
+            });
+            return;
+        }
+        definitionFromIndex(name);
+    }
+
+    /** The index's declarations of {@code name}, built (or re-walked) first when it is not. */
+    private void definitionFromIndex(String name) {
         ensureBuilt(() -> {
             Corpus corpus = corpus();
             definitionBusy = true;
-            com.editora.perf.OffFx.then(
-                    SEARCH_SITE,
-                    () -> corpus.searchSymbols(name, SymbolIndex.DEFAULT_LIMIT).stream()
-                            .filter(h -> h.symbol().name().equals(name))
-                            .toList(),
-                    answer -> {
-                        definitionBusy = false;
-                        List<SymbolIndex.Hit> exact = answer.or(List.of());
-                        if (exact.isEmpty()) {
-                            host.setStatus(tr("status.definition.notFound", name));
-                        } else if (exact.size() == 1) {
-                            Symbol s = exact.get(0).symbol();
-                            ops.openAndGoto(exact.get(0).file(), s.line(), s.column());
-                            host.setStatus(tr("status.definition.fromIndex", name));
-                        } else {
-                            lastResults = exact;
-                            picker.show(host.window());
-                        }
-                    });
+            com.editora.perf.OffFx.then(SEARCH_SITE, () -> exactHits(corpus, name), answer -> {
+                definitionBusy = false;
+                List<SymbolIndex.Hit> exact = answer.or(List.of());
+                if (exact.isEmpty()) {
+                    host.setStatus(tr("status.definition.notFound", name));
+                } else {
+                    showDefinitions(name, exact);
+                }
+            });
         });
+    }
+
+    private static List<SymbolIndex.Hit> exactHits(Corpus corpus, String name) {
+        return corpus.searchSymbols(name, SymbolIndex.DEFAULT_LIMIT).stream()
+                .filter(h -> h.symbol().name().equals(name))
+                .toList();
+    }
+
+    /** One declaration jumps; several open the picker. */
+    private void showDefinitions(String name, List<SymbolIndex.Hit> exact) {
+        if (exact.size() == 1) {
+            Symbol s = exact.get(0).symbol();
+            ops.openAndGoto(exact.get(0).file(), s.line(), s.column());
+            host.setStatus(tr("status.definition.fromIndex", name));
+        } else {
+            lastResults = exact;
+            picker.show(host.window());
+        }
+    }
+
+    /** Files a stale answer re-reads at most; past that it waits for the re-walk instead. */
+    static final int RECHECK_FILES = 16;
+
+    /**
+     * {@code hits} from a stale index, as their files declare {@code name} now: each file is read again, a file that
+     * is gone or no longer declares the name drops out, and a moved declaration answers where it is now. Empty when
+     * the hits span more than {@link #RECHECK_FILES} files, so the caller waits for the re-walk. Blocking: off FX.
+     */
+    static List<SymbolIndex.Hit> recheck(List<SymbolIndex.Hit> hits, String name) {
+        java.util.LinkedHashSet<Path> files = new java.util.LinkedHashSet<>();
+        for (SymbolIndex.Hit hit : hits) {
+            files.add(hit.file());
+        }
+        if (files.size() > RECHECK_FILES) {
+            return List.of();
+        }
+        List<SymbolIndex.Hit> out = new ArrayList<>();
+        for (Path file : files) {
+            List<Symbol> now;
+            try {
+                now = scanFile(file);
+            } catch (IOException | RuntimeException gone) {
+                continue;
+            }
+            for (Symbol s : now) {
+                if (s.name().equals(name)) {
+                    out.add(new SymbolIndex.Hit(file, s, 0));
+                }
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    /** The index was built for this project but changed since: it can answer while a re-walk refreshes it. */
+    private boolean staleButUsable() {
+        Path root = indexedRoot;
+        return isEnabled() && stale && root != null && root.equals(ops.projectRoot());
+    }
+
+    /** Starts the re-walk of a stale index without parking anyone on it; a walk already running is enough. */
+    private void refreshInBackground() {
+        if (!building) {
+            build(null);
+        }
     }
 
     /** A symbol at {@code offset} of {@code text}, for jumping to a declaration found by offset. */
@@ -647,6 +736,12 @@ final class IndexCoordinator {
             promptForSymbol();
             return;
         }
+        if (staleButUsable()) {
+            // The prompt opens now; the search runs when the name is entered, on the re-walked index if it has landed.
+            refreshInBackground();
+            promptForSymbol();
+            return;
+        }
         build(this::promptForSymbol);
     }
 
@@ -670,9 +765,11 @@ final class IndexCoordinator {
         host.setStatus(tr("status.index.building"));
         long gen = generation.incrementAndGet();
         long marks = staleMarks;
+        // A re-walk of the same project keeps what has not changed on disk; anything else reads every file.
+        Prior prior = root.equals(indexedRoot) ? new Prior(stamps, index.freeze()) : Prior.NONE;
         AutoCloseable task = host.startBackgroundTask(tr("status.index.building"));
         worker.submit(() -> {
-            Walked walked = walk(root, () -> gen != generation.get());
+            Walked walked = walk(root, () -> gen != generation.get(), prior);
             Platform.runLater(() -> {
                 building = false;
                 close(task);
@@ -682,9 +779,14 @@ final class IndexCoordinator {
                 }
                 index.clear(); // a re-walk of a stale index replaces it; entries of vanished files must go
                 stale = marks != staleMarks; // changed again while this walk ran: it may have missed it
+                java.util.Map<Path, Stamp> kept = new java.util.HashMap<>(walked.stamps());
                 for (Scanned s : walked.scanned()) {
-                    index.put(s.file(), s.symbols());
+                    if (!index.put(s.file(), s.symbols())) {
+                        kept.remove(s.file()); // a cap refused it: the next walk must not take "nothing" as its answer
+                    }
                 }
+                stamps = java.util.Map.copyOf(kept);
+                lastReused = walked.reused();
                 projectFiles = walked.files();
                 projectRelPaths = relativize(root, projectFiles);
                 indexedRoot = root;
@@ -702,13 +804,46 @@ final class IndexCoordinator {
         });
     }
 
-    /** One walk's yield: the files it saw, the symbols it found in them, and whether the cap cut it short. */
-    record Walked(List<Path> files, List<Scanned> scanned, boolean truncated) {}
+    /**
+     * One walk's yield: the files it saw, the symbols it found in them, whether the cap cut it short, the
+     * {@link Stamp} of each file it read or reused, and how many it reused.
+     */
+    record Walked(
+            List<Path> files, List<Scanned> scanned, boolean truncated, java.util.Map<Path, Stamp> stamps, int reused) {
+        Walked(List<Path> files, List<Scanned> scanned, boolean truncated) {
+            this(files, scanned, truncated, java.util.Map.of(), 0);
+        }
+    }
+
+    /**
+     * A file as it was on disk when its declarations were read: its modification time, its size, and the language
+     * it was read as. An equal stamp on the next walk means the symbols from last time still stand.
+     */
+    record Stamp(java.nio.file.attribute.FileTime modified, long size, String language) {}
+
+    /**
+     * A file modified this close to the moment it was read may change again within the file system's clock
+     * resolution without its stamp changing, so its stamp is not kept and the next walk reads it again (Git's
+     * "racily clean" rule).
+     */
+    static final long SETTLE_MILLIS = 2_000;
+
+    /** The index a re-walk replaces: the stamps it recorded and the symbols it holds, both unchanging. */
+    record Prior(java.util.Map<Path, Stamp> stamps, SymbolIndex.Frozen symbols) {
+        static final Prior NONE = new Prior(java.util.Map.of(), SymbolIndex.Frozen.EMPTY);
+
+        /** {@code file}'s symbols from last time when it is unchanged since, else null: read it again. */
+        @Nullable
+        List<Symbol> reuse(Path file, Stamp now) {
+            Stamp was = stamps.get(file);
+            return was != null && was.equals(now) ? symbols.symbolsIn(file) : null;
+        }
+    }
 
     record Scanned(Path file, List<Symbol> symbols) {}
 
     /** The blocking half — runs on {@link #worker}, touches nothing that belongs to the FX thread. */
-    private Walked walk(Path root, java.util.function.BooleanSupplier superseded) {
+    private Walked walk(Path root, java.util.function.BooleanSupplier superseded, Prior prior) {
         if (superseded.getAsBoolean()) {
             return new Walked(List.of(), List.of(), false);
         }
@@ -716,7 +851,7 @@ final class IndexCoordinator {
             return remoteWalk(root, ops.respectGitignore(), maxFiles);
         }
         GitignoreFilter ignore = ops.respectGitignore() ? GitignoreFilter.load(root) : GitignoreFilter.NONE;
-        return walk(root, ignore, maxFiles, superseded);
+        return walk(root, ignore, maxFiles, superseded, prior);
     }
 
     /**
@@ -734,7 +869,22 @@ final class IndexCoordinator {
      * this walk's result, and the walk that replaces it is waiting for the same single thread.
      */
     static Walked walk(Path root, GitignoreFilter ignore, int maxFiles, java.util.function.BooleanSupplier superseded) {
+        return walk(root, ignore, maxFiles, superseded, Prior.NONE);
+    }
+
+    /**
+     * As above, taking from {@code prior} the symbols of every file whose {@link Stamp} is unchanged instead of
+     * reading it again: a re-walk after a branch switch costs a stat per file plus a read of the ones that changed.
+     */
+    static Walked walk(
+            Path root,
+            GitignoreFilter ignore,
+            int maxFiles,
+            java.util.function.BooleanSupplier superseded,
+            Prior prior) {
         List<Scanned> out = new ArrayList<>();
+        java.util.Map<Path, Stamp> stamps = new java.util.HashMap<>();
+        int[] reused = {0};
         // Every file the walk sees, not only the ones with symbols: Search Everywhere needs to offer
         // files too, and this walk is already paying for the traversal. Doing it separately would mean a
         // second pass over the same tree for the same information.
@@ -753,10 +903,25 @@ final class IndexCoordinator {
                 return ProjectWalk.Verdict.ACCEPT;
             }
             try {
-                if (Files.size(p) > MAX_FILE_BYTES) { // of the target, when p is a link
+                // Of the target, when p is a link: the walk's attributes describe the link itself.
+                java.nio.file.attribute.BasicFileAttributes target = attrs.isRegularFile()
+                        ? attrs
+                        : Files.readAttributes(p, java.nio.file.attribute.BasicFileAttributes.class);
+                if (target.size() > MAX_FILE_BYTES) {
                     return ProjectWalk.Verdict.ACCEPT;
                 }
-                List<Symbol> symbols = DeclarationScanner.scan(Files.readString(p), language);
+                Stamp stamp = new Stamp(target.lastModifiedTime(), target.size(), language);
+                List<Symbol> symbols = prior.reuse(p, stamp);
+                if (symbols != null) {
+                    reused[0]++;
+                    stamps.put(p, stamp);
+                } else {
+                    long readAt = System.currentTimeMillis();
+                    symbols = DeclarationScanner.scan(Files.readString(p), language);
+                    if (readAt - stamp.modified().toMillis() > SETTLE_MILLIS) {
+                        stamps.put(p, stamp);
+                    }
+                }
                 if (!symbols.isEmpty()) {
                     out.add(new Scanned(p, symbols));
                 }
@@ -769,7 +934,7 @@ final class IndexCoordinator {
         if (ignore.prunesDependencies()) {
             ProjectWalk.Outcome outcome = ProjectWalk.walk(
                     root, new ProjectWalk.Options(Integer.MAX_VALUE, maxFiles, ignore, superseded), scan);
-            return new Walked(List.copyOf(files), out, outcome.truncated());
+            return new Walked(List.copyOf(files), out, outcome.truncated(), stamps, reused[0]);
         }
         // Dependency folders walked too ("Respect .gitignore" off): the project's own files first, then what the cap
         // leaves for node_modules. In one walk node_modules came before src/ and took all 50,000 places (JS E107).
@@ -788,7 +953,7 @@ final class IndexCoordinator {
                     }
                 });
         if (own.truncated() || superseded.getAsBoolean()) {
-            return new Walked(List.copyOf(files), out, own.truncated());
+            return new Walked(List.copyOf(files), out, own.truncated(), stamps, reused[0]);
         }
         ProjectWalk.Outcome deps = ProjectWalk.walk(
                 root,
@@ -796,7 +961,7 @@ final class IndexCoordinator {
                 (p, rel, attrs) -> com.editora.search.DependencyDirs.inDependencyDir(rel)
                         ? scan.file(p, rel, attrs)
                         : ProjectWalk.Verdict.SKIP);
-        return new Walked(List.copyOf(files), out, deps.truncated());
+        return new Walked(List.copyOf(files), out, deps.truncated(), stamps, reused[0]);
     }
 
     /**

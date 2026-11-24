@@ -48,8 +48,9 @@ final class SemanticTokenRequests {
     }
 
     /** The cached whole-document token state for delta requests (#679): the server's {@code resultId} +
-     *  the full data array it identifies. Keyed by document URI; dropped on close/shutdown/error. */
-    private record TokenState(LanguageServerSession session, String resultId, List<Integer> data) {}
+     *  the full data array it identifies, unboxed (L9). Keyed by document URI; dropped on close/shutdown/error. */
+    @SuppressWarnings("ArrayRecordComponent") // never compared or hashed; read only to splice the next delta onto
+    private record TokenState(LanguageServerSession session, String resultId, int[] data) {}
 
     final Map<String, TokenState> semanticTokenState = new ConcurrentHashMap<>();
 
@@ -149,11 +150,13 @@ final class SemanticTokenRequests {
                         if (!currentSemanticRequest(file, s, uri, requestGeneration)) {
                             return;
                         }
-                        List<Integer> data = null;
+                        int[] data = null;
                         String resultId = null;
                         if (error == null && either != null) {
                             if (either.isLeft() && either.getLeft() != null) {
-                                data = either.getLeft().getData(); // server chose to answer with a fresh full set
+                                // the server chose to answer with a fresh full set
+                                data = SemanticTokensSplice.toArray(
+                                        either.getLeft().getData());
                                 resultId = either.getLeft().getResultId();
                             } else if (either.isRight() && either.getRight() != null) {
                                 data = SemanticTokensSplice.apply(
@@ -168,10 +171,7 @@ final class SemanticTokenRequests {
                         }
                         rememberTokenState(s, uri, resultId, data);
                         wholeDocumentTokens.put(uri, new TokenMark(s, version));
-                        List<Integer> decoded = data;
-                        List<com.editora.text.SemanticToken> out = SemanticTokensDecoder.decode(
-                                decoded, legend.getTokenTypes(), legend.getTokenModifiers());
-                        Platform.runLater(() -> cb.accept(out));
+                        decodeAndDeliver(file, s, uri, requestGeneration, data, legend, cb);
                     });
             return;
         }
@@ -202,12 +202,33 @@ final class SemanticTokenRequests {
                         Platform.runLater(() -> cb.accept(List.of()));
                         return;
                     }
-                    rememberTokenState(s, uri, tokens.getResultId(), tokens.getData());
+                    int[] data = SemanticTokensSplice.toArray(tokens.getData());
+                    rememberTokenState(s, uri, tokens.getResultId(), data);
                     wholeDocumentTokens.put(uri, new TokenMark(s, version));
-                    List<com.editora.text.SemanticToken> out = SemanticTokensDecoder.decode(
-                            tokens.getData(), legend.getTokenTypes(), legend.getTokenModifiers());
-                    Platform.runLater(() -> cb.accept(out));
+                    decodeAndDeliver(file, s, uri, requestGeneration, data, legend, cb);
                 });
+    }
+
+    /**
+     * Decodes a whole-document answer on a thread of its own and hands the tokens to {@code cb} on the FX thread,
+     * unless a newer request was issued meanwhile. The reply handler runs on the session's reader thread, and a
+     * large class's decode (tens of thousands of tokens) held up the diagnostics and replies behind it (L9).
+     */
+    private void decodeAndDeliver(
+            Path file,
+            LanguageServerSession s,
+            String uri,
+            long requestGeneration,
+            int[] data,
+            org.eclipse.lsp4j.SemanticTokensLegend legend,
+            Consumer<List<com.editora.text.SemanticToken>> cb) {
+        Thread.ofVirtual().name("lsp-semantic-decode").start(() -> {
+            List<com.editora.text.SemanticToken> out =
+                    SemanticTokensDecoder.decode(data, legend.getTokenTypes(), legend.getTokenModifiers());
+            if (currentSemanticRequest(file, s, uri, requestGeneration)) {
+                Platform.runLater(() -> cb.accept(out));
+            }
+        });
     }
 
     private boolean currentSemanticRequest(
@@ -216,10 +237,10 @@ final class SemanticTokenRequests {
                 && java.util.Objects.equals(semanticRequestGeneration.get(uri), requestGeneration);
     }
 
-    private void rememberTokenState(
-            LanguageServerSession session, String uri, @Nullable String resultId, List<Integer> data) {
-        if (resultId != null && data != null) {
-            semanticTokenState.put(uri, new TokenState(session, resultId, List.copyOf(data)));
+    private void rememberTokenState(LanguageServerSession session, String uri, @Nullable String resultId, int[] data) {
+        if (resultId != null) {
+            // Never written to after this: a delta splices into a new array, so the state can share this one.
+            semanticTokenState.put(uri, new TokenState(session, resultId, data));
         } else {
             semanticTokenState.remove(uri); // no resultId ⇒ the server can't delta from this response
         }

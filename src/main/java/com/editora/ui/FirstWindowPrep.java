@@ -44,8 +44,8 @@ public final class FirstWindowPrep {
 
     /**
      * The pieces that read neither the settings nor the shared config: the bundled tables and the folders Editora
-     * keeps in {@code configDir}. The launch does them while the keychain is asked for the AI keys on another
-     * thread, which may change the settings ({@code App.loadForFirstWindow}).
+     * keeps in {@code configDir}. The launch does them on a thread of its own while the settings are loaded (and
+     * the keychain asked for the AI keys, which may change them): {@code App.loadForFirstWindow}.
      */
     public static void prepareApart(Path configDir) {
         // The user's themes, before any sheet is named: a user theme saved as the active one resolves on launch.

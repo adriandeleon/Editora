@@ -1185,7 +1185,8 @@ a file no longer listed). They come from the running server (`MapCardLinks.Sourc
 the file is lent while it answers; its references code lens where it has one (jdtls always, TypeScript with code
 lenses on, rust-analyzer — the number its "N references" title starts with), else its references counted for the
 first `MAX_COUNTED` (40) declarations, one after another. Nothing starts a server: without one a row shows no count.
-An answer for an outline since changed, or a file since closed, is dropped.
+An answer for an outline since changed, or a file since closed, is dropped, and the one-by-one round it belonged to
+stops sending (`usages`' `wanted`): typing on in the file asks for them all again later.
 
 **A declaration's history as a card** (Map code browser gap 12, `ProjectMapHistoryCard`). **Declaration History**
 in a declaration card's menu, or in a declaration row's (a Structure column of the Map's or a card's, which opens the

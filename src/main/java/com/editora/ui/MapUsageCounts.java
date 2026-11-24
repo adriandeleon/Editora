@@ -86,6 +86,11 @@ final class MapUsageCounts {
             forget(file);
             return;
         }
+        if (inFlight.remove(file)) {
+            // Typed on while it was being counted: the rest of that round is not sent, and its answer is dropped; the
+            // counts shown stay until the next round answers (perf review 2026-11-23 S8).
+            asked.merge(file, 1L, Long::sum);
+        }
         PauseTransition timer = waiting.computeIfAbsent(file, key -> new PauseTransition(QUIET));
         List<Declaration> declarations = declarations(outline);
         timer.setOnFinished(event -> {
@@ -102,7 +107,7 @@ final class MapUsageCounts {
         }
         long id = asked.merge(file, 1L, Long::sum);
         inFlight.add(file);
-        from.usages(file, declarations, answer -> {
+        from.usages(file, declarations, () -> !disposed && java.util.Objects.equals(asked.get(file), id), answer -> {
             if (disposed || !java.util.Objects.equals(asked.get(file), id)) {
                 return; // asked again since, or forgotten
             }

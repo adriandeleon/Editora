@@ -101,6 +101,17 @@ class HandlersDebugOffFxThreadFxTest {
         });
     }
 
+    /** Holds the launched-lines mappings' work for the test to run; other work runs as usual. */
+    private static void holdMappings(List<Runnable> held) {
+        OffFx.runnerForTest((name, task) -> {
+            if (LaunchedLines.SITE.equals(name)) {
+                held.add(task);
+            } else {
+                Thread.ofVirtual().name(name).start(task);
+            }
+        });
+    }
+
     /** Runs the work held so far, each on this (test) thread, and lets its answer land. */
     private static void runHeld(List<Runnable> held) throws Exception {
         FxTestSupport.drainFx();
@@ -116,7 +127,8 @@ class HandlersDebugOffFxThreadFxTest {
         EditorBuffer b = buffer(file, "a()\nb()\nc()\n");
         LaunchedLines lines = new LaunchedLines();
         try {
-            FxTestSupport.runOnFx(() -> lines.snapshotIfAbsent(file, b.getContent()));
+            // the launched text is a handle on the document's version, its String built only when mapped (D7)
+            FxTestSupport.runOnFx(() -> lines.snapshotIfAbsent(file, LaunchedLines.textOf(b)));
             listen();
             boolean[] known = {false};
             FxTestSupport.runOnFx(() -> {
@@ -142,7 +154,7 @@ class HandlersDebugOffFxThreadFxTest {
         EditorBuffer b = buffer(file, "a()\nb()\n");
         LaunchedLines lines = new LaunchedLines();
         List<Runnable> held = new CopyOnWriteArrayList<>();
-        OffFx.runnerForTest((name, task) -> held.add(task));
+        holdMappings(held);
         try {
             int[] ran = {0};
             FxTestSupport.runOnFx(() -> {
@@ -155,11 +167,53 @@ class HandlersDebugOffFxThreadFxTest {
             FxTestSupport.runOnFx(() -> b.getArea().insertText(0, "two()\n")); // typed before it lands
             runHeld(held); // the answer is for the old text: worked out again, nobody told yet
             assertEquals(0, ran[0], "an answer for text that moved on is not acted on");
+            SettingsRig.awaitFx("worked out again once the typing paused", () -> !held.isEmpty());
             runHeld(held);
             assertEquals(1, ran[0]);
             LaunchedLines.Mapping map = FxTestSupport.callOnFx(() -> lines.known(b));
             assertNotNull(map);
             assertEquals(2, map.toCurrent(0), "a() is below both added lines");
+        } finally {
+            FxTestSupport.runOnFx(b::dispose);
+        }
+    }
+
+    @Test
+    void newlinesTypedAboveABreakpointAreMappedOnceTheTypingPauses() throws Exception {
+        Path file = dir.resolve("app.py");
+        EditorBuffer b = buffer(file, "a()\nb()\nc()\n");
+        LaunchedLines lines = new LaunchedLines();
+        List<Runnable> held = new CopyOnWriteArrayList<>();
+        holdMappings(held);
+        try {
+            int[] ran = {0};
+            FxTestSupport.runOnFx(() -> {
+                b.toggleBreakpoint(2);
+                lines.snapshotIfAbsent(file, LaunchedLines.textOf(b));
+                // as DebugCoordinator.onBreakpointsChanged asks for each shift
+                b.getBreakpointManager().setOnChanged(() -> lines.knownOr(b, "t", () -> ran[0]++));
+            });
+            for (int i = 0; i < 5; i++) { // Enter held above the breakpoint: one shift per pulse
+                FxTestSupport.runOnFx(() -> b.getArea().insertText(0, "\n"));
+                FxTestSupport.drainFx();
+            }
+            assertEquals(0, held.size(), "nothing diffed while typing");
+            SettingsRig.awaitFx("worked out once the typing paused", () -> !held.isEmpty());
+            assertEquals(1, held.size(), "one mapping for the five newlines");
+            runHeld(held);
+            assertEquals(1, ran[0]);
+            LaunchedLines.Mapping map = FxTestSupport.callOnFx(() -> lines.known(b));
+            assertNotNull(map);
+            assertEquals(7, map.toCurrent(2), "c() is five lines down");
+
+            // a stop asks while the typing has not paused: it does not wait for the pause
+            FxTestSupport.runOnFx(() -> b.getArea().insertText(0, "\n"));
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> assertNull(lines.knownOr(b, "stop", () -> ran[0]++)));
+            FxTestSupport.drainFx();
+            assertEquals(1, held.size(), "worked out at once for the stop");
+            runHeld(held);
+            assertEquals(3, ran[0], "both waiters told");
         } finally {
             FxTestSupport.runOnFx(b::dispose);
         }

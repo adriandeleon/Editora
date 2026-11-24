@@ -327,11 +327,14 @@ final class MapCardLinks {
 
         /**
          * How many times each of {@code declarations} of {@code file} is used, by declaration line, given once on
-         * the FX thread; null when no running server can say (nothing is started). Map code browser gap 11.
+         * the FX thread; null when no running server can say (nothing is started). Map code browser gap 11. Once
+         * {@code wanted} says false (asked again since, or the file no longer shown) nothing more is sent to the
+         * server, and the answer may never come.
          */
         default void usages(
                 Path file,
                 List<MapUsageCounts.Declaration> declarations,
+                java.util.function.BooleanSupplier wanted,
                 Consumer<java.util.@Nullable Map<Integer, Integer>> answer) {
             answer.accept(null);
         }

@@ -20,6 +20,11 @@ public final class PreviewPrefs {
     private static volatile int fontSize;
     private static volatile int width;
     private static volatile boolean hideFrontMatter;
+    /**
+     * Whether {@code [[note]]} is a wiki link ({@code Settings.markdownWikiLinks}; on by default). Kept here, not in
+     * {@link MarkdownRenderer}, so a window applying its settings does not build the Markdown parsers (startup R3).
+     */
+    private static volatile boolean wikiLinks = true;
 
     private PreviewPrefs() {}
 
@@ -42,6 +47,15 @@ public final class PreviewPrefs {
     /** The reading column's width cap in px. */
     public static double contentWidth() {
         return width == 0 ? BASE_WIDTH : width;
+    }
+
+    /** Switches wiki links on or off for every later render; see {@link MarkdownRenderer#setWikiLinks}. */
+    public static void setWikiLinks(boolean on) {
+        wikiLinks = on;
+    }
+
+    public static boolean wikiLinks() {
+        return wikiLinks;
     }
 
     public static boolean hideFrontMatter() {
