@@ -90,6 +90,23 @@ class WindowReleasedOnCloseFxTest {
                 "a closed project window is still reachable (a Map reader's worker?)");
     }
 
+    /**
+     * A buffer asks for its spell dictionary when it opens, and the first build of a session takes seconds; the
+     * buffer's callback waited in a static list until then. A window closed meanwhile stayed in memory through it
+     * — on a loaded CI runner past this test's wait, so the first window of a test JVM failed here and passed on
+     * the rerun, the dictionary built by then.
+     */
+    @Test
+    void aWindowClosedWhileItsSpellDictionaryBuildsIsReleased(@TempDir Path dir) throws Exception {
+        try (com.editora.editor.spell.SpellDictionaries.BuildHold hold =
+                com.editora.editor.spell.SpellDictionaries.holdBuildForTest(
+                        com.editora.editor.spell.SpellDictionaries.DEFAULT)) {
+            WeakReference<MainController> closed = openAndClose(dir, false);
+            assertTrue(hold.waiting() > 0, "the window's buffer is waiting for its dictionary");
+            assertTrue(collected(closed), "a window closed while its spell dictionary built is still reachable");
+        }
+    }
+
     @Test
     void aWindowThatShowedTheProjectMapIsReleased(@TempDir Path dir) throws Exception {
         assertTrue(
