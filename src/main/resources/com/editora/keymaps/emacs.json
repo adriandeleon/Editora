@@ -255,5 +255,7 @@
   "C-c o m": "project.toggleMapView",
   "C-c o r": "projectMap.revealActiveFile",
   "f10": "view.focusMenuBar",
-  "C-x S-o": "window.otherReverse"
+  "C-x S-o": "window.otherReverse",
+  "C-c C-l f": "log.focusFilter",
+  "C-c C-l t": "log.toggleFollow"
 }

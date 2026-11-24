@@ -1,6 +1,7 @@
 package com.editora.editor.logviewer;
 
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import javafx.geometry.Bounds;
 import javafx.scene.canvas.Canvas;
@@ -14,6 +15,7 @@ import com.editora.editor.OverlayPalette;
 import com.editora.editor.SecondaryPane;
 import com.editora.editor.TabSurface;
 import com.editora.logviewer.LogLevel;
+import com.editora.logviewer.LogMatcher;
 import com.editora.logviewer.LogPatterns;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
@@ -40,6 +42,11 @@ public final class LogHighlightOverlay extends Region implements SecondaryPane.F
         /** The level of visible paragraph {@code paragraph} in the complete log (null for none). */
         @Nullable
         LogLevel levelAt(int paragraph);
+
+        /** The pattern whose matches are marked in the visible lines — the filter's — or null for none. */
+        default @Nullable Pattern highlight() {
+            return null;
+        }
     }
 
     /** Resolved from the editor background on a theme change, never per paint. */
@@ -48,6 +55,9 @@ public final class LogHighlightOverlay extends Region implements SecondaryPane.F
     private static final double BAR_WIDTH = 3.0;
     /** FATAL is told from ERROR by weight as well as by its wash. */
     private static final double FATAL_BAR_WIDTH = 6.0;
+    /** Most matches marked on one line: a pattern like {@code .} would otherwise box every character. */
+    private static final int MAX_MARKS_PER_LINE = 64;
+
     /** How far above the first visible line we scan to establish the inherited level (bounded → cheap). */
     private static final int INHERIT_SCAN = 400;
 
@@ -64,6 +74,9 @@ public final class LogHighlightOverlay extends Region implements SecondaryPane.F
     private @Nullable LogHighlightOverlay follower;
 
     private final Map<String, LogLevel> levelCache = lru(8000);
+
+    /** Matches the filter's pattern in the visible lines; rebuilt when the pattern changes, null for none. */
+    private @Nullable LogMatcher marker;
 
     /** Document edits seen, and the inherited level last computed for (first visible line, edits). */
     private int edits;
@@ -225,6 +238,7 @@ public final class LogHighlightOverlay extends Region implements SecondaryPane.F
             int first = Math.max(0, area.firstVisibleParToAllParIndex());
             int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
             boolean filtered = levels.filtered();
+            LogMatcher marks = filtered ? markerFor(levels.highlight()) : null;
             LogLevel carry = filtered ? null : inheritedLevelAt(first);
             for (int p = first; p <= last; p++) {
                 if (area.isFolded(p)) {
@@ -238,14 +252,43 @@ public final class LogHighlightOverlay extends Region implements SecondaryPane.F
                     eff = own != null ? own : carry; // a line without a level belongs to the record above
                     carry = eff;
                 }
-                if (eff == null || area.getParagraphLength(p) == 0) {
+                if (area.getParagraphLength(p) == 0) {
                     continue;
                 }
-                paintLine(g, p, eff, w);
+                if (eff != null) {
+                    paintLine(g, p, eff, w);
+                }
+                if (marks != null) {
+                    paintMatches(g, p, marks, w);
+                }
             }
         } catch (RuntimeException ignored) {
             // Viewport mid-layout — skip this frame; a later event redraws.
         }
+    }
+
+    /** The matcher for {@code pattern}, made again only when the filter's pattern changes. */
+    private @Nullable LogMatcher markerFor(@Nullable Pattern pattern) {
+        if (pattern == null) {
+            marker = null;
+        } else if (marker == null || marker.pattern() != pattern) {
+            marker = new LogMatcher(pattern);
+        }
+        return marker;
+    }
+
+    /** Boxes the filter's matches in paragraph {@code paragraph}, as Find marks its matches. */
+    private void paintMatches(GraphicsContext g, int paragraph, LogMatcher marks, double w) {
+        String text = area.getParagraph(paragraph).getText();
+        int base = area.getAbsolutePosition(paragraph, 0);
+        g.setFill(tints.match());
+        marks.ranges(text, MAX_MARKS_PER_LINE, (start, end) -> {
+            Bounds b = toLocal(
+                    area.getCharacterBoundsOnScreen(base + start, base + end).orElse(null));
+            if (b != null && b.getMaxX() >= 0 && b.getMinX() <= w) {
+                g.fillRect(b.getMinX(), b.getMinY(), b.getWidth(), b.getHeight());
+            }
+        });
     }
 
     /** The inherited level entering {@code first}: the nearest leveled line in the bounded window above it. */

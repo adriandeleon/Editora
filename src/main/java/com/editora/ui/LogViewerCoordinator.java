@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.regex.Pattern;
 
 import javafx.application.Platform;
 
@@ -17,6 +16,7 @@ import com.editora.logviewer.LogFilter;
 import com.editora.logviewer.LogLevel;
 import com.editora.logviewer.LogNavigation;
 import com.editora.logviewer.LogPatterns;
+import com.editora.logviewer.LogQuery;
 import com.editora.logviewer.LogTailService;
 import com.editora.text.LanguageRegistry;
 import com.editora.vfs.Vfs;
@@ -139,7 +139,7 @@ final class LogViewerCoordinator {
         if (want && !has) {
             LogControlBar bar = new LogControlBar(
                     following -> toggleFollow(buffer, following),
-                    (min, pattern) -> applyFilter(buffer, min, pattern, false),
+                    (min, query) -> applyFilter(buffer, min, query, false),
                     () -> buffer.getFocusedArea().requestFocus());
             logBars.put(buffer, bar);
             buffer.setLogControl(bar);
@@ -152,7 +152,7 @@ final class LogViewerCoordinator {
             logBars.remove(buffer);
             stopFollow(buffer);
             if (buffer.isLogFiltered()) {
-                buffer.applyLogFilter(null, null); // no control left to clear it with
+                buffer.applyLogFilter(null, LogQuery.NONE); // no control left to clear it with
             }
             buffer.setLogHighlightEnabled(false);
         }
@@ -165,13 +165,14 @@ final class LogViewerCoordinator {
             return;
         }
         bar.setFollowing(buffer.isLogFollowing());
-        bar.showFilter(buffer.getLogMinLevel(), buffer.getLogPattern());
+        bar.showFilter(buffer.getLogMinLevel(), buffer.getLogQuery());
         boolean filtered = buffer.isLogFiltered();
         bar.showState(
                 filtered,
                 filtered ? buffer.logVisibleLines() : 0,
                 filtered ? buffer.logTotalLines() : 0,
-                buffer.isLogTrimmed());
+                buffer.isLogTrimmed(),
+                filtered && buffer.isLogPatternSlow());
     }
 
     /** Cancels a buffer's follow + drops its per-buffer state (called when its tab closes). */
@@ -303,16 +304,16 @@ final class LogViewerCoordinator {
     // --- filter ----------------------------------------------------------------------------------
 
     /**
-     * Shows only the records of {@code buffer} at or above {@code min} that match {@code pattern} — a
-     * case-insensitive regular expression, or plain text when it is not a valid one. A large log is filtered
-     * off the FX thread; the view changes when the result is in.
+     * Shows only the records of {@code buffer} at or above {@code min} that {@code query} keeps — its patterns
+     * are regular expressions, or plain text when not valid ones. A large log is filtered off the FX thread;
+     * the view changes when the result is in.
      *
      * @param announce say so in the status bar (a command did this, not a keystroke in the pattern field)
      */
-    private void applyFilter(EditorBuffer buffer, @Nullable LogLevel min, @Nullable String pattern, boolean announce) {
-        String wanted = pattern == null || pattern.isEmpty() ? null : pattern;
+    private void applyFilter(EditorBuffer buffer, @Nullable LogLevel min, LogQuery query, boolean announce) {
+        LogQuery wanted = query.normalized();
         int request = filterRequests.merge(buffer, 1, Integer::sum);
-        boolean clearing = min == null && wanted == null;
+        boolean clearing = min == null && wanted.isEmpty();
         if (buffer.showsLogFilter(min, wanted)) {
             filtered(buffer, clearing, announce);
             return;
@@ -324,7 +325,7 @@ final class LogViewerCoordinator {
             return;
         }
         int epoch = buffer.logFilterEpoch();
-        Pattern compiled = LogFilter.compileFilter(wanted);
+        LogFilter.Patterns compiled = LogFilter.compile(wanted);
         filterExecutor.execute(() -> {
             LogFilter.Run run = LogFilter.run(source, min, compiled);
             Platform.runLater(() -> {
@@ -379,7 +380,7 @@ final class LogViewerCoordinator {
             QuickOpen<String> picker = new QuickOpen<>(
                     tr("log.level.pick"), tr("log.level.prompt"), () -> labels, s -> s, s -> "", choice -> {
                         int idx = Math.max(0, labels.indexOf(choice));
-                        applyFilter(b, LogControlBar.LEVELS.get(idx), b.getLogPattern(), true);
+                        applyFilter(b, LogControlBar.LEVELS.get(idx), b.getLogQuery(), true);
                     });
             picker.setOverlayHost(host.overlayHost());
             picker.show(host.window());
@@ -388,13 +389,40 @@ final class LogViewerCoordinator {
 
     void setRegexFilter() {
         ifLog(b -> {
-            String current = b.getLogPattern() == null ? "" : b.getLogPattern();
+            LogQuery query = b.getLogQuery();
+            String current = query.include() == null ? "" : query.include();
             host.promptText(
                     tr("log.filter.title"),
                     tr("log.filter.label"),
                     current,
-                    text -> applyFilter(b, b.getLogMinLevel(), text, true));
+                    text -> applyFilter(b, b.getLogMinLevel(), b.getLogQuery().withInclude(text), true));
         });
+    }
+
+    /** Asks for the pattern of records to hide, keeping the rest of the filter. */
+    void setHideFilter() {
+        ifLog(b -> {
+            LogQuery query = b.getLogQuery();
+            String current = query.exclude() == null ? "" : query.exclude();
+            host.promptText(tr("log.hide.title"), tr("log.hide.label"), current, text -> {
+                LogQuery now = b.getLogQuery();
+                applyFilter(b, b.getLogMinLevel(), new LogQuery(now.include(), text, now.matchCase()), true);
+            });
+        });
+    }
+
+    /**
+     * Next/Previous Problem in a log: a log has no language server, and its problems are its warnings and
+     * errors — so the chord the keymap gives Next Problem steps through those. Returns false (doing nothing)
+     * when the active buffer is not a log with the viewer on.
+     */
+    boolean stepProblemInLog(boolean forward) {
+        EditorBuffer b = host.activeBuffer();
+        if (!isEnabled() || b == null || !b.isLog()) {
+            return false;
+        }
+        jumpError(forward);
+        return true;
     }
 
     /** Puts the keyboard in the control bar's pattern field. */
@@ -408,7 +436,7 @@ final class LogViewerCoordinator {
     }
 
     void clearFilter() {
-        ifLog(b -> applyFilter(b, null, null, true));
+        ifLog(b -> applyFilter(b, null, LogQuery.NONE, true));
     }
 
     void jumpToNextError() {

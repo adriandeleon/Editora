@@ -1,6 +1,6 @@
 ---
 title: Server log viewer
-description: Log files get severity highlighting, a tail -f Follow button that survives rotation, open-at-the-tail for huge logs, and live level + regex filtering by record.
+description: Log files get severity highlighting, a tail -f Follow button that survives rotation, open-at-the-tail for huge logs, and live level, show and hide filtering by record.
 category: Workspace
 order: 5
 ---
@@ -57,19 +57,23 @@ stack-trace frame, belongs to the record above it and takes that record's color.
 
 ## The control bar
 
-Log mode adds a bar above the text with three controls, all reachable with Tab:
+Log mode adds a bar above the text with these controls, all reachable with Tab:
 
 - A labelled **Follow** button.
 - A **level list**: *All levels*, *Trace and up*, *Debug and up*, *Info and up*,
   *Warn and up*, *Error and up*, and *Fatal only*.
-- A **filter field** for a pattern.
+- A **filter field** for the records to show.
+- A **hide field** for the records to hide.
+- **Aa**, which makes both fields match case.
 
 While a filter is on, the bar shows how much of the log is visible, for example
 *65 of 185 lines*. **Log: Focus Filter** (`log.focusFilter`) puts the keyboard in
-the filter field, and Escape returns to the log.
+the filter field, and Escape returns to the log. While the keyboard is in the
+bar, Find's Match Case key turns **Aa** on and off.
 
 The bar and the palette commands show the same state: a level or pattern set
-with **Log: Filter by Level** or **Log: Filter by Pattern** appears in the bar.
+with **Log: Filter by Level**, **Log: Filter by Pattern** or **Log: Hide
+Matching Records** appears in the bar.
 
 ## Follow and large logs
 
@@ -117,12 +121,18 @@ save it: saving would truncate the file on disk.
 
 ## Live filtering
 
-Filter as you type by a **level floor** and a **regex** (or a literal substring
-when the query isn't valid regex). A stack trace inherits its record's level, so
-an exception stays visible when you filter to `WARN` and above.
+Filter as you type by a **level floor**, a pattern of records to **show** and a
+pattern of records to **hide**. Each pattern is a regular expression, or a
+literal substring when it isn't a valid one. A stack trace inherits its record's
+level, so an exception stays visible when you filter to `WARN` and above.
 
-The pattern is case-insensitive. When it isn't a valid regular expression, the
-field's tooltip says it is being matched as plain text.
+Patterns ignore case unless **Aa** is on. When a pattern isn't a valid regular
+expression, the field gets an amber border and its tooltip says it is being
+matched as plain text. To show or hide several things, put them in one pattern
+with `|`: `timeout|refused`.
+
+While a filter shows records by a pattern, its matches are highlighted in the
+visible lines, as Find highlights its matches.
 
 ### Filtering by record
 
@@ -134,22 +144,43 @@ with a level plus the level-less lines after it, such as a stack trace.
   a stack trace brings the line that says what failed, and a matched ERROR line
   keeps its stack trace.
 
+The hide pattern works on records too:
+
+- When a record's **first line** matches, the whole record is hidden, stack
+  trace and all. `HealthCheck` hides the health-check records.
+- Any **other line** that matches is hidden on its own. `at org.springframework`
+  shortens a stack trace and leaves the error that it belongs to.
+- Hiding wins: a record that matches both patterns is hidden.
+
+A record is judged by its first line, not by a line further down, so that a
+followed log can show a new record as soon as it arrives.
+
+### A pattern that takes too long
+
+Some patterns, such as `(a+)+$` or `(.*a){20}`, can take minutes on a line they
+almost match. Editora stops matching a line after 50 ms and counts it as not
+matching. After three such lines it stops using the pattern, and the bar says
+*pattern too slow on some lines*. Change the pattern to filter again.
+
 Filtered lines keep their real line numbers in the gutter, and applying or
 clearing a filter keeps you on the line you were on. Filtering works together
 with Follow: new records are filtered as they arrive.
 
 ## Commands
 
-None of the log commands has a default key; run them from the palette or bind
-them in [Keymaps](/docs/keymaps).
+In a log, **Next Problem** and **Previous Problem** step through the lines at
+warning level or higher, since a log has no language server to report problems.
+The keys are F8 and Shift+F8, F2 and Shift+F2 in the IntelliJ keymaps, and
+`M-g M-n` and `M-g M-p` in Emacs.
 
-| Action | Command |
-| --- | --- |
-| Toggle Follow (tail -f) | `log.toggleFollow` |
-| Filter by level | `log.setLevelFilter` |
-| Filter by pattern | `log.setRegexFilter` |
-| Focus the filter field | `log.focusFilter` |
-| Clear the filter | `log.clearFilter` |
-| Next / previous line at warning level or higher (**Log: Next Warning or Error**, **Log: Previous Warning or Error**) | `log.nextError` / `log.previousError` |
+| Action | Command | Default key |
+| --- | --- | --- |
+| Toggle Follow (tail -f) | `log.toggleFollow` | Ctrl+Alt+Shift+L (macOS: ⌥⌘⇧L; Emacs: `C-c C-l t`) |
+| Focus the filter field | `log.focusFilter` | Ctrl+Alt+Shift+F (macOS: ⌥⌘⇧F; Emacs: `C-c C-l f`) |
+| Filter by level | `log.setLevelFilter` | |
+| Filter by pattern | `log.setRegexFilter` | |
+| Hide records matching a pattern | `log.setHideFilter` | |
+| Clear the filter | `log.clearFilter` | |
+| Next / previous line at warning level or higher (**Log: Next Warning or Error**, **Log: Previous Warning or Error**) | `log.nextError` / `log.previousError` | Next / Previous Problem |
 | Show the file as a log, or stop (toggle) | `log.viewAsLog` |
 | Enable/disable the feature | `view.toggleLogViewer` |

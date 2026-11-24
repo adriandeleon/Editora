@@ -35,6 +35,19 @@ after it. The level floor and the pattern both keep or drop whole records, so a 
 with the line that explains it. `LogRecordFilter` holds a record's unmatched lines until a later
 line matches or the next record starts.
 
+**Hiding is decided by a record's first line.** The hide pattern (`LogQuery.exclude`) hides a whole
+record when the line that starts it matches, and any other matching line on its own. A record is
+never hidden by a later line: that would mean holding every record until the next one starts, and a
+followed log would not show its newest record. Hiding wins over showing, and a hidden line is never
+held, so held lines carry their own indexes (they need not be contiguous).
+
+**User patterns run through `LogMatcher`.** A pattern that can backtrack badly (a repeated group, a
+back-reference, three or more quantifiers: `canBacktrack`) is matched through a `CharSequence` that
+checks the clock and gives up on a line after 50 ms; three such lines and the matcher stops trying.
+The filter runs on the FX thread for a small log and the overlay's match highlight always does, so
+this is what keeps a bad pattern from freezing the window. Other patterns skip the check: it made a
+filter about 10% slower. JDK 25 memoizes `(a+)+$`, so tests use `(.*a){20}$`.
+
 **Only complete lines are judged.** A followed log arrives in chunks that can end mid-line. The
 visible text is always whole lines, each ending in `\n`; the unfinished last line is shown
 provisionally and replaced when its newline arrives. Appending kept lines without a terminator is
@@ -67,8 +80,6 @@ installed only if the text has done nothing but grow since (`LogView.epoch()`).
 
 ## Not done
 
-- No default key bindings for the `log.*` commands; `log.focusFilter` exists to bind.
-- No match highlight inside filtered lines, no exclude filter, no case toggle.
 - "View as Log" and the active filter are not remembered across sessions.
-- A pattern that backtracks catastrophically still runs unbounded (on the worker for a large log,
-  on the FX thread for a small one).
+- The level filter, pattern filter, hide filter and clear filter commands have no default keys.
+- The hide pattern's matches are not highlighted (only the show pattern's are).

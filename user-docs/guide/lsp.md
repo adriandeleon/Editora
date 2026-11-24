@@ -116,7 +116,9 @@ double-click jumps to any entry, a JDK or library one included.
 **Next Problem** and **Previous Problem** move the caret to the file's next or
 previous error, wrapping at the end (its warnings when it has no errors), and say
 what it is; **Show Problem at Caret** says the problem under the caret, or the
-worst one on its line.
+worst one on its line. In a log file they step through its warnings and errors
+instead (see [the log viewer](/docs/log-viewer)). The CUA and Sublime keymaps
+bind them to F8 and Shift+F8, like VS Code.
 
 ## Reading the code
 

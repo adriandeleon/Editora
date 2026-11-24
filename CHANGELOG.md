@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Hide records in the log viewer.** The log control bar has a second field, for the records to hide: a record whose
+  first line matches is hidden with its stack trace, and any other matching line on its own, so `at org.springframework`
+  shortens traces and `HealthCheck` drops the health checks. **Aa** makes both patterns match case, the show pattern's
+  matches are highlighted in the visible lines, and **Log: Hide Matching Records** sets the pattern from the palette.
+  A pattern that backtracks without end (`(a+)+$`) gives up after 50 ms a line instead of freezing the window.
+  **Log: Focus Filter** and **Log: Toggle Follow** have default keys (Ctrl+Alt+Shift+F and Ctrl+Alt+Shift+L), and
+  Next/Previous Problem steps through a log's warnings and errors; the CUA and Sublime keymaps bind it to F8.
+
 - **Homebrew and winget packages** (Pauta REL-12, REL-13, REL-14). A release now writes a Homebrew cask, for
   `brew install --cask adriandeleon/tap/editora` on Apple Silicon Macs, and opens a winget pull request for
   `winget install AdrianDeLeon.Editora` on Windows. Both need the `PACKAGES_TOKEN` repository secret; without it a

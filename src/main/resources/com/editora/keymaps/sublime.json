@@ -85,5 +85,9 @@
   "M-S-1": "project.toggleMapView",
   "M-f1": "projectMap.revealActiveFile",
   "M-pagedown": "window.other",
-  "M-pageup": "window.otherReverse"
+  "M-pageup": "window.otherReverse",
+  "C-M-S-f": "log.focusFilter",
+  "C-M-S-l": "log.toggleFollow",
+  "f8": "lsp.nextProblem",
+  "S-f8": "lsp.previousProblem"
 }

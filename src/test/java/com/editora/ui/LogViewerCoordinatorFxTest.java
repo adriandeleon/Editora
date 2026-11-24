@@ -225,7 +225,10 @@ class LogViewerCoordinatorFxTest {
 
         host.promptAnswer = "timed out";
         FxTestSupport.runOnFx(c::setRegexFilter);
-        assertEquals("timed out", FxTestSupport.callOnFx(bar::patternText), "the bar shows the palette's pattern");
+        assertEquals(
+                "timed out",
+                FxTestSupport.callOnFx(() -> bar.query().include()),
+                "the bar shows the palette's pattern");
         assertEquals("3 of 6 lines", FxTestSupport.callOnFx(bar::stateText), "the whole ERROR record, counted");
 
         // Choosing a level in the bar used to read an empty pattern field and drop the palette's pattern.
@@ -236,7 +239,7 @@ class LogViewerCoordinatorFxTest {
             level.getSelectionModel().select(LogControlBar.LEVELS.indexOf(com.editora.logviewer.LogLevel.WARN));
             level.getOnAction().handle(new javafx.event.ActionEvent());
         });
-        assertEquals("timed out", FxTestSupport.callOnFx(log::getLogPattern), "the pattern is still on");
+        assertEquals("timed out", FxTestSupport.callOnFx(() -> log.getLogQuery().include()), "the pattern is still on");
         assertEquals(com.editora.logviewer.LogLevel.WARN, FxTestSupport.callOnFx(log::getLogMinLevel));
 
         // And the prompt opens on the pattern that is active, not on nothing.
@@ -246,10 +249,74 @@ class LogViewerCoordinatorFxTest {
 
         FxTestSupport.runOnFx(c::clearFilter);
         assertFalse(FxTestSupport.callOnFx(log::isLogFiltered));
-        assertEquals(null, FxTestSupport.callOnFx(bar::patternText), "clearing empties the field");
+        assertEquals(null, FxTestSupport.callOnFx(() -> bar.query().include()), "clearing empties the field");
         assertEquals(null, FxTestSupport.callOnFx(bar::selectedLevel), "and resets the level");
         assertEquals("", FxTestSupport.callOnFx(bar::stateText));
         assertEquals(SAMPLE, FxTestSupport.callOnFx(log::getContent));
+    }
+
+    @Test
+    void theHideFieldAndMatchCaseFilterFromTheBar() throws Exception {
+        FakeHost host = new FakeHost();
+        LogViewerCoordinator c = new LogViewerCoordinator(host);
+        EditorBuffer log = sampleLog(host, c);
+        LogControlBar bar = barOf(c, log);
+
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.control.TextField hide = (javafx.scene.control.TextField) bar.lookup(".log-hide-field");
+            hide.setText("payment");
+            hide.getOnAction().handle(new javafx.event.ActionEvent()); // Enter
+        });
+        assertEquals(
+                String.join(
+                                "\n",
+                                "2026-10-06 09:00:00 INFO  started",
+                                "2026-10-06 09:00:01 WARN  pool exhausted",
+                                "2026-10-06 09:00:03 INFO  recovered")
+                        + "\n",
+                FxTestSupport.callOnFx(() -> log.getFocusedArea().getText()),
+                "the ERROR record is hidden with its stack trace");
+        assertEquals("3 of 6 lines", FxTestSupport.callOnFx(bar::stateText));
+
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.control.ToggleButton aa = (javafx.scene.control.ToggleButton) bar.lookup(".log-case-toggle");
+            aa.fire(); // Match Case on: "payment" is lower case in the log, so the same record stays hidden
+        });
+        assertTrue(FxTestSupport.callOnFx(() -> log.getLogQuery().matchCase()));
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.control.TextField hide = (javafx.scene.control.TextField) bar.lookup(".log-hide-field");
+            hide.setText("PAYMENT");
+            hide.getOnAction().handle(new javafx.event.ActionEvent());
+        });
+        assertEquals(
+                SAMPLE,
+                FxTestSupport.callOnFx(() -> log.getFocusedArea().getText()),
+                "matching case, PAYMENT hides nothing");
+
+        host.promptAnswer = "pool";
+        FxTestSupport.runOnFx(c::setHideFilter);
+        assertEquals("pool", FxTestSupport.callOnFx(() -> bar.query().exclude()), "the palette's pattern shows");
+        assertTrue(FxTestSupport.callOnFx(() -> log.getLogQuery().matchCase()), "and keeps Match Case");
+        assertEquals("5 of 6 lines", FxTestSupport.callOnFx(bar::stateText));
+
+        FxTestSupport.runOnFx(c::clearFilter);
+        assertEquals(null, FxTestSupport.callOnFx(() -> bar.query().exclude()), "clearing empties the hide field");
+        assertEquals(SAMPLE, FxTestSupport.callOnFx(log::getContent));
+    }
+
+    @Test
+    void nextProblemStepsThroughWarningsAndErrorsInALog() throws Exception {
+        FakeHost host = new FakeHost();
+        LogViewerCoordinator c = new LogViewerCoordinator(host);
+        EditorBuffer log = sampleLog(host, c);
+        FxTestSupport.runOnFx(() -> log.getFocusedArea().moveTo(0));
+        assertTrue(FxTestSupport.callOnFx(() -> c.stepProblemInLog(true)));
+        assertEquals(1, FxTestSupport.callOnFx(() -> log.getFocusedArea().getCurrentParagraph()), "the WARN line");
+        assertTrue(FxTestSupport.callOnFx(() -> c.stepProblemInLog(true)));
+        assertEquals(2, FxTestSupport.callOnFx(() -> log.getFocusedArea().getCurrentParagraph()), "the ERROR line");
+
+        host.active = null;
+        assertFalse(FxTestSupport.callOnFx(() -> c.stepProblemInLog(true)), "no log: the LSP's Next Problem runs");
     }
 
     @Test
@@ -290,7 +357,8 @@ class LogViewerCoordinatorFxTest {
         FxTestSupport.runOnFx(c::viewAsLog);
         assertTrue(FxTestSupport.callOnFx(plain::isLog));
         assertTrue(FxTestSupport.callOnFx(plain::hasLogControl));
-        FxTestSupport.runOnFx(() -> plain.applyLogFilter(com.editora.logviewer.LogLevel.ERROR, null));
+        FxTestSupport.runOnFx(
+                () -> plain.applyLogFilter(com.editora.logviewer.LogLevel.ERROR, com.editora.logviewer.LogQuery.NONE));
 
         FxTestSupport.runOnFx(c::viewAsLog);
         assertFalse(FxTestSupport.callOnFx(plain::isLog), "run again: no longer a log");
