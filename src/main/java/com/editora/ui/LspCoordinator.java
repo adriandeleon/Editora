@@ -2046,6 +2046,7 @@ final class LspCoordinator {
             case "clojure" -> s.isClojureLspEnabled();
             case "lua" -> s.isLuaLspEnabled();
             case "dart" -> s.isDartLspEnabled();
+            case "elixir" -> s.isElixirLspEnabled();
             case "dockerfile" -> s.isDockerfileLspEnabled();
             case "sql" -> s.isSqlLspEnabled();
             case "terraform" -> s.isTerraformLspEnabled();
@@ -2671,6 +2672,7 @@ final class LspCoordinator {
             case "clojure" -> s.setClojureLspCommand(command);
             case "lua" -> s.setLuaLspCommand(command);
             case "dart" -> s.setDartLspCommand(command);
+            case "elixir" -> s.setElixirLspCommand(command);
             case "dockerfile" -> s.setDockerfileLspCommand(command);
             case "sql" -> s.setSqlLspCommand(command);
             case "terraform" -> s.setTerraformLspCommand(command);

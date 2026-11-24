@@ -164,6 +164,16 @@ class NewFileCatalogTest {
         assertTrue(NewFileCatalog.byId("scripts.babashka").template().startsWith("#!/usr/bin/env bb"));
     }
 
+    /** New ▸ Elixir makes a .ex module with the caret where its CamelCase name goes. */
+    @Test
+    void anElixirModuleStartsWithTheCaretOnItsName() {
+        NewFileType type = NewFileCatalog.byId("lang.elixir");
+        assertEquals("elixir", LanguageRegistry.forFileName(type.suggestedFileName()));
+        NewFileContent.Rendered r = NewFileContent.render(type, "server", "");
+        assertEquals("defmodule  do\nend\n", r.text());
+        assertEquals("defmodule ".length(), r.caret());
+    }
+
     @Test
     void aClojureNamespaceIsNamedAfterItsFileWithDashes() {
         NewFileContent.Rendered r = NewFileContent.render(NewFileCatalog.byId("lang.clojure"), "string_utils", "");

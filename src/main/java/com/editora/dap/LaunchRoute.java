@@ -40,6 +40,8 @@ public final class LaunchRoute {
         BASH_DEBUG,
         /** local-lua-debugger ({@code lua-local}). */
         LUA_DEBUG,
+        /** ElixirLS ({@code mix_task}): a Mix task under its debugger. */
+        ELIXIR_LS,
         /** vscode-firefox-debug ({@code firefox}): a launch opens a page in Firefox; an attach joins a Firefox. */
         FIREFOX,
         /** java-debug, through a run configuration ({@code java}). */
@@ -157,6 +159,12 @@ public final class LaunchRoute {
             }
             case FirefoxLaunch.TYPE -> {
                 return new Route(Kind.FIREFOX, DebugLanguages.FIREFOX, request, attach, "");
+            }
+            case ElixirLaunch.TYPE -> {
+                if (attach) {
+                    return unsupported(body, "a mix_task attach (ElixirLS only launches)");
+                }
+                return new Route(Kind.ELIXIR_LS, DebugLanguages.ELIXIR, request, false, "");
             }
             case "lua-local" -> {
                 if (attach) {

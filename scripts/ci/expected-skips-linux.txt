@@ -2,6 +2,8 @@
 # is not listed here fails the build. Keep the reason beside each group.
 
 # Opt-in probes: need a real JDT LS, debug adapter, Node or Codex login (-Dgroups=probe and friends).
+# (HistoryIndexWriteProbeTest is a timing probe: -Dhistory.probe=true.)
+com.editora.config.HistoryIndexWriteProbeTest
 com.editora.ai.CodexAiProbeTest
 com.editora.lsp.JavaProjectEditingProbeTest
 com.editora.lsp.JdtlsClientSettingsProbeTest
@@ -60,6 +62,7 @@ com.editora.ui.PhpDebugProbeFxTest
 com.editora.ui.PhpWebProbeFxTest
 com.editora.ui.RemoteNativeAttachProbeFxTest
 com.editora.ui.RubyAppsProbeFxTest
+com.editora.ui.ElixirDebugProbeFxTest
 com.editora.ui.BashDebugProbeFxTest
 com.editora.ui.LuaDebugProbeFxTest
 com.editora.ui.JvmLanguageTestsProbeFxTest

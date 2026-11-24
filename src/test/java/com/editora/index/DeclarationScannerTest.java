@@ -646,6 +646,68 @@ class DeclarationScannerTest {
     }
 
     @Nested
+    @DisplayName("elixir")
+    class Elixir {
+
+        @Test
+        void findsModulesProtocolsFunctionsMacrosAndGuards() {
+            String src = """
+                    defmodule MyApp.Shape do
+                      @moduledoc \"""
+                      def not_a_function(x) do
+                      \"""
+                      defstruct kind: :circle
+                      @spec area(t()) :: float()
+                      def area(%{size: s}), do: s * s
+                      defp valid?(x) when is_number(x), do: x > 0
+                      def run!
+                      defmacro twice(expr) do
+                      defmacrop secret(x), do: x
+                      defguard is_small(x) when x < 1
+                      defdelegate size(s), to: Size
+                      def unquote(name)(), do: 1
+                      def unquote(name)(), do: 1
+                    end
+
+                    defprotocol MyApp.Describable do
+                      def describe(value)
+                    end
+
+                    defimpl MyApp.Describable, for: MyApp.Shape do
+                    end
+                    """;
+            assertEquals(
+                    List.of(
+                            "MyApp.Shape",
+                            "area",
+                            "valid?",
+                            "run!",
+                            "twice",
+                            "secret",
+                            "is_small",
+                            "size",
+                            "MyApp.Describable",
+                            "describe"),
+                    names(src, "elixir"));
+        }
+
+        @Test
+        void kindsAndCharacterLiterals() {
+            Symbol module = only("defmodule A do\nend\n", "elixir");
+            assertEquals(SymbolKind.MODULE, module.kind());
+            assertEquals(
+                    SymbolKind.INTERFACE,
+                    only("defprotocol P do\nend\n", "elixir").kind());
+            assertEquals(
+                    SymbolKind.FUNCTION, only("  def go(x), do: x\n", "elixir").kind());
+            // ?" is a character, not a string that blanks the declaration on the next line
+            assertEquals(
+                    List.of("quote_char", "after"), names("def quote_char, do: ?\"\ndef after, do: 1\n", "elixir"));
+            assertEquals(List.of(), names("x = \"def hidden(x)\"\n# def commented(x)\n", "elixir"));
+        }
+    }
+
+    @Nested
     @DisplayName("clojure")
     class Clojure {
 

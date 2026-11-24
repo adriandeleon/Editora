@@ -23,6 +23,7 @@ class ShebangTest {
         assertEquals("js", ext("#!/usr/local/bin/node"));
         assertEquals("php", ext("#!/usr/bin/php"));
         assertEquals("lua", ext("#!/usr/bin/lua"));
+        assertEquals("exs", ext("#!/usr/bin/env elixir"));
         assertEquals("ps1", ext("#!/usr/bin/pwsh"));
     }
 

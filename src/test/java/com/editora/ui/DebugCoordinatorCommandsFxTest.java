@@ -1867,7 +1867,8 @@ class DebugCoordinatorCommandsFxTest {
                         "bash",
                         "dart",
                         "lua",
-                        "firefox"),
+                        "firefox",
+                        "elixir"),
                 pickerRows());
         promptAnswer = "  " + python + " ";
         answerPicker(1, javafx.scene.input.KeyCode.ENTER);
@@ -1922,7 +1923,8 @@ class DebugCoordinatorCommandsFxTest {
                         "bash",
                         "dart",
                         "lua",
-                        "firefox"),
+                        "firefox",
+                        "elixir"),
                 pickerRows());
         answerPicker(0, javafx.scene.input.KeyCode.ENTER);
         assertTrue(host.settings.isPythonDebugEnabled());

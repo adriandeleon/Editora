@@ -46,6 +46,7 @@ final class SourceBlanker {
         boolean clojure = "clojure".equals(language);
         boolean scala = "scala".equals(language);
         boolean dart = "dart".equals(language);
+        boolean elixir = "elixir".equals(language);
         boolean regexLiterals = com.editora.editops.RegexLiterals.in(language);
         char[] out = text.toCharArray();
         String lineComment = clojure ? ";" : style != null && style.hasLine() ? style.line() : null;
@@ -64,6 +65,11 @@ final class SourceBlanker {
                 i++;
                 continue;
             }
+            if (elixir && c == '?' && (i == 0 || !isWordChar(text.charAt(i - 1)))) {
+                // a character literal (?", ?', ?#, ?\n) skips the character it names; `valid?` is a name
+                i += i + 1 < n && text.charAt(i + 1) == '\\' ? 3 : 2;
+                continue;
+            }
             if (blockStart != null && blockEnd != null && text.startsWith(blockStart, i)) {
                 int end = text.indexOf(blockEnd, i + blockStart.length());
                 int stop = end < 0 ? n : end + blockEnd.length();
@@ -79,8 +85,8 @@ final class SourceBlanker {
                 continue;
             }
             if (c == '"' || c == '\'' || c == '`') {
-                // every Clojure string may span lines; Dart's r'…' is raw, so a \ in it escapes nothing
-                i = blankString(text, out, i, c, clojure, dart && isRawPrefix(text, i));
+                // every Clojure and Elixir string may span lines; Dart's r'…' is raw, so a \ in it escapes nothing
+                i = blankString(text, out, i, c, clojure || elixir, dart && isRawPrefix(text, i));
                 continue;
             }
             if (c == '/' && regexLiterals) {
@@ -107,6 +113,10 @@ final class SourceBlanker {
         }
         int next = i + 1 + Character.charCount(text.codePointAt(i + 1));
         return next < n && text.charAt(next) == '\'';
+    }
+
+    private static boolean isWordChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '_';
     }
 
     /** Whether the quote at {@code i} follows a lone {@code r}: Dart's raw string ({@code r'C:\'}). */

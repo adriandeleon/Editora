@@ -65,30 +65,6 @@
       "link": "https://github.com/adriandeleon/Editora/issues/1575"
     },
     {
-      "rule": "REL-12",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.2.0/release/#rel-12",
-      "kind": "pending",
-      "reason": "Editora cannot be installed with Homebrew yet.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1578"
-    },
-    {
-      "rule": "REL-13",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.2.0/release/#rel-13",
-      "kind": "pending",
-      "reason": "Editora cannot be installed with winget yet.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1578"
-    },
-    {
-      "rule": "REL-14",
-      "level": "SHOULD",
-      "url": "https://pauta-project.dev/6.2.0/release/#rel-14",
-      "kind": "pending",
-      "reason": "No access token for publishing to package managers is set up, since none is used yet.",
-      "link": "https://github.com/adriandeleon/Editora/issues/1578"
-    },
-    {
       "rule": "REL-17",
       "level": "SHOULD",
       "url": "https://pauta-project.dev/6.2.0/release/#rel-17",

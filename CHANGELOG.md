@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Homebrew and winget packages** (Pauta REL-12, REL-13, REL-14). A release now writes a Homebrew cask, for
+  `brew install --cask adriandeleon/tap/editora` on Apple Silicon Macs, and opens a winget pull request for
+  `winget install AdrianDeLeon.Editora` on Windows. Both need the `PACKAGES_TOKEN` repository secret; without it a
+  release publishes on GitHub only, as before. A manual dry run of the release workflow renders the cask and the
+  manifests without publishing.
+- **Elixir.** Elixir is a language of its own: highlighting, indentation, folding, the outline, snippets and a new-file
+  template, with ElixirLS as its language server. Run File and Debug File run a Mix project's tests (`mix test`), a
+  script (`mix run`) or the project, and Debug Test at Caret debugs the ExUnit test at the caret alone, stopping in your
+  modules with their values. ElixirLS installs from **Settings → Debugging**.
 - **Ruby tests and Rails apps.** Run File and Debug File now run a Ruby file as what it is: an RSpec or Minitest file's
   tests (through `bin/rails test` in a Rails app), a Rails app's server, or a script, under `bundle exec` in a bundled
   project. Debug Test at Caret debugs the RSpec example or Minitest test at the caret alone, and F5 in a Rails
@@ -217,6 +226,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     two texts that share little: past 4,000 line edits they use the coarse comparison. The HTTP response viewer
     formats only the part of a large JSON body it shows. Finishing a long agent reply keeps the parts already shown.
     A new colour swatch in a CSS or HTML file no longer restyles the whole editor.
+  - Local History: with a long history, a save no longer rewrites the whole history index. It writes a small file of
+    what changed beside it (an 8.8 MB index: 42 ms and 8.8 MB written per save → about 1 ms and 13 KB), and the index
+    is rewritten every ten minutes or so of saving, when that file grows, and at quit. A crash keeps every saved
+    version, and two Editoras on one configuration folder still keep each other's versions and deletions.
 
 - **Editora's Linux app ID is now `io.github.adriandeleon.Editora`** (it was `com.editora.Editora`), as Pauta asks.
   It is the ID GNOME Software, KDE Discover and other software centres know Editora by. The listing says it replaces

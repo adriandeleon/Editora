@@ -1337,6 +1337,25 @@ a shell run configuration still is not debugged (`status.debug.shellNotDebuggabl
 `BashDebugWindowFxTest` (a stand-in adapter) covers the launch, the first stop passed, the watch and a zsh script;
 `BashDebugProbeFxTest` stops in a loop on the real adapter, reads its variables, steps and runs to the end.
 
+**Elixir.** The `elixir` profile is ElixirLS (elixir-lsp, Apache-2.0, 0.31.1), whose release zip holds the debug
+adapter (`debug_adapter.sh`, `.bat` on Windows; `InstalledAdapter.ELIXIR_LS`, a script, `<config>/plugins/dap/elixir`,
+`InstallCatalog.ELIXIR_LS_STEP`, settings `elixirDebugEnabled`/`elixirDebugPath`, schema 184) and the language server
+beside it (`language_server.sh`, located by `install/ElixirServerInstall`: as configured, else that install, else
+`elixir-ls` or `language_server.sh` on the PATH; held back by `UntrustedBuilds` in an untrusted folder with a
+`mix.exs`, since it compiles the project). Its first start compiles ElixirLS with the user's Elixir into
+`~/.cache/mix/installs` (Mix.install; Debian splits leex's `leexinc.hrl` into `erlang-dev`). A launch is a `mix_task`
+([`dap/ElixirLaunch`](../../src/main/java/com/editora/dap/ElixirLaunch.java)) planned by
+[`run/ElixirRun`](../../src/main/java/com/editora/run/ElixirRun.java) in the project (the nearest `mix.exs`): a test
+file `task: test`, `taskArgs: ["test/x_test.exs:<line>"]` (Debug Test at Caret's line, else the file), `startApps`, and
+`requireFiles` of `test/test_helper.exs` and the file, so a test's own module is interpreted too; another `.exs`
+`task: run` with the script; a module `task: run`, `--no-halt` when `mix.exs` names an application `mod:`. Without a
+Mix project ElixirLS fails the launch (`Mix.NoProjectError`): `ui/ElixirDebugLaunch` says so
+(`status.debug.elixirNeedsMix`) and Run File runs `elixir file`. Run File and F5 in a project ask the trust question
+first (`dialog.trust.item.mix`: Mix compiles the project and its dependencies). A launch.json `mix_task` configuration is
+`LaunchRoute.Kind.ELIXIR_LS`. No exception filters. ElixirLS does not pass ExUnit's report to the console.
+`ElixirDebugProbeFxTest` (opt-in) drives Debug Test at Caret (a stop in the module with its values, that test alone),
+F5 on a project script, a script with no project, and Run File on a test file, on Elixir 1.18 / OTP 27.
+
 **Lua.** The `lua` profile is local-lua-debugger (tomblind, MIT, `tomblind.local-lua-debugger-vscode` 0.3.3, its last
 release; SHA-256 checked), `extension/debugAdapter.js` on Node.js over stdio. `InstalledAdapter.LUA_DEBUG` finds it as
 configured (`Settings.luaDebugPath`), else in Editora's install (`plugins/dap/lua/extension/extension/debugAdapter.js`),

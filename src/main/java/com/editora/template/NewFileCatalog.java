@@ -143,6 +143,15 @@ public final class NewFileCatalog {
             {cursor}
             """;
 
+    /**
+     * An Elixir module, the caret where its name goes: a module is named in CamelCase ({@code MyApp.Server}) and
+     * its file in snake_case ({@code server.ex}), so the file name is no module name to fill in.
+     */
+    private static final String ELIXIR_MODULE = """
+            defmodule {cursor} do
+            end
+            """;
+
     private static final String BABASHKA = """
             #!/usr/bin/env bb
 
@@ -286,6 +295,8 @@ public final class NewFileCatalog {
                             NewFileType.named("lang.csharp", "C#", "Program", "cs"),
                             NewFileType.named("lang.go", "Go", "main", "go"),
                             NewFileType.named("lang.dart", "Dart", "main", "dart"),
+                            NewFileType.named("lang.elixir", "Elixir", "app", "ex")
+                                    .withTemplate(ELIXIR_MODULE),
                             NewFileType.named("lang.rust", "Rust", "main", "rs"),
                             NewFileType.named("lang.kotlin", "Kotlin", "Main", "kt"),
                             NewFileType.named("lang.scala", "Scala", "Main", "scala")

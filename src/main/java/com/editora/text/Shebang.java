@@ -55,6 +55,7 @@ public final class Shebang {
             Map.entry("lua", "lua"),
             Map.entry("luajit", "lua"),
             Map.entry("dart", "dart"),
+            Map.entry("elixir", "exs"),
             Map.entry("groovy", "groovy"),
             Map.entry("kotlin", "kts"), // a *.main.kts script run by the kotlin launcher
             Map.entry("scala", "sc"),

@@ -10,6 +10,14 @@ project:
   links:
     homepage: https://github.com/adriandeleon/Editora
   inceptionYear: "2026"
+  # Read from the project, not from the packager: tags set under winget: are not picked up.
+  tags:
+    - text-editor
+    - code-editor
+    - ide
+    - javafx
+  # An application rather than a command-line tool: what makes brew write a cask, not a formula.
+  stereotype: DESKTOP
   java:
     groupId: com.editora
     version: 25
@@ -40,16 +48,96 @@ release:
     changelog:
       external: out/release-notes.md
 
-# Attach every artifact gathered from the build matrix (downloaded under ./artifacts): native installers
-# (.dmg/.msi/.deb/.rpm), the portable Linux builds (.AppImage single-file + .tar.gz extract-and-install),
+# The package managers (Pauta REL-12, REL-13). A Homebrew cask takes exactly one artifact, so macOS and
+# Windows are two distributions: the cask serves Apple Silicon, and Intel Macs download the macos-x64 DMG.
+# Both packagers push to another repository, which the workflow's own token cannot do: release.yml passes
+# PACKAGES_TOKEN (a classic token with repo scope) and leaves both packagers out while it is unset (REL-14).
+# continueOnError: a token problem costs the package-manager update, never the release.
+#
+# The paths name the files download-artifact puts under ./artifacts/<artifact name>/. EDITORA_BUILD_VERSION
+# is the version in those names: the tag's on a release, the pom's -SNAPSHOT on a dry run, where the
+# project version has the suffix stripped (release.yml). A distribution's file is attached to the release
+# like the ones in `files`, so `files` leaves these two out: listed in both, JReleaser uploads the file
+# once but writes it into checksums_sha256.txt twice. The cask template is src/jreleaser/ (no
+# `auto_updates`, Apple Silicon only); EDITORA_MSI_PRODUCT_CODE is the MSI's own ProductCode, which
+# release.yml reads from the file.
+#
+# Check the cask and the manifests without releasing: docs/release.md, "Homebrew and winget".
+distributions:
+  editora:
+    type: NATIVE_PACKAGE
+    artifacts:
+      - path: 'artifacts/Editora-{{Env.EDITORA_BUILD_VERSION}}-macos-arm64/Editora-{{Env.EDITORA_BUILD_VERSION}}-macos-arm64.dmg'
+        platform: osx-aarch_64
+    brew:
+      active: RELEASE
+      continueOnError: true
+      # The tap is shared by the family and has a README of its own; JReleaser's stock one, written over
+      # it on every release, describes formulae the tap does not have.
+      skipTemplates:
+        - README.md.tpl
+      cask:
+        enabled: true
+        name: editora
+        displayName: Editora
+        appName: Editora.app
+      repository:
+        active: RELEASE
+        owner: adriandeleon
+        name: homebrew-tap
+        branch: main
+        branchPush: main
+
+  editora-windows:
+    type: NATIVE_PACKAGE
+    # winget's `Commands`: the console launcher the MSI puts on the PATH.
+    executable:
+      name: editora-cli
+      windowsExtension: exe
+    artifacts:
+      - path: 'artifacts/Editora-{{Env.EDITORA_BUILD_VERSION}}-windows-x64/Editora-{{Env.EDITORA_BUILD_VERSION}}-windows-x64.msi'
+        platform: windows-x86_64
+    winget:
+      active: RELEASE
+      continueOnError: true
+      package:
+        identifier: AdrianDeLeon.Editora
+        name: Editora
+        version: '{{projectVersion}}'
+        url: https://github.com/adriandeleon/Editora
+      publisher:
+        name: Adrian De Leon
+        url: https://github.com/adriandeleon
+        supportUrl: https://github.com/adriandeleon/Editora/issues
+      moniker: editora
+      installer:
+        type: MSI
+        # The MSI installs per machine (aot_build.java passes no per-user option).
+        scope: MACHINE
+        upgradeBehavior: INSTALL
+      # How winget finds an installed Editora to upgrade or remove; jpackage makes a new one per version.
+      productCode: '{{Env.EDITORA_MSI_PRODUCT_CODE}}'
+      # JReleaser copies the project's LICENSE into every packager's repository; in the winget fork that
+      # would replace Microsoft's own, and the pull request would carry it.
+      extraProperties:
+        skipLicenseFile: true
+      # A fork of microsoft/winget-pkgs under this account; the pull request is opened from it.
+      repository:
+        active: RELEASE
+        owner: adriandeleon
+        name: winget-pkgs
+        branch: master
+        branchPush: 'editora-{{projectVersion}}'
+
+# Attach every other artifact gathered from the build matrix (downloaded under ./artifacts): native installers
+# (the Intel .dmg, .deb, .rpm; the Apple Silicon .dmg and the .msi come from the distributions above), the portable Linux builds (.AppImage single-file + .tar.gz extract-and-install),
 # experimental Native Image archives, and per-platform runnable fat jars. All are named
 # per target in CI, so names are unique across OS/arch. Each Linux download has its OpenPGP signature
 # beside it (release.yml, sign-linux), and editora-signing-key.asc, the key that made them, is attached
 # too.
 files:
   globs:
-    - pattern: 'artifacts/**/*.dmg'
-    - pattern: 'artifacts/**/*.msi'
+    - pattern: 'artifacts/**/*-macos-x64.dmg'
     - pattern: 'artifacts/**/*.deb'
     - pattern: 'artifacts/**/*.rpm'
     - pattern: 'artifacts/**/*.AppImage'

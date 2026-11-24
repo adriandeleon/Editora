@@ -143,6 +143,29 @@ class AutoCloseTest {
                 AutoClose.decide('\'', "var s = ", (char) 0, false, "dart").action());
     }
 
+    /** Elixir: triple quotes open heredocs, ?" is a character, a sigil's quote pairs, and a backtick is no string. */
+    @Test
+    void elixirQuotes() {
+        assertEquals(
+                Action.INSERT_TRIPLE,
+                AutoClose.decide('"', "  @doc \"\"", (char) 0, false, "elixir").action());
+        assertEquals(
+                Action.NONE,
+                AutoClose.decide('"', "c = ?", (char) 0, false, "elixir").action());
+        assertEquals(
+                Action.INSERT_PAIR,
+                AutoClose.decide('"', "r = ~r", (char) 0, false, "elixir").action());
+        assertEquals(
+                Action.NONE,
+                AutoClose.decide('"', "x = bar", (char) 0, false, "elixir").action());
+        assertEquals(
+                Action.NONE,
+                AutoClose.decide('`', "x = ", (char) 0, false, "elixir").action());
+        assertEquals(
+                Action.INSERT_PAIR,
+                AutoClose.decide('\'', "x = ", (char) 0, false, "elixir").action());
+    }
+
     @Test
     void aBracketPairsOnlyWhereItsCloserCanSit() {
         assertEquals(Action.NONE, act('(', ' ', 'f', false), "before a word: `(` wraps it, no `()foo`");

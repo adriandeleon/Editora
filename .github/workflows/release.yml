@@ -857,8 +857,7 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
-            artifacts/**/*.dmg
-            artifacts/**/*.msi
+            artifacts/**/*-macos-x64.dmg
             artifacts/**/*.deb
             artifacts/**/*.rpm
             artifacts/**/*.AppImage
@@ -866,6 +865,51 @@ jobs:
             artifacts/**/Editora-*-native-experimental.zip
             artifacts/**/Editora-*.jar
             artifacts/**/*.asc
+            artifacts/Editora-*-macos-arm64/Editora-*-macos-arm64.dmg
+            artifacts/Editora-*-windows-x64/Editora-*-windows-x64.msi
+
+      # winget's manifest names the MSI's ProductCode, which is how winget finds an installed Editora to
+      # upgrade or remove. jpackage makes a new one for every version, so it is read from the file itself.
+      - name: Read the MSI's ProductCode
+        id: msi
+        shell: bash
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq msitools
+          msi="artifacts/Editora-$VERSION-windows-x64/Editora-$VERSION-windows-x64.msi"
+          code="$(msiinfo export "$msi" Property | tr -d '\r' | awk -F '\t' '$1 == "ProductCode" { print $2 }')"
+          if ! [[ "$code" =~ ^\{[0-9A-Fa-f-]{36}\}$ ]]; then
+            echo "::error title=No ProductCode::$msi has no ProductCode that winget can use: '$code'"
+            exit 1
+          fi
+          echo "product_code=$code" >> "$GITHUB_OUTPUT"
+          echo "MSI ProductCode: $code"
+
+      # Pauta REL-14. The Homebrew tap and the winget fork are other repositories, which the workflow's own
+      # token cannot write to: PACKAGES_TOKEN is a classic personal access token with `repo` scope. Without it
+      # a release leaves both packagers out and still publishes; once the secret exists they run, with no
+      # change here. A manual run is a dry run: it renders the cask and the manifests (in the uploaded
+      # jreleaser-output) and pushes nothing.
+      - name: Decide what JReleaser runs
+        id: packagers
+        shell: bash
+        env:
+          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "args=full-release --dry-run" >> "$GITHUB_OUTPUT"
+            echo "Dry run: nothing is published."
+          elif [ -n "${PACKAGES_TOKEN:-}" ]; then
+            echo "args=full-release" >> "$GITHUB_OUTPUT"
+            echo "PACKAGES_TOKEN is set: the Homebrew cask and the winget pull request are published."
+          else
+            echo "args=full-release --exclude-packager brew --exclude-packager winget" >> "$GITHUB_OUTPUT"
+            echo "::notice::No PACKAGES_TOKEN: publishing the GitHub release only, with no Homebrew cask and no winget pull request."
+          fi
 
       - name: JReleaser
         # No `v2` TAG exists upstream — `@v2` was a branch. Pinned to that branch's head as of 2026-10-01
@@ -875,11 +919,18 @@ jobs:
           # The JReleaser the action downloads. The default is `latest`, i.e. whatever was published
           # most recently on the day of the release; pin it and bump deliberately.
           version: 1.26.0
-          # Real tag pushes publish; manual runs only validate (dry run).
-          arguments: ${{ github.event_name == 'workflow_dispatch' && 'release --dry-run' || 'full-release' }}
+          # Real tag pushes publish; manual runs only validate (dry run). See "Decide what JReleaser runs".
+          arguments: ${{ steps.packagers.outputs.args }}
         env:
           JRELEASER_PROJECT_VERSION: ${{ steps.ver.outputs.release_version }}
+          # The version in the artifacts' names (jreleaser.yml's distributions), -SNAPSHOT on a dry run.
+          EDITORA_BUILD_VERSION: ${{ steps.ver.outputs.version }}
+          EDITORA_MSI_PRODUCT_CODE: ${{ steps.msi.outputs.product_code }}
           JRELEASER_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Push the cask to adriandeleon/homebrew-tap and open the winget pull request from the
+          # adriandeleon/winget-pkgs fork. A dry run only reads those (public) repositories.
+          JRELEASER_BREW_GITHUB_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+          JRELEASER_WINGET_GITHUB_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Upload JReleaser logs
         if: always()
@@ -889,6 +940,7 @@ jobs:
           path: |
             out/jreleaser/trace.log
             out/jreleaser/output.properties
+            out/jreleaser/package/
           if-no-files-found: ignore
 
   # Reopen master for development: after a real release, put the pom back on the NEXT patch with a

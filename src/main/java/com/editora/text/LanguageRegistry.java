@@ -172,6 +172,8 @@ public final class LanguageRegistry {
             Map.entry("rb", "ruby"),
             Map.entry("rake", "ruby"),
             Map.entry("gemspec", "ruby"),
+            Map.entry("ex", "elixir"),
+            Map.entry("exs", "elixir"),
             // Shell extensions come from ShellFiles (shared with GrammarRegistry), see forFileName.
             Map.entry("ps1", "powershell"),
             Map.entry("psm1", "powershell"),

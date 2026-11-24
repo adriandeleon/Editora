@@ -980,6 +980,9 @@ public final class InstallCatalog {
         if (FIREFOX_DEBUG_STEP.equals(stepId)) {
             return Optional.of(firefoxDebug());
         }
+        if (ELIXIR_LS_STEP.equals(stepId)) {
+            return Optional.of(elixirLs());
+        }
         if (!KOTLIN_LSP_STEP.equals(stepId)) {
             return Optional.empty();
         }
@@ -1071,6 +1074,37 @@ public final class InstallCatalog {
             assets.put(p, vsix);
         }
         return new PinnedServer(LUA_DEBUG_STEP, LUA_DEBUG_VERSION, assets, "debugAdapter.js", "", 2, 8);
+    }
+
+    /**
+     * ElixirLS (Apache-2.0, github.com/elixir-lsp/elixir-ls): one release zip for every platform, with the language
+     * server's and the debug adapter's launch scripts at its top level ({@code language_server.sh} and
+     * {@code debug_adapter.sh}, a {@code .bat} of each for Windows). They run on the Elixir and Erlang on the PATH, and
+     * ElixirLS compiles itself with Mix on its first start. The hash is the release asset's SHA-256 as GitHub publishes
+     * it for the tag, checked against a downloaded copy. The launcher is the debug adapter's script: {@code
+     * debug_adapter} finds the {@code .bat} on Windows, which the installer matches without its extension.
+     */
+    private static PinnedServer elixirLs() {
+        PinnedAsset zip = new PinnedAsset(
+                "https://github.com/elixir-lsp/elixir-ls/releases/download/v" + ELIXIR_LS_VERSION + "/elixir-ls-v"
+                        + ELIXIR_LS_VERSION + ".zip",
+                "bac08322ea3698157eb2373bb5b65e38c15df9dd41e1c06f142f874367fa472f",
+                Packing.ZIP);
+        java.util.Map<Platform, PinnedAsset> assets = new java.util.EnumMap<>(Platform.class);
+        for (Platform p : Platform.values()) {
+            assets.put(p, zip);
+        }
+        return new PinnedServer(
+                ELIXIR_LS_STEP, ELIXIR_LS_VERSION, assets, elixirLsLauncher(currentPlatform()), "", 1, 1);
+    }
+
+    /**
+     * The ElixirLS debug adapter's launcher as the installer looks for it on {@code platform}: {@code debug_adapter.sh},
+     * or on Windows {@code debug_adapter}, which matches {@code debug_adapter.bat} (a {@code .bat} is matched without
+     * its extension). Pure.
+     */
+    static String elixirLsLauncher(Platform platform) {
+        return platform == Platform.WIN_X64 ? "debug_adapter" : "debug_adapter.sh";
     }
 
     /**
@@ -1500,6 +1534,21 @@ public final class InstallCatalog {
                     LUA_DEBUG_DIR,
                     null)));
         }
+        if (ELIXIR_LS_STEP.equals(key)) {
+            boolean linuxHost = currentPlatform() == Platform.LINUX_X64 || currentPlatform() == Platform.LINUX_ARM;
+            return Optional.of(List.of(new Step(
+                    ELIXIR_LS_STEP,
+                    Kind.PINNED_SERVER,
+                    linuxHost ? Set.of() : Set.of(Prereq.TAR),
+                    List.of(),
+                    null,
+                    null,
+                    null,
+                    null,
+                    false,
+                    ELIXIR_LS_DIR,
+                    null)));
+        }
         if (FIREFOX_DEBUG_STEP.equals(key)) {
             boolean linuxHost = currentPlatform() == Platform.LINUX_X64 || currentPlatform() == Platform.LINUX_ARM;
             return Optional.of(List.of(new Step(
@@ -1589,6 +1638,18 @@ public final class InstallCatalog {
      * there.
      */
     public static final String FIREFOX_DEBUG_DIR = "plugins/dap/firefox";
+
+    /** The ElixirLS step's id, its Settings key and its recipe's ({@link #pinnedServer}). */
+    public static final String ELIXIR_LS_STEP = "elixir-ls";
+
+    /** The ElixirLS release Editora installs. Bump with its hash in {@link #pinnedServer}. */
+    public static final String ELIXIR_LS_VERSION = "0.31.1";
+
+    /**
+     * Where ElixirLS is unpacked, relative to the config dir: its debug adapter ({@code InstalledAdapter.ELIXIR_LS}) and
+     * its language server both run from there.
+     */
+    public static final String ELIXIR_LS_DIR = "plugins/dap/elixir";
 
     /** The netcoredbg step's id, its Settings key and its recipe's ({@link #pinnedServer}). */
     public static final String NETCOREDBG_STEP = "netcoredbg";

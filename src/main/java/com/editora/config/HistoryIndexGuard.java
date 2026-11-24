@@ -54,8 +54,12 @@ final class HistoryIndexGuard {
         }
         String name = index.getFileName().toString();
         try (Stream<Path> siblings = Files.list(dir)) {
+            // Not the index's delta (HistoryIndexFiles): it is named like a backup so that older builds protect
+            // its bodies, but it is part of the index here, and this build counts its rows as listed.
+            String delta = name + HistoryIndexFiles.DELTA_SUFFIX;
             return siblings.map(p -> p.getFileName().toString())
                     .filter(n -> n.startsWith(name)
+                            && !n.equals(delta)
                             && BACKUP_SUFFIX.matcher(n.substring(name.length())).matches())
                     .collect(java.util.stream.Collectors.toCollection(java.util.TreeSet::new));
         } catch (IOException e) {

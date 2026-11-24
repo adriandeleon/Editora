@@ -132,6 +132,10 @@ final class RunScan {
             // A script, a spec or test file, a Rails app's entry; a file of classes and methods has none.
             line = com.editora.run.RubyRunLines.runLine(in.name() == null ? "" : in.name(), text);
             runnable = line >= 0;
+        } else if (in.eligible() && "elixir".equals(language)) {
+            // A test file at its module, a script from the top; a module (.ex) has none.
+            line = com.editora.run.ElixirRun.runLine(in.name() == null ? "" : in.name(), text);
+            runnable = line >= 0;
         } else if (in.eligible() && "php".equals(language)) {
             // A script, a web app's entry (index.php, artisan) from the top, a PHPUnit test file at its class; a file
             // of classes has none (PhpRunLines).
