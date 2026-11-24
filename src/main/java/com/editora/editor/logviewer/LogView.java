@@ -1,12 +1,11 @@
 package com.editora.editor.logviewer;
 
 import java.util.Arrays;
-import java.util.Objects;
-import java.util.regex.Pattern;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.logviewer.LogFilter;
 import com.editora.logviewer.LogLevel;
+import com.editora.logviewer.LogQuery;
 import com.editora.logviewer.LogRecordFilter;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.ReadOnlyStyledDocument;
@@ -14,7 +13,7 @@ import org.fxmisc.richtext.model.TwoDimensional;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The log-viewer state of one {@link EditorBuffer}: the level/pattern filter, tail-follow, and the complete text
+ * The log-viewer state of one {@link EditorBuffer}: the level and text filter, tail-follow, and the complete text
  * that a filter hides.
  *
  * <p>A filter really replaces the editor text with the matching lines, so the area is <b>not</b> the document
@@ -68,10 +67,10 @@ public final class LogView {
     private @Nullable String fullSnapshot;
 
     private @Nullable LogLevel minLevel;
-    /** The pattern as the user typed it, and compiled. */
-    private @Nullable String query;
+    /** The text filter as the user typed it ({@link LogQuery#NONE} when there is none), and compiled. */
+    private LogQuery query = LogQuery.NONE;
 
-    private @Nullable Pattern regex;
+    private LogFilter.Patterns patterns = LogFilter.Patterns.NONE;
     /** The filter, positioned after the last complete line of {@link #full}. */
     private @Nullable LogRecordFilter filter;
     /** Length of the prefix of {@link #full} made of complete lines the filter has judged. */
@@ -175,10 +174,20 @@ public final class LogView {
         return minLevel;
     }
 
-    /** The pattern of the active filter as it was typed (null when unfiltered or no pattern). */
-    @Nullable
-    public String query() {
+    /** The text filter of the active filter as it was typed ({@link LogQuery#NONE} when unfiltered). */
+    public LogQuery query() {
         return query;
+    }
+
+    /** The compiled text filter ({@link LogFilter.Patterns#NONE} when unfiltered): what the overlay highlights. */
+    public LogFilter.Patterns patterns() {
+        return patterns;
+    }
+
+    /** Whether a pattern of the active filter took too long on some line, which was judged as not matching. */
+    public boolean slowPattern() {
+        LogRecordFilter f = filter;
+        return f != null && f.slow();
     }
 
     /** True once follow mode has dropped lines: the buffer is a tail of its file, not the file. */
@@ -247,28 +256,28 @@ public final class LogView {
         return epoch;
     }
 
-    /** Whether {@code min}/{@code pattern} is the filter already showing (so applying it again is no work). */
-    public boolean showsFilter(@Nullable LogLevel min, @Nullable String pattern) {
-        String wanted = pattern == null || pattern.isEmpty() ? null : pattern;
-        return min == minLevel && Objects.equals(wanted, query) && (full != null || (min == null && wanted == null));
+    /** Whether {@code min}/{@code text} is the filter already showing (so applying it again is no work). */
+    public boolean showsFilter(@Nullable LogLevel min, LogQuery text) {
+        LogQuery wanted = text.normalized();
+        return min == minLevel && wanted.equals(query) && (full != null || (min == null && wanted.isEmpty()));
     }
 
     /**
-     * Narrows the visible lines to the records whose (inherited) level is at least {@code min} and which match
-     * {@code pattern}; {@code null}/{@code null} clears the filter and restores the full text. The caret stays
-     * on the line it was on, or the nearest one still visible.
+     * Narrows the visible lines to the records whose (inherited) level is at least {@code min} and which
+     * {@code text} keeps; {@code null}/{@link LogQuery#NONE} clears the filter and restores the full text. The
+     * caret stays on the line it was on, or the nearest one still visible.
      */
-    public void applyFilter(@Nullable LogLevel min, @Nullable String pattern) {
-        if (showsFilter(min, pattern)) {
+    public void applyFilter(@Nullable LogLevel min, LogQuery text) {
+        if (showsFilter(min, text)) {
             return;
         }
-        Pattern rx = LogFilter.compileFilter(pattern);
-        if (min == null && rx == null) {
+        LogFilter.Patterns compiled = LogFilter.compile(text);
+        if (min == null && compiled.isEmpty()) {
             clearFilter();
             return;
         }
         String source = filterSource();
-        install(LogFilter.run(source, min, rx), source, min, pattern);
+        install(LogFilter.run(source, min, compiled), source, min, text);
     }
 
     /**
@@ -276,22 +285,22 @@ public final class LogView {
      * {@code atEpoch}. Returns false, changing nothing, when the text has since changed in any way other than
      * growing at its end — the caller computes again. Lines appended in the meantime are filtered here.
      */
-    public boolean install(LogFilter.Run run, int atEpoch, @Nullable LogLevel min, @Nullable String pattern) {
+    public boolean install(LogFilter.Run run, int atEpoch, @Nullable LogLevel min, LogQuery text) {
         if (atEpoch != epoch) {
             return false;
         }
-        install(run, filterSource(), min, pattern);
+        install(run, filterSource(), min, text);
         return true;
     }
 
-    private void install(LogFilter.Run run, String current, @Nullable LogLevel min, @Nullable String pattern) {
+    private void install(LogFilter.Run run, String current, @Nullable LogLevel min, LogQuery text) {
         boolean atEnd = following && showsEnd();
         int caretLine = caretSourceLine();
         full = new StringBuilder(current);
         fullSnapshot = current;
         minLevel = min;
-        query = pattern == null || pattern.isEmpty() ? null : pattern;
-        regex = LogFilter.compileFilter(query);
+        query = text.normalized();
+        patterns = LogFilter.compile(query);
         adopt(run);
         replaceArea(run.text());
         showPending();
@@ -395,7 +404,7 @@ public final class LogView {
         trimmed = false;
         heldAtFollowStart = 0;
         if (full != null) {
-            LogFilter.Run run = LogFilter.run(text, minLevel, regex);
+            LogFilter.Run run = LogFilter.run(text, minLevel, patterns);
             full = new StringBuilder(text);
             fullSnapshot = text;
             adopt(run);
@@ -425,17 +434,17 @@ public final class LogView {
             return () -> {};
         }
         LogLevel min = minLevel;
-        String pattern = query;
+        LogQuery text = query;
         clearFilterState();
-        return () -> applyFilter(min, pattern);
+        return () -> applyFilter(min, text);
     }
 
     private void clearFilterState() {
         full = null;
         fullSnapshot = null;
         minLevel = null;
-        query = null;
-        regex = null;
+        query = LogQuery.NONE;
+        patterns = LogFilter.Patterns.NONE;
         filter = null;
         consumed = 0;
         nextLine = 0;

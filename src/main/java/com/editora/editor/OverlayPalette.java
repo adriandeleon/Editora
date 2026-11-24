@@ -216,7 +216,8 @@ public final class OverlayPalette {
             Color trace,
             Color fatalWash,
             Color errorWash,
-            Color warnWash) {}
+            Color warnWash,
+            Color match) {}
 
     /** The log tints for an editor painted on {@code background}, with no theme to read. Pure. */
     public static LogTints logTints(@Nullable Color background) {
@@ -245,7 +246,8 @@ public final class OverlayPalette {
                 reach(ground.interpolate(ink(ground), 0.25), ground, 1.6),
                 alpha(base.error(), wash * 1.8),
                 alpha(base.error(), wash),
-                alpha(base.warning(), wash * 0.85));
+                alpha(base.warning(), wash * 0.85),
+                base.searchMatch());
     }
 
     /** Feeds {@code sink} the log tints for {@code area}, as {@link #track} feeds the overlay colours. */

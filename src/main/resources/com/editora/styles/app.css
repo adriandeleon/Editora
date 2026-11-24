@@ -1448,7 +1448,7 @@
     -fx-padding: 3 12 3 8;
     -fx-spacing: 6;
 }
-/* One height for the three controls: they are a row, and three different heights read as three widgets. */
+/* One height for the controls: they are a row, and different heights read as separate widgets. */
 .log-controls .log-follow,
 .log-controls .log-level-combo,
 .log-controls .log-filter-field {
@@ -1463,9 +1463,14 @@
 .log-controls .log-follow:selected .toolbar-icon { -fx-fill: -color-accent-fg; }
 .log-controls .log-level-combo .list-cell { -fx-font-size: 12px; -fx-padding: 0 4 0 6; }
 .log-controls .log-filter-field { -fx-pref-width: 320; -fx-max-width: 480; -fx-padding: 0 8 0 8; }
+/* What to hide is usually a word or two: the field of what to show gets the room. */
+.log-controls .log-hide-field { -fx-pref-width: 200; -fx-max-width: 360; }
+.log-controls .log-case-toggle { -fx-min-height: 26; -fx-pref-height: 26; -fx-max-height: 26; -fx-font-size: 12px; }
 /* Not a valid regular expression: it still filters, as plain text. */
 .log-controls .log-filter-field:literal { -fx-border-color: -state-amber-emphasis; -fx-border-radius: 4; }
 .log-controls .log-state { -fx-text-fill: -color-fg-muted; -fx-font-size: 12px; }
+/* A pattern gave up on some lines: say so in the warning colour, not as a muted count. */
+.log-controls .log-state:warning { -fx-text-fill: -state-amber; }
 
 /* The preview's −/+ zoom control (top-left of the preview pane). */
 .md-zoom {

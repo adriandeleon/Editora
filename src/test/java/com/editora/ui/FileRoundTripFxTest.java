@@ -252,7 +252,7 @@ class FileRoundTripFxTest {
             EditorBuffer buffer = load(fx, file);
 
             boolean editableBefore = FxTestSupport.callOnFx(buffer::isEditable);
-            FxTestSupport.runOnFx(() -> buffer.applyLogFilter(LogLevel.ERROR, null));
+            FxTestSupport.runOnFx(() -> buffer.applyLogFilter(LogLevel.ERROR, com.editora.logviewer.LogQuery.NONE));
             assertEquals(
                     "2026-01-01 ERROR failed",
                     FxTestSupport.callOnFx(buffer::getVisibleContent).strip());
@@ -267,7 +267,7 @@ class FileRoundTripFxTest {
             assertFalse(FxTestSupport.callOnFx(buffer::isDirty), "followed text comes from the file itself");
             assertEquals(log + "2026-01-01 DEBUG ignored\n", FxTestSupport.callOnFx(buffer::getContent));
 
-            FxTestSupport.runOnFx(() -> buffer.applyLogFilter(null, null));
+            FxTestSupport.runOnFx(() -> buffer.applyLogFilter(null, com.editora.logviewer.LogQuery.NONE));
             assertEquals(log + "2026-01-01 DEBUG ignored\n", FxTestSupport.callOnFx(buffer::getVisibleContent));
             assertFalse(FxTestSupport.callOnFx(buffer::isDirty), "clearing the filter is not an edit either");
             assertEquals(editableBefore, FxTestSupport.callOnFx(buffer::isEditable));
@@ -281,7 +281,7 @@ class FileRoundTripFxTest {
             Path file = Files.writeString(dir.resolve("reload.log"), "INFO old\nERROR old\n");
             EditorBuffer buffer = load(fx, file);
             FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
-            FxTestSupport.runOnFx(() -> buffer.applyLogFilter(LogLevel.ERROR, null));
+            FxTestSupport.runOnFx(() -> buffer.applyLogFilter(LogLevel.ERROR, com.editora.logviewer.LogQuery.NONE));
 
             Files.writeString(file, "INFO new\nERROR new\nERROR newer\n");
             FxTestSupport.callOnFx(() -> workflows.loadInto(buffer, file));

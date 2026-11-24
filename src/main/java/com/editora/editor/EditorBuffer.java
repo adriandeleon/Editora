@@ -98,6 +98,7 @@ import com.editora.editor.undo.CompletionUndoManager;
 import com.editora.editor.undo.UndoHistory;
 import com.editora.editor.undo.UndoMerge;
 import com.editora.logviewer.LogLevel;
+import com.editora.logviewer.LogQuery;
 import com.editora.markdown.MarkdownLint;
 import com.editora.markdown.MarkdownTable;
 import com.editora.maven.PomFiles;
@@ -2056,6 +2057,11 @@ public class EditorBuffer implements TabContent {
                         public @Nullable LogLevel levelAt(int paragraph) {
                             return logView.levelAt(paragraph);
                         }
+
+                        @Override
+                        public java.util.regex.@Nullable Pattern highlight() {
+                            return logView.patterns().include();
+                        }
                     }),
                     OverlayLayer.LOG);
         }
@@ -3749,18 +3755,18 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * Narrows the visible lines to the records at or above {@code minLevel} that match {@code pattern} (a
-     * regular expression, or plain text when it is not a valid one); {@code null}/{@code null} clears the
-     * filter. {@link #getContent()} stays the whole log throughout.
+     * Narrows the visible lines to the records at or above {@code minLevel} that {@code text} keeps (its
+     * patterns are regular expressions, or plain text when not valid ones); {@code null}/{@code NONE} clears
+     * the filter. {@link #getContent()} stays the whole log throughout.
      */
-    public void applyLogFilter(@Nullable LogLevel minLevel, @Nullable String pattern) {
+    public void applyLogFilter(@Nullable LogLevel minLevel, LogQuery text) {
         widen(); // the filter is derived from the area, which must therefore be the whole document
-        logView.applyFilter(minLevel, pattern);
+        logView.applyFilter(minLevel, text);
     }
 
-    /** Whether {@code minLevel}/{@code pattern} is the filter already showing. */
-    public boolean showsLogFilter(@Nullable LogLevel minLevel, @Nullable String pattern) {
-        return logView.showsFilter(minLevel, pattern);
+    /** Whether {@code minLevel}/{@code text} is the filter already showing. */
+    public boolean showsLogFilter(@Nullable LogLevel minLevel, LogQuery text) {
+        return logView.showsFilter(minLevel, text);
     }
 
     /**
@@ -3779,8 +3785,8 @@ public class EditorBuffer implements TabContent {
 
     /** Shows a filter computed from {@link #logFilterSource()}; false (and no change) when it is stale. */
     public boolean installLogFilter(
-            com.editora.logviewer.LogFilter.Run run, int epoch, @Nullable LogLevel minLevel, @Nullable String pattern) {
-        return logView.install(run, epoch, minLevel, pattern);
+            com.editora.logviewer.LogFilter.Run run, int epoch, @Nullable LogLevel minLevel, LogQuery text) {
+        return logView.install(run, epoch, minLevel, text);
     }
 
     /** The current level floor of the active filter (null when unfiltered or no floor). */
@@ -3788,9 +3794,14 @@ public class EditorBuffer implements TabContent {
         return logView.minLevel();
     }
 
-    /** The pattern of the active filter as typed (null when unfiltered or no pattern). */
-    public @Nullable String getLogPattern() {
+    /** The text filter of the active filter as typed ({@link LogQuery#NONE} when unfiltered). */
+    public LogQuery getLogQuery() {
         return logView.query();
+    }
+
+    /** Whether a pattern of the active filter took too long on some line (judged as not matching). */
+    public boolean isLogPatternSlow() {
+        return logView.slowPattern();
     }
 
     /** Lines the active filter shows, and lines in the whole log. Only meaningful while {@link #isLogFiltered()}. */

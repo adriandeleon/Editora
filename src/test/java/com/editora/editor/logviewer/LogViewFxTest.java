@@ -7,6 +7,7 @@ import java.util.concurrent.TimeUnit;
 import javafx.application.Platform;
 
 import com.editora.logviewer.LogLevel;
+import com.editora.logviewer.LogQuery;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -41,7 +42,7 @@ class LogViewFxTest {
             CodeArea area = new CodeArea();
             area.replaceText("ERROR first\n");
             LogView view = new LogView(area, () -> {}, CAP, SLACK);
-            view.applyFilter(LogLevel.ERROR, null);
+            view.applyFilter(LogLevel.ERROR, LogQuery.NONE);
 
             for (int i = 0; i < 100; i++) {
                 view.append("INFO filler line number " + i + "\n"); // never shown: below the level floor
@@ -81,12 +82,12 @@ class LogViewFxTest {
             CodeArea area = new CodeArea();
             LogView view = new LogView(area, () -> {}, CAP, SLACK);
             view.append("INFO a\nERROR b\n");
-            view.applyFilter(null, "ERROR");
+            view.applyFilter(null, LogQuery.including("ERROR"));
             view.append("INFO c\nERROR d\n");
 
             assertFalse(view.trimmed());
             assertEquals("INFO a\nERROR b\nINFO c\nERROR d\n", view.fullText());
-            view.applyFilter(null, null);
+            view.applyFilter(null, LogQuery.NONE);
             assertEquals("INFO a\nERROR b\nINFO c\nERROR d\n", area.getText());
             assertFalse(view.filtered());
             return null;
@@ -102,10 +103,10 @@ class LogViewFxTest {
             boolean[] sawUnflagged = {false};
             area.plainTextChanges().subscribe(change -> sawUnflagged[0] |= !view.adjusting());
 
-            view.applyFilter(LogLevel.ERROR, null);
+            view.applyFilter(LogLevel.ERROR, LogQuery.NONE);
             view.append("ERROR c\n");
             view.reset("ERROR rotated\n");
-            view.applyFilter(null, null);
+            view.applyFilter(null, LogQuery.NONE);
 
             assertFalse(sawUnflagged[0], "every change the view makes is distinguishable from a user edit");
             assertFalse(view.adjusting());
@@ -139,7 +140,7 @@ class LogViewFxTest {
             CodeArea area = new CodeArea();
             area.replaceText("INFO a\nERROR b\n");
             LogView view = new LogView(area, () -> {});
-            view.applyFilter(null, "ERROR");
+            view.applyFilter(null, LogQuery.including("ERROR"));
             assertEquals("ERROR b\n", area.getText());
 
             view.append("ERROR c\n");
@@ -159,7 +160,7 @@ class LogViewFxTest {
             CodeArea area = new CodeArea();
             area.replaceText("INFO b\n");
             LogView view = new LogView(area, () -> {});
-            view.applyFilter(null, "timeout");
+            view.applyFilter(null, LogQuery.including("timeout"));
 
             view.append("ERROR connection tim");
             assertEquals("", area.getText(), "half a line that does not match yet shows nothing");
@@ -187,7 +188,7 @@ class LogViewFxTest {
             CodeArea area = new CodeArea();
             area.replaceText("INFO a\nERROR last line, no newline");
             LogView view = new LogView(area, () -> {});
-            view.applyFilter(LogLevel.ERROR, null);
+            view.applyFilter(LogLevel.ERROR, LogQuery.NONE);
             assertEquals("ERROR last line, no newline\n", area.getText());
             assertEquals("INFO a\nERROR last line, no newline", view.fullText(), "the document is untouched");
             assertEquals(2, view.lineNumberAt(0));
@@ -204,8 +205,8 @@ class LogViewFxTest {
             LogView view = new LogView(area, () -> {});
             assertEquals(-1, view.lineNumberAt(0), "unfiltered: a paragraph is its own line");
 
-            view.applyFilter(LogLevel.WARN, null);
-            view.applyFilter(null, "timed out"); // the ERROR record, sitting under no WARN line now
+            view.applyFilter(LogLevel.WARN, LogQuery.NONE);
+            view.applyFilter(null, LogQuery.including("timed out")); // the ERROR record, sitting under no WARN line now
 
             assertEquals("ERROR boom\njava.io.IOException: Read timed out\n\tat x\n", area.getText());
             assertEquals(3, view.lineNumberAt(0));
@@ -229,17 +230,17 @@ class LogViewFxTest {
             LogView view = new LogView(area, () -> {});
             area.moveTo(20, 0); // "ERROR line 20"
 
-            view.applyFilter(LogLevel.ERROR, null);
+            view.applyFilter(LogLevel.ERROR, LogQuery.NONE);
             assertEquals(
                     "ERROR line 20",
                     area.getParagraph(area.getCurrentParagraph()).getText());
 
             area.moveTo(7, 0); // "ERROR line 28"
-            view.applyFilter(null, null);
+            view.applyFilter(null, LogQuery.NONE);
             assertEquals(28, area.getCurrentParagraph(), "clearing the filter lands on the same line, not at the end");
 
             area.moveTo(21, 0); // an INFO line the next filter hides
-            view.applyFilter(LogLevel.ERROR, null);
+            view.applyFilter(LogLevel.ERROR, LogQuery.NONE);
             assertEquals(
                     "ERROR line 24",
                     area.getParagraph(area.getCurrentParagraph()).getText(),
@@ -294,14 +295,14 @@ class LogViewFxTest {
             CodeArea area = new CodeArea();
             area.replaceText("INFO a\nERROR b\n");
             LogView view = new LogView(area, () -> {});
-            view.applyFilter(LogLevel.ERROR, "b");
+            view.applyFilter(LogLevel.ERROR, LogQuery.including("b"));
             int[] changes = {0};
             area.plainTextChanges().subscribe(c -> changes[0]++);
 
-            view.applyFilter(LogLevel.ERROR, "b"); // Enter, then the pending debounce
+            view.applyFilter(LogLevel.ERROR, LogQuery.including("b")); // Enter, then the pending debounce
             assertEquals(0, changes[0]);
-            assertTrue(view.showsFilter(LogLevel.ERROR, "b"));
-            assertFalse(view.showsFilter(LogLevel.ERROR, null));
+            assertTrue(view.showsFilter(LogLevel.ERROR, LogQuery.including("b")));
+            assertFalse(view.showsFilter(LogLevel.ERROR, LogQuery.NONE));
             return null;
         });
     }
@@ -315,18 +316,20 @@ class LogViewFxTest {
 
             String source = view.filterSource();
             int epoch = view.epoch();
-            var run = com.editora.logviewer.LogFilter.run(source, LogLevel.ERROR, null);
+            var run = com.editora.logviewer.LogFilter.run(
+                    source, LogLevel.ERROR, com.editora.logviewer.LogFilter.Patterns.NONE);
             view.append("ERROR c\nINFO d\n"); // arrives while the worker is busy
-            assertTrue(view.install(run, epoch, LogLevel.ERROR, null));
+            assertTrue(view.install(run, epoch, LogLevel.ERROR, LogQuery.NONE));
             assertEquals("ERROR b\nERROR c\n", area.getText(), "the lines appended meanwhile are filtered too");
             assertEquals("INFO a\nERROR b\nERROR c\nINFO d\n", view.fullText());
 
-            view.applyFilter(null, null);
+            view.applyFilter(null, LogQuery.NONE);
             source = view.filterSource();
             epoch = view.epoch();
-            run = com.editora.logviewer.LogFilter.run(source, LogLevel.ERROR, null);
+            run = com.editora.logviewer.LogFilter.run(
+                    source, LogLevel.ERROR, com.editora.logviewer.LogFilter.Patterns.NONE);
             area.insertText(0, "typed "); // a user edit: the computed result describes other text
-            assertFalse(view.install(run, epoch, LogLevel.ERROR, null));
+            assertFalse(view.install(run, epoch, LogLevel.ERROR, LogQuery.NONE));
             assertFalse(view.filtered());
             return null;
         });

@@ -24,7 +24,7 @@ class LogFilterTest {
 
     @Test
     void levelFloorKeepsHigherLevelsOnly() {
-        LogFilter.Run run = LogFilter.run(DOC, LogLevel.WARN, null);
+        LogFilter.Run run = LogFilter.run(DOC, LogLevel.WARN, LogFilter.Patterns.NONE);
         assertEquals(
                 String.join(
                                 "\n",
@@ -43,19 +43,20 @@ class LogFilterTest {
 
     @Test
     void everyKeptLineEndsWithANewlineSoAppendedLinesCannotJoinTheLast() {
-        LogFilter.Run run = LogFilter.run(DOC, null, Pattern.compile("starting"));
+        LogFilter.Run run = LogFilter.run(DOC, null, LogFilter.Patterns.including(Pattern.compile("starting")));
         assertEquals("2024-01-02 10:00:00 INFO  starting up\n", run.text());
     }
 
     @Test
     void aPatternKeepsTheWholeRecordWhenItsFirstLineMatches() {
-        LogFilter.Run run = LogFilter.run(DOC, null, Pattern.compile("failed to connect"));
+        LogFilter.Run run =
+                LogFilter.run(DOC, null, LogFilter.Patterns.including(Pattern.compile("failed to connect")));
         assertArrayEquals(new int[] {2, 3, 4}, run.lines(), "the trace of a matched record is part of it");
     }
 
     @Test
     void aPatternKeepsTheWholeRecordWhenOnlyALaterLineMatches() {
-        LogFilter.Run run = LogFilter.run(DOC, null, Pattern.compile("Db\\.open"));
+        LogFilter.Run run = LogFilter.run(DOC, null, LogFilter.Patterns.including(Pattern.compile("Db\\.open")));
         assertArrayEquals(
                 new int[] {2, 3, 4},
                 run.lines(),
@@ -65,7 +66,8 @@ class LogFilterTest {
 
     @Test
     void patternAndLevelCombine() {
-        LogFilter.Run run = LogFilter.run(DOC, LogLevel.WARN, Pattern.compile("cache|beans"));
+        LogFilter.Run run =
+                LogFilter.run(DOC, LogLevel.WARN, LogFilter.Patterns.including(Pattern.compile("cache|beans")));
         assertArrayEquals(new int[] {5}, run.lines(), "the DEBUG line matches the pattern but not the floor");
     }
 
@@ -73,17 +75,19 @@ class LogFilterTest {
     void linesBeforeTheFirstRecordStandAlone() {
         String doc = "banner one\nbanner two\n2024-01-02 10:00:00 INFO up\n";
         assertArrayEquals(
-                new int[] {1}, LogFilter.run(doc, null, Pattern.compile("two")).lines());
+                new int[] {1},
+                LogFilter.run(doc, null, LogFilter.Patterns.including(Pattern.compile("two")))
+                        .lines());
         assertArrayEquals(
                 new int[] {2},
-                LogFilter.run(doc, LogLevel.INFO, null).lines(),
+                LogFilter.run(doc, LogLevel.INFO, LogFilter.Patterns.NONE).lines(),
                 "under a floor, lines with no level to inherit are hidden");
     }
 
     @Test
     void anUnfinishedLastLineIsLeftToTheCaller() {
         String doc = "INFO a\nERROR half writ";
-        LogFilter.Run run = LogFilter.run(doc, null, null);
+        LogFilter.Run run = LogFilter.run(doc, null, LogFilter.Patterns.NONE);
         assertEquals("INFO a\n", run.text());
         assertEquals(7, run.consumed());
         assertEquals(1, run.total());
@@ -92,7 +96,7 @@ class LogFilterTest {
 
     @Test
     void theFilterGoesOnWhereTheDocumentEnded() {
-        LogFilter.Run run = LogFilter.run("2024-01-02 10:00:02 ERROR boom\n", LogLevel.ERROR, null);
+        LogFilter.Run run = LogFilter.run("2024-01-02 10:00:02 ERROR boom\n", LogLevel.ERROR, LogFilter.Patterns.NONE);
         LogFilter.Collector more = new LogFilter.Collector(16);
         run.filter().accept("\tat com.example.More(More.java:7)", 1, more);
         run.filter().accept("2024-01-02 10:00:03 INFO fine again", 2, more);
@@ -101,9 +105,11 @@ class LogFilterTest {
 
     @Test
     void emptyFilterReturnsEverything() {
-        assertEquals(DOC, LogFilter.run(DOC, null, null).text());
-        assertEquals("", LogFilter.run("", LogLevel.ERROR, null).text());
-        assertEquals("", LogFilter.run(null, LogLevel.ERROR, null).text());
+        assertEquals(DOC, LogFilter.run(DOC, null, LogFilter.Patterns.NONE).text());
+        assertEquals(
+                "", LogFilter.run("", LogLevel.ERROR, LogFilter.Patterns.NONE).text());
+        assertEquals(
+                "", LogFilter.run(null, LogLevel.ERROR, LogFilter.Patterns.NONE).text());
     }
 
     @Test

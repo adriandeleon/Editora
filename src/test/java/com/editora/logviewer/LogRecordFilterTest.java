@@ -65,4 +65,67 @@ class LogRecordFilterTest {
         assertEquals(LogLevel.WARN, filter.levelIfNext("  92% used"));
         assertEquals(LogLevel.ERROR, filter.levelIfNext("ERROR disk gone"));
     }
+
+    private static LogRecordFilter hiding(String include, String exclude) {
+        return new LogRecordFilter(null, LogFilter.compile(new LogQuery(include, exclude, false)));
+    }
+
+    @Test
+    void hidingARecordsFirstLineHidesItsStackTrace() {
+        assertEquals(
+                "INFO a\nINFO c\n",
+                feed(hiding(null, "boom"), "INFO a", "ERROR boom", "\tat x", "Caused by: y", "INFO c"));
+    }
+
+    @Test
+    void hidingAContinuationLineHidesOnlyThatLine() {
+        assertEquals(
+                "ERROR boom\n\tat com.example.A\nINFO c\n",
+                feed(
+                        hiding(null, "springframework"),
+                        "ERROR boom",
+                        "\tat org.springframework.X",
+                        "\tat com.example.A",
+                        "INFO c"));
+    }
+
+    @Test
+    void hideWinsOverShowAndAHiddenLineIsNotHeld() {
+        LogFilter.Collector out = new LogFilter.Collector(64);
+        LogRecordFilter filter = hiding("timeout", "springframework");
+        String[] lines = {"ERROR boom", "\tat org.springframework.X", "Caused by: timeout", "ERROR timeout too"};
+        for (int i = 0; i < lines.length; i++) {
+            filter.accept(lines[i], i, out);
+        }
+        assertEquals("ERROR boom\nCaused by: timeout\nERROR timeout too\n", out.text.toString());
+        assertEquals(0, out.lineAt(0));
+        assertEquals(2, out.lineAt(1), "the held line keeps its own index past the hidden one");
+
+        assertEquals("", feed(hiding("timeout", "timeout"), "ERROR timeout"), "matching both: hidden");
+    }
+
+    @Test
+    void wouldKeepAppliesTheHidePattern() {
+        LogRecordFilter filter = hiding(null, "noisy");
+        feed(filter, "INFO noisy heartbeat");
+        assertFalse(filter.wouldKeep("  continuation"), "a continuation of a hidden record");
+        assertFalse(filter.wouldKeep("INFO noisy again"));
+        assertTrue(filter.wouldKeep("INFO quiet"));
+    }
+
+    @Test
+    void matchCaseAppliesToBothPatterns() {
+        LogRecordFilter filter = new LogRecordFilter(null, LogFilter.compile(new LogQuery("Pay", "DEBUG", true)));
+        assertEquals("INFO Pay ok\n", feed(filter, "INFO Pay ok", "INFO pay ok", "INFO Pay DEBUG"));
+    }
+
+    @Test
+    void aPatternThatBacktracksForeverCountsAsNoMatchAndIsReported() {
+        LogRecordFilter filter = new LogRecordFilter(null, LogFilter.compile(LogQuery.including(LogMatcherTest.EVIL)));
+        String evil = "INFO " + LogMatcherTest.EVIL_LINE;
+        long start = System.nanoTime();
+        assertEquals("", feed(filter, evil, evil, evil, evil, evil, evil, evil, evil), "no match, after all");
+        assertTrue(System.nanoTime() - start < 5_000_000_000L, "it gave up instead of running for ever");
+        assertTrue(filter.slow());
+    }
 }

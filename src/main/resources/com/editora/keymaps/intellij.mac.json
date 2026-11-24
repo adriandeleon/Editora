@@ -127,5 +127,7 @@
   "M-f1": "projectMap.revealActiveFile",
   "f10": "view.focusMenuBar",
   "M-pagedown": "window.other",
-  "M-pageup": "window.otherReverse"
+  "M-pageup": "window.otherReverse",
+  "M-Cmd-S-f": "log.focusFilter",
+  "M-Cmd-S-l": "log.toggleFollow"
 }

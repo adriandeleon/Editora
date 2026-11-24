@@ -290,10 +290,11 @@ class LogViewerCommandsFxTest {
         fx(() -> FxTestSupport.call(
                 logs,
                 "applyFilter",
-                new Class<?>[] {EditorBuffer.class, LogLevel.class, String.class, boolean.class},
+                new Class<?>[] {EditorBuffer.class, LogLevel.class, com.editora.logviewer.LogQuery.class, boolean.class
+                },
                 b,
                 LogLevel.ERROR,
-                null,
+                com.editora.logviewer.LogQuery.NONE,
                 true));
         host.await(tr("status.log.filtered")::equals);
         assertEquals(

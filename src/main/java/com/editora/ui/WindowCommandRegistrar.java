@@ -1137,6 +1137,7 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("log.viewAsLog", host.logViewer()::viewAsLog));
         host.registry().register(Command.of("log.setLevelFilter", host.logViewer()::setLevelFilter));
         host.registry().register(Command.of("log.setRegexFilter", host.logViewer()::setRegexFilter));
+        host.registry().register(Command.of("log.setHideFilter", host.logViewer()::setHideFilter));
         host.registry().register(Command.of("log.focusFilter", host.logViewer()::focusFilter));
         host.registry().register(Command.of("log.clearFilter", host.logViewer()::clearFilter));
         host.registry().register(Command.of("log.nextError", host.logViewer()::jumpToNextError));
@@ -2665,14 +2666,16 @@ final class WindowCommandRegistrar {
                     .register(Command.of(
                             id, () -> host.ifLsp(() -> host.lspCoordinator().refactoring(kind, id))));
         }
-        host.registry()
-                .register(Command.of(
-                        "lsp.nextProblem",
-                        () -> host.ifLsp(() -> host.lspCoordinator().gotoProblem(true))));
-        host.registry()
-                .register(Command.of(
-                        "lsp.previousProblem",
-                        () -> host.ifLsp(() -> host.lspCoordinator().gotoProblem(false))));
+        host.registry().register(Command.of("lsp.nextProblem", () -> {
+            if (!host.logViewer().stepProblemInLog(true)) {
+                host.ifLsp(() -> host.lspCoordinator().gotoProblem(true));
+            }
+        }));
+        host.registry().register(Command.of("lsp.previousProblem", () -> {
+            if (!host.logViewer().stepProblemInLog(false)) {
+                host.ifLsp(() -> host.lspCoordinator().gotoProblem(false));
+            }
+        }));
         host.registry()
                 .register(Command.of("lsp.problemAtCaret", () -> host.ifLsp(host.lspCoordinator()::problemAtCaret)));
         host.registry()

@@ -8,7 +8,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Filtering a whole log document for the viewer: the lines of the records whose (inherited) severity is at
- * least {@code minLevel} and which match an optional pattern. Pure (java.base only), so it is unit-tested and
+ * least {@code minLevel}, which match an optional pattern and do not match an optional one to hide. Pure (java.base only), so it is unit-tested and
  * can run off the FX thread; the per-line rules are {@link LogRecordFilter}'s.
  */
 public final class LogFilter {
@@ -16,24 +16,30 @@ public final class LogFilter {
     private LogFilter() {}
 
     /**
-     * Compiles a filter query as a case-insensitive {@link Pattern}, treating it as a regular expression and
-     * <em>falling back to a literal substring match</em> when it isn't a valid regex — so the filter works
-     * for both a regex (e.g. {@code ERROR|WARN}, {@code timed?out}) and a plain string with metacharacters
-     * (e.g. {@code GET /api(v2)}). Returns {@code null} for null/empty input (no filter).
+     * Compiles a filter pattern, case-insensitively, treating it as a regular expression and <em>falling back to
+     * a literal substring match</em> when it isn't a valid regex — so the filter works for both a regex (e.g.
+     * {@code ERROR|WARN}, {@code timed?out}) and a plain string with metacharacters (e.g. {@code GET /api(v2)}).
+     * Returns {@code null} for null/empty input (no filter).
      */
     public static @Nullable Pattern compileFilter(@Nullable String query) {
+        return compileFilter(query, false);
+    }
+
+    /** {@link #compileFilter(String)}, matching case when {@code matchCase}. */
+    public static @Nullable Pattern compileFilter(@Nullable String query, boolean matchCase) {
         if (query == null || query.isEmpty()) {
             return null;
         }
+        int flags = matchCase ? 0 : Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
         try {
-            return Pattern.compile(query, Pattern.CASE_INSENSITIVE);
+            return Pattern.compile(query, flags);
         } catch (PatternSyntaxException e) {
-            return Pattern.compile(Pattern.quote(query), Pattern.CASE_INSENSITIVE);
+            return Pattern.compile(query, flags | Pattern.LITERAL);
         }
     }
 
     /** Whether {@code query} is a valid regular expression (an invalid one is matched as plain text). */
-    public static boolean isValidRegex(String query) {
+    public static boolean isValidRegex(@Nullable String query) {
         if (query == null || query.isEmpty()) {
             return true;
         }
@@ -43,6 +49,36 @@ public final class LogFilter {
         } catch (PatternSyntaxException e) {
             return false;
         }
+    }
+
+    /**
+     * A {@link LogQuery} compiled: the pattern whose records are kept and the one whose records are hidden.
+     *
+     * @param include records to keep, or {@code null} for all
+     * @param exclude records to hide, or {@code null} for none
+     */
+    public record Patterns(
+            @Nullable Pattern include, @Nullable Pattern exclude) {
+        /** Filters nothing. */
+        public static final Patterns NONE = new Patterns(null, null);
+
+        /** Only a pattern of records to keep. */
+        public static Patterns including(@Nullable Pattern include) {
+            return new Patterns(include, null);
+        }
+
+        public boolean isEmpty() {
+            return include == null && exclude == null;
+        }
+    }
+
+    /** Compiles both patterns of {@code query} (see {@link #compileFilter(String, boolean)}). */
+    public static Patterns compile(LogQuery query) {
+        if (query.isEmpty()) {
+            return Patterns.NONE;
+        }
+        return new Patterns(
+                compileFilter(query.include(), query.matchCase()), compileFilter(query.exclude(), query.matchCase()));
     }
 
     /**
@@ -73,9 +109,9 @@ public final class LogFilter {
             LogRecordFilter filter) {}
 
     /** Filters every complete line of {@code source}. Safe on any thread: it touches nothing but its arguments. */
-    public static Run run(String source, @Nullable LogLevel minLevel, @Nullable Pattern pattern) {
+    public static Run run(@Nullable String source, @Nullable LogLevel minLevel, Patterns patterns) {
         String text = source == null ? "" : source;
-        LogRecordFilter filter = new LogRecordFilter(minLevel, pattern);
+        LogRecordFilter filter = new LogRecordFilter(minLevel, patterns);
         Collector out = new Collector(Math.min(text.length(), 1 << 16));
         int pos = 0;
         int index = 0;
