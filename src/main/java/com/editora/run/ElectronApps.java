@@ -29,9 +29,11 @@ public final class ElectronApps {
      * An Electron app.
      *
      * @param root the package's folder (its {@code package.json}), where Electron runs
-     * @param electron Electron's program ({@code node_modules/electron/dist/electron}, {@code Electron.app}'s on macOS)
+     * @param electron Electron's program ({@code node_modules/electron/dist/electron}, {@code Electron.app}'s on macOS),
+     *     or null while it is not downloaded: Electron's package fetches it on its first start ({@code path.txt} is
+     *     written then), not when it is installed
      */
-    public record App(Path root, Path electron) {}
+    public record App(Path root, @Nullable Path electron) {}
 
     /** {@code require('electron')}, {@code from 'electron'}, {@code import('electron')}. */
     private static final Pattern LOADS_ELECTRON =
@@ -65,8 +67,11 @@ public final class ElectronApps {
             if (!main && !LOADS_ELECTRON.matcher(text).find()) {
                 return Optional.empty(); // a renderer script, a build script: not the app's start
             }
-            Path electron = electron(dir, isFile, read);
-            return electron == null ? Optional.empty() : Optional.of(new App(dir, electron));
+            Path pkgDir = installed(dir, isFile);
+            if (pkgDir == null) {
+                return Optional.empty(); // npm install not run: Node.js on the file, as before
+            }
+            return Optional.of(new App(dir, electron(pkgDir, isFile, read)));
         }
         return Optional.empty();
     }
@@ -93,24 +98,29 @@ public final class ElectronApps {
         return main.contains(".") && !main.endsWith("/") ? p : p.resolve("index.js");
     }
 
-    /**
-     * Electron's program for an app in {@code root}: {@code node_modules/electron/dist/} and the path its
-     * {@code path.txt} names (written by Electron's install), from the nearest {@code node_modules} with it.
-     */
-    static @Nullable Path electron(Path root, Predicate<Path> isFile, Function<Path, @Nullable String> read) {
+    /** Electron's package for an app in {@code root}: the nearest {@code node_modules/electron} up from it, or null. */
+    static @Nullable Path installed(Path root, Predicate<Path> isFile) {
         for (Path dir = root; dir != null; dir = dir.getParent()) {
             Path pkg = dir.resolve("node_modules").resolve("electron");
-            Path pathTxt = pkg.resolve("path.txt");
-            if (isFile.test(pathTxt)) {
-                String rel = read.apply(pathTxt);
-                if (rel == null || rel.isBlank()) {
-                    return null;
-                }
-                Path program = pkg.resolve("dist").resolve(rel.strip());
-                return isFile.test(program) ? program : null;
+            if (isFile.test(pkg.resolve("package.json"))) {
+                return pkg;
             }
         }
         return null;
+    }
+
+    /**
+     * Electron's program in its package {@code pkg}: {@code dist/} and the path its {@code path.txt} names, written
+     * when the program is downloaded; null before that.
+     */
+    static @Nullable Path electron(Path pkg, Predicate<Path> isFile, Function<Path, @Nullable String> read) {
+        Path pathTxt = pkg.resolve("path.txt");
+        String rel = isFile.test(pathTxt) ? read.apply(pathTxt) : null;
+        if (rel == null || rel.isBlank()) {
+            return null;
+        }
+        Path program = pkg.resolve("dist").resolve(rel.strip());
+        return isFile.test(program) ? program : null;
     }
 
     /** Electron's arguments for app {@code app} with its renderer debuggable on {@code port}, then {@code args}. */

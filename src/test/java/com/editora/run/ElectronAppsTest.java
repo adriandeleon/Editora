@@ -25,6 +25,7 @@ class ElectronAppsTest {
     private static Map<Path, String> app(String packageJson) {
         Map<Path, String> files = new HashMap<>();
         files.put(ROOT.resolve("package.json"), packageJson);
+        files.put(ROOT.resolve("node_modules/electron/package.json"), "{}");
         files.put(ROOT.resolve("node_modules/electron/path.txt"), "electron");
         files.put(PROGRAM, "");
         return files;
@@ -72,10 +73,19 @@ class ElectronAppsTest {
     }
 
     @Test
+    void anElectronInstalledButNotDownloadedIsAnAppWithoutItsProgram() {
+        Map<Path, String> files = new HashMap<>();
+        files.put(ROOT.resolve("package.json"), "{\"devDependencies\": {\"electron\": \"45.4.1\"}}");
+        files.put(ROOT.resolve("node_modules/electron/package.json"), "{}"); // npm install, before the first start
+        assertEquals(Optional.of(new ElectronApps.App(ROOT, null)), of(ROOT.resolve("index.js"), "", files));
+    }
+
+    @Test
     void electronInstalledInAWorkspacesRootNodeModulesIsFound() {
         Path app = ROOT.resolve("packages/desktop");
         Map<Path, String> files = new HashMap<>();
         files.put(app.resolve("package.json"), "{\"devDependencies\": {\"electron\": \"1\"}}");
+        files.put(ROOT.resolve("node_modules/electron/package.json"), "{}");
         files.put(ROOT.resolve("node_modules/electron/path.txt"), "Electron.app/Contents/MacOS/Electron\n");
         Path mac = ROOT.resolve("node_modules/electron/dist/Electron.app/Contents/MacOS/Electron");
         files.put(mac, "");

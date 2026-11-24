@@ -63,10 +63,24 @@ final class ElectronDebugLaunch {
             Optional<ElectronApps.App> app = a.value();
             if (app == null || app.isEmpty()) {
                 otherwise.run();
+            } else if (notDownloaded(app.get()) != null) {
+                d.host.setStatus(java.util.Objects.requireNonNull(notDownloaded(app.get())));
             } else {
                 debug(app.get(), args, d.host.activeBuffer());
             }
         });
+    }
+
+    /**
+     * What to say when {@code app}'s Electron is installed but its program not downloaded yet (Electron fetches it on
+     * its first start, not on {@code npm install}), or null when it is there.
+     */
+    static @Nullable String notDownloaded(ElectronApps.App app) {
+        return app.electron() != null
+                ? null
+                : com.editora.i18n.Messages.tr(
+                        "status.run.electronNotDownloaded",
+                        String.valueOf(app.root().getFileName()));
     }
 
     /** Debugs {@code app}: its main process and its renderer, together. */
@@ -94,7 +108,7 @@ final class ElectronDebugLaunch {
         m.put("type", "pwa-node");
         m.put("request", "launch");
         m.put("name", MAIN);
-        m.put("runtimeExecutable", app.electron().toString());
+        m.put("runtimeExecutable", String.valueOf(app.electron()));
         m.put("runtimeArgs", ElectronApps.args(port, args));
         m.put("cwd", app.root().toString());
         m.put("outputCapture", "std"); // Electron writes to its standard streams, not through Node's inspector

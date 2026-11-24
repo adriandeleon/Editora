@@ -3575,8 +3575,12 @@ final class RunCoordinator {
     private void planNode(Path path, @Nullable Path root, List<String> args) {
         com.editora.perf.OffFx.then("run-electron-plan", () -> ElectronDebugLaunch.appOf(path), a -> {
             java.util.Optional<com.editora.run.ElectronApps.App> app = a.value();
-            if (app != null && app.isPresent()) {
-                List<String> argv = new ArrayList<>(List.of(app.get().electron().toString()));
+            String missing = app == null || app.isEmpty() ? null : ElectronDebugLaunch.notDownloaded(app.get());
+            if (missing != null) {
+                host.setStatus(missing);
+            } else if (app != null && app.isPresent()) {
+                List<String> argv =
+                        new ArrayList<>(List.of(String.valueOf(app.get().electron())));
                 argv.addAll(com.editora.run.ElectronApps.args(0, args));
                 streamRun(path.getFileName().toString(), app.get().root(), argv, java.util.Map.of(), path);
             } else {

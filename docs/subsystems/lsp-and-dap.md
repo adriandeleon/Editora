@@ -1612,7 +1612,10 @@ npm and debugs the caret's test alone.
 main-process file starts: the nearest `package.json` names `electron` (dependencies, devDependencies or optional), the
 file is its `main` (else `index.js`) or loads `electron` (`require`, `import … from`, `import()`), and Electron is
 installed (`node_modules/electron/path.txt`, in the package's `node_modules` or one above, names the program under
-`dist/`). A page's script, a build script, a test file and a file under `node_modules` are not the app's start. F5
+`dist/`). Electron 45 downloads that program on its first start, not on `npm install`: an app whose package is installed
+(`node_modules/electron/package.json`) but whose `path.txt` is not written yet is still the app, with no program, and
+F5 and Run File say to run `npx install-electron` (`status.run.electronNotDownloaded`) rather than run Electron's
+installer themselves. A page's script, a build script, a test file and a file under `node_modules` are not the app's start. F5
 ([`ui/ElectronDebugLaunch`](../../src/main/java/com/editora/ui/ElectronDebugLaunch.java), looked for off the FX
 thread first in `debugJsFile`; a Node test run is never Electron) builds VS Code's Electron recipe in memory — "Electron:
 Main", a `pwa-node` launch with Electron's program as `runtimeExecutable` and `--remote-debugging-port=<free port> .`

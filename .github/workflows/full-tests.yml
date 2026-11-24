@@ -582,6 +582,8 @@ jobs:
           cd "$dest"
           npm init -y >/dev/null
           npm install --no-fund --no-audit --save-dev electron@45.4.1
+          # Electron fetches its program on its first start, not on install: fetched now, as `npx install-electron`.
+          npx --no-install install-electron
           test -f node_modules/electron/path.txt
 
       # vscode-firefox-debug for FirefoxDebugProbeFxTest, pinned as Editora's installer fetches it, where it puts it; the
