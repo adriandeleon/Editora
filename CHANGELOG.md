@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Run File runs single-file Java programs.** A `.java` outside a Maven or Gradle project whose first class has a
+  `static void main(String[] args)` gets a ▶ on that `main`, and Run File runs it with the source launcher
+  (`java Hello.java`): no project, no build. A `public` main runs on JDK 11 or newer; Run File says when the JDK is
+  older. Until now only compact source files (a top-level `void main`) ran on their own.
 - **Summary of a log.** **Log: Summarize** opens a Markdown report of the active log: its records per level, a
   records-over-time table with warnings and errors and a bar per interval, the most frequent messages counted with
   their numbers and ids masked, and the longest silences.
@@ -193,10 +197,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Run File says why a Java class does not run on its own.** On a `.java` with a class and its `main`, Run File now
-  says that only a compact source file (a top-level `void main`) runs on its own and that a class's `main` runs from
-  its ▶ in a Maven or Gradle project. Its other "Not a runnable file" message no longer lists a few languages of
-  the many it runs.
+- **Run File says why a Java file does not run on its own.** On a `.java` that is neither a single-file program nor a
+  compact source file (a library class, a class of a Maven or Gradle project), Run File now says what runs as one
+  file and that a project class's `main` runs from its ▶. Its other "Not a runnable file" message no longer lists a
+  few languages of the many it runs.
 
 - **Typing allocates about two thirds less.** Each keystroke in a 2,000-line Java file made the UI thread allocate
   about 7 MB, and now about 2.4 MB, so the garbage collector runs less often while you type. The editor's scrolling

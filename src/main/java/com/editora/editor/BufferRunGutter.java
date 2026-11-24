@@ -74,7 +74,29 @@ final class BufferRunGutter {
 
     /** True when the single-file Run entry is a compact Java source method (rather than a test glyph). */
     boolean isCompactSource() {
-        return "java".equals(b.language) && runLine >= 0;
+        return "java".equals(b.language) && runLine >= 0 && !classicJava;
+    }
+
+    /** The entry is a classic class's {@code main} run as one source file ({@code java File.java}). */
+    private boolean classicJava;
+
+    /** The JDK release Run File's single-file Java program needs (25 or 11); 0 when it runs none. */
+    private int javaRelease;
+
+    /** {@link #javaRelease}. */
+    int javaRelease() {
+        return javaRelease;
+    }
+
+    /** Whether the file belongs to a Maven or Gradle project: its classes run through the build, not as one file. */
+    private boolean jvmBuildProject;
+
+    /** Pushed by the window with the project main ▶ gate: a classic class in a build is not run as one file. */
+    void setJvmBuildProject(boolean inBuild) {
+        if (inBuild != jvmBuildProject) {
+            jvmBuildProject = inBuild;
+            recomputeRun();
+        }
     }
 
     /** Sets the callback fired when {@link #isRunnable()} flips (so the controller refreshes the Run button). */
@@ -333,7 +355,8 @@ final class BufferRunGutter {
                 mainGutterEnabled && small && "java".equals(b.language),
                 b.language,
                 b.path != null ? b.path.getFileName().toString() : b.displayName,
-                b.shebangJavaSource != null);
+                b.shebangJavaSource != null,
+                jvmBuildProject);
         // Only materialize the whole document when we actually scan it (compact-source / .http / test/main
         // detection). Otherwise editing a moderately large file (256 KB–5 MB) would allocate the full text on
         // every 150 ms edit pulse just to discard it as run-ineligible.
@@ -407,6 +430,8 @@ final class BufferRunGutter {
         int oldLine = runLine;
         runnable = now.runnable();
         runLine = now.line();
+        javaRelease = now.javaRelease();
+        classicJava = now.classicJava();
         b.httpGutter.setRequestLines(now.httpLines(), b::paragraphTextOrNull); // the ■ follows its request
         b.repaintHttpResults(b.httpResults.reanchor(now.httpLines(), b::paragraphTextOrNull)); // edited: it goes
         makeTargets = now.makeTargets();

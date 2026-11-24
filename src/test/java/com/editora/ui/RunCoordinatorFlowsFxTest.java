@@ -496,10 +496,10 @@ class RunCoordinatorFlowsFxTest {
     // --- Run File ---------------------------------------------------------------------------------------
 
     @Test
-    void runFileOnAJavaClassSaysOnlyACompactSourceRunsOnItsOwn() throws Exception {
-        // A classic class with a main is not a compact source: Run File does not run it on its own, and says why
-        // rather than listing Java among what it runs (smoke test 2026-11-24).
-        open("Hello.java", "public class Hello {\n    public static void main(String[] a) {}\n}\n", false);
+    void runFileOnAJavaClassWithoutAMainSaysWhatRunsAsOneFile() throws Exception {
+        // A library class: Run File does not run it, and says what a .java needs to run on its own rather than
+        // listing Java among what it runs (smoke test 2026-11-24).
+        open("Lib.java", "public class Lib {\n    int x;\n}\n", false);
         FxTestSupport.runOnFx(run::runActiveFile);
 
         assertEquals(List.of(tr("status.run.javaNotCompact")), statuses());
@@ -1375,6 +1375,42 @@ class RunCoordinatorFlowsFxTest {
         awaitStatus(tr("status.run.javaVersionUnreadable", muteJava));
         assertEquals("", console());
         assertFalse(FxTestSupport.callOnFx(run::consoleInUse));
+    }
+
+    // --- a classic single-file Java program: java Hello.java ---------------------------------------------
+
+    @Test
+    void aClassicSingleFileProgramRunsWithTheSourceLauncher() throws Exception {
+        host.settings.setMavenJdkHome(jdk.toString());
+        open(
+                "Hello.java",
+                "public class Hello {\n    public static void main(String[] args) {\n        System.out.println(1);\n    }\n}\n",
+                true);
+        ops.programArgs.put("Hello.java", "--name Ada");
+
+        FxTestSupport.runOnFx(run::runActiveFile);
+        awaitStatus(tr("status.run.ok"));
+
+        String shown = console();
+        assertTrue(shown.contains("java " + project.resolve("Hello.java") + " --name Ada\n"), shown);
+    }
+
+    @Test
+    void aClassicSingleFileProgramRunsOnJdk11ButNotOnAnOlderOne() throws Exception {
+        String hello = "public class Hello {\n    public static void main(String[] args) {}\n}\n";
+        Path eleven = project.resolve("jdk-11");
+        standInJava(eleven, "11.0.2");
+        host.settings.setMavenJdkHome(eleven.toString());
+        open("Hello.java", hello, true);
+        FxTestSupport.runOnFx(run::runActiveFile);
+        awaitStatus(tr("status.run.ok"));
+
+        clearLog();
+        Path eight = project.resolve("jdk-8");
+        standInJava(eight, "1.8.0_402");
+        host.settings.setMavenJdkHome(eight.toString());
+        FxTestSupport.runOnFx(run::runActiveFile);
+        awaitStatus(tr("status.run.needJdkSingleFile", 11, 8));
     }
 
     // --- Run Main Class ---------------------------------------------------------------------------------

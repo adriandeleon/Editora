@@ -3154,8 +3154,8 @@ final class RunCoordinator {
             return;
         }
         if (buffer == null || !buffer.isRunnable()) {
-            // A .java with a class and its main reads as runnable to anyone who has run one: say why it is not
-            // (only a compact source runs on its own) and where a class's main does run (smoke test 2026-11-24).
+            // A .java that does not run on its own (a class without a main, a class of a Maven or Gradle project):
+            // say what does run as one file, and where a project class's main runs (smoke test 2026-11-24).
             boolean java = buffer != null && "java".equals(buffer.getLanguage());
             host.setStatus(tr(java ? "status.run.javaNotCompact" : "status.run.notRunnable"));
             return;
@@ -3429,12 +3429,17 @@ final class RunCoordinator {
                     host.setStatus(tr("status.run.javaVersionUnreadable", javaExecutable));
                     return;
                 }
-                int required = Math.max(25, sourceRelease == null ? 25 : sourceRelease);
+                // A compact source needs JDK 25; a classic class with a public static main runs on 11 (JEP 330).
+                int release = buffer.javaRunRelease() > 0 ? buffer.javaRunRelease() : 25;
+                int required = Math.max(release, sourceRelease == null ? release : sourceRelease);
                 if (major > 0 && major < required) {
+                    boolean classic = !buffer.isCompactSource() && buffer.javaRunRelease() > 0;
                     host.setStatus(
-                            required == 25
-                                    ? tr("status.run.needJdk25", major)
-                                    : tr("status.run.needJdkVersion", required, major));
+                            classic && sourceRelease == null
+                                    ? tr("status.run.needJdkSingleFile", required, major)
+                                    : required == 25
+                                            ? tr("status.run.needJdk25", major)
+                                            : tr("status.run.needJdkVersion", required, major));
                     return;
                 }
                 proceed.run();
