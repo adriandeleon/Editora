@@ -95,17 +95,13 @@ final class ToolbarCoordinator {
      * The one right-click menu, reused across right-clicks: showing it again just moves it. A press anywhere
      * else closes it via {@link ContextMenuDismissal}.
      */
-    private final ContextMenu contextMenu = new ContextMenu();
+    private @Nullable ContextMenu contextMenu; // made on the first right-click: a popup window of its own
 
     ToolbarCoordinator(CoordinatorHost host, CommandRegistry registry, KeymapManager keymap, Ops ops) {
         this.host = host;
         this.registry = registry;
         this.keymap = keymap;
         this.ops = ops;
-        // A popup inherits the font of the node it is shown from, and the toolbar runs at 18px so its own
-        // labels read beside the glyphs — without this the menu rendered a third larger than every other
-        // menu in the app. See `.toolbar-context-menu` in app.css.
-        contextMenu.getStyleClass().add("toolbar-context-menu");
     }
 
     // ---- Rebuild -------------------------------------------------------------------------------------
@@ -304,8 +300,16 @@ final class ToolbarCoordinator {
         restore.getStyleClass().add("danger"); // resets the user's toolbar: a destructive row reads red
         restore.setOnAction(e -> restoreDefault());
         MenuChords.tag(restore, "toolbar.restoreDefault");
-        contextMenu.getItems().setAll(toggle, new SeparatorMenuItem(), configure, restore);
-        contextMenu.show(ops.toolBar(), screenX, screenY);
+        ContextMenu menu = contextMenu;
+        if (menu == null) {
+            menu = contextMenu = new ContextMenu();
+            // A popup inherits the font of the node it is shown from, and the toolbar runs at 18px so its own
+            // labels read beside the glyphs — without this the menu rendered a third larger than every other
+            // menu in the app. See `.toolbar-context-menu` in app.css.
+            menu.getStyleClass().add("toolbar-context-menu");
+        }
+        menu.getItems().setAll(toggle, new SeparatorMenuItem(), configure, restore);
+        menu.show(ops.toolBar(), screenX, screenY);
     }
 
     // ---- Drag-and-drop (mirrors MainController.enableTabDrag) -----------------------------------------

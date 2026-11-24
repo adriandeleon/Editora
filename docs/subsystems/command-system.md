@@ -680,6 +680,14 @@ pure translation between that and what a keymap takes (overrides, chord → id w
   needs the `Tooltip` itself calls `ControlNames.builtTooltip`. A tab's tooltip works the same way
   (`ControlNames.tip(Tab, text)`, one handler per tab pane), and a non-control node uses `LazyTooltip.install`.
   `LazyTooltipsFxTest` fails when a new window builds any tooltip before a hover, and names where.
+- **Context menus are built when first asked for**: a `ContextMenu` is a popup window too, and a window used to
+  build about forty before its first paint (one per tool-window stripe button, two per tab). Give a control its
+  menu with `LazyContextMenu.install(control, supplier)` and a tab with `LazyContextMenu.install(tab, build)`:
+  a `CONTEXT_MENU_REQUESTED` filter (on the control, or one per tab pane) builds and sets the menu, so the
+  control's or the header's own handler shows it as before, for a right-click, the Menu key and Shift+F10 alike.
+  Code that reads the menu back calls `LazyContextMenu.menuOf` (`FocusCommands.ownMenu` does), not
+  `getContextMenu()` (null until then). `LazyContextMenuFxTest` fails when a new window has any control or tab
+  with a menu before a right-click, and names it.
 - **A menu bar row whose command cannot run stays, grayed, and says why** (KBD-04 in Pauta 6.2.0).
   `MainMenuBar.refreshEnablement` asks `Chrome.disabledReason` for every row and `MainMenuBar.showAvailability`
   shows the answer: the row keeps working as a row (a disabled node gets no mouse events, so no tooltip, and

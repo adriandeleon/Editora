@@ -8274,7 +8274,7 @@ final class DebugCoordinator {
         buffer.setOnBreakpointsChanged(() -> onBreakpointsChanged(buffer));
         // Hover value tooltip while suspended: evaluate the hovered identifier in the selected frame.
         buffer.setDebugHoverEvaluator((expr, cb) -> dap().evaluateHover(expr, s().debugFrameId, cb));
-        buffer.setDebugValuePresenter(valuePopup()); // an object's fields unfold in the popup (follow-up 6)
+        buffer.setDebugValuePresenter(valuePresenter); // an object's fields unfold in the popup (follow-up 6)
         // "Debug File" beside "Run File" in the editor's menu: Debug was only in the Run menu and the palette.
         // Through F5's check: a live launch of another file is replaced only after asking (review 3, C202).
         buffer.setDebugFileHandler(() -> debugFile(buffer), () -> debugSupportEnabled() && isDebuggableBuffer(buffer));
@@ -9428,14 +9428,14 @@ final class DebugCoordinator {
             b.getFocusedArea().moveTo(line, 0);
             moveBreakpointToGroupAtCaret();
         });
-        gutterMenu.getItems().setAll(edit, flip, remove, waitFor, toGroup);
+        gutterMenu().getItems().setAll(edit, flip, remove, waitFor, toGroup);
         List<javafx.scene.control.MenuItem> lambdas = lambdaBreakpoints.choices(b, line, bp);
         if (!lambdas.isEmpty()) {
-            gutterMenu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
-            gutterMenu.getItems().addAll(lambdas);
+            gutterMenu().getItems().add(new javafx.scene.control.SeparatorMenuItem());
+            gutterMenu().getItems().addAll(lambdas);
         }
-        gutterMenu.getItems().addAll(new javafx.scene.control.SeparatorMenuItem(), list);
-        showGutterMenu(List.copyOf(gutterMenu.getItems()), e);
+        gutterMenu().getItems().addAll(new javafx.scene.control.SeparatorMenuItem(), list);
+        showGutterMenu(List.copyOf(gutterMenu().getItems()), e);
     }
 
     /** The gutter menu of a method breakpoint's or field watchpoint's mark: Enable / Disable, Remove, Breakpoints. */
@@ -9449,16 +9449,24 @@ final class DebugCoordinator {
     }
 
     private void showGutterMenu(List<javafx.scene.control.MenuItem> items, javafx.scene.input.ContextMenuEvent e) {
-        gutterMenu.getItems().setAll(items);
+        gutterMenu().getItems().setAll(items);
         Node source = e.getSource() instanceof Node n ? n : null;
         if (source != null && source.getScene() != null && source.getScene().getWindow() != null) {
-            gutterMenu.show(source, e.getScreenX(), e.getScreenY());
+            gutterMenu().show(source, e.getScreenX(), e.getScreenY());
         } else if (host.window() != null) {
-            gutterMenu.show(host.window(), e.getScreenX(), e.getScreenY());
+            gutterMenu().show(host.window(), e.getScreenX(), e.getScreenY());
         }
     }
 
-    private final javafx.scene.control.ContextMenu gutterMenu = new javafx.scene.control.ContextMenu();
+    /** A breakpoint mark's right-click menu, made on the first such right-click (it is a popup window of its own). */
+    private javafx.scene.control.@Nullable ContextMenu gutterMenu;
+
+    javafx.scene.control.ContextMenu gutterMenu() {
+        if (gutterMenu == null) {
+            gutterMenu = new javafx.scene.control.ContextMenu();
+        }
+        return gutterMenu;
+    }
 
     /**
      * Whether the editor menu offers Debug File of its own for a file of {@code language}: one that Run File can't
@@ -9726,6 +9734,47 @@ final class DebugCoordinator {
     }
 
     private @Nullable DebugValuePopup valuePopup;
+
+    /**
+     * What the editors show a value with: the {@link #valuePopup} (a popup window and two menus of its own),
+     * made the first time a value is shown, not with every editor of a window that may never debug.
+     */
+    private final com.editora.editor.debug.DebugValuePresenter valuePresenter =
+            new com.editora.editor.debug.DebugValuePresenter() {
+                @Override
+                public void show(org.fxmisc.richtext.CodeArea area, String expr, double x, double y, boolean key) {
+                    valuePopup().show(area, expr, x, y, key);
+                }
+
+                @Override
+                public void showEvaluated(org.fxmisc.richtext.CodeArea area, String expr, double x, double y) {
+                    valuePopup().showEvaluated(area, expr, x, y);
+                }
+
+                @Override
+                public void hide() {
+                    if (valuePopup != null) {
+                        valuePopup.hide();
+                    }
+                }
+
+                @Override
+                public void mouseLeft() {
+                    if (valuePopup != null) {
+                        valuePopup.mouseLeft();
+                    }
+                }
+
+                @Override
+                public boolean mouseInside() {
+                    return valuePopup != null && valuePopup.mouseInside();
+                }
+
+                @Override
+                public boolean isShowing() {
+                    return valuePopup != null && valuePopup.isShowing();
+                }
+            };
 
     /** The hover / Show Value at Caret popup, shared by this window's editors. */
     DebugValuePopup valuePopup() {

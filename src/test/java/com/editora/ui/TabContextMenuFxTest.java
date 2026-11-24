@@ -77,7 +77,7 @@ class TabContextMenuFxTest {
                 assertTrue(background != null, "two files are open, one of them in the background");
                 assertNotSame(active, backgroundBuffer);
 
-                ContextMenu menu = background.getContextMenu();
+                ContextMenu menu = LazyContextMenu.menuOf(background);
                 menu.getOnShowing().handle(null); // builds the lazy menu, as its first showing does
                 List<String> labels =
                         menu.getItems().stream().map(MenuItem::getText).toList();
@@ -139,7 +139,7 @@ class TabContextMenuFxTest {
                 names[1] = active.getPath().getFileName().toString();
                 scene[0] = background.getTabPane().getScene();
 
-                ContextMenu menu = background.getContextMenu();
+                ContextMenu menu = LazyContextMenu.menuOf(background);
                 menu.getOnShowing().handle(null); // builds the lazy menu, as its first showing does
                 menu.getItems().stream()
                         .filter(item -> tr("menu.compareWith").equals(item.getText()))
@@ -220,7 +220,7 @@ class TabContextMenuFxTest {
                                 instanceof EditorBuffer)
                         .findFirst()
                         .orElseThrow();
-                ContextMenu menu = tab.getContextMenu();
+                ContextMenu menu = LazyContextMenu.menuOf(tab);
                 menu.getOnShowing().handle(null);
                 List<String> labels =
                         menu.getItems().stream().map(MenuItem::getText).toList();
@@ -274,7 +274,7 @@ class TabContextMenuFxTest {
                                 instanceof EditorBuffer)
                         .findFirst()
                         .orElseThrow();
-                ContextMenu menu = tab.getContextMenu();
+                ContextMenu menu = LazyContextMenu.menuOf(tab);
                 menu.getOnShowing().handle(null); // builds the lazy menu, as its first showing does
                 assertEquals(
                         List.of(
@@ -335,14 +335,14 @@ class TabContextMenuFxTest {
                 MainController c = fx.controller;
                 EditorArea area = FxTestSupport.field(c, "editorArea");
                 List<Tab> tabs = area.tabs();
-                ContextMenu left = tabs.get(0).getContextMenu();
+                ContextMenu left = LazyContextMenu.menuOf(tabs.get(0));
                 left.getOnShowing().handle(null);
                 assertEquals(tr("row.unavailable.noTabsLeft"), reason(left, "menu.closeLeft"));
                 assertNull(reason(left, "menu.closeRight"), "the other tab can be closed");
                 assertEquals(tr("row.unavailable.noChanges"), reason(left, "menu.save"));
                 assertNull(reason(left, "menu.copyPath"), "a saved file has a path");
 
-                ContextMenu right = tabs.get(tabs.size() - 1).getContextMenu();
+                ContextMenu right = LazyContextMenu.menuOf(tabs.get(tabs.size() - 1));
                 right.getOnShowing().handle(null);
                 assertEquals(tr("row.unavailable.noTabsRight"), reason(right, "menu.closeRight"));
                 assertNull(reason(right, "menu.closeLeft"));
@@ -364,7 +364,7 @@ class TabContextMenuFxTest {
                                 && b.getPath() == null)
                         .findFirst()
                         .orElseThrow();
-                ContextMenu fresh = untitled.getContextMenu();
+                ContextMenu fresh = LazyContextMenu.menuOf(untitled);
                 fresh.getOnShowing().handle(null);
                 for (String key : List.of("menu.copyPath", "menu.rename")) {
                     assertEquals(tr("row.unavailable.unsaved"), reason(fresh, key), key);

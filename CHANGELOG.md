@@ -162,6 +162,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     other start-up work goes on.
   - A window no longer builds a tooltip for every button, status bar item and tab before it first paints: each
     tooltip is built the first time the pointer rests on its control, and looks and reads the same as before.
+  - Nor does it build a right-click menu for every tool-window button and tab, the toolbar, the breakpoint gutter
+    and the debugger's value popup: each is built when it is first opened, from the mouse or the keyboard.
   - Project Map: typing in a column filter on a very large folder no longer sorts the whole map per keystroke;
     zooming, and with Compact rows moving the pointer between columns, no longer re-sorts or lays out every column;
     problem counts are no longer rebuilt every 100 ms while the Map is hidden; "Show dependencies of the selection"

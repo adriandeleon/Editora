@@ -3730,12 +3730,12 @@ public class MainController implements com.editora.mcp.McpBridge {
             tabHeaders.contentHeader(tab, placeholder); // again, now that the pin is known
         }
         // The tab menu is a buffer's; opening it on a placeholder builds the editor first.
-        tab.setContextMenu(LazyContextMenu.of(menu -> {
+        LazyContextMenu.install(tab, menu -> {
             EditorBuffer built = ensureBuffer(tab);
             if (built != null) {
                 TabContextMenu.build(this, tab, built, menu);
             }
-        }));
+        });
         return tab;
     }
 
@@ -4658,13 +4658,12 @@ public class MainController implements com.editora.mcp.McpBridge {
      * place on disk), after the tab's {@code own} rows.
      */
     void installContentTabMenu(Tab tab, MenuItem... own) {
-        tab.setContextMenu(LazyContextMenu.of(menu -> TabContextMenu.buildForContent(this, tab, menu, own)));
+        LazyContextMenu.install(tab, menu -> TabContextMenu.buildForContent(this, tab, menu, own));
     }
 
     /** Builds and attaches the right-click context menu for a tab. */
     private void installTabMenu(Tab tab, EditorBuffer buffer) {
-        tab.setContextMenu(
-                LazyContextMenu.of(menu -> TabContextMenu.build(this, tab, buffer, menu))); // built on first use
+        LazyContextMenu.install(tab, menu -> TabContextMenu.build(this, tab, buffer, menu)); // built on first use
     }
 
     /** Reflection seam retained for lifecycle tests and project deletion. */
