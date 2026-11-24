@@ -190,6 +190,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Typing allocates about two thirds less.** Each keystroke in a 2,000-line Java file made the UI thread allocate
+  about 7 MB, and now about 2.4 MB, so the garbage collector runs less often while you type. The editor's scrolling
+  layer (Flowless, now a vendored fork like RichTextFX) measured every visible line again on each layout pass and
+  rebuilt its size index whenever a line was restyled, even though the line's size had not changed; it now keeps the
+  size when the line measures the same.
 - **Faster typing, startup and large projects** (performance review of 2026-11-23).
   - Typing renders about a third fewer frames (3.7 → 2.6 per key) and takes about half the UI-thread time: the
     overlays drawn over the text share one look at where it is per frame instead of each measuring it again on the

@@ -14,6 +14,8 @@ updates:
     ignore:
       # The RichTextFX fork is vendored under m2-repo/ and published nowhere else.
       - dependency-name: io.github.adriandeleon:richtextfx
+      # So is the Flowless fork, which replaces org.fxmisc.flowless:flowless.
+      - dependency-name: io.github.adriandeleon:flowless
 
   - package-ecosystem: github-actions
     directory: /
