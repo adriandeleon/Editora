@@ -2591,8 +2591,8 @@ public final class GitService {
      * at some point, and is dropped for a git older than 2.30 ({@link #resolvePush}).
      *
      * <p>The destination is explicit ({@link #PUSH_UPSTREAM} for a tracked branch): with no refspec,
-     * {@code push.default=matching} would force other branches too. A remote with push refspecs of its own
-     * ({@code remote.<name>.push}, Gerrit's {@code HEAD:refs/for/main}) is the exception: there the configured
+     * {@code push.default=matching} would force other branches too. A remote whose push refspecs all push
+     * {@code HEAD} (Gerrit's {@code HEAD:refs/for/main}) is the exception: there the configured
      * refspec decides, as for an ordinary push, and {@code --force-with-lease} guards every ref it updates
      * ({@link #resolvePush}). An untracked branch is pushed, and tracked, like a first {@link #pushArgs push}. Empty for a detached
      * HEAD or an unusable name: there is no branch to force. Pure — unit-tested.
@@ -2624,22 +2624,25 @@ public final class GitService {
      * <p>{@link #PUSH_UPSTREAM} {@code refs/heads/<b>} goes to the push remote ({@link #pushRemote}) and to the
      * branch of the same name there, never to another one:
      * <ul>
-     *   <li>an ordinary push whose upstream has the branch's name, or whose remote has push refspecs of its own
-     *       ({@code remote.<name>.push}, a Gerrit {@code HEAD:refs/for/main}), or that goes to another remote
+     *   <li>an ordinary push whose upstream has the branch's name, or whose remote's own push refspecs all push
+     *       {@code HEAD} (a Gerrit {@code HEAD:refs/for/main}, {@link #headBasedPushRefspecs}), or that goes to another remote
      *       than the upstream's (a triangular workflow) stays a plain {@code push}: git's own configuration
      *       decides, as in a terminal;</li>
      *   <li>an ordinary push of {@code feat} tracking {@code origin/main} — which fails under
      *       {@code push.default=simple} and lands on {@code main} under {@code upstream} — pushes {@code feat}
      *       to {@code origin/feat} and tracks it ({@code --set-upstream});</li>
      *   <li>a forced push names the remote and {@code refs/heads/<b>:refs/heads/<b>}, also tracking it when the
-     *       upstream had another name — unless the remote has push refspecs of its own: then, as for an
-     *       ordinary push, git's configuration decides where it goes (Gerrit's {@code HEAD:refs/for/main}),
-     *       and nothing is tracked.</li>
+     *       upstream had another name — unless the remote's push refspecs all push {@code HEAD}: then, as for
+     *       an ordinary push, git's configuration decides where it goes (Gerrit's {@code HEAD:refs/for/main}),
+     *       and nothing is tracked. Refspecs that name other refs ({@code refs/notes/*:refs/notes/*}, a
+     *       wildcard that would force every branch) do not count: the branch is named.</li>
      * </ul>
      *
-     * <p>{@link #PUSH_REMOTE} (a first push, forced or not) is resolved to the push remote; when that remote
-     * has push refspecs of its own the branch's ref and {@code --set-upstream} are dropped too, so
+     * <p>{@link #PUSH_REMOTE} (a first push, forced or not) is resolved to the push remote; when that remote's
+     * push refspecs all push {@code HEAD} the branch's ref and {@code --set-upstream} are dropped too, so
      * {@code push <remote>} goes where its configuration says rather than to a new branch of the same name.
+     * Any other refspec keeps the explicit {@code --set-upstream <remote> refs/heads/<b>}: a bare
+     * {@code push <remote>} would push only what that refspec names (notes, another branch) and report success.
      */
     static String[] resolvePush(
             String[] args, String configListZ, List<String> remotes, boolean forceIfIncludesSupported) {
@@ -2654,10 +2657,7 @@ public final class GitService {
                     : "";
             String remote = pushRemote(configListZ, branch, remotes);
             out.set(at, remote);
-            boolean forced = out.contains("--force-with-lease");
-            if (!branch.isEmpty()
-                    && hasPushRefspecs(configListZ, remote)
-                    && !(forced && wildcardPushRefspec(configListZ, remote))) {
+            if (!branch.isEmpty() && headBasedPushRefspecs(configListZ, remote)) {
                 out.remove(at + 1);
                 out.remove("--set-upstream");
             }
@@ -2673,16 +2673,16 @@ public final class GitService {
             boolean sameRemote = remote.equals(branchRemote);
             boolean sameName = merge.equals(ref);
             boolean force = out.contains("--force-with-lease");
-            boolean ownRefspecs = config.containsKey("remote." + remote + ".push");
-            // A forced push defers to the remote's own refspecs (Gerrit's HEAD:refs/for/main) only when none is a
-            // wildcard: "+refs/heads/*:refs/heads/*" would force every matching branch, not the one asked for.
-            boolean wildcard = force && ownRefspecs && wildcardPushRefspec(configListZ, remote);
-            if ((ownRefspecs && !wildcard) || (!force && (sameName || !sameRemote))) {
+            // The remote's own refspecs decide only when they push HEAD (Gerrit's HEAD:refs/for/main): any other
+            // ("refs/notes/*:refs/notes/*", "+refs/heads/*:refs/heads/*") would push something else than the branch
+            // asked for, or force every matching branch.
+            boolean headBased = headBasedPushRefspecs(configListZ, remote);
+            if (headBased || (!force && (sameName || !sameRemote))) {
                 out.remove(at + 1);
                 out.remove(at);
             } else {
                 List<String> target = new ArrayList<>();
-                if (sameRemote && !sameName && !wildcard && !out.contains("--set-upstream")) {
+                if (sameRemote && !sameName && !out.contains("--set-upstream")) {
                     target.add("--set-upstream");
                 }
                 target.add(remote);
@@ -2695,21 +2695,33 @@ public final class GitService {
         return out.toArray(String[]::new);
     }
 
-    /** Whether any of {@code remote}'s {@code remote.<name>.push} refspecs is a wildcard. Pure. */
-    private static boolean wildcardPushRefspec(String configListZ, String remote) {
+    /**
+     * Whether {@code remote} has {@code remote.<name>.push} refspecs and every one of them pushes {@code HEAD}
+     * ({@code HEAD}, {@code HEAD:refs/for/main}, {@code +HEAD:refs/heads/x}) — a Gerrit-style remote whose
+     * configuration says where the current branch goes. The key is multi-valued, so every value counts: one
+     * that names other refs ({@code refs/notes/*:refs/notes/*}, {@code refs/heads/main:refs/heads/main}, a
+     * wildcard) means a push left to the configuration would push something else than the branch asked for.
+     * Section and variable are lower-cased by {@code git config --list}; the remote's name is not. Pure.
+     */
+    static boolean headBasedPushRefspecs(String configListZ, String remote) {
         String key = "remote." + remote + ".push";
+        boolean any = false;
         for (String record : configListZ == null ? new String[0] : configListZ.split("\u0000", -1)) {
             int newline = record.indexOf('\n');
-            if (newline > 0 && record.substring(0, newline).equalsIgnoreCase(key) && record.indexOf('*', newline) > 0) {
-                return true;
+            if (newline < 0 || !record.substring(0, newline).equals(key)) {
+                continue;
             }
+            String spec = record.substring(newline + 1).strip();
+            if (spec.startsWith("+")) {
+                spec = spec.substring(1);
+            }
+            int colon = spec.indexOf(':');
+            if (!(colon < 0 ? spec : spec.substring(0, colon)).equals("HEAD")) {
+                return false;
+            }
+            any = true;
         }
-        return false;
-    }
-
-    /** Whether {@code remote} has {@code remote.<name>.push} refspecs of its own in {@code configListZ}. Pure. */
-    private static boolean hasPushRefspecs(String configListZ, String remote) {
-        return lastValues(configListZ, "remote." + remote + ".").containsKey("remote." + remote + ".push");
+        return any;
     }
 
     /** The last value of each key in {@code configListZ} that starts with one of {@code prefixes}. Pure. */
@@ -2968,11 +2980,14 @@ public final class GitService {
                 if (!movesBranch && onBranchNow(root)) {
                     // A checkout from a branch leaves nothing: the branch keeps its commits.
                     result = new LeftBehind(true, 0, false, 0, 0);
-                } else if (GitSafety.isSafeRevision(target)) {
+                } else if (pullRequest) {
+                    // "#5" passes isSafeRevision but git cannot name it (not fetched): a checkout of it puts at
+                    // stake what no ref keeps; a reset to it cannot be counted.
+                    if (!movesBranch) {
+                        result = unreferencedNow(root);
+                    }
+                } else {
                     result = leftBehindNow(root, target, movesBranch);
-                } else if (!movesBranch) {
-                    // A pull request git cannot name yet (not fetched): what no ref keeps is at stake.
-                    result = unreferencedNow(root);
                 }
             }
             LeftBehind posted = result;
@@ -3047,7 +3062,20 @@ public final class GitService {
      * unstage need not reload it ({@link #refsFingerprint(ProcessRunner.Result, ProcessRunner.Result, String)}).
      */
     public void refsFingerprint(Path root, Consumer<String> onResult) {
-        submit(exec, () -> {
+        refsFingerprintOn(exec, root, onResult);
+    }
+
+    /**
+     * {@link #refsFingerprint(Path, Consumer)} on the history lane, behind the Git Log's own reads, so the
+     * fingerprint a listing is compared with is read in order with that listing and never waits on (or
+     * delays) the status lane.
+     */
+    public void refsFingerprintForHistory(Path root, Consumer<String> onResult) {
+        refsFingerprintOn(historyExec, root, onResult);
+    }
+
+    private void refsFingerprintOn(ExecutorService lane, Path root, Consumer<String> onResult) {
+        submit(lane, () -> {
             String fingerprint = "";
             if (gitAvailable(root) && root != null) {
                 ProcessRunner.Result head = git(root, QUICK, "symbolic-ref", "-q", "HEAD");
@@ -4545,29 +4573,37 @@ public final class GitService {
                 userEnv(dir), inherited, ownSsh, batchSsh(dir), isLocal(dir) ? com.editora.Os.isLinux() : true);
     }
 
-    /** The resolved batch-mode ssh of the local Git for Windows ({@link GitSafety#batchSshCommand}); "" unknown. */
-    private static volatile @Nullable String windowsBatchSsh;
+    /** A resolved batch-mode ssh of the local Git for Windows ({@link GitSafety#batchSshCommand}), null: none. */
+    private record WindowsBatchSsh(
+            List<String> gitCommand, @Nullable String ssh) {}
 
-    private static volatile boolean windowsBatchSshResolved;
+    /** The last lookup that got an answer from git, for the git command it asked; null: none yet. */
+    private static volatile @Nullable WindowsBatchSsh windowsBatchSsh;
 
     /**
      * The {@code GIT_SSH_COMMAND} that puts ssh in batch mode for a command on {@code dir}'s host, or null when
      * none should be named ({@link GitSafety#batchSshCommand}: on Windows, only Git for Windows' own ssh by
-     * its path). A remote host is a Unix one. Asked off the FX thread; the Windows lookup runs once.
+     * its path). A remote host is a Unix one. Asked off the FX thread; the Windows lookup runs once per git
+     * command ({@link #setCommand} may name another git, with another ssh), and again after a failed one.
      */
     static @Nullable String batchSsh(@Nullable Path dir) {
         if (!isLocal(dir) || !com.editora.Os.isWindows()) {
             return GitSafety.BATCH_SSH;
         }
-        if (!windowsBatchSshResolved) {
-            List<String> argv = new ArrayList<>(command());
-            argv.add("--exec-path");
-            ProcessRunner.Result r = ProcessRunner.run(null, QUICK, argv, READ_ENV);
-            windowsBatchSsh = GitSafety.batchSshCommand(
-                    true, r.ok() ? r.out() : null, path -> Files.isRegularFile(Path.of(path)));
-            windowsBatchSshResolved = true;
+        List<String> gitCommand = command();
+        WindowsBatchSsh cached = windowsBatchSsh;
+        if (cached != null && cached.gitCommand().equals(gitCommand)) {
+            return cached.ssh();
         }
-        return windowsBatchSsh;
+        List<String> argv = new ArrayList<>(gitCommand);
+        argv.add("--exec-path");
+        ProcessRunner.Result r = ProcessRunner.run(null, QUICK, argv, READ_ENV);
+        if (!r.ok()) {
+            return null; // not cached: a git that failed to answer (a timeout, a bad path) is asked again
+        }
+        String ssh = GitSafety.batchSshCommand(true, r.out(), path -> Files.isRegularFile(Path.of(path)));
+        windowsBatchSsh = new WindowsBatchSsh(List.copyOf(gitCommand), ssh);
+        return ssh;
     }
 
     /** {@code setsid} on this machine, or null (Windows, macOS, or a Linux without util-linux). */

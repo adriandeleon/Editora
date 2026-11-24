@@ -231,9 +231,11 @@ ssh command of your own (`core.sshCommand` or `GIT_SSH_COMMAND`): a host key tha
 is not yet known, or a key whose passphrase is not in your ssh agent, fails at
 once with ssh's message ("Host key verification failed.") — connect once from a
 terminal, or add the key to your agent, then try again. On Windows, batch mode
-uses the ssh that comes with Git for Windows. A remote with push refspecs of its
-own (`remote.<name>.push`, such as Gerrit's `HEAD:refs/for/main`) keeps them,
-forced pushes included.
+uses the ssh that comes with Git for Windows. A remote whose push refspecs
+(`remote.<name>.push`) all push `HEAD`, such as Gerrit's `HEAD:refs/for/main`,
+keeps them, forced pushes included. Other push refspecs (notes, one fixed branch,
+`refs/heads/*`) do not decide where the current branch goes: Editora names the
+branch, so a push never sends only notes or force-pushes every branch.
 
 ### Automatic fetch
 
