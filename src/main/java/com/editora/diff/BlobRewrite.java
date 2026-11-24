@@ -7,7 +7,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import com.github.difflib.DiffUtils;
 import com.github.difflib.patch.AbstractDelta;
 import org.jspecify.annotations.Nullable;
 
@@ -76,7 +75,7 @@ public final class BlobRewrite {
         int beforeAt = 0;
         int afterAt = 0;
         for (AbstractDelta<String> delta :
-                DiffUtils.diff(beforeLines, after.lines()).getDeltas()) {
+                BoundedDiff.orChangedMiddle(beforeLines, after.lines()).getDeltas()) {
             while (beforeAt < delta.getSource().getPosition()) {
                 origin[afterAt++] = beforeAt++;
             }

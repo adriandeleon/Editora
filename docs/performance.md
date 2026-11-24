@@ -340,7 +340,8 @@ command waiting for one is busy, so a second press is refused.
   - The terminal's FX handlers never wait for the screen buffer's lock: they try it, and try again 4 ms later while
     the emulator writes (`TerminalView.underLockSoon`).
 - **Debugger, diff and merge.**
-  - The line mapping between the launched text and the document (`LaunchedLines.SITE`, a Myers diff) is worked out
+  - The line mapping between the launched text and the document (`LaunchedLines.SITE`, a Myers diff bounded by
+    `BoundedDiff`) is worked out
     on a snapshot keyed by document version. The breakpoint send after an edit, a stop, Run to Cursor and Jump to
     Line wait for it; other callers use the last mapping, and the file is sent again when it changes.
   - `DebugTextScans` (a breakpoint line with no code, the test at the caret) runs off the thread per version.

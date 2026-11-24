@@ -9,9 +9,9 @@ import java.util.Map;
 
 import javafx.application.Platform;
 
+import com.editora.diff.BoundedDiff;
 import com.editora.editor.EditorBuffer;
 import com.editora.perf.OffFx;
-import com.github.difflib.DiffUtils;
 import com.github.difflib.patch.AbstractDelta;
 import com.github.difflib.patch.Patch;
 import org.jspecify.annotations.Nullable;
@@ -239,7 +239,8 @@ final class LaunchedLines {
             int[] toCurrent = new int[launched.size()];
             Arrays.fill(toLaunched, -1);
             Arrays.fill(toCurrent, -1);
-            Patch<String> patch = DiffUtils.diff(launched, current);
+            // bounded: past the budget the changed middle is one region, paired by content below (P7)
+            Patch<String> patch = BoundedDiff.orChangedMiddle(launched, current);
             int l = 0;
             int c = 0;
             for (AbstractDelta<String> delta : patch.getDeltas()) {
