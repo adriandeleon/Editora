@@ -465,7 +465,12 @@ style-only change that still ended a succession — skips the draw and the snaps
   from "styled" to "no grammar".
 - A semantic-tokens response is a style-only update: identical tokens restyle nothing, and a different
   list re-tokenizes and restyles only the lines whose tokens differ (`SemanticToken.changedLines`), with the
-  overlay built off the FX thread.
+  overlay built off the FX thread. A whole-document answer (jdtls has no range requests) is kept and spliced as an
+  `int[]`, never a boxed list, and decoded on a thread of its own so the session's reader thread keeps reading.
+- New inlay hints or code lenses swap the area's inlay factory once (`BufferInlays.refreshInlayAreas`), not through
+  the fork's `refreshInlays()`, whose null in between rebuilt every hinted line twice; each line compares its new
+  inlays with the old and only the changed ones rebuild. A code lens under the pointer is found by descending only
+  into nodes whose bounds hold the point, not by a `lookupAll` of the area.
 - Overlays iterate just the **visible paragraphs**
   (`firstVisibleParToAllParIndex … lastVisibleParToAllParIndex`) and skip folded lines.
 - The minimap draws one row per **pixel row**, not per line, once lines are less than a pixel tall
