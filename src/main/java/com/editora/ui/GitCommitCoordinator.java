@@ -78,15 +78,18 @@ final class GitCommitCoordinator {
     /** A refresh was applied: {@code root} is the active repository now (null outside one). */
     void repositoryApplied(@Nullable Path root) {
         countsGeneration++;
-        if (panel == null) {
-            return;
-        }
+        // Tracked before the panel exists: it is built on first use, after a status was applied, and opening it
+        // reads none. Without this the first switch after it opened found no previous repository and carried the
+        // message typed there into the next one.
         Path previous = appliedRoot;
         if (root != null) {
             appliedRoot = root;
-            if (previous != null && !key(previous).equals(key(root))) {
-                switchedRepository(panel, previous, root);
-            }
+        }
+        if (panel == null) {
+            return;
+        }
+        if (root != null && previous != null && !key(previous).equals(key(root))) {
+            switchedRepository(panel, previous, root);
         }
         if (root == null) {
             templateRoot = null;

@@ -35,6 +35,20 @@ class AppDocsTest {
         AppDocs.resetManifest();
     }
 
+    /**
+     * Serves {@code site} instead of the guide the build carries, from a stopped server. The server and the manifest
+     * are static, and another test in this JVM that opened a docs link may have started the server from the real
+     * guide: {@code ExternalLinks.open} calls {@link AppDocs#localize} on a background thread, which can still be
+     * running when that test ends. The order matters: once the files are swapped and the manifest forgotten, such a
+     * late caller finds no guide and starts nothing, so the server stopped last stays stopped unless this test
+     * starts it.
+     */
+    private static void serve(Path site) {
+        AppDocs.files = path -> open(site, path);
+        AppDocs.resetManifest();
+        AppDocs.stop();
+    }
+
     @Test
     void onlyThisVersionsDocsAreTakenOver() {
         String base = "https://editora-project.dev/docs/v-1.2.0";
@@ -88,8 +102,7 @@ class AppDocsTest {
 
     @Test
     void withoutACopyLinksStayOnTheWebsite(@TempDir Path site) {
-        AppDocs.files = path -> open(site, path);
-        AppDocs.resetManifest();
+        serve(site);
         String url = AppInfo.docsUrl() + "/editing";
         assertFalse(AppDocs.bundled());
         assertEquals(url, AppDocs.localize(url));
@@ -99,8 +112,7 @@ class AppDocsTest {
     @Test
     void aCopyForAnotherVersionIsNotUsed(@TempDir Path site) throws IOException {
         Files.writeString(site.resolve("app-docs.json"), "{\"version\": \"0.0.1-other\"}");
-        AppDocs.files = path -> open(site, path);
-        AppDocs.resetManifest();
+        serve(site);
         assertFalse(AppDocs.bundled());
     }
 
@@ -114,8 +126,7 @@ class AppDocsTest {
         Path command = site.resolve("docs/v-" + version + "/commands/edit.escape.html/index.html");
         Files.createDirectories(command.getParent());
         Files.writeString(command, "<!doctype html><title>Escape HTML</title>");
-        AppDocs.files = path -> open(site, path);
-        AppDocs.resetManifest();
+        serve(site);
 
         String local = AppDocs.localize(AppInfo.docsUrl() + "/editing");
         assertTrue(local.startsWith("http://127.0.0.1:"), local);
