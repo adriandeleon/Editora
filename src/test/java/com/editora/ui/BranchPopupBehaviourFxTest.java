@@ -632,6 +632,10 @@ class BranchPopupBehaviourFxTest {
                         .toList();
                 assertTrue(labels.contains(tr("branchpopup.clone")), labels.toString());
                 assertTrue(labels.contains(tr("branchpopup.init")), labels.toString());
+                assertEquals(
+                        tr("branchpopup.clone"),
+                        name(s.list().getSelectionModel().getSelectedItem()),
+                        "the only content is the two actions: the first is selected, not nothing");
             } finally {
                 s.popup().hide();
                 s.stage().close();

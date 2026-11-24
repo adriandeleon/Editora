@@ -102,6 +102,48 @@ class GitUiDecisionsTest {
     }
 
     @Test
+    void aRemoteBranchSwitchesToALocalBranchOfAnyNameThatTracksIt() {
+        List<String> remotes = List.of("origin", "upstream");
+        assertEquals(
+                new GitWindowCoordinator.RemoteCheckout(GitWindowCoordinator.RemoteCheckout.Kind.SWITCH, "my-feature"),
+                GitWindowCoordinator.remoteCheckout(
+                        "origin/feature",
+                        List.of(new com.editora.git.GitService.BranchInfo("my-feature", "origin/feature", 0, 0, false)),
+                        remotes),
+                "no branch of the same name, but one that tracks it");
+        assertEquals(
+                new GitWindowCoordinator.RemoteCheckout(GitWindowCoordinator.RemoteCheckout.Kind.SWITCH, "up-feature"),
+                GitWindowCoordinator.remoteCheckout(
+                        "upstream/feature",
+                        List.of(
+                                new com.editora.git.GitService.BranchInfo("feature", "origin/feature", 0, 0, false),
+                                new com.editora.git.GitService.BranchInfo(
+                                        "up-feature", "upstream/feature", 0, 0, false)),
+                        remotes),
+                "the same name tracks another remote, but another branch tracks this one: no question");
+        assertEquals(
+                new GitWindowCoordinator.RemoteCheckout(GitWindowCoordinator.RemoteCheckout.Kind.SWITCH, "feature"),
+                GitWindowCoordinator.remoteCheckout(
+                        "origin/feature",
+                        List.of(
+                                new com.editora.git.GitService.BranchInfo("alias", "origin/feature", 0, 0, false),
+                                new com.editora.git.GitService.BranchInfo("feature", "origin/feature", 0, 0, false)),
+                        remotes),
+                "several track it: the one of the same name wins");
+    }
+
+    @Test
+    void theLogKeepsItsRefsFingerprintOnlyForALoadThatWorked() {
+        String refs = "HEAD=refs/heads/main\nabc HEAD\n";
+        assertEquals(refs, GitWindowCoordinator.refsAfterLoad(refs, com.editora.git.GitLog.Page.EMPTY));
+        assertEquals(
+                "",
+                GitWindowCoordinator.refsAfterLoad(refs, com.editora.git.GitLog.Page.failed("fatal: bad revision")),
+                "a failed page keeps no fingerprint, so the next Git command reloads it");
+        assertEquals("", GitWindowCoordinator.refsAfterLoad("", com.editora.git.GitLog.Page.EMPTY));
+    }
+
+    @Test
     void fetchPrunes() {
         assertEquals(
                 List.of("fetch", "--all", "--prune"),

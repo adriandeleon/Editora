@@ -262,6 +262,54 @@ class GitStashFeaturesFxTest {
     }
 
     /**
+     * {@code git stash branch} moves HEAD to a new branch at the stash's base: from a detached HEAD with a commit
+     * no branch has, it asks first like every other checkout; Cancel leaves HEAD, the stash and the branches alone.
+     */
+    @Test
+    void branchFromStashOffADetachedHeadAsksFirst(@TempDir Path dir) throws Exception {
+        GitTestRepo repo = GitTestRepo.init(dir);
+        Path file = repo.write("story.txt", BASE);
+        repo.commitAll("base");
+        repo.write("story.txt", "one\nTWO stashed\nthree\n");
+        repo.git("stash", "push", "-q", "-m", "mine");
+        repo.git("checkout", "-q", "--detach");
+        repo.write("experiment.txt", "only here\n");
+        repo.commitAll("experiment"); // reachable from the detached HEAD only
+        String detached = repo.git("rev-parse", "HEAD").text().strip();
+
+        List<Confirm.Question> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            Confirm.answerWith(question -> {
+                asked.add(question);
+                return false;
+            });
+            GitFeatureFx w = GitFeatureFx.create(async);
+            w.open(file);
+            Path root = FxTestSupport.callOnFx(w.git::repoRoot);
+            StashEntry entry = entries(w, root).get(0);
+
+            CountDownLatch kept = w.watchStatus(tr("status.git.headKept")::equals);
+            FxTestSupport.runOnFx(() -> w.git.stashes().branch(root, entry, "rescue"));
+            async.await(kept, "the declined stash branch");
+            assertEquals(1, asked.size());
+            assertEquals(tr("dialog.gitLeaveDetached.title"), asked.get(0).title());
+            assertTrue(asked.get(0).message().contains("rescue"), asked.get(0).message());
+            assertEquals(detached, repo.git("rev-parse", "HEAD").text().strip(), "HEAD did not move");
+            assertEquals(1, stashList(repo).size(), "the stash is kept");
+            assertFalse(repo.git("branch", "--list", "rescue").text().contains("rescue"));
+
+            Confirm.answerWith(question -> true);
+            CountDownLatch branched = w.watchStatus(tr("stash.branched", "rescue")::equals);
+            FxTestSupport.runOnFx(() -> w.git.stashes().branch(root, entry, "rescue"));
+            async.await(branched, "the agreed stash branch");
+            assertEquals("rescue", repo.git("branch", "--show-current").text().strip());
+            assertEquals(0, stashList(repo).size());
+        } finally {
+            Confirm.answerWith(null);
+        }
+    }
+
+    /**
      * Git stashes the files on disk. An edit still in the editor used to stay behind in the buffer while the
      * file under it was reset — the stash did not hold what the user was looking at.
      */

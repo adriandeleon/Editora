@@ -496,11 +496,15 @@ public final class BranchPopup {
     private void selectFirstSelectable() {
         // With nothing typed, the current branch: the actions above it are a keystroke away, and Enter on a
         // just-opened dropdown must not run one. When it is not listed (a detached HEAD, Local folded) nothing
-        // that acts is selected either — at most a section header, which Enter only folds or unfolds. Once
-        // something is typed, the first branch or action; a header only when everything is folded.
+        // that acts is selected either — at most a section header, which Enter only folds or unfolds. Outside
+        // a repository the dropdown holds only Clone and Initialize: the first is selected (Enter on it opens
+        // the Clone form, which runs nothing). Once something is typed, the first branch or action — a search
+        // folds nothing, so a matching row always follows any header.
+        boolean actionsOnly = !items.isEmpty() && items.stream().allMatch(ActionRow.class::isInstance);
         for (int pass = 0; pass < 3; pass++) {
-            if (query.isEmpty() == (pass == 1)) {
-                continue; // nothing typed: passes 0 and 2 (headers only); typed: passes 1 and 2
+            // Nothing typed: passes 0 and 2 (headers only), and 1 when there are only actions. Typed: pass 1.
+            if (!(query.isEmpty() ? pass != 1 || actionsOnly : pass == 1)) {
+                continue;
             }
             for (int i = 0; i < items.size(); i++) {
                 Row row = items.get(i);
