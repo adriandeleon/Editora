@@ -160,4 +160,33 @@ class IndexCoordinatorStaleFxTest {
             FxTestSupport.runOnFx(c::dispose);
         }
     }
+
+    /** F5: a stale index re-walks by stamp, so a checkout costs a read of only the files it changed. */
+    @Test
+    void aStaleReWalkReadsOnlyTheChangedFiles(@TempDir Path root) throws Exception {
+        java.nio.file.attribute.FileTime old =
+                java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() - 60_000);
+        for (String name : List.of("One", "Two", "Three")) {
+            Files.setLastModifiedTime(Files.writeString(root.resolve(name + ".java"), "class " + name + " {}\n"), old);
+        }
+        IndexCoordinator c = coordinator(root);
+        try {
+            ensureBuilt(c);
+            Files.writeString(root.resolve("Two.java"), "class TwoAfter {}\n");
+            FxTestSupport.runOnFx(c::markStale);
+            assertEquals(List.of("Two"), symbols(c, "Two"), "a stale index still answers until the re-walk lands");
+            ensureBuilt(c);
+            assertEquals(2, (int) FxTestSupport.callOnFx(() -> c.lastReused));
+            assertEquals(List.of("TwoAfter"), symbols(c, "TwoAfter"));
+            assertEquals(
+                    List.of(), symbols(c, "Two").stream().filter("Two"::equals).toList());
+            assertEquals(List.of("Three"), symbols(c, "Three"));
+
+            FxTestSupport.runOnFx(c::rebuild); // asked for by name: everything is read again
+            settle(c);
+            assertEquals(0, (int) FxTestSupport.callOnFx(() -> c.lastReused));
+        } finally {
+            FxTestSupport.runOnFx(c::dispose);
+        }
+    }
 }

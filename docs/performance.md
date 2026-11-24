@@ -548,6 +548,15 @@ style-only change that still ended a succession — skips the draw and the snaps
   mutation, a focus regain and a non-ignored external change still run `refresh()`. The Commit window
   (`GitPanel.setStatus`) leaves its rows alone for an equal status and renders a status that arrives while it is
   off screen when it is shown again; `TreeViewState` walks the rows once rather than asking `getTreeItem(row)`.
+- A stale symbol index (a checkout, a watcher overflow, a batch of more than 256 changes) is re-walked by file
+  stamp: `IndexCoordinator.Prior` keeps each file's modification time, size and language from the walk that read
+  it, and the re-walk takes the old symbols of every unchanged file instead of reading it (a file modified within
+  `SETTLE_MILLIS` of its read is never taken on its stamp). Meanwhile the stale index answers: Search Everywhere
+  shows its rows and searches again when the walk lands, Go to Symbol opens its prompt, and Go to Definition reads
+  again the few files its hits name (`IndexCoordinator.recheck`) and waits only to say "not found". Rebuild Index
+  reads every file.
+- `JavaProjectSettings.styleFolders`, which the project watcher asks on every sync, keeps its answer per root with
+  the stamps of the build files, profiles and style folders it read, so an unchanged project costs stats only.
 - A focus regain does not list the project's files again: `ProjectFileIndex.revalidate` stats each listed folder
   on the index's thread, ahead of the next search, and re-reads the direct entries of the folders modified since
   (`ProjectFileList.revalidate`). A remote root, a changed root `.gitignore` or more than 64 moved folders still
