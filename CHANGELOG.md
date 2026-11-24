@@ -196,9 +196,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Second pass: start-up paints the first file about 10% sooner (the find bar's buttons are built when Find first
     opens, the editor component and fonts are prepared while the settings load, and independent settings files are
     read side by side; the minimap draws just after the file instead of delaying its first frame). Typing renders
-    fewer frames again (1.87 → 1.57 per key on a short line): the column ruler, the status bar's line and column and
-    the scrollbar marks no longer redraw in a frame of their own after each key, and the spell checker no longer
-    measures a word on each keystroke.
+    about a third fewer frames again (1.87 → 1.29 per key on a short line, 2.58 → 1.58 on a long one): finding where
+    a character is on screen no longer costs an extra frame, and the column ruler, the status bar's line and column
+    and the scrollbar marks no longer redraw in a frame of their own after each key.
   - After a branch switch or a large outside change, the symbol index re-reads only the files that changed, and Go to
     Symbol and Go to Definition answer at once while it refreshes. The project watcher no longer re-reads the build
     files to find the Java style folders on every change.
