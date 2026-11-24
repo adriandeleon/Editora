@@ -186,16 +186,16 @@ change the same setting or entry, the one saved last wins.
 | File | Holds |
 | --- | --- |
 | `settings.json` | Preferences: font, theme, keymap, tab size, view options, auto-save, keybinding overrides. AI API keys only where no system keychain is available (see [where API keys are kept](/docs/ai#where-api-keys-are-kept)) |
-| `workspace-state.json` | Session of the no-project window: open files, folds, tool-window layout, window geometry, and the [Python interpreter](/docs/lsp#the-python-interpreter) picked for loose files |
+| `workspace-state.json` | Session of the no-project window: open files, folds, tool-window layout, window geometry, and the [Python interpreter](/docs/python#the-python-interpreter) picked for loose files |
 | `windows/<id>.json` | Session of each extra no-project window |
 | `recent-files.json` | Recent files list |
 | `search-history.json` | Your recent [Find in Files](/docs/navigation#find-in-files) queries |
 | `agent-sessions.json` | Your recent [AI Agent](/docs/ai#ai-agent) chats, so you can resume them. Each one's title is taken from its first prompt |
-| `projects.json` + `projects/<id>.json` | Project index and each project's session, including the [Python interpreter](/docs/lsp#the-python-interpreter) picked for it |
+| `projects.json` + `projects/<id>.json` | Project index and each project's session, including the [Python interpreter](/docs/python#the-python-interpreter) picked for it |
 | `bookmarks.json` | Bookmarks (per project) |
 | `notes.json` | Personal notes (per project) |
 | `breakpoints.json` | Debugger breakpoints (per project) |
-| `debug-adapters.json` | Your own [debug adapters](/docs/run-debug#debug-adapters-of-your-own), opened by **Debug: Edit Debug Adapters** |
+| `debug-adapters.json` | Your own [debug adapters](/docs/debugging#debug-adapters-of-your-own), opened by **Debug: Edit Debug Adapters** |
 | `connections.json` | Saved SFTP connections (no secrets), with whether each host may [run commands](/docs/remote) and its tool commands, and which containers and WSL distributions may run a project's tools |
 | `plugins.json` + `plugins/<id>/` | Enabled plugins and their folders |
 | `dictionary.txt` | Your added spell-check words |
@@ -243,7 +243,7 @@ they can be committed and shared:
 | --- | --- |
 | `.editora/settings.json` | This project's own values for how its files are edited, its build commands, debugger programs and language servers (the list follows) |
 | `.editora/run-configurations.json` | [Run configurations](/docs/run-debug) exported for the team |
-| `.editora/debug-adapters.json` | The project's own [debug adapters](/docs/run-debug#debug-adapters-of-your-own), used once the folder is trusted |
+| `.editora/debug-adapters.json` | The project's own [debug adapters](/docs/debugging#debug-adapters-of-your-own), used once the folder is trusted |
 
 A project's `.editora/settings.json` can set only these:
 
@@ -257,7 +257,7 @@ A project's `.editora/settings.json` can set only these:
 | The command each build tool runs (Maven, npm, Cargo, Go, Gradle, sbt, Mill, Scala CLI, Clojure, Leiningen, Babashka) | `buildCommands`, by tool |
 | The program of the Java, Python, JavaScript, Go, Rust, C#, Ruby and PHP debuggers, and GDB | `debugTools`, by debugger |
 | Which language server to run for a language, and whether to run it | `lspCommands`, `lspEnabled`, by server |
-| The [Bash server's options](/docs/lsp#bash-server-options) | `bashIde` |
+| The [Bash server's options](/docs/shell#bash-server-options) | `bashIde` |
 | The [HTML server's options](/docs/html#settings--lsp--html) (VS Code's `html.*` names) | `html`, or VS Code's dotted `html.…` keys at the top level |
 
 ```json
@@ -396,7 +396,7 @@ Run and Debug and for Pyright alike. The card's **Choose…** button runs
 **Python: Select Interpreter** (`python.selectInterpreter`), which picks the
 interpreter for the window's project; that pick is kept with the project's
 session, not in `settings.json`. See
-[The Python interpreter](/docs/lsp#the-python-interpreter).
+[The Python interpreter](/docs/python#the-python-interpreter).
 
 **Format on save (Ruff/Black)** formats a Python file with Ruff or Black (the
 project's own first) after a save you make yourself, and saves it again when
@@ -419,12 +419,12 @@ Debugging**:
 **Show toString() values** shows what each object's `toString()` returns,
 which runs your program's code at each stop; off, objects read `Type@id`. It
 takes effect at the next debug session. See
-[Inspecting values](/docs/run-debug#inspecting-values).
+[Inspecting values](/docs/debugging#inspecting-values).
 
 **Suspend all threads when one stops** makes a breakpoint, an exception or a
 step stop every thread of the program, and Continue resume them all; off, only
 the thread that hit it stops. It takes effect at the next debug session. See
-[Threads in a Java program](/docs/run-debug#threads-in-a-java-program).
+[Threads in a Java program](/docs/java#threads-in-a-java-program).
 
 ### Python debugging
 
@@ -440,7 +440,7 @@ Python subprocess) is debugged too, in a session of its own; off, it runs
 without the debugger. **Template breakpoints** makes a breakpoint in a Django
 or Jinja template stop on its line; Automatic turns it on for a project that
 uses Django or Jinja. See
-[Debugging Python](/docs/run-debug#debugging-python).
+[Debugging Python](/docs/python#debugging).
 
 ### Go debugging
 
@@ -453,7 +453,7 @@ goroutines the Threads view lists:
 | `debugGoPprofLabels` | pprof labels in names (`*` for every label, or keys such as `job, region`) | `*` |
 | `debugGoGoroutineFilter` | Goroutine filter, in Delve's syntax (`-with label job=*`) | blank (every goroutine) |
 
-See [Goroutines](/docs/run-debug#goroutines).
+See [Goroutines](/docs/go#goroutines).
 
 ### Evaluating expressions
 
@@ -465,7 +465,7 @@ See [Goroutines](/docs/run-debug#goroutines).
 
 GDB and Python's debugger stop an expression's call after this long, and the
 program stays paused where it was. See
-[Time limit](/docs/run-debug#time-limit).
+[Time limit](/docs/debugging#time-limit).
 
 ### Rulers and indent guides
 

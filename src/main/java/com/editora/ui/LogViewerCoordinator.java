@@ -4,12 +4,14 @@ import java.nio.file.Path;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import javafx.application.Platform;
 
 import com.editora.config.Settings;
+import com.editora.config.WorkspaceState;
 import com.editora.editor.EditorBuffer;
 import com.editora.logviewer.LogFileNames;
 import com.editora.logviewer.LogFilter;
@@ -65,6 +67,8 @@ final class LogViewerCoordinator {
     private final Map<EditorBuffer, LogControlBar> logBars = new IdentityHashMap<>();
     /** The newest filter asked of each buffer: an older one still being computed is dropped when it returns. */
     private final Map<EditorBuffer, Integer> filterRequests = new IdentityHashMap<>();
+    /** Buffers whose remembered view was put back already: a reload keeps what the user has now. */
+    private final Set<EditorBuffer> restored = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
 
     LogViewerCoordinator(CoordinatorHost host) {
         this.host = host;
@@ -109,8 +113,11 @@ final class LogViewerCoordinator {
                 || file == null
                 || buffer.isLog()
                 || !LanguageRegistry.plaintext().equals(buffer.getLanguage())
-                || !LogFileNames.mayBeLog(file.getFileName().toString())) {
-            return;
+                || !LogFileNames.mayBeLog(file.getFileName().toString())
+                || Boolean.FALSE.equals(remembered(file)
+                        .map(WorkspaceState.LogViewState::getViewAsLog)
+                        .orElse(null))) {
+            return; // the user said this one is not a log
         }
         String sample = content.length() > SNIFF_CHARS ? content.substring(0, SNIFF_CHARS) : content;
         if (LogPatterns.looksLikeLog(sample)) {
@@ -175,8 +182,93 @@ final class LogViewerCoordinator {
                 filtered && buffer.isLogPatternSlow());
     }
 
+    // --- memory across sessions ------------------------------------------------------------------
+
+    private java.util.Optional<WorkspaceState.LogViewState> remembered(@Nullable Path file) {
+        WorkspaceState ws = host.workspaceState();
+        return file == null || ws == null
+                ? java.util.Optional.empty()
+                : java.util.Optional.ofNullable(ws.getLogViews().get(file.toString()));
+    }
+
+    /**
+     * Puts back how a just-loaded file was last shown: as a log although its name is not a log's, and the
+     * level floor and filter it had. Once per buffer: a reload keeps whatever the user has made of it since.
+     */
+    void restoreView(EditorBuffer buffer) {
+        if (!restored.add(buffer) || !isEnabled()) {
+            return;
+        }
+        WorkspaceState.LogViewState state = remembered(buffer.getPath()).orElse(null);
+        if (state == null) {
+            return;
+        }
+        if (Boolean.TRUE.equals(state.getViewAsLog()) && !buffer.isLog()) {
+            buffer.setLogViewForced(true);
+            ensureControl(buffer);
+        }
+        if (!buffer.isLog()) {
+            return;
+        }
+        LogLevel min = null;
+        if (state.getMinLevel() != null) {
+            try {
+                min = LogLevel.valueOf(state.getMinLevel());
+            } catch (IllegalArgumentException ignored) {
+                // a level this build does not know: every level
+            }
+        }
+        LogQuery query = new LogQuery(state.getInclude(), state.getExclude(), state.isMatchCase()).normalized();
+        if (min != null || !query.isEmpty()) {
+            applyFilter(buffer, min, query, false);
+        }
+    }
+
+    /** Stores the buffer's level floor and filter, keeping its View as Log choice. */
+    private void rememberFilter(EditorBuffer buffer) {
+        remember(
+                buffer,
+                remembered(buffer.getPath())
+                        .map(WorkspaceState.LogViewState::getViewAsLog)
+                        .orElse(null));
+    }
+
+    /**
+     * Stores how {@code buffer} is shown; a file shown the way a fresh open would show it has no entry. Saves
+     * only when that changed, so putting a view back does not write the session again.
+     */
+    private void remember(EditorBuffer buffer, @Nullable Boolean viewAsLog) {
+        Path file = buffer.getPath();
+        WorkspaceState ws = host.workspaceState();
+        if (file == null || ws == null) {
+            return;
+        }
+        LogLevel min = buffer.isLog() ? buffer.getLogMinLevel() : null;
+        LogQuery query = buffer.isLog() ? buffer.getLogQuery() : LogQuery.NONE;
+        WorkspaceState.LogViewState state = new WorkspaceState.LogViewState(
+                viewAsLog,
+                min == null ? null : min.name(),
+                query.include(),
+                query.exclude(),
+                !query.isEmpty() && query.matchCase());
+        Map<String, WorkspaceState.LogViewState> views = ws.getLogViews();
+        String key = file.toString();
+        boolean empty = state.equals(new WorkspaceState.LogViewState());
+        WorkspaceState.LogViewState before = views.get(key);
+        if (empty ? before == null : state.equals(before)) {
+            return;
+        }
+        if (empty) {
+            views.remove(key);
+        } else {
+            views.put(key, state);
+        }
+        host.requestSave();
+    }
+
     /** Cancels a buffer's follow + drops its per-buffer state (called when its tab closes). */
     void onBufferClosed(EditorBuffer buffer) {
+        restored.remove(buffer);
         stopFollow(buffer);
         logBars.remove(buffer);
         resumes.remove(buffer);
@@ -343,6 +435,7 @@ final class LogViewerCoordinator {
 
     private void filtered(EditorBuffer buffer, boolean cleared, boolean announce) {
         syncBar(buffer);
+        rememberFilter(buffer);
         if (announce) {
             host.setStatus(tr(cleared ? "status.log.filterCleared" : "status.log.filtered"));
         }
@@ -371,6 +464,11 @@ final class LogViewerCoordinator {
         boolean on = !b.isLogViewForced();
         b.setLogViewForced(on);
         ensureControl(b); // off: also stops a follow and clears a filter
+        // Off is remembered only where the first lines could make it a log again on the next open.
+        Path file = b.getPath();
+        boolean sniffable =
+                file != null && LogFileNames.mayBeLog(file.getFileName().toString());
+        remember(b, on ? Boolean.TRUE : sniffable ? Boolean.FALSE : null);
         host.setStatus(tr(on ? "status.log.viewAsLog" : "status.log.viewAsLogOff"));
     }
 

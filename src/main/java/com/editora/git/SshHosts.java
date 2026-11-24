@@ -234,54 +234,62 @@ public final class SshHosts {
     /**
      * The files an {@code Include} path names, as ssh reads it: {@code ~/} is the home directory, a relative path
      * is relative to {@code ~/.ssh}, and {@code *} / {@code ?} / {@code [..]} are globs (in any part of it). Sorted;
-     * at most {@link #MAX_WATCHED_FILES}.
+     * at most {@link #MAX_WATCHED_FILES}. Package-private for tests.
+     *
+     * <p>The pattern is never made into a {@link Path} whole: {@code *} and {@code ?} are not allowed in a Windows
+     * path, so {@code Path.resolve("config.d/*")} throws there. The part before the first wildcard is resolved, and
+     * each part from there on is matched, as a glob, against the names in the directories found so far.
      */
-    private static List<Path> expand(Path home, Path sshDir, String pattern) {
-        String p = pattern.startsWith("~/") ? home + pattern.substring(1) : pattern;
-        if (!isGlob(p)) {
-            return List.of(sshDir.resolve(p).normalize());
-        }
-        // A wildcard is no legal path character on Windows, so the pattern is matched part by part: the parts before
-        // the first wildcard are the folder walked, as deep as the pattern has parts after them.
-        String[] parts = p.split("[/\\\\]+", -1);
-        int fixed = 0;
-        while (fixed < parts.length && !isGlob(parts[fixed])) {
-            fixed++;
-        }
-        String prefix = String.join("/", java.util.Arrays.asList(parts).subList(0, fixed));
-        Path root = fixed == 0
-                ? sshDir
-                : sshDir.resolve(prefix.isEmpty() ? "/" : prefix).normalize();
-        List<java.nio.file.PathMatcher> matchers = new java.util.ArrayList<>();
-        for (int i = fixed; i < parts.length; i++) {
-            matchers.add(root.getFileSystem().getPathMatcher("glob:" + parts[i]));
-        }
-        try (var walk = Files.walk(root, matchers.size())) {
-            return walk.filter(f -> matches(root.relativize(f), matchers))
+    static List<Path> expand(Path home, Path sshDir, String pattern) {
+        try {
+            String p = pattern.startsWith("~/") ? home + pattern.substring(1) : pattern;
+            java.util.regex.Matcher wild = WILDCARD.matcher(p);
+            if (!wild.find()) {
+                return List.of(sshDir.resolve(p).normalize());
+            }
+            // A backslash separates parts only where the file system says so (Windows); elsewhere it is a character.
+            boolean backslash = sshDir.getFileSystem().getSeparator().equals("\\");
+            int cut =
+                    Math.max(p.lastIndexOf('/', wild.start()), backslash ? p.lastIndexOf('\\', wild.start()) : -1) + 1;
+            List<Path> found = List.of(sshDir.resolve(p.substring(0, cut)));
+            for (String part : p.substring(cut).split(backslash ? "[/\\\\]+" : "/+")) {
+                if (part.isEmpty()) {
+                    continue;
+                }
+                if (!WILDCARD.matcher(part).find()) {
+                    found = found.stream().map(d -> d.resolve(part)).toList();
+                    continue;
+                }
+                // ssh's glob(3) has no {a,b}: those are plain characters in the name.
+                java.nio.file.PathMatcher matcher = sshDir.getFileSystem()
+                        .getPathMatcher("glob:" + part.replace("{", "\\{").replace("}", "\\}"));
+                List<Path> next = new java.util.ArrayList<>();
+                for (Path dir : found) {
+                    if (!Files.isDirectory(dir)) {
+                        continue;
+                    }
+                    try (var list = Files.list(dir)) {
+                        list.filter(f -> f.getFileName() != null && matcher.matches(f.getFileName()))
+                                .forEach(next::add);
+                    } catch (Exception unreadable) {
+                        // a directory we cannot list names nothing
+                    }
+                }
+                found = next;
+            }
+            return found.stream()
+                    .map(Path::normalize)
+                    .filter(Files::exists)
                     .sorted()
                     .limit(MAX_WATCHED_FILES)
                     .toList();
-        } catch (Exception unreadable) {
-            return List.of();
+        } catch (Exception badPath) {
+            return List.of(); // not a path this file system can name
         }
     }
 
-    private static boolean isGlob(String s) {
-        return s.matches(".*[*?\\[].*");
-    }
-
-    /** Whether each part of {@code relative} matches its part of the pattern, and there are as many. */
-    private static boolean matches(Path relative, List<java.nio.file.PathMatcher> matchers) {
-        if (relative.toString().isEmpty() || relative.getNameCount() != matchers.size()) {
-            return false;
-        }
-        for (int i = 0; i < matchers.size(); i++) {
-            if (!matchers.get(i).matches(relative.getName(i))) {
-                return false;
-            }
-        }
-        return true;
-    }
+    /** A glob character in an {@code Include} path. */
+    private static final Pattern WILDCARD = Pattern.compile("[*?\\[]");
 
     private static String readConfig() {
         try {

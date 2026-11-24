@@ -116,8 +116,11 @@ public class WorkspaceState {
      * absent means the Map follows the debugger, its default.
      *
      * <p>v35 → v36 added {@code debugBrowserUrls} (the pages Debug in Browser opened, most recent first). Additive.
+     *
+     * <p>v36 → v37 added {@code logViews} (per file: shown as a log or not, and its level floor and filter).
+     * Additive; absent means a file is shown as its name or first lines decide, unfiltered.
      */
-    public static final int SCHEMA_VERSION = 36;
+    public static final int SCHEMA_VERSION = 37;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -193,6 +196,8 @@ public class WorkspaceState {
     private Map<String, String> markdownPreviewLayouts = new LinkedHashMap<>();
     /** Persisted Markwhen preview renderer per file: absolute path -> "TIMELINE"|"CALENDAR". */
     private Map<String, String> markwhenViews = new LinkedHashMap<>();
+    /** The log viewer's state per file (absolute path), see {@link LogViewState}. Additive in schema v37. */
+    private Map<String, LogViewState> logViews = new LinkedHashMap<>();
     /** Per-file spell-check dictionary override: absolute path -> language id (e.g. "en_GB"). */
     private Map<String, String> spellLanguages = new LinkedHashMap<>();
     /**
@@ -313,6 +318,93 @@ public class WorkspaceState {
     private double windowWidth;
     private double windowHeight;
     private boolean windowMaximized;
+
+    /**
+     * How the log viewer last showed one file. Only what differs from a fresh open is kept: a file with
+     * nothing to remember has no entry.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class LogViewState {
+        /** True: shown as a log although its name is not a log's; false: the user turned a sniffed log off;
+         *  null: the name and first lines decide. */
+        private @Nullable Boolean viewAsLog;
+        /** The level floor's {@code LogLevel} name, or null for every level. */
+        private @Nullable String minLevel;
+
+        private @Nullable String include;
+        private @Nullable String exclude;
+        private boolean matchCase;
+
+        public LogViewState() {}
+
+        public LogViewState(
+                @Nullable Boolean viewAsLog,
+                @Nullable String minLevel,
+                @Nullable String include,
+                @Nullable String exclude,
+                boolean matchCase) {
+            this.viewAsLog = viewAsLog;
+            this.minLevel = minLevel;
+            this.include = include;
+            this.exclude = exclude;
+            this.matchCase = matchCase;
+        }
+
+        public @Nullable Boolean getViewAsLog() {
+            return viewAsLog;
+        }
+
+        public void setViewAsLog(@Nullable Boolean viewAsLog) {
+            this.viewAsLog = viewAsLog;
+        }
+
+        public @Nullable String getMinLevel() {
+            return minLevel;
+        }
+
+        public void setMinLevel(@Nullable String minLevel) {
+            this.minLevel = minLevel;
+        }
+
+        public @Nullable String getInclude() {
+            return include;
+        }
+
+        public void setInclude(@Nullable String include) {
+            this.include = include;
+        }
+
+        public @Nullable String getExclude() {
+            return exclude;
+        }
+
+        public void setExclude(@Nullable String exclude) {
+            this.exclude = exclude;
+        }
+
+        public boolean isMatchCase() {
+            return matchCase;
+        }
+
+        public void setMatchCase(boolean matchCase) {
+            this.matchCase = matchCase;
+        }
+
+        @Override
+        public boolean equals(@Nullable Object o) {
+            return o instanceof LogViewState v
+                    && java.util.Objects.equals(viewAsLog, v.viewAsLog)
+                    && java.util.Objects.equals(minLevel, v.minLevel)
+                    && java.util.Objects.equals(include, v.include)
+                    && java.util.Objects.equals(exclude, v.exclude)
+                    && matchCase == v.matchCase;
+        }
+
+        @Override
+        public int hashCode() {
+            return java.util.Objects.hash(viewAsLog, minLevel, include, exclude, matchCase);
+        }
+    }
 
     /**
      * One persisted open file: its absolute path, the caret offset to restore, whether it was pinned, and
@@ -528,6 +620,14 @@ public class WorkspaceState {
 
     public void setMarkdownPreviewLayouts(Map<String, String> markdownPreviewLayouts) {
         this.markdownPreviewLayouts = markdownPreviewLayouts == null ? new LinkedHashMap<>() : markdownPreviewLayouts;
+    }
+
+    public Map<String, LogViewState> getLogViews() {
+        return logViews;
+    }
+
+    public void setLogViews(@Nullable Map<String, LogViewState> logViews) {
+        this.logViews = logViews == null ? new LinkedHashMap<>() : new LinkedHashMap<>(logViews);
     }
 
     public void setMarkwhenViews(Map<String, String> markwhenViews) {

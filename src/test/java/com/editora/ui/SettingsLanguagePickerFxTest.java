@@ -78,7 +78,7 @@ class SettingsLanguagePickerFxTest {
     void theLanguageServersPageShowsThePickedServerOnly() throws Exception {
         FxTestSupport.runOnFx(() -> {
             rig.show();
-            Region page = rig.page("LSP");
+            rig.page("LSP");
             SettingsLanguagePicker languages = picker("lspPage");
             assertEquals(29, languages.combo().getItems().size(), "one entry per server");
             assertEquals("java", languages.picked(), "the first server is picked");
@@ -88,8 +88,9 @@ class SettingsLanguagePickerFxTest {
 
             languages.combo().setValue("go");
             assertEquals(List.of("go"), shown(languages));
-            // The Python card is every Python tool's, not the server's: it stays whatever is picked.
-            assertTrue(SettingsRig.texts(page).contains(tr("settings.lsp.python.title")));
+            // The Python card (interpreter, format on save) sits with the Python server, not above the picker.
+            assertTrue(SettingsRig.texts(holders(languages).get("python")).contains(tr("settings.lsp.python.title")));
+            assertFalse(SettingsRig.texts(holders(languages).get("go")).contains(tr("settings.lsp.python.title")));
         });
     }
 

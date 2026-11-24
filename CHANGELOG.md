@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failure's message and stack, a row that opens the test where it failed. Rerun Failed and Rerun This Test run
   just those tests with the runner's own filter. The Run console keeps the runner's usual report. Run File on a
   Dart test file now runs `dart test`.
+- **Logs open the way you left them.** A log remembers its level floor and its show and hide patterns, and a file's
+  **View as Log** choice is kept too (also turning off a file recognised as a log by its lines), so the next session
+  opens it filtered as before.
 - **Hide records in the log viewer.** The log control bar has a second field, for the records to hide: a record whose
   first line matches is hidden with its stack trace, and any other matching line on its own, so `at org.springframework`
   shortens traces and `HealthCheck` drops the health checks. **Aa** makes both patterns match case, the show pattern's
