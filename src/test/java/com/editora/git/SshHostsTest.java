@@ -103,6 +103,9 @@ class SshHostsTest {
         java.nio.file.Path work = java.nio.file.Files.writeString(ssh.resolve("config.d/work"), "Host w\n");
         String before = SshHosts.configFingerprint(home);
         assertEquals(before, SshHosts.configFingerprint(home), "nothing changed");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                before.contains(work.toString() + " "), "the included file is watched: " + before);
+        org.junit.jupiter.api.Assertions.assertFalse(before.contains(" ?\n"), "nothing failed to read: " + before);
 
         java.nio.file.Files.setLastModifiedTime(
                 work,
@@ -114,5 +117,33 @@ class SshHostsTest {
         java.nio.file.Files.writeString(ssh.resolve("config.d/more"), "Host m\n");
         org.junit.jupiter.api.Assertions.assertNotEquals(
                 touched, SshHosts.configFingerprint(home), "a file the glob now matches");
+    }
+
+    /**
+     * An Include glob is matched part by part, never made into a Path whole ({@code *} is not a legal Windows path
+     * character, so that threw there): a wildcard in a middle part, a fixed part after it, {@code ?}, {@code ~/},
+     * and (on Windows) backslashes as separators all name the same files ssh would read.
+     */
+    @Test
+    void includeGlobsExpandPartByPart(@org.junit.jupiter.api.io.TempDir java.nio.file.Path home) throws Exception {
+        java.nio.file.Path ssh = java.nio.file.Files.createDirectories(home.resolve(".ssh"));
+        java.nio.file.Path a = java.nio.file.Files.createDirectories(ssh.resolve("hosts/a"));
+        java.nio.file.Path b = java.nio.file.Files.createDirectories(ssh.resolve("hosts/b"));
+        java.nio.file.Files.createDirectories(ssh.resolve("hosts/c")); // has no "config": not named
+        java.nio.file.Path ac = java.nio.file.Files.writeString(a.resolve("config"), "");
+        java.nio.file.Path bc = java.nio.file.Files.writeString(b.resolve("config"), "");
+        java.nio.file.Path w1 = java.nio.file.Files.writeString(ssh.resolve("w1.conf"), "");
+        java.nio.file.Files.writeString(ssh.resolve("w12.conf"), "");
+
+        assertEquals(java.util.List.of(ac, bc), SshHosts.expand(home, ssh, "hosts/*/config"));
+        if (java.io.File.separatorChar == '\\') { // Windows: a backslash is a separator too
+            assertEquals(java.util.List.of(ac, bc), SshHosts.expand(home, ssh, "hosts\\*\\config"));
+        }
+        assertEquals(java.util.List.of(ac, bc), SshHosts.expand(home, ssh, "~/.ssh/hosts/[ab]/config"));
+        assertEquals(java.util.List.of(w1), SshHosts.expand(home, ssh, "w?.conf"));
+        assertEquals(java.util.List.of(w1), SshHosts.expand(home, ssh, ssh + "/w?.conf"));
+        assertEquals(java.util.List.of(), SshHosts.expand(home, ssh, "nowhere/*"));
+        // A plain path is named whether or not it is there yet: its appearing is a change too.
+        assertEquals(java.util.List.of(ssh.resolve("later")), SshHosts.expand(home, ssh, "later"));
     }
 }
