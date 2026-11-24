@@ -68,6 +68,9 @@ public class App extends Application {
         java.nio.file.Path configDir = ConfigManager.configDirFor(configDirArg(rawArgs), devFlag(rawArgs));
         // The window icons are decoded on a thread of their own while this one waits for the config (startup R3).
         com.editora.ui.WindowManager.readAppIconsAhead();
+        // The fonts the first frame shows whatever the settings say are registered while this thread would
+        // otherwise only wait for them (startup R3); startWith then reads the configured editor family at most.
+        com.editora.ui.Fonts.loadSettingsIndependent();
         Bootstrap boot = takeBootstrap(configDir);
         if (boot != null) {
             startWith(stage, rawArgs, boot);
@@ -83,6 +86,22 @@ public class App extends Application {
             } catch (IOException | RuntimeException e) {
                 LOG.log(Level.SEVERE, "Could not build the first window", e);
                 Platform.exit();
+            }
+        });
+    }
+
+    /**
+     * Builds and drops one text area on a thread of its own, so the first editor the window opens finds the text
+     * component's classes loaded and its call sites linked (startup R3: about 50 ms of the first file's open on the
+     * FX thread, in a fat-jar launch). A node not in a scene may be built on any thread. Best-effort: a failure
+     * only leaves that work to the first editor, as before.
+     */
+    private static void warmEditorClassesAsync() {
+        Thread.ofPlatform().daemon().name("editor-warm").start(() -> {
+            try {
+                new org.fxmisc.flowless.VirtualizedScrollPane<>(new org.fxmisc.richtext.CodeArea("warm\n"));
+            } catch (RuntimeException | LinkageError e) {
+                LOG.log(Level.FINE, "Editor warm-up failed", e);
             }
         });
     }
@@ -187,6 +206,8 @@ public class App extends Application {
         // or dark Caret & Ink theme, and Windows' high-contrast mode gives the high-contrast pair (ICON-16, ACC-09).
         com.editora.ui.SystemTheme.install();
         Application.setUserAgentStylesheet(Themes.userAgentStylesheetFor(settings.getTheme()));
+        // Once the theme's stylesheet is named (a control's first use would otherwise load the default one).
+        warmEditorClassesAsync();
         // Each window is told whether that theme is light or dark as it opens, so the frame and the window
         // buttons JavaFX draws follow the app theme rather than the desktop's. See WindowColorScheme.
         com.editora.ui.WindowColorScheme.install(Themes.isDark(settings.getTheme()));
