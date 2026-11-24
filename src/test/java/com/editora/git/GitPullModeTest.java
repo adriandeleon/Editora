@@ -42,6 +42,17 @@ class GitPullModeTest {
                         "",
                         "Applying autostash resulted in conflicts.\nYour changes are safe in the stash.\n"
                                 + "You can run \"git stash pop\" or \"git stash drop\" at any time.\n")));
+        // git 2.56 (verbatim from sequencer.c's apply_save_autostash_oid)
+        assertEquals(
+                GitPullMode.Autostash.KEPT_IN_STASH,
+                GitPullMode.autostash(new ProcessRunner.Result(
+                        0,
+                        "",
+                        "Your local changes are stashed, however applying them\n"
+                                + "resulted in conflicts.  You can either resolve the conflicts\n"
+                                + "and then discard the stash with \"git stash drop\", or, if you\n"
+                                + "do not want to resolve them now, run \"git reset --hard\" and\n"
+                                + "apply the local changes later by running \"git stash pop\".\n")));
     }
 
     @Test
