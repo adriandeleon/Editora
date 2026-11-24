@@ -101,6 +101,14 @@ class LogViewerCoordinatorFxTest {
 
         String promptAnswer;
         String promptInitial;
+        final List<EditorBuffer> opened = new ArrayList<>();
+
+        @Override
+        public void openTab(EditorBuffer buffer) {
+            opened.add(buffer);
+            buffers.add(buffer);
+            active = buffer;
+        }
 
         @Override
         public void promptText(String title, String label, String initial, Consumer<String> onAccept) {
@@ -308,6 +316,71 @@ class LogViewerCoordinatorFxTest {
         FxTestSupport.runOnFx(c::clearFilter);
         assertEquals(null, FxTestSupport.callOnFx(() -> bar.query().exclude()), "clearing empties the hide field");
         assertEquals(SAMPLE, FxTestSupport.callOnFx(log::getContent));
+    }
+
+    /** A command line that runs {@code java} from this JDK on a source file. */
+    private static String javaRunning(Path source) {
+        String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+        return "'" + java + "' '" + source + "'";
+    }
+
+    @Test
+    void aStreamShowsACommandsOutputPausesAndStopsWithItsTab(@org.junit.jupiter.api.io.TempDir Path dir)
+            throws Exception {
+        Path ticker = dir.resolve("Ticker.java");
+        try (var in = LogViewerCoordinatorFxTest.class.getResourceAsStream("log-stream-ticker.txt")) {
+            java.nio.file.Files.copy(in, ticker); // a program the test runs, not a test that waits
+        }
+        FakeHost host = new FakeHost();
+        host.settings.setLogViewer(true);
+        LogViewerCoordinator c = new LogViewerCoordinator(host);
+        FxTestSupport.runOnFx(() -> c.startStream(LogStreamSource.COMMAND, javaRunning(ticker)));
+        EditorBuffer tab = host.opened.get(0);
+        assertTrue(FxTestSupport.callOnFx(tab::isLog), "a stream opens as a log");
+        assertTrue(FxTestSupport.callOnFx(tab::isReadOnly));
+        assertTrue(FxTestSupport.callOnFx(tab::isLogFollowing));
+        FxTestSupport.awaitFxCondition(
+                () -> tab.getContent().contains("tick 3"), "the ticks arrive", java.time.Duration.ofSeconds(30));
+
+        FxTestSupport.runOnFx(c::toggleFollowCommand); // pause
+        assertFalse(FxTestSupport.callOnFx(tab::isLogFollowing));
+        String paused = FxTestSupport.callOnFx(tab::getContent);
+        FxTestSupport.awaitFxCondition(() -> c.heldStreamChars(tab) > 200, "new ticks held back while paused");
+        assertEquals(paused, FxTestSupport.callOnFx(tab::getContent), "paused: lines wait");
+        FxTestSupport.runOnFx(c::toggleFollowCommand); // resume
+        FxTestSupport.awaitFxCondition(
+                () -> tab.getContent().length() > paused.length() + 100, "the lines that waited, and more");
+        assertFalse(FxTestSupport.callOnFx(tab::isDirty), "a stream never asks to be saved");
+
+        FxTestSupport.runOnFx(() -> c.onBufferClosed(tab));
+        assertFalse(FxTestSupport.callOnFx(() -> c.isStreaming(tab)));
+    }
+
+    @Test
+    void aStreamThatEndsSaysSoAndOneThatCannotStartToo() throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setLogViewer(true);
+        LogViewerCoordinator c = new LogViewerCoordinator(host);
+        String javaExe = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+        FxTestSupport.runOnFx(() -> c.startStream(LogStreamSource.COMMAND, "'" + javaExe + "' -version"));
+        EditorBuffer tab = host.opened.get(0);
+        FxTestSupport.awaitFxCondition(
+                () -> !c.isStreaming(tab), "java -version ends", java.time.Duration.ofSeconds(30));
+        assertTrue(FxTestSupport.callOnFx(tab::getContent).contains("version"), "its standard error is shown too");
+        assertTrue(host.lastStatus.contains("code 0"), host.lastStatus);
+        FxTestSupport.runOnFx(c::toggleFollowCommand);
+        assertTrue(host.lastStatus.contains("ended"), "nothing to resume: " + host.lastStatus);
+
+        FxTestSupport.runOnFx(() -> c.startStream(LogStreamSource.COMMAND, "editora-no-such-program-here"));
+        EditorBuffer missing = host.opened.get(1);
+        FxTestSupport.awaitFxCondition(
+                () -> !c.isStreaming(missing), "the start fails", java.time.Duration.ofSeconds(30));
+        assertTrue(host.lastStatus.startsWith("Could not start"), host.lastStatus);
+
+        int tabs = host.opened.size();
+        FxTestSupport.runOnFx(() -> c.startStream(LogStreamSource.SSH_FILE, "no-path-here"));
+        assertEquals(tabs, host.opened.size(), "what cannot be streamed opens no tab");
+        assertTrue(host.lastStatus.startsWith("Not something to stream"));
     }
 
     @Test

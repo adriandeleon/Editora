@@ -1414,7 +1414,8 @@ A backlog of planned features and improvements. Unordered within each section.
       `Filter by Level` / `Filter by Pattern` / `Clear Filter` / `View as Log`. Later: a hide pattern (a record
       by its first line, other lines one by one), Match Case, match highlighting, a time limit on slow patterns,
       default keys for Focus Filter / Toggle Follow, Next/Previous Problem through warnings and errors.
-      *Deferred: tailing remote (SFTP) logs, multi-file merged tail, a dedicated Logs tool window,
+      Log: Open Log Stream… shows `docker`/`kubectl`/`journalctl`/`ssh tail -F`/any command as a live log tab.
+      *Deferred: multi-file merged tail, a dedicated Logs tool window,
       timestamp-range filtering, remembering the filter across sessions*
 - [x] Markdown support improvements — preview **CommonMark extensions** (YAML front matter, footnotes,
       heading anchors, `++inserted++`); **heading outline** in the Structure tool window; **Markdown lint**
