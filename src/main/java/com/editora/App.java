@@ -68,6 +68,9 @@ public class App extends Application {
         java.nio.file.Path configDir = ConfigManager.configDirFor(configDirArg(rawArgs), devFlag(rawArgs));
         // The window icons are decoded on a thread of their own while this one waits for the config (startup R3).
         com.editora.ui.WindowManager.readAppIconsAhead();
+        // The fonts the first frame shows whatever the settings say are registered while this thread would
+        // otherwise only wait for them (startup R3); startWith then reads the configured editor family at most.
+        com.editora.ui.Fonts.loadSettingsIndependent();
         Bootstrap boot = takeBootstrap(configDir);
         if (boot != null) {
             startWith(stage, rawArgs, boot);
@@ -83,6 +86,25 @@ public class App extends Application {
             } catch (IOException | RuntimeException e) {
                 LOG.log(Level.SEVERE, "Could not build the first window", e);
                 Platform.exit();
+            }
+        });
+    }
+
+    /**
+     * Builds and drops one text area on a thread of its own, so the first editor the window opens finds the text
+     * component's classes loaded and its call sites linked (startup R3: about 50 ms of the first file's open on the
+     * FX thread, in a fat-jar launch). A node not in a scene may be built on any thread. Best-effort: a failure
+     * only leaves that work to the first editor, as before.
+     */
+    private static void warmEditorClassesAsync() {
+        Thread.ofPlatform().daemon().name("editor-warm").start(() -> {
+            try {
+                org.fxmisc.richtext.CodeArea area = new org.fxmisc.richtext.CodeArea("warm\nup\n");
+                new org.fxmisc.flowless.VirtualizedScrollPane<>(area);
+                area.selectRange(0, 2); // what a file's open does to the caret, first used here
+                area.moveTo(0);
+            } catch (RuntimeException | LinkageError e) {
+                LOG.log(Level.FINE, "Editor warm-up failed", e);
             }
         });
     }
@@ -187,6 +209,8 @@ public class App extends Application {
         // or dark Caret & Ink theme, and Windows' high-contrast mode gives the high-contrast pair (ICON-16, ACC-09).
         com.editora.ui.SystemTheme.install();
         Application.setUserAgentStylesheet(Themes.userAgentStylesheetFor(settings.getTheme()));
+        // Once the theme's stylesheet is named (a control's first use would otherwise load the default one).
+        warmEditorClassesAsync();
         // Each window is told whether that theme is light or dark as it opens, so the frame and the window
         // buttons JavaFX draws follow the app theme rather than the desktop's. See WindowColorScheme.
         com.editora.ui.WindowColorScheme.install(Themes.isDark(settings.getTheme()));
@@ -608,6 +632,11 @@ public class App extends Application {
         Thread t = new Thread(
                 () -> {
                     try {
+                        // The read-only warm-up that needs no JSON mapper, on a second thread (startup R3).
+                        Thread.ofPlatform()
+                                .daemon()
+                                .name("config-prefetch-warm")
+                                .start(App::warmBundledForLoad);
                         warmConfigLoad(configDir);
                         loadGate.await();
                         future.complete(loadForFirstWindow(configDir, args));
@@ -636,27 +665,47 @@ public class App extends Application {
         // tells the user of a later one about the other.
         shared.claimInstance();
         try {
-            Settings settings = manager.load();
-            StartupPrep.beforeAnyServer(shared);
-            String language = uiLanguage(settings);
-            // The AI keys live in the system keychain; asking it may block (a round trip per provider), so it
-            // happens here, on a thread of its own while this one does the pieces that read neither the settings
-            // nor the shared config, which the keys may change (startup R3: it was ~70 ms of the wait in start()).
-            java.util.concurrent.FutureTask<@Nullable Void> keys = new java.util.concurrent.FutureTask<>(
-                    () -> shared.useSecretStore(com.editora.secrets.SecretStores.forThisMachine()), null);
-            Thread.ofPlatform().daemon().name("config-prefetch-keys").start(keys);
+            // What the first window reads that depends on neither the settings nor the shared config (the build
+            // information, the user's themes, the bundled tables, the folders Editora keeps here) is read on a
+            // thread of its own while this one loads the settings (startup R3). After the claim: it creates folders.
+            java.util.concurrent.FutureTask<@Nullable Void> apart =
+                    new java.util.concurrent.FutureTask<>(() -> StartupPrep.apartForFirstWindow(configDir), null);
+            Thread.ofPlatform().daemon().name("config-prefetch-apart").start(apart);
+            // The keychain's client is made beside the settings load too (loading its native library is most of
+            // the keys' wait); it is asked for the keys once the settings are in, below.
+            java.util.concurrent.FutureTask<com.editora.secrets.SecretStore> keychain =
+                    new java.util.concurrent.FutureTask<>(com.editora.secrets.SecretStores::forThisMachine);
+            Thread.ofPlatform().daemon().name("config-prefetch-keychain").start(keychain);
+            Settings settings;
+            String language;
             try {
-                // The message catalog (a few hundred KB of properties) is parsed here too rather than on the FX
-                // thread: this thread already has the setting that selects the language. Completing the future
-                // publishes it — start() reads no message before join().
-                com.editora.i18n.Messages.init(language);
-                // The bundled pauta.json is parsed here as well, so About and the Pauta window read no resource on
-                // the FX thread.
-                com.editora.PautaConformance.exceptions();
-                StartupPrep.apartForFirstWindow(configDir);
-            } finally {
-                awaitRethrowing(keys); // what the keys' thread threw is this load's failure, as it was inline
+                settings = manager.load();
+                StartupPrep.beforeAnyServer(shared);
+                language = uiLanguage(settings);
+                // The AI keys live in the system keychain; asking it may block (a round trip per provider), so it
+                // happens here, on a thread of its own while this one does the pieces that read neither the
+                // settings nor the shared config, which the keys may change (startup R3: it was ~70 ms of the wait
+                // in start()).
+                java.util.concurrent.FutureTask<@Nullable Void> keys = new java.util.concurrent.FutureTask<>(
+                        () -> shared.useSecretStore(awaitRethrowing(keychain)), null);
+                Thread.ofPlatform().daemon().name("config-prefetch-keys").start(keys);
+                try {
+                    // The message catalog (a few hundred KB of properties) is parsed here too rather than on the
+                    // FX thread: this thread already has the setting that selects the language. Completing the
+                    // future publishes it — start() reads no message before join().
+                    com.editora.i18n.Messages.init(language);
+                    // The bundled pauta.json is parsed here as well (if the warm-up has not), so About and the
+                    // Pauta window read no resource on the FX thread.
+                    com.editora.PautaConformance.exceptions();
+                } finally {
+                    awaitRethrowing(keys); // what the keys' thread threw is this load's failure, as it was inline
+                }
+            } catch (RuntimeException | Error e) {
+                awaitQuietly(apart); // it writes in the directory whose claim the handler below lets go of
+                awaitQuietly(keychain);
+                throw e;
             }
+            awaitRethrowing(apart); // what it threw is this load's failure, as it was inline
             com.editora.plugin.PluginManager plugins = com.editora.ui.WindowManager.discoverPlugins(shared);
             manager.setStartupSessionScan(com.editora.config.SessionScan.of(
                     manager.getWorkspaceState().getOpenFiles(), com.editora.vfs.Vfs::parseStorable));
@@ -675,13 +724,24 @@ public class App extends Application {
         }
     }
 
+    /** Waits for {@code task}, whatever it ends with: a load already failing reports its own failure. */
+    static void awaitQuietly(java.util.concurrent.Future<?> task) {
+        try {
+            task.get();
+        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.CancellationException e) {
+            // the load's own failure is the one reported
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     /**
      * Waits for {@code task} and throws what it threw, unwrapped: a load step moved to a thread of its own fails the
      * load as it did inline. A wait interrupted is a failure too, with the interrupt kept.
      */
-    static void awaitRethrowing(java.util.concurrent.Future<?> task) {
+    static <T extends @Nullable Object> T awaitRethrowing(java.util.concurrent.Future<T> task) {
         try {
-            task.get();
+            return task.get();
         } catch (java.util.concurrent.ExecutionException e) {
             Throwable cause = e.getCause();
             if (cause instanceof RuntimeException runtime) {
@@ -711,11 +771,26 @@ public class App extends Application {
                     mapper.readTree(java.nio.file.Files.readAllBytes(file));
                 }
             }
+        } catch (java.io.IOException | RuntimeException ignored) {
+            // A warm-up only; the load proper reports what is wrong with the files.
+        }
+    }
+
+    /**
+     * The rest of the read-only warm-up, beside {@link #warmConfigLoad} on a thread of its own: the schema tables and
+     * the store classes the load needs, and the bundled files the first window reads whatever the settings say (the
+     * English message catalog, {@code pauta.json}). Reads bundled resources only, so it may run before the
+     * single-instance probe has decided anything; what it leaves half done the load finishes itself.
+     */
+    static void warmBundledForLoad() {
+        try {
             com.editora.config.migration.ConfigSchema.SETTINGS.currentVersion();
             new Settings();
             new com.editora.config.WorkspaceState();
-        } catch (java.io.IOException | RuntimeException ignored) {
-            // A warm-up only; the load proper reports what is wrong with the files.
+            com.editora.i18n.Messages.warmBase();
+            com.editora.PautaConformance.exceptions();
+        } catch (RuntimeException | LinkageError ignored) {
+            // A warm-up only; the load proper does the same work and reports what fails.
         }
     }
 

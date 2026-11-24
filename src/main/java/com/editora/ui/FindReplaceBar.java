@@ -127,49 +127,17 @@ public class FindReplaceBar extends HBox {
         setAlignment(Pos.CENTER_LEFT);
         setVisible(false);
         setManaged(false);
-        build();
+        wire();
     }
 
-    private void build() {
-        findField.setPromptText(tr("find.prompt"));
-        replaceField.setPromptText(tr("find.replacePrompt"));
-        ControlNames.tip(wholeWord, tr("find.wholeWord"));
-        ControlNames.tip(preserveCase, tr("find.preserveCase"));
-        ControlNames.tip(inSelection, tr("find.inSelection"));
-        countLabel.getStyleClass().add("find-count");
-
-        Button next = iconButton(Icons.findNext(), tr("find.next"));
-        Button prev = iconButton(Icons.findPrevious(), tr("find.prev"));
-        Button replace = new Button(tr("find.replace"));
-        Button replaceAll = new Button(tr("find.all"));
-        Button close = iconButton(Icons.closeTab(), tr("find.close"));
-        // Next and Prev are Find: Next Match and Find: Previous Match: named after them, with their chords.
-        CommandTips.name(next, "find.next");
-        CommandTips.name(prev, "find.previous");
-        // Trailing clear ("✕") buttons inside each text field (shown only while the field has text).
-        Button findClear = ClearableField.clearButton(findField);
-        Button replaceClear = ClearableField.clearButton(replaceField);
-
-        next.setOnAction(e -> findNext());
-        prev.setOnAction(e -> findPrevious());
-        replace.setOnAction(e -> replaceCurrent());
-        replaceAll.setOnAction(e -> replaceAll());
-        close.setOnAction(e -> hideBar());
-
-        // Disable everything that acts on the find query while the Find field is empty — navigation
-        // (Prev/Next), replace (Replace/All), and the match-option toggles (case/regex/whole-word) all
-        // need something to search for.
+    /** The fields' and options' own behaviour, which holds from the start; the controls around them come later. */
+    private void wire() {
+        // The match options act on the find query: off while the Find field is empty (see build).
         javafx.beans.binding.BooleanBinding noQuery = findField.textProperty().isEmpty();
-        prev.disableProperty().bind(noQuery);
-        next.disableProperty().bind(noQuery);
-        replace.disableProperty().bind(noQuery);
-        replaceAll.disableProperty().bind(noQuery);
         caseSensitive.disableProperty().bind(noQuery);
         regex.disableProperty().bind(noQuery);
         wholeWord.disableProperty().bind(noQuery);
         preserveCase.disableProperty().bind(noQuery);
-        // "Sel" is a scope control rather than a match option, so it stays usable with an empty query.
-
         findField.setOnAction(e -> findNext());
         findField.setOnKeyPressed(e -> {
             if (e.getCode() == KeyCode.ESCAPE) {
@@ -206,6 +174,58 @@ public class FindReplaceBar extends HBox {
         // A buffer edit while the bar is open re-runs the search so the highlights track the new text,
         // but without selecting/scrolling to a match (that would fight the user's typing).
         editDebounce.setOnFinished(e -> recomputeHighlightsOnly());
+    }
+
+    /** Whether {@link #build} has run: the bar's controls are built on its first {@link #show}, not with the window. */
+    private boolean built;
+
+    /**
+     * Builds the bar's controls the first time it is shown (startup R3: they were about 20 ms of the first window's
+     * build, for a bar that starts hidden). Until then the bar is an empty, hidden box; the fields and options hold
+     * their state as before.
+     */
+    void ensureBuilt() {
+        if (!built) {
+            built = true;
+            build();
+        }
+    }
+
+    private void build() {
+        findField.setPromptText(tr("find.prompt"));
+        replaceField.setPromptText(tr("find.replacePrompt"));
+        ControlNames.tip(wholeWord, tr("find.wholeWord"));
+        ControlNames.tip(preserveCase, tr("find.preserveCase"));
+        ControlNames.tip(inSelection, tr("find.inSelection"));
+        countLabel.getStyleClass().add("find-count");
+
+        Button next = iconButton(Icons.findNext(), tr("find.next"));
+        Button prev = iconButton(Icons.findPrevious(), tr("find.prev"));
+        Button replace = new Button(tr("find.replace"));
+        Button replaceAll = new Button(tr("find.all"));
+        Button close = iconButton(Icons.closeTab(), tr("find.close"));
+        // Next and Prev are Find: Next Match and Find: Previous Match: named after them, with their chords.
+        CommandTips.name(next, "find.next");
+        CommandTips.name(prev, "find.previous");
+        // Trailing clear ("✕") buttons inside each text field (shown only while the field has text).
+        Button findClear = ClearableField.clearButton(findField);
+        Button replaceClear = ClearableField.clearButton(replaceField);
+
+        next.setOnAction(e -> findNext());
+        prev.setOnAction(e -> findPrevious());
+        replace.setOnAction(e -> replaceCurrent());
+        replaceAll.setOnAction(e -> replaceAll());
+        close.setOnAction(e -> hideBar());
+
+        // Disable everything that acts on the find query while the Find field is empty — navigation
+        // (Prev/Next), replace (Replace/All), and the match-option toggles (case/regex/whole-word) all
+        // need something to search for.
+        javafx.beans.binding.BooleanBinding noQuery = findField.textProperty().isEmpty();
+        prev.disableProperty().bind(noQuery);
+        next.disableProperty().bind(noQuery);
+        replace.disableProperty().bind(noQuery);
+        replaceAll.disableProperty().bind(noQuery);
+        // "Sel" is a scope control rather than a match option, so it stays usable with an empty query.
 
         layoutBar(next, prev, replace, replaceAll, close, findClear, replaceClear);
     }
@@ -284,6 +304,7 @@ public class FindReplaceBar extends HBox {
     }
 
     public void show(boolean backward) {
+        ensureBuilt();
         setVisible(true);
         setManaged(true);
         CodeArea area = area();

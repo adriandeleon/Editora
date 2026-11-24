@@ -148,7 +148,7 @@ public final class MarkdownRenderer {
      * built with to know its nodes.
      */
     public static List<org.commonmark.Extension> renderExtensions(boolean math) {
-        return renderExtensions(math, wikiLinks);
+        return renderExtensions(math, wikiLinks());
     }
 
     /** {@link #renderExtensions(boolean)} with wiki links recognised or not, whatever the switch says. */
@@ -176,16 +176,14 @@ public final class MarkdownRenderer {
         return ext;
     }
 
-    /** Whether {@code [[note]]} is a wiki link ({@code Settings.markdownWikiLinks}; on by default). */
-    private static volatile boolean wikiLinks = true;
-
     /** Switches wiki links on or off for every later {@link #parseForRender} and {@link #renderExtensions}. */
     public static void setWikiLinks(boolean on) {
-        wikiLinks = on;
+        PreviewPrefs.setWikiLinks(on);
     }
 
+    /** Whether {@code [[note]]} is a wiki link ({@code Settings.markdownWikiLinks}; on by default). */
     public static boolean wikiLinks() {
-        return wikiLinks;
+        return PreviewPrefs.wikiLinks();
     }
 
     /** Renders the same AST to plain text (markup stripped) — "what you see" in the preview, for copy. */
@@ -287,7 +285,7 @@ public final class MarkdownRenderer {
 
     /** {@link #parseForRender(String)} with math recognised or not, whatever the feature switch says. */
     public static org.commonmark.node.Node parseForRender(String markdown, boolean math) {
-        return renderParser(math, wikiLinks).parse(markdown == null ? "" : markdown);
+        return renderParser(math, wikiLinks()).parse(markdown == null ? "" : markdown);
     }
 
     /** The Markdown rendered to plain text (the visible text with markup removed) — for "Copy" from the

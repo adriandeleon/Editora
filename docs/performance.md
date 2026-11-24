@@ -877,7 +877,8 @@ keep the show path free of work the user is not waiting for; measure against the
   hands the font to the coordinator (`setOutputFont`/`setConsoleFont`), which applies it when the panel exists.
 - **Nothing else the first window does not show is built before it** (PERF-14, Pauta 6.2.0). A picker's
   overlay card (`QuickOpen`, `CommandPalette`, `FileFinder`, `Switcher`, `SearchEverywherePopup`,
-  `BranchPopup`, `BuildActionsPopup`) is built by its first `show` (`ensureBuilt`); the setters that reach a
+  `BranchPopup`, `BuildActionsPopup`) is built by its first `show` (`ensureBuilt`), and so are the find bar's
+  buttons and layout (`FindReplaceBar.ensureBuilt`; its fields' and options' behaviour is wired at once); the setters that reach a
   node before then keep the value for the build. The Settings window makes its stage and every control in
   `SettingsWindow.build`, on the first `show`; the Message Log popup, the Doctor page and the Welcome page
   (when the window opens on a file) are built by the accessor that first shows them. The in-window menu bar
@@ -892,9 +893,10 @@ keep the show path free of work the user is not waiting for; measure against the
   the parts of controls the window does show that it names with a reason (a right-click menu, a tooltip, a
   toolbar or stripe button not placed now); it also opens the Project panel and checks the Map is not built. A new picker, dialog or secondary window follows the same shape: nothing in the
   constructor, everything in the method the first show calls.
-- **Only the fonts the first frame needs are registered before it.** `App.start` calls
-  `Fonts.loadForFirstPaint(editorFamily)` — Inter (the chrome), JetBrains Mono (`app.css`'s monospace
-  fallback) and the configured editor family — and arms `Fonts.loadRemainingAfterNextPaint()`, which parses the
+- **Only the fonts the first frame needs are registered before it.** `App.start` registers Inter (the chrome)
+  and JetBrains Mono (`app.css`'s monospace fallback) while it waits for the prefetch
+  (`Fonts.loadSettingsIndependent`), then `Fonts.loadForFirstPaint(editorFamily)` adds the configured editor
+  family once the settings are in, and arms `Fonts.loadRemainingAfterNextPaint()`, which parses the
   other bundled families on a daemon thread once a frame has painted (`Font.loadFont` is static and safe off
   the FX thread). Anything that lists or applies a family a user may pick waits for that load first:
   `SettingsWindow.fontFamilyChoices` calls `Fonts.ensureAllLoaded()`, and applying a font setting calls
@@ -908,8 +910,10 @@ keep the show path free of work the user is not waiting for; measure against the
   is parsed as before. See [building and packaging](building-and-packaging.md#precompiled-stylesheets-bss).
 - **The config prefetch starts before the single-instance probe.** `App.main` starts the `config-prefetch`
   thread and only then probes the endpoint file (a stale one can cost up to the connect timeout). Until the
-  probe has decided that this process will run, the thread does only `App.warmConfigLoad` — the JSON mapper,
-  the store classes and the main files' bytes, read and dropped — because a load can move files (a migration
+  probe has decided that this process will run, the thread does only `App.warmConfigLoad` — the JSON mapper
+  and the main files' bytes, read and dropped — beside `App.warmBundledForLoad` on `config-prefetch-warm` (the
+  schema tables, the store classes, the English catalog `Messages.warmBase` and `pauta.json`, bundled files
+  only), because a load can move files (a migration
   backup, a restored set-aside copy, the TOML conversion) and a launch about to be forwarded must not touch
   the running editor's directory. After the gate it loads the shared config and everything the first window
   used to read on the FX thread: the plugin manifests (`WindowManager.discoverPlugins`), the session of the
@@ -921,10 +925,11 @@ keep the show path free of work the user is not waiting for; measure against the
 - **`start()` waits once, and touches no disk of the user's** (PERF-01, Pauta 6.2.0). The prefetch thread
   (`App.loadForFirstWindow`) also claims the config dir before loading it, opens the session log (what was
   logged before is in memory and written first), reads the process ledgers and reaps a crashed run's servers,
-  removes a stale MCP endpoint (`StartupPrep`), asks the keychain for the AI keys on a thread of its own
-  (`config-prefetch-keys`, joined before the plugins are discovered) while it parses the message catalog, the
-  bundled tables and what reads neither the settings nor the shared config (`FirstWindowPrep.prepareApart`),
-  and reads what the first window's set-up used to read
+  removes a stale MCP endpoint (`StartupPrep`), and runs side by side with the settings load what reads neither
+  the settings nor the shared config (`FirstWindowPrep.prepareApart` and the build information, on
+  `config-prefetch-apart`) and the keychain client's set-up (`config-prefetch-keychain`); it asks the keychain
+  for the AI keys on a thread of its own once the settings are in (`config-prefetch-keys`, joined, with the
+  apart step, before the plugins are discovered) while it parses the language's catalog, and reads what the first window's set-up used to read
   (`ui/FirstWindowPrep`): the user's themes, the zoomed copies of the window's sheets (`UiZoom.prepare`), the
   recent files and search history, the build information (`AppInfo.load`), the first window's project settings
   (handed over by `ConfigManager.setStartupProjectSettings`), the bundled XML schemas and the loose-files root,
@@ -936,7 +941,10 @@ keep the show path free of work the user is not waiting for; measure against the
   inline. Restored windows after the first have their sessions (and project settings) read on a
   `window-session-read` thread while the first one paints; a window's turn waits for its read without blocking.
   The window icons are read once (`AppIcons`), decoded on a thread of their own that `start()` starts before it
-  waits for the prefetch (`AppIcons.readAhead`); the Welcome page checks its recent files and project folders
+  waits for the prefetch (`AppIcons.readAhead`); once the theme's stylesheet is named, a throwaway `CodeArea` is
+  built on `editor-warm` so the first editor finds RichTextFX loaded and its call sites linked
+  (`App.warmEditorClassesAsync`); the wiki-links switch the preview settings set lives in `PreviewPrefs`, so applying
+  them builds no Markdown parser; the Welcome page checks its recent files and project folders
   off the thread (`RecentFilesCheck`); `--diff-ui`'s operands, the run configuration's main class and the
   `.gitignore` walk of a window joining a shared Java server are looked at on threads of their own. The places
   name themselves to `perf/BlockingSites`, which `StartupOffFxThreadFxTest` listens to through a real launch.
@@ -948,7 +956,9 @@ keep the show path free of work the user is not waiting for; measure against the
   `LspManager` constructor no longer spawns it), the `rg --version` probe (and none at all while the ripgrep
   setting is off), the `gh` probe, the Hunspell dictionary build (`SpellDictionaries.ensureBuilt` keeps the
   waiting callbacks), the clipboard read behind the Paste button, and the release check, which also waits
-  `UpdateCheckScheduler.DELAY` after that. Outside a launch (tests, a later window) `AfterFirstPaint.run`
+  `UpdateCheckScheduler.DELAY` after that. The minimap's first content render (a snapshot the FX thread waits for)
+  counts its two frames from the release, not from the window's first frames, which paint before the file's text
+  is in. Outside a launch (tests, a later window) `AfterFirstPaint.run`
   runs its task at once, so callers need not know whether a hold exists. Keep the queued tasks starters —
   an executor submit, a thread start — since they run on the FX thread at release.
 - **The focus a window gains by being shown is not a regain.** `MainController.onWindowFocusGained` skips the
