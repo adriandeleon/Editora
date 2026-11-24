@@ -109,6 +109,37 @@ class JumpRevealColumnFxTest {
                 "a column past the viewport's width is scrolled to");
     }
 
+    /**
+     * The jump scrolls to the column itself, in the call that moves the caret, when the target line was off screen
+     * (so it gets its cell in the jump's own layout). The caret bounds the area caches were read for it, and those
+     * were measured when the caret moved, before the line had a cell: nothing was scrolled, and the column showed
+     * only when something else happened to follow the caret a pulse later (with the Flowless fork, nothing did).
+     */
+    @Test
+    void aJumpToAnOffScreenLineScrollsToTheColumnInTheSameFrame() throws Exception {
+        CodeArea area = buffer.getArea();
+        WindowSessionCoordinator sessions = FxTestSupport.field(fx.controller, "sessions");
+        FxTestSupport.runOnFx(() -> {
+            area.moveTo(1, 0); // the long line on screen once, so its width is known
+            area.requestFollowCaret();
+        });
+        settle();
+        FxTestSupport.runOnFx(() -> {
+            area.moveTo(70, 0);
+            area.requestFollowCaret();
+        });
+        FxTestSupport.awaitFxCondition(
+                () -> area.firstVisibleParToAllParIndex() > 1 && area.getEstimatedScrollX() < 0.5,
+                "the long line scrolled out of view, at column 1");
+        settle();
+        int far = FxTestSupport.callOnFx(() -> area.getParagraphLength(1)) - 5;
+        double scrolled = FxTestSupport.callOnFx(() -> {
+            sessions.gotoInFile(file, 2, far);
+            return area.getEstimatedScrollX();
+        });
+        assertTrue(scrolled > 0, "the jump itself scrolled to the column: " + scrolled);
+    }
+
     /** Three FX pulses: the layout passes the area scrolls in run on them. */
     private static void settle() throws Exception {
         java.util.concurrent.CountDownLatch pulses = new java.util.concurrent.CountDownLatch(3);

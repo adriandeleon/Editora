@@ -95,10 +95,20 @@ public final class JumpReveal {
         }
     }
 
-    /** Scrolls {@code area} sideways so its caret, on a line already on screen, is inside the viewport. */
+    /**
+     * Scrolls {@code area} sideways so its caret, on a line already on screen, is inside the viewport.
+     *
+     * <p>The caret's bounds are measured here, after the layout, not read from {@link CodeArea#getCaretBounds()}:
+     * that value is cached when the caret moves and recomputed only when it changes paragraph, so for a jump to a
+     * line that had no cell yet it stays empty (or keeps the old horizontal scroll's x) through the layout that
+     * creates the cell, and the jump landed with the caret off to the right. It used to be scrolled to a pulse later
+     * only by accident, when the long line's width coming back made the horizontal scrollbar reappear and the
+     * resize followed the caret.
+     */
     private static void revealCaretColumn(CodeArea area) {
         area.layout();
-        var caret = area.getCaretBounds().orElse(null);
+        var caret = area.getCaretBoundsOnScreen(area.getCaretSelectionBind().getUnderlyingCaret())
+                .orElse(null);
         if (caret == null) {
             return;
         }
