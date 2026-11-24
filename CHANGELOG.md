@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Homebrew and winget packages** (Pauta REL-12, REL-13, REL-14). A release now writes a Homebrew cask, for
+  `brew install --cask adriandeleon/tap/editora` on Apple Silicon Macs, and opens a winget pull request for
+  `winget install AdrianDeLeon.Editora` on Windows. Both need the `PACKAGES_TOKEN` repository secret; without it a
+  release publishes on GitHub only, as before. A manual dry run of the release workflow renders the cask and the
+  manifests without publishing.
 - **Elixir.** Elixir is a language of its own: highlighting, indentation, folding, the outline, snippets and a new-file
   template, with ElixirLS as its language server. Run File and Debug File run a Mix project's tests (`mix test`), a
   script (`mix run`) or the project, and Debug Test at Caret debugs the ExUnit test at the caret alone, stopping in your
