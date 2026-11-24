@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.function.BooleanSupplier;
 
 import com.editora.config.SharedConfig;
@@ -13,6 +14,7 @@ import com.editora.dap.LaunchJson;
 import com.editora.editor.EditorBuffer;
 import com.editora.testkit.Await;
 import com.editora.web.Browsers;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -106,6 +108,9 @@ class FirefoxDebugProbeFxTest {
             await("JavaScript debugging available", 60, () -> call(() -> debug.debugEffectiveFor("javascript")));
             await("Firefox's debugger found", 60, () -> call(() -> dap.isExternalLocated(DebugLanguages.FIREFOX)));
             debug.browser.firefoxArgs = List.of("-headless");
+            Path log = dir.resolve("adapter.log");
+            debug.browser.firefoxOptions =
+                    Map.of("log", Map.of("fileName", log.toString(), "fileLevel", Map.of("default", "Debug")));
             EditorBuffer html = FxTestSupport.callOnFx(c::activeBuffer);
             EditorBuffer js = FxTestSupport.callOnFx(() ->
                     FxTestSupport.<DebugCoordinator.Ops>field(debug, "ops").bufferForPath(site.script()));
@@ -114,7 +119,7 @@ class FirefoxDebugProbeFxTest {
             await("the page in front", 30, () -> call(() -> c.activeBuffer() == html));
             FxTestSupport.runOnFx(() ->
                     ((com.editora.command.CommandRegistry) FxTestSupport.field(c, "registry")).run("debug.start"));
-            awaitStop(dap, debug, SCRIPT_LINE, "app.js");
+            awaitStop(c, dap, debug, SCRIPT_LINE, "app.js", log);
             assertEquals("Firefox: index.html", call(() -> (String) FxTestSupport.field(debug.panel(), "sessionFile")));
             FxTestSupport.runOnFx(dap::stop);
             await("stopped", 30, () -> !call(dap::isActive));
@@ -128,8 +133,7 @@ class FirefoxDebugProbeFxTest {
         String exe = firefox();
         Site site = site(dir);
         Files.createDirectories(site.root().resolve(".vscode"));
-        Path launchJson =
-                Files.writeString(site.root().resolve(".vscode/launch.json"), """
+        Path launchJson = Files.writeString(site.root().resolve(".vscode/launch.json"), """
                 {
                   "version": "0.2.0",
                   "configurations": [
@@ -139,11 +143,13 @@ class FirefoxDebugProbeFxTest {
                       "request": "launch",
                       "file": "${workspaceFolder}/index.html",
                       "firefoxExecutable": "%s",
-                      "firefoxArgs": ["-headless"]
+                      "firefoxArgs": ["-headless"],
+                      "log": {"fileName": "%s", "fileLevel": {"default": "Debug"}}
                     }
                   ]
                 }
-                """.formatted(exe.replace("\\", "\\\\")));
+                """.formatted(
+                exe.replace("\\", "\\\\"), dir.resolve("adapter.log").toString().replace("\\", "\\\\")));
         FxWindowFixture fx = window(dir, site.script());
         try {
             MainController c = fx.controller;
@@ -155,7 +161,7 @@ class FirefoxDebugProbeFxTest {
             LaunchJson.File parsed = LaunchJson.parse(Files.readString(launchJson));
             FxTestSupport.runOnFx(() -> debug.runLaunchConfiguration(
                     launchJson, site.root(), parsed, parsed.configurations().getFirst(), js));
-            awaitStop(dap, debug, SCRIPT_LINE, "app.js");
+            awaitStop(c, dap, debug, SCRIPT_LINE, "app.js", dir.resolve("adapter.log"));
             assertEquals("Shelf in Firefox", call(() -> (String) FxTestSupport.field(debug.panel(), "sessionFile")));
             FxTestSupport.runOnFx(dap::stop);
             await("stopped", 30, () -> !call(dap::isActive));
@@ -202,7 +208,7 @@ class FirefoxDebugProbeFxTest {
                     .run("debug.attachBrowser"));
             await("the prompt", 30, () -> call(() -> OverlayDriver.showing(c)));
             FxTestSupport.runOnFx(() -> OverlayDriver.answer(c, "127.0.0.1:" + port));
-            awaitStop(dap, debug, SCRIPT_LINE, "app.js");
+            awaitStop(c, dap, debug, SCRIPT_LINE, "app.js", null);
             FxTestSupport.runOnFx(dap::stop);
             await("detached", 30, () -> !call(dap::isActive));
         } finally {
@@ -242,8 +248,12 @@ class FirefoxDebugProbeFxTest {
         Await.until(condition, what, java.time.Duration.ofSeconds(seconds));
     }
 
-    /** A stop at {@code line} of {@code file} (the top frame's). */
-    private static void awaitStop(DapManager dap, DebugCoordinator debug, int line, String file)
+    /**
+     * A stop at {@code line} of {@code file} (the top frame's); on none, what was going on: the status line's messages,
+     * the Firefox and Electron processes running, and the end of the adapter's own log ({@code log}, when it keeps one).
+     */
+    private static void awaitStop(
+            MainController c, DapManager dap, DebugCoordinator debug, int line, String file, @Nullable Path log)
             throws InterruptedException {
         try {
             await(
@@ -262,7 +272,32 @@ class FirefoxDebugProbeFxTest {
                             + (debug.panel().callStack().get(0).line() + 1));
             String console = call(() -> FxTestSupport.<org.fxmisc.richtext.CodeArea>field(debug.panel(), "console")
                     .getText());
-            throw new AssertionError(e.getMessage() + " (" + call(dap::state) + ", " + top + ")\n" + console, e);
+            String status = call(() -> {
+                MessageLog messages = FxTestSupport.field(FxTestSupport.field(c, "statusBar"), "messageLog");
+                return String.join(
+                        " | ",
+                        messages.entries().stream().map(MessageLog.Entry::text).toList());
+            });
+            String browsers = String.join(
+                    "\n",
+                    ProcessHandle.allProcesses()
+                            .map(p -> p.info().commandLine().orElse(""))
+                            .filter(cmd -> cmd.contains("firefox") || cmd.contains("electron"))
+                            .map(cmd -> cmd.length() > 300 ? cmd.substring(0, 300) : cmd)
+                            .toList());
+            String adapter = "";
+            if (log != null && Files.isRegularFile(log)) {
+                try {
+                    List<String> lines = Files.readAllLines(log);
+                    adapter = String.join("\n", lines.subList(Math.max(0, lines.size() - 150), lines.size()));
+                } catch (java.io.IOException io) {
+                    adapter = "(adapter log unreadable: " + io + ")";
+                }
+            }
+            throw new AssertionError(
+                    e.getMessage() + " (" + call(dap::state) + ", " + top + ")\nconsole:\n" + console + "\nstatus: "
+                            + status + "\nprocesses:\n" + browsers + "\nadapter log:\n" + adapter,
+                    e);
         }
     }
 }
