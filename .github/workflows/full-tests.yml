@@ -421,7 +421,7 @@ jobs:
           gem install --user-install --no-document debug -v 1.11.0
           # RSpec, Minitest and a Rails app for RubyAppsProbeFxTest: the user gems' programs on the PATH, and a
           # minimal app with its bundle installed where the probe copies it from.
-          gem install --user-install --no-document rspec minitest sqlite3 'rails:8.1.4.1'
+          gem install --user-install --no-document bundler rspec minitest sqlite3 'rails:8.1.4.1'
           gems_bin="$(ruby -e 'print Gem.user_dir')/bin"
           echo "$gems_bin" >> "$GITHUB_PATH"
           export PATH="$gems_bin:$PATH"
