@@ -176,7 +176,7 @@ public final class StatusBar extends HBox {
     /** Caret / selection changes update only the cheap caret-dependent segments (Ln/Col + the CSV field) —
      *  NOT the file-size segment, which is O(document) and doesn't change when the caret moves. One key
      *  moves both the caret and the selection (and a drag moves them every mouse event), so the refresh is
-     *  coalesced to one per pulse rather than run for each property. */
+     *  coalesced to one per pulse rather than run for each property (see {@link #scheduleCaretRefresh}). */
     private final InvalidationListener caretListener = obs -> scheduleCaretRefresh();
 
     private boolean caretRefreshPending;
@@ -1135,15 +1135,38 @@ public final class StatusBar extends HBox {
         refreshSize(buffer);
     }
 
+    /**
+     * Coalesces the caret segments' refresh to whichever comes first: the next pulse, before its layout, or a
+     * {@code runLater}. A key moves the caret between pulses; when the pulse that renders the keystroke runs before
+     * the {@code runLater}, the new Ln/Col would otherwise be laid out and drawn in a pulse and a frame of its own.
+     */
     private void scheduleCaretRefresh() {
         if (caretRefreshPending) {
             return;
         }
         caretRefreshPending = true;
-        Platform.runLater(() -> {
-            caretRefreshPending = false;
-            refreshCaretSegments();
-        });
+        javafx.scene.Scene scene = getScene();
+        if (scene != null) {
+            caretRefreshScene = scene;
+            scene.addPreLayoutPulseListener(caretRefreshNow);
+        }
+        Platform.runLater(caretRefreshNow);
+    }
+
+    private final Runnable caretRefreshNow = this::flushCaretRefresh;
+    /** The scene whose next pulse runs a pending caret refresh, or null. */
+    private javafx.scene.@Nullable Scene caretRefreshScene;
+
+    private void flushCaretRefresh() {
+        if (caretRefreshScene != null) {
+            caretRefreshScene.removePreLayoutPulseListener(caretRefreshNow);
+            caretRefreshScene = null;
+        }
+        if (!caretRefreshPending) {
+            return; // the pulse or the runLater got there first
+        }
+        caretRefreshPending = false;
+        refreshCaretSegments();
     }
 
     /** Updates only the caret-dependent segments for the active buffer (the {@link #caretListener} target). */
