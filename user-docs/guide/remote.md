@@ -307,7 +307,7 @@ index, the java-debug plugin, and classes compiled for debugging).
 | [Search Everywhere](/docs/navigation#search-everywhere) files | The host lists the project's files, skipping ignored ones as for a local project. There are no symbols for a remote project. |
 | [Run, builds and tests](/docs/run-debug#running-on-a-remote-host) | Run on a file (a shell script under the interpreter its shebang names on the host, a Python script under the project's venv on the host), a main class, script / make / npm configurations, with output, input and Stop as locally; and Maven, Gradle, npm, Cargo and Go builds and test runs, with output and Stop (the Output console takes no input). A main class's Maven build runs on the host and streams into the Run console. |
 | [Language servers](/docs/lsp) | Each server runs on the host: completion, hover, diagnostics, go to definition, rename and the rest. In a folder you have not trusted, servers that load the project's build wait, as locally ([details](/docs/lsp#servers-that-load-a-projects-build)). |
-| [Debugging](/docs/run-debug#debugging) | Python (debugpy), JavaScript (vscode-js-debug) and Java (java-debug in the host's `jdtls`). |
+| [Debugging](/docs/debugging) | Python (debugpy), JavaScript (vscode-js-debug) and Java (java-debug in the host's `jdtls`). |
 | [Terminal](/docs/terminal#terminals-on-a-host-in-a-container-or-in-wsl) | A real terminal on the host, in the project's folder, with [shell integration](/docs/terminal#shell-integration). Open Terminal Here on a remote folder opens there. A dropped connection keeps the tab's text and offers Reconnect. |
 | Outside changes | The project folder is watched on the host, so a `git pull` or a build there updates the Project tree, Git, language servers and an open file that changed. A host with `inotifywait` reports at once; others are checked every few seconds. |
 
@@ -460,7 +460,7 @@ project's tools run on this machine, as for any local folder.
 | [GitHub](/docs/github) | The container's own `gh`, signed in there. |
 | [Run, builds and tests](/docs/run-debug#running-in-a-container-or-wsl) | Run on a file, a main class, run configurations, with output, input and Stop as locally; and Maven, Gradle, npm, Cargo and Go builds and test runs, with output and Stop (the Output console takes no input). Java is the container's own. |
 | [Language servers](/docs/lsp#language-servers-in-a-container-or-wsl) | Each server runs in the container, the one its `PATH` finds. Java's jdtls keeps its index in the container. In a folder you have not trusted, servers that load the project's build wait, as locally ([details](/docs/lsp#servers-that-load-a-projects-build)). |
-| [Debugging](/docs/run-debug#debugging-in-a-container-or-wsl) | Python (debugpy), JavaScript (vscode-js-debug) and Java (java-debug in the container's jdtls), as on an SSH host. |
+| [Debugging](/docs/debugging#debugging-in-a-container-or-wsl) | Python (debugpy), JavaScript (vscode-js-debug) and Java (java-debug in the container's jdtls), as on an SSH host. |
 
 The tools are the ones the container's `PATH` finds; the per-host tool commands
 under **Settings → Remote → This Host** belong to saved SSH sites. Settings that
