@@ -57,8 +57,8 @@ final class BrowserDebugLaunch {
         if (!firefoxReady()) {
             return;
         }
-        java.util.Map<String, Object> request =
-                FirefoxLaunch.configured(body, workspace, browserProfile(FirefoxLaunch.TYPE));
+        java.util.Map<String, Object> request = FirefoxLaunch.configured(
+                body, workspace, browserProfile(FirefoxLaunch.TYPE), ElectronDebugLaunch.freePort());
         d.ops.openToolWindow();
         d.nameSession(name);
         d.s().relaunch = null;
@@ -225,7 +225,8 @@ final class BrowserDebugLaunch {
             return; // said why
         }
         java.util.Map<String, Object> planned = firefox
-                ? FirefoxLaunch.launch(url, webRoot, served, exe, browserProfile(id), firefoxArgs)
+                ? FirefoxLaunch.launch(
+                        url, webRoot, served, exe, browserProfile(id), firefoxArgs, ElectronDebugLaunch.freePort())
                 : com.editora.dap.BrowserLaunch.launch(
                         type, url, webRoot, served, exe, browserProfile(id), browserArgs);
         java.util.Map<String, Object> request = new java.util.LinkedHashMap<>(planned);
