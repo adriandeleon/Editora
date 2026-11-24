@@ -32,6 +32,7 @@ com.editora.lsp.HtmlServerFormatNodeProbeFxTest
 com.editora.ui.CompactSourceDebugProbeFxTest
 com.editora.ui.ClojureServerProbeFxTest
 com.editora.ui.GroovyServerProbeFxTest
+com.editora.ui.ElixirServerProbeFxTest
 com.editora.ui.ScalaBuildRunProbeFxTest
 com.editora.ui.ScalaMetalsProbeFxTest
 com.editora.ui.JavaCodeChangesProbeFxTest
