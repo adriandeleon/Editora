@@ -105,7 +105,11 @@
         <!-- Transitive automatic-module deps patched by moditect for jlink/jpackage. -->
         <reactfx.version>2.0-M5</reactfx.version>
         <undofx.version>2.1.1</undofx.version>
-        <flowless.version>0.7.4</flowless.version>
+        <!-- Personal fork of Flowless 0.7.4 (io.github.adriandeleon:flowless, vendored in m2-repo like RichTextFX):
+             a cell whose layout is dirty keeps its memoized size when it measures the same, instead of
+             re-splicing the size trees on every layout pass. Source: FXMisc/Flowless v0.7.4 plus the commits on
+             the fork's branch `editora`; its -sources.jar is vendored beside the jar (docs/dependencies.md). -->
+        <flowless.version>0.7.4-editora.1</flowless.version>
         <wellbehavedfx.version>0.3.3</wellbehavedfx.version>
     </properties>
 
@@ -174,7 +178,17 @@
                     <groupId>org.openjfx</groupId>
                     <artifactId>*</artifactId>
                 </exclusion>
+                <!-- Upstream Flowless: our fork (below) replaces it, same module and packages. -->
+                <exclusion>
+                    <groupId>org.fxmisc.flowless</groupId>
+                    <artifactId>flowless</artifactId>
+                </exclusion>
             </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>io.github.adriandeleon</groupId>
+            <artifactId>flowless</artifactId>
+            <version>${flowless.version}</version>
         </dependency>
         <dependency>
             <groupId>io.github.mkpaz</groupId>
@@ -1179,7 +1193,7 @@
                                 </module>
                                 <module>
                                     <artifact>
-                                        <groupId>org.fxmisc.flowless</groupId>
+                                        <groupId>io.github.adriandeleon</groupId>
                                         <artifactId>flowless</artifactId>
                                         <version>${flowless.version}</version>
                                     </artifact>

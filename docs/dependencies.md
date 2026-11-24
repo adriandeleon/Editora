@@ -71,6 +71,31 @@ at `package`; the `dist` profile only consumes its output) injects explicit `mod
 you may need to adjust those descriptors' `requires` (several need `javafx.controls` for
 `IndexRange`).
 
+## Flowless — a personal fork (`m2-repo/`)
+
+RichTextFX lays its paragraphs out in a Flowless `VirtualFlow`. Editora uses a fork,
+`io.github.adriandeleon:flowless`, **vendored in `m2-repo/`** beside the RichTextFX fork; `pom.xml` excludes
+upstream `org.fxmisc.flowless:flowless` from RichTextFX so only the fork is on the path. The module name
+(`org.fxmisc.flowless`) and packages are unchanged.
+
+- **0.7.4-editora.1** is upstream 0.7.4 plus one performance change. `Navigator.layoutChildren` calls
+  `SizeTracker.forgetSizeOf` for every displayed cell whose layout is dirty, and each forget spliced the sparse size
+  lists and their ReactFX finger-tree reductions, then invalidated the average cell length, whose recomputation
+  forced the length of every displayed cell again. Most of what dirties a cell's layout (a restyled span, a moved caret,
+  a repainted selection) leaves its size alone, and while typing this was about two thirds of what the FX thread
+  allocated per keystroke (2,000-line Java file: 6,760–7,230 → 2,362–2,366 KB per key, frames per key unchanged). `forgetSizeOf`
+  now measures the cell again and keeps its memoized breadth and length when neither changed; a changed size is
+  forgotten as before (word wrap's re-measure in `EditorBuffer.startWrapRemeasure` relies on that).
+
+**To update the fork:** the source is FXMisc/Flowless at tag `v0.7.4` plus the commits on the fork's `editora`
+branch; the `-sources.jar` beside the jar holds exactly what was compiled. Build it with
+`scripts/build-jar.sh <version>` in the fork (javac against ReactFX 2.0-M5 and JavaFX 13 from `~/.m2`, Java 21
+bytecode; the build is reproducible, so a rebuild gives the same SHA-256). JavaFX 13 is deliberate: from 19 on,
+`ObservableValue.flatMap` clashes with ReactFX's `Val.flatMap` at compile time, though the bytecode runs on any
+JavaFX. Gradle's upstream build is not used. Copy `flowless-<version>{.jar,.pom,-sources.jar}` into
+`m2-repo/io/github/adriandeleon/flowless/<version>/`, record each SHA-256 beside it as for RichTextFX, delete the
+previous version's directory and bump `<flowless.version>`; `BuildHygieneTest` checks all of it.
+
 ## tm4e — NetBeans repackaging (signed jar)
 
 The syntax engine ships as `org.netbeans.external:org.eclipse.tm4e.core-0.14.0:RELEASE260`

@@ -186,6 +186,11 @@ class BuildHygieneTest {
     }
 
     @Test
+    void theVendoredFlowlessJarMatchesItsRecordedChecksumAndIsTheOnlyVersion() throws Exception {
+        assertVendored(Path.of("io", "github", "adriandeleon", "flowless"), "flowless.version", "Flowless");
+    }
+
+    @Test
     void theVendoredJediTermJarMatchesItsRecordedChecksumAndIsTheOnlyVersion() throws Exception {
         assertVendored(Path.of("org", "jetbrains", "jediterm", "jediterm-core"), "jediterm.version", "JediTerm");
     }

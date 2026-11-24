@@ -47,10 +47,12 @@ class PerfBudgetFxTest {
     /** Rendered frames per paced keystroke in a 2,000-line Java file (measured 1.020–1.025). */
     static final double TYPING_FRAMES_PER_KEY = 1.25;
     /**
-     * Kilobytes the FX thread allocates per paced keystroke, warm JIT (measured 6,760–7,230). Two thirds of it is
-     * Flowless's {@code SizeTracker.forgetSizeOf} rebuilding the size tree of every line on each layout pass.
+     * Kilobytes the FX thread allocates per paced keystroke, warm JIT (measured 2,362–2,366; 6,760–7,230 before the
+     * Flowless fork 0.7.4-editora.1 stopped re-splicing the size tree of every dirty-but-unchanged cell on each
+     * layout pass). About 1.8 MB of what is left is spent inside the key event itself, rebuilding the edited line's
+     * cell and applying CSS to its nodes among it.
      */
-    static final double TYPING_FX_ALLOC_KB_PER_KEY = 8_000;
+    static final double TYPING_FX_ALLOC_KB_PER_KEY = 2_700;
     /** Frames a focused, untouched editor renders in 10 s: the caret blink, and nothing else (measured 20–21). */
     static final double IDLE_FRAMES_PER_10S = 24;
     /** Live heap per open tab of a 20–60 KB Java source, in MB (measured 3.26–3.50). */
