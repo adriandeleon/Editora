@@ -1791,6 +1791,41 @@ and a configuration's `linux`, `osx` and `windows` parts apply on that system.
   declining runs nothing. **Restart** runs the task again. Any other kind of
   task, or one with `dependsOn`, isn't run: the status bar says to run it
   yourself first.
+- **`postDebugTask`:** a task of `tasks.json`, of the same kinds, that runs
+  when the session ends, in the Debug console after the program's output.
+  **Restart** runs it before the `preLaunchTask` and the new launch, as VS Code
+  does.
+- **`serverReadyAction`:** Editora watches the program's output for the
+  server's address, and the first time it sees it, opens the address or
+  debugs it:
+
+  ```json
+  {
+    "name": "Server", "type": "node", "request": "launch",
+    "program": "${workspaceFolder}/server.js",
+    "serverReadyAction": { "action": "debugWithChrome", "killOnServerStop": true }
+  }
+  ```
+
+  - `pattern`: a regular expression looked for in each line of output, in
+    any case, with colour codes taken out. It is `listening on.* (https?://\S+|[0-9]+)`
+    when you leave it out, which matches "listening on port 3000" and
+    "Now listening on: https://localhost:5001".
+  - `uriFormat`: the address made of what the pattern's first group caught,
+    with `%s` standing for it. A port number gives `http://localhost:%s` and
+    an address gives itself. A pattern with no group uses `uriFormat` as it is.
+  - `action`: `openExternally` (the default) opens the address in your
+    browser. `debugWithChrome` and `debugWithEdge` open it in Chrome or Edge
+    under the debugger, in a session beside the server's, with `webRoot`
+    (the workspace folder unless you set it) for the page's scripts.
+    `startDebugging` starts another configuration: the one called `name`, or
+    the one given as `config`.
+  - `killOnServerStop`: when the server's session ends, the session the
+    address started stops too.
+
+  The Debug console says what was done with the address. The program's output
+  is watched in the Debug console only: a program you run in a Terminal tab
+  (Settings → Debug) isn't watched.
 
 ## Compounds
 

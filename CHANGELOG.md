@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **launch.json `serverReadyAction` and `postDebugTask`.** A configuration's `serverReadyAction` watches the
+  program's output for the server's address (VS Code's pattern and `uriFormat`), then opens it in the browser, debugs
+  it in Chrome or Edge beside the server, or starts another configuration; `killOnServerStop` stops that session with
+  the server. Its `postDebugTask` runs when the session ends, and before the launch again on Restart.
 - **Summary of a log.** **Log: Summarize** opens a Markdown report of the active log: its records per level, a
   records-over-time table with warnings and errors and a bar per interval, the most frequent messages counted with
   their numbers and ids masked, and the longest silences.
