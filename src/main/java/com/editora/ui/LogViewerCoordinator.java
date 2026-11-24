@@ -20,6 +20,7 @@ import com.editora.logviewer.LogNavigation;
 import com.editora.logviewer.LogPatterns;
 import com.editora.logviewer.LogQuery;
 import com.editora.logviewer.LogTailService;
+import com.editora.logviewer.LogTimes;
 import com.editora.text.LanguageRegistry;
 import com.editora.vfs.Vfs;
 import org.jspecify.annotations.Nullable;
@@ -688,6 +689,99 @@ final class LogViewerCoordinator {
 
     void clearFilter() {
         ifLog(b -> applyFilter(b, null, LogQuery.NONE, true));
+    }
+
+    // --- time ---------------------------------------------------------------------------------------
+
+    /** The day a time typed without a date is on: the caret line's, or else the log's first. */
+    private static java.time.@Nullable LocalDate referenceDay(org.fxmisc.richtext.CodeArea area, LogTimes.Context ctx) {
+        java.util.function.IntFunction<String> line = i -> area.getParagraph(i).getText();
+        long t = LogTimes.timeAt(line, area.getCurrentParagraph(), ctx);
+        if (t == LogTimes.NONE) {
+            t = LogTimes.firstTimeFrom(line, area.getParagraphs().size(), 0, ctx);
+        }
+        return t == LogTimes.NONE ? null : LogTimes.dateOf(t, ctx);
+    }
+
+    /** Asks for a time and moves the caret to the first line written then or later. */
+    void goToTime() {
+        ifLog(b -> {
+            var area = b.getFocusedArea();
+            LogTimes.Context ctx = LogTimes.Context.local();
+            long here = LogTimes.timeAt(i -> area.getParagraph(i).getText(), area.getCurrentParagraph(), ctx);
+            String initial = here == LogTimes.NONE ? "" : LogTimes.format(here, ctx);
+            host.promptText(tr("log.time.goTitle"), tr("log.time.goLabel"), initial, text -> {
+                long target = LogTimes.parseTyped(text, referenceDay(area, ctx), ctx);
+                if (target == LogTimes.NONE) {
+                    host.setStatus(tr("status.log.timeNotUnderstood", text.strip()));
+                    return;
+                }
+                int line = LogTimes.firstAtOrAfter(
+                        i -> area.getParagraph(i).getText(),
+                        area.getParagraphs().size(),
+                        target,
+                        ctx);
+                if (line < 0) {
+                    host.setStatus(tr("status.log.noLineAfter", LogTimes.format(target, ctx)));
+                    return;
+                }
+                b.jumpToLine(line);
+            });
+        });
+    }
+
+    /** Asks for a time range ("10:05 - 10:20") and shows only the records written in it. */
+    void setTimeRange() {
+        ifLog(b -> {
+            var area = b.getFocusedArea();
+            LogTimes.Context ctx = LogTimes.Context.local();
+            LogQuery query = b.getLogQuery();
+            String initial = typedRange(query.from(), query.to(), ctx);
+            host.promptText(tr("log.time.rangeTitle"), tr("log.time.rangeLabel"), initial, text -> {
+                LogTimes.Typed range = LogTimes.parseRange(text, referenceDay(area, ctx), ctx);
+                if (range == null) {
+                    host.setStatus(tr("status.log.timeNotUnderstood", text.strip()));
+                    return;
+                }
+                applyFilter(b, b.getLogMinLevel(), b.getLogQuery().withTimeRange(range.from(), range.to()), true);
+            });
+        });
+    }
+
+    private static String typedRange(@Nullable Long from, @Nullable Long to, LogTimes.Context ctx) {
+        if (from == null && to == null) {
+            return "";
+        }
+        return (from == null ? "" : LogTimes.format(from, ctx)) + " .. " + (to == null ? "" : LogTimes.format(to, ctx));
+    }
+
+    /** Keeps the records written from the caret line's time on ({@code fromCaret}), or up to it. */
+    void timeRangeAtCaret(boolean fromCaret) {
+        ifLog(b -> {
+            var area = b.getFocusedArea();
+            LogTimes.Context ctx = LogTimes.Context.local();
+            long t = LogTimes.timeAt(i -> area.getParagraph(i).getText(), area.getCurrentParagraph(), ctx);
+            if (t == LogTimes.NONE) {
+                host.setStatus(tr("status.log.noTimeAtCaret"));
+                return;
+            }
+            LogQuery query = b.getLogQuery();
+            Long from = fromCaret ? Long.valueOf(t) : query.from();
+            Long to = fromCaret ? query.to() : Long.valueOf(t);
+            if (from != null && to != null && to < from) { // the other end is on the wrong side: drop it
+                if (fromCaret) {
+                    to = null;
+                } else {
+                    from = null;
+                }
+            }
+            applyFilter(b, b.getLogMinLevel(), query.withTimeRange(from, to), true);
+        });
+    }
+
+    /** Drops the time range, keeping the rest of the filter. */
+    void clearTimeRange() {
+        ifLog(b -> applyFilter(b, b.getLogMinLevel(), b.getLogQuery().withTimeRange(null, null), true));
     }
 
     void jumpToNextError() {

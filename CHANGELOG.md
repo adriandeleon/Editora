@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Times in logs.** The log viewer reads each line's timestamp (ISO, Logback, Tomcat, syslog, klog, access logs, and
+  JSON `time`/`ts` fields, also as epoch numbers). **Log: Go to Time…** jumps to the first line written at or after a
+  time, **Log: Filter by Time…** shows the records between two times (`10:05 - 10:20`), and **Show From/Up To Caret
+  Line** set one end from the line at the caret. The control bar shows the range.
 - **Live logs from containers, Kubernetes, systemd and SSH.** **Log: Open Log Stream…** opens a read-only log tab fed
   by `docker logs -f`, `kubectl logs -f`, `journalctl -f -u`, `ssh host tail -F` or any command you type, with level
   colors, filters and Follow (off pauses it). Closing the tab stops the command.
