@@ -205,12 +205,30 @@ public final class HistoryBlobStore {
         }
     }
 
-    /** Tightens permissions left by older versions without changing or deleting any stored revision. */
+    /**
+     * Left in the blobs folder once {@link #hardenExisting} has walked every body, so later launches skip the
+     * walk: a body written since is created owner-only, and a collection checks every body it keeps. A dot
+     * file, and not in a shard folder, so it is neither a body nor a staging file to anything that lists them.
+     */
+    static final String HARDENED_MARKER = ".hardened";
+
+    /**
+     * Tightens permissions left by older versions without changing or deleting any stored revision. Walks the
+     * store once: after a walk that could list every shard it leaves {@link #HARDENED_MARKER}, and a store
+     * that has one is not walked again (the walk queued at start-up held up the session's first revision
+     * behind one permission change per stored body, on every launch). Only an entry whose permissions are
+     * wrong is changed.
+     */
     void hardenExisting() {
         if (!Files.isDirectory(blobsDir)) {
             return;
         }
+        Path marker = blobsDir.resolve(HARDENED_MARKER);
+        if (Files.exists(marker)) {
+            return;
+        }
         harden(blobsDir, OWNER_DIRECTORY);
+        boolean[] complete = {true};
         try (Stream<Path> shards = Files.list(blobsDir)) {
             shards.forEach(shard -> {
                 if (Files.isDirectory(shard)) {
@@ -218,14 +236,25 @@ public final class HistoryBlobStore {
                     try (Stream<Path> files = Files.list(shard)) {
                         files.forEach(file -> harden(file, OWNER_FILE));
                     } catch (IOException ignored) {
-                        // Best effort: another shard can still be hardened.
+                        complete[0] = false; // Best effort: another shard can still be hardened.
                     }
                 } else {
                     harden(shard, OWNER_FILE);
                 }
             });
         } catch (IOException ignored) {
-            // Best effort on an unreadable store.
+            return; // Best effort on an unreadable store; walked again at the next start.
+        }
+        if (complete[0]) {
+            try {
+                if (marker.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+                    Files.createFile(marker, PosixFilePermissions.asFileAttribute(OWNER_FILE));
+                } else {
+                    Files.createFile(marker);
+                }
+            } catch (IOException | UnsupportedOperationException ignored) {
+                // Not recorded: the next start walks again, as before.
+            }
         }
     }
 
@@ -270,7 +299,11 @@ public final class HistoryBlobStore {
             return;
         }
         try {
-            Files.setPosixFilePermissions(path, permissions);
+            // Read first: a permission change writes the file's metadata (its change time) even when the mode
+            // is already right, and a collection checks every body it keeps.
+            if (!permissions.equals(Files.getPosixFilePermissions(path))) {
+                Files.setPosixFilePermissions(path, permissions);
+            }
         } catch (IOException | UnsupportedOperationException ignored) {
             // Best effort on filesystems that report POSIX support but reject a chmod operation.
         }

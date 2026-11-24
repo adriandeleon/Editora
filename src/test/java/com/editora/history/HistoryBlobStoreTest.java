@@ -141,6 +141,46 @@ class HistoryBlobStoreTest {
         assertEquals("rwx------", PosixFilePermissions.toString(Files.getPosixFilePermissions(shard)));
     }
 
+    /** F9: the start-up walk runs once per store, not on every launch. */
+    @Test
+    void theStartupWalkIsRecordedAndNotRepeated(@TempDir Path dir) throws Exception {
+        assumeTrue(dir.getFileSystem().supportedFileAttributeViews().contains("posix"));
+        HistoryBlobStore store = new HistoryBlobStore(dir);
+        String sha = store.put("walked once");
+        Path blob = dir.resolve(sha.substring(0, 2)).resolve(sha + ".txt.gz");
+        Files.setPosixFilePermissions(blob, PosixFilePermissions.fromString("rw-r--r--"));
+
+        store.hardenExisting();
+        assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(blob)));
+        assertTrue(Files.exists(dir.resolve(HistoryBlobStore.HARDENED_MARKER)));
+        assertFalse(HistoryBlobStore.isBodyFileName(HistoryBlobStore.HARDENED_MARKER));
+
+        Files.setPosixFilePermissions(blob, PosixFilePermissions.fromString("rw-r--r--"));
+        store.hardenExisting();
+        assertEquals(
+                "rw-r--r--",
+                PosixFilePermissions.toString(Files.getPosixFilePermissions(blob)),
+                "a hardened store is not walked again");
+        // A collection still checks what it keeps, and the marker is neither a body nor collected.
+        store.deleteUnreferenced(Set.of(sha));
+        assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(blob)));
+        assertTrue(Files.exists(dir.resolve(HistoryBlobStore.HARDENED_MARKER)));
+    }
+
+    /** F9: a body whose permissions are already right is only read, never changed (no metadata write). */
+    @Test
+    void aBodyWithTheRightPermissionsIsNotChangedAgain(@TempDir Path dir) throws Exception {
+        assumeTrue(dir.getFileSystem().supportedFileAttributeViews().contains("unix"));
+        HistoryBlobStore store = new HistoryBlobStore(dir);
+        String sha = store.put("left alone");
+        Path blob = dir.resolve(sha.substring(0, 2)).resolve(sha + ".txt.gz");
+        Object ctime = Files.getAttribute(blob, "unix:ctime");
+        Thread.sleep(20); // past the file system's time resolution, so a change would show
+        store.deleteUnreferenced(Set.of(sha));
+        store.hardenExisting();
+        assertEquals(ctime, Files.getAttribute(blob, "unix:ctime"));
+    }
+
     @Test
     void gzipRoundTripHelper() throws Exception {
         // The static gunzip mirrors the read path; verify it inverts the stored format via a real put/get
