@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="CalcTest" file="/work/CalcTest.php" tests="5" assertions="4" errors="0" failures="2" skipped="1" time="0.008383">
+    <testcase name="testAdds" file="/work/CalcTest.php" line="5" class="CalcTest" classname="CalcTest" assertions="1" time="0.003081"/>
+    <testcase name="testFails" file="/work/CalcTest.php" line="6" class="CalcTest" classname="CalcTest" assertions="1" time="0.004315">
+      <failure type="PHPUnit\Framework\ExpectationFailedException">CalcTest::testFails
+Failed asserting that 2 is identical to 3.
+
+/work/CalcTest.php:6</failure>
+    </testcase>
+    <testcase name="testSkips" file="/work/CalcTest.php" line="7" class="CalcTest" classname="CalcTest" assertions="0" time="0.000512">
+      <skipped/>
+    </testcase>
+    <testsuite name="CalcTest::testData" tests="2" assertions="2" errors="0" failures="1" skipped="0" time="0.000475">
+      <testcase name="testData with data set #0" file="/work/CalcTest.php" line="10" class="CalcTest" classname="CalcTest" assertions="1" time="0.000162"/>
+      <testcase name="testData with data set &quot;two&quot;" file="/work/CalcTest.php" line="10" class="CalcTest" classname="CalcTest" assertions="1" time="0.000313">
+        <failure type="PHPUnit\Framework\ExpectationFailedException">CalcTest::testData with data set "two"
+Failed asserting that 3 is identical to 2.
+
+/work/CalcTest.php:10</failure>
+      </testcase>
+    </testsuite>
+  </testsuite>
+</testsuites>

@@ -1,0 +1,27 @@
+Run options: -v --seed 1
+
+# Running:
+
+Spec style#test_0001_works fine = 0.00 s = .
+CalcTest#test_skips = 0.00 s = S
+CalcTest#test_fails = 0.00 s = F
+CalcTest#test_adds = 0.00 s = .
+CalcTest#test_errors = 0.00 s = E
+
+Finished in 0.001536s, 3255.8908 runs/s, 1953.5345 assertions/s.
+
+  1) Skipped:
+CalcTest#test_skips [calc_test.rb:13]:
+later
+
+  2) Failure:
+CalcTest#test_fails [calc_test.rb:7]:
+Expected: 3
+  Actual: 2
+
+  3) Error:
+CalcTest#test_errors:
+ArgumentError: boom
+    calc_test.rb:10:in 'CalcTest#test_errors'
+
+5 runs, 3 assertions, 1 failures, 1 errors, 1 skips

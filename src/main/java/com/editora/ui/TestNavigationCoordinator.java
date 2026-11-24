@@ -188,6 +188,39 @@ final class TestNavigationCoordinator {
         }
     });
 
+    /** Test files under their own runners (Jest, Vitest, Deno, RSpec, Minitest, PHPUnit, ExUnit, Dart). */
+    private final ToolTestRunner toolTests = new ToolTestRunner(new ToolTestRunner.Host() {
+        @Override
+        public RunCoordinator runCoordinator() {
+            return host.runCoordinator();
+        }
+
+        @Override
+        public TestRunCoordinator testRunCoordinator() {
+            return host.testRunCoordinator();
+        }
+
+        @Override
+        public void setStatus(String message) {
+            host.setStatus(message);
+        }
+
+        @Override
+        public void openLink(com.editora.run.StackTraceLinks.Link link, Runnable fallback) {
+            openRunLink(link, fallback);
+        }
+    });
+
+    /** Runs {@code spec}, a test file under its own runner, into Test Results; false when Test Results is off. */
+    boolean runToolTests(ToolTestRunner.Spec spec) {
+        if (!host.config().getSettings().isTestRunner()
+                || host.coordinatorHost().simpleModeActive()) {
+            return false;
+        }
+        toolTests.run(spec);
+        return true;
+    }
+
     /** Runs a Node.js test file's tests into Test Results; false when Test Results is off (it runs as a script). */
     boolean runNodeTestFile(Path file) {
         if (!host.config().getSettings().isTestRunner()

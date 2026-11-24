@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
  * A click on a menu bar title opens that menu with its rows, as a person clicks it.
@@ -55,6 +56,8 @@ class MenuBarClickFxTest {
     @Test
     void clickingEachTitleOpensItsMenuWithItsRows() throws Exception {
         MainMenuBar menuBar = FxTestSupport.field(fx.controller, "menuBar");
+        // macOS: the menus are the system's, built whole up front, and have no title buttons in the window.
+        assumeFalse(FxTestSupport.callOnFx(menuBar::onSystemMenuBar), "the in-window menu bar");
         MenuBar bar = FxTestSupport.callOnFx(() -> (MenuBar) menuBar.node());
         assertTrue(FxTestSupport.callOnFx(menuBar::rowsUnbuilt), "precondition: no menu has been opened yet");
 
