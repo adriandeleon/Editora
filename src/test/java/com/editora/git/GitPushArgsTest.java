@@ -89,6 +89,39 @@ class GitPushArgsTest {
                 resolved(GitService.forcePushArgs("topic", ""), config("remote.pushdefault", "fork")));
     }
 
+    /** R3-E2: a remote with push refspecs of its own (Gerrit) keeps them for a forced push, untracked. */
+    @Test
+    void aForcedPushKeepsTheRemotesOwnPushRefspecs() {
+        String gerrit = config(
+                "branch.feat.remote", "origin",
+                "branch.feat.merge", "refs/heads/main",
+                "remote.origin.push", "HEAD:refs/for/main");
+        assertArrayEquals(
+                new String[] {"push", "--force-with-lease", "--force-if-includes"},
+                resolved(GitService.forcePushArgs("feat", "origin/main"), gerrit));
+        String sameName = config(
+                "branch.main.remote", "origin",
+                "branch.main.merge", "refs/heads/main",
+                "remote.origin.push", "HEAD:refs/for/main");
+        assertArrayEquals(
+                new String[] {"push", "--force-with-lease"},
+                GitService.resolvePush(
+                        GitService.forcePushArgs("main", "origin/main"), sameName, List.of("origin"), false));
+        // Untracked: the push remote is named, but neither the branch's ref nor --set-upstream.
+        String untracked = config("remote.origin.push", "HEAD:refs/for/main");
+        assertArrayEquals(
+                new String[] {"push", "--force-with-lease", "--force-if-includes", "origin"},
+                resolved(GitService.forcePushArgs("topic", ""), untracked));
+        assertArrayEquals(new String[] {"push", "origin"}, resolved(GitService.pushArgs("topic", ""), untracked));
+        // Another remote's refspecs do not count.
+        String forkOnly = config("remote.fork.push", "HEAD:refs/for/main");
+        assertArrayEquals(
+                new String[] {
+                    "push", "--force-with-lease", "--force-if-includes", "--set-upstream", "origin", "refs/heads/topic"
+                },
+                resolved(GitService.forcePushArgs("topic", ""), forkOnly));
+    }
+
     @Test
     void blankOrNullBranchNeverSetsUpstream() {
         // Detached HEAD / unknown branch: never emit "--set-upstream origin <empty>".
