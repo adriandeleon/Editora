@@ -159,8 +159,8 @@ final class AccessibleNames {
             if (!named(control, labelled)) {
                 unnamed.putIfAbsent(describe(control), where);
             }
-            if (control.getContextMenu() != null) {
-                ContextMenu menu = control.getContextMenu();
+            ContextMenu menu = LazyContextMenu.menuOf(control); // built now, as the first right-click would
+            if (menu != null) {
                 if (LazyContextMenu.isUnbuilt(menu) && menu.getOnShowing() != null) {
                     // Built on its first showing: build it now, as the first right-click would.
                     menu.getOnShowing().handle(new WindowEvent(menu, WindowEvent.WINDOW_SHOWING));

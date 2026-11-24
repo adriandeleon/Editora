@@ -69,7 +69,7 @@ class ViewerTabsFxTest {
 
     /** The menu's visible rows, as it would show now. */
     private static List<String> rows(Tab tab) {
-        ContextMenu menu = tab.getContextMenu();
+        ContextMenu menu = LazyContextMenu.menuOf(tab);
         assertNotNull(menu, "the tab has a right-click menu");
         menu.getOnShowing().handle(null);
         return menu.getItems().stream()
@@ -81,7 +81,7 @@ class ViewerTabsFxTest {
 
     private static MenuItem row(Tab tab, String text) {
         rows(tab); // built on its first showing
-        return tab.getContextMenu().getItems().stream()
+        return LazyContextMenu.menuOf(tab).getItems().stream()
                 .filter(item -> text.equals(item.getText()))
                 .findFirst()
                 .orElseThrow();
