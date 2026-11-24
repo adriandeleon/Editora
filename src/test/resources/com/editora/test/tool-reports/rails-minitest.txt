@@ -1,0 +1,19 @@
+Running 2 tests in a single process (parallelization threshold is 50)
+Run options: -v --seed 31988
+
+# Running:
+
+CalcTest#test_adds = 0.00 s = .
+CalcTest#test_fails = 0.00 s = F
+
+
+Failure:
+CalcTest#test_fails [test/models/calc_test.rb:7]:
+Expected: 3
+  Actual: 2
+
+bin/rails test test/models/calc_test.rb:6
+
+
+Finished in 0.008521s, 234.7020 runs/s, 234.7020 assertions/s.
+2 runs, 2 assertions, 1 failures, 0 errors, 0 skips

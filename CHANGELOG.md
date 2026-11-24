@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Test Results for more test runners.** Running a test file under Jest, Vitest, Deno, RSpec, Minitest (and
+  `bin/rails test`), PHPUnit, ExUnit or `dart test` fills Test Results: each test passed, failed or skipped, a
+  failure's message and stack, a row that opens the test where it failed. Rerun Failed and Rerun This Test run
+  just those tests with the runner's own filter. The Run console keeps the runner's usual report. Run File on a
+  Dart test file now runs `dart test`.
 - **Warnings and errors on a log's scrollbar.** A stripe over the scrollbar marks a log's WARN lines in amber and its
   ERROR and FATAL lines in red; hover a mark to read the line, click it to go there. A filtered log marks what the
   filter kept.

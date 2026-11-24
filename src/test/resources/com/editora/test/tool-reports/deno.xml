@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="deno test" tests="5" failures="1" errors="0" time="0.004">
+    <testsuite name="./calc_test.ts" tests="5" disabled="1" errors="0" failures="1">
+        <testcase name="adds" classname="./calc_test.ts" time="0.000" line="1" col="6">
+        </testcase>
+        <testcase name="fails" classname="./calc_test.ts" time="0.003" line="2" col="6">
+            <failure message="Uncaught Error: boom">Error: boom
+Deno.test(&quot;fails&quot;, () =&gt; { throw new Error(&quot;boom&quot;); });
+                                 ^
+    at file:///work/calc_test.ts:2:34</failure>
+        </testcase>
+        <testcase name="skips" classname="./calc_test.ts" time="0.000" line="3" col="6">
+            <skipped/>
+        </testcase>
+        <testcase name="steps" classname="./calc_test.ts" time="0.000" line="4" col="6">
+        </testcase>
+        <testcase name="steps &gt; inner" classname="./calc_test.ts" time="0.000" line="4" col="43">
+        </testcase>
+    </testsuite>
+</testsuites>
