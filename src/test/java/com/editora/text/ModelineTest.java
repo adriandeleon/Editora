@@ -15,6 +15,7 @@ class ModelineTest {
     @Test
     void vimModelinesNameTheFiletype() {
         assertEquals("sh", ext("# vim: ft=sh\necho hi\n"));
+        assertEquals("ex", ext("# -*- mode: elixir -*-\nIO.puts 1\n"));
         assertEquals("sh", ext("# vim: set filetype=bash :\necho hi\n"));
         assertEquals("sh", ext("# vi:syntax=zsh\n"));
         assertEquals("sh", ext("# ex: set ts=4 sw=4 ft=sh:\n"));

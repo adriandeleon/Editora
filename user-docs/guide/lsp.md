@@ -703,7 +703,7 @@ Twenty-six servers are supported:
   (`rust-analyzer`), **C / C++** (`clangd`), **C#** (`csharp-ls`)
 - **Ruby** (`ruby-lsp`), **PHP** (`phpactor`), **Kotlin**
   (JetBrains' Kotlin LSP, `kotlin-lsp`), **Groovy** (`gls`, from gvy), **Clojure** (`clojure-lsp`),
-  **Scala** (Metals), **Lua** (`lua-language-server`)
+  **Scala** (Metals), **Lua** (`lua-language-server`), **Elixir** (ElixirLS, `elixir-ls`)
 - **Astro** (`astro-ls`), **HTML** (`vscode-html-language-server`), **CSS**
   (`vscode-css-language-server`), **JSON** (`vscode-json-language-server`),
   **YAML**, **XML** (`lemminx`), **Bash** (`bash-language-server`),
@@ -801,6 +801,11 @@ covered through one of these channels, picked per server:
   only when that toolchain is already on your `PATH`.
 - **Binary** releases downloaded per OS/architecture (clangd, terraform-ls,
   Lua, and tinymist for Typst), extracted into your config folder.
+- **ElixirLS**, the Elixir server and debugger in one, from its pinned 0.31.1
+  release zip checked against its SHA-256 (**Install…** on the Elixir card of
+  **Settings → Debugging**). Its first start compiles it with your Elixir,
+  which takes a minute or two. It compiles your Mix project too, so it waits
+  until you trust the folder.
 - A **pinned native binary** for lemminx, the XML server, from one vscode-xml
   release, with both the zip and the program checked against the release's
   SHA-256 (see [Installing lemminx](#installing-lemminx)).

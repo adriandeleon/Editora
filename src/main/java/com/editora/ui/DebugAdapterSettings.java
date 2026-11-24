@@ -219,7 +219,18 @@ final class DebugAdapterSettings {
                     "firefox-debug",
                     InstallCatalog.FIREFOX_DEBUG_STEP,
                     "status.debug.firefoxOff",
-                    (s, scope) -> tr("status.debug.firefoxMissing")));
+                    (s, scope) -> tr("status.debug.firefoxMissing")),
+            new Binding(
+                    DebugLanguages.ELIXIR,
+                    Settings::isElixirDebugEnabled,
+                    Settings::setElixirDebugEnabled,
+                    Settings::getElixirDebugPath,
+                    Settings::setElixirDebugPath,
+                    "settings.debug.elixirPath",
+                    "elixir-ls",
+                    InstallCatalog.ELIXIR_LS_STEP,
+                    "status.debug.elixirOff",
+                    (s, scope) -> tr("status.debug.elixirLsMissing")));
 
     /** Every adapter with settings of its own, in the order the pickers list them. */
     static List<Binding> all() {

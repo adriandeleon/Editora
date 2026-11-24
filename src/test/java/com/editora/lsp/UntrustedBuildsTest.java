@@ -24,7 +24,7 @@ class UntrustedBuildsTest {
 
     @Test
     void onlyTheServersThatRunAProjectsBuildAreGated() {
-        for (String id : List.of("java", "kotlin", "scala", "rust", "ruby", "csharp", "clojure", "dart")) {
+        for (String id : List.of("java", "kotlin", "scala", "rust", "ruby", "csharp", "clojure", "dart", "elixir")) {
             assertTrue(UntrustedBuilds.gated(id), id);
         }
         for (String id : List.of("python", "typescript", "go", "xml", "bash", "json", "html", "css", "clangd")) {
@@ -57,6 +57,11 @@ class UntrustedBuildsTest {
         assertFalse(UntrustedBuilds.withholds("dart", dir, false));
         Files.writeString(dir.resolve("analysis_options.yaml"), "plugins:\n  some_plugin: ^1.0.0\n");
         assertTrue(UntrustedBuilds.withholds("dart", dir, false), "its analyzer plugins run the folder's code");
+        Files.writeString(dir.resolve("hello.exs"), "IO.puts(:hi)\n");
+        assertFalse(UntrustedBuilds.withholds("elixir", dir, false), "a loose script: ElixirLS compiles nothing");
+        Files.writeString(dir.resolve("mix.exs"), "defmodule App.MixProject do\nend\n");
+        assertTrue(UntrustedBuilds.withholds("elixir", dir, false), "ElixirLS compiles the Mix project");
+        assertFalse(UntrustedBuilds.withholds("elixir", dir, true), "trusted: started as before");
         assertFalse(UntrustedBuilds.hasBuild("java", dir));
         assertFalse(UntrustedBuilds.hasBuild("python", dir), "not a gated server");
         assertFalse(UntrustedBuilds.hasBuild("rust", dir.resolve("absent")), "an unreadable folder");

@@ -60,6 +60,7 @@ com.editora.ui.PhpDebugProbeFxTest
 com.editora.ui.PhpWebProbeFxTest
 com.editora.ui.RemoteNativeAttachProbeFxTest
 com.editora.ui.RubyAppsProbeFxTest
+com.editora.ui.ElixirDebugProbeFxTest
 com.editora.ui.BashDebugProbeFxTest
 com.editora.ui.LuaDebugProbeFxTest
 com.editora.ui.JvmLanguageTestsProbeFxTest

@@ -847,4 +847,30 @@ class InstallCatalogTest {
         }
         assertTrue(InstallCatalog.isTrustedDownloadUrl(linux.url()));
     }
+
+    @Test
+    void elixirLsIsOneReleaseZipForEveryPlatform() {
+        Step elixir = InstallCatalog.debuggerInstall(InstallCatalog.ELIXIR_LS_STEP)
+                .orElseThrow()
+                .getFirst();
+        assertEquals(Kind.PINNED_SERVER, elixir.kind());
+        assertEquals("plugins/dap/elixir", elixir.destSubpath(), "where InstalledAdapter.ELIXIR_LS looks");
+        var recipe = InstallCatalog.pinnedServer(InstallCatalog.ELIXIR_LS_STEP).orElseThrow();
+        var linux = recipe.assetFor(Platform.LINUX_X64);
+        assertNotNull(linux);
+        assertEquals(
+                "https://github.com/elixir-lsp/elixir-ls/releases/download/v0.31.1/elixir-ls-v0.31.1.zip", linux.url());
+        assertEquals("bac08322ea3698157eb2373bb5b65e38c15df9dd41e1c06f142f874367fa472f", linux.sha256());
+        assertEquals(InstallCatalog.Packing.ZIP, linux.packing());
+        for (Platform p : Platform.values()) {
+            assertEquals(linux, recipe.assetFor(p), p + ": one zip of scripts, run on Elixir");
+        }
+        assertTrue(InstallCatalog.isTrustedDownloadUrl(linux.url()));
+        assertEquals("debug_adapter.sh", InstallCatalog.elixirLsLauncher(Platform.LINUX_X64));
+        assertEquals("debug_adapter.sh", InstallCatalog.elixirLsLauncher(Platform.MAC_ARM));
+        assertEquals(
+                "debug_adapter",
+                InstallCatalog.elixirLsLauncher(Platform.WIN_X64),
+                "the installer matches debug_adapter.bat without its extension");
+    }
 }

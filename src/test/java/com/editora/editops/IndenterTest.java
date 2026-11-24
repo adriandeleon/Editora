@@ -28,6 +28,7 @@ class IndenterTest {
         assertEquals(Style.PY, Indenter.styleFor("yaml"));
         assertEquals(Style.SHELL, Indenter.styleFor("shell"));
         assertEquals(Style.RUBY, Indenter.styleFor("ruby"));
+        assertEquals(Style.ELIXIR, Indenter.styleFor("elixir"));
         assertEquals(Style.LUA, Indenter.styleFor("lua"));
         assertEquals(Style.BRACES, Indenter.styleFor("terraform"));
         assertEquals(Style.XML, Indenter.styleFor("html"));
@@ -49,6 +50,37 @@ class IndenterTest {
         assertEquals("\n    ", enterAtEnd("    x = x + 1", "lua"));
         // An inline `... end` on one line is net-zero, so no extra indent.
         assertEquals("\n", enterAtEnd("if x then return 1 end", "lua"));
+    }
+
+    /** Elixir: {@code do}, a clause's {@code ->}, {@code fn} and the mid-block keywords open; {@code do:} does not. */
+    @Test
+    void elixirOpeners() {
+        assertEquals("\n    ", enterAtEnd("defmodule App do", "elixir"));
+        assertEquals("\n    ", enterAtEnd("def run(x) when x > 0 do", "elixir"));
+        assertEquals("\n    ", enterAtEnd("{:ok, value} ->", "elixir"));
+        assertEquals("\n    ", enterAtEnd("Enum.map(list, fn x ->", "elixir"));
+        assertEquals("\n    ", enterAtEnd("else", "elixir"));
+        assertEquals("\n    ", enterAtEnd("rescue", "elixir"));
+        assertEquals("\n    ", enterAtEnd("%{", "elixir"));
+        assertEquals("\n", enterAtEnd("def f(x), do: x", "elixir"), "the keyword form is one line");
+        assertEquals("\n", enterAtEnd("opts = [do: 1]", "elixir"));
+        assertEquals("\n", enterAtEnd("undo", "elixir"));
+        assertEquals("\n", enterAtEnd("x = :do", "elixir"));
+        assertEquals("\n", enterAtEnd("end", "elixir"));
+        assertEquals("\n", enterAtEnd("fn x -> x end", "elixir"));
+        assertEquals("\n", enterAtEnd("IO.puts(\"do\") # do", "elixir"), "a string and a comment open nothing");
+    }
+
+    @Test
+    void elixirClosersDeIndentViaKeyword() {
+        assertTrue(Indenter.completesCloserKeyword(Style.ELIXIR, "    end\n"));
+        assertTrue(Indenter.completesCloserKeyword(Style.ELIXIR, "    end)"));
+        assertTrue(Indenter.completesCloserKeyword(Style.ELIXIR, "  after "));
+        assertTrue(Indenter.completesCloserKeyword(Style.ELIXIR, "  catch\n"));
+        assertFalse(Indenter.completesCloserKeyword(Style.ELIXIR, "    endpoint "));
+        assertTrue(Indenter.isCloserChar(Style.ELIXIR, '}'));
+        String block = "defmodule A do\n  def f do\n    x\n    end";
+        assertEquals("  ", Indenter.closerAlignIndent(Style.ELIXIR, block, block.length(), 2, "    "));
     }
 
     @Test

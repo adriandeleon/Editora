@@ -1323,6 +1323,7 @@ final class ProjectMapModel {
             "typescriptreact",
             "python",
             "ruby",
+            "elixir",
             "go",
             "dart",
             "rust",

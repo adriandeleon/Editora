@@ -72,6 +72,7 @@ public final class SnippetManager {
             "css",
             "dart",
             "dockerfile",
+            "elixir",
             "go",
             "groovy",
             "html",

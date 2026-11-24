@@ -30,6 +30,8 @@ public final class Indenter {
         PY,
         SHELL,
         RUBY,
+        /** Elixir: {@code do … end}, {@code fn … end} and {@code ->} clauses. */
+        ELIXIR,
         LUA,
         /** Lisp (Clojure): indented by the innermost open bracket ({@link LispIndent}). */
         LISP,
@@ -233,6 +235,7 @@ public final class Indenter {
         return switch (style) {
             case SHELL -> SHELL_CLOSERS.contains(word);
             case RUBY -> RUBY_CLOSERS.contains(word);
+            case ELIXIR -> ELIXIR_CLOSERS.contains(word);
             case LUA -> LUA_CLOSERS.contains(word);
             case PY -> PY_CLOSERS.contains(word) && content.stripTrailing().endsWith(":");
             default -> false;
@@ -261,6 +264,7 @@ public final class Indenter {
 
     private static final Set<String> SHELL_CLOSERS = Set.of("fi", "done", "esac", "else", "elif", ";;", ";&", ";;&");
     private static final Set<String> RUBY_CLOSERS = Set.of("end", "else", "elsif", "when", "rescue", "ensure");
+    private static final Set<String> ELIXIR_CLOSERS = Set.of("end", "else", "rescue", "catch", "after");
     private static final Set<String> LUA_CLOSERS = Set.of("end", "else", "elseif", "until");
     private static final Set<String> PY_CLOSERS = Set.of("else", "elif", "except", "finally");
 
@@ -293,6 +297,7 @@ public final class Indenter {
             case "python", "cython", "starlark", "yaml" -> Style.PY;
             case "shell" -> Style.SHELL;
             case "ruby" -> Style.RUBY;
+            case "elixir" -> Style.ELIXIR;
             case "lua" -> Style.LUA;
             case "clojure" -> Style.LISP;
             default -> Style.PLAIN;
@@ -615,7 +620,11 @@ public final class Indenter {
 
     /** True when typing {@code c} is a closing bracket that should de-indent for the style. */
     public static boolean isCloserChar(Style style, char c) {
-        return (style == Style.BRACES || style == Style.SHELL || style == Style.RUBY || style == Style.LUA)
+        return (style == Style.BRACES
+                        || style == Style.SHELL
+                        || style == Style.RUBY
+                        || style == Style.ELIXIR
+                        || style == Style.LUA)
                 && (c == '}' || c == ')' || c == ']');
     }
 
@@ -644,7 +653,9 @@ public final class Indenter {
     public static boolean completesCloserKeyword(Style style, String lineUpToCaretPlusChar) {
         Set<String> closers = style == Style.SHELL
                 ? SHELL_CLOSERS
-                : style == Style.RUBY ? RUBY_CLOSERS : style == Style.LUA ? LUA_CLOSERS : Set.of();
+                : style == Style.RUBY
+                        ? RUBY_CLOSERS
+                        : style == Style.ELIXIR ? ELIXIR_CLOSERS : style == Style.LUA ? LUA_CLOSERS : Set.of();
         if (closers.isEmpty()) {
             return false;
         }
@@ -759,6 +770,7 @@ public final class Indenter {
                         || endsWithDoBlock(code)
                         || rubyOpener(code)
                         || startsWithWord(code, "else", "elsif", "when", "rescue", "ensure", "begin");
+            case ELIXIR -> last == '{' || last == '(' || last == '[' || elixirOpener(code);
             case LUA -> last == '{' || luaOpener(code);
             case LISP, PLAIN -> false;
         };
@@ -781,6 +793,19 @@ public final class Indenter {
         }
         // function definition: `function f(...)`, `local function f(...)`, `x = function(...)`, anon `function()`
         return code.matches(".*\\bfunction\\b\\s*[\\w.:]*\\s*\\([^)]*\\)\\s*");
+    }
+
+    /**
+     * An Elixir line that opens a block: it ends with {@code do} ({@code defmodule A do}, {@code if x do}; the
+     * keyword form {@code do:} is a one-liner), a clause's {@code ->} ({@code {:ok, v} ->}, {@code fn x ->}), a bare
+     * {@code fn}, or begins an {@code else}/{@code rescue}/{@code catch}/{@code after} branch.
+     */
+    private static boolean elixirOpener(String code) {
+        String t = code.strip();
+        return t.matches("(?:.*[^\\w?!:@.])?do") // `do`, not `undo` or `:do`
+                || t.endsWith("->")
+                || t.matches("(?:.*[^\\w?!:@.])?fn")
+                || startsWithWord(t, "else", "rescue", "catch", "after");
     }
 
     /** Ends with {@code do}, optionally followed by a {@code |block params|}. */
@@ -1023,7 +1048,7 @@ public final class Indenter {
      * a JS private field, Python's {@code //} and Lua's {@code #t} are code, not comments:
      * <ul>
      *   <li>{@code //} — brace languages only;</li>
-     *   <li>{@code #} — shell/Python/Ruby when it starts a word; brace languages (Terraform, PHP) only
+     *   <li>{@code #} — shell/Python/Ruby/Elixir when it starts a word; brace languages (Terraform, PHP) only
      *       when it stands alone ({@code # note}, not {@code #main});</li>
      *   <li>{@code --} — Lua anywhere; brace languages (SQL) only when it stands alone.</li>
      * </ul>
@@ -1085,7 +1110,7 @@ public final class Indenter {
         if (c == '#') {
             boolean alone = i + 1 == s.length() || Character.isWhitespace(s.charAt(i + 1)) || s.charAt(i + 1) == '!';
             return switch (style) {
-                case SHELL, PY, RUBY -> wordStart;
+                case SHELL, PY, RUBY, ELIXIR -> wordStart;
                 case BRACES -> wordStart && alone;
                 default -> false;
             };

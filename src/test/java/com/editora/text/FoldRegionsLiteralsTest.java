@@ -76,6 +76,49 @@ class FoldRegionsLiteralsTest {
         assertEquals(List.of(new Region(0, 5), new Region(2, 4)), sorted(raw, "dart"));
     }
 
+    /**
+     * Elixir: do … end and fn … end blocks, multi-line brackets and heredocs fold; the keyword and atom forms
+     * ({@code do:}, {@code :end}), strings, sigils, character literals and comments open and close nothing.
+     */
+    @Test
+    void elixirDoEndBlocks() {
+        String src = """
+                defmodule A do
+                  @moduledoc \"""
+                  Has do and end inside.
+                  \"""
+                  def f(x), do: x
+                  def g(list) do
+                    Enum.map(list, fn x ->
+                      x + 1
+                    end)
+                  end
+                  def h, do: {:end, "end", ~s(do), ?", "#{"end"}"} # do
+                  @map %{
+                    a: 1
+                  }
+                end
+                """;
+        assertEquals(
+                List.of(new Region(0, 14), new Region(1, 3), new Region(5, 9), new Region(6, 8), new Region(11, 13)),
+                sorted(src, "elixir"));
+    }
+
+    /** An Elixir heredoc sigil (~H\"""…\""") folds, and the do/end inside it is markup, not a block. */
+    @Test
+    void elixirHeredocSigil() {
+        String src = """
+                def render(assigns) do
+                  ~H\"""
+                  <%= if @ok do %>
+                    yes
+                  <% end %>
+                  \"""
+                end
+                """;
+        assertEquals(List.of(new Region(0, 6), new Region(1, 5)), sorted(src, "elixir"));
+    }
+
     @Test
     void cssUrlIsNotALineComment() {
         String css = "@media print {\n  .a { background: url(http://x/a.png); }\n  .b {\n    color: red;\n  }\n}\n";

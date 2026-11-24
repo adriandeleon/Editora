@@ -432,6 +432,7 @@ final class DebugCoordinator {
     private final MemoryEdits memoryEdits = new MemoryEdits(this);
 
     private final DartDebugLaunch dart = new DartDebugLaunch(this); // Dart, and a Flutter app's Dart
+    final ElixirDebugLaunch elixir = new ElixirDebugLaunch(this); // a Mix project's tests, scripts and app
     private final ElectronDebugLaunch electron = new ElectronDebugLaunch(this); // an Electron app: main + renderer
     final RemoteAttachLaunch remote = new RemoteAttachLaunch(this); // a native program under a debug server elsewhere
     final BrowserDebugLaunch browser = new BrowserDebugLaunch(this); // a page in Chrome, Edge, Firefox…
@@ -1385,6 +1386,7 @@ final class DebugCoordinator {
                         scope.debugTool("lua", s.getLuaDebugPath()),
                         found -> applyGating());
         dart.configure(on, s, scope, this::applyGating); // dart, and flutter for a Flutter app's file
+        elixir.configure(on, s, scope, this::applyGating); // ElixirLS
         browser.configure(on, s, scope, this::applyGating); // vscode-firefox-debug, for Firefox
         // C and C++: the same CodeLLDB as Rust's.
         dap().configureExternal(
@@ -4203,7 +4205,7 @@ final class DebugCoordinator {
                 }
             }
             case FIREFOX -> browser.startConfigured(workspace, name, anchor, route.request());
-            case DELVE, CODELLDB, NETCOREDBG, RDBG, PHP_DEBUG, BASH_DEBUG, LUA_DEBUG, GDB, CUSTOM -> {
+            case DELVE, CODELLDB, NETCOREDBG, RDBG, PHP_DEBUG, BASH_DEBUG, LUA_DEBUG, ELIXIR_LS, GDB, CUSTOM -> {
                 if (profile == null) {
                     return;
                 }
@@ -5653,6 +5655,10 @@ final class DebugCoordinator {
         }
         if ("ruby".equals(language)) {
             ruby.debug(path, b.getContent(), fileArgs); // a script, a spec or test file, a Rails app's server
+            return;
+        }
+        if ("elixir".equals(language)) {
+            elixir.debug(path, b.getContent(), fileArgs); // a Mix project's tests, a script, the project
             return;
         }
         if (java.util.Set.of("bash", "lua").contains(language)) {

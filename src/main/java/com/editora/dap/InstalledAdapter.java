@@ -99,6 +99,19 @@ public record InstalledAdapter(
             List.of("firefox-devtools.vscode-firefox-debug-"),
             List.of("dist/adapter.bundle.js"));
 
+    /**
+     * ElixirLS (elixir-lsp, Apache-2.0): its release zip's {@code debug_adapter.sh} ({@code .bat} on Windows), a script
+     * that runs ElixirLS's debug adapter on the installed Elixir; the language server's {@code language_server.sh} sits
+     * beside it. VS Code's extension is {@code jakebecker.elixir-ls}, with the release in {@code elixir-ls-release}.
+     */
+    public static final InstalledAdapter ELIXIR_LS = new InstalledAdapter(
+            "elixir",
+            ElixirLaunch.adapterFile(),
+            false,
+            List.of(ElixirLaunch.adapterFile()),
+            List.of("jakebecker.elixir-ls-"),
+            List.of("elixir-ls-release/" + ElixirLaunch.adapterFile()));
+
     /** Where the installer puts it, by this launch's config folder first. Pure construction. */
     List<Path> roots(Path home) {
         List<Path> roots = new ArrayList<>();

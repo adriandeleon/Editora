@@ -17,6 +17,8 @@ class FileIconsTest {
         assertEquals("go", FileIcons.iconKeyFor("main.go"));
         assertEquals("php", FileIcons.iconKeyFor("index.php"));
         assertEquals("ruby", FileIcons.iconKeyFor("app.rb"));
+        assertEquals("elixir", FileIcons.iconKeyFor("server.ex"));
+        assertEquals("elixir", FileIcons.iconKeyFor("mix.exs"));
         assertEquals("c", FileIcons.iconKeyFor("main.c"));
         assertEquals("cpp", FileIcons.iconKeyFor("main.cpp"));
         assertEquals("csharp", FileIcons.iconKeyFor("Program.cs"));

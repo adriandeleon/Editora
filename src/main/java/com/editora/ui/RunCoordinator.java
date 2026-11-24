@@ -3216,7 +3216,8 @@ final class RunCoordinator {
             com.editora.run.ClojureRun.@Nullable Plan clojure,
             com.editora.run.PythonWebApps.@Nullable Server web,
             com.editora.run.PhpApps.@Nullable Plan php,
-            com.editora.run.RubyApps.@Nullable Plan ruby) {}
+            com.editora.run.RubyApps.@Nullable Plan ruby,
+            com.editora.run.ElixirRun.@Nullable Plan elixir) {}
 
     private FilePlan planFile(
             String language,
@@ -3280,6 +3281,16 @@ final class RunCoordinator {
                 "ruby".equals(language) && com.editora.process.ExecTargets.runsHere(path)
                         ? com.editora.run.RubyApps.plan(
                                 path, content, List.of(), -1, null, project, RubyDebugLaunch.lookups())
+                        : null,
+                "elixir".equals(language) && com.editora.process.ExecTargets.runsHere(path)
+                        ? com.editora.run.ElixirRun.plan(
+                                path,
+                                content,
+                                List.of(),
+                                -1,
+                                project,
+                                java.nio.file.Files::isRegularFile,
+                                ElixirDebugLaunch::read)
                         : null);
     }
 
@@ -3342,6 +3353,7 @@ final class RunCoordinator {
                 && !buffer.isShell()
                 && !"php".equals(buffer.getLanguage())
                 && !"ruby".equals(buffer.getLanguage())
+                && !"elixir".equals(buffer.getLanguage())
                 && !com.editora.run.NodeRunPlan.isNodeLanguage(buffer.getLanguage())
                 && !com.editora.run.CompiledRunLine.supports(buffer.getLanguage())
                 && !jvmScript;
@@ -3422,6 +3434,16 @@ final class RunCoordinator {
         }
         if (plan.php() != null) {
             launchPhp(path, plan.php(), args);
+            return;
+        }
+        if (plan.elixir() != null) { // mix test, mix run, elixir file (ElixirRun)
+            Path mixProject = plan.elixir().project();
+            if (mixProject != null && !ops.trustBuild(mixProject, List.of(tr("dialog.trust.item.mix", "mix.exs")))) {
+                return; // Mix compiles the project and its dependencies: their code runs only in a trusted folder
+            }
+            List<String> argv = new ArrayList<>(plan.elixir().command());
+            argv.addAll(args);
+            streamRun(path.getFileName().toString(), plan.elixir().cwd(), argv, java.util.Map.of(), path);
             return;
         }
         if (plan.ruby() != null) { // a script, a spec or test file, a Rails app's server (RubyApps)

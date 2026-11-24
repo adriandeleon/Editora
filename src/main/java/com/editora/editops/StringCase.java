@@ -270,6 +270,7 @@ public final class StringCase {
             "typescriptreact",
             "python",
             "ruby",
+            "elixir",
             "lua",
             "sql",
             "proto");

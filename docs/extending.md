@@ -201,7 +201,8 @@ list.
    beside `PythonIndent`/`ShellIndent`: `LispIndent` (Clojure: by the innermost open bracket) and
    `ScalaIndent` (Scala 3's optional-brace openers, shared with folding). `IndentWindow.enterEdit` must
    hand a style that reads the lines above the caret a back-scan window.
-8. **`FoldRegions`** — a `detect` case (the brace walker, or a scanner of its own like `lisp`/`scala`),
+8. **`FoldRegions`** — a `detect` case (the brace walker, or a scanner of its own like `lisp`/`scala`, or
+   `ElixirFolds` for `do … end` blocks),
    the `SLASH_STAR_LANGUAGES` block-comment set, and `Syntax.of` for the literal rules (triple quotes, a
    `'` that may not close).
 9. **`AutoClose.decide`** — a quote that is not a string delimiter in the language (Clojure's `'` and
@@ -215,7 +216,8 @@ list.
     `'sym` and `\c`, Scala 2's `'symbol`). `DeclarationScannerTest` holds a case per language.
 11. **Structure panel** — `StructurePanel.isBraceLanguage` for a brace language. When the grammar emits no
     `entity.name.*` scopes for declarations (Clojure), add a branch to `buildNodes` that builds the outline
-    another way (`clojureFormNodes` reads the symbol index).
+    another way (`clojureFormNodes` reads the symbol index). When it names calls as functions too (Dart,
+    Elixir), `StructureOutline.scannedOutline` takes the outline's symbols from the symbol index instead.
 12. **Stack traces** (JVM languages) — the file extension in `StackTraceLinks.JVM_SOURCE` and the source
     roots in `search/SourceFileFinder.SOURCE_ROOTS`.
 

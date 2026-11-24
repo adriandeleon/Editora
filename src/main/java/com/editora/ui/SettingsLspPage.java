@@ -623,6 +623,17 @@ final class SettingsLspPage {
                         v -> config.getSettings().setDartLspCommand(v),
                         () -> config.getSettings().getDartLspCommand()),
                 new LspServerUi(
+                        "elixir",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_ELIXIR_COMMAND,
+                        "settings.lsp.enableElixir",
+                        "settings.lsp.elixirCommand",
+                        "lsp elixir elixirls elixir-ls mix phoenix erlang language server found installed not found"
+                                + " command path executable",
+                        v -> config.getSettings().setElixirLspEnabled(v),
+                        () -> config.getSettings().isElixirLspEnabled(),
+                        v -> config.getSettings().setElixirLspCommand(v),
+                        () -> config.getSettings().getElixirLspCommand()),
+                new LspServerUi(
                         "dockerfile",
                         com.editora.lsp.LspServerRegistry.DEFAULT_DOCKERFILE_COMMAND,
                         "settings.lsp.enableDockerfile",

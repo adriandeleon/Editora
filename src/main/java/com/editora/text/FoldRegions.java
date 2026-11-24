@@ -35,6 +35,8 @@ import org.jspecify.annotations.Nullable;
  *   <li><b>Scala</b>: braces, plus Scala 3's optional-brace blocks by indentation (through their {@code end}
  *       marker).</li>
  *   <li><b>Clojure</b>: every form that spans lines — {@code ( )}, {@code [ ]}, {@code &#123; &#125;}.</li>
+ *   <li><b>Elixir</b>: {@code do … end} and {@code fn … end} blocks, multi-line brackets and heredocs
+ *       ({@link ElixirFolds}).</li>
  *   <li><b>Other line/indentation-based languages</b> (ruby, yaml, ini, sql, powershell, batch) and
  *       plaintext: no delimiter folding.</li>
  * </ul>
@@ -95,6 +97,7 @@ public final class FoldRegions {
             case "javascript", "javascriptreact", "typescriptreact" -> jsx(text, language);
             case "scala" -> scala(text);
             case "clojure" -> lisp(text);
+            case "elixir" -> ElixirFolds.detect(text);
             case "typst" -> typst(text);
             case "http" -> http(text);
             case "shell" -> shell(text);
