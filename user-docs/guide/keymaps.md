@@ -98,7 +98,7 @@ Enter, Tab and Esc.
 ## Debugger keys
 
 Every keymap binds the debugger's commands. The Emacs keymap's are listed under
-[Debugging](/docs/run-debug#debugging); besides those, `C-c C-d` followed by
+[Debugging](/docs/debugging); besides those, `C-c C-d` followed by
 `r` restarts, `v` shows the value at the caret, `x` evaluates, `w` adds a
 watch, `l` lists the breakpoints, `m` mutes them, `t` enables or disables the
 caret line's breakpoint, `1` toggles a temporary breakpoint, `s` smart-steps
@@ -106,7 +106,7 @@ into, `f` restarts the frame and `h` applies code changes. With Shift,
 `C-c C-d S-u` runs to the cursor past every breakpoint, `C-c C-d S-a`
 attaches again to the last address, and in Java `C-c C-d S-m` toggles a method
 breakpoint, `C-c C-d S-w` a field watchpoint and `C-c C-d S-l` a
-[lambda breakpoint](/docs/run-debug#lambda-breakpoints). The other keymaps have
+[lambda breakpoint](/docs/debugging#lambda-breakpoints). The other keymaps have
 no keys for method breakpoints and field watchpoints.
 
 The CUA and Sublime Text keymaps use VS Code's function keys:
@@ -142,11 +142,11 @@ a watch prompt and a breakpoint's condition and log message, and typing `.`
 opens the same list. In the evaluate fields, Shift+Enter starts a fragment of
 several lines, which Ctrl+Enter evaluates; your keymap's own editing keys work
 there too. Alt+click on an expression in the editor evaluates it
-([Quick Evaluate](/docs/run-debug#quick-evaluate)).
+([Quick Evaluate](/docs/debugging#quick-evaluate)).
 In the value popup of Show Value at Caret, the arrow keys move and unfold,
 Enter unfolds a row or loads the next page, Shift+Enter adds the row to
 Watches, Ctrl+C (⌘C on macOS) copies its value and Esc closes the popup. See
-[Inspecting values](/docs/run-debug#inspecting-values).
+[Inspecting values](/docs/debugging#inspecting-values).
 
 ## Java chords
 

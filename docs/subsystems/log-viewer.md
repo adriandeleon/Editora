@@ -74,6 +74,15 @@ old offset between two polls cannot be told from growth; `tail -f` has the same 
 replaces the whole buffer, so it is not applied to a buffer with unsaved edits: the follow stops
 with a status message and the disk snapshot stays that of the old file, so saving asks first.
 
+**Remembered per file.** `WorkspaceState.logViews` (schema 37) keeps, per absolute path, a
+`LogViewState`: View as Log (`true` on, `false` a sniffable file turned off, so `sniffLoaded` leaves
+it alone; `null` the name and lines decide), the level floor and the `LogQuery`. Only what differs
+from a fresh open is stored; an entry equal to a fresh open is removed. `LogViewerCoordinator`
+writes it from `filtered()` and `viewAsLog()` and saves only when it changed; `restoreView` puts it
+back once per buffer after the load (`FileWorkflowCoordinator.applyPreparedLoad`), so a reload keeps
+what the user has now. Follow is not remembered: it starts a poll. `RenamedFileState` moves entries
+with a rename and copies them on Save As.
+
 **Memory.** A follow may add `LogView.FOLLOW_CAP` characters to what the buffer held when it
 started; past that the oldest lines go and the buffer becomes unsaveable (`trimmed()`). A filter on
 a log of `LogViewerCoordinator.ASYNC_FILTER_CHARS` or more is computed off the FX thread and
@@ -92,7 +101,5 @@ are only nearly ordered.
 
 - No time ruler beside the overview stripe, and no time slider: the range is typed or set from the caret.
 - The time range is not remembered across sessions with the rest of the filter.
-
-- "View as Log" and the active filter are not remembered across sessions.
 - The level filter, pattern filter, hide filter and clear filter commands have no default keys.
 - The hide pattern's matches are not highlighted (only the show pattern's are).

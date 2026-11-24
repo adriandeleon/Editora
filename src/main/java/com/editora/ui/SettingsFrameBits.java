@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.util.Collection;
 import java.util.Map;
 
 import javafx.geometry.Pos;
@@ -43,7 +44,7 @@ final class SettingsFrameBits {
             Map.entry("AGENT", "ai"),
             Map.entry("AI", "ai"),
             Map.entry("LSP", "lsp"),
-            Map.entry("DEBUG", "run-debug"),
+            Map.entry("DEBUG", "debugging"),
             Map.entry("MARKDOWN", "markdown"),
             Map.entry("MERMAID", "markdown#mermaid-diagrams"),
             Map.entry("DIAGRAMS", "diagrams"),
@@ -69,6 +70,11 @@ final class SettingsFrameBits {
     static String helpUrl(String category) {
         String page = DOCS.get(category);
         return AppInfo.docsUrl() + (page == null ? "" : "/" + page);
+    }
+
+    /** Every docs page (and anchor) a Settings page links, for the test that holds them to the user guide. */
+    static Collection<String> docsPages() {
+        return DOCS.values();
     }
 
     /** The sidebar's badges for a page: its modified-row count (none at 0) and the Beta pill; null for neither. */

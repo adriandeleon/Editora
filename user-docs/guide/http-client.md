@@ -362,7 +362,7 @@ sends the request.
 
 **HTTP: Debug Request at Caret** (`http.debugRequest`) sends the request at the
 caret with its pre-request scripts and response handlers under the
-[JavaScript debugger](/docs/run-debug#debugging). It is also **Debug Request** in
+[JavaScript debugger](/docs/debugging). It is also **Debug Request** in
 a `.http` file's right-click menu, and what Debug does in a `.http` file. A
 script stops at its breakpoints with the call stack, variables, watches and
 stepping of any JavaScript session. When you continue, the request goes on.
@@ -371,7 +371,7 @@ stepping of any JavaScript session. When you continue, the request goes on.
   or in a `./check.js` script file. Elsewhere in a `.http` file there is
   nothing to stop at, so no breakpoint is set there.
 - It needs JavaScript debugging, as for a `.js` file:
-  [install vscode-js-debug](/docs/run-debug#installing-adapters), and keep
+  [install vscode-js-debug](/docs/debugging#installing-adapters), and keep
   **Enable debugging (DAP)** on in **Settings → Debugging** (it is on by default).
 - A paused script is not stopped by the script timeout. If the debugger hasn't
   attached after 30 seconds, the script is stopped.
@@ -431,7 +431,7 @@ chosen by an earlier response or a script.
 **Settings → Web** turns scripts off, picks the Node.js to use and sets the
 timeout. Left empty, scripts run on the same Node.js as Run: a project's
 `.nvmrc` or `.node-version`, then the **Node.js** setting, then `node` on the
-`PATH` (see [Which Node.js runs](/docs/run-debug#nodejs-scripts)). A Detected line
+`PATH` (see [Which Node.js runs](/docs/javascript-typescript#running-nodejs-scripts)). A Detected line
 under **Node.js for HTTP scripts** says whether that node is there (*node: found
 (/usr/bin/node)* or *node: not found*), and the script rows are greyed out while
 the HTTP client or its scripts are off. The

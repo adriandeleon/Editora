@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   JSON `time`/`ts` fields, also as epoch numbers). **Log: Go to Time…** jumps to the first line written at or after a
   time, **Log: Filter by Time…** shows the records between two times (`10:05 - 10:20`), and **Show From/Up To Caret
   Line** set one end from the line at the caret. The control bar shows the range.
+- **Logs open the way you left them.** A log remembers its level floor and its show and hide patterns, and a file's
+  **View as Log** choice is kept too (also turning off a file recognised as a log by its lines), so the next session
+  opens it filtered as before.
 - **Hide records in the log viewer.** The log control bar has a second field, for the records to hide: a record whose
   first line matches is hidden with its stack trace, and any other matching line on its own, so `at org.springframework`
   shortens traces and `HealthCheck` drops the health checks. **Aa** makes both patterns match case, the show pattern's

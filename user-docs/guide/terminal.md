@@ -430,7 +430,7 @@ a real terminal, which the Run and Debug consoles are not. For those:
   card of **Settings → Debugging**, does the same for a Java, Python or
   JavaScript program you debug. It needs **Run the debugged program in the
   Debug console (program input)**, beside it, on as well (see
-  [Program input](/docs/run-debug#program-input-in-the-debug-console)). The
+  [Program input](/docs/debugging#program-input-in-the-debug-console)). The
   Debug console's first line names the tab the program runs in.
 
 The program runs where its configuration or file runs: on this computer, on
