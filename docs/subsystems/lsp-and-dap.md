@@ -1608,6 +1608,25 @@ refusal (`JsLaunch.launchProblemKey`) now waits for the plan: only plain Node ru
 (`NodeDebugConfigs.nodeRuns`), so Jest, Vitest and Deno debug them. `JsTestRunnerProbeFxTest` installs each runner with
 npm and debugs the caret's test alone.
 
+**Electron.** [`run/ElectronApps`](../../src/main/java/com/editora/run/ElectronApps.java) (pure) finds the app a
+main-process file starts: the nearest `package.json` names `electron` (dependencies, devDependencies or optional), the
+file is its `main` (else `index.js`) or loads `electron` (`require`, `import … from`, `import()`), and Electron is
+installed (`node_modules/electron/path.txt`, in the package's `node_modules` or one above, names the program under
+`dist/`). Electron 45 downloads that program on its first start, not on `npm install`: an app whose package is installed
+(`node_modules/electron/package.json`) but whose `path.txt` is not written yet is still the app, with no program, and
+F5 and Run File say to run `npx install-electron` (`status.run.electronNotDownloaded`) rather than run Electron's
+installer themselves. A page's script, a build script, a test file and a file under `node_modules` are not the app's start. F5
+([`ui/ElectronDebugLaunch`](../../src/main/java/com/editora/ui/ElectronDebugLaunch.java), looked for off the FX
+thread first in `debugJsFile`; a Node test run is never Electron) builds VS Code's Electron recipe in memory — "Electron:
+Main", a `pwa-node` launch with Electron's program as `runtimeExecutable` and `--remote-debugging-port=<free port> .`
+(then the file's program arguments) as `runtimeArgs`, `outputCapture: std`; "Electron: Renderer", a `pwa-chrome`
+attach to that port with the app's folder as `webRoot` and a 30 s `timeout` — and runs them as a compound with
+`stopAll` through `runLaunchCompound`, so each is a session of its own and Debug ▸ Stop ends both and the app. js-debug
+treats `electron` as a Node runtime for the main process; Chromium switches (`--ozone-platform=headless --no-sandbox`
+in the probe) are read anywhere on the command line. Run File (`RunCoordinator.planNode`) runs `electron .` in the
+app's folder. `ElectronDebugProbeFxTest` (opt-in) drives a headless Electron 45: a stop in the main process, then in
+the window's script, Stop leaving no Electron, and Run File.
+
 **Deno.** A JS/TS file of a Deno project — [`run/DenoRun`](../../src/main/java/com/editora/run/DenoRun.java):
 the nearest folder above it with a `deno.json(c)`, before any with a `package.json`, inside the project (a loose
 file: up to eight folders, not past home) — is planned by `NodeRunLauncher.denoReady` instead of `NodeRunPlan`,
