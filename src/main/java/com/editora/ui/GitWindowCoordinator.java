@@ -222,7 +222,7 @@ final class GitWindowCoordinator {
      */
     static final int LOG_RELOAD_LIMIT = 5_000;
 
-    /** The refs fingerprint read when the log on screen was loaded; empty until known. */
+    /** The refs fingerprint read just before the log on screen was read; empty until known, or when it failed. */
     private String gitLogRefs = "";
 
     /** The page size in use; a field so a test can page through a handful of commits. */
@@ -295,7 +295,7 @@ final class GitWindowCoordinator {
 
     /**
      * What choosing a remote-tracking branch in the dropdown does. {@code kind}: switch to local branch
-     * {@code name} (it tracks this very remote branch); create a local branch that tracks it ({@code name} is
+     * {@code name} (it tracks this very remote branch, whatever its name); create a local branch that tracks it ({@code name} is
      * git's own choice, the remote branch's name); or ask for a name, {@code name} the suggestion — a local
      * branch of the remote branch's name exists but tracks something else, or nothing.
      */
@@ -309,9 +309,11 @@ final class GitWindowCoordinator {
 
     /**
      * Decides {@link RemoteCheckout} for {@code remoteBranch}: split at the longest known remote name (a remote
-     * may itself hold a slash), then the local branch of the rest is reused only when its upstream is this remote
-     * branch — {@code upstream/feature} never switches to a {@code feature} that tracks {@code origin/feature}.
-     * The suggested name is {@code <remote>-<branch>}. Pure.
+     * may itself hold a slash), then any local branch whose upstream is this remote branch is switched to — the
+     * one of the same name first, so {@code origin/feature} reaches a {@code my-feature} that tracks it. A local
+     * branch is never reused for its name alone: {@code upstream/feature} never switches to a {@code feature} that
+     * tracks {@code origin/feature}; with no tracking branch and that name taken, the user is asked for a name,
+     * {@code <remote>-<branch>} suggested. Pure.
      */
     static RemoteCheckout remoteCheckout(
             String remoteBranch, List<com.editora.git.GitService.BranchInfo> local, List<String> remoteNames) {
@@ -319,21 +321,29 @@ final class GitWindowCoordinator {
         if (split == null) {
             return new RemoteCheckout(RemoteCheckout.Kind.TRACK, "");
         }
+        com.editora.git.GitService.BranchInfo tracking = null;
+        boolean nameTaken = false;
         for (com.editora.git.GitService.BranchInfo b : local) {
-            if (b.name().equals(split.branch())) {
-                return remoteBranch.equals(b.upstream())
-                        ? new RemoteCheckout(RemoteCheckout.Kind.SWITCH, b.name())
-                        : new RemoteCheckout(RemoteCheckout.Kind.ASK, split.remote() + "-" + split.branch());
+            boolean sameName = b.name().equals(split.branch());
+            nameTaken |= sameName;
+            if (remoteBranch.equals(b.upstream()) && (tracking == null || sameName)) {
+                tracking = b; // the same-named one first, else the first local branch that tracks it
             }
         }
-        return new RemoteCheckout(RemoteCheckout.Kind.TRACK, split.branch());
+        if (tracking != null) {
+            return new RemoteCheckout(RemoteCheckout.Kind.SWITCH, tracking.name());
+        }
+        return nameTaken
+                ? new RemoteCheckout(RemoteCheckout.Kind.ASK, split.remote() + "-" + split.branch())
+                : new RemoteCheckout(RemoteCheckout.Kind.TRACK, split.branch());
     }
 
     /** A remote-tracking row of the dropdown was chosen: see {@link #remoteCheckout}. */
     private void checkoutRemoteRow(Path root, String remote, com.editora.git.GitService.Branches branches) {
         RemoteCheckout choice = remoteCheckout(remote, branches.local(), branches.remoteNames());
         switch (choice.kind()) {
-            case SWITCH -> host.git().checkoutBranch(choice.name());
+            case SWITCH ->
+                inRoot(root, () -> host.git().checkoutBranch(choice.name())).run();
             case TRACK ->
                 GitLeaveDetachedHead.thenMove(
                         host.git(),
@@ -960,23 +970,37 @@ final class GitWindowCoordinator {
         });
         gitLogLoading = true;
         gitLogRefs = "";
+        // The refs are read BEFORE the page, not beside it: the two run on different lanes, and a fingerprint
+        // read after a commit that the page missed would tell gitMutated the rows are current. Read first, it
+        // describes the rows' state or an older one, and an older one only costs a reload.
+        host.git().service().cancelHistoryRead(); // the listing this one replaces is of no use any more
         host.git().service().refsFingerprint(root, refs -> {
-            if (generation == gitLogGeneration) {
-                gitLogRefs = refs;
-            }
-        });
-        host.git().service().logPage(root, request, page -> {
             if (generation != gitLogGeneration) {
                 return;
             }
-            if (searchedFile && page.error().isEmpty() && !page.entries().isEmpty()) {
-                searchFileHistory(root, page, query, all, generation, listing, view);
-                return;
-            }
-            gitLogLoading = false;
-            gitLogListing = listing;
-            host.gitLogPanel().setLog(page, view);
+            host.git().service().logPage(root, request, page -> {
+                if (generation != gitLogGeneration) {
+                    return;
+                }
+                if (searchedFile && page.error().isEmpty() && !page.entries().isEmpty()) {
+                    searchFileHistory(root, page, query, all, generation, listing, view, refs);
+                    return;
+                }
+                gitLogLoading = false;
+                gitLogListing = listing;
+                gitLogRefs = refsAfterLoad(refs, page);
+                host.gitLogPanel().setLog(page, view);
+            });
         });
+    }
+
+    /**
+     * The refs fingerprint kept for a log that has just loaded: the one read before its page, or none when the
+     * page failed — the rows on screen are then an error, and the next Git command must read the log again
+     * whether or not it moved a ref. Pure.
+     */
+    static String refsAfterLoad(String fingerprintBefore, com.editora.git.GitLog.Page page) {
+        return page.error().isEmpty() ? fingerprintBefore : "";
     }
 
     /**
@@ -993,7 +1017,8 @@ final class GitWindowCoordinator {
             boolean all,
             long generation,
             Object listing,
-            GitLogPanel.View view) {
+            GitLogPanel.View view,
+            String refs) {
         com.editora.git.GitLog.Request search = new com.editora.git.GitLog.Request(
                 all, null, query.withoutPaths(), com.editora.git.GitLog.followedPaths(history), 0, LOG_RELOAD_LIMIT);
         host.git().service().logPage(root, search, found -> {
@@ -1002,7 +1027,9 @@ final class GitWindowCoordinator {
             }
             gitLogLoading = false;
             gitLogListing = listing;
-            host.gitLogPanel().setLog(searchedHistory(history, found), view);
+            com.editora.git.GitLog.Page shown = searchedHistory(history, found);
+            gitLogRefs = refsAfterLoad(refs, shown);
+            host.gitLogPanel().setLog(shown, view);
         });
     }
 

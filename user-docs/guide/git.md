@@ -253,9 +253,10 @@ Branch, Pull, Fetch, Push, and the like), then **Local** branches with the
 current one first, then **Remote** branches, grouped by remote when there are
 several. It opens with the current branch selected (with a detached HEAD, or
 **Local** folded, nothing that Enter would run is selected). Clicking a row
-checks the branch out. Choosing a remote branch switches to the local branch
-that tracks it; when a local branch of that name tracks something else, it asks
-for a name for a new tracking branch instead. A row's `⋯` button, a
+checks the branch out. Choosing a remote branch switches to a local branch
+that tracks it, whatever that branch is called; when none does and a local
+branch of that name tracks something else, it asks for a name for a new
+tracking branch instead. A row's `⋯` button, a
 right-click, or the Menu key opens its actions; the same actions are in the
 palette and under **Git ▸ Branches**.
 
@@ -291,7 +292,8 @@ you push it. Merging and rebasing carry uncommitted changes across with
 stash and the conflicts appear in the Commit window. Checking out a tag or a
 commit reports the detached HEAD. Leaving a detached HEAD that has commits no
 branch or tag holds — by switching branch, checking out a revision, a tag, or a
-remote branch, or making a new branch and switching to it — asks first, since
+remote branch, making a new branch and switching to it, or turning a stash into
+a branch — asks first, since
 afterwards only the reflog leads to them.
 
 ## Remotes and worktrees
