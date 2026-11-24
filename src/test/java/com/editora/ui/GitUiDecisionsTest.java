@@ -143,6 +143,33 @@ class GitUiDecisionsTest {
         assertEquals("", GitWindowCoordinator.refsAfterLoad("", com.editora.git.GitLog.Page.EMPTY));
     }
 
+    /** R4-B1: a stage or unstage during a long log read does not restart it while the refs it read still hold. */
+    @Test
+    void aCommandDuringALoadComparesAgainstTheLoadsOwnRefs() {
+        String refs = "HEAD=refs/heads/main\nabc HEAD\n";
+        assertEquals(
+                GitWindowCoordinator.MutationCheck.COMPARE,
+                GitWindowCoordinator.mutationCheck(true, true, refs, ""),
+                "the rows on screen have no fingerprint yet, the load in flight has one");
+        assertEquals(
+                GitWindowCoordinator.MutationCheck.WAIT,
+                GitWindowCoordinator.mutationCheck(true, true, null, ""),
+                "its refs may have been read before the command ended: wait for them, do not cancel the read");
+        assertEquals(
+                GitWindowCoordinator.MutationCheck.RELOAD,
+                GitWindowCoordinator.mutationCheck(true, true, "", refs),
+                "the load could not read its refs");
+        assertEquals(
+                GitWindowCoordinator.MutationCheck.COMPARE,
+                GitWindowCoordinator.mutationCheck(true, false, null, refs));
+        assertEquals(
+                GitWindowCoordinator.MutationCheck.RELOAD, GitWindowCoordinator.mutationCheck(true, false, null, ""));
+        assertEquals(
+                GitWindowCoordinator.MutationCheck.RELOAD,
+                GitWindowCoordinator.mutationCheck(false, true, refs, refs),
+                "another repository is always read again");
+    }
+
     @Test
     void fetchPrunes() {
         assertEquals(
