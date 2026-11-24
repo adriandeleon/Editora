@@ -27,6 +27,11 @@ final class WindowServicesHost implements CoordinatorHost {
     }
 
     @Override
+    public com.editora.config.WorkspaceState workspaceState() {
+        return mc.config.getWorkspaceState();
+    }
+
+    @Override
     public long fileSize(Path file) {
         return FileWorkflowCoordinator.fileSize(file);
     }

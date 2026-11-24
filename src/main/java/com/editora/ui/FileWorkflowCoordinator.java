@@ -1548,6 +1548,7 @@ final class FileWorkflowCoordinator {
         } else if (!load.truncated()) {
             host.logViewer().sniffLoaded(buffer, load.content()); // a log its name does not announce
         }
+        host.logViewer().restoreView(buffer); // View as Log, level floor and filter from the last session
         String forgotten = applyChosenEncoding(buffer, load);
         applyViewFirst(buffer, load, text.length());
         if (!load.truncated() && load.file() != null && load.file().getFileName() != null) {
