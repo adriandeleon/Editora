@@ -1147,6 +1147,7 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of("log.showUpToCaret", () -> host.logViewer().timeRangeAtCaret(false)));
         host.registry().register(Command.of("log.clearTimeRange", host.logViewer()::clearTimeRange));
+        host.registry().register(Command.of("log.openStream", host.logViewer()::openLogStream));
         host.registry().register(Command.of("log.nextError", host.logViewer()::jumpToNextError));
         host.registry().register(Command.of("log.previousError", host.logViewer()::jumpToPreviousError));
         host.registry().register(Command.of("view.toggleLogViewer", host.logViewer()::toggleViewer));

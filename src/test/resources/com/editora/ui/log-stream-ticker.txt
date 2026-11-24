@@ -1,0 +1,9 @@
+// A program LogViewerCoordinatorFxTest runs as a log stream: one log line every 40 ms, forever (the test stops it).
+class Ticker {
+    public static void main(String[] args) throws Exception {
+        for (int i = 0; ; i++) {
+            System.out.println("2026-11-24 10:00:00 INFO tick " + i);
+            Thread.sleep(40);
+        }
+    }
+}

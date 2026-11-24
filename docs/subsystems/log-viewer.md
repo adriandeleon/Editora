@@ -97,6 +97,15 @@ does not keep a line with no time known. The control bar has no field for the ra
 `query()`, so typing a pattern does not drop it. `LogTimes.firstAtOrAfter` reads from the top: logs
 are only nearly ordered.
 
+**A stream is a tab without a file.** `LogViewerCoordinator.startStream` builds the command from a
+`LogStreamSource` (the typed text, shell words except for SSH's `host:/path`, whose path is quoted for
+the remote shell), opens an untitled read-only buffer forced into log mode and feeds it through
+`appendLogText`, as a follow does. `LogStream` reads stdout and stderr line by line on two daemon
+threads (a line is never split between them) and drains to the FX thread in coalesced batches.
+Follow off pauses delivery, not the command; the held text is capped at `LogView.FOLLOW_CAP`. Closing
+the tab (`onBufferClosed`) and `shutdown` stop the command. COMMAND and JOURNAL run on
+`ExecTargets.forPath(projectRoot)`; CONTAINER, KUBERNETES and SSH_FILE are clients on this machine.
+
 **A `.gz` file opens decompressed and read-only.** `FileWorkflowCoordinator.prepareGzip` reads it
 through `io/GzipText` (at most `EditorBuffer.LARGE_FILE_BYTES`; a log keeps its end, from a line
 start, anything else its start) and marks the load `truncated`, which makes the tab read-only and
@@ -108,6 +117,8 @@ that is not gzip after all falls back to the plain read.
 
 - No time ruler beside the overview stripe, and no time slider: the range is typed or set from the caret.
 - The time range is not remembered across sessions with the rest of the filter.
+- A stream that ended cannot be restarted in place (it would repeat its last 1000 lines); open it again.
+- Streams are not reopened with the session.
 - Archives (`.zip`, `.tar`, `.tar.gz`) have no entry picker; only single-file gzip opens.
 - The level filter, pattern filter, hide filter and clear filter commands have no default keys.
 - The hide pattern's matches are not highlighted (only the show pattern's are).

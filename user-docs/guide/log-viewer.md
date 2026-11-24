@@ -127,6 +127,29 @@ lines are dropped and the control bar notes *older lines dropped*.
 A tab that has dropped lines holds only the end of the log, so Editora refuses to
 save it: saving would truncate the file on disk.
 
+## Live logs from other places
+
+**Log: Open Log Stream…** (`log.openStream`) shows a log that a command
+prints as it grows, in a new read-only tab with the log viewer's level colors,
+filters and Follow. Pick where it comes from:
+
+| Source | What runs | What you type |
+| --- | --- | --- |
+| Container… | `docker logs -f --tail 1000` (or the container engine set in Settings) | a running container, picked from a list |
+| Kubernetes… | `kubectl logs -f --tail=1000` | `pod/name`, `deploy/api -n shop` |
+| systemd Unit… | `journalctl -f -n 1000 -o short-iso -u` | `nginx` |
+| File over SSH… | `ssh host tail -n 1000 -F path` | `user@host:/var/log/app.log` |
+| Command… | the command you type | `docker compose logs -f api` |
+
+Each one starts with the last 1000 lines. A command and a systemd unit run where
+the project's tools run, which is the server for a remote project; the others
+run on this computer. File over SSH uses your system's `ssh` with
+`BatchMode=yes`, so it needs a key or agent, not a password.
+
+Follow off pauses the tab: the command keeps running and its new lines wait
+(up to 12 MB) until you follow again. Closing the tab stops the command. When
+the command ends, the status bar says so with its exit code.
+
 ## Live filtering
 
 Filter as you type by a **level floor**, a pattern of records to **show** and a
@@ -224,6 +247,7 @@ The keys are F8 and Shift+F8, F2 and Shift+F2 in the IntelliJ keymaps, and
 | Filter by time range | `log.setTimeRange` | |
 | Show from / up to the caret line's time | `log.showFromCaret` / `log.showUpToCaret` | |
 | Clear the time range | `log.clearTimeRange` | |
+| Open a live log from a container, pod, unit, SSH or a command | `log.openStream` | |
 | Next / previous line at warning level or higher (**Log: Next Warning or Error**, **Log: Previous Warning or Error**) | `log.nextError` / `log.previousError` | Next / Previous Problem |
 | Show the file as a log, or stop (toggle) | `log.viewAsLog` |
 | Enable/disable the feature | `view.toggleLogViewer` |

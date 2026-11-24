@@ -4,10 +4,13 @@ Performance is a first-class constraint in Editora, not an afterthought. The edi
 responsive on large files, and the UI thread is sacred. This page is the contract every change
 on a hot path must honor.
 
-**Assess and report the cost of every change.** For any implementation or fix, evaluate its
-effect on the hot paths (allocation per keystroke/scroll, added FX-thread work, extra
-layout/CSS passes, memory) and say so in the PR — even if it's "negligible". If a change risks
-a regression, measure it (e.g. temporary `System.nanoTime` instrumentation) rather than guess.
+**No change may make Editora slower.** Every feature and fix is checked for its effect on the hot
+paths (allocation per keystroke/scroll, added FX-thread work, extra layout/CSS passes and frames,
+memory per tab, startup, idle work) and the pull request says what it found — measured, not
+guessed, whenever the change is on a hot path. Three layers enforce it, described under
+[Per-change check](#per-change-check): a count-based budget test in every CI run, an A/B
+measurement by the author for a change on a hot path, and a nightly A/B of master against the
+last release.
 
 ## The hot paths
 
@@ -1000,6 +1003,74 @@ What stays: every store is still re-serialized once at load for the `StoreSync` 
 the canonical form of the store as loaded — the "nothing changed" check and the three-way merge compare
 against it — and a decoded-bytes baseline would change what a merge keeps of another writer's keys. That
 serialization runs on the prefetch thread for every store a launch reads.
+
+## Per-change check
+
+The November 2026 review found startup +48 %, heap per tab ×2 and rendered frames per keystroke +88 % against
+October. No single pull request did that: many small ones did, each "negligible", and the release-time A/B could
+only say *that* it happened, not which merge. So every change is checked as it is made, in three layers.
+
+### 1. The budget test, on every pull request
+
+`PerfBudgetFxTest` runs in CI's Linux suite like any FX test, about a minute. It asserts **counts**, which hold on any
+machine, never times:
+
+| Budget | What it catches |
+| --- | --- |
+| rendered frames per keystroke (2,000-line Java file, paced typing) | a listener that dirties the scene again, chained frames |
+| KB the FX thread allocates per keystroke | per-key work: a rescan, a copy of the text, a new overlay |
+| frames an idle, focused editor renders in 10 s | a timer or animation that repaints with nothing happening |
+| live heap and scene nodes per open tab | per-tab memory and scene-graph growth |
+| `EditorBuffer`s reachable, and pulse receivers registered, after closing every tab | leaks: a listener, a static cache, an `AnimationTimer` left running |
+
+Each budget is the value measured on master when it was set plus some 15–25 % of headroom (the measured range is in
+the comment beside it). The test prints every value as a `PERF-BUDGET` line. When it fails:
+
+- **Find what the change added** to that path. `-Dperf.budget.jfr=<directory>` records the typing window with JFR's
+  profile settings; `jfr print --events jdk.ObjectAllocationSample --stack-depth 64 <directory>/typing.jfr` shows
+  where the allocation goes.
+- **Raise a budget only with a reason**, in the same pull request, with the `perf-ab.sh` table for that mode (below)
+  in its description. A feature that genuinely needs more per key is a decision for the pull request's reviewer, not a
+  number nudged until CI is green.
+- **Lower a budget** after an improvement, to lock the gain in.
+
+Pulses are printed but not budgeted: RichTextFX's caret blink keeps a focused `CodeArea` pulsing at the display rate
+(a bare one does about 62 a second), so extra work does not show as extra pulses. Frames do.
+
+### 2. An A/B measurement, for a change on a hot path
+
+A change that touches typing, rendering, scrolling, highlighting, opening or saving files, Find, per-tab state,
+startup, or adds a listener, timer, poller or background task that runs while the user works, is measured against
+`origin/master` before the pull request is opened, with only the modes it can affect (one mode, 3 reps, is minutes,
+not the hour a full run takes):
+
+```
+PERF_MODES="typing:2000 idle" scripts/perf-ab.sh origin/master 3
+scripts/measure-startup.sh -n 7          # on both builds, when the change adds work at startup
+```
+
+| The change touches | Modes |
+| --- | --- |
+| keystrokes, the caret, overlays, the gutter, decorations | `typing:2000` (and `bare:2000` as the noise control) |
+| scrolling, layout of long files | `scroll:20000` |
+| highlighting, folding, Structure | `hl:79000` |
+| opening, loading, encodings, large-file guards | `open:20`, `memory:30` |
+| saving, Local History | `save` |
+| Find, search | `find:45` |
+| timers, watchers, pollers, background work | `idle` |
+
+The table goes in the pull request. A metric marked **▲** (more than 10 % worse, beyond the spread) is fixed before
+merging, or justified in the pull request; **▲?** is re-run with more reps first. A change on no hot path says so in
+one line ("no hot path touched") instead.
+
+### 3. The nightly A/B, on master
+
+`.github/workflows/perf-nightly.yml` runs `scripts/perf-ab.sh <newest v* tag> 3` on master every night at 02:41 UTC,
+on a runner of its own, and keeps one issue labelled `perf-regression` up to date: opened (or updated, with the new
+table) when a metric is ▲, closed when a night comes back clean. It measures time, which the budget test cannot, and
+catches what slipped past the first two layers within a day of the merge. A ▲ from a shared runner is confirmed
+locally (`PERF_MODES=<mode> scripts/perf-ab.sh v<previous> 5`) before it is chased. Run it on demand with
+`gh workflow run perf-nightly.yml [-f baseline=<ref>] [-f modes='typing:2000']`.
 
 ## Release A/B review
 

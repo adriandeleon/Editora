@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   JSON `time`/`ts` fields, also as epoch numbers). **Log: Go to Time…** jumps to the first line written at or after a
   time, **Log: Filter by Time…** shows the records between two times (`10:05 - 10:20`), and **Show From/Up To Caret
   Line** set one end from the line at the caret. The control bar shows the range.
+- **Live logs from containers, Kubernetes, systemd and SSH.** **Log: Open Log Stream…** opens a read-only log tab fed
+  by `docker logs -f`, `kubectl logs -f`, `journalctl -f -u`, `ssh host tail -F` or any command you type, with level
+  colors, filters and Follow (off pauses it). Closing the tab stops the command.
 - **Compressed logs open directly.** A `.gz` file such as logrotate's `app.log.2.gz` opens decompressed and read-only,
   in the log viewer when its name is a log's, so it can be filtered without unpacking it. A large one shows its last
   16 MB (a log) or first 16 MB.
