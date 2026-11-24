@@ -173,10 +173,9 @@ final class MainMenuBar {
             } else {
                 // JavaFX opens no menu without items, and the menu bar's skin counts only visible ones (a click on
                 // a title whose rows are all hidden does nothing): one blank, grayed row stands in until the first
-                // open replaces it with the real rows, before the popup is laid out, so it is never seen or read.
-                MenuItem standIn = new MenuItem();
-                standIn.setDisable(true);
-                menu.getItems().add(standIn);
+                // open replaces it with the real rows, before the popup is laid out, so it is never seen. It carries
+                // the menu's title so that anything reading the unopened menu still finds a named row.
+                menu.getItems().add(com.editora.editor.RowReasons.placeholder(new MenuItem(menu.getText())));
                 unbuilt.put(menu, spec);
             }
             // Recompute enablement as the menu opens, so it can never show a stale answer. The context
