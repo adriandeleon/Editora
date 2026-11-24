@@ -124,8 +124,8 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
      * changed line can never find a stale entry. What a paragraph object does not capture — the wrap width,
      * the font, the tab size, a gutter that grew a digit — is caught three ways: a different box size
      * ({@link Geometry#width}/{@code height}); {@link #refresh} and {@link #invalidateGeometry}, which drop
-     * everything; and one word re-measured per frame ({@link #stale}), since anything that moves the text
-     * inside its box moves it in every paragraph alike.
+     * everything; and where the text column sits in the box, looked at once per frame ({@link #stale}), since
+     * anything that moves the text inside its box moves it in every paragraph alike.
      */
     private final java.util.Map<Object, Geometry> geometry = new java.util.IdentityHashMap<>();
 
@@ -133,9 +133,9 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
 
     /**
      * One paragraph's squiggles; {@code rects} is empty when none of its words is flagged and eligible.
-     * {@code firstStart}/{@code firstEnd} are the columns of the word the first squiggle belongs to.
+     * {@code column} is how far right of the box's left edge the text column was when they were measured.
      */
-    private record Geometry(double width, double height, double[] rects, int firstStart, int firstEnd) {}
+    private record Geometry(double width, double height, double[] rects, double column) {}
 
     private static final double[] NO_RECTS = new double[0];
 
@@ -535,7 +535,7 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
                     Geometry known = geometry.get(area.getParagraph(p));
                     if (known != null && known.rects().length > 0) {
                         verified = true;
-                        if (stale(p, box, known)) {
+                        if (stale(box, known)) {
                             geometry.clear(); // the text moved inside its box: every paragraph's did
                         }
                     }
@@ -721,30 +721,25 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
         if (n < rects.length) {
             return java.util.Arrays.copyOf(rects, n); // a word could not be placed yet: do not remember that
         }
-        int base = hits.isEmpty() ? 0 : area.getAbsolutePosition(paragraph, 0);
-        geometry.put(
-                key,
-                new Geometry(
-                        box.getWidth(),
-                        box.getHeight(),
-                        rects,
-                        hits.isEmpty() ? 0 : hits.get(0)[0] - base,
-                        hits.isEmpty() ? 0 : hits.get(0)[1] - base));
+        geometry.put(key, new Geometry(box.getWidth(), box.getHeight(), rects, columnIn(box)));
         return rects;
     }
 
     /**
-     * Whether the remembered position of {@code known}'s first word is no longer where the layout puts it.
-     * One layout query a frame, against one per squiggle: it catches what neither the paragraph object nor
-     * its box size shows, such as a line-number gutter that grew a digit and pushed the text right.
+     * Whether the text column is no longer where it was in {@code box} when {@code known} was measured: it
+     * catches what neither the paragraph object nor its box size shows, such as a line-number gutter that grew a
+     * digit and pushed the text right. A look at where the text flow is, shared with the other overlays this
+     * frame; it used to re-measure the first squiggled word, a RichTextFX character-bounds query that adds a shape
+     * to the text flow and takes it off again, and so cost the next frame on every keystroke.
      */
-    private boolean stale(int paragraph, Bounds box, Geometry known) {
-        int base = area.getAbsolutePosition(paragraph, 0);
-        Bounds now = area.getCharacterBoundsOnScreen(base + known.firstStart(), base + known.firstEnd())
-                .orElse(null);
-        return now == null
-                || Math.abs(now.getMinX() - box.getMinX() - known.rects()[0]) > 0.5
-                || Math.abs(now.getMaxY() - box.getMinY() - known.rects()[2]) > 0.5;
+    private boolean stale(Bounds box, Geometry known) {
+        double now = columnIn(box);
+        return Double.isNaN(now) || Double.isNaN(known.column()) || Math.abs(now - known.column()) > 0.5;
+    }
+
+    /** How far right of {@code box}'s left edge the text column is now (NaN: no text laid out). */
+    private double columnIn(Bounds box) {
+        return afterLayout.textColumnOnScreen() - box.getMinX();
     }
 
     /** Adds each misspelled, eligible word in {@code paragraph} to {@code hits} as {@code {absStart, absEnd}}. */
