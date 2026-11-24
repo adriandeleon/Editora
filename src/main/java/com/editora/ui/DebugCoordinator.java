@@ -356,6 +356,16 @@ final class DebugCoordinator {
             new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
     private final Set<EditorBuffer> pendingPersist = new LinkedHashSet<>();
 
+    /**
+     * The other tabs' triggered breakpoints, looked at again once a shift made by typing settles rather than per
+     * newline (perf review 2026-11-23, D9): a shift changes no id, so nothing waits for another breakpoint than
+     * before; only the line a waiting breakpoint's tooltip names ("waits for Main.java:12") moves.
+     */
+    private final javafx.animation.PauseTransition triggersDebounce =
+            new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
+
+    private final Set<EditorBuffer> pendingTriggers = new LinkedHashSet<>();
+
     /** A breakpoint condition or log message the adapter could not evaluate, and what it said about it. */
     record EvaluationFailure(String expression, String message) {}
 
@@ -576,6 +586,11 @@ final class DebugCoordinator {
         this.lsp = lsp;
         this.ops = ops;
         persistDebounce.setOnFinished(e -> flushPendingPersist());
+        triggersDebounce.setOnFinished(e -> {
+            List<EditorBuffer> pending = List.copyOf(pendingTriggers);
+            pendingTriggers.clear();
+            pending.forEach(this::triggersChanged);
+        });
         setUp(sessions.focused());
         memberBreakpoints = new MemberBreakpointCommands(
                 host, ops, this::dap, this::allManagers, lspManager, () -> breakpointsMuted);
@@ -1227,6 +1242,8 @@ final class DebugCoordinator {
     /** Window close: the before-launch build must not outlive the window that started it. */
     void shutdown() {
         persistDebounce.stop();
+        triggersDebounce.stop();
+        pendingTriggers.clear();
         flushPendingPersist(); // a breakpoint moved by an edit in the last 300 ms is not lost with the window
         for (DebugSession session : sessions.all()) {
             shutdownBeforeLaunch(session);
@@ -1506,7 +1523,24 @@ final class DebugCoordinator {
                         resendLines(buffer); // a new breakpoint is unverified until the adapter answers for it
                     }
                 });
-        triggersChanged(buffer);
+        if (buffer.getBreakpointManager().isEditDriven()) {
+            scheduleTriggersChanged(buffer);
+        } else {
+            pendingTriggers.remove(buffer);
+            triggersChanged(buffer);
+        }
+    }
+
+    /**
+     * {@link #triggersChanged} for a shift made by typing: nothing when none of {@code buffer}'s breakpoints is one
+     * another can wait for (only a trigger has an id), else once typing settles (D9).
+     */
+    private void scheduleTriggersChanged(EditorBuffer buffer) {
+        if (!buffer.getBreakpointManager().anyWithId()) {
+            return;
+        }
+        pendingTriggers.add(buffer);
+        triggersDebounce.playFromStart();
     }
 
     /**
