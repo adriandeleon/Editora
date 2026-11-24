@@ -555,6 +555,16 @@ style-only change that still ended a succession — skips the draw and the snaps
 - Local History captures for a Git Rollback/Discard go through
   `HistoryCoordinator.captureAllBeforeOverwriteDurably`: every file is recorded first and the index is written
   and made durable once for the batch, not once per file.
+- A Local History publication of a big index (≥ 256 KiB) appends the changed files' rows to
+  `history/index.journal` and syncs one line instead of serializing, re-reading, hashing, writing and syncing the
+  whole index (`HistoryJournal`; a 7 MB index: ~81 ms → ~14 ms per save on the writer thread). The index is
+  written whole at most about every ten minutes (with the blob collection), at 1 MiB of journal and at quit. See
+  [config and migrations](subsystems/config-and-migrations.md).
+- The blob store's permission walk runs once per store (`blobs/.hardened`), and a permission is read before it is
+  changed, so neither a launch nor a collection rewrites the metadata of every body.
+- The Local History folder view merges only the keys under its folder (`HistoryQueries.mergedFolderRevisions`)
+  and looks at its files again at most every 2 s (`HistoryCoordinator.FOLDER_LOOK_SPACING_NANOS`), with one
+  trailing look; a restore from the listing lets the next look go at once.
 - The Markdown preview rebuilds only the **blocks that changed** (`MarkdownPreview`). The document is cut
   into its top-level blocks off the FX thread, each keyed by its exact source text (plus the link
   definitions it could use and the size/mtime of the local images it shows); a render keeps every node
