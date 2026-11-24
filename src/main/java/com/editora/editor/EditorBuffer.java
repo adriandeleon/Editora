@@ -560,6 +560,7 @@ public class EditorBuffer implements TabContent {
     private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area, this::documentText);
 
     private @Nullable LogHighlightOverlay logOverlay; // lazily attached on first activation — see logOverlay()
+    private com.editora.logviewer.@Nullable LogSources logSources; // a merged log's (Log: Merge Logs…)
     /** A log's WARN/ERROR overview over the scrollbar, attached with the log overlay — see logStripe(). */
     private com.editora.editor.logviewer.@Nullable LogStripe logStripe;
 
@@ -2064,6 +2065,11 @@ public class EditorBuffer implements TabContent {
                         @Override
                         public java.util.regex.@Nullable Pattern highlight() {
                             return logView.patterns().include();
+                        }
+
+                        @Override
+                        public int lineAt(int paragraph) {
+                            return logView.filtered() ? logView.lineNumberAt(paragraph) - 1 : paragraph;
                         }
                     }),
                     OverlayLayer.LOG);
@@ -3841,6 +3847,19 @@ public class EditorBuffer implements TabContent {
     /** Runs when the log view's counts, follow or trimmed state change (the log control shows them). */
     public void setOnLogStateChanged(Runnable listener) {
         logView.setOnStateChanged(listener);
+    }
+
+    /** Tags each line of a merged log with the log it came from (see {@code LogMerge}); null for none. */
+    public void setLogSources(com.editora.logviewer.@Nullable LogSources sources) {
+        logSources = sources;
+        if (sources != null || logOverlay != null) {
+            logOverlay().setSources(sources);
+        }
+    }
+
+    /** The sources of a merged log, or null. */
+    public com.editora.logviewer.@Nullable LogSources getLogSources() {
+        return logSources;
     }
 
     /** Appends {@code text} read from the file's tail (filtered when a filter is active); never dirties. */

@@ -122,7 +122,17 @@ keeps Save from writing text over the compressed bytes. `LogFileNames.isLog` loo
 (not `.tar.gz`), so `app.log.2.gz` is a log by name; `startFollow` refuses a compressed file. A file
 that is not gzip after all falls back to the plain read.
 
+**A merge is a merge of runs, not a sort.** `LogMerge` splits each file into records (a line with a
+`LogTimes` time plus the untimed lines after it) and repeatedly takes the earliest head record, the
+earlier file on a tie, so no file's own order changes. The text is left as it was; `LogSources`
+(the file of each line of the whole text) goes to `LogHighlightOverlay.setSources`, which paints a
+strip at the right edge and a name chip, mapping a filtered paragraph back through
+`LevelSource.lineAt`. `LogViewerCoordinator.mergeFiles` reads the files off the FX thread (gzip
+through `GzipText`, else the last `LARGE_FILE_BYTES` from a line start).
+
 ## Not done
+
+- A merged tab cannot follow its files: it is a snapshot (open a stream per file to watch them).
 
 - No time ruler beside the overview stripe, and no time slider: the range is typed or set from the caret.
 - The time range is not remembered across sessions with the rest of the filter.

@@ -166,6 +166,7 @@ class CommandSweepFxTest {
             "file.save", // of a buffer that has no file yet
             "file.saveAsAdmin", // likewise: without a path it is Save As
             "git.applyPatch",
+            "log.mergeLogs", // the log files to merge
             "markdown.insertImage", // of a saved Markdown file: the image chooser
             "notes.export",
             "preview.exportDocx",

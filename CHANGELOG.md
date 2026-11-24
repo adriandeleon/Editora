@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Merge logs by time.** **Log: Merge Logs…** opens two or more logs as one read-only log, their records in the order
+  they were written (stack traces stay with theirs, each file keeps its own order), each line tagged with its file's
+  colour and name.
 - **Test Results for more test runners.** Running a test file under Jest, Vitest, Deno, RSpec, Minitest (and
   `bin/rails test`), PHPUnit, ExUnit or `dart test` fills Test Results: each test passed, failed or skipped, a
   failure's message and stack, a row that opens the test where it failed. Rerun Failed and Rerun This Test run
