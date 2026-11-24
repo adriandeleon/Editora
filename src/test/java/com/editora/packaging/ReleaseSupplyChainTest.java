@@ -359,12 +359,24 @@ class ReleaseSupplyChainTest {
         assertTrue(subjects.find(), "the attestation step lost its `subject-path:` list");
         subjects.group(1).lines().map(String::trim).forEach(attested::add);
         List<String> released = new ArrayList<>();
-        Matcher globs = Pattern.compile("(?m)^    - pattern: '(.+)'$").matcher(read(REPO.resolve("jreleaser.yml")));
+        String config = read(REPO.resolve("jreleaser.yml"));
+        Matcher globs = Pattern.compile("(?m)^    - pattern: '(.+)'$").matcher(config);
         while (globs.find()) {
             released.add(globs.group(1));
         }
         assertFalse(released.isEmpty(), "found no `files.globs` in jreleaser.yml — the scan is broken");
-        assertEquals(released, attested, "every pattern JReleaser attaches must also be attested, and no other");
+        // A distribution's file (the Homebrew and winget packagers) is attached to the release too; its path
+        // names the version as a template, which the attestation's glob writes as `*`.
+        int globbed = released.size();
+        Matcher packaged = Pattern.compile("(?m)^      - path: '(.+)'$").matcher(config);
+        while (packaged.find()) {
+            released.add(packaged.group(1).replace("{{Env.EDITORA_BUILD_VERSION}}", "*"));
+        }
+        assertEquals(
+                globbed + 2,
+                released.size(),
+                "expected the Apple Silicon DMG and the MSI as jreleaser.yml's distribution artifacts");
+        assertEquals(released, attested, "every file JReleaser attaches must also be attested, and no other");
     }
 
     @Test

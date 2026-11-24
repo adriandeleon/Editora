@@ -4,6 +4,7 @@ import static lib.Assert.assertContains;
 import static lib.Assert.assertEquals;
 import static lib.Assert.assertMatches;
 import static lib.Assert.assertNotContains;
+import static lib.Assert.assertTrue;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -99,12 +100,19 @@ class CheckReleaseTest implements AutoCloseable {
     }
 
     @Test
-    void everyExpectedExtensionIsAttachedByJreleaser() throws IOException {
-        String globs = Files.readString(Repo.root().resolve("jreleaser.yml"));
+    void everyExpectedAssetIsAttachedByJreleaser() throws IOException {
+        // A file is attached by a `files.globs` pattern or as a distribution's artifact (the package managers').
+        // Each is matched by its last path segment: `*` and the version template stand for any name part.
+        String config = Files.readString(Repo.root().resolve("jreleaser.yml"));
+        var attached = Pattern.compile("(?m)^ +- (?:pattern|path): '(.+)'$").matcher(config).results()
+                .map(m -> m.group(1).replace("{{Env.EDITORA_BUILD_VERSION}}", "*"))
+                .map(glob -> glob.substring(glob.lastIndexOf('/') + 1))
+                .map(name -> Pattern.compile(Pattern.quote(name).replace("*", "\\E.*\\Q")))
+                .toList();
+        assertTrue(attached.size() > 2, "found no globs or distribution paths in jreleaser.yml — the scan is broken");
         for (String name : CheckRelease.expectedAssets("1.2.3", "1.2.3")) {
-            String extension = name.endsWith(".tar.gz") ? "tar.gz" : name.substring(name.lastIndexOf('.') + 1);
-            if (!globs.contains("." + extension)) {
-                throw new AssertionError("jreleaser.yml has no glob that would attach " + name);
+            if (attached.stream().noneMatch(p -> p.matcher(name).matches())) {
+                throw new AssertionError("jreleaser.yml attaches no file named like " + name);
             }
         }
     }
