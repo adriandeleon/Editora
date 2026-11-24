@@ -1034,6 +1034,13 @@ the comment beside it). The test prints every value as a `PERF-BUDGET` line. Whe
   number nudged until CI is green.
 - **Lower a budget** after an improvement, to lock the gain in.
 
+The allocation is read for the whole FX thread, and a CI shard runs hundreds of test classes in one JVM, so a window
+an earlier class left open would be charged to the keystroke (in November 2026 three of them, one laying out a
+Settings page on every pulse, made it 10–72 MB a key and failed the gate in whichever shard put it after them). Each
+test therefore first hides every window that is not its own; `other_windows_hidden` says how many. A run with a
+non-zero count and a value near its budget is worth a JFR look before blaming the change; the leaking classes are
+their own fix.
+
 Pulses are printed but not budgeted: RichTextFX's caret blink keeps a focused `CodeArea` pulsing at the display rate
 (a bare one does about 62 a second), so extra work does not show as extra pulses. Frames do.
 
