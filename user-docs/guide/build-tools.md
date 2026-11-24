@@ -558,6 +558,18 @@ file, which runs `node --test` (see
 [Node.js scripts](/docs/run-debug#nodejs-scripts)); its results can be rerun one
 test at a time or failed-only.
 
+**Run Test at Caret** (`test.runAtCaret`) also runs one test in the other test
+files Editora debugs at the caret, without the debugger: it runs the file as
+*Run File* does, narrowed to the test the caret is in (the whole file when the
+caret is in none). That is a Go test (`-test.run`), a Rust `#[test]` (its path,
+exactly), a Dart `test` or `group` (`dart test --plain-name`), a `node:test`
+test (`--test-name-pattern`, into Test Results), a Deno test, a Jest or Vitest
+test, an RSpec example (`rspec file:line`), a Minitest test (`bin/rails test
+file:line` in a Rails app, else `-n`), a PHPUnit test (`--filter`), an ExUnit
+test (`mix test file:line`) and a C# test (`dotnet test --filter`). Its output
+goes where *Run File*'s does: the Run console, or Test Results for `node:test`
+and Python.
+
 Tests in **nested classes** have their own icons: a method inside a JUnit
 `@Nested` class, or inside a static nested test class, gets a ▶, and so does
 the nested class itself. Run and Debug address the nested class as

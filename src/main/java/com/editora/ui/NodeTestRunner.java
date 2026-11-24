@@ -52,8 +52,21 @@ final class NodeTestRunner {
         start(file, List.of());
     }
 
+    /**
+     * Runs the tests of {@code file} that Node's {@code nodeFlags} pick ({@code --test-name-pattern …}): Run Test at
+     * Caret, into Test Results as Run File's run goes; Rerun runs the same.
+     */
+    void run(Path file, List<String> nodeFlags) {
+        startWith(file, nodeFlags, () -> run(file, nodeFlags));
+    }
+
     /** Runs the tests of {@code file} named {@code rowNames} (Test Results rows; empty = all). */
     private void start(Path file, List<String> rowNames) {
+        startWith(file, NodeTestNames.nodeFlags(rowNames), () -> start(file, rowNames));
+    }
+
+    /** Runs {@code file}'s tests with {@code nodeFlags}; {@code again} is what Rerun does. */
+    private void startWith(Path file, List<String> nodeFlags, Runnable again) {
         String label = file.getFileName().toString();
         NodeRunLauncher.plan(
                 new NodeRunLauncher.Spec(
@@ -62,14 +75,14 @@ final class NodeTestRunner {
                         "",
                         host.settings().getNodePath(),
                         List.of(),
-                        NodeTestNames.nodeFlags(rowNames),
+                        nodeFlags,
                         true,
                         Map.of(),
                         null),
-                ready -> launch(file, label, rowNames, ready));
+                ready -> launch(file, label, again, ready));
     }
 
-    private void launch(Path file, String label, List<String> rowNames, NodeRunLauncher.Ready ready) {
+    private void launch(Path file, String label, Runnable again, NodeRunLauncher.Ready ready) {
         if (ready.plan().error() != null) {
             host.setStatus(tr(ready.plan().error()));
             return;
@@ -137,7 +150,7 @@ final class NodeTestRunner {
                         ready.plan().env(),
                         file,
                         hooks,
-                        () -> start(file, rowNames),
+                        again,
                         () -> shown[0] = !launchFailed[0]
                                 && host.testRunCoordinator().startExternalRun(label, ready.dir(), driver(file)));
     }

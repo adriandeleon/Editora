@@ -238,31 +238,49 @@ public final class SshHosts {
      */
     private static List<Path> expand(Path home, Path sshDir, String pattern) {
         String p = pattern.startsWith("~/") ? home + pattern.substring(1) : pattern;
-        Path path = sshDir.resolve(p).normalize();
-        if (!p.matches(".*[*?\\[].*")) {
-            return List.of(path);
+        if (!isGlob(p)) {
+            return List.of(sshDir.resolve(p).normalize());
         }
-        // The deepest ancestor without a wildcard is walked, as deep as the pattern has parts below it.
-        Path root = path.getRoot() == null ? sshDir : path.getRoot();
+        // A wildcard is no legal path character on Windows, so the pattern is matched part by part: the parts before
+        // the first wildcard are the folder walked, as deep as the pattern has parts after them.
+        String[] parts = p.split("[/\\\\]+", -1);
         int fixed = 0;
-        for (Path part : path) {
-            if (part.toString().matches(".*[*?\\[].*")) {
-                break;
-            }
-            root = root.resolve(part);
+        while (fixed < parts.length && !isGlob(parts[fixed])) {
             fixed++;
         }
-        int depth = path.getNameCount() - fixed;
-        java.nio.file.PathMatcher matcher =
-                path.getFileSystem().getPathMatcher("glob:" + path.toString().replace("\\", "\\\\"));
-        try (var walk = Files.walk(root, depth)) {
-            return walk.filter(f -> f.getNameCount() == path.getNameCount() && matcher.matches(f))
+        String prefix = String.join("/", java.util.Arrays.asList(parts).subList(0, fixed));
+        Path root = fixed == 0
+                ? sshDir
+                : sshDir.resolve(prefix.isEmpty() ? "/" : prefix).normalize();
+        List<java.nio.file.PathMatcher> matchers = new java.util.ArrayList<>();
+        for (int i = fixed; i < parts.length; i++) {
+            matchers.add(root.getFileSystem().getPathMatcher("glob:" + parts[i]));
+        }
+        try (var walk = Files.walk(root, matchers.size())) {
+            return walk.filter(f -> matches(root.relativize(f), matchers))
                     .sorted()
                     .limit(MAX_WATCHED_FILES)
                     .toList();
         } catch (Exception unreadable) {
             return List.of();
         }
+    }
+
+    private static boolean isGlob(String s) {
+        return s.matches(".*[*?\\[].*");
+    }
+
+    /** Whether each part of {@code relative} matches its part of the pattern, and there are as many. */
+    private static boolean matches(Path relative, List<java.nio.file.PathMatcher> matchers) {
+        if (relative.toString().isEmpty() || relative.getNameCount() != matchers.size()) {
+            return false;
+        }
+        for (int i = 0; i < matchers.size(); i++) {
+            if (!matchers.get(i).matches(relative.getName(i))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static String readConfig() {

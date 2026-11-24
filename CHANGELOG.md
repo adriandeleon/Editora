@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Run Test at Caret everywhere Debug Test at Caret works.** In a Go, Rust, Dart, JavaScript/TypeScript (node:test,
+  Deno, Jest, Vitest), RSpec, Minitest, PHPUnit, ExUnit or C# test file, Run Test at Caret now runs the test at the
+  caret alone, without the debugger, as Run File runs the file: before, only Java and Python tests ran at the caret.
 - **Homebrew and winget packages** (Pauta REL-12, REL-13, REL-14). A release now writes a Homebrew cask, for
   `brew install --cask adriandeleon/tap/editora` on Apple Silicon Macs, and opens a winget pull request for
   `winget install AdrianDeLeon.Editora` on Windows. Both need the `PACKAGES_TOKEN` repository secret; without it a

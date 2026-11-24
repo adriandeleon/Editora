@@ -113,6 +113,11 @@ final class RunCoordinator {
             return false;
         }
 
+        /** As above, narrowed by Node's {@code nodeFlags} (Run Test at Caret's {@code --test-name-pattern}). */
+        default boolean runNodeTestFile(Path file, List<String> nodeFlags) {
+            return false;
+        }
+
         /** The Python interpreter picked for this window's project ("" = detect it). */
         default String pythonInterpreterChoice() {
             return "";
@@ -1147,7 +1152,8 @@ final class RunCoordinator {
             java.util.Map<String, String> env,
             @Nullable Path dir,
             Runnable again,
-            boolean configured) {}
+            boolean configured,
+            int testLine) {} // the 0-based line a Rust test file's run is narrowed to (Run Test at Caret), else -1
 
     /** A built program found for a {@link CompiledRun}, or why there is none ({@code problem}, said as it is). */
     private record Built(
@@ -1192,7 +1198,8 @@ final class RunCoordinator {
                     terminalRun = inTerminal;
                     runCompiledConfig(cfg, cwd, source, args, env, false);
                 },
-                true);
+                true,
+                -1);
         if (ScriptRunCommand.GO.equals(cfg.type())) {
             runGo(run);
         } else if (ScriptRunCommand.RUST.equals(cfg.type())) {
@@ -1212,6 +1219,11 @@ final class RunCoordinator {
      * only: the program is built into this machine's cache.
      */
     private void launchCompiledFile(String language, Path path, List<String> args) {
+        launchCompiledFile(language, path, args, -1);
+    }
+
+    /** As above; a Rust test file's run narrowed to the test at 0-based {@code testLine} (-1: every test). */
+    private void launchCompiledFile(String language, Path path, List<String> args, int testLine) {
         if (!com.editora.process.ExecTargets.runsHere(path)) {
             host.setStatus(tr("status.run.compiledFileRemote", path.getFileName()));
             return;
@@ -1226,10 +1238,11 @@ final class RunCoordinator {
                 () -> {
                     List<String> again = programArgs(ops.programArgs(source), null);
                     if (again != null) {
-                        launchCompiledFile(language, source, again);
+                        launchCompiledFile(language, source, again, testLine);
                     }
                 },
-                false);
+                false,
+                testLine);
         switch (language) {
             case ScriptRunCommand.GO -> runGo(run);
             case ScriptRunCommand.RUST -> runRust(run);
@@ -1492,8 +1505,8 @@ final class RunCoordinator {
                                             root.resolve("src").resolve("main.rs"))
                                     || java.nio.file.Files.isDirectory(
                                             root.resolve("src").resolve("bin"));
-                            // No caret picks a test: a test file runs all its tests.
-                            return com.editora.dap.RustLaunch.plan(root, source, text, -1, hasProgram);
+                            // Run File runs a test file's tests; Run Test at Caret the one at its line.
+                            return com.editora.dap.RustLaunch.plan(root, source, text, run.testLine(), hasProgram);
                         },
                         plan -> runRustPlanned(run, source, root, cargo, plan));
             });
@@ -3610,6 +3623,11 @@ final class RunCoordinator {
      * thread first.
      */
     private void planNode(Path path, @Nullable Path root, List<String> args) {
+        planNode(path, root, args, List.of());
+    }
+
+    /** As above, with {@code nodeArgs} for Node (a test's {@code --test-name-pattern}, Jest's names, Deno's filter). */
+    private void planNode(Path path, @Nullable Path root, List<String> args, List<String> nodeArgs) {
         com.editora.perf.OffFx.then("run-electron-plan", () -> ElectronDebugLaunch.appOf(path), a -> {
             java.util.Optional<com.editora.run.ElectronApps.App> app = a.value();
             String missing = app == null || app.isEmpty() ? null : ElectronDebugLaunch.notDownloaded(app.get());
@@ -3621,23 +3639,15 @@ final class RunCoordinator {
                 argv.addAll(com.editora.run.ElectronApps.args(0, args));
                 streamRun(path.getFileName().toString(), app.get().root(), argv, java.util.Map.of(), path);
             } else {
-                planNodeFile(path, root, args);
+                planNodeFile(path, root, args, nodeArgs);
             }
         });
     }
 
-    private void planNodeFile(Path path, @Nullable Path root, List<String> args) {
+    private void planNodeFile(Path path, @Nullable Path root, List<String> args, List<String> nodeArgs) {
         NodeRunLauncher.plan(
                 new NodeRunLauncher.Spec(
-                        path,
-                        root,
-                        "",
-                        host.settings().getNodePath(),
-                        args,
-                        List.of(),
-                        false,
-                        java.util.Map.of(),
-                        null),
+                        path, root, "", host.settings().getNodePath(), args, nodeArgs, false, java.util.Map.of(), null),
                 ready -> streamNode(path.getFileName().toString(), ready, path));
     }
 
@@ -4103,6 +4113,217 @@ final class RunCoordinator {
                 panel().setRuntime(NodeRunLauncher.withSource(version, source));
             }
         });
+    }
+
+    // --- Run Test at Caret, without the debugger -----------------------------------------------------------------
+
+    /**
+     * Run Test at Caret without the debugger, in a test file of a runner Debug Test at Caret debugs: the file run as Run
+     * File runs it, narrowed to the test at the caret (its whole file when the caret is in no test) — Go's test binary
+     * with {@code -test.run}, Cargo's with the test's path, {@code dart test --plain-name}, Node's
+     * {@code --test-name-pattern} (into Test Results, as Run File's node:test run goes), Deno's filter, Jest's and
+     * Vitest's names, {@code rspec file:line}, {@code bin/rails test file:line}, Minitest's {@code -n}, PHPUnit's
+     * {@code --filter}, {@code mix test file:line}, {@code dotnet test --filter}. False — nothing done — for any other
+     * file: Java, Kotlin and Groovy run theirs through the build tool, Python's through pytest.
+     */
+    boolean runTestAtCaret(@Nullable EditorBuffer b) {
+        Path path = b == null ? null : b.getPath();
+        if (b == null || path == null || !com.editora.process.ExecTargets.runsHere(path)) {
+            return false;
+        }
+        String language = b.getLanguage() == null ? "" : b.getLanguage();
+        String text = b.getContent();
+        int caret = DebugCoordinator.caretLine(b);
+        String name = String.valueOf(path.getFileName());
+        boolean handled = switch (language) {
+            case "go" -> com.editora.dap.GoLaunch.isTestFile(path);
+            case "rust" -> com.editora.dap.RustLaunch.testAt(text, caret) != null;
+            case "dart" -> com.editora.dap.DartTests.isTestFile(path);
+            case "ruby" -> com.editora.run.RubyApps.isSpec(name) || com.editora.run.RubyApps.isMinitest(name, text);
+            case "php" -> com.editora.run.PhpApps.isTestFile(name, text);
+            case "elixir" -> com.editora.run.ElixirRun.isTest(name);
+            case "csharp" -> com.editora.dap.DotnetTests.testAt(text, caret) != null;
+            default ->
+                "javascript".equals(com.editora.dap.DapServerRegistry.adapterLanguage(language))
+                        && com.editora.dap.JsLaunch.isTestFile(path);
+        };
+        if (!handled) {
+            return false;
+        }
+        if (consoleRunning() || deploying) {
+            beginRunRequest(); // says the Run is busy
+            return true;
+        }
+        saveThen(List.of(b), () -> {
+            if (beginRunRequest()) {
+                testAtCaret(language, path, text, caret);
+            }
+        });
+        return true;
+    }
+
+    private void testAtCaret(String language, Path path, String text, int caret) {
+        Path project = ops.projectRoot();
+        String label = path.getFileName() + ":" + (caret + 1);
+        switch (language) {
+            case "go" -> {
+                String test = com.editora.dap.GoLaunch.testAt(text, caret);
+                launchCompiledFile(
+                        ScriptRunCommand.GO,
+                        path,
+                        test == null ? List.of("-test.v") : List.of("-test.run", "^" + test + "$", "-test.v"));
+            }
+            case "rust" -> launchCompiledFile(ScriptRunCommand.RUST, path, List.of(), caret);
+            case "dart" -> runDartTestAtCaret(path, com.editora.dap.DartTests.at(text, caret), label);
+            case "ruby" ->
+                offFx(
+                        "run-ruby-test-plan",
+                        () -> com.editora.run.RubyApps.plan(
+                                path,
+                                text,
+                                List.of(),
+                                caret,
+                                com.editora.run.RubyTests.at(text, caret),
+                                project,
+                                RubyDebugLaunch.lookups()),
+                        plan -> streamRun(label, plan.cwd(), plan.command(), java.util.Map.of(), path));
+            case "php" -> {
+                String method = com.editora.run.PhpUnitTests.at(text, caret);
+                offFx(
+                        "run-php-test-plan",
+                        () -> com.editora.run.PhpApps.plan(
+                                path,
+                                text,
+                                List.of(),
+                                method == null ? null : com.editora.run.PhpUnitTests.filter(method),
+                                project,
+                                "php",
+                                PhpDebugLaunch.lookups()),
+                        plan -> {
+                            String missing = PhpDebugLaunch.missingMessage(plan);
+                            if (missing != null) {
+                                host.setStatus(missing);
+                            } else {
+                                streamRun(label, plan.cwd(), plan.command(), java.util.Map.of(), path);
+                            }
+                        });
+            }
+            case "elixir" ->
+                offFx(
+                        "run-elixir-test-plan",
+                        () -> com.editora.run.ElixirRun.plan(
+                                path,
+                                text,
+                                List.of(),
+                                caret,
+                                project,
+                                java.nio.file.Files::isRegularFile,
+                                ElixirDebugLaunch::read),
+                        plan -> {
+                            Path mix = plan.project();
+                            if (mix != null && !ops.trustBuild(mix, List.of(tr("dialog.trust.item.mix", "mix.exs")))) {
+                                return; // Mix compiles the project and its dependencies
+                            }
+                            streamRun(label, plan.cwd(), plan.command(), java.util.Map.of(), path);
+                        });
+            case "csharp" -> runCsharpTestAtCaret(path, com.editora.dap.DotnetTests.testAt(text, caret), label);
+            default -> runJsTestAtCaret(path, com.editora.dap.JsLaunch.testArgsAt(text, caret));
+        }
+    }
+
+    /**
+     * A JavaScript or TypeScript test file's test at the caret, as Run File runs the file: under Deno, Jest or Vitest
+     * by its name ({@code nodeArgs}), else under {@code node --test} into Test Results by its pattern.
+     */
+    private void runJsTestAtCaret(Path path, List<String> nodeArgs) {
+        Path root = ops.projectRoot();
+        com.editora.perf.OffFx.then(
+                "run-js-test-at-caret",
+                () -> com.editora.run.DenoRun.root(path, root).isPresent()
+                        || com.editora.run.JsTestRunner.find(path, root).isPresent(),
+                a -> {
+                    boolean runner = Boolean.TRUE.equals(a.value());
+                    if (runner || !ops.runNodeTestFile(path, nodeArgs)) {
+                        planNode(path, root, List.of(), runner ? nodeArgs : withTest(nodeArgs));
+                    }
+                });
+    }
+
+    /** {@code node --test} and {@code nodeArgs}: a test file run as tests when Test Results cannot take it. */
+    private static List<String> withTest(List<String> nodeArgs) {
+        List<String> out = new ArrayList<>(List.of("--test"));
+        out.addAll(nodeArgs);
+        return out;
+    }
+
+    /** A Dart test file's test or group at the caret ({@code target}; null: the file's) under {@code dart test}. */
+    private void runDartTestAtCaret(Path path, com.editora.dap.DartTests.@Nullable Target target, String label) {
+        offFx(
+                "run-dart-test-plan",
+                () -> {
+                    Path root = com.editora.run.DartRun.packageRoot(path, java.nio.file.Files::isRegularFile);
+                    String pubspec = root == null
+                            ? null
+                            : java.nio.file.Files.readString(root.resolve(com.editora.run.DartRun.PUBSPEC));
+                    return new DartRead(root, pubspec);
+                },
+                read -> {
+                    Path root = read.root();
+                    if (root != null
+                            && !ops.trustBuild(
+                                    root, List.of(tr("dialog.trust.item.pubspec", com.editora.run.DartRun.PUBSPEC)))) {
+                        return; // pub fetches the packages and runs their build hooks
+                    }
+                    boolean flutter = com.editora.run.DartRun.isFlutter(read.pubspec());
+                    com.editora.config.Settings s = host.settings();
+                    String tool = flutter
+                            ? (s.getFlutterDebugPath().isBlank() ? "flutter" : s.getFlutterDebugPath())
+                            : (s.getDartDebugPath().isBlank() ? "dart" : s.getDartDebugPath());
+                    Path cwd = root != null ? root : path.toAbsolutePath().getParent();
+                    List<String> argv = new ArrayList<>(List.of(
+                            tool,
+                            "test",
+                            root != null ? com.editora.run.DartRun.relativeTarget(root, path) : path.toString()));
+                    if (target != null) {
+                        argv.addAll(com.editora.dap.DartTests.toolArgs(target));
+                    }
+                    streamRun(label, cwd, argv, java.util.Map.of(), path);
+                });
+    }
+
+    /** A C# test at the caret ({@code target}) under {@code dotnet test --filter}, in its test project. */
+    private void runCsharpTestAtCaret(Path path, com.editora.dap.DotnetTests.@Nullable Target target, String label) {
+        if (target == null) {
+            return; // not reached: handled only with a test at the caret
+        }
+        offFx(
+                "run-csharp-test-plan",
+                () -> {
+                    Path project = com.editora.dap.DotnetLaunch.projectFile(path);
+                    String csproj = project == null ? null : java.nio.file.Files.readString(project);
+                    return project != null && com.editora.dap.DotnetTests.isTestProject(csproj)
+                            ? java.util.Optional.of(project)
+                            : java.util.Optional.<Path>empty();
+                },
+                found -> {
+                    if (found.isEmpty()) {
+                        host.setStatus(tr("status.testrunner.noTestAtCaret"));
+                        return;
+                    }
+                    Path project = found.get();
+                    Path root = project.toAbsolutePath().getParent();
+                    if (root == null
+                            || !ops.trustBuild(root, List.of(tr("dialog.trust.item.dotnet", project.getFileName())))) {
+                        return; // not trusted: nothing is built or run
+                    }
+                    List<String> argv = new ArrayList<>(List.of(
+                            "dotnet",
+                            "test",
+                            project.toString(),
+                            "--filter",
+                            com.editora.dap.DotnetTests.filter(target)));
+                    streamRun(label, root, argv, java.util.Map.of("DOTNET_NOLOGO", "1"), path);
+                });
     }
 
     /** Stops the currently running program (Run tool window Stop button / {@code run.stop} command). */
