@@ -69,17 +69,17 @@ class LogHighlightOverlayFxTest {
             o.setSources(new LogSources(List.of("api.log", "db.log"), new int[] {0, 1, 0}));
             return o;
         });
-        for (int i = 0; i < 5; i++) {
-            onFx(() -> {
+        // The repaint runs after a layout pass (AfterLayoutPaint): look until it has landed, one FX turn at a
+        // time, rather than assuming how many turns that takes in a JVM other tests have kept busy.
+        Color strip = Color.WHITE;
+        for (int turn = 0; turn < 500 && strip.getRed() > 0.9 && strip.getBlue() > 0.9; turn++) {
+            strip = onFx(() -> {
                 overlay.applyCss();
                 overlay.layout();
-                return null;
-            }); // a few pulses: layout, then the coalesced repaint after it
+                WritableImage image = overlay.snapshot(new SnapshotParameters(), null);
+                return image.getPixelReader().getColor((int) image.getWidth() - 2, 8);
+            });
         }
-        Color strip = onFx(() -> {
-            WritableImage image = overlay.snapshot(new SnapshotParameters(), null);
-            return image.getPixelReader().getColor((int) image.getWidth() - 2, 8);
-        });
         Color expected = LogHighlightOverlay.sourceColor(0);
         assertEquals(expected.getRed(), strip.getRed(), 0.08, "the first line's strip is api's colour: " + strip);
         assertEquals(expected.getBlue(), strip.getBlue(), 0.08);

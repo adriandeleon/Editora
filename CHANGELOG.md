@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Summary of a log.** **Log: Summarize** opens a Markdown report of the active log: its records per level, a
+  records-over-time table with warnings and errors and a bar per interval, the most frequent messages counted with
+  their numbers and ids masked, and the longest silences.
 - **Merge logs by time.** **Log: Merge Logs…** opens two or more logs as one read-only log, their records in the order
   they were written (stack traces stay with theirs, each file keeps its own order), each line tagged with its file's
   colour and name.

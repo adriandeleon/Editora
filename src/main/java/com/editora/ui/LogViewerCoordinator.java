@@ -390,6 +390,35 @@ final class LogViewerCoordinator {
         return stream == null ? 0 : stream.heldChars();
     }
 
+    // --- summary --------------------------------------------------------------------------------------
+
+    /** Opens a Markdown report of the active log: levels, records over time, repeated messages, silences. */
+    void summarize() {
+        ifLog(b -> {
+            String text = b.logFilterSource(); // the whole log, whatever a filter shows of it
+            String name = b.getPath() != null
+                    ? String.valueOf(b.getPath().getFileName())
+                    : b.getDisplayName() != null ? b.getDisplayName() : host.bufferBaseName(b);
+            LogTimes.Context context = LogTimes.Context.local();
+            host.setStatus(tr("status.log.summarizing"));
+            java.util.concurrent.CompletableFuture.supplyAsync(
+                            () -> LogSummaryReport.markdown(
+                                    com.editora.logviewer.LogSummary.of(text, context), name, context),
+                            filterExecutor)
+                    .whenComplete((markdown, failure) -> Platform.runLater(() -> {
+                        if (failure != null) {
+                            host.setStatus(tr("status.log.summaryFailed", String.valueOf(failure.getMessage())));
+                            return;
+                        }
+                        EditorBuffer report = new EditorBuffer();
+                        report.setDisplayName(tr("log.summary.fileName", name));
+                        report.setInitialContent(markdown);
+                        host.openTab(report);
+                        host.setStatus(tr("status.log.summarized", name));
+                    }));
+        });
+    }
+
     // --- merging --------------------------------------------------------------------------------------
 
     /** Asks for two or more log files and opens them merged by time in a new tab. */
