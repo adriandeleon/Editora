@@ -42,6 +42,12 @@ class LogViewerCoordinatorFxTest {
         String lastStatus;
         int requestSaveCount;
         int syncCount;
+        final com.editora.config.WorkspaceState workspace = new com.editora.config.WorkspaceState();
+
+        @Override
+        public com.editora.config.WorkspaceState workspaceState() {
+            return workspace;
+        }
 
         @Override
         public Settings settings() {
@@ -365,6 +371,76 @@ class LogViewerCoordinatorFxTest {
         assertFalse(FxTestSupport.callOnFx(plain::hasLogControl));
         assertFalse(FxTestSupport.callOnFx(plain::isLogFiltered), "a filter cannot outlive the control that clears it");
         assertTrue(FxTestSupport.callOnFx(plain::isEditable));
+    }
+
+    /** A buffer for {@code file} as the next session opens it: content in, then the remembered view back. */
+    private static EditorBuffer reopened(LogViewerCoordinator c, String file) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setPath(Path.of(file).toAbsolutePath());
+            b.setInitialContent(SAMPLE);
+            c.sniffLoaded(b, SAMPLE);
+            c.restoreView(b);
+            return b;
+        });
+    }
+
+    @Test
+    void aLogsLevelFloorAndFilterComeBackInTheNextSession() throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setLogViewer(true);
+        LogViewerCoordinator c = new LogViewerCoordinator(host);
+        EditorBuffer log = reopened(c, "app.log");
+        host.active = log;
+        assertTrue(host.workspace.getLogViews().isEmpty(), "an unfiltered log leaves nothing behind");
+
+        host.promptAnswer = "timed out";
+        FxTestSupport.runOnFx(c::setRegexFilter);
+        host.promptAnswer = "pool";
+        FxTestSupport.runOnFx(c::setHideFilter);
+        int saves = host.requestSaveCount;
+
+        EditorBuffer next = reopened(c, "app.log");
+        assertTrue(FxTestSupport.callOnFx(next::isLogFiltered));
+        assertEquals(
+                new com.editora.logviewer.LogQuery("timed out", "pool", false),
+                FxTestSupport.callOnFx(next::getLogQuery));
+        assertEquals(saves, host.requestSaveCount, "putting the view back does not save the session again");
+
+        FxTestSupport.runOnFx(c::clearFilter);
+        assertTrue(host.workspace.getLogViews().isEmpty(), "a cleared filter is forgotten");
+        EditorBuffer third = reopened(c, "app.log");
+        assertFalse(FxTestSupport.callOnFx(third::isLogFiltered));
+    }
+
+    @Test
+    void viewAsLogIsRememberedBothWays() throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setLogViewer(true);
+        LogViewerCoordinator c = new LogViewerCoordinator(host);
+
+        EditorBuffer notes = reopened(c, "notes.txt");
+        host.active = notes;
+        FxTestSupport.runOnFx(c::viewAsLog);
+        FxTestSupport.runOnFx(() -> notes.applyLogFilter(null, com.editora.logviewer.LogQuery.NONE));
+        assertTrue(FxTestSupport.callOnFx(reopened(c, "notes.txt")::isLog), "View as Log comes back");
+
+        EditorBuffer out = reopened(c, "server.out");
+        assertTrue(FxTestSupport.callOnFx(out::isLog), "sniffed from its lines");
+        host.active = out;
+        FxTestSupport.runOnFx(c::viewAsLog);
+        assertFalse(FxTestSupport.callOnFx(out::isLog));
+        assertFalse(
+                FxTestSupport.callOnFx(reopened(c, "server.out")::isLog),
+                "turned off, its lines do not make it a log again");
+
+        host.active = notes;
+        FxTestSupport.runOnFx(c::viewAsLog);
+        assertFalse(
+                host.workspace
+                        .getLogViews()
+                        .containsKey(Path.of("notes.txt").toAbsolutePath().toString()),
+                "a .txt turned back off is as a fresh open shows it: nothing to keep");
     }
 
     @Test
