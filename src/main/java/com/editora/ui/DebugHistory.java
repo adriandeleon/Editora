@@ -171,15 +171,22 @@ final class DebugHistory {
             return keys;
         }
 
+        /** Each frame's index by its key, built once: {@link #changed} asks every stop kept per Variables cell. */
+        private @Nullable Map<String, Integer> frameIndexes;
+
         /** The index of the frame with key {@code key} at this stop, or -1. */
         int frameIndex(String key) {
-            String[] keys = frameKeys();
-            for (int i = 0; i < keys.length; i++) {
-                if (keys[i].equals(key)) {
-                    return i;
+            Map<String, Integer> byKey = frameIndexes;
+            if (byKey == null) {
+                String[] keys = frameKeys();
+                byKey = HashMap.newHashMap(keys.length);
+                for (int i = 0; i < keys.length; i++) {
+                    byKey.putIfAbsent(keys[i], i); // the first, as a scan finds it
                 }
+                frameIndexes = byKey;
             }
-            return -1;
+            Integer i = byKey.get(key);
+            return i == null ? -1 : i;
         }
     }
 

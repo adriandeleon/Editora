@@ -548,6 +548,22 @@ public final class BreakpointManager implements LineMarks.Carrier {
                 .values());
     }
 
+    /**
+     * Whether any breakpoint has an {@link Breakpoint#id()} — only one another waits for is given one — without
+     * copying them (as {@link #snapshot()} does). While narrowed, those outside the region are not looked at: true.
+     */
+    public boolean anyWithId() {
+        if (held != null) {
+            return true;
+        }
+        for (Breakpoint bp : byLine.values()) {
+            if (!bp.id().isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** The whole-document line of the narrowed region's first line (0 when not narrowed). */
     public int regionFirstLine() {
         return held == null ? 0 : held.firstLine();

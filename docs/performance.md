@@ -343,17 +343,25 @@ command waiting for one is busy, so a second press is refused.
   - The line mapping between the launched text and the document (`LaunchedLines.SITE`, a Myers diff bounded by
     `BoundedDiff`) is worked out
     on a snapshot keyed by document version. The breakpoint send after an edit, a stop, Run to Cursor and Jump to
-    Line wait for it; other callers use the last mapping, and the file is sent again when it changes.
+    Line wait for it; other callers use the last mapping, and the file is sent again when it changes. The launched
+    text is a `DocumentText` handle taken in O(1) at session start (its String built off the thread, only for a
+    file that is mapped), and a shift made by typing is mapped once the text has been still for
+    `LaunchedLines.EDIT_PAUSE` (150 ms); a stop or a toggle does not wait. The other tabs' triggered breakpoints are
+    looked at again once such a shift settles, and not at all when the file has no breakpoint another waits for.
   - `DebugTextScans` (a breakpoint line with no code, the test at the caret) runs off the thread per version.
   - A stop or a step asks for the top 50 frames of the stack (`DapClient.FIRST_FRAMES`); the Call Stack's last row
-    asks for the rest. Thread Dump and Parallel Stacks still ask for up to 1,000 frames per thread.
+    asks for the rest. Thread Dump and Parallel Stacks still ask for up to 1,000 frames per thread. Editora's own
+    JVM adapter (Kotlin, Groovy, Scala, Clojure) fetches a page of frames in one JDWP request and looks at each
+    candidate source file at most once in five seconds (`SourceLooks`).
   - A stop that may not be shown (breakpoint filters, a token logpoint, an exception breakpoint's check, a step
     filter, Thread Dump's pause) is decided before the window shows the session suspended
     (`DebugSession.suspendHeld`): one that goes on changes nothing on screen. Python exception breakpoints of builtin
     types are told to debugpy as `exceptionOptions`, so it does not stop on every raised exception
     (`PythonExceptionTypes`).
   - Debug History and the changed-value marks keep a value's first 4,096 characters with its length and hash
-    (`KeptValue`); a Variables row finds a multi-line value's first line without splitting it.
+    (`KeptValue`); a Variables row finds a multi-line value's first line without splitting it. Each kept stop
+    indexes its frames by key, so an old stop's changed marks cost one lookup per kept stop.
+  - With several sessions, a step only sets the strip's tab words (`DebugSessionsView.onlyStatesDiffer`).
   - The merge resolver's Save (`MergeViewerPane.SAVE_SITE`, busy meanwhile; a close-save asks for the close again
     once applied), Resolve Conflicts, Open in Diff Viewer and Apply Patch, and the diff viewer's applies parse and
     compose off the thread.

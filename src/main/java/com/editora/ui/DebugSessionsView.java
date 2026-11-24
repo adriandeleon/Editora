@@ -89,8 +89,47 @@ final class DebugSessionsView extends BorderPane {
         return strip.isVisible();
     }
 
-    /** Draws the sessions' tabs again; with fewer than two the strip is hidden. */
+    /**
+     * Pure: whether {@code now} differs from {@code before} only in the tabs' state words — the same sessions in the
+     * same order, with the same titles, each as live and as shown — so the strip's buttons need only their text set.
+     */
+    static boolean onlyStatesDiffer(List<Tab> before, List<Tab> now) {
+        if (before.size() != now.size()) {
+            return false;
+        }
+        for (int i = 0; i < now.size(); i++) {
+            Tab a = before.get(i);
+            Tab b = now.get(i);
+            if (a.session() != b.session()
+                    || !a.title().equals(b.title())
+                    || a.live() != b.live()
+                    || a.shown() != b.shown()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Draws the sessions' tabs again; with fewer than two the strip is hidden. A step (Running, then Suspended)
+     * only changes a tab's words: the buttons are kept and their text set (perf review 2026-11-23, D14).
+     */
     void setTabs(List<Tab> now) {
+        if (now.equals(tabs)) {
+            return;
+        }
+        if (now.size() >= 2 && onlyStatesDiffer(tabs, now)) {
+            int i = 0;
+            for (Node child : strip.getChildren()) {
+                if (child instanceof ToggleButton button) {
+                    Tab tab = now.get(i++);
+                    button.setText(tr("debug.sessions.tab", tab.title(), tab.state()));
+                }
+            }
+            tabs.clear();
+            tabs.addAll(now);
+            return;
+        }
         tabs.clear();
         tabs.addAll(now);
         strip.getChildren().clear();
