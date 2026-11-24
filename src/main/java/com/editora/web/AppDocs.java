@@ -144,11 +144,19 @@ public final class AppDocs {
         return "http://127.0.0.1:" + port + (rest.isEmpty() ? "/" : rest);
     }
 
-    /** The local server's port, starting it if needed; 0 when it could not start (the caller keeps the web link). */
+    /**
+     * The local server's port, starting it if needed; 0 when it could not start or there is no guide to serve (the
+     * caller keeps the web link). The guide is checked again under the lock, since {@link #localize} checks it
+     * before: tests swap {@link #files} and stop the server, and a caller that checked before the swap must not
+     * start a server after it.
+     */
     static int ensureStarted() {
         synchronized (LOCK) {
             if (server != null) {
                 return port;
+            }
+            if (!bundled()) {
+                return 0;
             }
             try {
                 InetAddress loopback = InetAddress.getLoopbackAddress();
