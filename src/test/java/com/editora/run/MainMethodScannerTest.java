@@ -127,4 +127,28 @@ class MainMethodScannerTest {
         assertEquals("", MainMethodScanner.packageOf("class App {}"));
         assertEquals("", MainMethodScanner.packageOf(null));
     }
+
+    @Test
+    void theSourceLauncherRunsTheFirstClassMain() {
+        var classic = MainMethodScanner.sourceLaunch(
+                "// Hello\npublic class Hello {\n    public static void main(String[] args) {}\n}\nclass Helper {}\n");
+        org.junit.jupiter.api.Assertions.assertNotNull(classic);
+        assertEquals(2, classic.line());
+        org.junit.jupiter.api.Assertions.assertFalse(classic.jdk25(), "public: JDK 11's launcher runs it");
+
+        var packagePrivate = MainMethodScanner.sourceLaunch("class A {\n    static void main(String... a) {}\n}\n");
+        org.junit.jupiter.api.Assertions.assertNotNull(packagePrivate);
+        org.junit.jupiter.api.Assertions.assertTrue(packagePrivate.jdk25(), "not public: only JDK 25's launcher");
+
+        // The launcher runs the first top-level class only, and a nested class's main is not the program's.
+        org.junit.jupiter.api.Assertions.assertNull(MainMethodScanner.sourceLaunch(
+                "class Util {}\nclass App {\n    public static void main(String[] a) {}\n}\n"));
+        org.junit.jupiter.api.Assertions.assertNull(MainMethodScanner.sourceLaunch(
+                "class Outer {\n    static class In {\n        public static void main(String[] a) {}\n    }\n}\n"));
+        // A main in a comment or a string is not one.
+        org.junit.jupiter.api.Assertions.assertNull(
+                MainMethodScanner.sourceLaunch(
+                        "class Doc {\n    // public static void main(String[] a) {}\n    String s = \"static void main(String[] a)\";\n}\n"));
+        org.junit.jupiter.api.Assertions.assertNull(MainMethodScanner.sourceLaunch("public class Lib {\n}\n"));
+    }
 }

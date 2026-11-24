@@ -8343,7 +8343,13 @@ final class DebugCoordinator {
         buffer.setDebugValuePresenter(valuePresenter); // an object's fields unfold in the popup (follow-up 6)
         // "Debug File" beside "Run File" in the editor's menu: Debug was only in the Run menu and the palette.
         // Through F5's check: a live launch of another file is replaced only after asking (review 3, C202).
-        buffer.setDebugFileHandler(() -> debugFile(buffer), () -> debugSupportEnabled() && isDebuggableBuffer(buffer));
+        // Not while this very file is being debugged or built for it, as in editorMenuItems (review 2 C110): a
+        // runnable file's Debug File sits here, and a classic Java program became runnable (single-file Run).
+        buffer.setDebugFileHandler(
+                () -> debugFile(buffer),
+                () -> debugSupportEnabled()
+                        && isDebuggableBuffer(buffer)
+                        && (buffer.getPath() == null || !launchLiveFor(buffer.getPath())));
         buffer.setGutterBreakpointMenu(this::showGutterMenu); // right-click a breakpoint: Edit / Disable / Remove
         buffer.setDebugMenuContributor(() -> editorMenuItems(buffer));
     }

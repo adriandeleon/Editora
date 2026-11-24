@@ -5,7 +5,7 @@ category: Languages
 order: 1
 ---
 
-Java gets code intelligence from Eclipse JDT LS (`jdtls`), runs a compact source file or any main class from the gutter, and debugs with the Java debug adapter. What every language shares is on the [language servers](/docs/lsp), [running](/docs/run-debug) and [debugging](/docs/debugging) pages; this page is what is particular to Java.
+Java gets code intelligence from Eclipse JDT LS (`jdtls`), runs a compact source file, a single-file program or any main class from the gutter, and debugs with the Java debug adapter. What every language shares is on the [language servers](/docs/lsp), [running](/docs/run-debug) and [debugging](/docs/debugging) pages; this page is what is particular to Java.
 
 ## Java refactorings that ask a question
 

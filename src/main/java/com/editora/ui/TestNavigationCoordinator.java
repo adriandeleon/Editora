@@ -580,6 +580,8 @@ final class TestNavigationCoordinator {
                 && buffer.getPath() != null
                 && RemoteExec.runsFor(buffer.getPath())
                 && jvmBuildDetected());
+        // Independent of Simple mode and of where it runs: a class of a build is never Run File's single source file.
+        buffer.setJvmBuildProject(buffer.getPath() != null && jvmBuildDetected());
     }
 
     /** Pushes the JUnit test-gutter gate to a buffer (Test Runner on + not Simple mode + local + JVM project). */
