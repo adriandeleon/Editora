@@ -57,7 +57,7 @@ public final class JestJsonReport {
                         message,
                         failure,
                         null,
-                        path.isEmpty() ? null : path,
+                        hint(path),
                         a.path("location").path("line").asInt(0)));
             }
             if (tests.isEmpty()) {
@@ -65,16 +65,7 @@ public final class JestJsonReport {
                 if (!message.isBlank() && "failed".equals(file.path("status").asText(""))) {
                     String clean = NodeTestFailure.stripAnsi(message).strip();
                     tests.add(new ParsedTest(
-                            suite,
-                            suite,
-                            TestStatus.ERROR,
-                            0,
-                            null,
-                            firstLine(clean),
-                            clean,
-                            null,
-                            path.isEmpty() ? null : path,
-                            0));
+                            suite, suite, TestStatus.ERROR, 0, null, firstLine(clean), clean, null, hint(path), 0));
                 }
             }
             out.add(new ParsedSuite(suite, tests));
@@ -101,6 +92,18 @@ public final class JestJsonReport {
         return all.isEmpty() ? null : String.join("\n\n", all);
     }
 
+    /** {@code path} as this system writes it; null for none. */
+    private static @Nullable String hint(String path) {
+        if (path.isEmpty()) {
+            return null;
+        }
+        try {
+            return Path.of(path).toString();
+        } catch (RuntimeException notAPath) {
+            return path;
+        }
+    }
+
     static String firstLine(String text) {
         int nl = text.indexOf('\n');
         return (nl >= 0 ? text.substring(0, nl) : text).strip();
@@ -112,11 +115,13 @@ public final class JestJsonReport {
             return "tests";
         }
         try {
-            Path p = Path.of(path);
-            Path d = dir.toAbsolutePath().normalize();
-            return p.isAbsolute() && p.normalize().startsWith(d)
-                    ? d.relativize(p.normalize()).toString().replace('\\', '/')
-                    : path.replace('\\', '/');
+            Path p = Path.of(path).normalize();
+            Path d = dir.normalize();
+            if (!p.startsWith(d)) {
+                p = p.toAbsolutePath();
+                d = d.toAbsolutePath();
+            }
+            return p.startsWith(d) ? d.relativize(p).toString().replace('\\', '/') : path.replace('\\', '/');
         } catch (RuntimeException notAPath) {
             return path;
         }

@@ -17,6 +17,11 @@ class ToolTestKindTest {
 
     private static final Path WORK = Path.of("/work");
 
+    /** {@code relative} in {@link #WORK}, as this system writes the path. */
+    private static String at(String relative) {
+        return WORK.resolve(relative).toString();
+    }
+
     private static String fixture(String name) throws Exception {
         return Files.readString(
                 Path.of(Objects.requireNonNull(ToolTestKindTest.class.getResource("tool-reports/" + name))
@@ -71,7 +76,7 @@ class ToolTestKindTest {
         ParsedTest fails = test(suites, "calc › fails");
         assertEquals(TestStatus.FAILED, fails.status());
         assertEquals(3, fails.sourceLineHint());
-        assertEquals("/work/tr.test.js", fails.sourceFileHint());
+        assertEquals(at("tr.test.js"), fails.sourceFileHint());
         assertTrue(fails.failureMessage().startsWith("Error: expect(received).toBe(expected)"), fails.failureMessage());
         assertTrue(fails.stackTrace().contains("tr.test.js:3:39"), "its stack, to jump to the assertion");
         assertEquals(TestStatus.SKIPPED, test(suites, "calc › skips").status());
@@ -97,7 +102,7 @@ class ToolTestKindTest {
         assertEquals(TestStatus.FAILED, fails.status());
         assertEquals("RSpec::Expectations::ExpectationNotMetError", fails.failureType());
         assertEquals("expected: 3", fails.failureMessage());
-        assertEquals("/work/calc_spec.rb", fails.sourceFileHint());
+        assertEquals(at("calc_spec.rb"), fails.sourceFileHint());
         assertEquals(5, fails.sourceLineHint());
         assertTrue(fails.stackTrace().contains("./calc_spec.rb:6:in"));
         assertEquals(TestStatus.PASSED, test(suites, "Calc adds").status());
@@ -115,7 +120,7 @@ class ToolTestKindTest {
         ParsedTest fails = test(suites, "testFails");
         assertEquals(TestStatus.FAILED, fails.status());
         assertEquals("Failed asserting that 2 is identical to 3.", fails.failureMessage());
-        assertEquals("/work/CalcTest.php", fails.sourceFileHint());
+        assertEquals(at("CalcTest.php"), fails.sourceFileHint());
         assertEquals(6, fails.sourceLineHint());
         assertEquals(TestStatus.SKIPPED, test(suites, "testSkips").status());
         assertEquals(
@@ -132,7 +137,7 @@ class ToolTestKindTest {
         ParsedTest fails = test(suites, "fails");
         assertEquals(TestStatus.FAILED, fails.status());
         assertEquals("Uncaught Error: boom", fails.failureMessage());
-        assertEquals("/work/calc_test.ts", fails.sourceFileHint(), "Deno's class is its file");
+        assertEquals(at("calc_test.ts"), fails.sourceFileHint(), "Deno's class is its file");
         assertEquals(2, fails.sourceLineHint());
         assertEquals(TestStatus.SKIPPED, test(suites, "skips").status());
         assertEquals(TestStatus.PASSED, test(suites, "steps > inner").status());
@@ -146,7 +151,7 @@ class ToolTestKindTest {
         ParsedTest fails = test(suites, "calc fails");
         assertEquals(TestStatus.FAILED, fails.status());
         assertEquals("Expected: <3>", fails.failureMessage());
-        assertEquals("/work/test/calc_test.dart", fails.sourceFileHint());
+        assertEquals(at("test/calc_test.dart"), fails.sourceFileHint());
         assertEquals(8, fails.sourceLineHint());
         assertTrue(fails.stackTrace().contains("test/calc_test.dart 9:7"));
         ParsedTest skips = test(suites, "calc skips");
@@ -162,7 +167,7 @@ class ToolTestKindTest {
         ParsedTest fails = test(suites, "test_fails");
         assertEquals(TestStatus.FAILED, fails.status());
         assertEquals("Expected: 3", fails.failureMessage());
-        assertEquals("/work/calc_test.rb", fails.sourceFileHint());
+        assertEquals(at("calc_test.rb"), fails.sourceFileHint());
         assertEquals(7, fails.sourceLineHint());
         ParsedTest errors = test(suites, "test_errors");
         assertEquals(TestStatus.ERROR, errors.status());
@@ -180,7 +185,7 @@ class ToolTestKindTest {
         ParsedTest fails = test(suites, "test_fails");
         assertEquals(TestStatus.FAILED, fails.status());
         assertEquals("Expected: 3", fails.failureMessage());
-        assertEquals("/work/test/models/calc_test.rb", fails.sourceFileHint());
+        assertEquals(at("test/models/calc_test.rb"), fails.sourceFileHint());
         assertTrue(!fails.stackTrace().contains("bin/rails test"), fails.stackTrace());
         assertEquals(TestStatus.PASSED, test(suites, "test_adds").status());
     }
@@ -193,7 +198,7 @@ class ToolTestKindTest {
         ParsedTest fails = test(suites, "test fails");
         assertEquals(TestStatus.FAILED, fails.status());
         assertEquals("Assertion with == failed", fails.failureMessage());
-        assertEquals("/work/test/calc_test.exs", fails.sourceFileHint());
+        assertEquals(at("test/calc_test.exs"), fails.sourceFileHint());
         assertEquals(8, fails.sourceLineHint());
         assertTrue(fails.stackTrace().contains("test/calc_test.exs:9: (test)"));
         assertEquals(TestStatus.SKIPPED, test(suites, "test group skipped").status());
@@ -223,20 +228,21 @@ class ToolTestKindTest {
     @Test
     void eachRunIsToldToReportAndOptionsGoBeforeTheTestsOwnArguments() {
         Path r = Path.of("/tmp/r");
+        String rs = r.toString();
         assertEquals(
-                List.of("deno", "test", "-A", "a_test.ts", "--junit-path=/tmp/r", "--", "x"),
+                List.of("deno", "test", "-A", "a_test.ts", "--junit-path=" + rs, "--", "x"),
                 ToolTestKind.DENO.withReport(List.of("deno", "test", "-A", "a_test.ts", "--", "x"), r, List.of()));
         assertEquals(
-                List.of("rspec", "a_spec.rb", "--format", "progress", "--format", "json", "--out", "/tmp/r"),
+                List.of("rspec", "a_spec.rb", "--format", "progress", "--format", "json", "--out", rs),
                 ToolTestKind.RSPEC.withReport(List.of("rspec", "a_spec.rb"), r, List.of()));
         assertEquals(
-                List.of("rspec", "a_spec.rb", "--format", "documentation", "--format", "json", "--out", "/tmp/r"),
+                List.of("rspec", "a_spec.rb", "--format", "documentation", "--format", "json", "--out", rs),
                 ToolTestKind.RSPEC.withReport(List.of("rspec", "a_spec.rb"), r, List.of("documentation")));
         assertEquals(
                 List.of("mix", "test", "test/a_test.exs:4", "--trace"),
                 ToolTestKind.EXUNIT.withReport(List.of("mix", "test", "test/a_test.exs:4"), r, List.of()));
         assertEquals(
-                List.of("dart", "test", "test/a_test.dart", "--file-reporter", "json:/tmp/r"),
+                List.of("dart", "test", "test/a_test.dart", "--file-reporter", "json:" + rs),
                 ToolTestKind.DART.withReport(List.of("dart", "test", "test/a_test.dart"), r, List.of()));
     }
 
