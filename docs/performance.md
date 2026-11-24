@@ -833,7 +833,19 @@ diagnostics, …) follows one discipline:
   paint:** RichTextFX answers it by adding a `Path` to the paragraph's text flow and removing it, which
   dirties the scene and costs the next pulse and frame. The old per-overlay checks did that three pulses in a
   row after every paint (3.79 rendered frames per key against 2.02 in October). Measure characters only while
-  painting, and key a frame on `AfterLayoutPaint.textColumnOnScreen()` (`IndentGuideOverlay`).
+  painting, and key a frame on `AfterLayoutPaint.textColumnOnScreen()` (`IndentGuideOverlay`). Even a paint's
+  own query costs a frame: the added `Path` marks its text flow for a CSS pass, the flag outlives the pulse's
+  sync (the paint ran after that pulse's CSS pass), and `Scene` then marks the root dirty, so the next pulse
+  renders a frame that changes no pixel. So a check that the text moved reads the text column, never a word
+  (`SpellCheckOverlay.stale`), and a query that can wait is not made on every keystroke. The real fix belongs in
+  RichTextFX (`ParagraphText.getRangeBoundsOnScreen` can take the bounds of a `Path` it never adds).
+- **one pulse per change, not one per `runLater`**: work queued with `Platform.runLater` from a key handler often
+  runs after the pulse that renders the key, so whatever it changes is laid out and drawn in a pulse and a frame
+  of its own. The column ruler measures from a post-layout pulse listener (`BufferRuler`, through
+  `AfterLayoutPaint`); the status bar's Ln/Col refresh runs in the next pulse's pre-layout listener or its
+  `runLater`, whichever comes first (`StatusBar.scheduleCaretRefresh`); and the scrollbar stripes (TODO,
+  diagnostics, Markdown lint) skip a redraw whose canvas size, line count and content height are unchanged
+  (`StripeFrame`), which is most keystrokes.
   `FrameWatch` (tests) checks every shown frame rather than where a paint settles; `AfterLayoutPaintFxTest`
   pins one look per pulse and no pulses asked for after a paint
 - **no gutter work for what the gutter does not show**: `recreateParagraphGraphic` builds a cell even for a
