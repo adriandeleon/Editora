@@ -529,13 +529,15 @@ class DebugReviewCWindowFxTest {
     void thePopupKnowsTheLineItOpenedFor() throws Exception {
         Path util = file("util.py", UTIL);
         EditorBuffer b = open(util);
-        int line = FxTestSupport.callOnFx(() -> {
+        // The text can land before a pulse has laid the new tab out (the area is still 0x0 then, and has no line
+        // to measure): wait for the layout that gives the word its place on screen.
+        var bounds = EventuallyFx.valueOnFx("the word laid out", Duration.ofSeconds(10), () -> {
             var area = b.getFocusedArea();
-            area.layout();
             int at = area.getAbsolutePosition(2, 4);
-            var bounds = area.getCharacterBoundsOnScreen(at, at + 1).orElseThrow();
-            return DebugValuePopup.lineAbove(area, bounds.getMinX(), bounds.getMaxY() + 2);
+            return area.getCharacterBoundsOnScreen(at, at + 1).orElse(null);
         });
+        int line = FxTestSupport.callOnFx(
+                () -> DebugValuePopup.lineAbove(b.getFocusedArea(), bounds.getMinX(), bounds.getMaxY() + 2));
         assertEquals(2, line, "just below the word: its own line");
         assertEquals(-1, (int)
                 FxTestSupport.callOnFx(() -> DebugValuePopup.lineAbove(new org.fxmisc.richtext.CodeArea(), 0, 0)));
