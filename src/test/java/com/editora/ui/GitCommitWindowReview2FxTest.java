@@ -360,6 +360,42 @@ class GitCommitWindowReview2FxTest {
         }
     }
 
+    /**
+     * The Commit window is built on first use, after the repository's status was applied, and opening it reads
+     * no status: the first switch away must still move the message aside (it was carried into the other
+     * repository; on macOS, where git is slower, the test above hit it every time).
+     */
+    @Test
+    void aMessageTypedBeforeAnyRefreshStaysWithItsRepository(@TempDir Path dir) throws Exception {
+        GitTestRepo one = GitTestRepo.init(Files.createDirectory(dir.resolve("one")));
+        Path a = one.write("a.txt", "a\n");
+        one.commitAll("base");
+        GitTestRepo two = GitTestRepo.init(Files.createDirectory(dir.resolve("two")));
+        Path b = two.write("b.txt", "b\n");
+        two.commitAll("base");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            GitFeatureFx w = GitFeatureFx.create(async);
+            w.open(a);
+            GitFeatureFx.await("the first repository", () -> one.root.equals(w.git.repoRoot()));
+            FxTestSupport.runOnFx(w.git::gitCommitFocus); // builds the panel; no refresh
+            GitPanel panel = FxTestSupport.field(w.fx.controller, "gitPanel");
+            GitFeatureFx.await(
+                    "the Commit window",
+                    () -> panel.isOnScreen() && panel.getChildren().size() > 1);
+            FxTestSupport.runOnFx(() -> message(panel).setText("for the first repository"));
+
+            w.open(b);
+            GitFeatureFx.await("the second repository", () -> two.root.equals(w.git.repoRoot()));
+            GitFeatureFx.await("an empty box", () -> message(panel).getText().isEmpty());
+
+            w.open(a);
+            GitFeatureFx.await(
+                    "the first repository's message back",
+                    () -> "for the first repository".equals(message(panel).getText()));
+        }
+    }
+
     // --- U15: why a commit key did nothing --------------------------------------------------------------------
 
     @Test
