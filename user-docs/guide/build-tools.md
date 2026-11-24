@@ -529,7 +529,28 @@ of its parent's, is read too), Go uses `go test -json`, npm reads TAP when the
 reporter emits it, and Cargo parses libtest output. For `node --test`, Test Results also reads
 node:test's own default output, so `"test": "node --test"` fills the tree with no
 reporter flag. In TAP output a `describe` block is a group, not a failed test,
-and a failure shows its error and stack. sbt, Mill and Scala CLI tests are not
+and a failure shows its error and stack.
+
+A test file that *Run File* or *Run Test at Caret* runs under its own runner
+fills Test Results too, while the Run console shows the runner's usual report:
+
+| Runner | How Test Results reads it |
+| --- | --- |
+| Jest | `--json --outputFile`, when the run ends |
+| Vitest | its `json` reporter beside the default one, when the run ends |
+| Deno | `deno test --junit-path`, when the run ends |
+| RSpec | `--format json --out` beside the console format your `.rspec` names (else `progress`), when the run ends |
+| Minitest, `bin/rails test` | the verbose console (`-v`), test by test |
+| PHPUnit | `--log-junit`, when the run ends |
+| ExUnit | `mix test --trace`, test by test |
+| `dart test`, `flutter test` | `--file-reporter json:`, when the run ends |
+
+A row opens its test where it failed, else where it is declared. **Rerun
+Failed** and **Rerun This Test** narrow the file's run with the runner's own
+filter: `-t` for Jest and Vitest, `--filter` for Deno and PHPUnit, `--example`
+for RSpec, `-n` for Minitest, `--only test:` for ExUnit and `--name` for Dart.
+*Run File* on a Dart test file now runs `dart test` (`flutter test` in a
+Flutter package) rather than `dart run`. sbt, Mill and Scala CLI tests are not
 read yet: their output stays in the Output console. Where a structured format isn't available, the
 window says so and points at the Output console.
 
@@ -567,8 +588,8 @@ test (`--test-name-pattern`, into Test Results), a Deno test, a Jest or Vitest
 test, an RSpec example (`rspec file:line`), a Minitest test (`bin/rails test
 file:line` in a Rails app, else `-n`), a PHPUnit test (`--filter`), an ExUnit
 test (`mix test file:line`) and a C# test (`dotnet test --filter`). Its output
-goes where *Run File*'s does: the Run console, or Test Results for `node:test`
-and Python.
+goes where *Run File*'s does: the Run console, and Test Results for every one
+of these runners but Go, Rust and C#.
 
 Tests in **nested classes** have their own icons: a method inside a JUnit
 `@Nested` class, or inside a static nested test class, gets a ▶, and so does

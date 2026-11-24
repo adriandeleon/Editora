@@ -59,6 +59,106 @@ public final class JUnitXmlParser implements TestResultParser {
                 suiteName, tests, text(firstChild(suite, "system-out")), text(firstChild(suite, "system-err")));
     }
 
+    /**
+     * Every test of a JUnit XML report a test runner writes in one file — PHPUnit's {@code --log-junit}, Deno's
+     * {@code --junit-path} — whose suites nest under {@code <testsuites>} (PHPUnit's data sets in a suite of their
+     * own): a suite per test class (PHPUnit) or file (Deno), each test with the {@code file} and {@code line} the
+     * runner gives. {@code dir} is where it ran, for a relative file. Empty when {@code xml} is no report.
+     */
+    public static List<ParsedSuite> parseAll(String xml, java.nio.file.Path dir) {
+        Element root;
+        try {
+            root = document(xml);
+        } catch (Exception notXml) {
+            return List.of();
+        }
+        if (root == null || !("testsuites".equals(root.getNodeName()) || "testsuite".equals(root.getNodeName()))) {
+            return List.of();
+        }
+        java.util.Map<String, List<ParsedTest>> byClass = new java.util.LinkedHashMap<>();
+        collect(root, null, dir, byClass);
+        List<ParsedSuite> out = new ArrayList<>();
+        byClass.forEach((name, tests) -> out.add(new ParsedSuite(name, tests)));
+        return out;
+    }
+
+    private static void collect(
+            Element suite,
+            @Nullable String file,
+            java.nio.file.Path dir,
+            java.util.Map<String, List<ParsedTest>> byClass) {
+        String suiteFile = attr(suite, "file", file);
+        for (Node n = suite.getFirstChild(); n != null; n = n.getNextSibling()) {
+            if (n.getNodeType() != Node.ELEMENT_NODE) {
+                continue;
+            }
+            Element el = (Element) n;
+            if ("testsuite".equals(el.getNodeName())) {
+                collect(el, suiteFile, dir, byClass);
+            } else if ("testcase".equals(el.getNodeName())) {
+                String cls = attr(el, "classname", attr(el, "class", attr(suite, "name", "tests")));
+                String name = cls == null || cls.isEmpty() ? "tests" : cls;
+                byClass.computeIfAbsent(name, k -> new ArrayList<>()).add(runnerCase(el, name, suiteFile, dir));
+            }
+        }
+    }
+
+    /** A runner's {@code <testcase>}: its status and failure, and where it is from its own attributes. */
+    private static ParsedTest runnerCase(
+            Element tc, String className, @Nullable String suiteFile, java.nio.file.Path dir) {
+        TestStatus status = TestStatus.PASSED;
+        String type = null;
+        String message = null;
+        String trace = null;
+        Element error = firstChild(tc, "error");
+        Element failure = error != null ? error : firstChild(tc, "failure");
+        Element skipped = firstChild(tc, "skipped");
+        if (failure != null) {
+            status = error != null ? TestStatus.ERROR : TestStatus.FAILED;
+            type = attr(failure, "type", null);
+            trace = text(failure);
+            message = attr(failure, "message", null);
+            if (message == null && trace != null) {
+                // PHPUnit's starts with the test's name, then why it failed
+                String[] lines = trace.strip().split("\\R");
+                message = lines.length > 1 && !lines[1].isBlank() ? lines[1].strip() : lines[0].strip();
+            }
+        } else if (skipped != null) {
+            status = TestStatus.SKIPPED;
+            message = attr(skipped, "message", null);
+        }
+        String file = attr(tc, "file", suiteFile);
+        if (file == null && (className.startsWith("./") || className.contains("/"))) {
+            file = className; // Deno's class is the test's file
+        }
+        String abs = null;
+        if (file != null) {
+            try {
+                abs = dir.resolve(file).normalize().toString();
+            } catch (RuntimeException notAPath) {
+                abs = file;
+            }
+        }
+        int line = 0;
+        try {
+            line = Integer.parseInt(String.valueOf(attr(tc, "line", "0")));
+        } catch (NumberFormatException none) {
+            // no line
+        }
+        String out = text(firstChild(tc, "system-out"));
+        return new ParsedTest(
+                className,
+                String.valueOf(attr(tc, "name", "")),
+                status,
+                seconds(attr(tc, "time", "")),
+                type,
+                message,
+                trace,
+                out,
+                abs,
+                line);
+    }
+
     private ParsedTest parseCase(Element tc, @Nullable String suiteName) {
         String method = attr(tc, "name", "");
         String className = attr(tc, "classname", suiteName);

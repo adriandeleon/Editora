@@ -118,6 +118,14 @@ final class RunCoordinator {
             return false;
         }
 
+        /**
+         * Runs a test file under its own runner ({@code spec}: Jest, RSpec, PHPUnit, ExUnit, …) into Test Results;
+         * false when Test Results is off (it runs in the Run console only).
+         */
+        default boolean runToolTests(ToolTestRunner.Spec spec) {
+            return false;
+        }
+
         /** The Python interpreter picked for this window's project ("" = detect it). */
         default String pythonInterpreterChoice() {
             return "";
@@ -1262,6 +1270,13 @@ final class RunCoordinator {
      */
     private void runDart(CompiledRun run) {
         Path source = run.source();
+        if (!run.configured()
+                && run.args().isEmpty()
+                && com.editora.dap.DartTests.isTestFile(source)
+                && com.editora.process.ExecTargets.runsHere(source)) {
+            runDartTestAtCaret(source, null, run.label()); // its tests under dart test, as Run Test at Caret runs them
+            return;
+        }
         // The package and its pubspec are read off the FX thread (PERF-01, Pauta 6.2.0).
         offFx(
                 "run-dart-plan",
@@ -3456,13 +3471,25 @@ final class RunCoordinator {
             }
             List<String> argv = new ArrayList<>(plan.elixir().command());
             argv.addAll(args);
-            streamRun(path.getFileName().toString(), plan.elixir().cwd(), argv, java.util.Map.of(), path);
+            streamTests(
+                    elixirTests(plan.elixir()),
+                    path.getFileName().toString(),
+                    plan.elixir().cwd(),
+                    argv,
+                    java.util.Map.of(),
+                    path);
             return;
         }
         if (plan.ruby() != null) { // a script, a spec or test file, a Rails app's server (RubyApps)
             List<String> argv = new ArrayList<>(plan.ruby().command());
             argv.addAll(args);
-            streamRun(path.getFileName().toString(), plan.ruby().cwd(), argv, java.util.Map.of(), path);
+            streamTests(
+                    rubyTests(plan.ruby()),
+                    path.getFileName().toString(),
+                    plan.ruby().cwd(),
+                    argv,
+                    java.util.Map.of(),
+                    path);
             if (plan.ruby().url() != null) {
                 host.setStatus(tr("status.run.rubyServing", plan.ruby().url()));
             }
@@ -3584,7 +3611,7 @@ final class RunCoordinator {
         }
         List<String> argv = new ArrayList<>(plan.command());
         argv.addAll(args);
-        streamRun(path.getFileName().toString(), plan.cwd(), argv, java.util.Map.of(), path);
+        streamTests(phpTests(plan), path.getFileName().toString(), plan.cwd(), argv, java.util.Map.of(), path);
         if (plan.url() != null) {
             host.setStatus(tr("status.run.phpServing", plan.url()));
         }
@@ -3686,6 +3713,12 @@ final class RunCoordinator {
         if (ready.route() == com.editora.run.TsRunRoute.Kind.PLAIN
                 && com.editora.run.NodeRunPlan.isTypeScript(ready.target())) {
             pendingOutputWatcher = tsImportHint();
+        }
+        if (script != null) {
+            // Jest, Vitest, deno test: into Test Results as well
+            streamTests(
+                    com.editora.test.ToolTestKind.ofNodeArgv(plan.argv()), label, dir, plan.argv(), plan.env(), script);
+            return;
         }
         streamRun(label, dir, plan.argv(), plan.env(), script);
     }
@@ -4186,7 +4219,8 @@ final class RunCoordinator {
                                 com.editora.run.RubyTests.at(text, caret),
                                 project,
                                 RubyDebugLaunch.lookups()),
-                        plan -> streamRun(label, plan.cwd(), plan.command(), java.util.Map.of(), path));
+                        plan -> streamTests(
+                                rubyTests(plan), label, plan.cwd(), plan.command(), java.util.Map.of(), path));
             case "php" -> {
                 String method = com.editora.run.PhpUnitTests.at(text, caret);
                 offFx(
@@ -4204,7 +4238,8 @@ final class RunCoordinator {
                             if (missing != null) {
                                 host.setStatus(missing);
                             } else {
-                                streamRun(label, plan.cwd(), plan.command(), java.util.Map.of(), path);
+                                streamTests(
+                                        phpTests(plan), label, plan.cwd(), plan.command(), java.util.Map.of(), path);
                             }
                         });
             }
@@ -4224,7 +4259,7 @@ final class RunCoordinator {
                             if (mix != null && !ops.trustBuild(mix, List.of(tr("dialog.trust.item.mix", "mix.exs")))) {
                                 return; // Mix compiles the project and its dependencies
                             }
-                            streamRun(label, plan.cwd(), plan.command(), java.util.Map.of(), path);
+                            streamTests(elixirTests(plan), label, plan.cwd(), plan.command(), java.util.Map.of(), path);
                         });
             case "csharp" -> runCsharpTestAtCaret(path, com.editora.dap.DotnetTests.testAt(text, caret), label);
             default -> runJsTestAtCaret(path, com.editora.dap.JsLaunch.testArgsAt(text, caret));
@@ -4287,7 +4322,7 @@ final class RunCoordinator {
                     if (target != null) {
                         argv.addAll(com.editora.dap.DartTests.toolArgs(target));
                     }
-                    streamRun(label, cwd, argv, java.util.Map.of(), path);
+                    streamTests(com.editora.test.ToolTestKind.DART, label, cwd, argv, java.util.Map.of(), path);
                 });
     }
 
@@ -4324,6 +4359,43 @@ final class RunCoordinator {
                             com.editora.dap.DotnetTests.filter(target)));
                     streamRun(label, root, argv, java.util.Map.of("DOTNET_NOLOGO", "1"), path);
                 });
+    }
+
+    /**
+     * Streams a test file's run under its own runner ({@code kind}: RSpec, PHPUnit, ExUnit, Jest, …) into Test Results
+     * as well, when Test Results takes it ({@link ToolTestRunner}); else — no runner, Test Results off, a file on
+     * another host — into the Run console alone, as any program.
+     */
+    private void streamTests(
+            com.editora.test.@Nullable ToolTestKind kind,
+            String label,
+            @Nullable Path cwd,
+            List<String> command,
+            java.util.Map<String, String> env,
+            Path script) {
+        if (kind != null
+                && cwd != null
+                && com.editora.process.ExecTargets.runsHere(script)
+                && ops.runToolTests(new ToolTestRunner.Spec(kind, label, cwd, command, env, script))) {
+            return;
+        }
+        streamRun(label, cwd, command, env, script);
+    }
+
+    private static com.editora.test.@Nullable ToolTestKind rubyTests(com.editora.run.RubyApps.Plan plan) {
+        return switch (plan.kind()) {
+            case RSPEC -> com.editora.test.ToolTestKind.RSPEC;
+            case MINITEST -> com.editora.test.ToolTestKind.MINITEST;
+            default -> null;
+        };
+    }
+
+    private static com.editora.test.@Nullable ToolTestKind phpTests(com.editora.run.PhpApps.Plan plan) {
+        return plan.kind() == com.editora.run.PhpApps.Kind.TESTS ? com.editora.test.ToolTestKind.PHPUNIT : null;
+    }
+
+    private static com.editora.test.@Nullable ToolTestKind elixirTests(com.editora.run.ElixirRun.Plan plan) {
+        return plan.kind() == com.editora.run.ElixirRun.Kind.TESTS ? com.editora.test.ToolTestKind.EXUNIT : null;
     }
 
     /** Stops the currently running program (Run tool window Stop button / {@code run.stop} command). */

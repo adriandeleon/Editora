@@ -1,0 +1,21 @@
+Running ExUnit with seed: 0, max_cases: 1
+
+
+CalcTest [test/calc_test.exs]
+  * test group skipped [L#18]  * test group skipped (skipped) [L#18]
+  * test adds two numbers [L#4]  * test adds two numbers (0.00ms) [L#4]
+  * test fails [L#8]  * test fails (1.5ms) [L#8]
+
+  1) test fails (CalcTest)
+     test/calc_test.exs:8
+     Assertion with == failed
+     code:  assert 1 + 1 == 3
+     left:  2
+     right: 3
+     stacktrace:
+       test/calc_test.exs:9: (test)
+
+  * test group inside [L#13]  * test group inside (0.00ms) [L#13]
+
+Finished in 0.03 seconds (0.00s async, 0.03s sync)
+4 tests, 1 failure, 1 skipped

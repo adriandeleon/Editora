@@ -1,0 +1,19 @@
+{"protocolVersion":"0.1.1","runnerVersion":"1.31.1","pid":3598626,"type":"start","time":0}
+{"suite":{"id":0,"platform":"vm","path":"test/calc_test.dart"},"type":"suite","time":0}
+{"test":{"id":1,"name":"loading test/calc_test.dart","suiteID":0,"groupIDs":[],"metadata":{"skip":false,"skipReason":null},"line":null,"column":null,"url":null},"type":"testStart","time":4}
+{"count":1,"time":11,"type":"allSuites"}
+{"testID":1,"result":"success","skipped":false,"hidden":true,"type":"testDone","time":237}
+{"group":{"id":2,"suiteID":0,"parentID":null,"name":"","metadata":{"skip":false,"skipReason":null},"testCount":4,"line":null,"column":null,"url":null},"type":"group","time":239}
+{"group":{"id":3,"suiteID":0,"parentID":2,"name":"calc","metadata":{"skip":false,"skipReason":null},"testCount":3,"line":4,"column":3,"url":"file:///work/test/calc_test.dart"},"type":"group","time":239}
+{"test":{"id":4,"name":"calc adds","suiteID":0,"groupIDs":[2,3],"metadata":{"skip":false,"skipReason":null},"line":5,"column":5,"url":"file:///work/test/calc_test.dart"},"type":"testStart","time":239}
+{"testID":4,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":248}
+{"test":{"id":5,"name":"calc fails","suiteID":0,"groupIDs":[2,3],"metadata":{"skip":false,"skipReason":null},"line":8,"column":5,"url":"file:///work/test/calc_test.dart"},"type":"testStart","time":249}
+{"testID":5,"error":"Expected: <3>\n  Actual: <2>\n","stackTrace":"package:matcher          expect\ntest/calc_test.dart 9:7  main.<fn>.<fn>\n","isFailure":true,"type":"error","time":259}
+{"testID":5,"result":"failure","skipped":false,"hidden":false,"type":"testDone","time":259}
+{"test":{"id":6,"name":"calc skips","suiteID":0,"groupIDs":[2,3],"metadata":{"skip":true,"skipReason":"later"},"line":11,"column":5,"url":"file:///work/test/calc_test.dart"},"type":"testStart","time":260}
+{"testID":6,"messageType":"skip","message":"Skip: later","type":"print","time":261}
+{"testID":6,"result":"success","skipped":true,"hidden":false,"type":"testDone","time":261}
+{"test":{"id":7,"name":"top","suiteID":0,"groupIDs":[2],"metadata":{"skip":false,"skipReason":null},"line":13,"column":3,"url":"file:///work/test/calc_test.dart"},"type":"testStart","time":261}
+{"testID":7,"messageType":"print","message":"hello","type":"print","time":262}
+{"testID":7,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":263}
+{"success":false,"type":"done","time":270}
