@@ -28,6 +28,7 @@ final class OverlayLayer {
     static final int MINIMAP = 130;
     static final int DIAGNOSTIC_STRIPE = 140;
     static final int MARKDOWN_LINT_STRIPE = 150;
+    static final int LOG_STRIPE = 155;
     static final int TODO_STRIPE = 160;
     static final int RULER = 170;
 

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Warnings and errors on a log's scrollbar.** A stripe over the scrollbar marks a log's WARN lines in amber and its
+  ERROR and FATAL lines in red; hover a mark to read the line, click it to go there. A filtered log marks what the
+  filter kept.
 - **Hide records in the log viewer.** The log control bar has a second field, for the records to hide: a record whose
   first line matches is hidden with its stack trace, and any other matching line on its own, so `at org.springframework`
   shortens traces and `HealthCheck` drops the health checks. **Aa** makes both patterns match case, the show pattern's

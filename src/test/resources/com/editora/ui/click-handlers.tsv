@@ -19,6 +19,7 @@ com/editora/editor/fold/FoldManager.java	marker	setOnMouseClicked	gutter run mar
 com/editora/editor/fold/FoldManager.java	slot	setOnMouseClicked	gutter blame annotation; git.toggleBlame and git.blameShowCommit are the keyboard path
 com/editora/editor/fold/StickyScrollBar.java	flow	setOnMouseClicked	sticky scope header: a click jumps to the scope line; view.gotoParentFold / nav.goToLine reach it from the keyboard
 com/editora/editor/http/HttpResultMarks.java	a	addEventFilter	the editor (a CodeArea) or a console: a click on a request result mark; http.openResponseInTab and http.runRequest are the keys
+com/editora/editor/logviewer/LogStripe.java	this	addEventHandler	a canvas stripe beside the scroll bar: a click jumps to a WARN/ERROR line; lsp.nextProblem / log.nextError do it from the keyboard
 com/editora/editor/lsp/CodeActionPopup.java	list	setOnMouseClicked	a Control: its own role and keys (Enter on the row does what the click does)
 com/editora/editor/markdown/MarkdownFormatBar.java	view	addEventFilter	the editor (a CodeArea) or a console: tracks a selection drag so the format bar waits for the release; not an action
 com/editora/editor/markdown/MarkdownLintStripe.java	this	addEventHandler	a canvas stripe: a click jumps to a lint mark; the Markdown Lint tool window and its list are the keyboard path
