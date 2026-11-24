@@ -3520,6 +3520,11 @@ public class EditorBuffer implements TabContent {
         return bi == null ? null : bi.hash();
     }
 
+    /** The on-disk line (index into the blame list) that area line {@code line} shows, or -1 when none. */
+    public int blameDiskLineAt(int line) {
+        return gitLines.diskLineAt(line);
+    }
+
     /** The commit hash that last touched the caret line (for "show this commit"), or null. */
     public @Nullable String blameHashAtCaret() {
         return blameHashAt(focusedArea.getCurrentParagraph());

@@ -119,6 +119,8 @@ final class GitPatchCoordinator {
                     if (patch != null) {
                         if (patch.endingsLost()) {
                             host.setStatus(tr("status.git.patchEndingsNormalized"));
+                        } else if (patch.fileChanged()) {
+                            host.setStatus(tr("status.git.patchFileChanged"));
                         }
                         chooseTarget(patch.bytes());
                     } else {
@@ -128,10 +130,15 @@ final class GitPatchCoordinator {
     }
 
     /**
-     * What Apply Patch applies from a tab: the bytes, and whether the patch file's mixed line endings could
-     * not be kept (an edited tab is applied as a save would write it, one line ending throughout).
+     * What Apply Patch applies from a tab: the bytes; whether the patch file's mixed line endings could not be
+     * kept (an edited tab is applied as a save would write it, one line ending throughout); and whether the
+     * tab, unedited, no longer matches its file (changed on disk since it was read), so its text is applied.
      */
-    record TabPatch(byte[] bytes, boolean endingsLost) {}
+    record TabPatch(byte[] bytes, boolean endingsLost, boolean fileChanged) {
+        TabPatch(byte[] bytes, boolean endingsLost) {
+            this(bytes, endingsLost, false);
+        }
+    }
 
     /**
      * The patch a tab holds, as bytes. A tab is text with one line ending, decoded with its charset — a
@@ -145,9 +152,12 @@ final class GitPatchCoordinator {
         if (disk != null && !edited && sameText(disk, content, charset)) {
             return new TabPatch(disk, false);
         }
-        boolean lost =
-                disk != null && LineEndings.mixed(new String(disk, java.nio.charset.StandardCharsets.ISO_8859_1));
-        return new TabPatch(patchBytes(content, ending, charset), lost);
+        // Only an edit is to blame for the lost endings: an unedited tab that differs from its file was read
+        // before the file changed on disk, and says that instead.
+        boolean lost = disk != null
+                && edited
+                && LineEndings.mixed(new String(disk, java.nio.charset.StandardCharsets.ISO_8859_1));
+        return new TabPatch(patchBytes(content, ending, charset), lost, disk != null && !edited);
     }
 
     /** Whether {@code disk}, decoded as the tab decodes it, is the tab's {@code content} up to line endings. */

@@ -71,6 +71,13 @@ public final class MergeViewerPane implements TabContent {
 
     private final BorderPane root = new BorderPane();
     private final Label status = new Label();
+    private final Button save = new Button(tr("merge.save"));
+    /**
+     * Why the Result for the last choices could not be put together, or null. While set, the Result area still
+     * shows the text for earlier choices: Save is off and refuses, with this reason, until a compose succeeds.
+     */
+    private @Nullable String resultFailure;
+
     private final TextArea resultArea = new TextArea();
     private final String fontStyle;
     private boolean updatingResult;
@@ -124,7 +131,6 @@ public final class MergeViewerPane implements TabContent {
 
     private HBox buildToolbar() {
         status.getStyleClass().add("merge-status");
-        Button save = new Button(tr("merge.save"));
         save.getStyleClass().addAll("merge-save", "success");
         save.setOnAction(e -> saveResult(null));
         FocusCommands.press(root, "merge.saveResult", save);
@@ -341,26 +347,36 @@ public final class MergeViewerPane implements TabContent {
         List<Choice> now = List.copyOf(choices);
         long mine = ++resultGeneration;
         composing = true;
-        com.editora.perf.OffFx.then(RESULT_SITE, () -> resultText(file, now, lineSeparator, finalNewline), a -> {
-            if (mine != resultGeneration) {
-                return;
-            }
-            composing = false;
-            String text = a.value();
-            if (text == null) {
-                // Not put together: a save waiting for it would wait forever, and would save the Result
-                // for earlier choices. Drop it, and say so — the next choice tries again.
-                afterComposed = null;
-                status.setText(resultFailedText(a.failure()));
-                return;
-            }
-            showResult(text);
-            Runnable after = afterComposed;
+        com.editora.perf.OffFx.then(
+                RESULT_SITE, () -> resultText(file, now, lineSeparator, finalNewline), a -> resultLanded(mine, a));
+    }
+
+    private void resultLanded(long mine, com.editora.perf.OffFx.Answer<String> a) {
+        if (mine != resultGeneration) {
+            return;
+        }
+        composing = false;
+        String text = a.value();
+        if (text == null) {
+            // Not put together: the Result area still shows the text for earlier choices. A save waiting for
+            // it is dropped, and Save stays off until a compose succeeds — the next choice tries again.
             afterComposed = null;
-            if (after != null) {
-                after.run();
-            }
-        });
+            resultFailure = resultFailedText(a.failure());
+            save.setDisable(true);
+            status.setText(resultFailure);
+            return;
+        }
+        showResult(text);
+        Runnable after = afterComposed;
+        afterComposed = null;
+        if (after != null) {
+            after.run();
+        }
+    }
+
+    /** Lands a failed compose for the last choices, as {@link #refreshResult} would. Test accessor. */
+    void failComposeForTest(Throwable failure) {
+        resultLanded(resultGeneration, new com.editora.perf.OffFx.Answer<>(null, failure));
     }
 
     /** What the status line says when the Result could not be put together or turned into text. Pure. */
@@ -381,6 +397,8 @@ public final class MergeViewerPane implements TabContent {
     }
 
     private void showResult(String text) {
+        resultFailure = null;
+        save.setDisable(false);
         generatedResult = text;
         updatingResult = true;
         try {
@@ -407,6 +425,10 @@ public final class MergeViewerPane implements TabContent {
         }
         if (composing) {
             afterComposed = () -> saveResult(whenSaved); // the Result for the last choice first
+            return;
+        }
+        if (resultFailure != null) { // the Result shown is for earlier choices
+            status.setText(resultFailure);
             return;
         }
         saving = true;
@@ -506,10 +528,17 @@ public final class MergeViewerPane implements TabContent {
         if (saving) {
             return false;
         }
-        if (composing) { // the quit may wait: put together in place
+        if (composing || resultFailure != null) { // the quit may wait: put together in place
             resultGeneration++;
             composing = false;
-            showResult(resultText(file, List.copyOf(choices), lineSeparator, finalNewline));
+            try {
+                showResult(resultText(file, List.copyOf(choices), lineSeparator, finalNewline));
+            } catch (RuntimeException e) {
+                resultFailure = resultFailedText(e);
+                save.setDisable(true);
+                status.setText(resultFailure);
+                return false; // never the Result for earlier choices
+            }
         }
         saving = true;
         return apply(resultTextForSave(resultArea.getText(), generatedResult, shownResult, lineSeparator), null);

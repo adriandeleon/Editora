@@ -927,10 +927,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         }
         detailsHash.setText(c.hash());
         long now = System.currentTimeMillis() / 1000;
-        detailsAuthor.setText(c.author() + " · "
-                + (c.epochSeconds() > 0
-                        ? absoluteDate(c.epochSeconds()) + " (" + relativeDate(c, now) + ")"
-                        : c.date()));
+        detailsAuthor.setText(c.author() + " · " + detailsDate(c, now));
         detailsMessage.setText(c.subject());
         showParents(c.parents());
         showRefs(c.refs());
@@ -983,11 +980,30 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
 
     private static final DateTimeFormatter ABSOLUTE_DATE = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM);
 
-    /** A commit time in the user's zone and locale: "Oct 3, 2026, 2:22:10 PM". */
+    /**
+     * A commit time in the user's zone and locale, the zone named: "Oct 3, 2026, 2:22:10 PM CEST". Named because
+     * the row's short date is the author's own, which can be another day.
+     */
     static String absoluteDate(long epochSeconds) {
-        return ABSOLUTE_DATE
-                .withLocale(java.util.Locale.getDefault(java.util.Locale.Category.FORMAT))
-                .format(Instant.ofEpochSecond(epochSeconds).atZone(ZoneId.systemDefault()));
+        java.util.Locale locale = java.util.Locale.getDefault(java.util.Locale.Category.FORMAT);
+        java.time.ZonedDateTime at = Instant.ofEpochSecond(epochSeconds).atZone(ZoneId.systemDefault());
+        return ABSOLUTE_DATE.withLocale(locale).format(at) + " "
+                + DateTimeFormatter.ofPattern("zzz", locale).format(at);
+    }
+
+    /**
+     * The details pane's date from the row: the absolute time with how long ago it was ("in the future" for a
+     * time ahead of the clock, never the short date again), or the short date when git gave no timestamp. Pure.
+     */
+    static String detailsDate(Entry c, long nowSeconds) {
+        return c.epochSeconds() > 0
+                ? absoluteDate(c.epochSeconds()) + " (" + relativeDate(c.epochSeconds(), "", nowSeconds) + ")"
+                : c.date();
+    }
+
+    /** The tooltip's date: the row's short date with how long ago it was, or "in the future". Pure. */
+    static String tooltipDate(Entry c, long nowSeconds) {
+        return c.epochSeconds() > 0 ? c.date() + " (" + relativeDate(c.epochSeconds(), "", nowSeconds) + ")" : c.date();
     }
 
     /**
@@ -1193,12 +1209,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
 
     private static String commitTooltip(Entry c) {
         StringBuilder sb = new StringBuilder(c.subject());
-        sb.append('\n').append(c.author()).append(" · ").append(c.date());
-        if (c.epochSeconds() > 0) {
-            sb.append(" (")
-                    .append(relativeDate(c, System.currentTimeMillis() / 1000))
-                    .append(')');
-        }
+        sb.append('\n').append(c.author()).append(" · ").append(tooltipDate(c, System.currentTimeMillis() / 1000));
         if (!c.refs().isEmpty()) {
             sb.append('\n');
             for (int i = 0; i < c.refs().size(); i++) {
