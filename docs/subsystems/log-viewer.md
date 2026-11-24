@@ -14,6 +14,7 @@ Level tints, tail-follow and filtering for log files. Back to [the docs index](.
   - `LogRecordFilter` / `LogFilter` — the filter. Stateful, fed one complete line at a time.
   - `LogTail` / `LogTailService` — reading what a file gained, and the poll that does it.
   - `LogNavigation` — next/previous line at a level.
+  - `LogTimes` — the time a line was written (epoch ms), typed times and ranges, and the line at a time.
 - [`editor/LogView`](../../src/main/java/com/editora/editor/logviewer/LogView.java) — one buffer's filter and
   follow state, and the full text a filter hides.
 - [`editor/LogHighlightOverlay`](../../src/main/java/com/editora/editor/logviewer/LogHighlightOverlay.java) —
@@ -96,6 +97,15 @@ marks repaints nothing. It paints one mark per pixel row, the worst, so cost doe
 number of marks. It shares the Markdown-lint stripe's slot (a log is never Markdown) and pushes the
 TODO stripe left by its width. A split's copy takes the original's marks instead of scanning.
 
+**Times are epoch milliseconds, completed by a `LogTimes.Context`.** A timestamp with no zone is in
+the context's zone, a date with no year in its year; `LogFilter.compile` uses `Context.local()`. The
+range lives in `LogQuery.from/to` (absolute, so a typed time of day is resolved against the caret
+line's date when it is typed) and compiles to `LogFilter.TimeRange` in `Patterns`. `LogRecordFilter`
+parses a line's time only while a range is set, carries it to the lines below like the level, and
+does not keep a line with no time known. The control bar has no field for the range but keeps it in
+`query()`, so typing a pattern does not drop it. `LogTimes.firstAtOrAfter` reads from the top: logs
+are only nearly ordered.
+
 **A stream is a tab without a file.** `LogViewerCoordinator.startStream` builds the command from a
 `LogStreamSource` (the typed text, shell words except for SSH's `host:/path`, whose path is quoted for
 the remote shell), opens an untitled read-only buffer forced into log mode and feeds it through
@@ -114,6 +124,8 @@ that is not gzip after all falls back to the plain read.
 
 ## Not done
 
+- No time ruler beside the overview stripe, and no time slider: the range is typed or set from the caret.
+- The time range is not remembered across sessions with the rest of the filter.
 - A stream that ended cannot be restarted in place (it would repeat its last 1000 lines); open it again.
 - Streams are not reopened with the session.
 - Archives (`.zip`, `.tar`, `.tar.gz`) have no entry picker; only single-file gzip opens.

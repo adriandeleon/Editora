@@ -209,6 +209,33 @@ Filtered lines keep their real line numbers in the gutter, and applying or
 clearing a filter keeps you on the line you were on. Filtering works together
 with Follow: new records are filtered as they arrive.
 
+## Times
+
+Editora reads the time each line was written from its timestamp: ISO and
+Logback dates (`2026-11-24 10:05:30,123`, `2026-11-24T10:05:30Z`), Tomcat's
+`24-Nov-2026 10:05:30.123`, syslog's `Nov 24 10:05:30`, klog's
+`I1124 10:05:30.000000`, an access log's `[24/Nov/2026:10:05:30 +0000]`, and a
+JSON line's `time`, `timestamp` or `ts`, as text or as an epoch number. A line
+without a timestamp, such as a stack-trace frame, was written at the time of the
+line above it. A time with no zone is in your computer's zone, and a syslog date
+with no year is in the current year.
+
+- **Log: Go to Time…** asks for a time and moves to the first line written then
+  or later. Type a time of day (`10:05`, `10:05:30.250`), which is on the caret
+  line's date, or a full date and time.
+- **Log: Filter by Time…** shows only the records written between two times:
+  `10:05 - 10:20`, `2026-11-24 22:00 .. 2026-11-25 02:00`. Leave a side empty
+  for no limit (`10:05 ..`). The end covers all of what it names, so `10:20`
+  runs to 10:20:59. The control bar shows the range next to the line count.
+- **Log: Show From Caret Line** and **Log: Show Up To Caret Line** set one end
+  of the range to the time of the line at the caret.
+- **Log: Clear Time Range** removes the range and keeps the rest of the filter;
+  **Log: Clear Filter** removes everything.
+
+The time range works with the level floor and the patterns: a record has to
+pass all of them. Lines above the first timestamp have no time, so a range
+hides them.
+
 ## Commands
 
 In a log, **Next Problem** and **Previous Problem** step through the lines at
@@ -224,6 +251,10 @@ The keys are F8 and Shift+F8, F2 and Shift+F2 in the IntelliJ keymaps, and
 | Filter by pattern | `log.setRegexFilter` | |
 | Hide records matching a pattern | `log.setHideFilter` | |
 | Clear the filter | `log.clearFilter` | |
+| Go to the first line at a time | `log.goToTime` | |
+| Filter by time range | `log.setTimeRange` | |
+| Show from / up to the caret line's time | `log.showFromCaret` / `log.showUpToCaret` | |
+| Clear the time range | `log.clearTimeRange` | |
 | Open a live log from a container, pod, unit, SSH or a command | `log.openStream` | |
 | Next / previous line at warning level or higher (**Log: Next Warning or Error**, **Log: Previous Warning or Error**) | `log.nextError` / `log.previousError` | Next / Previous Problem |
 | Show the file as a log, or stop (toggle) | `log.viewAsLog` |

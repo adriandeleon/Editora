@@ -41,6 +41,9 @@ class HistoryEngineFixesTest {
 
     private SharedConfig open() {
         SharedConfig config = new SharedConfig(dir, false);
+        // Results meant for the FX thread run here: in a JVM where another test started the toolkit they would
+        // land on it later, after the assertions (the other writer's rows, adoptForeignRows).
+        config.setFxThreadForTest(Runnable::run);
         config.load();
         open.add(config);
         return config;
