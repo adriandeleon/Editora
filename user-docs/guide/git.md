@@ -256,9 +256,13 @@ current one first, then **Remote** branches, grouped by remote when there are
 several. It opens with the current branch selected (with a detached HEAD, or
 **Local** folded, nothing that Enter would run is selected). Clicking a row
 checks the branch out. Choosing a remote branch switches to a local branch
-that tracks it, whatever that branch is called; when none does and a local
-branch of that name tracks something else, it asks for a name for a new
-tracking branch instead. A row's `⋯` button, a
+that tracks it, whatever that branch is called (the one of the same name
+first). A branch checked out in another [work tree](#remotes-and-worktrees) is passed
+over, since Git will not check out the same branch twice. When no free local
+branch tracks it, a new tracking branch is created under the remote branch's
+name; if a local branch of that name already exists (it tracks something
+else, tracks nothing, or is checked out in another work tree), it asks for a
+name for the new tracking branch instead. A row's `⋯` button, a
 right-click, or the Menu key opens its actions; the same actions are in the
 palette and under **Git ▸ Branches**.
 
