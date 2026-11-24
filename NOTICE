@@ -361,7 +361,8 @@ RichTextFX — io.github.adriandeleon:richtextfx
 Flowless — io.github.adriandeleon:flowless
     The virtual flow under the code-editing control. This is a fork of
     FXMisc Flowless 0.7.4 with one layout-performance change, vendored
-    under m2-repo/ in place of org.fxmisc.flowless:flowless.
+    under m2-repo/ in place of org.fxmisc.flowless:flowless
+    (https://github.com/adriandeleon/Flowless).
     Copyright (c) 2014, TomasMikula. All rights reserved.
     License: BSD-2-Clause
     https://github.com/FXMisc/Flowless

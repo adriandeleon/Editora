@@ -87,8 +87,8 @@ upstream `org.fxmisc.flowless:flowless` from RichTextFX so only the fork is on t
   now measures the cell again and keeps its memoized breadth and length when neither changed; a changed size is
   forgotten as before (word wrap's re-measure in `EditorBuffer.startWrapRemeasure` relies on that).
 
-**To update the fork:** the source is FXMisc/Flowless at tag `v0.7.4` plus the commits on the fork's `editora`
-branch; the `-sources.jar` beside the jar holds exactly what was compiled. Build it with
+**To update the fork:** the source is github.com/adriandeleon/Flowless, branch `editora` (upstream tag `v0.7.4`
+plus our commits); the `-sources.jar` beside the jar holds exactly what was compiled. Build it with
 `scripts/build-jar.sh <version>` in the fork (javac against ReactFX 2.0-M5 and JavaFX 13 from `~/.m2`, Java 21
 bytecode; the build is reproducible, so a rebuild gives the same SHA-256). JavaFX 13 is deliberate: from 19 on,
 `ObservableValue.flatMap` clashes with ReactFX's `Val.flatMap` at compile time, though the bytecode runs on any
