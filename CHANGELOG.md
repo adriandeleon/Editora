@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Ruby tests and Rails apps.** Run File and Debug File now run a Ruby file as what it is: an RSpec or Minitest file's
+  tests (through `bin/rails test` in a Rails app), a Rails app's server, or a script, under `bundle exec` in a bundled
+  project. Debug Test at Caret debugs the RSpec example or Minitest test at the caret alone, and F5 in a Rails
+  controller serves the app so a request stops at your breakpoints.
 - **Attach to a remote program.** **Debug: Attach to Remote Program…** debugs a C, C++ or Rust program running under
   gdbserver (or lldb-server) on another machine, in a container or on a board, with a copy of the program here for its
   symbols, on GDB or CodeLLDB. A launch.json `cppdbg` configuration with `miDebuggerServerAddress` attaches the same way.

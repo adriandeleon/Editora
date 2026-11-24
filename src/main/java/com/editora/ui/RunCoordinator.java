@@ -3215,7 +3215,8 @@ final class RunCoordinator {
             @Nullable String jvmToolName,
             com.editora.run.ClojureRun.@Nullable Plan clojure,
             com.editora.run.PythonWebApps.@Nullable Server web,
-            com.editora.run.PhpApps.@Nullable Plan php) {}
+            com.editora.run.PhpApps.@Nullable Plan php,
+            com.editora.run.RubyApps.@Nullable Plan ruby) {}
 
     private FilePlan planFile(
             String language,
@@ -3275,7 +3276,11 @@ final class RunCoordinator {
                                 List.of(),
                                 d -> java.nio.file.Files.isRegularFile(d.resolve("__init__.py")))
                         : null,
-                "php".equals(language) ? phpPlan(path, content, project) : null);
+                "php".equals(language) ? phpPlan(path, content, project) : null,
+                "ruby".equals(language) && com.editora.process.ExecTargets.runsHere(path)
+                        ? com.editora.run.RubyApps.plan(
+                                path, content, List.of(), -1, null, project, RubyDebugLaunch.lookups())
+                        : null);
     }
 
     /**
@@ -3336,6 +3341,7 @@ final class RunCoordinator {
         boolean javaSource = !buffer.isPython()
                 && !buffer.isShell()
                 && !"php".equals(buffer.getLanguage())
+                && !"ruby".equals(buffer.getLanguage())
                 && !com.editora.run.NodeRunPlan.isNodeLanguage(buffer.getLanguage())
                 && !com.editora.run.CompiledRunLine.supports(buffer.getLanguage())
                 && !jvmScript;
@@ -3416,6 +3422,15 @@ final class RunCoordinator {
         }
         if (plan.php() != null) {
             launchPhp(path, plan.php(), args);
+            return;
+        }
+        if (plan.ruby() != null) { // a script, a spec or test file, a Rails app's server (RubyApps)
+            List<String> argv = new ArrayList<>(plan.ruby().command());
+            argv.addAll(args);
+            streamRun(path.getFileName().toString(), plan.ruby().cwd(), argv, java.util.Map.of(), path);
+            if (plan.ruby().url() != null) {
+                host.setStatus(tr("status.run.rubyServing", plan.ruby().url()));
+            }
             return;
         }
         if (com.editora.run.CompiledRunLine.supports(buffer.getLanguage())) {
