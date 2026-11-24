@@ -1456,6 +1456,16 @@ does:
 A `preLaunchTask` runs as a before-launch step when its `tasks.json` task is a plain `shell` (`sh -c` / `cmd /c`) or
 `process` command (`LaunchJson.taskArgv`). Any other task type, or one with `dependsOn`, is said rather than guessed.
 
+A configuration's `serverReadyAction` and `postDebugTask` ride on its session as a `ui/LaunchFollowUp`, set just before
+`startRoute` and counted from the session's next STARTING (so an end still to be reported for the launch it replaced
+doesn't run the task). [`dap/ServerReadyAction`](../../src/main/java/com/editora/dap/ServerReadyAction.java) is VS
+Code's matcher: its default pattern, `uriFormat`, ANSI stripped, lines joined across output events, one match per
+launch. `DebugCoordinator.serverOutput` feeds it the session's output (not Editora's own command lines);
+`openExternally` goes to `openExternalUrl`, `debugWithChrome`/`debugWithEdge` and `startDebugging` run
+`resolveAndRun` in a session beside it (`sessionForLaunch`), remembered with its generation for `killOnServerStop`. At
+the session's INACTIVE `launchEnded` stops that session and runs the `postDebugTask` as a before-launch step; Restart
+takes the follow-up before its stop and runs the task, then the launch again.
+
 [`dap/LaunchRoute`](../../src/main/java/com/editora/dap/LaunchRoute.java) sends each `type` to its debugger. Only
 the fields VS Code reads itself are left out (`name`, its tasks, `console`, `presentation` …):
 
