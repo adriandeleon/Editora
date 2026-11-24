@@ -96,10 +96,17 @@ Follow off pauses delivery, not the command; the held text is capped at `LogView
 the tab (`onBufferClosed`) and `shutdown` stop the command. COMMAND and JOURNAL run on
 `ExecTargets.forPath(projectRoot)`; CONTAINER, KUBERNETES and SSH_FILE are clients on this machine.
 
+**A `.gz` file opens decompressed and read-only.** `FileWorkflowCoordinator.prepareGzip` reads it
+through `io/GzipText` (at most `EditorBuffer.LARGE_FILE_BYTES`; a log keeps its end, from a line
+start, anything else its start) and marks the load `truncated`, which makes the tab read-only and
+keeps Save from writing text over the compressed bytes. `LogFileNames.isLog` looks through `.gz`
+(not `.tar.gz`), so `app.log.2.gz` is a log by name; `startFollow` refuses a compressed file. A file
+that is not gzip after all falls back to the plain read.
+
 ## Not done
 
 - A stream that ended cannot be restarted in place (it would repeat its last 1000 lines); open it again.
 - Streams are not reopened with the session.
-
+- Archives (`.zip`, `.tar`, `.tar.gz`) have no entry picker; only single-file gzip opens.
 - The level filter, pattern filter, hide filter and clear filter commands have no default keys.
 - The hide pattern's matches are not highlighted (only the show pattern's are).

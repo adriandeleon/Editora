@@ -21,6 +21,13 @@ A file opens in log mode when its name says it is a log:
 - `syslog`, `dmesg`, `catalina.out` and `nohup.out`, also with a rotation number
   (`syslog.1`).
 
+A log that logrotate compressed (`app.log.2.gz`, `syslog.3.gz`) opens too,
+decompressed and read-only, so you can filter it like any log without unpacking
+it first. Up to 16 MB of it is shown; for a bigger one, that is its last 16 MB,
+the newest lines. Any other `.gz` file opens decompressed and read-only as well.
+Follow is not available for a compressed log, since it no longer grows. Archives
+of several files (`.tar.gz`, `.zip`) don't open this way.
+
 A plain-text file whose name doesn't settle it, such as `server.out`,
 `worker.err`, or a file with no extension (like most of `/var/log`), is checked
 by content: it opens as a log when enough of its first lines carry a level or

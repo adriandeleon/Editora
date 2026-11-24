@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Live logs from containers, Kubernetes, systemd and SSH.** **Log: Open Log Stream…** opens a read-only log tab fed
   by `docker logs -f`, `kubectl logs -f`, `journalctl -f -u`, `ssh host tail -F` or any command you type, with level
   colors, filters and Follow (off pauses it). Closing the tab stops the command.
+- **Compressed logs open directly.** A `.gz` file such as logrotate's `app.log.2.gz` opens decompressed and read-only,
+  in the log viewer when its name is a log's, so it can be filtered without unpacking it. A large one shows its last
+  16 MB (a log) or first 16 MB.
 - **Logs open the way you left them.** A log remembers its level floor and its show and hide patterns, and a file's
   **View as Log** choice is kept too (also turning off a file recognised as a log by its lines), so the next session
   opens it filtered as before.

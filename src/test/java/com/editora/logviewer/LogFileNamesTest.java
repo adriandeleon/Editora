@@ -23,7 +23,11 @@ class LogFileNamesTest {
             "syslog.1",
             "catalina.out",
             "nohup.out",
-            "dmesg"
+            "dmesg",
+            "app.log.gz",
+            "app.log.2.gz",
+            "syslog.3.gz",
+            "access_log.1.gz"
         }) {
             assertTrue(LogFileNames.isLog(name), name);
         }
@@ -35,7 +39,8 @@ class LogFileNamesTest {
             "notes.txt",
             "catalog.json",
             "login.js",
-            "app.log.gz",
+            "logs.tar.gz",
+            "notes.txt.gz",
             "blog.md",
             "changelog",
             "server.out",

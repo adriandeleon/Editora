@@ -46,7 +46,7 @@ a Markdown file. JavaScript uses the TSX grammar, so JSX in a `.js` file highlig
 XML covers its dialects too: DTDs (`.dtd`, `.ent`, `.mod`), RELAX NG,
 XSL-FO, Schematron, MSBuild and NuGet project files, `.resx`, XAML, XLIFF,
 property lists, KML, GPX, DITA and others open as XML (the full list is under
-[XML](/docs/lsp#xml)). DTD declarations (`<!ELEMENT>`, `<!ATTLIST>`,
+[XML](/docs/xml#language-server)). DTD declarations (`<!ELEMENT>`, `<!ATTLIST>`,
 `<!NOTATION>`, like `<!ENTITY>`) are highlighted in a DOCTYPE and in a DTD
 file. A `go.mod` stays plain text, and `.xhtml` is HTML. A `.mod`, `.sch`,
 `.props`, `.targets` or `.fo` file is XML only when its text starts with `<`,
