@@ -2806,7 +2806,9 @@ when it has settings of its own.
   when its tokens are current.
 - **Diagnostics.** In open-files scope, publishes for files not open on the publishing server are dropped
   in `LspManager` on the reader thread. The Problems tree rebuilds at most once per 100 ms and not at all
-  while its window is closed (it catches up on show).
+  while its window is closed (it catches up on show); a row's context menu is built when it is asked for
+  (`LazyContextMenu.install`), not on each cell update. The build folder a Java publish's non-project check
+  needs is memoized per server root and folder (`LspCoordinator.buildFolders`, a `perf/Looked`).
 - **One ordered writer.** `AsyncPipeWriter` is public and also used by `DapClient` and `AcpClient`, so no
   pipe or socket write happens on the FX thread. `didOpen` / `didChange` / `didSave` are JSON-encoded on the
   writer thread (`DeferredSyncConsumer`); the incremental diff is still computed by the caller.
