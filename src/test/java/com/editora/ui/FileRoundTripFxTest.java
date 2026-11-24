@@ -21,6 +21,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import static com.editora.i18n.Messages.tr;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -317,6 +318,32 @@ class FileRoundTripFxTest {
 
             assertEquals(log, Files.readString(file), "the tail must not replace the whole log");
             assertEquals(tr("status.log.trimmedNoSave", "trimmed.log"), echo(fx));
+        }
+    }
+
+    @Test
+    void aCompressedLogOpensDecompressedReadOnlyAndIsNeverSavedOver(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            String log = "2026-01-01 INFO started\n2026-01-01 ERROR failed\n";
+            var bytes = new java.io.ByteArrayOutputStream();
+            try (var out = new java.util.zip.GZIPOutputStream(bytes)) {
+                out.write(log.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            byte[] gz = bytes.toByteArray();
+            Path file = Files.write(dir.resolve("app.log.2.gz"), gz);
+            EditorBuffer buffer = load(fx, file);
+
+            assertEquals(log, FxTestSupport.callOnFx(buffer::getContent), "the text, not the compressed bytes");
+            assertTrue(FxTestSupport.callOnFx(buffer::isLog), "a rotated log's compressed copy is a log");
+            assertTrue(FxTestSupport.callOnFx(buffer::isReadOnly));
+            FxTestSupport.runOnFx(() -> buffer.applyLogFilter(LogLevel.ERROR, com.editora.logviewer.LogQuery.NONE));
+            assertEquals(
+                    "2026-01-01 ERROR failed",
+                    FxTestSupport.callOnFx(buffer::getVisibleContent).strip());
+
+            save(async, fx);
+            assertArrayEquals(gz, Files.readAllBytes(file), "text never replaces the compressed file");
         }
     }
 
