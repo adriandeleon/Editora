@@ -96,7 +96,16 @@ marks repaints nothing. It paints one mark per pixel row, the worst, so cost doe
 number of marks. It shares the Markdown-lint stripe's slot (a log is never Markdown) and pushes the
 TODO stripe left by its width. A split's copy takes the original's marks instead of scanning.
 
+**A `.gz` file opens decompressed and read-only.** `FileWorkflowCoordinator.prepareGzip` reads it
+through `io/GzipText` (at most `EditorBuffer.LARGE_FILE_BYTES`; a log keeps its end, from a line
+start, anything else its start) and marks the load `truncated`, which makes the tab read-only and
+keeps Save from writing text over the compressed bytes. `LogFileNames.isLog` looks through `.gz`
+(not `.tar.gz`), so `app.log.2.gz` is a log by name; `startFollow` refuses a compressed file. A file
+that is not gzip after all falls back to the plain read.
+
 ## Not done
+
+- Archives (`.zip`, `.tar`, `.tar.gz`) have no entry picker; only single-file gzip opens.
 
 - The level filter, pattern filter, hide filter and clear filter commands have no default keys.
 - The hide pattern's matches are not highlighted (only the show pattern's are).

@@ -1010,6 +1010,37 @@ final class FileWorkflowCoordinator {
                     true);
         }
 
+        /**
+         * This load as the decompressed text of the gzip file of {@code fileSize}/{@code fileMtime}: read-only
+         * ({@code truncated}, which also keeps Save from writing text over the compressed file), with no source
+         * bytes to write back. {@code logOffset} holds the decompressed size and {@code tail} whether only its end
+         * was kept, for the status message.
+         */
+        PreparedLoad decompressedFrom(long fileSize, long fileMtime, long decompressed, boolean cut) {
+            return new PreparedLoad(
+                    file,
+                    content,
+                    fileSize,
+                    fileMtime,
+                    lines,
+                    maxLineLength,
+                    charset,
+                    editorConfig,
+                    binary,
+                    large,
+                    heavy,
+                    longLine,
+                    !binary,
+                    log,
+                    decompressed,
+                    cut,
+                    null,
+                    declaredCharset,
+                    null,
+                    document,
+                    false);
+        }
+
         /** This load with {@code fingerprint} and {@code mtime}/{@code size} of the file it was decrypted from. */
         PreparedLoad decryptedFrom(long fileSize, long fileMtime, @Nullable String fileFingerprint) {
             return new PreparedLoad(
@@ -1183,6 +1214,12 @@ final class FileWorkflowCoordinator {
                 return locked; // decrypted later, by the window's encryption feature (never as part of a read)
             }
         }
+        if (com.editora.io.GzipText.isGzip(file)) {
+            PreparedLoad gzip = prepareGzip(file, size, mtime, isLog, editorConfig, sniffBinary, forDocument);
+            if (gzip != null) {
+                return gzip;
+            }
+        }
         long wanted = Math.min(size, EditorBuffer.HUGE_FILE_BYTES);
         // Before reading, only the characters are known: a file whose characters alone will not fit is read in
         // part, so it is never read whole. Its lines are counted after the read (prepareFromBytes).
@@ -1245,6 +1282,30 @@ final class FileWorkflowCoordinator {
         }
         byte[] bytes = Files.readAllBytes(file);
         return prepareFromBytes(file, size, mtime, isLog, editorConfig, bytes, sniffBinary, forDocument);
+    }
+
+    /**
+     * A gzip-compressed file ({@code app.log.2.gz}), decompressed: read-only, since saving the text would replace
+     * the compressed file with it. At most {@link EditorBuffer#LARGE_FILE_BYTES} of it — a log's end, any other
+     * file's start. Null when it is not gzip after all (the caller then reads it as it is, likely as binary).
+     */
+    private @Nullable PreparedLoad prepareGzip(
+            Path file,
+            long size,
+            long mtime,
+            boolean isLog,
+            com.editora.editorconfig.EditorConfigProperties editorConfig,
+            boolean sniffBinary,
+            boolean forDocument) {
+        com.editora.io.GzipText.Read read;
+        try {
+            read = com.editora.io.GzipText.read(file, (int) EditorBuffer.LARGE_FILE_BYTES, isLog);
+        } catch (IOException e) {
+            return null; // not gzip (a ZipException), or unreadable: the plain read reports it
+        }
+        return prepareFromBytes(
+                        file, read.bytes().length, mtime, isLog, editorConfig, read.bytes(), sniffBinary, forDocument)
+                .decompressedFrom(size, mtime, read.total(), read.cut());
     }
 
     /**
@@ -1560,6 +1621,17 @@ final class FileWorkflowCoordinator {
                             : com.editora.editops.LineEndings.dominant(text),
                     buffer.getEffectiveCharset(),
                     host::setStatus);
+        }
+        if (load.truncated() && com.editora.io.GzipText.isGzip(load.file())) {
+            String name = String.valueOf(load.file().getFileName());
+            String total = StatusBar.formatSize(load.logOffset());
+            return !load.tail()
+                    ? tr("status.load.gzip", name, total)
+                    : tr(
+                            load.log() ? "status.load.gzipLogCut" : "status.load.gzipCut",
+                            name,
+                            total,
+                            StatusBar.formatSize(text.length()));
         }
         if (load.truncated()) {
             return tr(

@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Warnings and errors on a log's scrollbar.** A stripe over the scrollbar marks a log's WARN lines in amber and its
   ERROR and FATAL lines in red; hover a mark to read the line, click it to go there. A filtered log marks what the
   filter kept.
+- **Compressed logs open directly.** A `.gz` file such as logrotate's `app.log.2.gz` opens decompressed and read-only,
+  in the log viewer when its name is a log's, so it can be filtered without unpacking it. A large one shows its last
+  16 MB (a log) or first 16 MB.
 - **Logs open the way you left them.** A log remembers its level floor and its show and hide patterns, and a file's
   **View as Log** choice is kept too (also turning off a file recognised as a log by its lines), so the next session
   opens it filtered as before.
