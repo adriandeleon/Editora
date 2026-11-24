@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Elixir.** Elixir is a language of its own: highlighting, indentation, folding, the outline, snippets and a new-file
+  template, with ElixirLS as its language server. Run File and Debug File run a Mix project's tests (`mix test`), a
+  script (`mix run`) or the project, and Debug Test at Caret debugs the ExUnit test at the caret alone, stopping in your
+  modules with their values. ElixirLS installs from **Settings → Debugging**.
 - **Ruby tests and Rails apps.** Run File and Debug File now run a Ruby file as what it is: an RSpec or Minitest file's
   tests (through `bin/rails test` in a Rails app), a Rails app's server, or a script, under `bundle exec` in a bundled
   project. Debug Test at Caret debugs the RSpec example or Minitest test at the caret alone, and F5 in a Rails

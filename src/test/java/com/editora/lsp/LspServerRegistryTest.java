@@ -181,6 +181,14 @@ class LspServerRegistryTest {
         assertEquals("dart", LspServerRegistry.serverIdFor("dart"));
         assertTrue(LspServerRegistry.specFor("dart", Map.of()).rootMarkers().contains("pubspec.yaml"));
         assertEquals(
+                List.of("elixir-ls"),
+                LspServerRegistry.specFor("elixir", Map.of()).command(),
+                "ElixirLS by its packages' name; Editora's own install is found before it (ElixirServerInstall)");
+        assertEquals("elixir", LspServerRegistry.serverIdFor("elixir"));
+        assertEquals(
+                List.of("mix.exs", ".git"),
+                LspServerRegistry.specFor("elixir", Map.of()).rootMarkers());
+        assertEquals(
                 List.of("docker-langserver", "--stdio"),
                 LspServerRegistry.specFor("dockerfile", Map.of()).command());
         assertEquals(List.of("sqls"), LspServerRegistry.specFor("sql", Map.of()).command());

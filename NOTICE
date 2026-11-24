@@ -30,8 +30,8 @@ Most grammars were obtained from the shiki "tm-grammars" collection:
     https://github.com/shikijs/textmate-grammars-themes
     (packages/tm-grammars/grammars)
 
-The C#, CSS, dotenv, PowerShell, SQL, Scala, Clojure, and Dart grammars are
-from tm-grammars 1.32.22; the other grammars from this source are from earlier
+The C#, CSS, dotenv, PowerShell, SQL, Scala, Clojure, Dart, and Elixir
+grammars are from tm-grammars 1.32.22; the other grammars from this source are from earlier
 releases. The Scala grammar (scala.tmLanguage.json) is shiki's copy of
 scala/vscode-scala-syntax and the Clojure grammar (clojure.tmLanguage.json) of
 the one Microsoft Visual Studio Code ships (from atom/language-clojure), both
@@ -71,6 +71,28 @@ vendored unmodified.
     THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+The Elixir grammar (elixir.tmLanguage.json) is shiki's copy of the one in
+elixir-editors/elixir-tmbundle (Syntaxes/Elixir.tmLanguage, commit 43c8cd9),
+under the Apache License, Version 2.0; it is vendored unmodified. Its ~L and
+~H sigils include an EEx grammar (text.elixir) that is not bundled, so their
+Elixir parts stay plain; the HTML in them is highlighted.
+
+    https://github.com/elixir-editors/elixir-tmbundle
+
+    Copyright 2012 Plataformatec.
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
 
 These are aggregated by shiki from their respective upstream projects, each
 under its original license (predominantly MIT, with some under other permissive
@@ -198,7 +220,7 @@ crontab, Caddyfile,
 fstab, hosts, .properties, deb822 (Debian control / APT sources), APT
 sources.list, network interfaces, Debian changelog, unified diff/patch,
 Makefile, justfile, Protocol Buffers, GraphQL, Astro, .gitattributes, pip
-requirements, Scala, Clojure, Dart.
+requirements, Scala, Clojure, Dart, Elixir.
 
 ================================================================================
 Bundled fonts
@@ -272,8 +294,8 @@ and java.json, which started from friendly-snippets and was
 largely rewritten for Editora: fixed bodies (class name, package, semicolons),
 arrow switch, records, sealed types, streams, text blocks, virtual threads,
 JUnit 5, and IntelliJ-style alias triggers. The remaining snippet files (xml,
-batchfile, groovy, scala, clojure, dart, json, yaml, ini, global) are original
-to Editora and covered by Editora's own MIT License.
+batchfile, groovy, scala, clojure, dart, elixir, json, yaml, ini, global) are
+original to Editora and covered by Editora's own MIT License.
 
 ================================================================================
 Bundled Maven POM schemas
@@ -532,7 +554,7 @@ Simple Icons (browser + file-type glyphs)
     browser picker (com.editora.ui.Icons), the Apache Maven feather glyph in the
     Maven toolbar button (com.editora.ui.Icons.maven), and the per-language
     file-type glyphs in com.editora.ui.FileIcons (Java, Python, JavaScript,
-    TypeScript, Go, Dart, PHP, Ruby, C, C++, C#, Kotlin, Apache Groovy, Scala,
+    TypeScript, Go, Dart, PHP, Ruby, Elixir, C, C++, C#, Kotlin, Apache Groovy, Scala,
     Clojure, HTML5, CSS, Markdown, YAML,
     Bash, Docker, Terraform, Mermaid, …), are the single-path SVG logos from the
     Simple Icons collection,

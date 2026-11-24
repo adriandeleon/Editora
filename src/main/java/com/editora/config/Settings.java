@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 183;
+    public static final int SCHEMA_VERSION = 184;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -1000,6 +1000,10 @@ public class Settings {
     private boolean firefoxDebugEnabled = true;
     /** vscode-firefox-debug's {@code adapter.bundle.js} (or its folder); blank = Editora's install, VS Code's extension. */
     private String firefoxDebugPath = "";
+    /** Elixir debugging (ElixirLS's debug adapter): on by default, only effective when ElixirLS is found. */
+    private boolean elixirDebugEnabled = true;
+    /** ElixirLS's {@code debug_adapter.sh} (or its folder); blank = Editora's install, VS Code's extension. */
+    private String elixirDebugPath = "";
     /** Dart and Flutter debugging (the SDK's own adapters): on by default, only effective when {@code dart} is found. */
     private boolean dartDebugEnabled = true;
     /** {@code dart} (its {@code debug_adapter}); blank = {@code dart} on the PATH. */
@@ -1040,6 +1044,7 @@ public class Settings {
     private String clojureLspCommand = "";
     private String luaLspCommand = "";
     private String dartLspCommand = "";
+    private String elixirLspCommand = "";
     private String dockerfileLspCommand = "";
     private String sqlLspCommand = "";
     private String terraformLspCommand = "";
@@ -1102,6 +1107,7 @@ public class Settings {
     private boolean clojureLspEnabled = true;
     private boolean luaLspEnabled = true;
     private boolean dartLspEnabled = true;
+    private boolean elixirLspEnabled = true;
     private boolean dockerfileLspEnabled = true;
     private boolean sqlLspEnabled = true;
     private boolean terraformLspEnabled = true;
@@ -4135,6 +4141,22 @@ public class Settings {
         this.firefoxDebugPath = firefoxDebugPath == null ? "" : firefoxDebugPath;
     }
 
+    public boolean isElixirDebugEnabled() {
+        return elixirDebugEnabled;
+    }
+
+    public void setElixirDebugEnabled(boolean elixirDebugEnabled) {
+        this.elixirDebugEnabled = elixirDebugEnabled;
+    }
+
+    public String getElixirDebugPath() {
+        return elixirDebugPath == null ? "" : elixirDebugPath;
+    }
+
+    public void setElixirDebugPath(String elixirDebugPath) {
+        this.elixirDebugPath = elixirDebugPath == null ? "" : elixirDebugPath;
+    }
+
     public boolean isDartDebugEnabled() {
         return dartDebugEnabled;
     }
@@ -4647,6 +4669,22 @@ public class Settings {
 
     public void setDartLspEnabled(boolean dartLspEnabled) {
         this.dartLspEnabled = dartLspEnabled;
+    }
+
+    public String getElixirLspCommand() {
+        return elixirLspCommand == null ? "" : elixirLspCommand;
+    }
+
+    public void setElixirLspCommand(String elixirLspCommand) {
+        this.elixirLspCommand = elixirLspCommand == null ? "" : elixirLspCommand;
+    }
+
+    public boolean isElixirLspEnabled() {
+        return elixirLspEnabled;
+    }
+
+    public void setElixirLspEnabled(boolean elixirLspEnabled) {
+        this.elixirLspEnabled = elixirLspEnabled;
     }
 
     public String getLuaLspCommand() {

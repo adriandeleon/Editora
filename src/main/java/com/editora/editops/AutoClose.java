@@ -101,6 +101,9 @@ public final class AutoClose {
         if ("dart".equals(language) && !hasSelection) {
             return dart(typed, lineBeforeCaret, prev, next);
         }
+        if ("elixir".equals(language) && !hasSelection) {
+            return elixir(typed, lineBeforeCaret, prev, next);
+        }
         if (!"python".equals(language) || hasSelection) {
             return decide(typed, prev, next, hasSelection);
         }
@@ -136,6 +139,30 @@ public final class AutoClose {
                             || !(Character.isLetterOrDigit(lineBeforeCaret.charAt(n - 2))
                                     || lineBeforeCaret.charAt(n - 2) == '_'));
             if (rawPrefix && !Character.isLetterOrDigit(next)) {
+                return new Decision(Action.INSERT_PAIR, typed);
+            }
+        }
+        return decide(typed, prev, next, false);
+    }
+
+    /**
+     * Elixir: no backtick strings, {@code """} and {@code '''} open heredocs, {@code ?"} is a character literal
+     * (never a string), and a sigil's letter ({@code ~s"}, {@code ~r'}) opens a string where a word would not.
+     */
+    private static Decision elixir(char typed, String lineBeforeCaret, char prev, char next) {
+        if (typed == '`') {
+            return Decision.NONE;
+        }
+        if ((typed == '"' || typed == '\'') && next != typed) {
+            if (prev == '?') {
+                return Decision.NONE;
+            }
+            if (opensTripleQuote(lineBeforeCaret, typed)) {
+                return new Decision(Action.INSERT_TRIPLE, typed);
+            }
+            int n = lineBeforeCaret.length();
+            boolean sigil = Character.isLetter(prev) && n >= 2 && lineBeforeCaret.charAt(n - 2) == '~';
+            if (sigil && !Character.isLetterOrDigit(next)) {
                 return new Decision(Action.INSERT_PAIR, typed);
             }
         }

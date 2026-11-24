@@ -110,6 +110,7 @@ class LspCoordinatorServerIdsTest {
             case "clojure" -> s.setClojureLspCommand(v);
             case "lua" -> s.setLuaLspCommand(v);
             case "dart" -> s.setDartLspCommand(v);
+            case "elixir" -> s.setElixirLspCommand(v);
             case "dockerfile" -> s.setDockerfileLspCommand(v);
             case "sql" -> s.setSqlLspCommand(v);
             case "terraform" -> s.setTerraformLspCommand(v);

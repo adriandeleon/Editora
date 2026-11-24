@@ -36,7 +36,8 @@ class DebugLanguagesTest {
                         "php",
                         "bash",
                         "dart",
-                        "lua"),
+                        "lua",
+                        "elixir"),
                 List.copyOf(DebugLanguages.ids()));
         assertEquals(DebugLanguages.ids(), DapServerRegistry.languageIdsForDebug());
         for (String ts : List.of("typescript", "javascriptreact", "typescriptreact", "javascript")) {
@@ -50,6 +51,7 @@ class DebugLanguagesTest {
         assertSame(DebugLanguages.PHP, DebugLanguages.forLanguage("php"));
         assertSame(DebugLanguages.BASH, DebugLanguages.forLanguage("shell"), "a shell file: Bash's");
         assertSame(DebugLanguages.LUA, DebugLanguages.forLanguage("lua"));
+        assertSame(DebugLanguages.ELIXIR, DebugLanguages.forLanguage("elixir"));
         assertNull(DebugLanguages.forLanguage("zig"));
         assertNull(DebugLanguages.forLanguage(null));
         assertNull(DebugLanguages.byId(null));
@@ -66,11 +68,12 @@ class DebugLanguagesTest {
                                     DebugLanguages.PHP,
                                     DebugLanguages.BASH,
                                     DebugLanguages.DART,
-                                    DebugLanguages.LUA)
+                                    DebugLanguages.LUA,
+                                    DebugLanguages.ELIXIR)
                             .contains(l),
                     l.external() != null,
                     l.id()
-                            + ": Go's, Rust's, C/C++'s, C#'s, Ruby's, PHP's, Bash's, Dart's and Lua's adapters are started by the"
+                            + ": Go's, Rust's, C/C++'s, C#'s, Ruby's, PHP's, Bash's, Dart's, Lua's and Elixir's adapters are started by the"
                             + " generic path");
         }
     }

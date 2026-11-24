@@ -145,7 +145,8 @@ final class InstallCoordinator {
                     InstallCatalog.PHP_DEBUG_STEP,
                     InstallCatalog.BASH_DEBUG_STEP,
                     InstallCatalog.LUA_DEBUG_STEP,
-                    InstallCatalog.FIREFOX_DEBUG_STEP -> installDebugger(key);
+                    InstallCatalog.FIREFOX_DEBUG_STEP,
+                    InstallCatalog.ELIXIR_LS_STEP -> installDebugger(key);
             case "python" -> installSupport(Lang.PYTHON);
             case "javascript" -> installSupport(Lang.JAVASCRIPT);
             case "mermaid" -> installSupport(Lang.MERMAID);
@@ -205,6 +206,7 @@ final class InstallCoordinator {
             case InstallCatalog.BASH_DEBUG_STEP -> "Bash Debug";
             case InstallCatalog.LUA_DEBUG_STEP -> "Lua Debug";
             case InstallCatalog.FIREFOX_DEBUG_STEP -> "Firefox Debug";
+            case InstallCatalog.ELIXIR_LS_STEP -> "ElixirLS";
             default -> "CodeLLDB";
         };
     }

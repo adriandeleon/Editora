@@ -434,6 +434,30 @@ public final class DebugLanguages {
             "debug.error.luaUnavailable",
             new ExternalAdapter(List.of("debugAdapter.js"), ExternalAdapter.Transport.STDIO, null));
 
+    /**
+     * Elixir, through ElixirLS's debug adapter ({@code debug_adapter.sh}, {@code .bat} on Windows; Apache-2.0), over its
+     * standard streams: it runs a Mix task ({@code mix_task}: {@code mix test}, {@code mix run}) in the project's folder
+     * with the project's modules interpreted by Erlang's debugger, so breakpoints stop in them. A Mix project is needed
+     * ({@link ElixirLaunch}); its first start compiles ElixirLS itself. No exception filters.
+     */
+    public static final DebugLanguage ELIXIR = new DebugLanguage(
+            "elixir",
+            "Elixir",
+            Set.of("elixir"),
+            Kind.EXTERNAL,
+            ElixirLaunch.TYPE,
+            ElixirLaunch.TYPE,
+            "",
+            List.of(),
+            null,
+            Availability.LOCATED,
+            List.of(),
+            null,
+            null,
+            false,
+            "debug.error.elixirUnavailable",
+            new ExternalAdapter(List.of(ElixirLaunch.adapterFile()), ExternalAdapter.Transport.STDIO, null));
+
     private static final List<DebugLanguage> ALL = List.of(
             JAVA,
             PYTHON,
@@ -450,7 +474,8 @@ public final class DebugLanguages {
             PHP,
             BASH,
             DART,
-            LUA);
+            LUA,
+            ELIXIR);
 
     /**
      * GDB's own DAP mode ({@code gdb -i dap}, GDB 14 and later), over its standard streams: C and C++'s other debugger

@@ -38,6 +38,7 @@ final class LspServerCommands {
         "typst",
         "astro",
         "dart",
+        "elixir",
         com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID
     };
 
@@ -89,6 +90,7 @@ final class LspServerCommands {
             case "clojure" -> s.getClojureLspCommand();
             case "lua" -> s.getLuaLspCommand();
             case "dart" -> s.getDartLspCommand();
+            case "elixir" -> s.getElixirLspCommand();
             case "dockerfile" -> s.getDockerfileLspCommand();
             case "sql" -> s.getSqlLspCommand();
             case "terraform" -> s.getTerraformLspCommand();
@@ -125,6 +127,7 @@ final class LspServerCommands {
             case "clojure" -> s.setClojureLspEnabled(on);
             case "lua" -> s.setLuaLspEnabled(on);
             case "dart" -> s.setDartLspEnabled(on);
+            case "elixir" -> s.setElixirLspEnabled(on);
             case "dockerfile" -> s.setDockerfileLspEnabled(on);
             case "sql" -> s.setSqlLspEnabled(on);
             case "terraform" -> s.setTerraformLspEnabled(on);
@@ -142,8 +145,8 @@ final class LspServerCommands {
         return java.util.List.of(SERVER_IDS);
     }
 
-    /** {@code command} for {@code serverId}: Editora's own copy, kept outside PATH, for a blank XML, pom, HTML, CSS or
-     *  JSON command (review A9, review 2 A3, HTML A2), on the Maven JDK ({@code jdkHome}). Pure but for file lookups. */
+    /** {@code command} for {@code serverId}: Editora's own copy, kept outside PATH, for a blank XML, pom, HTML, CSS,
+     *  JSON or Elixir command (review A9, review 2 A3, HTML A2), on the Maven JDK ({@code jdkHome}). Pure but for file lookups. */
     static String withOwnCopy(
             String serverId, @Nullable String command, @Nullable Path configDir, @Nullable String jdkHome) {
         return OWN_COPIES.get(
@@ -218,6 +221,9 @@ final class LspServerCommands {
         if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId) && raw.isBlank()) {
             String own = com.editora.install.MavenServerInstall.effectiveCommand(raw, configDir);
             return own.isBlank() ? raw : com.editora.lsp.JvmServerCommand.withJdk(own, jdk);
+        }
+        if (com.editora.install.ElixirServerInstall.SERVER_ID.equals(serverId)) {
+            return com.editora.install.ElixirServerInstall.effectiveCommand(raw, configDir); // ElixirLS's own install
         }
         if (com.editora.install.TypeScriptServerInstall.SERVER_ID.equals(serverId)) {
             return com.editora.install.TypeScriptServerInstall.effectiveCommand(raw, configDir); // JS review B104

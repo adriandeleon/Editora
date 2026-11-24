@@ -59,7 +59,11 @@ class BundledGrammarsTokenizeTest {
                     + "  given Ordering[Int] = Ordering.Int\nend Main\n",
             "clojure",
             "(ns demo.core (:require [clojure.string :as str]))\n; note\n(defn f [x] (str \"v=\" x \\a))\n"
-                    + "(def re #\"\\s+\")\n#{:a 'b}\n");
+                    + "(def re #\"\\s+\")\n#{:a 'b}\n",
+            // ~H includes EEx (text.elixir), which is not bundled: the include is dropped, never a failure
+            "elixir",
+            "defmodule Demo do\n  @moduledoc \"\"\"\n  Doc.\n  \"\"\"\n  def f(x) when x > 0, do: \"v=#{x}\" # note\n"
+                    + "  def g, do: ~r/a+/i\n  def h(assigns), do: ~H\"\"\"\n  <p><%= @x %></p>\n  \"\"\"\nend\n");
 
     private static List<String> failures(IGrammar grammar, String text) {
         List<String> failures = new ArrayList<>();
@@ -150,6 +154,13 @@ class BundledGrammarsTokenizeTest {
         for (JsonNode child : node) {
             walk(child, name, onig, rejected, compiled);
         }
+    }
+
+    /** The vendored Elixir grammar highlights keywords, strings and comments in a .ex file. */
+    @Test
+    void theElixirGrammarHighlights() {
+        assertTrue(classesOf("demo.ex", SAMPLES.get("elixir")).containsAll(List.of("keyword", "string", "comment")));
+        assertTrue(classesOf("mix.exs", SAMPLES.get("elixir")).contains("keyword"));
     }
 
     /** The rewritten patterns still do their job — not merely "no exception". */

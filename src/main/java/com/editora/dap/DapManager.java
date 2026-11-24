@@ -2494,6 +2494,9 @@ public final class DapManager {
         if (DebugLanguages.LUA.equals(language)) {
             return InstalledAdapter.LUA_DEBUG;
         }
+        if (DebugLanguages.ELIXIR.equals(language)) {
+            return InstalledAdapter.ELIXIR_LS;
+        }
         if (DebugLanguages.FIREFOX.equals(language)) {
             return InstalledAdapter.FIREFOX_DEBUG;
         }

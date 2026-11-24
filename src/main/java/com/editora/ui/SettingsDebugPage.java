@@ -638,7 +638,7 @@ final class SettingsDebugPage {
 
     /**
      * The debug adapters with a card of their own (Java, Python, JavaScript, Go, Rust, C#, Ruby, PHP, Bash, Dart, Lua,
-     * Firefox), in display
+     * Firefox, Elixir), in display
      * order.
      */
     private java.util.List<DebugAdapterUi> debugAdapterUis() {
@@ -804,7 +804,15 @@ final class SettingsDebugPage {
                         v -> config.getSettings().setFirefoxDebugEnabled(v),
                         () -> config.getSettings().isFirefoxDebugEnabled(),
                         v -> config.getSettings().setFirefoxDebugPath(v),
-                        () -> config.getSettings().getFirefoxDebugPath()));
+                        () -> config.getSettings().getFirefoxDebugPath()),
+                externalAdapterUi(
+                        com.editora.dap.DebugLanguages.ELIXIR,
+                        com.editora.Os.isWindows() ? "debug_adapter.bat" : "debug_adapter.sh",
+                        "debug elixir elixirls elixir-ls mix phoenix erlang beam path found install",
+                        v -> config.getSettings().setElixirDebugEnabled(v),
+                        () -> config.getSettings().isElixirDebugEnabled(),
+                        v -> config.getSettings().setElixirDebugPath(v),
+                        () -> config.getSettings().getElixirDebugPath()));
     }
 
     /**

@@ -935,6 +935,16 @@ final class DoctorCoordinator {
                     return found != null ? base.ok(found) : base.missing("doctor.tip.missing", "firefox-debug");
                 }));
             }
+            if (s.isElixirDebugEnabled()) {
+                String configured = scope.debugTool("elixir", s.getElixirDebugPath());
+                DoctorCheck check = DoctorCheck.checking("debug.elixir", "debug", tr("doctor.label.elixirDebug"), "")
+                        .withSettings("debug");
+                specs.add(probe(check, base -> {
+                    String found = com.editora.dap.DapManager.locateExternal(
+                            com.editora.dap.DebugLanguages.ELIXIR, configured);
+                    return found != null ? base.ok(found) : base.missing("doctor.tip.missing", "ElixirLS");
+                }));
+            }
             if (s.isPhpDebugEnabled()) {
                 String configured = scope.debugTool("php", s.getPhpDebugPath());
                 DoctorCheck check = DoctorCheck.checking("debug.php", "debug", tr("doctor.label.phpDebug"), "")

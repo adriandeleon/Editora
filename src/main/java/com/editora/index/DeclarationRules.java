@@ -315,6 +315,25 @@ final class DeclarationRules {
             rule("^\\s*class\\s+(?<n>[\\w:]+)", SymbolKind.TYPE),
             rule("^\\s*def\\s+(?:self\\.)?(?<n>[\\w?!=\\[\\]]+)", SymbolKind.METHOD));
 
+    /** An Elixir function name: {@code run}, {@code valid?}, {@code fetch!}, {@code _private}. */
+    private static final String ELIXIR_FN = "[\\p{Ll}_][\\w]*[?!]?";
+
+    /**
+     * Elixir: modules, protocols, and the functions, macros and guards each defines. {@code defimpl} names the
+     * protocol it implements (a go-to there would land on the wrong thing) and {@code defstruct}/{@code
+     * defexception} name nothing of their own, so they are left out; so are {@code @type}/{@code @spec}, as Ruby's
+     * declarations stop at {@code def}. {@code def unquote(name)(…)} (a function made by a macro) has no name to
+     * index.
+     */
+    private static final List<Rule> ELIXIR = List.of(
+            rule("^\\s*defmodule\\s+(?<n>[\\p{Lu}][\\w.]*)", SymbolKind.MODULE, "defmodule"),
+            rule("^\\s*defprotocol\\s+(?<n>[\\p{Lu}][\\w.]*)", SymbolKind.INTERFACE, "defprotocol"),
+            rule(
+                    "^\\s*def(?:p|macrop?|guardp?|delegate|n|np)?\\s+(?!unquote\\b)(?<n>" + ELIXIR_FN
+                            + ")(?=\\s*(?:\\(|,|\\bdo\\b|\\bwhen\\b|$))",
+                    SymbolKind.FUNCTION,
+                    "def"));
+
     private static final List<Rule> PHP = List.of(
             rule("^\\s*namespace\\s+(?<n>[\\w\\\\]+)", SymbolKind.MODULE),
             rule("(?:^|\\s)class\\s+(?<n>\\w+)", SymbolKind.TYPE),
@@ -421,6 +440,7 @@ final class DeclarationRules {
             Map.entry("cpp", C),
             Map.entry("csharp", JAVA),
             Map.entry("ruby", RUBY),
+            Map.entry("elixir", ELIXIR),
             Map.entry("php", PHP),
             Map.entry("shell", SHELL),
             Map.entry("lua", LUA));
@@ -439,6 +459,7 @@ final class DeclarationRules {
     static boolean braceScoped(String language) {
         return !("python".equals(language)
                 || "ruby".equals(language)
+                || "elixir".equals(language)
                 || "shell".equals(language)
                 || "clojure".equals(language));
     }

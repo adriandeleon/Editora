@@ -1,0 +1,120 @@
+{
+  "defmodule": {
+    "prefix": "defmodule",
+    "body": ["defmodule ${1:App.Module} do", "\t$0", "end"],
+    "description": "Module"
+  },
+  "moduledoc": {
+    "prefix": "doc",
+    "body": ["@moduledoc \"\"\"", "${1:What this module does.}", "\"\"\""],
+    "description": "Module documentation"
+  },
+  "def": {
+    "prefix": "def",
+    "body": ["def ${1:name}(${2}) do", "\t$0", "end"],
+    "description": "Public function"
+  },
+  "defp": {
+    "prefix": "defp",
+    "body": ["defp ${1:name}(${2}) do", "\t$0", "end"],
+    "description": "Private function"
+  },
+  "def one-liner": {
+    "prefix": "df",
+    "body": ["def ${1:name}(${2}), do: ${0:nil}"],
+    "description": "One-line function"
+  },
+  "defstruct": {
+    "prefix": "defstruct",
+    "body": ["defstruct [${1::field}]"],
+    "description": "Struct fields"
+  },
+  "spec": {
+    "prefix": "spec",
+    "body": ["@spec ${1:name}(${2}) :: ${0:term()}"],
+    "description": "Typespec"
+  },
+  "fn": {
+    "prefix": "fn",
+    "body": ["fn ${1:x} -> ${0:x} end"],
+    "description": "Anonymous function"
+  },
+  "case": {
+    "prefix": "case",
+    "body": ["case ${1:value} do", "\t${2:{:ok, result\\}} ->", "\t\t${3:result}", "", "\t${4:{:error, reason\\}} ->", "\t\t${0:reason}", "end"],
+    "description": "case"
+  },
+  "cond": {
+    "prefix": "cond",
+    "body": ["cond do", "\t${1:condition} ->", "\t\t$2", "", "\ttrue ->", "\t\t$0", "end"],
+    "description": "cond"
+  },
+  "if else": {
+    "prefix": "ife",
+    "body": ["if ${1:condition} do", "\t$2", "else", "\t$0", "end"],
+    "description": "if / else"
+  },
+  "with": {
+    "prefix": "with",
+    "body": ["with {:ok, ${1:a}} <- ${2:fetch()} do", "\t$0", "else", "\t{:error, reason} -> {:error, reason}", "end"],
+    "description": "with"
+  },
+  "pipe": {
+    "prefix": "pipe",
+    "body": ["${1:list}", "|> Enum.map(fn ${2:x} -> ${3:x} end)", "|> ${0:Enum.sum()}"],
+    "description": "Pipeline"
+  },
+  "test module": {
+    "prefix": "testmod",
+    "body": ["defmodule ${1:App}Test do", "\tuse ExUnit.Case, async: true", "", "\ttest \"${2:works}\" do", "\t\t$0", "\tend", "end"],
+    "description": "ExUnit test module"
+  },
+  "describe": {
+    "prefix": "describe",
+    "body": ["describe \"${1:function/1}\" do", "\t$0", "end"],
+    "description": "ExUnit describe block"
+  },
+  "test": {
+    "prefix": "test",
+    "body": ["test \"${1:does something}\" do", "\t$0", "end"],
+    "description": "ExUnit test"
+  },
+  "assert": {
+    "prefix": "assert",
+    "body": ["assert ${1:actual} == ${0:expected}"],
+    "description": "ExUnit assertion"
+  },
+  "GenServer": {
+    "prefix": "genserver",
+    "body": [
+      "defmodule ${1:App.Server} do",
+      "\tuse GenServer",
+      "",
+      "\tdef start_link(opts) do",
+      "\t\tGenServer.start_link(__MODULE__, opts, name: __MODULE__)",
+      "\tend",
+      "",
+      "\t@impl true",
+      "\tdef init(opts) do",
+      "\t\t{:ok, ${2:opts}}",
+      "\tend",
+      "",
+      "\t@impl true",
+      "\tdef handle_call(${3::get}, _from, state) do",
+      "\t\t{:reply, state, state}",
+      "\tend",
+      "",
+      "\t@impl true",
+      "\tdef handle_cast(${4:{:put, value\\}}, _state) do",
+      "\t\t{:noreply, value}",
+      "\tend$0",
+      "end"
+    ],
+    "description": "GenServer skeleton"
+  },
+  "IO.inspect": {
+    "prefix": "ii",
+    "body": ["IO.inspect(${1:value}, label: \"${2:value}\")"],
+    "description": "Inspect a value"
+  }
+}

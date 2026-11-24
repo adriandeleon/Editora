@@ -73,6 +73,7 @@ public final class Commenter {
                     "shell",
                     "yaml",
                     "ruby",
+                    "elixir",
                     "dockerfile",
                     "toml",
                     "http",

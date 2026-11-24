@@ -177,6 +177,9 @@ public final class LspServerRegistry {
     /** Markers for a Dart or Flutter package root (its pubspec.yaml, else the repo). */
     public static final List<String> DART_ROOT_MARKERS = List.of("pubspec.yaml", ".git");
 
+    /** Markers for an Elixir Mix project root (its mix.exs, else the repo). */
+    public static final List<String> ELIXIR_ROOT_MARKERS = List.of("mix.exs", ".git");
+
     /** Markers for a Terraform module root (a .terraform dir / lock file, else the repo). */
     public static final List<String> TERRAFORM_ROOT_MARKERS = List.of(".terraform", ".terraform.lock.hcl", ".git");
 
@@ -216,6 +219,12 @@ public final class LspServerRegistry {
 
     /** The Dart analysis server, which the Dart SDK (and so Flutter's) ships: {@code dart} is all it needs. */
     public static final String DEFAULT_DART_COMMAND = "dart language-server --protocol=lsp";
+
+    /**
+     * ElixirLS (its {@code language_server.sh}) as Homebrew and most packages name it. A blank command finds Editora's
+     * own install first, the one Settings → Debugging puts its debug adapter in ({@code install.ElixirServerInstall}).
+     */
+    public static final String DEFAULT_ELIXIR_COMMAND = "elixir-ls";
 
     /**
      * The Groovy server (gvy's {@code gls}, a fat jar) has no default command, like the pom.xml server: it is
@@ -296,6 +305,7 @@ public final class LspServerRegistry {
         TYPST("typst", DEFAULT_TYPST_COMMAND, TYPST_ROOT_MARKERS, Set.of("typst")),
         ASTRO("astro", DEFAULT_ASTRO_COMMAND, ASTRO_ROOT_MARKERS, Set.of("astro")),
         DART("dart", DEFAULT_DART_COMMAND, DART_ROOT_MARKERS, Set.of("dart")),
+        ELIXIR("elixir", DEFAULT_ELIXIR_COMMAND, ELIXIR_ROOT_MARKERS, Set.of("elixir")),
         // Maven-aware pom.xml server: JVM lemminx + lemminx-maven. Served language id is the routing-only
         // pseudo id MAVEN_POM_LANGUAGE_ID; the didOpen id is translated back to "xml" (see protocolLanguageId).
         MAVEN_POM(

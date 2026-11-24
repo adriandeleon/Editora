@@ -72,6 +72,7 @@ public final class Modeline {
             Map.entry("c++", "cpp"),
             Map.entry("go", "go"),
             Map.entry("dart", "dart"),
+            Map.entry("elixir", "ex"),
             Map.entry("rust", "rs"),
             Map.entry("lua", "lua"),
             Map.entry("php", "php"),

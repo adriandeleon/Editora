@@ -106,6 +106,7 @@ final class ProjectMapOverview {
         markers.put("Cargo.toml", "Cargo");
         markers.put("pyproject.toml", "Python (pyproject)");
         markers.put("pubspec.yaml", "Dart (pub)");
+        markers.put("mix.exs", "Mix");
         return Map.copyOf(markers);
     }
 

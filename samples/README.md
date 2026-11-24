@@ -30,6 +30,8 @@ a Scala 2 brace object), `samples/syntax/sample.clj` (Clojure: a namespace, a pr
 macro, character and regex literals), `samples/syntax/sample.php`, `samples/syntax/sample.rb`,
 `samples/syntax/sample.lua`, `samples/syntax/sample.dart` (Dart: a sealed class with a switch expression,
 a mixin, an enhanced enum, an extension, factory and named constructors, raw and multi-line strings),
+`samples/syntax/sample.ex` (Elixir: modules, a protocol and its implementation, a struct, a GenServer,
+guards, pipes, sigils, heredocs, binaries and a comprehension),
 `samples/syntax/sample.html`, `samples/syntax/sample.css`,
 `samples/syntax/sample.json`, `samples/syntax/sample.jsonl` (JSON Lines: one value per line, of every
 kind), `samples/syntax/sample.yaml`, `samples/syntax/sample.xml`,

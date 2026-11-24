@@ -636,6 +636,12 @@ final class TestNavigationCoordinator {
                 && host.debugCoordinator().ruby.debugTestAtCaret(b)) {
             return;
         }
+        // An ExUnit test at the caret is debugged on ElixirLS: mix test file:line.
+        if (debug
+                && host.debugCoordinator() != null
+                && host.debugCoordinator().elixir.debugTestAtCaret(b)) {
+            return;
+        }
         // A PHPUnit test at the caret is debugged on Xdebug: PHPUnit runs the file, filtered to it.
         if (debug
                 && host.debugCoordinator() != null

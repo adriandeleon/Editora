@@ -2775,7 +2775,8 @@ public class EditorBuffer implements TabContent {
             "csharp",
             "typst",
             "astro",
-            "dart");
+            "dart",
+            "elixir");
 
     /** Whether this buffer's language has a language server. */
     public boolean isLspLanguage() {

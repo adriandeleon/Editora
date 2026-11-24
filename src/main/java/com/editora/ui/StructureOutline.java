@@ -233,7 +233,7 @@ final class StructureOutline {
         String fileName = src.fileName();
         boolean gradleScript =
                 fileName != null && fileName.toLowerCase(java.util.Locale.ROOT).endsWith(".gradle.kts");
-        for (Symbol s : "dart".equals(src.language()) ? dartSymbols(src.text()) : src.symbols()) {
+        for (Symbol s : scannedOutline(src.language()) ? scannerSymbols(src.text(), src.language()) : src.symbols()) {
             if (shell && !SHELL_NAME.matcher(s.name()).matches()) {
                 continue; // `"${DOCKER[@]}" version` at a line start is tagged as a name: `$` is no function (C13)
             }
@@ -988,13 +988,19 @@ final class StructureOutline {
     }
 
     /**
-     * Dart's declarations, read by the server-free declaration scanner. The Dart grammar scopes every lower-case
-     * name before {@code (} as {@code entity.name.function} — a call ({@code setState(…)}) as much as a
-     * declaration — and names no class, so its symbols gave an outline of calls with every type left out.
+     * Whether {@code language}'s outline comes from the declaration scanner rather than its grammar. The Dart and
+     * Elixir grammars scope every lower-case name before {@code (} as {@code entity.name.function} — a call
+     * ({@code setState(…)}, {@code IO.puts(…)}) as much as a declaration — and Dart's names no class, so their
+     * symbols gave an outline of calls.
      */
-    private static List<Symbol> dartSymbols(String text) {
+    private static boolean scannedOutline(String language) {
+        return "dart".equals(language) || "elixir".equals(language);
+    }
+
+    /** {@code language}'s declarations, read by the server-free declaration scanner, as outline symbols. */
+    private static List<Symbol> scannerSymbols(String text, String language) {
         List<Symbol> out = new ArrayList<>();
-        for (com.editora.index.Symbol s : com.editora.index.DeclarationScanner.scan(text, "dart")) {
+        for (com.editora.index.Symbol s : com.editora.index.DeclarationScanner.scan(text, language)) {
             String kind = switch (s.kind()) {
                 case MODULE -> "namespace";
                 case INTERFACE -> "interface";
