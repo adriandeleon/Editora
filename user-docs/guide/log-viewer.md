@@ -63,6 +63,14 @@ Outside those positions a level word has to be upper case, so the word "error"
 inside a message doesn't recolor an INFO line. A line with no level, such as a
 stack-trace frame, belongs to the record above it and takes that record's color.
 
+### Warnings and errors on the scrollbar
+
+A thin stripe over the scrollbar marks every WARN line in amber and every
+ERROR or FATAL line in red, with the whole log mapped to its height, so you can
+see where the trouble is without scrolling. Hover a mark to read its line, and
+click it to go there. When a filter is on, the stripe marks the lines the filter
+kept. A stack trace is marked once, at its record's first line.
+
 ## The control bar
 
 Log mode adds a bar above the text with these controls, all reachable with Tab:
