@@ -127,6 +127,45 @@ class GitCommitWindowReview3FxTest {
         }
     }
 
+    // --- R4-U5: an autostash flag does not outlive Git being switched off -----------------------------------
+
+    @Test
+    void switchingGitOffForgetsTheAutostashOfTheMergeInProgress(@TempDir Path dir) throws Exception {
+        GitTestRepo repo = GitTestRepo.init(dir);
+        Path story = conflictedMergeWithAutostash(repo);
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            GitFeatureFx w = GitFeatureFx.create(async);
+            w.open(story);
+            GitPanel panel = showCommitWindow(w);
+            GitFeatureFx.await(
+                    "the banner says where the work is",
+                    () -> FxTestSupport.<Boolean>field(panel, "operationAutostash"));
+
+            FxTestSupport.runOnFx(() -> {
+                w.fx.shared.getSettings().setGitSupport(false);
+                w.git.applySupport();
+            });
+            assertFalse(FxTestSupport.<Boolean>field(panel, "operationAutostash"), "no operation, no autostash");
+        }
+    }
+
+    private static Path conflictedMergeWithAutostash(GitTestRepo repo) throws Exception {
+        Path story = repo.write("story.txt", "base\n");
+        Path other = repo.write("other.txt", "base\n");
+        repo.commitAll("base");
+        repo.git("checkout", "-q", "-b", "feature");
+        repo.write("story.txt", "feature version\n");
+        repo.commitAll("feature");
+        repo.git("checkout", "-q", "main");
+        repo.write("story.txt", "main version\n");
+        repo.commitAll("main change");
+        Files.writeString(other, "uncommitted work\n");
+        repo.tryGit("merge", "--autostash", "feature");
+        assertTrue(Files.exists(repo.root.resolve(".git/MERGE_AUTOSTASH")), "git kept the work aside");
+        return story;
+    }
+
     // --- U12: Amend replaces the commit it was armed against, or nothing ------------------------------------
 
     @Test
@@ -177,7 +216,7 @@ class GitCommitWindowReview3FxTest {
 
             javafx.application.Platform.runLater(() -> w.git.discardChanges(List.of("ita.txt"), List.of()));
             assertEquals(
-                    tr("dialog.discard.added", "ita.txt") + "\n\n" + tr("dialog.discard.unsavedEdits", 1),
+                    tr("dialog.discard.added", "ita.txt") + "\n\n" + tr("dialog.discard.unsavedEditsNamed", "ita.txt"),
                     answerDialog(ButtonBar.ButtonData.OK_DONE));
 
             GitFeatureFx.await(
@@ -185,6 +224,61 @@ class GitCommitWindowReview3FxTest {
                     () -> w.fx.controller.buffersAtOrUnderLocal(ita).isEmpty());
             assertFalse(Files.exists(ita));
         }
+    }
+
+    // --- R4-U1: the unsaved text of a file a discard deletes stays in Local History --------------------------
+
+    @Test
+    void discardingAnUntrackedFileWithUnsavedEditsKeepsTheirTextInLocalHistory(@TempDir Path dir) throws Exception {
+        GitTestRepo repo = GitTestRepo.init(dir);
+        Path base = repo.write("base.txt", "base\n");
+        repo.commitAll("base");
+        Path scratch = repo.write("scratch.txt", "on disk\n");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            GitFeatureFx w = GitFeatureFx.create(async);
+            w.fx.shared.getSettings().setLocalHistory(true);
+            EditorBuffer buffer = w.open(scratch);
+            FxTestSupport.runOnFx(() -> buffer.replaceWholeDocument("typed, not saved\n"));
+            w.open(base);
+
+            javafx.application.Platform.runLater(() -> w.git.discardChanges(List.of(), List.of("scratch.txt")));
+            String prompt = answerDialog(ButtonBar.ButtonData.OK_DONE);
+            assertTrue(prompt.endsWith(tr("dialog.discard.unsavedEditsNamed", "scratch.txt")), prompt);
+
+            GitFeatureFx.await(
+                    "the deleted file's tab closed",
+                    () -> w.fx.controller.buffersAtOrUnderLocal(scratch).isEmpty());
+            assertFalse(Files.exists(scratch));
+            GitFeatureFx.await(
+                    "the unsaved text in Local History",
+                    () -> historyBodies(w, scratch).contains("typed, not saved\n"));
+            assertTrue(historyBodies(w, scratch).contains("on disk\n"), "the file on disk is kept too");
+        }
+    }
+
+    @Test
+    void anUnsavedFileInAnotherWindowIsNamedWithThatWindow() {
+        assertEquals("a.txt", GitCoordinator.unsavedEditName("a.txt", null));
+        assertEquals(tr("dialog.discard.unsavedEditsElsewhere", "a.txt"), GitCoordinator.unsavedEditName("a.txt", ""));
+        assertEquals(
+                tr("dialog.discard.unsavedEditsInWindow", "a.txt", "web"),
+                GitCoordinator.unsavedEditName("a.txt", "web"));
+    }
+
+    /** The texts Local History keeps for {@code file}, in every project bucket. */
+    private static List<String> historyBodies(GitFeatureFx w, Path file) {
+        com.editora.history.HistoryBlobStore blobs = FxTestSupport.field(w.fx.shared.historyService(), "blobs");
+        List<String> out = new ArrayList<>();
+        for (var bucket : w.fx.shared.historyByProject().values()) {
+            for (var revision : bucket.getOrDefault(com.editora.config.PathKeys.normalizedKey(file), List.of())) {
+                String body = blobs.get(revision.sha256());
+                if (body != null) {
+                    out.add(body);
+                }
+            }
+        }
+        return out;
     }
 
     // --- helpers ----------------------------------------------------------------------------------------

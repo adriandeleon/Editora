@@ -67,7 +67,7 @@ class GitReview3DecisionsTest {
         Files.writeString(wt.resolve(".git"), "gitdir: " + own + "\n");
 
         Map<Path, GitMetadataWatcher.Kind> watched =
-                GitMetadataWatcher.dirsOf(wt).watched();
+                GitMetadataWatcher.dirsOf(wt).watched(true, GitMetadataWatcher.MAX_REF_FOLDERS);
 
         assertEquals(GitMetadataWatcher.Kind.GIT_DIR, watched.get(own.normalize()));
         assertEquals(GitMetadataWatcher.Kind.COMMON_DIR, watched.get(common.normalize()), "not its index or HEAD");

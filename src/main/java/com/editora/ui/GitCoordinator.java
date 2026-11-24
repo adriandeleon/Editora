@@ -145,6 +145,15 @@ final class GitCoordinator {
         default void closeDeletedBuffers(List<EditorBuffer> buffers) {}
 
         /**
+         * The name of the other window whose tab holds {@code buffer} (its project folder's name, or {@code ""} when
+         * it has none), or null when this window holds it or there is no other window: the Discard question says
+         * where unsaved edits that go too are.
+         */
+        default @Nullable String otherWindowOf(EditorBuffer buffer) {
+            return null;
+        }
+
+        /**
          * Copies {@code files} into Local History as pre-delete revisions, then reports — on the FX thread —
          * whether every one that Local History can hold is safely stored. Untracked files have no other copy.
          */
@@ -443,6 +452,7 @@ final class GitCoordinator {
             repositoryListener.accept(null, "");
             ops.setGitRefusal("");
             ops.setGitOperation(GitOperation.NONE, 0);
+            ops.setGitOperationAutostash(false); // no operation, so no autostash it holds
             ops.setGitPanelStatus(null);
             lastStatusByPath = java.util.Map.of();
             ops.setProjectGitStatus(java.util.Map.of()); // Git turned off → clear the Project tree coloring
@@ -723,6 +733,7 @@ final class GitCoordinator {
             // "no repository": the segment and the Commit window say what git said.
             ops.setGitRefusal(state.refusal());
             ops.setGitOperation(GitOperation.NONE, 0);
+            ops.setGitOperationAutostash(false); // no operation, so no autostash it holds
             ops.setGitPanelStatus(null);
             lastStatusByPath = java.util.Map.of();
             ops.setProjectGitStatus(java.util.Map.of()); // clear the tree's file coloring (outside a repo / Git off)
@@ -1367,10 +1378,10 @@ final class GitCoordinator {
     }
 
     /** What the prompt adds after what is discarded: unsaved edits that go too, nested repositories left alone. */
-    private static String discardNotes(List<EditorBuffer> edited, List<String> nested) {
+    private String discardNotes(List<EditorBuffer> edited, List<String> nested) {
         StringBuilder notes = new StringBuilder();
         if (!edited.isEmpty()) {
-            notes.append("\n\n").append(tr("dialog.discard.unsavedEdits", edited.size()));
+            notes.append("\n\n").append(unsavedEditsNote(edited));
         }
         if (!nested.isEmpty()) {
             notes.append("\n\n")
@@ -1380,6 +1391,39 @@ final class GitCoordinator {
                                     : tr("dialog.discard.nestedRepos", nested.size()));
         }
         return notes.toString();
+    }
+
+    /** At most this many files with unsaved edits are named in a Discard question; more are counted. */
+    static final int UNSAVED_EDITS_NAMED = 3;
+
+    /**
+     * The note saying which unsaved edits a Discard drops too: up to {@link #UNSAVED_EDITS_NAMED} files by name,
+     * each with the window that holds it when that is not this one; more as a count.
+     */
+    private String unsavedEditsNote(List<EditorBuffer> edited) {
+        if (edited.size() > UNSAVED_EDITS_NAMED) {
+            return tr("dialog.discard.unsavedEdits", edited.size());
+        }
+        List<String> names = new ArrayList<>(edited.size());
+        for (EditorBuffer buffer : edited) {
+            Path file = buffer.getPath();
+            Path name = file == null ? null : file.getFileName();
+            names.add(unsavedEditName(name == null ? buffer.getTitle() : name.toString(), ops.otherWindowOf(buffer)));
+        }
+        return tr("dialog.discard.unsavedEditsNamed", String.join(", ", names));
+    }
+
+    /**
+     * One file in {@link #unsavedEditsNote}: its name, and the window that holds it when that is another one
+     * ({@code otherWindow} null: this one; {@code ""}: another window without a project). Pure.
+     */
+    static String unsavedEditName(String file, @Nullable String otherWindow) {
+        if (otherWindow == null) {
+            return file;
+        }
+        return otherWindow.isEmpty()
+                ? tr("dialog.discard.unsavedEditsElsewhere", file)
+                : tr("dialog.discard.unsavedEditsInWindow", file, otherWindow);
     }
 
     /** The buffers of {@code edited} whose files {@code discard} still changes. */
