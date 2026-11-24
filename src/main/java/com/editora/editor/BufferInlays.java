@@ -96,10 +96,17 @@ final class BufferInlays {
 
     /** Draws the server's colour swatches (HTML review D9) before their literals; null or empty clears them. */
     void setColorSwatches(java.util.@Nullable List<com.editora.text.ColorSwatch> swatches) {
-        if (swatchInlays.set(b.largeFile ? null : swatches, b.root)) {
+        java.util.List<javafx.scene.Parent> hosts =
+                b.area2 == null ? java.util.List.of(b.area) : java.util.List.of(b.area, b.area2);
+        if (swatchInlays.set(b.largeFile ? null : swatches, hosts)) {
             ensureInlayFactory();
             refreshInlayAreas();
         }
+    }
+
+    /** The split view's area opened: it paints the swatches the first area does. */
+    void attachSwatches(javafx.scene.Parent area2) {
+        swatchInlays.attach(area2);
     }
 
     private static final String CODE_LENS_STYLE = "code-lens";

@@ -90,9 +90,9 @@ public final class DiffEngine {
     private static final double MIN_PAIR_SIMILARITY = 0.35;
     /**
      * Above this many line edits the Myers search (quadratic in the edit distance) is abandoned for the
-     * linear {@link #computeCoarse} alignment: 20,000 edits take about a second, 80,000 took 25.
+     * linear {@link #computeCoarse} alignment (see {@link BoundedDiff#MAX_LINE_EDITS} for the cost).
      */
-    static final int MAX_LINE_EDITS = 20_000;
+    static final int MAX_LINE_EDITS = BoundedDiff.MAX_LINE_EDITS;
 
     /** Computes the diff of two already-split line lists (default options). */
     public static DiffModel compute(List<String> left, List<String> right) {

@@ -17,7 +17,7 @@ every combination to real `git apply`. The viewer's sides are bare-`\n` text, so
 also carries a `SideFormat` (line-ending label and charset, read off the raw decode or the open buffer);
 export re-applies it per side before `PatchWriter` runs on the diff worker (`DiffService.patch`) and
 writes the patch in a legacy single-byte charset both sides share, else UTF-8. `PatchWriter` shares the
-engine's 20,000-edit budget and falls back to one whole-middle hunk. `PatchParser` records the line number
+engine's 4,000-edit budget and falls back to one whole-middle hunk. `PatchParser` records the line number
 each hunk header gives every reconstructed line, and `PatchLineNumbers` puts those numbers on the rows of
 a patch-file diff (again after a swap or an option change).
 
@@ -34,9 +34,11 @@ pretending they are text. A Git blob or closed working file over 10 MB is likewi
 surrogate: the side always completes (a review never waits on it) and, like a binary side, it disables
 every mutation. The surrogate names what it stands for — a file's size and SHA-256 prefix, a blob's spec —
 so two oversized sides do not compare as identical merely for both being too large. `DiffEngine` abandons
-the Myers search beyond 20,000 line edits for the linear coarse alignment (and `InlineDiff` beyond 1,000
-token edits for one changed-middle span), so one rewritten file or minified line cannot hold the window's
-single diff worker; a comparison that fails on the worker still calls back, with no model.
+the Myers search beyond 4,000 line edits (`BoundedDiff.MAX_LINE_EDITS`, about 80 ms) for the linear coarse
+alignment (and `InlineDiff` beyond 1,000 token edits for one changed-middle span), so one rewritten file or
+minified line cannot hold the window's single diff worker. Every Myers line diff goes through `BoundedDiff`:
+`ThreeWayMerge`, `BlobRewrite` and the debugger's `LaunchedLines` take `BoundedDiff.orChangedMiddle`, one
+changed region between the common head and tail past the budget; a comparison that fails on the worker still calls back, with no model.
 
 ## Computation and refresh
 

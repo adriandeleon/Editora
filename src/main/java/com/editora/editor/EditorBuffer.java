@@ -4150,6 +4150,7 @@ public class EditorBuffer implements TabContent {
         inlayDecor.installCodeLensClick(area2);
         if (inlayDecor.inlayFactoryInstalled) {
             area2.setInlayFactory(inlayDecor::inlaysOn); // hints, lenses and results set before the split opened
+            inlayDecor.attachSwatches(area2);
         }
         imageDrop.install(area2);
         if (caretOps.multiCaretEnabled && !hugeFile && caretOps.multiCaret2 == null) {
