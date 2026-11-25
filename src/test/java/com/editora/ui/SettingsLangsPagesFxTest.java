@@ -348,9 +348,12 @@ class SettingsLangsPagesFxTest {
             TextField key = rig.control("aiApiKeyField");
             org.junit.jupiter.api.Assertions.assertEquals("sk-ant-FAKE", key.getText());
             SettingsRig.typeAndEnter(key, "sk-ant-TYPED");
-            org.junit.jupiter.api.Assertions.assertEquals("sk-ant-TYPED", store.items.get("ai-api-key.anthropic"));
             org.junit.jupiter.api.Assertions.assertEquals("", rig.settings.getAiApiKey(), "not in settings.json");
         });
+        // The vault writes the keychain on its own thread (never the FX thread): wait for it, then look.
+        com.editora.config.ApiKeyVault vault = rig.config.shared().apiKeyVault();
+        assertTrue(vault != null && vault.awaitWrites(), "the key was written");
+        org.junit.jupiter.api.Assertions.assertEquals("sk-ant-TYPED", store.items.get("ai-api-key.anthropic"));
     }
 
     @Test
