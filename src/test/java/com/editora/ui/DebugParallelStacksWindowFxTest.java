@@ -77,7 +77,7 @@ class DebugParallelStacksWindowFxTest {
     @AfterEach
     void endSession() throws Exception {
         FxTestSupport.runOnFx(() -> {
-            DebugParallelStacksWindow window = debug.parallelStacksWindowIfOpen();
+            DebugParallelStacksWindow window = debug.stacks.parallelStacksWindow;
             if (window != null) {
                 window.hide();
             }
@@ -146,10 +146,10 @@ class DebugParallelStacksWindowFxTest {
         await(
                 "the Parallel Stacks window",
                 () -> call(() -> {
-                    DebugParallelStacksWindow w = debug.parallelStacksWindowIfOpen();
+                    DebugParallelStacksWindow w = debug.stacks.parallelStacksWindow;
                     return w != null && w.isShowing() && w.stacks() != null;
                 }));
-        return call(debug::parallelStacksWindowIfOpen);
+        return call(() -> debug.stacks.parallelStacksWindow);
     }
 
     private static List<String> texts(DebugParallelStacksWindow w, String styleClass) {
@@ -218,7 +218,7 @@ class DebugParallelStacksWindowFxTest {
         assertTrue(call(() -> w.stacks().dump().pausedForIt()));
         await("the program goes on", () -> session.requests.contains("continue"));
         await("running", () -> call(manager::state) == DapManager.State.RUNNING);
-        assertTrue(call(() -> debug.threadDumpWindowIfOpen() == null), "Parallel Stacks, not Thread Dump");
+        assertTrue(call(() -> debug.stacks.threadDumpWindow == null), "Parallel Stacks, not Thread Dump");
 
         FxTestSupport.runOnFx(manager::stop);
         await("stopped", () -> !call(manager::isActive));

@@ -28,7 +28,7 @@ class DebugRetargetPromptFxTest {
         String question = DebugRetargetPrompt.question(false, "dialog.debug.retargetPaused", "Server", "Client.java");
         FxTestSupport.runOnFx(() -> {
             try (DialogAnswers answers = DialogAnswers.pressing(ButtonBar.ButtonData.CANCEL_CLOSE)) {
-                assertEquals(DebugCoordinator.Retarget.CANCEL, DebugRetargetPrompt.ask(null, question, false));
+                assertEquals(DebugFileLaunch.Retarget.CANCEL, DebugRetargetPrompt.ask(null, question, false));
                 Dialogs.Asked asked = answers.only();
                 assertEquals(tr("dialog.debug.retargetTitle"), asked.title());
                 assertEquals(question, asked.content());
@@ -42,9 +42,9 @@ class DebugRetargetPromptFxTest {
                         "stopping is red and never the default; Cancel is");
 
                 answers.nowClosing();
-                assertEquals(DebugCoordinator.Retarget.CANCEL, DebugRetargetPrompt.ask(null, question, false));
+                assertEquals(DebugFileLaunch.Retarget.CANCEL, DebugRetargetPrompt.ask(null, question, false));
                 answers.nowPressing(tr("dialog.debug.retargetStop"));
-                assertEquals(DebugCoordinator.Retarget.STOP, DebugRetargetPrompt.ask(null, question, false));
+                assertEquals(DebugFileLaunch.Retarget.STOP, DebugRetargetPrompt.ask(null, question, false));
             }
         });
     }
@@ -54,7 +54,7 @@ class DebugRetargetPromptFxTest {
         String question = DebugRetargetPrompt.question(true, "dialog.debug.retargetPaused", "Server", "Client.java");
         FxTestSupport.runOnFx(() -> {
             try (DialogAnswers answers = DialogAnswers.pressing(tr("dialog.debug.retargetBoth"))) {
-                assertEquals(DebugCoordinator.Retarget.BOTH, DebugRetargetPrompt.ask(null, question, true));
+                assertEquals(DebugFileLaunch.Retarget.BOTH, DebugRetargetPrompt.ask(null, question, true));
                 Dialogs.Asked asked = answers.only();
                 assertEquals(tr("dialog.debug.retargetBothTitle"), asked.title());
                 assertEquals(question, asked.content());
@@ -69,11 +69,11 @@ class DebugRetargetPromptFxTest {
                         asked.answers());
 
                 answers.nowPressing(tr("dialog.debug.retargetStop"));
-                assertEquals(DebugCoordinator.Retarget.STOP, DebugRetargetPrompt.ask(null, question, true));
+                assertEquals(DebugFileLaunch.Retarget.STOP, DebugRetargetPrompt.ask(null, question, true));
                 answers.nowPressing(ButtonBar.ButtonData.CANCEL_CLOSE);
-                assertEquals(DebugCoordinator.Retarget.CANCEL, DebugRetargetPrompt.ask(null, question, true));
+                assertEquals(DebugFileLaunch.Retarget.CANCEL, DebugRetargetPrompt.ask(null, question, true));
                 answers.nowClosing();
-                assertEquals(DebugCoordinator.Retarget.CANCEL, DebugRetargetPrompt.ask(null, question, true));
+                assertEquals(DebugFileLaunch.Retarget.CANCEL, DebugRetargetPrompt.ask(null, question, true));
             }
         });
     }

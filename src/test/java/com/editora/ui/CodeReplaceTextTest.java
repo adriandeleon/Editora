@@ -51,11 +51,11 @@ class CodeReplaceTextTest {
         DapModels.StackFrameInfo bottom = new DapModels.StackFrameInfo(3, "main", f, 3, 1);
         List<DapModels.StackFrameInfo> frames = List.of(top, mid, bottom);
 
-        assertTrue(DebugCoordinator.canRestartFrame(true, true, top, frames));
-        assertTrue(DebugCoordinator.canRestartFrame(true, true, mid, frames));
-        assertFalse(DebugCoordinator.canRestartFrame(true, true, bottom, frames));
-        assertFalse(DebugCoordinator.canRestartFrame(false, true, top, frames), "running: no frames to restart");
-        assertFalse(DebugCoordinator.canRestartFrame(true, false, top, frames), "the adapter cannot");
-        assertFalse(DebugCoordinator.canRestartFrame(true, true, null, frames));
+        assertTrue(JavaCodeChanges.canRestartFrame(true, true, top, frames));
+        assertTrue(JavaCodeChanges.canRestartFrame(true, true, mid, frames));
+        assertFalse(JavaCodeChanges.canRestartFrame(true, true, bottom, frames));
+        assertFalse(JavaCodeChanges.canRestartFrame(false, true, top, frames), "running: no frames to restart");
+        assertFalse(JavaCodeChanges.canRestartFrame(true, false, top, frames), "the adapter cannot");
+        assertFalse(JavaCodeChanges.canRestartFrame(true, true, null, frames));
     }
 }

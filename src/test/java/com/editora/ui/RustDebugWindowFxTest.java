@@ -224,7 +224,7 @@ class RustDebugWindowFxTest {
         assertEquals(List.of("tests::squares", "--exact"), again.launchArgs.get("args"), "Restart repeats the test");
         // The caret is in no test now: the scan (off the FX thread) finds none and the command goes on elsewhere.
         boolean[] elsewhere = {false};
-        boolean handled = call(() -> debug.debugRustTestAtCaret(main, () -> elsewhere[0] = true));
+        boolean handled = call(() -> debug.fileLaunch.debugRustTestAtCaret(main, () -> elsewhere[0] = true));
         if (handled) {
             SettingsRig.awaitFx("no test at the caret", () -> elsewhere[0]);
         }
@@ -279,7 +279,7 @@ class RustDebugWindowFxTest {
     void theEditorMenuOffersDebugFileBesideRunFile() throws Exception {
         EditorBuffer b = open(root.resolve("src/main.rs"));
         await("the Run scan", () -> call(b::isRunnable));
-        List<String> items = FxTestSupport.callOnFx(() -> debug.editorMenuItems(b).stream()
+        List<String> items = FxTestSupport.callOnFx(() -> debug.breakpointMenus.editorMenuItems(b).stream()
                 .map(javafx.scene.control.MenuItem::getText)
                 .toList());
         assertFalse(items.contains(tr("editmenu.debugFile")), "beside Run File, not twice: " + items);

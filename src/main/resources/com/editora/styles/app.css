@@ -6434,6 +6434,13 @@
 .context-menu {
     -fx-effect: dropshadow(gaussian, -shadow, 16, 0.16, 0, 16);
 }
+/* Software rendering (RenderPipeline: the GPU pipeline could not start, so JavaFX draws on the CPU): no popup
+   shadow. A popup with an effect is redrawn whole, blur included, each time a row's hover changes, which on the
+   CPU is what made moving through the menus lag. The border keeps the menu apart from what is under it.
+   Pinned by RenderPipelineFxTest. */
+.software-rendering .context-menu {
+    -fx-effect: null;
+}
 
 /* Tool window panels: rounded corners, no drawn frame. The panel is bounded by the editor on one
    side and the window edge on the other, and the SplitPane divider between it and the editor is the

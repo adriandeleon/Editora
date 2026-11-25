@@ -718,6 +718,19 @@ class ChromeTest {
         assertEquals("view.toggleCsvGrid", r.commandArg());
     }
 
+    /** On macOS the menu lives in the system menu bar, so the switches for the window's own menu bar are grayed. */
+    @Test
+    void theWindowMenuBarSwitchesAreGrayedOnMacOnly() {
+        for (String id : java.util.List.of("view.toggleMenuBar", "view.toggleExtendedWindow")) {
+            Chrome.DisabledReason mac = Chrome.osReason(id, com.editora.Os.Kind.MAC);
+            assertNotNull(mac, id);
+            assertEquals("palette.disabled.systemMenuBarMac", mac.messageKey());
+            assertNull(mac.commandArg(), "no command of Editora's would enable it");
+            assertNull(Chrome.osReason(id, com.editora.Os.Kind.LINUX), id);
+            assertNull(Chrome.osReason(id, com.editora.Os.Kind.WINDOWS), id);
+        }
+    }
+
     /** What an OS cannot do is grayed with its own reason, ahead of any setting: the command is still listed. */
     @Test
     void whatAnOsCannotDoIsGrayedWithItsOwnReason() {

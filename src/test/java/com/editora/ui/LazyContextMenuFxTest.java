@@ -142,8 +142,12 @@ class LazyContextMenuFxTest {
                     () -> made.size() + " context menu(s) made before any right-click; give the control its menu"
                             + " with LazyContextMenu.install instead:\n" + String.join("\n", made));
             DebugCoordinator debug = FxTestSupport.field(fx.controller, "debugCoordinator");
-            assertNull(FxTestSupport.field(debug, "valuePopup"), "the debugger's value popup waits for a value");
-            assertNull(FxTestSupport.field(debug, "gutterMenu"), "the breakpoint menu waits for a breakpoint");
+            assertNull(
+                    FxTestSupport.field(debug.valuePopups, "valuePopup"),
+                    "the debugger's value popup waits for a value");
+            assertNull(
+                    FxTestSupport.field(debug.breakpointMenus, "gutterMenu"),
+                    "the breakpoint menu waits for a breakpoint");
             Object toolbar = FxTestSupport.field(fx.controller, "toolbarCoordinator");
             assertNull(FxTestSupport.field(toolbar, "contextMenu"), "the toolbar's menu waits for a right-click");
 

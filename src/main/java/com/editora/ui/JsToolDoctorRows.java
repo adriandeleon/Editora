@@ -82,7 +82,7 @@ final class JsToolDoctorRows {
 
     private static DoctorCheck row(JsTools.Kind kind) {
         return DoctorCheck.checking("js." + kind.binName(), "format", kind.displayName(), kind.binName())
-                .withSettings("lsp");
+                .withSettings("lsp:" + com.editora.lsp.TypeScriptServer.SERVER_ID); // the TypeScript card has them
     }
 
     /** A configured tool's row: its version and path, or why it cannot run. */

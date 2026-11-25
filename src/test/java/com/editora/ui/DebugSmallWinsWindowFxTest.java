@@ -247,7 +247,7 @@ class DebugSmallWinsWindowFxTest {
         await(
                 "the stop on line " + (line + 1) + " painted",
                 () -> call(() -> {
-                    DapModels.StackFrameInfo painted = FxTestSupport.field(debug, "paintedFrame");
+                    DapModels.StackFrameInfo painted = FxTestSupport.field(debug.execLine, "paintedFrame");
                     return painted != null && painted.line() == line;
                 }));
         FxTestSupport.drainFx();

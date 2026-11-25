@@ -96,7 +96,7 @@ class DebugQuickWinsProbeFxTest {
             EditorBuffer b = FxTestSupport.callOnFx(c::activeBuffer);
             FxTestSupport.runOnFx(() -> {
                 b.getFocusedArea().moveTo(TEMPORARY_LINE, 0);
-                debug.toggleTemporaryBreakpointAtCaret();
+                debug.breakpointMenus.toggleTemporaryBreakpointAtCaret();
                 b.toggleBreakpoint(SLEEP_LINE);
             });
 

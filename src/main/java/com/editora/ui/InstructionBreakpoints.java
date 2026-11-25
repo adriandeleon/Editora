@@ -133,7 +133,7 @@ final class InstructionBreakpoints {
 
     /** Shows the Disassembly view, at the instruction of {@code address} when it is listed there. */
     void reveal(String address) {
-        d.showLowLevelView(DebugPanel.AREA_DISASSEMBLY);
+        d.lowLevel.showLowLevelView(DebugPanel.AREA_DISASSEMBLY);
         DebugDisassemblyView view = d.s().panel == null ? null : d.s().panel.disassemblyView();
         if (view != null) {
             view.selectAddress(address);
@@ -182,7 +182,7 @@ final class InstructionBreakpoints {
      */
     void stopped(String reason, List<DapModels.StackFrameInfo> frames) {
         if (atInstructionBreakpoint(reason, frames, d.dap().instructionBreakpoints())) {
-            d.showLowLevelView(DebugPanel.AREA_DISASSEMBLY);
+            d.lowLevel.showLowLevelView(DebugPanel.AREA_DISASSEMBLY);
         }
     }
 

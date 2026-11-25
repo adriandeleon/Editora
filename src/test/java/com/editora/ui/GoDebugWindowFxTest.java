@@ -148,7 +148,7 @@ class GoDebugWindowFxTest {
         EditorBuffer main = open(root.resolve("main.go"));
         assertTrue(call(main::isBreakpointsEnabled), "a Go file has the breakpoint gutter");
         FxTestSupport.runOnFx(() -> main.toggleBreakpoint(3));
-        assertFalse(call(() -> debug.debugGoTestAtCaret(main)), "main.go is no test file");
+        assertFalse(call(() -> debug.fileLaunch.debugGoTestAtCaret(main)), "main.go is no test file");
         run("debug.start");
         FakeDebugAdapter.Session session = nextSession("launch");
         Map<String, Object> launch = session.launchArgs;
@@ -235,7 +235,7 @@ class GoDebugWindowFxTest {
     void attachToProcessAttachesDelveByProcessId() throws Exception {
         open(root.resolve("main.go"));
         var target = new LocalProcesses.Target(4242, LocalProcesses.Kind.GO, "server", "", 0);
-        FxTestSupport.runOnFx(() -> debug.attachToProcess(target));
+        FxTestSupport.runOnFx(() -> debug.attach.attachToProcess(target));
         FakeDebugAdapter.Session session = nextSession("attach");
         assertTrue(session.attached);
         assertEquals("local", session.launchArgs.get("mode"));
@@ -258,7 +258,7 @@ class GoDebugWindowFxTest {
             await("Delve not found", () -> !call(() -> debug.debugEffectiveFor("go")));
             assertEquals(tr("status.debug.delveMissing"), call(() -> debug.unavailableMessage("go", null)));
             var target = new LocalProcesses.Target(1, LocalProcesses.Kind.GO, "server", "", 0);
-            FxTestSupport.runOnFx(() -> debug.attachToProcess(target));
+            FxTestSupport.runOnFx(() -> debug.attach.attachToProcess(target));
             assertFalse(call(manager::isActive), "nothing is attached without Delve");
         } finally {
             FxTestSupport.runOnFx(() -> {
@@ -278,7 +278,7 @@ class GoDebugWindowFxTest {
     void theEditorMenuOffersDebugFileBesideRunFile() throws Exception {
         EditorBuffer b = open(root.resolve("main.go"));
         await("the Run scan", () -> call(b::isRunnable));
-        List<String> items = FxTestSupport.callOnFx(() -> debug.editorMenuItems(b).stream()
+        List<String> items = FxTestSupport.callOnFx(() -> debug.breakpointMenus.editorMenuItems(b).stream()
                 .map(javafx.scene.control.MenuItem::getText)
                 .toList());
         assertFalse(items.contains(tr("editmenu.debugFile")), "beside Run File, not twice: " + items);

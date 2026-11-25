@@ -60,6 +60,7 @@ final class JavaCleanupsDialog {
         dialog.setHeaderText(tr("settings.javaCleanups.header"));
         dialog.getDialogPane().setContent(scroll);
         dialog.getDialogPane().getButtonTypes().setAll(ButtonType.OK, ButtonType.CANCEL);
+        Dialogs.adoptOwner(dialog);
         dialog.showAndWait().filter(b -> b == ButtonType.OK).ifPresent(b -> onChosen.accept(ticked(boxes)));
     }
 }

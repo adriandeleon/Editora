@@ -159,4 +159,23 @@ class SettingsLanguagePickerFxTest {
                     LspServerRegistry.MAVEN_POM_SERVER_ID, picker("lspPage").picked());
         });
     }
+
+    @Test
+    void aDoctorRowsSettingsOpensItsLanguagesCard() throws Exception {
+        // Doctor's Settings… on the PowerShell server row opened Language Servers on whatever the picker held.
+        FxTestSupport.runOnFx(() -> {
+            rig.window.showDoctorTarget("lsp:powershell", rig.owner);
+            assertEquals("LSP", rig.openPage());
+            assertEquals("powershell", picker("lspPage").picked());
+            assertEquals(List.of("powershell"), shown(picker("lspPage")));
+
+            rig.window.showDoctorTarget("debug:go", rig.owner);
+            assertEquals("DEBUG", rig.openPage());
+            assertEquals("go", picker("debugPage").picked());
+
+            rig.window.showDoctorTarget("lsp:no-such-server", rig.owner);
+            assertEquals("LSP", rig.openPage(), "an unknown language still opens the page");
+            assertEquals("powershell", picker("lspPage").picked(), "and leaves the pick");
+        });
+    }
 }

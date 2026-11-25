@@ -22,7 +22,7 @@ final class MapCardGutterMarks implements MapCardGutter.Source {
 
     /** What the marks are read from, and what the clicks do, in a window. */
     interface Window {
-        /** Whether a breakpoint may be set in {@code file} (see {@link DebugCoordinator#cardBreakpointsOn}). */
+        /** Whether a breakpoint may be set in {@code file} (see {@link MapDebugFollow#cardBreakpointsOn}). */
         boolean breakpointsOn(Path file);
 
         Map<Integer, MapCardGutter.Breakpoint> breakpoints(Path file);
@@ -62,17 +62,17 @@ final class MapCardGutterMarks implements MapCardGutter.Source {
             @Override
             public boolean breakpointsOn(Path file) {
                 DebugCoordinator debug = mc.debugCoordinator;
-                return debug != null && debug.cardBreakpointsOn(file);
+                return debug != null && debug.mapFollow.cardBreakpointsOn(file);
             }
 
             @Override
             public Map<Integer, MapCardGutter.Breakpoint> breakpoints(Path file) {
-                return mc.debugCoordinator.cardBreakpoints(file);
+                return mc.debugCoordinator.mapFollow.cardBreakpoints(file);
             }
 
             @Override
             public void toggleBreakpoint(Path file, int line, String text) {
-                mc.debugCoordinator.toggleCardBreakpoint(file, line, text);
+                mc.debugCoordinator.mapFollow.toggleCardBreakpoint(file, line, text);
             }
 
             @Override
