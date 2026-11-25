@@ -486,6 +486,73 @@ public final class DapClient implements IDebugProtocolClient {
     /** How long Stop waits for the adapter's answer to {@code terminate} ({@link #terminateFirst}). */
     static final long TERMINATE_WAIT_MILLIS = 5_000;
 
+    /**
+     * Whether Stop first takes this session's breakpoints out of the program and resumes it, then detaches: Delve's
+     * multi-client headless server keeps a client's breakpoints, and its halt, after that client leaves, so a program
+     * only detached from stops at its next breakpoint with nobody there to resume it (probed with Delve 1.27).
+     */
+    private volatile boolean releaseBeforeDetach;
+
+    /** See {@link #releaseBeforeDetach}; call before the session ends. */
+    public void setReleaseBeforeDetach(boolean release) {
+        this.releaseBeforeDetach = release;
+    }
+
+    /**
+     * Clears this session's line and function breakpoints in the adapter, then continues the program: the future of the
+     * {@code continue}'s answer, sent once the clears are answered (a refusal is fine: the program was running).
+     */
+    private CompletableFuture<?> releaseProgram(IDebugProtocolServer s) {
+        List<CompletableFuture<?>> cleared = new ArrayList<>();
+        try {
+            for (DapModels.FileBreakpoints fb : initialBreakpoints) {
+                if (fb.file() == null || fb.breakpoints().isEmpty() || !paths.owns(fb.file())) {
+                    continue;
+                }
+                Source source = new Source();
+                source.setName(String.valueOf(fb.file().getFileName()));
+                source.setPath(paths.toAdapter(fb.file()));
+                SetBreakpointsArguments a = new SetBreakpointsArguments();
+                a.setSource(source);
+                a.setBreakpoints(new SourceBreakpoint[0]);
+                cleared.add(timed(s.setBreakpoints(a)));
+            }
+            Capabilities caps = capabilities;
+            if (caps != null
+                    && Boolean.TRUE.equals(caps.getSupportsFunctionBreakpoints())
+                    && !memberBreakpoints.isEmpty()) {
+                org.eclipse.lsp4j.debug.SetFunctionBreakpointsArguments a =
+                        new org.eclipse.lsp4j.debug.SetFunctionBreakpointsArguments();
+                a.setBreakpoints(new org.eclipse.lsp4j.debug.FunctionBreakpoint[0]);
+                cleared.add(timed(s.setFunctionBreakpoints(a)));
+            }
+        } catch (RuntimeException e) {
+            LOG.log(Level.FINE, "clearing the breakpoints before a detach failed", e);
+        }
+        return CompletableFuture.allOf(cleared.toArray(CompletableFuture[]::new))
+                .handle((v, e) -> null)
+                .thenCompose(v -> {
+                    ContinueArguments c = new ContinueArguments();
+                    c.setThreadId(1); // Delve resumes every goroutine whatever the id
+                    try {
+                        return timed(s.continue_(c)).handle((r, e) -> null);
+                    } catch (RuntimeException e) {
+                        return CompletableFuture.completedFuture(null);
+                    }
+                });
+    }
+
+    /** {@link #releaseProgram}, waited for (bounded). */
+    private void awaitRelease(IDebugProtocolServer s) {
+        try {
+            releaseProgram(s).get(TERMINATE_WAIT_MILLIS, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+            // not answered in time: detach anyway
+        }
+    }
+
     /** The method breakpoints and field watchpoints in force (sent on {@code initialized} and when they change). */
     private volatile List<DapModels.MemberBreakpoint> memberBreakpoints = List.of();
 
@@ -640,11 +707,38 @@ public final class DapClient implements IDebugProtocolClient {
      * {@link #setAdapterProcess} so it is killed on {@link #dispose}).
      */
     public CompletableFuture<Capabilities> connect(int port, @Nullable String adapterId) {
+        return connect(LOOPBACKS, port, 50, 200, adapterId);
+    }
+
+    /**
+     * {@link #connect(int, String)} to an adapter on {@code host} — another machine's, or a container's: a debug server
+     * already listening there (Delve's headless one), so fewer and longer tries than for an adapter just started here.
+     * A loopback name is this machine's, tried as {@link #connect(int, String)} does.
+     */
+    public CompletableFuture<Capabilities> connect(String host, int port, @Nullable String adapterId) {
+        return isLoopback(host)
+                ? connect(port, adapterId)
+                : connect(new String[] {stripBrackets(host)}, port, 5, 2_000, adapterId);
+    }
+
+    /** Whether {@code host} names this machine's loopback ({@code localhost}, {@code 127.0.0.1}, {@code ::1}). */
+    static boolean isLoopback(String host) {
+        String h = stripBrackets(host.strip()).toLowerCase(java.util.Locale.ROOT);
+        return h.isEmpty() || h.equals("localhost") || h.equals("::1") || h.startsWith("127.");
+    }
+
+    private static String stripBrackets(String host) {
+        return host.startsWith("[") && host.endsWith("]") ? host.substring(1, host.length() - 1) : host;
+    }
+
+    private CompletableFuture<Capabilities> connect(
+            String[] hosts, int port, int tries, int timeoutMillis, @Nullable String adapterId) {
         try {
             if (disposed) {
                 return CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("disposed"));
             }
-            Socket opened = openWithRetry(port, 50); // gives up early once the session is disposed
+            // gives up early once the session is disposed
+            Socket opened = openWithRetry(hosts, port, tries, timeoutMillis);
             if (disposed) {
                 opened.close();
                 return CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("disposed"));
@@ -774,15 +868,15 @@ public final class DapClient implements IDebugProtocolClient {
      */
     private static final String[] LOOPBACKS = {"127.0.0.1", "::1"};
 
-    private Socket openWithRetry(int port, int tries) throws InterruptedException {
+    private Socket openWithRetry(String[] hosts, int port, int tries, int timeoutMillis) throws InterruptedException {
         for (int i = 0; i < tries; i++) {
             if (disposed) { // Stop while connecting: the retries would otherwise go on for seconds
                 throw new java.util.concurrent.CancellationException("disposed");
             }
-            for (String loopback : LOOPBACKS) {
+            for (String address : hosts) {
                 Socket s = new Socket();
                 try {
-                    s.connect(new InetSocketAddress(loopback, port), 200);
+                    s.connect(new InetSocketAddress(address, port), timeoutMillis);
                     return s;
                 } catch (Exception e) {
                     try {
@@ -794,7 +888,10 @@ public final class DapClient implements IDebugProtocolClient {
             }
             Thread.sleep(40);
         }
-        throw new IllegalStateException(com.editora.i18n.Messages.tr("debug.error.noConnection", port));
+        throw new IllegalStateException(
+                hosts == LOOPBACKS
+                        ? com.editora.i18n.Messages.tr("debug.error.noConnection", port)
+                        : com.editora.i18n.Messages.tr("debug.error.noConnectionTo", hosts[0] + ":" + port));
     }
 
     /**
@@ -2707,6 +2804,11 @@ public final class DapClient implements IDebugProtocolClient {
      * it before returning, which can take a while (see {@link #disposeInBackground}).
      */
     public void dispose() {
+        IDebugProtocolServer s = server;
+        if (releaseBeforeDetach && !disposed && s != null) {
+            releaseBeforeDetach = false; // once: the dispose that follows detaches
+            awaitRelease(s);
+        }
         CompletableFuture<Void> disconnect = beginDispose(false);
         if (disconnect != null) {
             finishDispose(disconnect);
@@ -2723,6 +2825,14 @@ public final class DapClient implements IDebugProtocolClient {
      */
     public void disposeInBackground() {
         IDebugProtocolServer s = server;
+        if (releaseBeforeDetach && !disposed && s != null) {
+            releaseBeforeDetach = false; // once: the dispose that follows detaches
+            Thread.ofPlatform().daemon().name("dap-release").start(() -> {
+                awaitRelease(s);
+                disposeInBackground();
+            });
+            return;
+        }
         if (terminateFirst && !disposed && s != null) {
             terminateFirst = false; // once: the dispose that follows disconnects
             CompletableFuture<Void> terminated;

@@ -75,6 +75,7 @@ debugging and quirks are on its page under **Languages** in the sidebar.
 | Attach to a running JVM or Node.js | `debug.attach` | `C-c C-d a` |
 | Attach to a program on this machine ([Attach to Process](#attach-to-process)) | `debug.attachToProcess` | (palette) |
 | Attach to a program under gdbserver elsewhere ([Attach to Remote Program](#attach-to-a-remote-program)) | `debug.attachRemote` | (palette) |
+| Attach to a Go program under a headless Delve ([Attach to Remote Delve](#attach-to-a-remote-go-program)) | `debug.attachRemoteGo` | (palette) |
 | Attach again to the last address | `debug.reattach` | `C-c C-d S-a` |
 | Open a [core dump](#opening-a-core-dump) | `debug.openCoreDump` | (palette) |
 | [Listen for Xdebug](/docs/php#debugging) | `debug.listenXdebug` | (palette) |
@@ -436,6 +437,49 @@ server with it.
 A [launch.json](#launchjson-configurations) `cppdbg` configuration with
 `miDebuggerServerAddress`, or a `gdb` attach with a `target`, attaches the
 same way, as in VS Code.
+
+## Attach to a remote Go program
+
+**Debug: Attach to Remote Delve…** (`debug.attachRemoteGo`, also in **Run ▸
+Launch and Attach**) debugs a Go program that runs under Delve's headless
+server on another machine, in a container or on this one. Start it there with:
+
+```sh
+dlv debug --headless --listen=:2345 --accept-multiclient ./cmd/app
+```
+
+`dlv exec --headless … ./app` runs a binary you built (with
+`-gcflags="all=-N -l"` for the best stepping), and `dlv attach --headless …
+<pid>` takes a program that is already running. Editora asks for the server's
+address, such as `box:2345` (a port alone means this machine). When the
+program was built from another folder over there, such as `/app` in a
+container, give that folder next, and leave it blank when the paths are the
+same: Delve then maps your project's files to that folder and back, so your
+breakpoints bind and every stop opens the file here. Both answers are offered
+again the next time. Editora needs no Delve of its own for this: it talks to
+the server.
+
+Delve has the program waiting until you attach; it then runs on to your
+breakpoints. **Stop** takes your breakpoints out, lets the program run on and
+detaches. With `--accept-multiclient` the server stays, so you can attach
+again later; without it, the server ends when you stop, and ends a program it
+started (`dlv debug`, `dlv exec`) with it.
+
+A [launch.json](#launchjson-configurations) `go` configuration with
+`"mode": "remote"`, a `port` and, if it is not this machine, a `host`,
+attaches the same way, as in VS Code; its `substitutePath` maps the folders:
+
+```json
+{
+  "name": "Container",
+  "type": "go",
+  "request": "attach",
+  "mode": "remote",
+  "host": "127.0.0.1",
+  "port": 2345,
+  "substitutePath": [{ "from": "${workspaceFolder}", "to": "/app" }]
+}
+```
 
 ## Opening a core dump
 

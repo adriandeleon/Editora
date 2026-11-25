@@ -446,6 +446,7 @@ final class DebugCoordinator {
     final PowerShellDebugLaunch powershell = new PowerShellDebugLaunch(this); // .ps1 on PowerShell Editor Services
     private final ElectronDebugLaunch electron = new ElectronDebugLaunch(this); // an Electron app: main + renderer
     final RemoteAttachLaunch remote = new RemoteAttachLaunch(this); // a native program under a debug server elsewhere
+    final RemoteDelveLaunch delve = new RemoteDelveLaunch(this); // a Go program under a headless Delve
     /** launch.json's serverReadyAction and postDebugTask ({@link LaunchFollowUps}). */
     final LaunchFollowUps followUps = new LaunchFollowUps(this);
 
@@ -4261,6 +4262,7 @@ final class DebugCoordinator {
                 }
             }
             case FIREFOX -> browser.startConfigured(workspace, name, anchor, route.request());
+            case DELVE_REMOTE -> delve.startConfigured(name, route.request());
             case DELVE,
                     CODELLDB,
                     NETCOREDBG,

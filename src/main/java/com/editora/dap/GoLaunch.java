@@ -374,4 +374,53 @@ public final class GoLaunch {
         m.put("processId", pid);
         return m;
     }
+
+    /** The port Delve's headless server is usually started on ({@code dlv debug --headless --listen=:2345}). */
+    public static final int REMOTE_PORT = 2345;
+
+    /**
+     * The {@code attach} request for a program under Delve's headless server ({@code dlv debug|exec|attach --headless
+     * --listen=host:port}, its DAP and JSON-RPC server), as VS Code's {@code mode: remote}: the client talks DAP to that
+     * server itself, here with no Delve of its own. When the program was built from {@code remoteRoot} over there,
+     * {@code substitutePath} has Delve turn this machine's {@code localRoot} into it and back, so breakpoints bind and
+     * stops open the files here.
+     */
+    public static Map<String, Object> remoteAttach(
+            String host, int port, @Nullable Path localRoot, @Nullable String remoteRoot) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("type", "go");
+        m.put("request", "attach");
+        m.put("mode", "remote");
+        m.put("host", host);
+        m.put("port", port);
+        String remote = remoteRoot == null ? "" : remoteRoot.strip();
+        if (localRoot != null && !remote.isEmpty() && !remote.equals(localRoot.toString())) {
+            m.put("substitutePath", List.of(Map.of("from", localRoot.toString(), "to", remote)));
+        }
+        return m;
+    }
+
+    /** Whether launch.json's {@code go} configuration {@code body} attaches to a headless Delve ({@code mode: remote}). */
+    public static boolean isRemote(Map<String, Object> body) {
+        return "remote".equals(body.get("mode"));
+    }
+
+    /** A remote configuration's {@code host}: {@code 127.0.0.1} when it names none, as VS Code's Go extension. */
+    public static String remoteHost(Map<String, Object> body) {
+        return body.get("host") instanceof String h && !h.isBlank() ? h.strip() : "127.0.0.1";
+    }
+
+    /** A remote configuration's {@code port} (a number or its digits); -1 when it has none or it is not a port. */
+    public static int remotePort(Map<String, Object> body) {
+        Object raw = body.get("port");
+        String s = raw instanceof Number n
+                ? String.valueOf(n.intValue())
+                : String.valueOf(raw).strip();
+        try {
+            int p = Integer.parseInt(s);
+            return p > 0 && p < 65536 ? p : -1;
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
 }

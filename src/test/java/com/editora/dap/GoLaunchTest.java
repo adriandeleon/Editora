@@ -273,4 +273,36 @@ class GoLaunchTest {
         assertTrue(Files.isDirectory(dir.resolve("editora-dlv-folder")), "a folder is not a program");
         assertEquals(0, GoLaunch.deleteStaleDebugBinaries(dir.resolve("missing"), java.time.Instant.now()));
     }
+
+    @Test
+    void aRemoteAttachTalksToTheHeadlessServerAndMapsTheProjectWhenItWasBuiltElsewhere() {
+        Path here = Path.of("/home/me/app").toAbsolutePath();
+        Map<String, Object> same = GoLaunch.remoteAttach("10.0.0.5", 2345, here, "  ");
+        assertEquals(
+                Map.of("type", "go", "request", "attach", "mode", "remote", "host", "10.0.0.5", "port", 2345),
+                same,
+                "the same paths there: nothing to map");
+        assertEquals(same, GoLaunch.remoteAttach("10.0.0.5", 2345, here, here.toString()), "its own folder: the same");
+        assertEquals(same, GoLaunch.remoteAttach("10.0.0.5", 2345, null, "/app"), "no project: nothing to map from");
+        assertEquals(
+                List.of(Map.of("from", here.toString(), "to", "/app")),
+                GoLaunch.remoteAttach("box", 40000, here, " /app ").get("substitutePath"),
+                "built from /app over there: Delve maps this folder to it and back");
+    }
+
+    @Test
+    void aRemoteConfigurationsHostAndPortAreReadAsVsCodesGoExtensionReadsThem() {
+        assertTrue(GoLaunch.isRemote(Map.of("type", "go", "mode", "remote")));
+        assertFalse(GoLaunch.isRemote(Map.of("type", "go", "mode", "local")));
+        assertEquals("127.0.0.1", GoLaunch.remoteHost(Map.of()), "VS Code's default");
+        assertEquals("127.0.0.1", GoLaunch.remoteHost(Map.of("host", " ")));
+        assertEquals("box.lan", GoLaunch.remoteHost(Map.of("host", " box.lan ")));
+        assertEquals(2345, GoLaunch.remotePort(Map.of("port", 2345)));
+        assertEquals(2345, GoLaunch.remotePort(Map.of("port", 2345.0)), "JSON's number");
+        assertEquals(40000, GoLaunch.remotePort(Map.of("port", " 40000 ")), "a substituted ${input:…}");
+        assertEquals(-1, GoLaunch.remotePort(Map.of()), "none");
+        assertEquals(-1, GoLaunch.remotePort(Map.of("port", 0)));
+        assertEquals(-1, GoLaunch.remotePort(Map.of("port", 70000)));
+        assertEquals(-1, GoLaunch.remotePort(Map.of("port", "${env:PORT}")));
+    }
 }

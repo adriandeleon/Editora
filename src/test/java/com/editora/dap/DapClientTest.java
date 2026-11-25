@@ -20,6 +20,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -304,5 +305,15 @@ class DapClientTest {
                 DapClient.codeReplace(com.google.gson.JsonParser.parseString("{\"changedClasses\":[null,[1]]}")));
         assertEquals(
                 new DapModels.CodeReplace(List.of(), ""), DapClient.codeReplace(new DapClient.RedefineClassesBody()));
+    }
+
+    @Test
+    void aLoopbackNameIsThisMachinesAdapterAndAnyOtherHostIsConnectedToAsItIs() {
+        for (String h : List.of("localhost", "LOCALHOST", "127.0.0.1", "127.1.2.3", "::1", "[::1]", " ", "")) {
+            assertTrue(DapClient.isLoopback(h), h);
+        }
+        for (String h : List.of("10.0.0.5", "box.lan", "::2", "[fe80::1]", "192.168.1.1")) {
+            assertFalse(DapClient.isLoopback(h), h);
+        }
     }
 }
