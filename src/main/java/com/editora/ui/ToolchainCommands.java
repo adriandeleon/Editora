@@ -45,7 +45,7 @@ final class ToolchainCommands {
         this.host = host;
         this.scope = scope;
         this.reload = reload;
-        JkitCli.programFrom(() -> host.settings().getJkitPath()); // Settings ▸ Build Tools ▸ jkit program
+        JkitCli.useProgram(host.settings().getJkitPath()); // Settings ▸ Build Tools ▸ jkit program
     }
 
     // --- the project's own tools ----------------------------------------------------------------------------
@@ -996,6 +996,7 @@ final class ToolchainCommands {
 
     /** Runs {@code then} off the FX thread with jkit's path, or says how to get jkit when there is none. */
     private void withJkit(Consumer<String> then) {
+        JkitCli.useProgram(host.settings().getJkitPath()); // as Settings say now (a palette change, another window)
         work.execute(() -> {
             String jkit = JkitCli.locate();
             if (jkit == null) {

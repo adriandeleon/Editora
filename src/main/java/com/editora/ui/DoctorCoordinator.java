@@ -1029,6 +1029,7 @@ final class DoctorCoordinator {
             for (com.editora.build.BuildTool tool : com.editora.build.BuildTool.values()) {
                 specs.add(buildTool(tool, s, needs));
             }
+            com.editora.toolchain.JkitCli.useProgram(s.getJkitPath());
             specs.add(jkitRow(ops.projectRoot()));
         }
 

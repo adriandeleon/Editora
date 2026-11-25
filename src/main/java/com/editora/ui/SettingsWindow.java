@@ -354,7 +354,9 @@ public class SettingsWindow {
     /** Build Tools ▸ jkit: the jkit program (blank: found on PATH) and whether it is there. */
     private TextField jkitPathField;
 
-    private final ToolStatusRow jkitStatus = new ToolStatusRow("jkit");
+    /** Its "found" line: made with the page's controls, never with the window (a window builds Settings lazily). */
+    private @Nullable ToolStatusRow jkitStatus;
+
     private TextField mavenArchetypeCatalogField;
     private final java.util.Map<BuildTool, Label> buildToolStatusLabels = new java.util.EnumMap<>(BuildTool.class);
     private CheckBox ripgrepCheck;
@@ -975,14 +977,17 @@ public class SettingsWindow {
         jkitPathField = new TextField();
         jkitPathField.setPromptText(tr("settings.jkit.path.prompt"));
         jkitPathField.setId("settings-jkit-path");
+        ToolStatusRow jkitRow = new ToolStatusRow("jkit");
+        jkitStatus = jkitRow;
         commitOnEnterOrBlur(jkitPathField, () -> config.getSettings().getJkitPath(), now -> {
             config.getSettings().setJkitPath(now.strip());
+            com.editora.toolchain.JkitCli.useProgram(config.getSettings().getJkitPath());
             apply();
             refreshJkitStatus();
         });
-        jkitStatus.link(tr("settings.jkit.settings"), () -> runAppCommand("toolchain.jkit.settings"));
-        jkitStatus.link(tr("settings.jkit.doctor"), () -> runAppCommand("toolchain.jkit.doctor"));
-        jkitStatus.linkWhenMissing(tr("settings.jkit.get"), () -> runAppCommand("toolchain.jkit.website"));
+        jkitRow.link(tr("settings.jkit.settings"), () -> runAppCommand("toolchain.jkit.settings"));
+        jkitRow.link(tr("settings.jkit.doctor"), () -> runAppCommand("toolchain.jkit.doctor"));
+        jkitRow.linkWhenMissing(tr("settings.jkit.get"), () -> runAppCommand("toolchain.jkit.website"));
         mavenArchetypeCatalogField = new TextField();
         scopeUi = new ProjectScopeSettings(
                 this::projectScope, this::apply, this::isLoading, this::load, this::trustProject, () -> stage);
@@ -3165,16 +3170,19 @@ public class SettingsWindow {
                 buildBeforeRunCheck,
                 tr("settings.buildBeforeRun.hint"),
                 "java build before run debug compile maven gradle launch main class stale");
-        Card jkitCard = card(p, "jkit");
-        toolRows(
-                jkitCard,
-                Category.BUILD_TOOLS,
-                tr("settings.jkit.path"),
-                tr("settings.jkit.path.hint"),
-                jkitPathField,
-                null,
-                jkitStatus,
-                "jkit jdk maven gradle sbt graalvm install toolchain sdkman jkit.toml version manager");
+        ToolStatusRow jkitRow = jkitStatus;
+        if (jkitRow != null) { // buildControls() makes it before any page
+            Card jkitCard = card(p, "jkit");
+            toolRows(
+                    jkitCard,
+                    Category.BUILD_TOOLS,
+                    tr("settings.jkit.path"),
+                    tr("settings.jkit.path.hint"),
+                    jkitPathField,
+                    null,
+                    jkitRow,
+                    "jkit jdk maven gradle sbt graalvm install toolchain sdkman jkit.toml version manager");
+        }
         for (BuildTool bt : BuildTool.enabled()) {
             if (bt == BuildTool.NPM) {
                 // One Node.js for Run, npm scripts, Debug, the language servers and HTTP scripts (review E102):
@@ -4663,11 +4671,15 @@ public class SettingsWindow {
 
     /** Looks for the jkit program (off the FX thread) and shows its version, or that it is missing. */
     private void refreshJkitStatus() {
-        jkitStatus.checking();
+        ToolStatusRow status = jkitStatus;
+        if (status == null) {
+            return; // the page is not built yet
+        }
+        status.checking();
         com.editora.process.BlockingTasks.named("settings-jkit-probe").execute(() -> {
             String jkit = com.editora.toolchain.JkitCli.locate();
             String version = jkit == null ? null : com.editora.toolchain.JkitCli.version(jkit);
-            javafx.application.Platform.runLater(() -> jkitStatus.show(
+            javafx.application.Platform.runLater(() -> status.show(
                     jkit != null, jkit == null ? "" : (version == null ? "" : version + " — ") + jkit, false));
         });
     }

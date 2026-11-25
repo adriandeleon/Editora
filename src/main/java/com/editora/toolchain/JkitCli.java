@@ -85,7 +85,7 @@ public final class JkitCli {
      * {@code /usr/local/bin}, {@code ~/.local/bin}); null when there is none. Reads the disk: off the FX thread.
      */
     public static @Nullable String locate() {
-        String chosen = String.valueOf(program.get()).strip();
+        String chosen = program.strip();
         if (!chosen.isEmpty()) {
             String expanded =
                     chosen.startsWith("~") ? System.getProperty("user.home", "~") + chosen.substring(1) : chosen;
@@ -105,12 +105,15 @@ public final class JkitCli {
         return null;
     }
 
-    /** The jkit program Settings names (Build Tools ▸ jkit), blank to look for it on PATH. */
-    private static volatile java.util.function.Supplier<String> program = () -> "";
+    /**
+     * The jkit program Settings names (Build Tools ▸ jkit), blank to look for it on PATH. A plain value, never a
+     * reference to a window or its settings: it is static, and a window must be released when it closes.
+     */
+    private static volatile String program = "";
 
-    /** Reads the jkit program from {@code setting} from now on (blank: look for it on PATH and where packages put it). */
-    public static void programFrom(java.util.function.Supplier<String> setting) {
-        program = setting;
+    /** Uses {@code path} as the jkit program from now on (blank: look for it on PATH and where packages put it). */
+    public static void useProgram(@Nullable String path) {
+        program = path == null ? "" : path;
     }
 
     /** {@code jkit --version}'s version ({@code 0.2.0}), or null when it cannot be run. */
