@@ -637,6 +637,17 @@ final class SettingsLspPage {
                         v -> config.getSettings().setElixirLspCommand(v),
                         () -> config.getSettings().getElixirLspCommand()),
                 new LspServerUi(
+                        "powershell",
+                        com.editora.lsp.LspServerRegistry.DEFAULT_POWERSHELL_COMMAND,
+                        "settings.lsp.enablePowershell",
+                        "settings.lsp.powershellCommand",
+                        "lsp powershell pwsh ps1 pses editor services psscriptanalyzer language server found installed"
+                                + " not found command path executable",
+                        v -> config.getSettings().setPowershellLspEnabled(v),
+                        () -> config.getSettings().isPowershellLspEnabled(),
+                        v -> config.getSettings().setPowershellLspCommand(v),
+                        () -> config.getSettings().getPowershellLspCommand()),
+                new LspServerUi(
                         "dockerfile",
                         com.editora.lsp.LspServerRegistry.DEFAULT_DOCKERFILE_COMMAND,
                         "settings.lsp.enableDockerfile",

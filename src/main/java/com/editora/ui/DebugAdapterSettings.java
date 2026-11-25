@@ -230,7 +230,18 @@ final class DebugAdapterSettings {
                     "elixir-ls",
                     InstallCatalog.ELIXIR_LS_STEP,
                     "status.debug.elixirOff",
-                    (s, scope) -> tr("status.debug.elixirLsMissing")));
+                    (s, scope) -> tr("status.debug.elixirLsMissing")),
+            new Binding(
+                    DebugLanguages.POWERSHELL,
+                    Settings::isPowershellDebugEnabled,
+                    Settings::setPowershellDebugEnabled,
+                    Settings::getPowershellDebugPath,
+                    Settings::setPowershellDebugPath,
+                    "settings.debug.powershellPath",
+                    "pwsh",
+                    "", // installed from its release or with VS Code's PowerShell extension
+                    "status.debug.powershellOff",
+                    (s, scope) -> tr("status.debug.powershellMissing")));
 
     /** Every adapter with settings of its own, in the order the pickers list them. */
     static List<Binding> all() {

@@ -44,6 +44,8 @@ public final class LaunchRoute {
         ELIXIR_LS,
         /** vscode-firefox-debug ({@code firefox}): a launch opens a page in Firefox; an attach joins a Firefox. */
         FIREFOX,
+        /** PowerShell Editor Services ({@code PowerShell}): a script, run so its output reaches the Debug console. */
+        POWERSHELL,
         /** java-debug, through a run configuration ({@code java}). */
         JAVA,
         /** An adapter of the user's ({@link CustomAdapters}). */
@@ -165,6 +167,17 @@ public final class LaunchRoute {
                     return unsupported(body, "a mix_task attach (ElixirLS only launches)");
                 }
                 return new Route(Kind.ELIXIR_LS, DebugLanguages.ELIXIR, request, false, "");
+            }
+            case PowerShellLaunch.TYPE -> {
+                if (attach) {
+                    return unsupported(body, "a PowerShell attach (use a launch of the script)");
+                }
+                return new Route(
+                        Kind.POWERSHELL,
+                        DebugLanguages.POWERSHELL,
+                        PowerShellLaunch.fromLaunchJson(request),
+                        false,
+                        "");
             }
             case "lua-local" -> {
                 if (attach) {

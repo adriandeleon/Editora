@@ -94,7 +94,7 @@ class BrowserDebugProbeFxTest {
      * Starts the browser, headless, on an empty page and waits for it to exit, so that the starts under the debugger
      * are not the machine's first. Says how long it took: the number to look at when a launch is given up on.
      */
-    private static void firstStart(String executable, Path profile) throws InterruptedException {
+    static void firstStart(String executable, Path profile) throws InterruptedException {
         long start = System.nanoTime();
         String outcome;
         try {

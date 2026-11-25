@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 185;
+    public static final int SCHEMA_VERSION = 186;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -1009,6 +1009,10 @@ public class Settings {
     private boolean elixirDebugEnabled = true;
     /** ElixirLS's {@code debug_adapter.sh} (or its folder); blank = Editora's install, VS Code's extension. */
     private String elixirDebugPath = "";
+    /** PowerShell debugging (PowerShell Editor Services): on by default, only effective when PSES is found. */
+    private boolean powershellDebugEnabled = true;
+    /** PSES's {@code Start-EditorServices.ps1} (or its release's folder); blank = Editora's install, VS Code's extension. */
+    private String powershellDebugPath = "";
     /** Dart and Flutter debugging (the SDK's own adapters): on by default, only effective when {@code dart} is found. */
     private boolean dartDebugEnabled = true;
     /** {@code dart} (its {@code debug_adapter}); blank = {@code dart} on the PATH. */
@@ -1050,6 +1054,7 @@ public class Settings {
     private String luaLspCommand = "";
     private String dartLspCommand = "";
     private String elixirLspCommand = "";
+    private String powershellLspCommand = "";
     private String dockerfileLspCommand = "";
     private String sqlLspCommand = "";
     private String terraformLspCommand = "";
@@ -1113,6 +1118,7 @@ public class Settings {
     private boolean luaLspEnabled = true;
     private boolean dartLspEnabled = true;
     private boolean elixirLspEnabled = true;
+    private boolean powershellLspEnabled = true;
     private boolean dockerfileLspEnabled = true;
     private boolean sqlLspEnabled = true;
     private boolean terraformLspEnabled = true;
@@ -4170,6 +4176,22 @@ public class Settings {
         this.elixirDebugPath = elixirDebugPath == null ? "" : elixirDebugPath;
     }
 
+    public boolean isPowershellDebugEnabled() {
+        return powershellDebugEnabled;
+    }
+
+    public void setPowershellDebugEnabled(boolean powershellDebugEnabled) {
+        this.powershellDebugEnabled = powershellDebugEnabled;
+    }
+
+    public String getPowershellDebugPath() {
+        return powershellDebugPath == null ? "" : powershellDebugPath;
+    }
+
+    public void setPowershellDebugPath(String powershellDebugPath) {
+        this.powershellDebugPath = powershellDebugPath == null ? "" : powershellDebugPath;
+    }
+
     public boolean isDartDebugEnabled() {
         return dartDebugEnabled;
     }
@@ -4698,6 +4720,22 @@ public class Settings {
 
     public void setElixirLspEnabled(boolean elixirLspEnabled) {
         this.elixirLspEnabled = elixirLspEnabled;
+    }
+
+    public String getPowershellLspCommand() {
+        return powershellLspCommand == null ? "" : powershellLspCommand;
+    }
+
+    public void setPowershellLspCommand(String powershellLspCommand) {
+        this.powershellLspCommand = powershellLspCommand == null ? "" : powershellLspCommand;
+    }
+
+    public boolean isPowershellLspEnabled() {
+        return powershellLspEnabled;
+    }
+
+    public void setPowershellLspEnabled(boolean powershellLspEnabled) {
+        this.powershellLspEnabled = powershellLspEnabled;
     }
 
     public String getLuaLspCommand() {

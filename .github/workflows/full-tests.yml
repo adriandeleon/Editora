@@ -474,6 +474,24 @@ jobs:
           test -f "$dest/debug_adapter.sh"
           elixir "$dest/quiet_install.exs"
 
+      # PowerShellProbeFxTest: pwsh comes with the runner image; PowerShell Editor Services is unpacked where Editora
+      # looks for its own install.
+      - name: Install PowerShell Editor Services
+        env:
+          PSES_VERSION: v4.7.0
+          PSES_SHA256: 5084f0326cc88539e9d880b08f6c52ce5be4672bb8ecee8921e35f8895a6b9d7
+        run: |
+          command -v pwsh && pwsh -NoLogo -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
+          curl -fsSL -o /tmp/pses.zip "https://github.com/PowerShell/PowerShellEditorServices/releases/download/${PSES_VERSION}/PowerShellEditorServices.zip"
+          echo "${PSES_SHA256}  /tmp/pses.zip" | sha256sum -c -
+          dest="$HOME/.editora/plugins/dap/powershell"
+          mkdir -p "$dest"
+          unzip -q /tmp/pses.zip -d "$dest"
+          test -f "$dest/PowerShellEditorServices/Start-EditorServices.ps1"
+
+      # PowerShellProbeFxTest: PowerShell Editor Services as language server (PSScriptAnalyzer's alias warning) and
+      # debugger (F5 stops in a function with its parameters, the console evaluates, the output reaches the console),
+      # and Run File on pwsh.
       # JavaDebugRealAdapterProbeFxTest: a Maven project launch, a program Editora starts itself (runInTerminal),
       # and Stop / window close leaving no debuggee or compile folder — against the real java-debug.
       # PlainFolderDebugProbeFxTest: F5 in a two-package plain folder, an edit, F5, a compile error (review 3, C208).
@@ -581,7 +599,7 @@ jobs:
       # PythonTemplatesProbeFxTest: on debugpy, a breakpoint on a Jinja template's line (Jinja2 in the requirements) and
       # on a Django template's (a manage.py) stops on it with the template's variables, Template breakpoints Automatic.
       - name: Test compact Java language service and debugging
-        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,RemoteNativeAttachProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,CsharpTestDebugProbeFxTest,RubyDebugProbeFxTest,RubyAppsProbeFxTest,ElixirDebugProbeFxTest,RunTestAtCaretProbeFxTest,ToolTestResultsProbeFxTest,PhpDebugProbeFxTest,PhpWebProbeFxTest,BashDebugProbeFxTest,DebugHistoryProbeFxTest#python*+java+javaRecording,SeveralSessionsProbeFxTest,TriggeredBreakpointsProbeFxTest#python+java,LoadedSourcesProbeFxTest#c*+python*,MarkObjectProbeFxTest,DebugSmallWinsProbeFxTest,ThreadDumpProbeFxTest,TypeRenderersProbeFxTest,BreakpointFiltersProbeFxTest,CoreDumpProbeFxTest,DebugTableProbeFxTest,ParallelStacksProbeFxTest,StepBackProbeFxTest,ExceptionBreakpointsProbeFxTest,PythonDataProbeFxTest,StepFiltersProbeFxTest#python+java+go,EvaluationTimeLimitProbeFxTest,WatchSetValueProbeFxTest#python+java+go,ValueFormatsProbeFxTest#java+python+go+gdb+codelldb,GoGoroutinesProbeFxTest,PythonTemplatesProbeFxTest,PythonWebProbeFxTest,InstructionBreakpointProbeFxTest,MemoryWriteProbeFxTest,DartDebugProbeFxTest,CppTestsProbeFxTest -Dgroups=probe -Dlsp.probe=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,RemoteNativeAttachProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,CsharpTestDebugProbeFxTest,RubyDebugProbeFxTest,RubyAppsProbeFxTest,ElixirDebugProbeFxTest,PowerShellProbeFxTest,RunTestAtCaretProbeFxTest,ToolTestResultsProbeFxTest,PhpDebugProbeFxTest,PhpWebProbeFxTest,BashDebugProbeFxTest,DebugHistoryProbeFxTest#python*+java+javaRecording,SeveralSessionsProbeFxTest,TriggeredBreakpointsProbeFxTest#python+java,LoadedSourcesProbeFxTest#c*+python*,MarkObjectProbeFxTest,DebugSmallWinsProbeFxTest,ThreadDumpProbeFxTest,TypeRenderersProbeFxTest,BreakpointFiltersProbeFxTest,CoreDumpProbeFxTest,DebugTableProbeFxTest,ParallelStacksProbeFxTest,StepBackProbeFxTest,ExceptionBreakpointsProbeFxTest,PythonDataProbeFxTest,StepFiltersProbeFxTest#python+java+go,EvaluationTimeLimitProbeFxTest,WatchSetValueProbeFxTest#python+java+go,ValueFormatsProbeFxTest#java+python+go+gdb+codelldb,GoGoroutinesProbeFxTest,PythonTemplatesProbeFxTest,PythonWebProbeFxTest,InstructionBreakpointProbeFxTest,MemoryWriteProbeFxTest,DartDebugProbeFxTest,CppTestsProbeFxTest -Dgroups=probe -Dlsp.probe=true test
 
   # The Node.js tool chain Editora drives but never ships: typescript-language-server with TypeScript, and
   # vscode-js-debug. Both are user-installed, so the default lanes skip their probes — and a TypeScript release

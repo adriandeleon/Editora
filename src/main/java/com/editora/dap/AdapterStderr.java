@@ -26,6 +26,11 @@ final class AdapterStderr {
 
     /** Starts draining {@code process}'s standard error on a virtual thread. */
     static AdapterStderr drain(Process process) {
+        return drain(process, line -> {});
+    }
+
+    /** As {@link #drain(Process)}, each line handed to {@code each} too (the program's output, for PowerShell). */
+    static AdapterStderr drain(Process process, java.util.function.Consumer<String> each) {
         AdapterStderr tail = new AdapterStderr();
         Thread.ofVirtual().name("dap-adapter-stderr").start(() -> {
             try (BufferedReader r =
@@ -33,6 +38,7 @@ final class AdapterStderr {
                 String line;
                 while ((line = r.readLine()) != null) {
                     tail.add(line);
+                    each.accept(line);
                 }
             } catch (IOException e) {
                 // the adapter is gone; what was read is kept

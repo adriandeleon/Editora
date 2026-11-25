@@ -179,6 +179,8 @@ public final class LspServerRegistry {
 
     /** Markers for an Elixir Mix project root (its mix.exs, else the repo). */
     public static final List<String> ELIXIR_ROOT_MARKERS = List.of("mix.exs", ".git");
+    /** A PowerShell project has no build file of its own: a module's manifest or the repository is its root. */
+    public static final List<String> POWERSHELL_ROOT_MARKERS = List.of("PSScriptAnalyzerSettings.psd1", ".git");
 
     /** Markers for a Terraform module root (a .terraform dir / lock file, else the repo). */
     public static final List<String> TERRAFORM_ROOT_MARKERS = List.of(".terraform", ".terraform.lock.hcl", ".git");
@@ -225,6 +227,11 @@ public final class LspServerRegistry {
      * own install first, the one Settings → Debugging puts its debug adapter in ({@code install.ElixirServerInstall}).
      */
     public static final String DEFAULT_ELIXIR_COMMAND = "elixir-ls";
+    /**
+     * PowerShell Editor Services, started by {@code pwsh} from its {@code Start-EditorServices.ps1}: the bare default
+     * finds it as the debugger does ({@code install.PowerShellServerInstall}) and adds its arguments.
+     */
+    public static final String DEFAULT_POWERSHELL_COMMAND = "pwsh";
 
     /**
      * The Groovy server (gvy's {@code gls}, a fat jar) has no default command, like the pom.xml server: it is
@@ -306,6 +313,7 @@ public final class LspServerRegistry {
         ASTRO("astro", DEFAULT_ASTRO_COMMAND, ASTRO_ROOT_MARKERS, Set.of("astro")),
         DART("dart", DEFAULT_DART_COMMAND, DART_ROOT_MARKERS, Set.of("dart")),
         ELIXIR("elixir", DEFAULT_ELIXIR_COMMAND, ELIXIR_ROOT_MARKERS, Set.of("elixir")),
+        POWERSHELL("powershell", DEFAULT_POWERSHELL_COMMAND, POWERSHELL_ROOT_MARKERS, Set.of("powershell")),
         // Maven-aware pom.xml server: JVM lemminx + lemminx-maven. Served language id is the routing-only
         // pseudo id MAVEN_POM_LANGUAGE_ID; the didOpen id is translated back to "xml" (see protocolLanguageId).
         MAVEN_POM(

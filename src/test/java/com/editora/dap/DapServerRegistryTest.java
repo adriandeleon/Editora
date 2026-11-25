@@ -32,7 +32,8 @@ class DapServerRegistryTest {
                         "bash",
                         "dart",
                         "lua",
-                        "elixir"),
+                        "elixir",
+                        "powershell"),
                 DapServerRegistry.languageIdsForDebug());
     }
 

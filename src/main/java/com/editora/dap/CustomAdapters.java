@@ -55,6 +55,7 @@ public final class CustomAdapters {
             "dart",
             "lua-local",
             ElixirLaunch.TYPE,
+            PowerShellLaunch.TYPE,
             FirefoxLaunch.TYPE,
             "java",
             "editora-jvm",

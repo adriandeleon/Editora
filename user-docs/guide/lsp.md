@@ -522,7 +522,8 @@ Twenty-six servers are supported:
   (`rust-analyzer`), **C / C++** (`clangd`), **C#** (`csharp-ls`)
 - **Ruby** (`ruby-lsp`), **PHP** (`phpactor`), **Kotlin**
   (JetBrains' Kotlin LSP, `kotlin-lsp`), **Groovy** (`gls`, from gvy), **Clojure** (`clojure-lsp`),
-  **Scala** (Metals), **Lua** (`lua-language-server`), **Elixir** (ElixirLS, `elixir-ls`)
+  **Scala** (Metals), **Lua** (`lua-language-server`), **Elixir** (ElixirLS, `elixir-ls`),
+  **PowerShell** ([PowerShell Editor Services](/docs/powershell#code-intelligence), on `pwsh`)
 - **Astro** (`astro-ls`), **HTML** (`vscode-html-language-server`), **CSS**
   (`vscode-css-language-server`), **JSON** (`vscode-json-language-server`),
   **YAML**, **XML** (`lemminx`), **Bash** (`bash-language-server`),

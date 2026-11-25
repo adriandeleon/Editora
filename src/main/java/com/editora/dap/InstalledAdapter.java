@@ -100,6 +100,18 @@ public record InstalledAdapter(
             List.of("dist/adapter.bundle.js"));
 
     /**
+     * PowerShell Editor Services (Microsoft, MIT): {@code PowerShellEditorServices/Start-EditorServices.ps1} in its
+     * release zip, run on {@code pwsh}; VS Code's extension is {@code ms-vscode.powershell}, with it in {@code modules}.
+     */
+    public static final InstalledAdapter POWERSHELL = new InstalledAdapter(
+            "powershell",
+            PowerShellLaunch.START_SCRIPT,
+            false,
+            List.of("PowerShellEditorServices/" + PowerShellLaunch.START_SCRIPT, PowerShellLaunch.START_SCRIPT),
+            List.of("ms-vscode.powershell-"),
+            List.of("modules/PowerShellEditorServices/" + PowerShellLaunch.START_SCRIPT));
+
+    /**
      * ElixirLS (elixir-lsp, Apache-2.0): its release zip's {@code debug_adapter.sh} ({@code .bat} on Windows), a script
      * that runs ElixirLS's debug adapter on the installed Elixir; the language server's {@code language_server.sh} sits
      * beside it. VS Code's extension is {@code jakebecker.elixir-ls}, with the release in {@code elixir-ls-release}.

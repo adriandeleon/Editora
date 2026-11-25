@@ -3518,6 +3518,21 @@ final class RunCoordinator {
             launchPhp(path, plan.php(), args);
             return;
         }
+        if ("powershell"
+                .equals(buffer.getLanguage())) { // a .ps1 on pwsh (Windows PowerShell without it), in its folder
+            String pwsh = com.editora.dap.PowerShellLaunch.executable(
+                    name -> Path.of(com.editora.process.ProcessRunner.resolveExecutable(List.of(name))
+                                    .getFirst())
+                            .isAbsolute(),
+                    com.editora.Os.isWindows());
+            streamRun(
+                    path.getFileName().toString(),
+                    path.toAbsolutePath().getParent(),
+                    com.editora.dap.PowerShellLaunch.runCommand(pwsh, path, args),
+                    java.util.Map.of(),
+                    path);
+            return;
+        }
         if (plan.elixir() != null) { // mix test, mix run, elixir file (ElixirRun)
             Path mixProject = plan.elixir().project();
             if (mixProject != null && !ops.trustBuild(mixProject, List.of(tr("dialog.trust.item.mix", "mix.exs")))) {

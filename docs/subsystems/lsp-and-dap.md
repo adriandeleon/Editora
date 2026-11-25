@@ -1353,6 +1353,19 @@ Mix project ElixirLS fails the launch (`Mix.NoProjectError`): `ui/ElixirDebugLau
 (`status.debug.elixirNeedsMix`) and Run File runs `elixir file`. Run File and F5 in a project ask the trust question
 first (`dialog.trust.item.mix`: Mix compiles the project and its dependencies). A launch.json `mix_task` configuration is
 `LaunchRoute.Kind.ELIXIR_LS`. No exception filters. ElixirLS does not pass ExUnit's report to the console.
+
+**PowerShell.** The `powershell` profile is PowerShell Editor Services (Microsoft, MIT; probed with 4.7.0 on pwsh
+7.5.13): its `Start-EditorServices.ps1` ([`InstalledAdapter.POWERSHELL`](../../src/main/java/com/editora/dap/InstalledAdapter.java):
+the release zip's `PowerShellEditorServices/`, or VS Code's `ms-vscode.powershell-*/modules/`), run by `DapManager`
+on `pwsh` with `-DebugServiceOnly -Stdio` ([`dap/PowerShellLaunch`](../../src/main/java/com/editora/dap/PowerShellLaunch.java)).
+The same script with `-LanguageServiceOnly -Stdio` is the language server; `install/PowerShellServerInstall` turns
+the blank or `pwsh` command into that. In this mode PSES has no console: its console REPL needs a real terminal
+(PSReadLine's and the legacy read loop's `ReadKey` fail on a pipe), and without one `Write-Output` and `Write-Host` go
+nowhere. So the launch's `script` is the script wrapped: `& { & 'x.ps1' args } *>&1`, each record formatted as the
+console does (`WARNING:` …), `Out-String -Stream`, then `[Console]::Error.WriteLine`; `DapManager` streams the
+adapter's stderr into the Debug console for this profile. A launch.json `PowerShell` launch gets the same wrapping
+(`LaunchRoute.Kind.POWERSHELL`); an attach is refused. PSES answers a `repl` evaluate in its absent console (an empty
+result), so the Debug console sends `watch` for it (`DapManager.adapterContext`). No exception filters.
 `ElixirDebugProbeFxTest` (opt-in) drives Debug Test at Caret (a stop in the module with its values, that test alone),
 F5 on a project script, a script with no project, and Run File on a test file, on Elixir 1.18 / OTP 27.
 

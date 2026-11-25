@@ -11,8 +11,8 @@ Editora debugs [**Java**](/docs/java#debugging), [**Python**](/docs/python#debug
 [**Clojure**](/docs/clojure#debugging), [**Scala**](/docs/scala#debugging), [**Go**](/docs/go#debugging),
 [**Rust**](/docs/rust#debugging), [**C and C++**](/docs/c-cpp#debugging),
 [**C#**](/docs/csharp#debugging), [**Ruby**](/docs/ruby#debugging),
-[**PHP**](/docs/php#debugging), [**Bash**](/docs/shell#debugging) and
-[**Elixir**](/docs/elixir#debugging) through the Debug Adapter Protocol, with an IntelliJ-style Debug tool window (`M-g d`). Debugging
+[**PHP**](/docs/php#debugging), [**Bash**](/docs/shell#debugging),
+[**Elixir**](/docs/elixir#debugging) and [**PowerShell**](/docs/powershell#debugging) through the Debug Adapter Protocol, with an IntelliJ-style Debug tool window (`M-g d`). Debugging
 is **on by default**, and each language's debugger starts once its adapter is
 found ([Installing adapters](#installing-adapters)); the switch is **Enable
 debugging (DAP)** in **Settings → Debugging**. A project's
@@ -1768,6 +1768,7 @@ listed first. With no `launch.json`, the status bar says so.
 | `rdbg` | rdbg, with `useBundler` for `bundle exec`; an attach connects to a local `debugPort` |
 | `php` | PHP Debug; without a `program`, it listens for Xdebug |
 | `bashdb` | Bash Debug, which launches a script under bashdb; it can't attach |
+| `PowerShell` | [PowerShell Editor Services](/docs/powershell#debugging), which launches a `script` (a file or a command) with its `args`; it can't attach |
 | `chrome`, `msedge` | vscode-js-debug driving a [browser](/docs/javascript-typescript#debugging-in-a-browser): a launch needs a `url` or a `file`; an attach connects to its `port` |
 
 A [debug adapter of your own](#debug-adapters-of-your-own) is used by its
