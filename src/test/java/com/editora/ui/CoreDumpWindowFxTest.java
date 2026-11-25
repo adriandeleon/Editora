@@ -74,7 +74,7 @@ class CoreDumpWindowFxTest {
             fx.shared.getSettings().setDebugSupport(true);
             fx.shared.getSettings().setRustDebugPath(codelldb.toString());
             fx.shared.getSettings().setGoDebugPath(dlv.toString());
-            debug.chooseFile = chooser -> {
+            debug.attach.chooseFile = chooser -> {
                 asked.add(chooser.getTitle());
                 Path next = answers.poll();
                 return next == null ? null : next.toFile();

@@ -117,8 +117,8 @@ class LaunchCompoundWindowFxTest {
         LaunchJson.File parsed = LaunchJson.parse(Files.readString(launchJson));
         DebugCoordinator.LaunchFile launch = new DebugCoordinator.LaunchFile(launchJson, root, parsed);
         EditorBuffer none = null;
-        FxTestSupport.runOnFx(
-                () -> debug.runLaunchCompound(launch, parsed.compounds().getFirst(), none));
+        FxTestSupport.runOnFx(() ->
+                debug.launchJson.runLaunchCompound(launch, parsed.compounds().getFirst(), none));
 
         // Both start at once: they reach the adapter in either order.
         FakeDebugAdapter.Session one = adapter.awaitSession();
@@ -146,15 +146,15 @@ class LaunchCompoundWindowFxTest {
 
         // A configuration started while a session runs goes beside it, as in VS Code.
         FxTestSupport.runOnFx(() -> debug.focusSession(both.getFirst()));
-        FxTestSupport.runOnFx(
-                () -> debug.runLaunchConfiguration(launchJson, root, parsed, parsed.configuration("Server"), none));
+        FxTestSupport.runOnFx(() -> debug.launchJson.runLaunchConfiguration(
+                launchJson, root, parsed, parsed.configuration("Server"), none));
         FakeDebugAdapter.Session again = adapter.awaitSession();
         again.awaitRequest("launch");
         DebugSession reused = call(() -> debug.sessions().focused());
         assertSame(both.getFirst(), reused, "an ended session is used again");
         await("running", () -> call(() -> reused.dap.state() == DapManager.State.RUNNING));
-        FxTestSupport.runOnFx(
-                () -> debug.runLaunchConfiguration(launchJson, root, parsed, parsed.configuration("Client"), none));
+        FxTestSupport.runOnFx(() -> debug.launchJson.runLaunchConfiguration(
+                launchJson, root, parsed, parsed.configuration("Client"), none));
         FakeDebugAdapter.Session beside = adapter.awaitSession();
         beside.awaitRequest("launch");
         assertNotSame(reused, call(() -> debug.sessions().focused()), "beside the running one");

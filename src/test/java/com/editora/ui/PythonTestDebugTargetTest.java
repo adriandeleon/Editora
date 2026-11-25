@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * What Debug on a Python row of Test Results runs ({@link PythonTestRunner#debugTarget}) and which pytest test a
- * Python test glyph's Debug Test stands for ({@link DebugCoordinator#pytestTarget}). Both said "debugging this
+ * Python test glyph's Debug Test stands for ({@link PythonDebugLaunch#pytestTarget}). Both said "debugging this
  * test is not supported".
  */
 class PythonTestDebugTargetTest {
@@ -64,14 +64,14 @@ class PythonTestDebugTargetTest {
 
     @Test
     void aTestGlyphStandsForItsPytestTest() {
-        var method =
-                DebugCoordinator.pytestTarget(SOURCE, new JavaTestScanner.TestTarget(1, "TestCart", "test_add", false));
+        var method = PythonDebugLaunch.pytestTarget(
+                SOURCE, new JavaTestScanner.TestTarget(1, "TestCart", "test_add", false));
         assertEquals("TestCart::test_add", method.nodeSuffix());
-        var cls = DebugCoordinator.pytestTarget(SOURCE, new JavaTestScanner.TestTarget(0, "TestCart", null, false));
+        var cls = PythonDebugLaunch.pytestTarget(SOURCE, new JavaTestScanner.TestTarget(0, "TestCart", null, false));
         assertEquals("TestCart", cls.nodeSuffix());
-        var free = DebugCoordinator.pytestTarget(SOURCE, new JavaTestScanner.TestTarget(5, "", "test_free", false));
+        var free = PythonDebugLaunch.pytestTarget(SOURCE, new JavaTestScanner.TestTarget(5, "", "test_free", false));
         assertEquals("test_free", free.nodeSuffix());
         assertNull(
-                DebugCoordinator.pytestTarget(SOURCE, new JavaTestScanner.TestTarget(0, "", null, false)), "the file");
+                PythonDebugLaunch.pytestTarget(SOURCE, new JavaTestScanner.TestTarget(0, "", null, false)), "the file");
     }
 }

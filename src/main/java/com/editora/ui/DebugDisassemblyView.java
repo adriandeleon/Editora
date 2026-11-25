@@ -85,7 +85,7 @@ final class DebugDisassemblyView extends VBox {
                                 list,
                                 "debug.toggleBreakpoint",
                                 null,
-                                DebugCoordinator.breakpointGlyph(),
+                                BreakpointMenus.breakpointGlyph(),
                                 this::toggleSelected),
                         () -> breakpointsTaken.getAsBoolean(),
                         "row.unavailable.noInstructionBreakpoints"),

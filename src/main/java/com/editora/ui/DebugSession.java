@@ -86,7 +86,7 @@ final class DebugSession {
     java.nio.file.@Nullable Path launchAskedFile;
 
     /**
-     * A launch was let through ({@code DebugCoordinator.clearToStart}) and has not started or stopped yet: only its
+     * A launch was let through ({@code DebugFileLaunch.clearToStart}) and has not started or stopped yet: only its
      * saves and plans count as getting ready, not a plan the window reads for something else.
      */
     boolean launching;
@@ -156,7 +156,7 @@ final class DebugSession {
     /** Bumped when a session starts or ends, so a slow runtime probe cannot label the next one. */
     long runtimeGeneration;
 
-    /** F5 is starting a test: its check has been made ({@code DebugCoordinator.clearToDebugTest}). */
+    /** F5 is starting a test: its check has been made ({@code DebugFileLaunch.clearToDebugTest}). */
     boolean startCleared;
 
     /** The build before a project launch in flight; replaced or cleared to drop its result (Stop). */
@@ -314,7 +314,7 @@ final class DebugSession {
     /** java-debug's last ERROR notice, so a failed replace does not print the same reason twice. */
     String lastCodeReplaceError = "";
 
-    /** The replace whose old-code hint waits for the next stack ({@code DebugCoordinator.explainOldCode}); 0: none. */
+    /** The replace whose old-code hint waits for the next stack ({@code JavaCodeChanges.explainOldCode}); 0: none. */
     long oldCodeHintPending;
 
     /** Counts the old-code hints asked for, so that each waits under its own number. */

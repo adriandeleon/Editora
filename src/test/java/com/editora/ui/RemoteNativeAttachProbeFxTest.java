@@ -65,7 +65,12 @@ class RemoteNativeAttachProbeFxTest {
 
     /** {@code tally.c} built with its debug symbols. */
     private static Program build(Path dir) throws Exception {
-        Path folder = Files.createDirectory(dir.resolve("tally")).toRealPath();
+        return build(dir, "tally");
+    }
+
+    /** {@code tally.c} built with its debug symbols in {@code dir/folder}. */
+    private static Program build(Path dir, String folderName) throws Exception {
+        Path folder = Files.createDirectory(dir.resolve(folderName)).toRealPath();
         Path source = Files.writeString(folder.resolve("tally.c"), SOURCE);
         Path binary = folder.resolve("tally");
         Process cc = new ProcessBuilder(ProcessRunner.resolveExecutable(
@@ -105,6 +110,19 @@ class RemoteNativeAttachProbeFxTest {
     }
 
     @Test
+    void aProgramBuiltInAnotherFolderStopsInItsSourcesHereOnGdb(@TempDir Path dir) throws Exception {
+        assumeTrue(Boolean.getBoolean("lsp.probe"), "opt-in: -Dlsp.probe=true");
+        assumeTrue(onPath("cc") && onPath("gdbserver") && onPath("gdb"), "needs cc, gdbserver and gdb");
+        attachByCommand(dir, s -> s.setCppDebugger("gdb"), true);
+    }
+
+    @Test
+    void aProgramBuiltInAnotherFolderStopsInItsSourcesHereOnCodelldb(@TempDir Path dir) throws Exception {
+        String codelldb = NativeDebugProbeFxTest.assumeToolsAndCodelldb("cc", "gdbserver");
+        attachByCommand(dir, s -> s.setRustDebugPath(codelldb), true);
+    }
+
+    @Test
     void aCppdbgConfigurationWithAServerAddressAttaches(@TempDir Path dir) throws Exception {
         assumeTrue(Boolean.getBoolean("lsp.probe"), "opt-in: -Dlsp.probe=true");
         assumeTrue(onPath("cc") && onPath("gdbserver") && onPath("gdb"), "needs cc, gdbserver and gdb");
@@ -123,7 +141,7 @@ class RemoteNativeAttachProbeFxTest {
             await("GDB found", 60, () -> call(() -> w.dap.isExternalLocated(DebugLanguages.GDB)));
             FxTestSupport.runOnFx(() -> w.b.toggleBreakpoint(LINE));
             LaunchJson.File parsed = LaunchJson.parse(Files.readString(launchJson));
-            FxTestSupport.runOnFx(() -> w.debug.runLaunchConfiguration(
+            FxTestSupport.runOnFx(() -> w.debug.launchJson.runLaunchConfiguration(
                     launchJson,
                     p.source().getParent(),
                     parsed,
@@ -138,9 +156,21 @@ class RemoteNativeAttachProbeFxTest {
     }
 
     private void attachByCommand(Path dir, Consumer<com.editora.config.Settings> settings) throws Exception {
-        Program p = build(dir);
+        attachByCommand(dir, settings, false);
+    }
+
+    /**
+     * Attach to Remote Program… against gdbserver; {@code mapped}: the program built and run in one folder ("there")
+     * and debugged from a copy of it and its source in another ("here"), the folder over there given at the third
+     * prompt — the stop is in the copy here.
+     */
+    private void attachByCommand(Path dir, Consumer<com.editora.config.Settings> settings, boolean mapped)
+            throws Exception {
+        Program built = build(dir, mapped ? "there" : "tally");
+        Program p =
+                mapped ? copy(built, Files.createDirectory(dir.resolve("here")).toRealPath()) : built;
         int port = freePort();
-        Process server = gdbserver(p.binary(), port);
+        Process server = gdbserver(built.binary(), port);
         FxWindowFixture fx = window(dir, p.source(), settings);
         try {
             Window w = Window.of(fx);
@@ -155,12 +185,28 @@ class RemoteNativeAttachProbeFxTest {
             FxTestSupport.runOnFx(() -> OverlayDriver.answer(w.c, "127.0.0.1:" + port));
             await("the program prompt", 30, () -> call(() -> OverlayDriver.showing(w.c)));
             FxTestSupport.runOnFx(() -> OverlayDriver.answer(w.c, p.binary().toString()));
+            await("the folder prompt", 30, () -> call(() -> OverlayDriver.showing(w.c)));
+            String there = mapped ? built.source().getParent().toString() : "";
+            FxTestSupport.runOnFx(() -> OverlayDriver.answer(w.c, there));
             awaitStop(w, LINE);
+            Path top = call(() -> w.debug.panel().callStack().get(0).file());
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    p.source(), top == null ? null : top.toRealPath(), "the stop is in the source here");
             stopAndAwaitEnd(w, server);
         } finally {
             server.destroyForcibly();
             fx.dispose();
         }
+    }
+
+    /** {@code built}'s program and source copied into {@code here}: the same build, its sources elsewhere. */
+    private static Program copy(Program built, Path here) throws Exception {
+        Path source = Files.copy(built.source(), here.resolve(built.source().getFileName()));
+        Path binary = Files.copy(
+                built.binary(),
+                here.resolve(built.binary().getFileName()),
+                java.nio.file.StandardCopyOption.COPY_ATTRIBUTES);
+        return new Program(source, binary);
     }
 
     private static void stopAndAwaitEnd(Window w, Process server) throws Exception {

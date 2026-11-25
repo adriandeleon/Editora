@@ -1309,8 +1309,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         panel.setMarkerActions(new ProjectTreeMarkerActions(bookmarkCoordinator, notesCoordinator));
         panel.setCardGutterSource(MapCardGutterMarks.of(this)); // breakpoints, bookmarks, ▶ and bars on Map cards
         if (debugCoordinator != null) { // the Map follows the debugger's stops, its call stack picks frames
-            panel.setOnDebugFramePicked(debugCoordinator::selectFrameFromMap);
-            debugCoordinator.setOnMapStop(panel::setDebugStop);
+            panel.setOnDebugFramePicked(debugCoordinator.mapFollow::selectFrameFromMap);
+            debugCoordinator.mapFollow.setOnMapStop(panel::setDebugStop);
         }
         panel.setMapOpenActions(this::openAndNavigate, this::openNarrowedFromMap);
         panel.setMapServerSymbols(file -> structurePanel == null ? null : structurePanel.serverSymbolsFor(file));

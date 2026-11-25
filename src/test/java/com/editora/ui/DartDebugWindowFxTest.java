@@ -229,6 +229,6 @@ class DartDebugWindowFxTest {
 
         // Not a test file: Debug Test at Caret leaves it to the others (here, nothing to debug at the caret).
         EditorBuffer program = open(cli.resolve("bin/main.dart"));
-        assertFalse(call(() -> debug.debugDartTestAtCaret(program)));
+        assertFalse(call(() -> debug.fileLaunch.debugDartTestAtCaret(program)));
     }
 }

@@ -89,7 +89,7 @@ class LambdaBreakpointsProbeFxTest {
             EditorBuffer b = FxTestSupport.callOnFx(c::activeBuffer);
             FxTestSupport.runOnFx(() -> {
                 b.getFocusedArea().moveTo(LINE, 30); // in the lambda's body
-                debug.toggleLambdaBreakpointAtCaret();
+                debug.breakpointMenus.toggleLambdaBreakpointAtCaret();
             });
             // Whether the line has code is scanned off the FX thread (PERF-01): the breakpoint is set when it lands.
             await(

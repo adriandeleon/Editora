@@ -42,6 +42,24 @@ final class DebugStacks {
     @Nullable
     DebugThreadDumpWindow threadDumpWindow;
 
+    /**
+     * Debug: Thread Dump ({@code debug.threadDump}): every thread of the program with its call stack, in the Thread
+     * Dump window. Suspended, the dump is of the stop. Running, the program is paused for it and goes on after, the
+     * editor left where it is — the way to see what a program that hangs is doing.
+     */
+    void threadDump() {
+        take(false);
+    }
+
+    /**
+     * Debug: Parallel Stacks ({@code debug.parallelStacks}): every thread's call stack merged into one tree, in the
+     * Parallel Stacks window ({@link ParallelStacks}). The stacks are taken as Thread Dump takes them: a running
+     * program is paused for them and goes on after.
+     */
+    void parallelStacks() {
+        take(true);
+    }
+
     /** Takes every thread's stack for Parallel Stacks ({@code parallel}) or Thread Dump. */
     void take(boolean parallel) {
         DebugSession session = d.s();
@@ -194,7 +212,7 @@ final class DebugStacks {
     private void openDumpFrame(DapModels.StackFrameInfo frame) {
         Path file = frame.file();
         if (file != null && d.hasSource(frame)) {
-            d.openSourceLine(file, frame.line());
+            d.lowLevel.openSourceLine(file, frame.line());
             return;
         }
         Path anchor = d.dap().debugFile();

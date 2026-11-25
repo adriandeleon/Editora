@@ -367,6 +367,28 @@ public class WindowManager {
         }
     }
 
+    /** Whether this session already said that JavaFX is drawing on the CPU (said once, in the first window). */
+    private boolean softwareRenderingReported;
+
+    /**
+     * Says, once per session, that JavaFX fell back to software rendering ({@link RenderPipeline}): everything then
+     * draws on the CPU and menus, scrolling and typing lag with no other sign of why. A warning, so it stays in the
+     * message log; the Doctor's Graphics Rendering row says what to do about it.
+     */
+    private void reportSoftwareRendering(MainController controller) {
+        if (softwareRenderingReported || !RenderPipeline.softwareFallback()) {
+            return;
+        }
+        softwareRenderingReported = true;
+        java.util.logging.Logger.getLogger(WindowManager.class.getName())
+                .warning("JavaFX fell back to software rendering (prism.order=" + System.getProperty("prism.order")
+                        + "); run with -Dprism.verbose=true to see why");
+        // Deferred past startup's own status messages, so the warning is the line left showing.
+        javafx.application.Platform.runLater(() -> controller
+                .statusBar()
+                .setMessage(com.editora.i18n.Messages.tr("status.renderingSoftware"), MessageLog.Severity.WARN));
+    }
+
     /**
      * Shows, once, what the shared config could not read as written when it loaded: values that were reset,
      * files that fell back to defaults, and files that will not be saved this session. Reported as errors so
@@ -2267,6 +2289,9 @@ public class WindowManager {
             controller.setWindowContext(this, project);
 
             StackPane sceneRoot = new StackPane(root);
+            if (RenderPipeline.softwareFallback()) {
+                sceneRoot.getStyleClass().add(RenderPipeline.SOFTWARE_STYLE); // app.css: no popup shadows to redraw
+            }
             controller.installZenOverlay(sceneRoot);
             controller.installPrefixHint(sceneRoot);
             Scene scene = new Scene(sceneRoot, UiZoom.px(1000), UiZoom.px(700));
@@ -2361,6 +2386,7 @@ public class WindowManager {
             }
             reportUnknownKeymap(controller);
             reportConfigLoadProblems(controller);
+            reportSoftwareRendering(controller);
             return stage;
         } catch (java.io.IOException e) {
             throw new java.io.UncheckedIOException("Failed to build a window for project '" + key + "'", e);

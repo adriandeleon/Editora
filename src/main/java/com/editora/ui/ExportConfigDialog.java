@@ -30,7 +30,9 @@ final class ExportConfigDialog {
 
     /** The user's choice, or empty when cancelled. Blocks (modal). */
     static Optional<Choice> ask(Window owner, boolean askHttpHistory, boolean askPluginData) {
-        return build(owner, askHttpHistory, askPluginData).showAndWait();
+        Dialog<Choice> dialog = build(owner, askHttpHistory, askPluginData);
+        Dialogs.adoptOwner(dialog);
+        return dialog.showAndWait();
     }
 
     /** The dialog, not yet shown (tests look inside it). Only the questions that apply are shown. */

@@ -93,7 +93,7 @@ final class MemoryEdits {
 
     /** The page again, and the frame's variables: either may show the bytes that changed. */
     private void reread() {
-        d.readMemory();
+        d.lowLevel.readMemory();
         DapModels.StackFrameInfo frame = d.s().shownFrame;
         DebugPanel panel = d.s().panel;
         if (frame != null && panel != null) {

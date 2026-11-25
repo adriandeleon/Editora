@@ -256,7 +256,7 @@ class LaunchJsonWindowFxTest {
                     .filter(x -> x.name().equals(c[0]))
                     .findFirst()
                     .orElseThrow();
-            FxTestSupport.runOnFx(() -> debug.runLaunchConfiguration(launchJson, root, parsed, config, b));
+            FxTestSupport.runOnFx(() -> debug.launchJson.runLaunchConfiguration(launchJson, root, parsed, config, b));
             await(c[0], () -> c[1].equals(status()));
             assertTrue(!call(manager::isActive), c[0] + ": nothing started");
         }

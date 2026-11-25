@@ -16,8 +16,9 @@ import static com.editora.i18n.Messages.tr;
  * Debug: Attach to Remote Program… — a native program (C, C++, Rust) run under a debug server on another machine, in
  * a container or on a board ({@code gdbserver host:2345 program}, {@code lldb-server gdbserver …}), debugged with a
  * copy of it here for its symbols ({@link RemoteNativeAttach}): on GDB when C/C++ is set to GDB in Settings →
- * Debugging, else on CodeLLDB (Rust always). It asks for the server's address, then for the program, both remembered
- * for the next time in this window. Part of {@link DebugCoordinator}.
+ * Debugging, else on CodeLLDB (Rust always). It asks for the server's address, then for the program, then for the
+ * folder it was built in over there when that is not where its sources are here (the debugger maps one to the other),
+ * all remembered for the next time in this window. Part of {@link DebugCoordinator}.
  */
 final class RemoteAttachLaunch {
 
@@ -27,6 +28,8 @@ final class RemoteAttachLaunch {
     private String lastAddress = "localhost:" + RemoteNativeAttach.DEFAULT_PORT;
 
     private String lastProgram = "";
+
+    private String lastRemoteRoot = "";
 
     RemoteAttachLaunch(DebugCoordinator d) {
         this.d = d;
@@ -81,12 +84,36 @@ final class RemoteAttachLaunch {
                 return;
             }
             lastProgram = program.toString();
-            start(address, program);
+            Path local = sourcesHere(program);
+            d.host.promptText(
+                    tr("debug.remote.title"),
+                    tr("debug.remote.folderPrompt", local.toString()),
+                    lastRemoteRoot,
+                    typed2 -> {
+                        if (typed2 == null) {
+                            return; // cancelled
+                        }
+                        lastRemoteRoot = typed2.strip();
+                        start(address, program, RemoteNativeAttach.folderMap(local, lastRemoteRoot));
+                    });
         });
     }
 
-    /** Attaches to the server at {@code address} with {@code program}'s symbols, on the debugger C/C++ is set to. */
-    private void start(String address, Path program) {
+    /** Where the program's sources are here: the project, else the program's folder. */
+    private Path sourcesHere(Path program) {
+        Path project = d.ops.projectRoot();
+        if (project != null) {
+            return project;
+        }
+        Path parent = program.toAbsolutePath().getParent();
+        return parent != null ? parent : program.toAbsolutePath();
+    }
+
+    /**
+     * Attaches to the server at {@code address} with {@code program}'s symbols, on the debugger C/C++ is set to;
+     * {@code sourceMap} maps the folder it was built in over there to the one here.
+     */
+    private void start(String address, Path program, Map<String, String> sourceMap) {
         EditorBuffer b = d.host.activeBuffer();
         boolean rust = b != null && "rust".equals(b.getLanguage());
         boolean gdb = !rust && "gdb".equals(d.host.settings().getCppDebugger().toLowerCase(Locale.ROOT));
@@ -98,8 +125,8 @@ final class RemoteAttachLaunch {
             return;
         }
         Map<String, Object> request = gdb
-                ? RemoteNativeAttach.gdb(program.toString(), address)
-                : RemoteNativeAttach.codelldb(program.toString(), address, rust);
+                ? RemoteNativeAttach.gdb(program.toString(), address, sourceMap)
+                : RemoteNativeAttach.codelldb(program.toString(), address, rust, sourceMap);
         String label = tr("debug.remote.session", String.valueOf(program.getFileName()), address);
         d.inSession(d.sessionForLaunch(), () -> d.startExternalSession(program, profile, request, label));
     }

@@ -144,6 +144,7 @@ final class TypeRendererDialog {
         javafx.scene.Node saveButton = dialog.getDialogPane().lookupButton(save);
         saveButton.disableProperty().bind(form.type.textProperty().isEmpty());
         Platform.runLater(() -> (form.type.getText().isBlank() ? form.type : form.value).requestFocus());
+        Dialogs.adoptOwner(dialog);
         Optional<ButtonType> answer = dialog.showAndWait();
         if (answer.isEmpty() || answer.get() != save) {
             return Optional.empty();

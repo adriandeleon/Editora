@@ -239,8 +239,9 @@ class RemovalUndoWindowFxTest {
         assertEquals(recording, at(b, 2));
 
         // Debug: Breakpoints, Alt+D on the row of the one on line 3.
-        FxTestSupport.runOnFx(() -> debug.breakpointsPicker()
-                .remove(debug.breakpointsPicker().entries().stream()
+        FxTestSupport.runOnFx(() -> debug.breakpointMenus
+                .breakpointsPicker()
+                .remove(debug.breakpointMenus.breakpointsPicker().entries().stream()
                         .filter(e -> e.buffer() == b && e.line() == 2)
                         .findFirst()
                         .orElseThrow()));
@@ -344,11 +345,11 @@ class RemovalUndoWindowFxTest {
                 ops().breakpointMap().put(DebugCoordinator.key(other), new ArrayList<>(List.of(detailed, plain))));
 
         // A Project Map card's gutter, on a file with no tab.
-        FxTestSupport.runOnFx(() -> debug.toggleCardBreakpoint(other, 3, OTHER));
+        FxTestSupport.runOnFx(() -> debug.mapFollow.toggleCardBreakpoint(other, 3, OTHER));
         assertEquals(List.of(detailed), stored(other));
         assertEquals(0, recorded(), "a plain one records nothing");
 
-        FxTestSupport.runOnFx(() -> debug.toggleCardBreakpoint(other, 1, OTHER));
+        FxTestSupport.runOnFx(() -> debug.mapFollow.toggleCardBreakpoint(other, 1, OTHER));
         assertEquals(List.of(), stored(other));
         assertEquals("Breakpoint on line 2 of Other.java removed." + HINT, status());
         undo();
@@ -357,8 +358,8 @@ class RemovalUndoWindowFxTest {
 
         // Removed again, and a plain one set on the line since: it stays.
         FxTestSupport.runOnFx(() -> {
-            debug.toggleCardBreakpoint(other, 1, OTHER);
-            debug.toggleCardBreakpoint(other, 1, OTHER);
+            debug.mapFollow.toggleCardBreakpoint(other, 1, OTHER);
+            debug.mapFollow.toggleCardBreakpoint(other, 1, OTHER);
         });
         undo();
         assertEquals("This can no longer be undone: Breakpoint on line 2 of Other.java removed.", status());
@@ -370,7 +371,7 @@ class RemovalUndoWindowFxTest {
         Breakpoint detailed = detailed(1, "  int a = 1;");
         FxTestSupport.runOnFx(() -> {
             ops().breakpointMap().put(DebugCoordinator.key(other), new ArrayList<>(List.of(detailed)));
-            debug.toggleCardBreakpoint(other, 1, OTHER);
+            debug.mapFollow.toggleCardBreakpoint(other, 1, OTHER);
         });
         assertEquals(1, recorded());
         EditorBuffer tab = open(other);

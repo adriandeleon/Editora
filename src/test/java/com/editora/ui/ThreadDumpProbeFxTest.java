@@ -233,10 +233,10 @@ class ThreadDumpProbeFxTest {
                 "the Thread Dump window",
                 60,
                 () -> call(() -> {
-                    DebugThreadDumpWindow w = debug.threadDumpWindowIfOpen();
+                    DebugThreadDumpWindow w = debug.stacks.threadDumpWindow;
                     return w != null && w.isShowing() && w.dump() != null && w.dump() != before;
                 }));
-        return call(() -> debug.threadDumpWindowIfOpen().dump());
+        return call(() -> debug.stacks.threadDumpWindow.dump());
     }
 
     private static void run(MainController c, String command) throws Exception {

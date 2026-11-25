@@ -81,8 +81,11 @@ class DebugPanelFocusRetentionFxTest {
 
         // The debugger stops in the open file (as a step would). The reveal focuses the editor…
         DapModels.StackFrameInfo frame = new DapModels.StackFrameInfo(1, "Focus.go", real, 1, 0);
-        FxTestSupport.runOnFx(
-                () -> FxTestSupport.call(debug, "highlightFrame", new Class[] {DapModels.StackFrameInfo.class}, frame));
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                FxTestSupport.field(debug, "execLine"),
+                "highlightFrame",
+                new Class[] {DapModels.StackFrameInfo.class},
+                frame));
 
         // …but the panel-focus restore (Platform.runLater in highlightFrame) has since run, so focus is back.
         assertTrue(focusWithinDebugPanel(), "focus must return to the Debug panel after a step-driven reveal");

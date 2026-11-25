@@ -228,7 +228,7 @@ class BrowserDebugProbeFxTest {
             EditorBuffer js = FxTestSupport.callOnFx(c::activeBuffer);
             FxTestSupport.runOnFx(() -> js.toggleBreakpoint(SCRIPT_LINE));
             LaunchJson.File parsed = LaunchJson.parse(Files.readString(launchJson));
-            FxTestSupport.runOnFx(() -> debug.runLaunchConfiguration(
+            FxTestSupport.runOnFx(() -> debug.launchJson.runLaunchConfiguration(
                     launchJson, root, parsed, parsed.configurations().getFirst(), js));
             awaitStop(c, dap, debug, SCRIPT_LINE, "app.js");
             awaitRow(debug, "n", null);

@@ -79,7 +79,7 @@ class DebugTableWindowFxTest {
     @AfterEach
     void endSession() throws Exception {
         FxTestSupport.runOnFx(() -> {
-            debug.tableWindows().forEach(DebugTableWindow::hide);
+            debug.valueWindows.tableWindows().forEach(DebugTableWindow::hide);
             manager.stop();
         });
         await("stopped", () -> !call(manager::isActive));
@@ -170,8 +170,10 @@ class DebugTableWindowFxTest {
 
     private DebugTableWindow open(String name, String key) throws Exception {
         FxTestSupport.runOnFx(() -> viewAs(name, key).fire());
-        await("the table window", () -> call(() -> !debug.tableWindows().isEmpty()));
-        return call(() -> debug.tableWindows().getLast());
+        await(
+                "the table window",
+                () -> call(() -> !debug.valueWindows.tableWindows().isEmpty()));
+        return call(() -> debug.valueWindows.tableWindows().getLast());
     }
 
     /** The columns' names: a data column's is the label it has for its dtype's tooltip. */

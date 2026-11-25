@@ -874,6 +874,40 @@ class DapManagerSessionFxTest {
     }
 
     @Test
+    void aPythonListeningOnAnotherHostIsAttachedToThere() throws Exception {
+        // A debugpy listening on an address that is not this machine's loopback: a container's, another machine's.
+        // The attach used to connect to 127.0.0.1 whatever the host, and so never reached it.
+        java.net.InetAddress elsewhere = nonLoopbackAddress();
+        org.junit.jupiter.api.Assumptions.assumeTrue(elsewhere != null, "needs a network address besides loopback");
+        try (FakeDebugAdapter remote = new FakeDebugAdapter(false, elsewhere)) {
+            String host = elsewhere.getHostAddress();
+            onFx(() -> dap.startPythonAttach(dir, host, remote.port()));
+            FakeDebugAdapter.Session session = remote.awaitSession();
+            session.awaitRequest("attach");
+            assertEquals(host, ((Map<?, ?>) session.launchArgs.get("connect")).get("host"));
+            onFx(dap::stop);
+            assertTrue(session.disconnected.await(10, TimeUnit.SECONDS));
+        }
+    }
+
+    /** An IPv4 address of an interface that is up and not loopback; null when the machine has none. */
+    private static java.net.@org.jspecify.annotations.Nullable InetAddress nonLoopbackAddress()
+            throws java.net.SocketException {
+        for (java.net.NetworkInterface nic :
+                java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())) {
+            if (!nic.isUp() || nic.isLoopback()) {
+                continue;
+            }
+            for (java.net.InetAddress a : java.util.Collections.list(nic.getInetAddresses())) {
+                if (a instanceof java.net.Inet4Address && !a.isLoopbackAddress() && !a.isLinkLocalAddress()) {
+                    return a;
+                }
+            }
+        }
+        return null;
+    }
+
+    @Test
     void pauseDoesNothingWhenTheAdapterCannotListItsThreads() throws Exception {
         project();
         FakeDebugAdapter.Session session = launch();
