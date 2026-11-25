@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   app), Run File and F5 on the `config.ru`, a Ruby file at the project's top such as `app.rb`, or a file under `app/` or
   `config/` start the app under rackup on the first free port from 9292; under the debugger a request stops in your
   routes. A `config.ru` opens as Ruby.
+- **Phoenix: run and debug the web server.** F5 or Run File on a module of a Phoenix app runs `mix phx.server`; under
+  the debugger a breakpoint in a controller, LiveView or plug stops while the browser's request waits, and the server
+  runs until Stop.
 - **Editora says when it is drawing on the CPU.** When JavaFX cannot start its GPU pipeline (on Linux, typically a
   graphics driver updated without a reboot) it falls back to software rendering and the whole window lags. The
   status bar now says so once, Doctor gains a Graphics Rendering row with the reason and the fix, and menus drop
