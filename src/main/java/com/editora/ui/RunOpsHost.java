@@ -43,7 +43,7 @@ final class RunOpsHost implements RunCoordinator.Ops {
 
     @Override
     public void attachJavaDebugger(@Nullable Path anchor, int port, Runnable stopOwner) {
-        if (anchor != null) mc.debugCoordinator.attachToPort(anchor, "localhost", port, stopOwner);
+        if (anchor != null) mc.debugCoordinator.attach.attachToPort(anchor, "localhost", port, stopOwner);
     }
 
     @Override

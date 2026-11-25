@@ -159,7 +159,7 @@ class CoreDumpProbeFxTest {
             DapManager dap = FxTestSupport.field(c, "dapManager");
             String language = source.toString().endsWith(".go") ? "go" : "cpp";
             await(language + " debugging available", 120, () -> call(() -> debug.debugEffectiveFor(language)));
-            FxTestSupport.runOnFx(() -> debug.chooseFile = chooser -> core.toFile());
+            FxTestSupport.runOnFx(() -> debug.attach.chooseFile = chooser -> core.toFile());
             FxTestSupport.runOnFx(
                     () -> ((CommandRegistry) FxTestSupport.field(c, "registry")).run("debug.openCoreDump"));
             await(

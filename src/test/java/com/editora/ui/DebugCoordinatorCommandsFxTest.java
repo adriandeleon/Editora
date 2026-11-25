@@ -1136,12 +1136,12 @@ class DebugCoordinatorCommandsFxTest {
     void anAttachedTestRunIsStoppedWithItsSessionAndItsOtherJvmsAreAttachedInTurn() throws Exception {
         Path test = open("src/main/java/demo/Args.java");
         List<String> owner = new java.util.concurrent.CopyOnWriteArrayList<>();
-        FxTestSupport.runOnFx(() -> debug.attachToPort(test, "localhost", 41001, () -> owner.add("stopped")));
+        FxTestSupport.runOnFx(() -> debug.attach.attachToPort(test, "localhost", 41001, () -> owner.add("stopped")));
         FakeDebugAdapter.Session first = session("attach");
         awaitState("debug.state.running");
 
         clearLog();
-        FxTestSupport.runOnFx(() -> debug.attachToPort(test, "localhost", 41002, () -> owner.add("stopped")));
+        FxTestSupport.runOnFx(() -> debug.attach.attachToPort(test, "localhost", 41002, () -> owner.add("stopped")));
         assertEquals(List.of(tr("status.debug.attachQueued", 41002)), statuses(), "the second fork waits its turn");
         assertEquals(1, adapter.sessionCount());
 
@@ -1295,18 +1295,18 @@ class DebugCoordinatorCommandsFxTest {
 
     @Test
     void attachParsesHostAndPortAndRestartAttachesAgain() throws Exception {
-        FxTestSupport.runOnFx(() -> debug.debugAttach());
+        FxTestSupport.runOnFx(() -> debug.attach.debugAttach());
         assertEquals(List.of(tr("status.debug.saveFirst")), statuses());
 
         clearLog();
         Path file = open("src/main/java/demo/Args.java");
         promptAnswer = " not-a-port ";
-        FxTestSupport.runOnFx(() -> debug.debugAttach());
+        FxTestSupport.runOnFx(() -> debug.attach.debugAttach());
         assertEquals(List.of(tr("status.debug.badAddress", "not-a-port")), statuses());
         assertEquals(0, adapter.sessionCount());
 
         promptAnswer = "build.example.test:8000";
-        FxTestSupport.runOnFx(() -> debug.debugAttach());
+        FxTestSupport.runOnFx(() -> debug.attach.debugAttach());
         FakeDebugAdapter.Session first = session("attach");
         assertEquals("build.example.test", first.launchArgs.get("hostName"));
         assertEquals("8000", String.valueOf(first.launchArgs.get("port")).replace(".0", ""));
@@ -1320,7 +1320,7 @@ class DebugCoordinatorCommandsFxTest {
         assertEquals("build.example.test", second.launchArgs.get("hostName"));
 
         promptAnswer = "5005"; // a bare port: this machine
-        FxTestSupport.runOnFx(() -> debug.debugAttach());
+        FxTestSupport.runOnFx(() -> debug.attach.debugAttach());
         assertEquals("localhost", session("attach").launchArgs.get("hostName"));
     }
 
@@ -1331,29 +1331,29 @@ class DebugCoordinatorCommandsFxTest {
     void attachRemembersItsAddressesAndReattachUsesTheLastOne() throws Exception {
         attachTargets = new ArrayList<>();
         Path file = open("src/main/java/demo/Args.java");
-        FxTestSupport.runOnFx(() -> debug.debugReattach());
+        FxTestSupport.runOnFx(() -> debug.attach.debugReattach());
         assertEquals(List.of(tr("status.debug.noEarlierAttach")), statuses());
 
         promptAnswer = "build.example.test:8000"; // nothing remembered yet: Attach asks
-        FxTestSupport.runOnFx(() -> debug.debugAttach());
+        FxTestSupport.runOnFx(() -> debug.attach.debugAttach());
         session("attach");
         awaitState("debug.state.running");
         assertEquals(List.of("build.example.test:8000"), attachTargets);
 
-        FxTestSupport.runOnFx(() -> debug.debugReattach());
+        FxTestSupport.runOnFx(() -> debug.attach.debugReattach());
         assertEquals("build.example.test", session("attach").launchArgs.get("hostName"));
         awaitState("debug.state.running");
 
         // With an address remembered, Attach offers it first and "Another address…" last.
         promptAnswer = "localhost:5006";
-        FxTestSupport.runOnFx(() -> debug.debugAttach());
+        FxTestSupport.runOnFx(() -> debug.attach.debugAttach());
         answerPicker(1, javafx.scene.input.KeyCode.ENTER);
         assertEquals(
                 "5006", String.valueOf(session("attach").launchArgs.get("port")).replace(".0", ""));
         awaitState("debug.state.running");
         assertEquals(List.of("localhost:5006", "build.example.test:8000"), attachTargets, "most recent first");
 
-        FxTestSupport.runOnFx(() -> debug.debugAttach());
+        FxTestSupport.runOnFx(() -> debug.attach.debugAttach());
         answerPicker(1, javafx.scene.input.KeyCode.ENTER); // the earlier one
         assertEquals("build.example.test", session("attach").launchArgs.get("hostName"));
         assertEquals(List.of("build.example.test:8000", "localhost:5006"), attachTargets);
@@ -1380,10 +1380,10 @@ class DebugCoordinatorCommandsFxTest {
         FxTestSupport.runOnFx(() -> {
             dap.setServerProvidesJavaDebug(false); // jdtls came up without java-debug
             promptAnswer = "5005";
-            debug.debugAttach();
+            debug.attach.debugAttach();
             debug.debugMainClass();
             debug.debugConfig(config("App", "java", "demo.Args", ""));
-            debug.attachToPort(active.getPath(), "localhost", 5005);
+            debug.attach.attachToPort(active.getPath(), "localhost", 5005);
             debug.debugStart();
         });
         FxTestSupport.drainFx();

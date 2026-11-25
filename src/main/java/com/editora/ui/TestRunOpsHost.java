@@ -74,7 +74,7 @@ final class TestRunOpsHost implements TestRunCoordinator.Ops {
 
     /**
      * The debugger a test of {@code file} attaches with: Editora's JVM adapter for a Kotlin or Groovy test (as
-     * {@link DebugCoordinator#attachToPort} routes it), java-debug through jdtls for any other.
+     * {@link DebugAttach#attachToPort} routes it), java-debug through jdtls for any other.
      */
     static String testDebugLanguage(@Nullable Path file) {
         String jvm = file == null ? null : DebugCoordinator.jvmAdapterLanguage(file);
@@ -85,7 +85,7 @@ final class TestRunOpsHost implements TestRunCoordinator.Ops {
     public void attachDebugger(String className, String host, int port) {
         mc.setStatus(tr("status.testrunner.debugAttaching", port));
         mc.testNavigation.resolveTestClassAnchor(
-                className, a -> mc.debugCoordinator.attachTestJvm(a, host, port, mc.testRunCoordinator::stop));
+                className, a -> mc.debugCoordinator.attach.attachTestJvm(a, host, port, mc.testRunCoordinator::stop));
     }
 
     @Override

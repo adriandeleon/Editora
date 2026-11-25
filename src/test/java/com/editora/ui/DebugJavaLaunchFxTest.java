@@ -298,7 +298,7 @@ class DebugJavaLaunchFxTest {
     void restartLeavesASessionAttachedToATestRunAloneAndSaysWhy() throws Exception {
         Path file = open("src/test/java/demo/LoopTest.java", "package demo;\npublic class LoopTest {\n}\n");
 
-        FxTestSupport.runOnFx(() -> debug.attachToPort(file, "localhost", 5005));
+        FxTestSupport.runOnFx(() -> debug.attach.attachToPort(file, "localhost", 5005));
         FakeDebugAdapter.Session session = adapter.awaitSession();
         session.awaitRequest("attach");
         EventuallyFx.untilOnFx(
@@ -332,7 +332,7 @@ class DebugJavaLaunchFxTest {
         javafx.scene.control.Button restart = FxTestSupport.field(panel, "restart");
         javafx.scene.Node holder = FxTestSupport.field(panel, "restartHolder");
 
-        FxTestSupport.runOnFx(() -> debug.attachToPort(file, "localhost", 5005));
+        FxTestSupport.runOnFx(() -> debug.attach.attachToPort(file, "localhost", 5005));
         adapter.awaitSession().awaitRequest("attach");
         EventuallyFx.untilOnFx(
                 "the attach never reached RUNNING",
