@@ -190,6 +190,14 @@ jobs:
           trap 'kill "$dumper" 2>/dev/null || true' EXIT
           ./mvnw -B --no-transfer-progress -Dgroups=fx -Djacoco.skip=true -Dsurefire.rerunFailingTestsCount=2 -DforkCount=2 -Dsurefire.includesFile=target/shard-includes.txt test
 
+      # As in ci.yml: the classes that run alone (the perf budget gate), in a JVM of their own.
+      - name: Test the classes that run alone (FX suite)
+        if: matrix.shard == 1 && (success() || failure())
+        timeout-minutes: 8
+        run: |
+          java scripts/ci/ShardTests.java alone > target/alone-includes.txt
+          ./mvnw -B --no-transfer-progress -Dgroups=fx -Djacoco.skip=true -Dsurefire.rerunFailingTestsCount=2 -Dsurefire.includesFile=target/alone-includes.txt test
+
       - name: Thread dumps of a hung test run
         if: always()
         shell: bash
@@ -376,6 +384,8 @@ jobs:
           gdb --version | head -1
           command -v gdbserver || sudo apt-get install -y --no-install-recommends gdbserver
           gdbserver --version | head -1
+          # C++ test frameworks for CppTestsProbeFxTest (found by CMake's find_package).
+          sudo apt-get install -y -qq --no-install-recommends libgtest-dev catch2 doctest-dev
           cmake --version | head -1
           cc --version | head -1
           curl -fsSL -o /tmp/codelldb.vsix "https://github.com/vadimcn/codelldb/releases/download/${CODELLDB_VERSION}/codelldb-linux-x64.vsix"
@@ -504,6 +514,8 @@ jobs:
       # debugged; Run File on a test file runs its tests.
       # RubyAppsProbeFxTest: under rdbg, Debug Test at Caret runs an RSpec example and a Minitest test alone and stops
       # in them, a Rails test stops in its controller, and F5 in a Rails controller serves the app and a request stops.
+      # CppTestsProbeFxTest: GoogleTest, Catch2 3 and doctest in a CMake project: a ▶ per test, Run File into Test
+      # Results, Rerun Failed (built again), Run Test at Caret, and Debug Test at Caret stopping on GDB.
       # RemoteNativeAttachProbeFxTest: a C program under gdbserver, attached to by Attach to Remote Program on GDB and
       # on CodeLLDB and by a cppdbg configuration with miDebuggerServerAddress, stops at its breakpoint.
       # PhpWebProbeFxTest: F5 on an index.php serves it on PHP's built-in server and a request stops; F5 on a class of a
@@ -569,7 +581,7 @@ jobs:
       # PythonTemplatesProbeFxTest: on debugpy, a breakpoint on a Jinja template's line (Jinja2 in the requirements) and
       # on a Django template's (a manage.py) stops on it with the template's variables, Template breakpoints Automatic.
       - name: Test compact Java language service and debugging
-        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,RemoteNativeAttachProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,CsharpTestDebugProbeFxTest,RubyDebugProbeFxTest,RubyAppsProbeFxTest,ElixirDebugProbeFxTest,RunTestAtCaretProbeFxTest,ToolTestResultsProbeFxTest,PhpDebugProbeFxTest,PhpWebProbeFxTest,BashDebugProbeFxTest,DebugHistoryProbeFxTest#python*+java+javaRecording,SeveralSessionsProbeFxTest,TriggeredBreakpointsProbeFxTest#python+java,LoadedSourcesProbeFxTest#c*+python*,MarkObjectProbeFxTest,DebugSmallWinsProbeFxTest,ThreadDumpProbeFxTest,TypeRenderersProbeFxTest,BreakpointFiltersProbeFxTest,CoreDumpProbeFxTest,DebugTableProbeFxTest,ParallelStacksProbeFxTest,StepBackProbeFxTest,ExceptionBreakpointsProbeFxTest,PythonDataProbeFxTest,StepFiltersProbeFxTest#python+java+go,EvaluationTimeLimitProbeFxTest,WatchSetValueProbeFxTest#python+java+go,ValueFormatsProbeFxTest#java+python+go+gdb+codelldb,GoGoroutinesProbeFxTest,PythonTemplatesProbeFxTest,PythonWebProbeFxTest,InstructionBreakpointProbeFxTest,MemoryWriteProbeFxTest,DartDebugProbeFxTest -Dgroups=probe -Dlsp.probe=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest,PlainFolderDebugProbeFxTest,DebugQuickWinsProbeFxTest,MemberBreakpointsProbeFxTest,ThreadsViewProbeFxTest,ExceptionCardProbeFxTest,AttachToProcessProbeFxTest#aJvm*+aPython*,PinnedValuesProbeFxTest,LambdaBreakpointsProbeFxTest,GoDebugProbeFxTest,RustDebugProbeFxTest,NativeDebugProbeFxTest,RemoteNativeAttachProbeFxTest,DisassemblyMemoryProbeFxTest,LaunchJsonProbeFxTest,CsharpDebugProbeFxTest,CsharpTestDebugProbeFxTest,RubyDebugProbeFxTest,RubyAppsProbeFxTest,ElixirDebugProbeFxTest,RunTestAtCaretProbeFxTest,ToolTestResultsProbeFxTest,PhpDebugProbeFxTest,PhpWebProbeFxTest,BashDebugProbeFxTest,DebugHistoryProbeFxTest#python*+java+javaRecording,SeveralSessionsProbeFxTest,TriggeredBreakpointsProbeFxTest#python+java,LoadedSourcesProbeFxTest#c*+python*,MarkObjectProbeFxTest,DebugSmallWinsProbeFxTest,ThreadDumpProbeFxTest,TypeRenderersProbeFxTest,BreakpointFiltersProbeFxTest,CoreDumpProbeFxTest,DebugTableProbeFxTest,ParallelStacksProbeFxTest,StepBackProbeFxTest,ExceptionBreakpointsProbeFxTest,PythonDataProbeFxTest,StepFiltersProbeFxTest#python+java+go,EvaluationTimeLimitProbeFxTest,WatchSetValueProbeFxTest#python+java+go,ValueFormatsProbeFxTest#java+python+go+gdb+codelldb,GoGoroutinesProbeFxTest,PythonTemplatesProbeFxTest,PythonWebProbeFxTest,InstructionBreakpointProbeFxTest,MemoryWriteProbeFxTest,DartDebugProbeFxTest,CppTestsProbeFxTest -Dgroups=probe -Dlsp.probe=true test
 
   # The Node.js tool chain Editora drives but never ships: typescript-language-server with TypeScript, and
   # vscode-js-debug. Both are user-installed, so the default lanes skip their probes — and a TypeScript release

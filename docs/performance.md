@@ -1012,8 +1012,12 @@ only say *that* it happened, not which merge. So every change is checked as it i
 
 ### 1. The budget test, on every pull request
 
-`PerfBudgetFxTest` runs in CI's Linux suite like any FX test, about a minute. It asserts **counts**, which hold on any
-machine, never times:
+`PerfBudgetFxTest` runs in CI's Linux suite (and the macOS FX lane), about a minute, in a JVM of its own: shard 1
+runs it after its own classes (`ShardTests.java alone`). What a JVM ran before changes its numbers. JavaFX's headless
+window copies its pixels each frame through `ByteBuffer.asIntBuffer()`, one view object per pixel, which the JIT
+removes only while `HeapByteBuffer.asIntBuffer`'s byte-order branch has seen one byte order. A test before it that used
+the other one (AWT through a math image, JDI) left 34 MB a frame: 41 MB a keystroke against a 2.7 MB budget, with no
+change to Editora. It asserts **counts**, which hold on any machine, never times:
 
 | Budget | What it catches |
 | --- | --- |

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **C and C++ tests: GoogleTest, Catch2 and doctest.** A C or C++ test file has a ▶ per test and one for the whole
+  file. Run File, Run Test at Caret and a test's ▶ build its program and run it with the test's filter
+  (`--gtest_filter`, a Catch2 test spec, `--test-case`), into Test Results: each test passed, failed or skipped, a
+  failed check with its values, a row that opens the failing line. Rerun Failed builds again first. Debug Test at
+  Caret debugs the program on CodeLLDB or GDB, filtered to the test.
 - **Full jkit support.** Editora drives [jkit](https://jkit-project.dev/) for every command it has: the project's pins
   come from jkit itself (`jkit status`: `jkit.toml`, `.sdkmanrc`, `.tool-versions`, `.java-version`), **Set Project
   JDK…** can keep the choice in `jkit.toml` (`jkit pin`), and sbt and GraalVM join JDK, Maven and Gradle. New **Java

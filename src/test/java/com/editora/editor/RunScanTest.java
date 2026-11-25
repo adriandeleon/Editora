@@ -294,4 +294,18 @@ class RunScanTest {
         RunScan.Inputs off = new RunScan.Inputs(false, false, false, false, "c", "tally.c", false, false);
         assertFalse(RunScan.scan(off, "int main(void) {}\n").runnable(), "the Run feature off");
     }
+
+    @Test
+    void aCppTestFileHasAGlyphPerTestAndOneForTheWholeFile() {
+        String gtest = "#include <gtest/gtest.h>\n\nTEST(Math, Adds) {\n}\nTEST(Math, Fails) {}\n";
+        RunScan.Result r = RunScan.scan(inputs("cpp", "calc_test.cpp"), gtest);
+        assertTrue(r.runnable(), "Run File runs the tests, though the file has no main");
+        assertEquals(List.of(0, 2, 4), List.copyOf(r.testLines().keySet()));
+        assertEquals("Math.Fails", r.testLines().get(4).methodName());
+        assertEquals("GTEST", r.testLines().get(4).className());
+        assertEquals(null, r.testLines().get(0).methodName(), "the whole file");
+        RunScan.Result plain = RunScan.scan(inputs("cpp", "main.cpp"), "int main() {}\n");
+        assertTrue(plain.testLines().isEmpty(), "a program: its main's ▶ only");
+        assertEquals(0, plain.line());
+    }
 }

@@ -601,11 +601,17 @@ fills Test Results too, while the Run console shows the runner's usual report:
 | PHPUnit | `--log-junit`, when the run ends |
 | ExUnit | `mix test --trace`, test by test |
 | `dart test`, `flutter test` | `--file-reporter json:`, when the run ends |
+| GoogleTest | `--gtest_output=xml:`, when the run ends |
+| Catch2 | its XML reporter beside the console one (Catch2 2: the XML reporter only), when the run ends |
+| doctest | its XML reporter, when the run ends (the console says little) |
 
 A row opens its test where it failed, else where it is declared. **Rerun
 Failed** and **Rerun This Test** narrow the file's run with the runner's own
 filter: `-t` for Jest and Vitest, `--filter` for Deno and PHPUnit, `--example`
-for RSpec, `-n` for Minitest, `--only test:` for ExUnit and `--name` for Dart.
+for RSpec, `-n` for Minitest, `--only test:` for ExUnit, `--name` for Dart,
+`--gtest_filter` for GoogleTest, a test spec for Catch2 and `--test-case` for
+doctest. A C or C++ test program is built again before them
+([C & C++](/docs/c-cpp#tests)).
 *Run File* on a Dart test file now runs `dart test` (`flutter test` in a
 Flutter package) rather than `dart run`. sbt, Mill and Scala CLI tests are not
 read yet: their output stays in the Output console. Where a structured format isn't available, the

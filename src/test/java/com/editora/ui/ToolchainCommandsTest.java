@@ -141,7 +141,8 @@ class ToolchainCommandsTest {
                                 "maven", null, null, "global", "/m", "/h/.jkit/tools/maven/3.9.11", null),
                         new JkitCli.StatusTool("gradle", null, null, "none", null, null, null)));
         String text = ToolchainCommands.statusText(status);
-        assertTrue(text.startsWith("Project /src/app (jkit.toml)"), text);
+        // The project's folder as this system writes it (\src\app on Windows).
+        assertTrue(text.startsWith("Project " + java.nio.file.Path.of("/src/app") + " (jkit.toml)"), text);
         assertTrue(text.contains("! jkit.toml:3: unknown tool 'ant', skipped"));
         assertTrue(text.contains("JDK: pins 21 → not installed"));
         assertTrue(text.contains("\n    jkit sync"));

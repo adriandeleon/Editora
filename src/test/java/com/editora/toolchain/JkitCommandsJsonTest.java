@@ -89,16 +89,20 @@ class JkitCommandsJsonTest {
                 pins,
                 new ProjectToolchain.Installs(List.of(graal, temurin25), List.of(sdkmanMaven), List.of()));
 
-        assertEquals("/h/.jkit/tools/jdk/21.0.9+10-temurin", r.home("jdk"), "the install jkit picked");
+        assertEquals(
+                Path.of("/h/.jkit/tools/jdk/21.0.9+10-temurin").toString(), // as this system writes it
+                r.home("jdk"),
+                "the install jkit picked");
         assertEquals(ProjectToolchain.Origin.JKIT, r.jdk().origin());
         assertEquals("jkit.toml", r.jdk().file());
-        assertEquals("/s/mvn", r.home("maven"), "jkit has none: SDKMAN's Maven answers the pin");
-        assertEquals("/s/graal", r.home("graalvm"), "only a GraalVM-based JDK answers the graalvm pin");
+        assertEquals(Path.of("/s/mvn").toString(), r.home("maven"), "jkit has none: SDKMAN's Maven answers the pin");
+        assertEquals(
+                Path.of("/s/graal").toString(), r.home("graalvm"), "only a GraalVM-based JDK answers the graalvm pin");
         assertTrue(r.missing().isEmpty());
 
         ProjectToolchain.Resolution own = ProjectToolchain.resolve(
                 Map.of("jdk", "25"), pins, new ProjectToolchain.Installs(List.of(temurin25), List.of(), List.of()));
-        assertEquals("/s/tem", own.home("jdk"), "the project setting wins over jkit.toml");
+        assertEquals(Path.of("/s/tem").toString(), own.home("jdk"), "the project setting wins over jkit.toml");
         assertEquals(ProjectToolchain.Origin.PROJECT_SETTINGS, own.jdk().origin());
         assertEquals(
                 List.of("maven", "graalvm"),

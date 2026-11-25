@@ -78,7 +78,7 @@ final class RunScan {
         int line;
         List<Integer> httpLines = List.of();
         Map<Integer, String> makeTargets = Map.of();
-        Map<Integer, JavaTestScanner.TestTarget> pythonTests = Map.of();
+        Map<Integer, JavaTestScanner.TestTarget> fileTests = Map.of();
         String language = in.language();
         int javaRelease = 0;
         boolean classicJava = false;
@@ -99,9 +99,9 @@ final class RunScan {
             runnable = !targets.isEmpty();
             line = -1; // Makefile uses the target line map, not a single entry line
         } else if (in.eligible() && "python".equals(language)) {
-            pythonTests = pythonTestLines(in.name(), text);
-            line = pythonTests.isEmpty() ? pythonRunLine(in.name(), text) : -1; // tests: their own ▶ each
-            runnable = line >= 0 || !pythonTests.isEmpty();
+            fileTests = pythonTestLines(in.name(), text);
+            line = fileTests.isEmpty() ? pythonRunLine(in.name(), text) : -1; // tests: their own ▶ each
+            runnable = line >= 0 || !fileTests.isEmpty();
         } else if (in.eligible() && "shell".equals(language) && !ShellFiles.isStartupFile(in.name())) {
             // (A sourced startup file — .bashrc, .xinitrc, .envrc … — is never run: no ▶ for it.)
             // Gated like Python, by the Run feature alone: shell Run used to also need LSP and the Bash server
@@ -129,6 +129,13 @@ final class RunScan {
             // file's ▶ runs its tests (node --test) — decided at launch, where the path is known.
             runnable = true;
             line = 0;
+        } else if (in.eligible()
+                && ("c".equals(language) || "cpp".equals(language))
+                && !(fileTests = cppTestLines(text)).isEmpty()) {
+            // A GoogleTest, Catch2 or doctest file: a ▶ per test (its program run with that test's filter), and the
+            // whole file's on its first line, or on its main when it has one.
+            line = com.editora.run.CompiledRunLine.runLine(language, in.name(), text);
+            runnable = true;
         } else if (in.eligible() && com.editora.run.CompiledRunLine.supports(language)) {
             // A C, C++, Go, Rust or Dart file with a program's main: Run File builds it as Debug File does, then runs
             // it (a Dart file by dart run, or flutter run for a Flutter app's: DartRun).
@@ -167,7 +174,7 @@ final class RunScan {
         }
         // JUnit test glyphs are additive to whatever the run type above decided (a test file is usually neither
         // compact-source nor a script), so they OR into runnable and get their own line→target map.
-        Map<Integer, JavaTestScanner.TestTarget> testLines = pythonTests;
+        Map<Integer, JavaTestScanner.TestTarget> testLines = fileTests;
         if (in.testEligible()) {
             Map<Integer, JavaTestScanner.TestTarget> tl = new LinkedHashMap<>();
             for (JavaTestScanner.TestTarget t : JavaTestScanner.scan(language, text)) {
@@ -276,6 +283,30 @@ final class RunScan {
     /** As {@link #pythonRunLine(String, String)} for a file of no particular name. */
     static int pythonRunLine(String text) {
         return pythonRunLine(null, text);
+    }
+
+    /**
+     * The ▶ glyphs of a C or C++ test file ({@link com.editora.test.CppTests}): one per test — {@code className} the
+     * framework's kind, {@code methodName} the test's name — and one on the first line for the whole file when no test
+     * sits there. Empty for a file that includes no test framework, or has no tests.
+     */
+    static Map<Integer, JavaTestScanner.TestTarget> cppTestLines(String text) {
+        com.editora.test.ToolTestKind kind = com.editora.test.CppTests.framework(text);
+        if (kind == null) {
+            return Map.of();
+        }
+        List<com.editora.test.CppTests.Test> tests = com.editora.test.CppTests.scan(kind, text);
+        if (tests.isEmpty()) {
+            return Map.of();
+        }
+        Map<Integer, JavaTestScanner.TestTarget> out = new LinkedHashMap<>();
+        if (tests.get(0).line() > 0) {
+            out.put(0, new JavaTestScanner.TestTarget(0, kind.name(), null, false)); // the whole file
+        }
+        for (com.editora.test.CppTests.Test t : tests) {
+            out.put(t.line(), new JavaTestScanner.TestTarget(t.line(), kind.name(), t.name(), false));
+        }
+        return out;
     }
 
     /**
