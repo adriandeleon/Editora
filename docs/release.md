@@ -161,8 +161,8 @@ that Editora builds against — publishes no `win-aarch64` native jar on Maven C
 ([JDK-8314064]), so a native ARM64 build can't link — Windows-on-ARM users run the x64 installer
 under emulation. Revisit when JavaFX ships `win-aarch64` natives.
 
-Before the matrix, the **Render the user guide** job (`docs-site`) checks out `editora-website`'s `master`,
-renders this commit's `user-docs/` with its `scripts/build-app-docs.mjs` and uploads the HTML; every leg
+Before the matrix, the **Render the user guide** job (`docs-site`) checks out `editora-website`'s `website-next`
+(the branch kept in step with Editora master; `master` documents the release already out), renders this commit's `user-docs/` with its `scripts/build-app-docs.mjs` and uploads the HTML; every leg
 downloads it into `.docs-site/` so the jar carries it ([bundled user guide](building-and-packaging.md#bundled-user-guide)).
 A guide page the website's build rejects stops the release here, before any leg starts.
 
@@ -282,7 +282,7 @@ their `.asc` files are attested too.
 Anyone can check a download with the GitHub CLI:
 
 ```bash
-gh attestation verify Editora-0.28.0-linux-x64.deb --repo adriandeleon/Editora --source-ref refs/tags/v0.28.0
+gh attestation verify Editora-0.29.0-linux-x64.deb --repo adriandeleon/Editora --source-ref refs/tags/v0.29.0
 ```
 
 - **Keyless.** Sigstore signs with the job's short-lived OIDC identity, so there is no key or secret
@@ -356,7 +356,7 @@ Users check a download with:
 
 ```bash
 gpg --import editora-signing-key.asc
-gpg --verify Editora-0.28.0-linux-x64.deb.asc Editora-0.28.0-linux-x64.deb
+gpg --verify Editora-0.29.0-linux-x64.deb.asc Editora-0.29.0-linux-x64.deb
 ```
 
 `sudo rpm --import editora-signing-key.asc` lets `rpm -K` and dnf check the `.rpm`'s own

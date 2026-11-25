@@ -185,6 +185,19 @@ class ReleaseSupplyChainTest {
     }
 
     @Test
+    void theUserGuideIsRenderedWithTheWebsiteBranchThatTracksThisRepo() throws IOException {
+        // 0.29.0's dry run: editora-website's master still listed screenshots this repo's user-docs/ had renamed,
+        // so its build refused the guide. website-next is kept in step with Editora master; master is not.
+        String docs = jobs(read(WORKFLOWS.resolve("release.yml"))).get("docs-site");
+        assertTrue(
+                docs.contains("repository: adriandeleon/editora-website"), "docs-site no longer checks out the site");
+        assertTrue(
+                docs.contains("ref: website-next"),
+                "docs-site must render with editora-website's website-next: its master documents the release"
+                        + " already out and can lag user-docs/");
+    }
+
+    @Test
     void theMacOsDmgIsSignedBeforeTheBuildAndNotarizedAfterIt() throws IOException {
         String build = jobs(read(WORKFLOWS.resolve("release.yml"))).get("build");
         int importCert = build.indexOf("- name: Import signing certificate (macOS)");

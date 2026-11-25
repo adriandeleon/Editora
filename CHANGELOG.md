@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-11-25
+
 ### Added
 
 - **PowerShell: code intelligence and debugging.** PowerShell Editor Services (VS Code's PowerShell engine, on `pwsh`)
@@ -118,30 +120,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `describe`) at the caret under that runner, alone, with breakpoints in your test and the code it calls, TypeScript
   and `.tsx` files included. F5 on a test file debugs all of its tests, and Run File on it runs them with the runner
   instead of `node --test`. Editora uses the runner installed in the package's `node_modules`.
-
 - **Lua debugging.** Press F5 on a Lua script to debug it: breakpoints (with conditions), locals, upvalues and
   globals, watches and hovers, stepping, changing a variable's value, and a stop where an error is raised. The script's
   output appears in the Debug console. It runs on Local Lua Debugger, which Settings ▸ Debugging ▸ Lua installs (it
   needs Node.js), with the `lua` on your PATH (or `lua5.4`, `lua5.3`, `luajit`…). launch.json `lua-local`
   configurations work too. A launch.json `bashdb` configuration, which started nothing before, now starts as well.
-
 - **Deno.** A JavaScript or TypeScript file in a Deno project (a folder with a `deno.json` or `deno.jsonc`) now
   runs under Deno: Run File runs `deno run` (a test file `deno test`) from the project's folder, with every
   permission granted, since the Run console can't ask for them. F5 debugs it the same way through the JavaScript
   debugger: breakpoints in your TypeScript, locals, watches and stepping. Debug Test at Caret runs just the
   `Deno.test` (or `describe`) around the caret. A file whose first line names `deno` (`#!/usr/bin/env -S deno run`)
   debugs too. Editora finds Deno on your PATH or in `~/.deno/bin`, where its installer puts it.
-
 - **The documentation comes with Editora.** Help ▸ Documentation now opens the user guide that ships inside
   Editora, in your browser: the same pages as the website, with their pictures, search and every command's page,
   for the version you are running, and without a network connection. Help for a command in the palette, Settings'
   *Help for* links and Pauta Conformance open it too. Links to pages it does not hold, such as News, go to the
   website, and the new Help ▸ Online Documentation opens the website's copy.
-
 - **Debug Test at Caret for Dart.** In a Dart `_test.dart` file, Debug Test at Caret debugs the `test`,
   `testWidgets` or `group` the caret is in, alone, on Dart's (or Flutter's) test runner; outside them, every test of
   the file.
-
 - **Dart and Flutter.** Editora now knows Dart: syntax colouring, comments, indenting and folding, the
   Structure panel and Go to Symbol, snippets, a New File template and its file icon. With the Dart SDK (or
   Flutter's) installed, Dart's own analysis server gives errors, completion, navigation, rename and formatting
@@ -151,18 +148,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Debugging ▸ Dart. F5 debugs either on the SDK's own debugger (`dart debug_adapter`, `flutter debug_adapter`):
   breakpoints, conditions and logpoints, locals, watches and hovers, and stops on uncaught exceptions (or on every
   exception). Dart run configurations run and debug the same way.
-
 - **Edit memory in the Memory view.** While the program is paused, double-click a row of the Debug window's Memory
   view (or press F2, or use its right-click menu's Edit Bytes…) and type new bytes, in hex or as "quoted text". Only
   the bytes you changed are written, and the view and the Variables view show the new values. It works on CodeLLDB,
   GDB and Delve (C, C++, Rust and Go). The Memory view also finds a C array's bytes on GDB now, where typing its name
   said it had no address.
-
 - **Instruction breakpoints.** In the Debug window's Disassembly view, click the margin before an instruction's
   address, press F9, or use the row's right-click menu to put a breakpoint on that one machine instruction. The
   program stops there, and the Disassembly view opens at it. It works on CodeLLDB, GDB and Delve (C, C++, Rust and
   Go). The breakpoints last for the debug session, since an address belongs to that run of the program.
-
 - **Run and debug Django, Flask and FastAPI apps.** Run or Debug a Django project's `manage.py` and its development
   server starts (`runserver`); do the same on a Flask or FastAPI app's file and Editora serves it with
   `flask run --reload` or `uvicorn --reload`, from the right folder. Breakpoints in your views stop, and keep
@@ -210,7 +204,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file, the project's own build otherwise), and the program runs in the Run console with its output and exit code.
   Before, only F5 started such a file, and Run said it was not runnable. Debug: Debug Current File now also works on
   a file that Run File runs.
-
 - **Internal: a performance A/B against the previous release.** `scripts/perf-ab.sh <tag> [reps]` builds the
   previous release in a worktree beside the main checkout and runs a headless probe against both builds,
   interleaved: typing (including rendered frames per keystroke), scrolling, idle, highlighting, a large file, heap
@@ -219,11 +212,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Settings shows one language at a time on Language Servers and Debugging.** Each page has a **Language** picker and
+  shows only that language's cards, instead of a wall of 27 servers and 9 adapters. A search ignores the pick and
+  shows every language with a hit. Go's Goroutines card now sits with Go, and Build Tools' "pom.xml editing" link opens
+  Language Servers with Maven picked.
 - **Run File says why a Java file does not run on its own.** On a `.java` that is neither a single-file program nor a
   compact source file (a library class, a class of a Maven or Gradle project), Run File now says what runs as one
   file and that a project class's `main` runs from its ▶. Its other "Not a runnable file" message no longer lists a
   few languages of the many it runs.
-
 - **Typing allocates about two thirds less.** Each keystroke in a 2,000-line Java file made the UI thread allocate
   about 7 MB, and now about 2.4 MB, so the garbage collector runs less often while you type. The editor's scrolling
   layer (Flowless, now a vendored fork like RichTextFX) measured every visible line again on each layout pass and
@@ -303,7 +299,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     what changed beside it (an 8.8 MB index: 42 ms and 8.8 MB written per save → about 1 ms and 13 KB), and the index
     is rewritten every ten minutes or so of saving, when that file grows, and at quit. A crash keeps every saved
     version, and two Editoras on one configuration folder still keep each other's versions and deletions.
-
 - **Editora's Linux app ID is now `io.github.adriandeleon.Editora`** (it was `com.editora.Editora`), as Pauta asks.
   It is the ID GNOME Software, KDE Discover and other software centres know Editora by. The listing says it replaces
   the old ID, and an upgrade removes the file named for the old one, so Editora is listed once.
@@ -325,17 +320,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   running Editora, an index backup, or an index not trusted yet).
 - **An LSP edit that deletes many files asks first.** When it deletes more files than Local History copies (200),
   Editora says so and asks before going ahead.
-
 - **Editora now works toward Pauta 6.2.0** (it was 6.0.1). About and the README name the new edition. In 6.2.0 an icon
   on a menu row is optional, so menu rows without one are no longer listed as unmet.
 - **Force Push is offered only after a rejected push.** The Git ▸ Remotes ▸ Force Push (with Lease) row and its
   palette command are gone. When a push is rejected because the remote branch has commits yours does not, the
   question offers Pull, then Push (the default) and, in red beside it, Force with Lease, which still refuses to
   overwrite commits you have not fetched.
-
 - **The terminal's paste confirmation has a palette command too.** Terminal: Change a Setting… now lists
   "Confirm a paste of several lines", so it can be turned off and on from the palette as from its Settings row.
-
 - **The menu bar is in the title bar by default on Windows and Linux.** The extended window, until now an
   experimental option, is on for new installs and for existing ones that had left it off (it was off by default,
   so an untouched setting and a deliberate off look the same). The Settings row "Merge the menu bar into the title
@@ -356,7 +348,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every trigger, the scope and fields Editora does not use still are). A file with comments still loads, and the
   first save of one asks first, naming the file. Edit User Snippets, which opens the file as text, keeps them.
   Settings Sync merges a snippet file changed on two machines the same way.
-
 - **A release's notes are its changelog.** The text of each GitHub release, which What's New on the Welcome page
   opens, is now this file's section for the version, after a short install guide, instead of a list of commits. A
   section too long for a release page is shown by its entries' first lines, with a link to the whole of it.
@@ -365,6 +356,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Java projects catch up after a quick checkout and pull.** When a project's `pom.xml` files changed twice within a
+  second (a `git checkout` then a `git pull`), jdtls could update only some modules and leave imports of a sibling
+  module red although Maven built fine. Editora now tells jdtls to update the projects again once the changed build
+  files have settled.
 - **Word wrap takes effect every time.** Turning word wrap on in a file with long lines sometimes wrapped nothing and
   kept the horizontal scrollbar, more often on a busy machine: a long line the view was showing again kept the width
   it was measured at unwrapped, and every line was laid out at that width.
@@ -377,7 +372,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and failed to launch.
 - **A question with nothing more to say has no empty band.** "Quit Editora?" with no terminal running showed a blank
   row between the question and its buttons.
-
 - **A window closed in the first seconds of a session no longer lingers in memory.** Each open file asks for its
   spell-check dictionary (and prose completion for its word list), and the first one built in a session takes a few
   seconds; a window closed before it was ready stayed in memory (about 20 MB) until it was. It is now released at
@@ -437,7 +431,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     files. Staging while the Git Log is still loading no longer restarts it, and the log no longer waits behind a slow
     commit hook. Choosing a remote branch skips local branches checked out in another worktree. A review tab notices
     a push made while it loaded, and an Enterprise address with a port is not pinned.
-
 - **`${fileDirnameBasename}` in `launch.json` is empty for a file at the root of a drive.** It used to read
   `null`, as did `${relativeFileDirname}` when the file had no folder; both are now empty, as in VS Code.
 - **Old error underlines came back after some edits.** After signature help, Format, code actions and other requests
@@ -471,21 +464,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Local History upkeep.** A clock set ahead and then corrected no longer leaves versions that never expire; an empty
   index backup no longer stops old content being collected for 30 days, and a lost index gets the same 30-day grace as a
   damaged one.
-
 - **A closed window no longer lingers in memory after a late GitHub check.** With the GitHub CLI installed, a window
   closed while Editora was still asking `gh` whether it is signed in got the answer afterwards: the closed window
   showed its GitHub tool window and saved its settings, and that save could keep the whole window (about 20 MB) in
   memory. The answer is now dropped once the window has closed.
-
 - **Folding no longer stops on a very long XML or HTML tag.** A tag (or a stray `<name` in text) with a couple of
   thousand characters before its `>` made the fold scan run out of stack, and that file then had no folding at all.
-
 - **The first file you open gets its colours sooner.** Its syntax colouring no longer waits behind the start-up
   loading of every other language's grammar.
-
 - **Smart Type completion after `return` in a switch rule's block.** In Java, a `return` inside `case X -> { … }`
   now gets the method's return type for Smart Type completion, as it does elsewhere in the method.
-
 - **The Disassembly view on GDB** now shows the instructions leading up to where the program stopped. GDB used to
   answer with instructions after it, so the current instruction wasn't in the list.
 - **Debugger review fixes, second round.** A second review of the debugger found these, now fixed:
@@ -522,7 +510,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **On macOS, About and Settings are in the application menu, and Quit is Editora's own.** About Editora and
   Settings… open from the application menu, as on other Mac apps. Quit from that menu, Cmd-Q, the Dock or a logout
   now goes through Editora's Quit, which asks once about unsaved work, instead of closing each window in turn.
-
 - **Debugging a C, C++ or Rust program on CodeLLDB reports the program's own exit code.** The Debug console said
   "Process finished with exit code 143" (and the status bar 143) after a program that exited 0. Recent CodeLLDB
   (1.12) has Editora start its launcher, `codelldb-launch`, and ends that launcher with SIGTERM once the program has
