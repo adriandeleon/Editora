@@ -274,15 +274,22 @@ class ElixirDebugProbeFxTest {
     }
 
     private static void awaitStop(Window w, int line, String file) throws InterruptedException {
+        String debugError = com.editora.i18n.Messages.tr("status.debug.error", "");
         try {
             await(
                     "a stop at " + file + ":" + (line + 1),
-                    600, // ElixirLS's first start compiles it
-                    () -> call(() -> w.dap.state() == DapManager.State.SUSPENDED
-                            && !w.debug.panel().callStack().isEmpty()
-                            && w.debug.panel().callStack().get(0).line() == line
-                            && w.debug.panel().callStack().get(0).file() != null
-                            && w.debug.panel().callStack().get(0).file().endsWith(file)));
+                    // ElixirLS's first start compiles it (under a minute); kept under the test's 5-minute limit, so a
+                    // stop that never comes reports the state, the console and the status below, not a bare timeout
+                    240,
+                    () -> call(() -> status(w).contains(debugError) // a session that failed: no stop will come
+                            || (w.dap.state() == DapManager.State.SUSPENDED
+                                    && !w.debug.panel().callStack().isEmpty()
+                                    && w.debug.panel().callStack().get(0).line() == line
+                                    && w.debug.panel().callStack().get(0).file() != null
+                                    && w.debug.panel().callStack().get(0).file().endsWith(file))));
+            if (call(() -> status(w).contains(debugError))) {
+                throw new AssertionError("the debug session failed instead of stopping at " + file + ":" + (line + 1));
+            }
         } catch (AssertionError e) {
             String top = call(() -> w.debug.panel().callStack().isEmpty()
                     ? "no frames"
