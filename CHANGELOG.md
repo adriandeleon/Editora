@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the program running. A launch.json `go` configuration with `"mode": "remote"` (and its `substitutePath`) attaches the
   same way.
 
+### Fixed
+
+- **Attaching to a Python on another machine.** Debug: Attach (and a launch.json `debugpy` attach with a `connect`
+  host) to a Python under `debugpy --listen` on another machine or in a container connected to this machine whatever
+  host was given, so it never reached it. It now connects to that host.
+
 ## [0.29.0] - 2026-11-25
 
 ### Added

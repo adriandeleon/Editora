@@ -2984,7 +2984,7 @@ public final class DapManager {
                 }
                 onOutput(epoch, tr("debug.console.attaching", host + ":" + port) + "\n", COMMAND_CATEGORY);
                 // `debugpy --listen` runs debugpy's own adapter on that port: the client talks DAP to it directly.
-                c.connect(port, spec.adapterId()).whenComplete((caps, e) -> {
+                c.connect(host, port, spec.adapterId()).whenComplete((caps, e) -> {
                     if (e != null) {
                         fail(epoch, tr("debug.error.debugpyConnect", msg(e)));
                         return;
