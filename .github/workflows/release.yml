@@ -119,11 +119,15 @@ jobs:
           persist-credentials: false
           path: editora
 
+      # website-next, not master: master documents the release already out, and its site code (screenshot list,
+      # sidebar) can lag what this repo's user-docs/ now has (0.29.0's dry run failed on a renamed screenshot).
+      # website-next is the branch kept in step with Editora master, and it becomes master once this release's
+      # site update lands.
       - name: Check out the website (the renderer)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: adriandeleon/editora-website
-          ref: master
+          ref: website-next
           persist-credentials: false
           path: website
 
