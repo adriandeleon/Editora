@@ -10,6 +10,8 @@ import java.util.function.BooleanSupplier;
 import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.control.ListCell;
+import javafx.scene.control.ListView;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
@@ -141,12 +143,16 @@ class MapDebugStopFxTest {
                 KeyEvent enter = new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER, false, false, false, false);
                 javafx.event.Event.fireEvent(column.list(), enter);
                 assertEquals(List.of(twice, library), picked);
-                column.list().applyCss();
-                column.list().layout();
-                Node cell = column.list().lookup(".list-cell");
-                assertNotNull(cell);
+                // The list reuses its cells as it scrolls, so the first cell in the scene graph need not show the
+                // first row (on a macOS runner it showed row 3, and the click picked that frame). The list is made
+                // short and scrolled here so its cells are reused on purpose; the click goes to the cell of row 0.
+                ListView<DapModels.StackFrameInfo> list = column.list();
+                list.resize(list.getWidth(), 2.5 * list.lookup(".list-cell").prefHeight(-1));
+                list.layout();
+                list.scrollTo(3);
+                list.layout();
                 javafx.event.Event.fireEvent(
-                        cell,
+                        rowCell(list, 0),
                         new MouseEvent(
                                 MouseEvent.MOUSE_CLICKED,
                                 1,
@@ -394,6 +400,23 @@ class MapDebugStopFxTest {
             FxTestSupport.invoke(cards, "repaintPreviewConnectors");
         });
         FxTestSupport.drainFx();
+    }
+
+    /** The cell showing {@code row}, scrolled into view: a list's cells are reused, in no order. FX thread. */
+    private static ListCell<?> rowCell(ListView<?> list, int row) {
+        list.scrollTo(row);
+        list.applyCss();
+        list.layout();
+        List<String> seen = new java.util.ArrayList<>();
+        for (Node node : list.lookupAll(".list-cell")) {
+            if (node instanceof ListCell<?> cell) {
+                if (cell.getIndex() == row && cell.isVisible()) {
+                    return cell;
+                }
+                seen.add(cell.getIndex() + (cell.isVisible() ? "" : " (hidden)"));
+            }
+        }
+        throw new AssertionError("no cell shows row " + row + "; cells show " + seen);
     }
 
     /** Lets the pulses that apply a stop pass. */

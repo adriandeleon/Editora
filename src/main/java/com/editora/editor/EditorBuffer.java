@@ -4979,6 +4979,14 @@ public class EditorBuffer implements TabContent {
                         }
                         next++;
                     }
+                    // Only a cell whose layout is dirty is measured again, and getParagraphLinesCount lays the cell
+                    // out itself. A cell the flow placed with a width it measured before wrap was on (one it shows
+                    // again after scrolling back, say) would keep that width, and with it the whole view's.
+                    for (Node box : target.lookupAll(".paragraph-box")) {
+                        if (box instanceof javafx.scene.Parent cell) {
+                            cell.requestLayout();
+                        }
+                    }
                     target.requestLayout();
                     if (next < size) {
                         return; // continue after this pulse's layout has re-measured the slice
