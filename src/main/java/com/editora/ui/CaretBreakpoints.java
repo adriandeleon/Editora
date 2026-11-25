@@ -211,6 +211,7 @@ final class CaretBreakpoints {
         if (!breakpointAllowed(b, line, () -> addLogpoint(b, line))) {
             return;
         }
-        BreakpointEditForm.showLogpoint(d.host.overlayHost(), b, line, d.valuePopups.completionSource(true), d.host::setStatus);
+        BreakpointEditForm.showLogpoint(
+                d.host.overlayHost(), b, line, d.valuePopups.completionSource(true), d.host::setStatus);
     }
 }

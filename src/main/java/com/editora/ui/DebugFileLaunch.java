@@ -653,7 +653,8 @@ final class DebugFileLaunch {
         if (projectRoot != null && !compactSource) {
             d.javaLaunch.buildThenLaunch(path, start);
         } else if (java && !compactSource) {
-            d.javaLaunch.looseBuildThenLaunch(path, start); // a loose file or a plain folder is built too (review 2, A101)
+            d.javaLaunch.looseBuildThenLaunch(
+                    path, start); // a loose file or a plain folder is built too (review 2, A101)
         } else {
             start.run();
         }

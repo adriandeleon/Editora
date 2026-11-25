@@ -153,7 +153,9 @@ final class MapDebugFollow {
             d.host.setStatus(tr("status.debug.noCodeOnLine"));
             return;
         }
-        d.breakpointMenus.breakpointsPicker().rewriteClosed(file, key, line, set ? null : Breakpoint.plain(line, lineOf(text, line)));
+        d.breakpointMenus
+                .breakpointsPicker()
+                .rewriteClosed(file, key, line, set ? null : Breakpoint.plain(line, lineOf(text, line)));
     }
 
     /** Line {@code line} (0-based) of {@code text}, or "" past its end. */

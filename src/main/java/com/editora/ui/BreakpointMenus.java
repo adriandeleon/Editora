@@ -555,7 +555,8 @@ final class BreakpointMenus {
             items.add(menuItem("debug.toggleLambdaBreakpoint", breakpointGlyph(), this::toggleLambdaBreakpointAtCaret));
         }
         items.add(menuItem("debug.addLogpoint", logpointGlyph(), d.caretBreakpoints::addLogpointAtCaret));
-        items.add(menuItem("debug.addTriggeredBreakpoint", breakpointGlyph(), d.caretBreakpoints::addTriggeredBreakpointAtCaret));
+        items.add(menuItem(
+                "debug.addTriggeredBreakpoint", breakpointGlyph(), d.caretBreakpoints::addTriggeredBreakpointAtCaret));
         items.add(menuItem("debug.editBreakpoint", Icons.edit(), d.caretBreakpoints::editBreakpointAtCaret));
         javafx.scene.control.MenuItem toGroup =
                 menuItem("debug.moveBreakpointToGroup", null, this::moveBreakpointToGroupAtCaret);

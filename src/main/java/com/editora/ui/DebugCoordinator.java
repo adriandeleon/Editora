@@ -26,7 +26,6 @@ import com.editora.dap.DapModels;
 import com.editora.dap.DapServerRegistry;
 import com.editora.dap.TypeRenderer;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.UiZoom;
 import com.editora.editor.debug.BreakpointManager;
 import com.editora.lsp.LspManager;
 import com.editora.run.ProgramArgs;
