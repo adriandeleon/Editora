@@ -2637,18 +2637,23 @@ public final class DapManager {
             throws Exception {
         int port = external.transport() == ExternalAdapter.Transport.PORT_ARGUMENT ? freePort() : -1;
         // vscode-bash-debug checks each program it names: its bashdb, bash, cat, mkfifo, pkill, by absolute path.
+        Map<String, Object> sent = request;
+        if (DebugLanguages.GDB.equals(language) && request.containsKey(RemoteNativeAttach.SOURCE_FILE_MAP)) {
+            sent = new java.util.LinkedHashMap<>(request);
+            sent.remove(RemoteNativeAttach.SOURCE_FILE_MAP); // GDB's command line carries it (below)
+        }
         Map<String, Object> launch = DebugLanguages.BASH.equals(language) && executable != null
                 ? ScriptLaunch.withBashTools(
-                        request,
+                        sent,
                         Path.of(executable),
                         name -> ProcessRunner.resolveExecutable(List.of(name)).getFirst())
                 : DebugLanguages.LUA.equals(language) && executable != null
                         ? ScriptLaunch.withLuaRuntime( // where lldebugger.lua is, and which Lua is installed
-                                request,
+                                sent,
                                 Path.of(executable),
                                 name -> ProcessRunner.resolveExecutable(List.of(name))
                                         .getFirst())
-                        : request;
+                        : sent;
         List<String> argv = new ArrayList<>(external.argv(executable, port));
         boolean powershell = DebugLanguages.POWERSHELL.equals(language) && executable != null;
         if (powershell) { // PSES's start script, on pwsh, as a debug adapter on stdio
@@ -2662,6 +2667,9 @@ public final class DapManager {
         }
         if (language == DebugLanguages.GDB) {
             argv.addAll(1, EvaluationLimits.gdbArguments(shared.evaluationTimeLimit)); // before -i dap
+            // GDB's DAP mode has no source map: the request's is substitute-path on its command line, not sent.
+            argv.addAll(RemoteNativeAttach.gdbSubstitutions(
+                    RemoteNativeAttach.sourceFileMap(request.get(RemoteNativeAttach.SOURCE_FILE_MAP))));
         }
         argv.addAll(programTail);
         if (argv.getFirst().endsWith(".js")) {

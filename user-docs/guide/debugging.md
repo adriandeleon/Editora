@@ -425,8 +425,12 @@ machine, in a container or on a board under a debug server: start it there
 with `gdbserver :2345 ./app` (or `lldb-server gdbserver :2345 ./app`). Editora
 asks for the server's address, such as `board:2345` (a port alone means this
 machine), then for the program here: the same build, with its debug symbols,
-so the debugger knows its functions and source lines. Both answers are offered
-again the next time.
+so the debugger knows its functions and source lines. Last, when the program
+was built in another folder over there, such as `/build/app` in a container,
+give that folder, and leave it blank when the paths are the same: the debugger
+then maps it to your project (or the program's folder) so your breakpoints
+bind and every stop opens the file here. The answers are offered again the
+next time.
 
 C and C++ attach with the debugger chosen for them on **Settings →
 Debugging** (CodeLLDB or GDB); Rust with CodeLLDB. The server holds the
@@ -436,7 +440,12 @@ server with it.
 
 A [launch.json](#launchjson-configurations) `cppdbg` configuration with
 `miDebuggerServerAddress`, or a `gdb` attach with a `target`, attaches the
-same way, as in VS Code.
+same way, as in VS Code. Its `sourceFileMap` maps the folders, on GDB and on
+CodeLLDB alike (an `lldb` configuration has CodeLLDB's own `sourceMap`):
+
+```json
+"sourceFileMap": { "/build/app": "${workspaceFolder}" }
+```
 
 ## Attach to a remote Go program
 

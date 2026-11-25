@@ -95,15 +95,21 @@ public final class LaunchRoute {
                 String server = text(body.get("miDebuggerServerAddress"));
                 if (!server.isBlank()) { // a program under gdbserver elsewhere: VS Code's remote cppdbg
                     String program = text(body.get("program"));
+                    Map<String, String> map =
+                            RemoteNativeAttach.sourceFileMap(body.get(RemoteNativeAttach.SOURCE_FILE_MAP));
                     return "lldb".equals(text(body.get("MIMode")))
                             ? new Route(
                                     Kind.CODELLDB,
                                     DebugLanguages.CPP,
-                                    RemoteNativeAttach.codelldb(program, server, false),
+                                    RemoteNativeAttach.codelldb(program, server, false, map),
                                     true,
                                     "")
                             : new Route(
-                                    Kind.GDB, DebugLanguages.GDB, RemoteNativeAttach.gdb(program, server), true, "");
+                                    Kind.GDB,
+                                    DebugLanguages.GDB,
+                                    RemoteNativeAttach.gdb(program, server, map),
+                                    true,
+                                    "");
                 }
                 if ("lldb".equals(text(body.get("MIMode")))) {
                     return new Route(Kind.CODELLDB, DebugLanguages.CPP, codelldbFromCppdbg(body, attach), attach, "");
@@ -269,12 +275,17 @@ public final class LaunchRoute {
     /**
      * GDB's DAP request: {@code program}, {@code args}, {@code cwd}, {@code env} (an object; {@code cppdbg}'s
      * {@code environment} list too), and {@code stopAtBeginningOfMainSubprogram} for a stop on entry; an attach by
-     * {@code pid} ({@code processId}), or to a debug server by {@code target} ({@code host:port}).
+     * {@code pid} ({@code processId}), or to a debug server by {@code target} ({@code host:port}). A
+     * {@code sourceFileMap} is kept ({@link RemoteNativeAttach#SOURCE_FILE_MAP}).
      */
     static Map<String, Object> gdbRequest(Map<String, Object> body, boolean attach) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("type", "gdb");
         out.put("request", attach ? "attach" : "launch");
+        Map<String, String> map = RemoteNativeAttach.sourceFileMap(body.get(RemoteNativeAttach.SOURCE_FILE_MAP));
+        if (!map.isEmpty()) {
+            out.put(RemoteNativeAttach.SOURCE_FILE_MAP, map); // GDB's substitute-path, on its command line
+        }
         if (attach) {
             if (body.get("target") instanceof String target && !target.isBlank()) {
                 out.put("target", target); // a debug server's host:port (gdbserver), as GDB's own DAP takes it
@@ -306,11 +317,15 @@ public final class LaunchRoute {
         return out;
     }
 
-    /** CodeLLDB's request for a {@code cppdbg} configuration that asks for LLDB. */
+    /** CodeLLDB's request for a {@code cppdbg} configuration that asks for LLDB; its {@code sourceFileMap} a {@code sourceMap}. */
     static Map<String, Object> codelldbFromCppdbg(Map<String, Object> body, boolean attach) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("type", "lldb");
         out.put("request", attach ? "attach" : "launch");
+        Map<String, String> map = RemoteNativeAttach.sourceFileMap(body.get(RemoteNativeAttach.SOURCE_FILE_MAP));
+        if (!map.isEmpty()) {
+            out.put("sourceMap", map);
+        }
         if (attach) {
             out.put("pid", number(body.get("processId")));
             return out;

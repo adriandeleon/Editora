@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   project's files to it, so breakpoints bind and stops open the files here. Stop takes your breakpoints out and leaves
   the program running. A launch.json `go` configuration with `"mode": "remote"` (and its `substitutePath`) attaches the
   same way.
+- **Remote C, C++ and Rust programs built elsewhere.** Attach to Remote Program… asks for the folder the program was
+  built in on that machine, and a launch.json `cppdbg` configuration's `sourceFileMap` is honoured, on GDB and on
+  CodeLLDB: breakpoints set in your copy of the sources bind, and stops open the files here.
 
 ## [0.29.0] - 2026-11-25
 
