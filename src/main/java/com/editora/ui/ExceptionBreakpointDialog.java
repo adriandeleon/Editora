@@ -136,6 +136,7 @@ final class ExceptionBreakpointDialog {
         }
         dialog.getDialogPane().setContent(form.node);
         Platform.runLater(form.type::requestFocus);
+        Dialogs.adoptOwner(dialog);
         Optional<ButtonType> answer = dialog.showAndWait();
         if (answer.isEmpty() || answer.get() == cancel) {
             return Optional.empty();

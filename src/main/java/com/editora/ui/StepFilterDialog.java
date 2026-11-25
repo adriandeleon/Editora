@@ -128,6 +128,7 @@ final class StepFilterDialog {
         javafx.scene.Node saveButton = dialog.getDialogPane().lookupButton(save);
         saveButton.disableProperty().bind(form.pattern.textProperty().isEmpty());
         Platform.runLater(form.pattern::requestFocus);
+        Dialogs.adoptOwner(dialog);
         Optional<ButtonType> answer = dialog.showAndWait();
         if (answer.isEmpty() || answer.get() != save) {
             return Optional.empty();

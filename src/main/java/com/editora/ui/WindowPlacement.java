@@ -94,19 +94,55 @@ final class WindowPlacement {
         return first;
     }
 
-    /** Positions {@code window} (of the given size) centred on {@code owner}, on the owner's screen. */
+    /**
+     * Positions {@code window} centred on {@code owner}, on the owner's screen. Called on every open, not just the
+     * first, so a window reopened after the editor moved comes up over the editor again. A window shown before is
+     * centred at the size it has now (the user may have resized it); {@code width}×{@code height} is the size a
+     * never-shown window opens at. Without a usable owner it centres on the app window in front, and with none of
+     * those on the screen.
+     */
     static void centerOnOwner(Window window, @Nullable Window owner, double width, double height) {
-        if (owner == null
-                || Double.isNaN(owner.getX())
-                || Double.isNaN(owner.getY())
-                || Double.isNaN(owner.getWidth())
-                || Double.isNaN(owner.getHeight())) {
-            return; // an owner that was never shown has no position to centre on
+        Window over = hasBounds(owner) ? owner : frontWindowOtherThan(window);
+        double w = sized(window.getWidth()) ? window.getWidth() : width;
+        double h = sized(window.getHeight()) ? window.getHeight() : height;
+        if (over == null) {
+            window.centerOnScreen();
+            return;
         }
-        Rectangle2D ownerBounds = new Rectangle2D(
-                owner.getX(), owner.getY(), Math.max(0, owner.getWidth()), Math.max(0, owner.getHeight()));
-        Point2D at = centered(ownerBounds, width, height, screenOf(owner));
+        Rectangle2D ownerBounds =
+                new Rectangle2D(over.getX(), over.getY(), Math.max(0, over.getWidth()), Math.max(0, over.getHeight()));
+        Point2D at = centered(ownerBounds, w, h, screenOf(over));
         window.setX(at.getX());
         window.setY(at.getY());
+    }
+
+    private static boolean sized(double length) {
+        return !Double.isNaN(length) && length > 0;
+    }
+
+    /** Whether {@code owner} has a position to centre on (one that was never shown has none). */
+    private static boolean hasBounds(@Nullable Window owner) {
+        return owner != null
+                && !Double.isNaN(owner.getX())
+                && !Double.isNaN(owner.getY())
+                && !Double.isNaN(owner.getWidth())
+                && !Double.isNaN(owner.getHeight());
+    }
+
+    /** {@link #frontWindow()} with a position to centre on, skipping {@code self}. */
+    private static @Nullable Window frontWindowOtherThan(Window self) {
+        Window first = null;
+        for (Window w : Window.getWindows()) {
+            if (w == self || !(w instanceof Stage) || !w.isShowing() || !hasBounds(w)) {
+                continue;
+            }
+            if (w.isFocused()) {
+                return w;
+            }
+            if (first == null) {
+                first = w;
+            }
+        }
+        return first;
     }
 }
