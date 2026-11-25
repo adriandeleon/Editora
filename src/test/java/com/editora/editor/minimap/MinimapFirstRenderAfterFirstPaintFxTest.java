@@ -33,6 +33,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class MinimapFirstRenderAfterFirstPaintFxTest {
 
     private Stage stage;
+    private Minimap minimap;
+
+    /** This test's own minimap's renders, read on the FX thread. */
+    private int renders() throws Exception {
+        int[] n = new int[1];
+        onFx(() -> n[0] = minimap.rendersForTest());
+        return n[0];
+    }
 
     private static void onFx(Runnable r) throws Exception {
         var err = new AtomicReference<Throwable>();
@@ -79,7 +87,12 @@ class MinimapFirstRenderAfterFirstPaintFxTest {
         });
     }
 
-    private void showMinimap() throws Exception {
+    /**
+     * Shows a minimap in its own window and returns that window. Each test counts only its own minimap's
+     * renders: the global {@link Minimap#RENDERS_FOR_TEST} also counts a minimap another test left alive in this
+     * JVM, whose first render (started before this test's hold) can land inside the frames this test waits.
+     */
+    private Stage showMinimap() throws Exception {
         StringBuilder text = new StringBuilder();
         for (int i = 0; i < 100; i++) {
             text.append("line ").append(i).append('\n');
@@ -87,38 +100,61 @@ class MinimapFirstRenderAfterFirstPaintFxTest {
         onFx(() -> {
             CodeArea area = new CodeArea();
             area.replaceText(text.toString());
-            Minimap minimap = new Minimap(area);
+            minimap = new Minimap(area);
             var scroll = new VirtualizedScrollPane<>(area);
             HBox.setHgrow(scroll, Priority.ALWAYS);
             stage = new Stage();
             stage.setScene(new Scene(new HBox(scroll, minimap), 800, 500));
             stage.show();
         });
+        return stage;
     }
 
     @Test
     void duringALaunchTheFirstRenderWaitsForTheFirstPaintedContent() throws Exception {
         FxToolkit.registerPrimaryStage();
         AfterFirstPaint.hold();
-        int before = Minimap.RENDERS_FOR_TEST.get();
         showMinimap();
         awaitFrames(10);
-        assertEquals(before, Minimap.RENDERS_FOR_TEST.get(), "no render while the launch's first paint is pending");
+        assertEquals(0, renders(), "no render while the launch's first paint is pending");
 
         onFx(AfterFirstPaint::release);
         Await.until(
-                com.editora.editor.EditorFx.check(() -> Minimap.RENDERS_FOR_TEST.get() != before),
+                com.editora.editor.EditorFx.checkOnFx(() -> minimap.rendersForTest() != 0),
                 "the first render once the content has painted");
+    }
+
+    /**
+     * Regression for a CI flake (expected 393, was 394): a minimap another test left showing, whose first render
+     * was already counting its two frames when this launch's hold began, rendered inside the ten frames waited
+     * here and was counted against this test's minimap.
+     */
+    @Test
+    void anotherWindowsMinimapRenderingMeanwhileIsNotCountedAsThisOne() throws Exception {
+        FxToolkit.registerPrimaryStage();
+        AfterFirstPaint.release();
+        Stage leftOver = showMinimap(); // its first render starts at once: the gate is open
+        Minimap leftOverMinimap = minimap;
+        try {
+            AfterFirstPaint.hold();
+            showMinimap();
+            awaitFrames(10);
+            assertEquals(0, renders(), "no render while the launch's first paint is pending");
+            int[] other = new int[1];
+            onFx(() -> other[0] = leftOverMinimap.rendersForTest());
+            assertTrue(other[0] > 0, "the other window's minimap did render meanwhile");
+        } finally {
+            onFx(leftOver::hide);
+        }
     }
 
     @Test
     void outsideALaunchTheFirstRenderComesWithoutWaiting() throws Exception {
         FxToolkit.registerPrimaryStage();
         AfterFirstPaint.release();
-        int before = Minimap.RENDERS_FOR_TEST.get();
         showMinimap();
         Await.until(
-                com.editora.editor.EditorFx.check(() -> Minimap.RENDERS_FOR_TEST.get() != before),
+                com.editora.editor.EditorFx.checkOnFx(() -> minimap.rendersForTest() != 0),
                 "the first render, two frames after the editor painted");
     }
 }

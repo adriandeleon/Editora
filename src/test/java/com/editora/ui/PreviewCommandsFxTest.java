@@ -1000,11 +1000,15 @@ class PreviewCommandsFxTest {
     void aFixWorkedOutWhileTheTextChangedIsWorkedOutAgainOnTheNewText() throws Exception {
         EditorBuffer b = linted("lint.md", "# T\n\ntext   \n");
         java.util.List<Runnable> held = new java.util.concurrent.CopyOnWriteArrayList<>();
+        // Only the fix's own work is held: anything else that reaches the runner meanwhile (on a slow CI runner,
+        // other off-FX work of the window) runs in place, or it would be counted as the fix's and never run.
+        java.util.Set<String> fixSites =
+                Set.of("MarkdownLintActions.fix", com.editora.editor.EditorBuffer.WHOLE_EDIT_SITE);
         com.editora.perf.OffFx.runnerForTest((name, task) -> {
-            if (name.equals(com.editora.editor.markdown.MarkdownBlockMap.SITE)) {
-                task.run(); // the editor's line map, not what this test holds back
-            } else {
+            if (fixSites.contains(name)) {
                 held.add(task);
+            } else {
+                task.run();
             }
         });
         try {
@@ -1021,6 +1025,11 @@ class PreviewCommandsFxTest {
             assertEquals("# T\n\ntext\nmore\n", text(b));
         } finally {
             com.editora.perf.OffFx.runnerForTest((name, task) -> task.run()); // as OffFxInPlace has it
+            // A fix whose work never lands leaves the window's Fix command waiting for it, and every later test
+            // of this class that presses Fix finds it doing nothing: land whatever a failed assertion left here.
+            while (!held.isEmpty()) {
+                FxTestSupport.runOnFx(held.remove(0));
+            }
         }
     }
 

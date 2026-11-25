@@ -67,8 +67,11 @@ class DocumentSnapshotFxTest {
             runOnFx(() -> {
                 buffer.getArea().appendText("// edit\n");
                 before[0] = buffer.documentSnapshotMaterializations();
+                long onFx = buffer.documentSnapshotFxMaterializations();
                 buffer.highlighter.applyHighlighting();
-                assertEquals(before[0], buffer.documentSnapshotMaterializations(), "nothing built on the FX thread");
+                // The FX-thread count: the pass's worker may build the String before the next statement here
+                // (a CI flake read the any-thread count as one too many).
+                assertEquals(onFx, buffer.documentSnapshotFxMaterializations(), "nothing built on the FX thread");
             });
             awaitOnFx(() -> !buffer.settlingForTest());
             runOnFx(() -> {
@@ -76,6 +79,41 @@ class DocumentSnapshotFxTest {
                 // checkpoint (on the FX thread) all read this version: its text was built once.
                 assertEquals(before[0] + 1, buffer.documentSnapshotMaterializations(), "built once, and reused");
             });
+        } finally {
+            runOnFx(buffer::dispose);
+        }
+    }
+
+    /**
+     * Regression for a CI flake ("nothing built on the FX thread" expected 1, was 2): the pass's worker built the
+     * text while the FX thread was still between dispatching the pass and counting, and the count did not say on
+     * which thread a String was built. Here the FX thread waits for the worker's build before it counts.
+     */
+    @Test
+    void aBuildOnThePassThreadIsNotCountedAsOneOnTheFxThread() throws Exception {
+        EditorBuffer[] holder = new EditorBuffer[1];
+        runOnFx(() -> {
+            EditorBuffer buffer = new EditorBuffer();
+            holder[0] = buffer;
+            buffer.setPath(java.nio.file.Path.of("/tmp/snap/B.java").toAbsolutePath());
+            buffer.setInitialContent("class B {\n  void one() {}\n}\n");
+        });
+        EditorBuffer buffer = holder[0];
+        try {
+            awaitOnFx(() -> !buffer.settlingForTest());
+            runOnFx(() -> {
+                buffer.getArea().appendText("// edit\n");
+                long all = buffer.documentSnapshotMaterializations();
+                long onFx = buffer.documentSnapshotFxMaterializations();
+                buffer.highlighter.applyHighlighting();
+                long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+                while (buffer.documentSnapshotMaterializations() == all && System.nanoTime() < deadline) {
+                    Thread.onSpinWait(); // the worker builds the text meanwhile
+                }
+                assertEquals(all + 1, buffer.documentSnapshotMaterializations(), "the pass's thread built it");
+                assertEquals(onFx, buffer.documentSnapshotFxMaterializations(), "nothing built on the FX thread");
+            });
+            awaitOnFx(() -> !buffer.settlingForTest());
         } finally {
             runOnFx(buffer::dispose);
         }

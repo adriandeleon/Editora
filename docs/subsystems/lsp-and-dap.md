@@ -1343,7 +1343,9 @@ adapter (`debug_adapter.sh`, `.bat` on Windows; `InstalledAdapter.ELIXIR_LS`, a 
 beside it (`language_server.sh`, located by `install/ElixirServerInstall`: as configured, else that install, else
 `elixir-ls` or `language_server.sh` on the PATH; held back by `UntrustedBuilds` in an untrusted folder with a
 `mix.exs`, since it compiles the project). Its first start compiles ElixirLS with the user's Elixir into
-`~/.cache/mix/installs` (Mix.install; Debian splits leex's `leexinc.hrl` into `erlang-dev`). A launch is a `mix_task`
+`~/.cache/mix/installs` (Mix.install, built per `MIX_ENV`, which `launch.sh` sets to `prod`; Debian splits leex's
+`leexinc.hrl` into `erlang-dev`, and OTP's `debugger` app, which the debug adapter loads at start, into
+`erlang-debugger`). A launch is a `mix_task`
 ([`dap/ElixirLaunch`](../../src/main/java/com/editora/dap/ElixirLaunch.java)) planned by
 [`run/ElixirRun`](../../src/main/java/com/editora/run/ElixirRun.java) in the project (the nearest `mix.exs`): a test
 file `task: test`, `taskArgs: ["test/x_test.exs:<line>"]` (Debug Test at Caret's line, else the file), `startApps`, and

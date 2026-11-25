@@ -458,13 +458,17 @@ jobs:
           test -f "$dest/extension/out/bashDebug.js"
 
       # Elixir and the pinned ElixirLS for ElixirDebugProbeFxTest, where Editora's installer puts it; its first start
-      # compiles it with Mix, done here once so the probe does not wait on it.
+      # compiles it with Mix, done here once so the probe does not wait on it. Ubuntu splits OTP's debugger app into
+      # erlang-debugger, without which ElixirLS's debug adapter stops at start ("application debugger could not be
+      # found"). The warm-up runs as launch.sh does (MIX_ENV=prod, stdin closed): Mix.install builds per environment,
+      # and a dev build left the first start compiling, the language server and the debug adapter at once.
       - name: Install Elixir and ElixirLS
         env:
           ELIXIR_LS_VERSION: v0.31.1
           ELIXIR_LS_SHA256: bac08322ea3698157eb2373bb5b65e38c15df9dd41e1c06f142f874367fa472f
         run: |
-          sudo apt-get install -y -qq --no-install-recommends elixir erlang-dev erlang-parsetools erlang-dialyzer
+          sudo apt-get install -y -qq --no-install-recommends elixir erlang-dev erlang-parsetools erlang-dialyzer \
+            erlang-debugger
           elixir --version | tail -1
           curl -fsSL -o /tmp/elixir-ls.zip "https://github.com/elixir-lsp/elixir-ls/releases/download/${ELIXIR_LS_VERSION}/elixir-ls-${ELIXIR_LS_VERSION}.zip"
           echo "${ELIXIR_LS_SHA256}  /tmp/elixir-ls.zip" | sha256sum -c -
@@ -472,7 +476,7 @@ jobs:
           mkdir -p "$dest"
           unzip -q /tmp/elixir-ls.zip -d "$dest"
           test -f "$dest/debug_adapter.sh"
-          elixir "$dest/quiet_install.exs"
+          echo "" | MIX_ENV=prod elixir "$dest/quiet_install.exs"
 
       # PowerShellProbeFxTest: pwsh comes with the runner image; PowerShell Editor Services is unpacked where Editora
       # looks for its own install.

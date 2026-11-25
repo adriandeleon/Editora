@@ -365,6 +365,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Word wrap takes effect every time.** Turning word wrap on in a file with long lines sometimes wrapped nothing and
+  kept the horizontal scrollbar, more often on a busy machine: a long line the view was showing again kept the width
+  it was measured at unwrapped, and every line was laid out at that width.
 - **Menu rows read alike.** Rows that kept their palette prefix because one word would be left ("File: Save",
   "Edit: Occur…", "Tool Window: Project", "Git: Push") have menu titles of their own ("Save", "List Matching
   Lines…", "Project", "Push"), in every language.

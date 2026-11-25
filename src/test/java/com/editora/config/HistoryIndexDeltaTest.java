@@ -46,6 +46,10 @@ class HistoryIndexDeltaTest {
 
     private SharedConfig open() {
         SharedConfig config = new SharedConfig(dir, false);
+        // Rows taken in from another writer are handed to the FX thread, which is Platform.runLater whenever an
+        // earlier test in this JVM started the toolkit: the assertions right after a publication then raced it.
+        // Run here, on the writer thread, they land before the publication is waited for, with or without one.
+        config.setFxThreadForTest(Runnable::run);
         config.load();
         config.historyIndexFiles().deltaMinIndexBytes(0);
         open.add(config);
@@ -95,7 +99,7 @@ class HistoryIndexDeltaTest {
         settle(config);
     }
 
-    /** Waits for the writer, for the history worker, and for the FX-thread work (adopted rows) they queued. */
+    /** Waits for the writer (which adopts the other writer's rows, see {@link #open}) and the history worker. */
     private static void settle(SharedConfig config) throws Exception {
         config.flushWrites();
         Field field = HistoryService.class.getDeclaredField("exec");

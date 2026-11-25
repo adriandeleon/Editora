@@ -338,6 +338,13 @@ final class LspCoordinatorFixture implements AutoCloseable {
             coordinator.syncBuffer(buffer);
         });
         quiesce();
+        if (!FxTestSupport.callOnFx(() -> manager.isManaged(file))) {
+            // A buffer that changes the window's project re-applies the support first: the servers' own copies,
+            // their probes and the file's root are looked at off the FX thread (PERF-01), and the buffer is
+            // opened on its server when the last answer lands, however long a loaded machine takes.
+            SettingsRig.awaitFx("precondition: " + name + " is on a language server", () -> manager.isManaged(file));
+            quiesce();
+        }
         ops.open.put(file.toAbsolutePath().normalize(), buffer);
         layout();
         assertTrue(manager.isManaged(file), "precondition: " + name + " is on a language server");

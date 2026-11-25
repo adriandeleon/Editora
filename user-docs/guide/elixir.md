@@ -35,4 +35,6 @@ Debugging** (its `debug_adapter.sh`, or the unpacked release folder), else in
 its own install, else in VS Code's ElixirLS extension. The card's **Install…**
 downloads ElixirLS 0.31.1, which is also Elixir's
 [language server](/docs/lsp). ElixirLS needs Elixir and Erlang on your `PATH`;
-its first start compiles it, which takes a minute or two.
+its first start compiles it, which takes a minute or two. Debian and Ubuntu
+split Erlang into packages: the debugger needs `erlang-debugger`, and the first
+start needs `erlang-dev` (`sudo apt install erlang-dev erlang-debugger`).
