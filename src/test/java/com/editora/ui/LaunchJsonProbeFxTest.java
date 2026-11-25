@@ -172,7 +172,8 @@ class LaunchJsonProbeFxTest {
             assertEquals(4, parsed.configurations().size());
 
             for (LaunchJson.Configuration config : parsed.configurations()) {
-                FxTestSupport.runOnFx(() -> debug.runLaunchConfiguration(launchJson, root, parsed, config, b));
+                FxTestSupport.runOnFx(
+                        () -> debug.launchJson.runLaunchConfiguration(launchJson, root, parsed, config, b));
                 awaitStop(dap, debug, 7, config.name() + " stops at the printf");
                 assertEquals(config.name(), call(() -> (String) FxTestSupport.field(debug.panel(), "sessionFile")));
                 assertTrue(Files.isRegularFile(root.resolve("shelf")), "the preLaunchTask built it");
@@ -234,7 +235,7 @@ class LaunchJsonProbeFxTest {
             LaunchJson.File parsed = LaunchJson.parse(Files.readString(launchJson));
             LaunchJson.Configuration config = parsed.configurations().getFirst();
             assertNotNull(config);
-            FxTestSupport.runOnFx(() -> debug.runLaunchConfiguration(launchJson, root, parsed, config, b));
+            FxTestSupport.runOnFx(() -> debug.launchJson.runLaunchConfiguration(launchJson, root, parsed, config, b));
             awaitStop(dap, debug, 6, "the Go binary stops at n++");
             FxTestSupport.runOnFx(dap::stop);
             await("stopped", () -> !call(dap::isActive));
@@ -288,7 +289,7 @@ class LaunchJsonProbeFxTest {
             FxTestSupport.runOnFx(() -> pyBuffer.toggleBreakpoint(2));
             LaunchJson.File parsed = LaunchJson.parse(Files.readString(launchJson));
 
-            FxTestSupport.runOnFx(() -> debug.runLaunchConfiguration(
+            FxTestSupport.runOnFx(() -> debug.launchJson.runLaunchConfiguration(
                     launchJson, root, parsed, parsed.configurations().get(0), pyBuffer));
             awaitStop(dap, debug, 2, "the Python program stops at its print");
             FxTestSupport.runOnFx(dap::resume);
@@ -307,7 +308,7 @@ class LaunchJsonProbeFxTest {
                             && c.activeBuffer().getPath().toRealPath().equals(js)));
             com.editora.editor.EditorBuffer jsBuffer = FxTestSupport.callOnFx(c::activeBuffer);
             FxTestSupport.runOnFx(() -> jsBuffer.toggleBreakpoint(1));
-            FxTestSupport.runOnFx(() -> debug.runLaunchConfiguration(
+            FxTestSupport.runOnFx(() -> debug.launchJson.runLaunchConfiguration(
                     launchJson, root, parsed, parsed.configurations().get(1), jsBuffer));
             awaitStop(dap, debug, 1, "the Node program stops at its log");
             FxTestSupport.runOnFx(dap::resume);
@@ -353,7 +354,7 @@ class LaunchJsonProbeFxTest {
             com.editora.editor.EditorBuffer b = FxTestSupport.callOnFx(c::activeBuffer);
             FxTestSupport.runOnFx(() -> b.toggleBreakpoint(15));
             LaunchJson.File parsed = LaunchJson.parse(Files.readString(launchJson));
-            FxTestSupport.runOnFx(() -> debug.runLaunchConfiguration(
+            FxTestSupport.runOnFx(() -> debug.launchJson.runLaunchConfiguration(
                     launchJson, root, parsed, parsed.configurations().getFirst(), b));
             awaitStop(dap, debug, 15, "the cargo-built program stops in its loop");
             FxTestSupport.runOnFx(dap::stop);

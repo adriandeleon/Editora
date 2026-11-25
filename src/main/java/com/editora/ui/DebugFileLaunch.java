@@ -576,7 +576,7 @@ final class DebugFileLaunch {
         }
         com.editora.dap.DebugLanguage own = com.editora.dap.DebugLanguages.forLanguage(b.getLanguage());
         if (own != null && com.editora.dap.DebugLanguages.custom().contains(own)) {
-            d.debugCustomFile(b, path, own, fileArgs);
+            d.launchJson.debugCustomFile(b, path, own, fileArgs);
             return;
         }
         // Re-anchor closed files' breakpoints first (off-thread) so the initial setBreakpoints arms them too.

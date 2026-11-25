@@ -117,8 +117,8 @@ class ServerReadyWindowFxTest {
         LaunchJson.File parsed = LaunchJson.parse(Files.readString(launchJson));
         EditorBuffer none = null;
         Path cleaned = root.resolve("cleaned");
-        FxTestSupport.runOnFx(
-                () -> debug.runLaunchConfiguration(launchJson, root, parsed, parsed.configuration("Server"), none));
+        FxTestSupport.runOnFx(() -> debug.launchJson.runLaunchConfiguration(
+                launchJson, root, parsed, parsed.configuration("Server"), none));
         FakeDebugAdapter.Session server = adapter.awaitSession();
         server.awaitRequest("launch");
         DebugSession serverSession = call(() -> debug.sessions().focused());
@@ -147,8 +147,8 @@ class ServerReadyWindowFxTest {
         // Restart: the postDebugTask, then the launch again (as VS Code).
         Files.delete(cleaned);
         FxTestSupport.runOnFx(() -> debug.focusSession(serverSession));
-        FxTestSupport.runOnFx(
-                () -> debug.runLaunchConfiguration(launchJson, root, parsed, parsed.configuration("Server"), none));
+        FxTestSupport.runOnFx(() -> debug.launchJson.runLaunchConfiguration(
+                launchJson, root, parsed, parsed.configuration("Server"), none));
         FakeDebugAdapter.Session second = adapter.awaitSession();
         second.awaitRequest("launch");
         await("running again", () -> call(() -> serverSession.dap.state() == DapManager.State.RUNNING));

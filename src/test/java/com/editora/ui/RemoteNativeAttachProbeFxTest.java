@@ -123,7 +123,7 @@ class RemoteNativeAttachProbeFxTest {
             await("GDB found", 60, () -> call(() -> w.dap.isExternalLocated(DebugLanguages.GDB)));
             FxTestSupport.runOnFx(() -> w.b.toggleBreakpoint(LINE));
             LaunchJson.File parsed = LaunchJson.parse(Files.readString(launchJson));
-            FxTestSupport.runOnFx(() -> w.debug.runLaunchConfiguration(
+            FxTestSupport.runOnFx(() -> w.debug.launchJson.runLaunchConfiguration(
                     launchJson,
                     p.source().getParent(),
                     parsed,
