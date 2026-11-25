@@ -2292,7 +2292,7 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.mainClass",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugMainClass)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().javaLaunch::debugMainClass)));
         host.registry()
                 .register(Command.of(
                         "debug.viaBuild",

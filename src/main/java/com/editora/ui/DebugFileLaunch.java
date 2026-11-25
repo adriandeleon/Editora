@@ -201,7 +201,7 @@ final class DebugFileLaunch {
         if (d.beforeLaunchActive()) {
             d.beforeLaunch().stop();
         }
-        d.dropPendingBuild();
+        d.javaLaunch.dropPendingBuild();
         d.stop(); // the session, or a test run waiting for its JVM
     }
 
@@ -530,7 +530,7 @@ final class DebugFileLaunch {
             // Planned exactly as Run plans it (review D104, D106): the same Node.js, flags, environment and
             // folder — and for a TypeScript file whatever Run runs for it (tsx, or the compiled file).
             Path launchedJs = path;
-            d.s().relaunch = () -> d.relaunchFor(launchedJs, again -> launchBuffer(again, nodeArgs));
+            d.s().relaunch = () -> d.javaLaunch.relaunchFor(launchedJs, again -> launchBuffer(again, nodeArgs));
             d.debugJsFile(path, fileArgs, nodeArgs);
             return;
         }
@@ -587,7 +587,7 @@ final class DebugFileLaunch {
         Path project = java ? JavaLaunchPrep.projectOf(path, projectRoot, d.ops.projectRoot()) : null;
         if (java
                 && !d.savedOrThen(
-                        d.javaBuffers(path, project, false),
+                        d.javaLaunch.javaBuffers(path, project, false),
                         () -> launchBufferPlanned(b, path, language, nodeArgs, read))) {
             return; // the launched file was saved above; the others of the project first, off the FX thread
         }
@@ -606,27 +606,27 @@ final class DebugFileLaunch {
         // A remote file's program runs on its host: none of this machine's JDK setting, PATH or JAVA_HOME.
         // A Groovy script runs on the Settings JDK too (its JAVA_HOME), as Run runs it.
         boolean jvmScript = com.editora.run.JvmScriptRun.supports(language);
-        String jdkHome = d.presentJdk(
+        String jdkHome = d.javaLaunch.presentJdk(
                 !(java || jvmScript) || !com.editora.process.ExecTargets.runsHere(path)
                         ? ""
                         : compactSource || jvmScript
                                 ? d.host.projectScope().jdkHome(d.host.settings())
-                                : d.configuredJdkHome(projectRoot, null));
+                                : d.javaLaunch.configuredJdkHome(projectRoot, null));
         String selectedJava = com.editora.run.JdkToolchain.javaExecutable(jdkHome);
         // A Java file without a build tool runs on Run's JDK: the Settings JDK, else PATH's java (review 2, B102).
         String javaExec = java && projectRoot == null && com.editora.process.ExecTargets.runsHere(path)
-                ? d.looseJava(selectedJava)
+                ? JavaDebugLaunch.looseJava(selectedJava)
                 : selectedJava;
         d.dap()
                 .setEnv(com.editora.run.JdkToolchain.environment(
                         jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
         Path launched = path;
-        d.s().relaunch = () -> d.relaunchFor(launched, again -> launchBuffer(again, nodeArgs));
+        d.s().relaunch = () -> d.javaLaunch.relaunchFor(launched, again -> launchBuffer(again, nodeArgs));
         if ("kotlin".equals(language)
                 && com.editora.run.KotlinRun.shape(launched.getFileName().toString())
                         == com.editora.run.KotlinRun.Shape.PROGRAM) {
             // Compiled first (into the Debug console), then `java -jar` with the agent: Restart compiles an edit.
-            d.debugKotlinProgram(
+            d.javaLaunch.debugKotlinProgram(
                     launched,
                     null,
                     javaExec,
@@ -645,15 +645,15 @@ final class DebugFileLaunch {
             } else if (compactSource && file.getFileName().toString().endsWith(".java")) {
                 d.dap().startCompactSource(file, javaExec);
             } else if (java) {
-                d.dap().startLaunch(file, d::pickMainClass, javaExec, projectRoot, looseCwd);
+                d.dap().startLaunch(file, d.javaLaunch::pickMainClass, javaExec, projectRoot, looseCwd);
             } else {
-                d.dap().startLaunch(file, language, d::pickMainClass, javaExec, projectRoot);
+                d.dap().startLaunch(file, language, d.javaLaunch::pickMainClass, javaExec, projectRoot);
             }
         });
         if (projectRoot != null && !compactSource) {
-            d.buildThenLaunch(path, start);
+            d.javaLaunch.buildThenLaunch(path, start);
         } else if (java && !compactSource) {
-            d.looseBuildThenLaunch(path, start); // a loose file or a plain folder is built too (review 2, A101)
+            d.javaLaunch.looseBuildThenLaunch(path, start); // a loose file or a plain folder is built too (review 2, A101)
         } else {
             start.run();
         }

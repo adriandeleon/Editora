@@ -128,7 +128,7 @@ final class TestNavigationCoordinator {
             public void debugTests(
                     Path anchor, Path cwd, List<String> pytestIds, List<String> unittestIds, @Nullable String label) {
                 if (host.debugCoordinator() != null) {
-                    host.debugCoordinator().debugPythonTests(anchor, cwd, pytestIds, unittestIds, label);
+                    host.debugCoordinator().python.debugPythonTests(anchor, cwd, pytestIds, unittestIds, label);
                 }
             }
 
@@ -683,7 +683,9 @@ final class TestNavigationCoordinator {
             return;
         }
         // A pytest file's test at the caret is debugged with debugpy running pytest (Fixer D's hunk).
-        if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugPythonTestAtCaret(b, classLevel)) {
+        if (debug
+                && host.debugCoordinator() != null
+                && host.debugCoordinator().python.debugPythonTestAtCaret(b, classLevel)) {
             return;
         }
         // A JavaScript/TypeScript test file's test at the caret is debugged under node --test (review D7).
@@ -776,7 +778,7 @@ final class TestNavigationCoordinator {
         // A pytest test's ▶ (its editor-menu Debug Test): debugpy runs it under pytest (Fixer D's hunk).
         EditorBuffer b = host.activeBuffer();
         if (b != null && b.isPython() && host.debugCoordinator() != null) {
-            host.debugCoordinator().debugPythonGlyph(b, target);
+            host.debugCoordinator().python.debugPythonGlyph(b, target);
             return;
         }
         if (b != null && isCppTest(b) && host.debugCoordinator() != null) {
