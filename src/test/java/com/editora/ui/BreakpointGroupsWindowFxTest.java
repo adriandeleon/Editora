@@ -254,22 +254,22 @@ class BreakpointGroupsWindowFxTest {
         assertEquals(
                 "    " + tr("debug.breakpoints.groupRow", "Setup", 4),
                 call(() -> BreakpointsPicker.groupRow(
-                        "Setup", debug.breakpointsPicker().entries())));
+                        "Setup", debug.breakpointMenus.breakpointsPicker().entries())));
 
         // One turned on by hand: the group is partly on, and choosing it turns them all on.
         FxTestSupport.runOnFx(() -> mgr.setEnabled(0, true));
         assertEquals(
                 "– " + tr("debug.breakpoints.groupRow", "Setup", 4),
                 call(() -> BreakpointsPicker.groupRow(
-                        "Setup", debug.breakpointsPicker().entries())));
-        assertTrue(call(() -> debug.breakpointsPicker().toggleGroup("Setup")));
+                        "Setup", debug.breakpointMenus.breakpointsPicker().entries())));
+        assertTrue(call(() -> debug.breakpointMenus.breakpointsPicker().toggleGroup("Setup")));
         assertTrue(call(() -> mgr.get(1).enabled()));
         assertTrue(stored(other, 1).enabled());
         assertTrue(call(() -> debug.memberBreakpoints().all().getFirst().enabled()));
 
         // The list says the group, and finds a breakpoint by it; blank takes a breakpoint out of its group.
         BreakpointsPicker.Entry first =
-                call(() -> debug.breakpointsPicker().entries().getFirst());
+                call(() -> debug.breakpointMenus.breakpointsPicker().entries().getFirst());
         assertTrue(BreakpointsPicker.detail(first, null, null).contains(tr("debug.breakpoint.group", "Setup")));
         FxTestSupport.runOnFx(() -> b.getFocusedArea().moveTo(0, 0));
         run("debug.moveBreakpointToGroup");

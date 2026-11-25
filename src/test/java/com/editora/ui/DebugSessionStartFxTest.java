@@ -183,7 +183,7 @@ class DebugSessionStartFxTest {
         assertEquals(tr("status.debug.alreadyStarting", "Alpha.java"), SaveDecisionsFxTest.lastMessage(fx));
         FxTestSupport.runOnFx(() -> {
             assertTrue(
-                    debug.editorMenuItems(alpha).stream()
+                    debug.breakpointMenus.editorMenuItems(alpha).stream()
                             .noneMatch(i -> tr("editmenu.debugFile").equals(i.getText())),
                     "no second launch of the file being built");
             debug.debugFile(beta); // the editor menu's Debug File in Beta

@@ -239,8 +239,9 @@ class RemovalUndoWindowFxTest {
         assertEquals(recording, at(b, 2));
 
         // Debug: Breakpoints, Alt+D on the row of the one on line 3.
-        FxTestSupport.runOnFx(() -> debug.breakpointsPicker()
-                .remove(debug.breakpointsPicker().entries().stream()
+        FxTestSupport.runOnFx(() -> debug.breakpointMenus
+                .breakpointsPicker()
+                .remove(debug.breakpointMenus.breakpointsPicker().entries().stream()
                         .filter(e -> e.buffer() == b && e.line() == 2)
                         .findFirst()
                         .orElseThrow()));

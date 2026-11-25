@@ -74,7 +74,7 @@ class JsColumnBreakpointsProbeFxTest {
             EditorBuffer b = FxTestSupport.callOnFx(c::activeBuffer);
             FxTestSupport.runOnFx(() -> {
                 b.getFocusedArea().moveTo(LINE, 25); // in the arrow's body
-                debug.toggleLambdaBreakpointAtCaret();
+                debug.breakpointMenus.toggleLambdaBreakpointAtCaret();
             });
             // Whether the line has code is scanned off the FX thread (PERF-01): the breakpoint is set when it lands.
             await(
