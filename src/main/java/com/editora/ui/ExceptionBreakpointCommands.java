@@ -77,7 +77,7 @@ final class ExceptionBreakpointCommands {
             session.filtersPassed = true;
             again.run();
             if (info != null) {
-                d.showExceptionInfo(info);
+                d.execLine.showExceptionInfo(info);
             }
         };
         if (info != null && ExceptionBreakpoints.uncaught(info.breakMode())) {

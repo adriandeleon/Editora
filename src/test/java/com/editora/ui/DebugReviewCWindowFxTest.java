@@ -385,27 +385,33 @@ class DebugReviewCWindowFxTest {
             stopAt(session, util, 3, "exception");
             await(
                     "the exception card",
-                    () -> debug.exceptionCard() != null
-                            && debug.exceptionCard().shown() != null
+                    () -> debug.execLine.exceptionCard() != null
+                            && debug.execLine.exceptionCard().shown() != null
                             && "builtins.ValueError"
-                                    .equals(debug.exceptionCard().shown().type()));
+                                    .equals(debug.execLine
+                                            .exceptionCard()
+                                            .shown()
+                                            .type()));
             com.editora.dap.DapModels.ExceptionInfo shown =
-                    FxTestSupport.callOnFx(() -> debug.exceptionCard().shown());
+                    FxTestSupport.callOnFx(() -> debug.execLine.exceptionCard().shown());
             assertEquals("builtins.ValueError", shown.type());
             assertTrue(shown.uncaught());
             assertEquals("File \"util.py\", line 3", shown.stackTrace());
 
             // Closed and reopened: Show Exception brings it back for the same stop.
-            FxTestSupport.runOnFx(() -> debug.exceptionCard().hide());
-            FxTestSupport.runOnFx(debug::showException);
-            await("Show Exception reopens it", () -> debug.exceptionCard().isShowing());
+            FxTestSupport.runOnFx(() -> debug.execLine.exceptionCard().hide());
+            FxTestSupport.runOnFx(debug.execLine::showException);
+            await(
+                    "Show Exception reopens it",
+                    () -> debug.execLine.exceptionCard().isShowing());
 
             FxTestSupport.runOnFx(manager::resume);
             session.awaitRequest("continue");
-            await("Continue closes it", () -> !debug.exceptionCard().isShowing());
+            await("Continue closes it", () -> !debug.execLine.exceptionCard().isShowing());
             stopAt(session, util, 3, "breakpoint");
             FxTestSupport.drainFx();
-            assertFalse(FxTestSupport.callOnFx(() -> debug.exceptionCard().isShowing()), "not for a breakpoint");
+            assertFalse(
+                    FxTestSupport.callOnFx(() -> debug.execLine.exceptionCard().isShowing()), "not for a breakpoint");
         }
     }
 

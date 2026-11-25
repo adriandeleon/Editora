@@ -145,8 +145,11 @@ class DebugTableProbeFxTest {
                             && debug.panel().callStack().getFirst().line() == line));
             await("orders", 60, () -> call(() -> item(debug, "orders") != null));
             FxTestSupport.runOnFx(() -> viewAsTable(debug).fire());
-            await("the table", 30, () -> call(() -> !debug.tableWindows().isEmpty()));
-            DebugTableWindow w = call(() -> debug.tableWindows().getLast());
+            await(
+                    "the table",
+                    30,
+                    () -> call(() -> !debug.valueWindows.tableWindows().isEmpty()));
+            DebugTableWindow w = call(() -> debug.valueWindows.tableWindows().getLast());
             await(
                     "two rows with their fields",
                     60,
