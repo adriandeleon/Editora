@@ -17,12 +17,17 @@ with a `Gemfile`) and under `bundle exec` once the bundle is installed:
   in a Rails app, else `ruby -Itest` on it;
 - a **Rails** app's `config.ru` or `bin/rails` starts the app's development
   server, `bin/rails server`, on the first free port from 3000;
+- another **Rack** app (Sinatra, Roda, a bare Rack app: a `config.ru` in the
+  project's folder) starts its server, `rackup`, on the first free port from
+  9292, from its `config.ru`, a Ruby file at the top of the project (such as
+  Sinatra's `app.rb`), or a file under `app/` or `config/`;
 - any other file with code of its own runs as `ruby file`. A file of classes,
   modules and methods alone gets no ▶.
 
 **Debug File** (F5) does the same under the debugger (see
 [Debugging Ruby](#debugging)). Pressed in any file under a Rails app's
-`app/` or `config/`, such as a controller, F5 serves the app.
+`app/` or `config/`, such as a controller, or in a Rack app's `app.rb`, F5
+serves the app.
 
 ## Debugging
 
@@ -40,10 +45,15 @@ your breakpoints:
   `test "…"` the caret is in (`-n test_name`);
 - a **Rails** app: F5 on a controller, model or other file under `app/` or
   `config/` starts `bin/rails server`, and each request you send it stops at
-  your breakpoints. Stop ends the server.
+  your breakpoints. Stop ends the server;
+- a **Rack** app such as **Sinatra**: F5 on its `app.rb` (or `config.ru`)
+  starts its server under `rackup`, and a request stops in your routes the same
+  way.
 
-rdbg debugs a program run under `bundle exec` even when the `debug` gem isn't
-in the bundle. The program's output
+On Ruby 4.0 and later a server run under `bundle exec` needs the `debug` gem
+in its `Gemfile` (`gem "debug", group: :development`; Rails apps list it
+already): rdbg's debug server loads `irb`, which is no longer a default gem.
+Without it the Debug console shows rdbg's own message asking for it. The program's output
 reaches the Debug console. Ruby's
 [exception breakpoints](/docs/debugging#exception-breakpoints), **Ruby: any raised exception**
 and **Ruby: RuntimeError**, are off by default, as in VS Code.

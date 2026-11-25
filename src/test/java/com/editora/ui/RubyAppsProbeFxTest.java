@@ -227,10 +227,86 @@ class RubyAppsProbeFxTest {
         }
     }
 
+    /** A modular Sinatra app: {@code GET /hi?who=x} answers {@code hi x}. */
+    private static final String SINATRA_APP = """
+            require "sinatra/base"
+
+            class App < Sinatra::Base
+              get "/hi" do
+                who = params["who"]
+                "hi #{who}"
+              end
+            end
+            """;
+
+    /** {@code who = params["who"]}, 0-based. */
+    private static final int SINATRA_LINE = 4;
+
+    /**
+     * A Sinatra app ({@code app.rb}, {@code config.ru}, a {@code Gemfile} of sinatra, rackup, puma and, as rdbg asks of
+     * a bundle, debug: on Ruby 4 its DAP server needs irb, no longer a default gem, which debug brings) with its bundle
+     * installed from the gems already here ({@code bundle install --local}); the test skipped without them.
+     */
+    private static Path sinatraApp(Path dir) throws Exception {
+        assumeRuby("ruby", "rdbg", "bundle");
+        Path app = Files.createDirectories(dir.resolve("greeter")).toRealPath();
+        Files.writeString(app.resolve("Gemfile"), """
+                source "https://rubygems.org"
+                gem "sinatra"
+                gem "rackup"
+                gem "puma"
+                gem "debug", group: :development
+                """);
+        Files.writeString(app.resolve("app.rb"), SINATRA_APP);
+        Files.writeString(app.resolve("config.ru"), "require_relative \"app\"\nrun App\n");
+        Process bundle = new ProcessBuilder(
+                        com.editora.process.ProcessRunner.resolveExecutable(List.of("bundle", "install", "--local")))
+                .directory(app.toFile())
+                .redirectErrorStream(true)
+                .redirectOutput(dir.resolve("bundle.log").toFile())
+                .start();
+        assumeTrue(
+                bundle.waitFor(180, TimeUnit.SECONDS) && bundle.exitValue() == 0,
+                "needs the sinatra, rackup, puma and debug gems (gem install sinatra rackup puma debug): "
+                        + Files.readString(dir.resolve("bundle.log")));
+        return app;
+    }
+
+    @Test
+    void f5InASinatraAppServesItUnderRackupAndARequestStops(@TempDir Path dir) throws Exception {
+        Path app = sinatraApp(dir);
+        Path main = app.resolve("app.rb");
+        Window w = open(dir, main);
+        try {
+            FxTestSupport.runOnFx(() -> w.b.toggleBreakpoint(SINATRA_LINE));
+            FxTestSupport.runOnFx(() -> ((CommandRegistry) FxTestSupport.field(w.c, "registry")).run("debug.start"));
+            String url = awaitServing(w);
+            CompletableFuture<String> reply = get(url + "/hi?who=probe");
+            awaitStop(w, SINATRA_LINE, "app.rb");
+            FxTestSupport.runOnFx(() -> w.b.toggleBreakpoint(SINATRA_LINE));
+            FxTestSupport.runOnFx(w.dap::resume);
+            assertEquals("hi probe", reply.get(120, TimeUnit.SECONDS));
+            FxTestSupport.runOnFx(() -> ((CommandRegistry) FxTestSupport.field(w.c, "registry")).run("debug.stop"));
+            await("the server ended", 60, () -> !call(w.dap::isActive));
+        } finally {
+            w.close();
+        }
+    }
+
+    /** {@link #await}, the Debug console and the session's state in the failure. */
+    private static void awaitOr(Window w, String what, int seconds, BooleanSupplier condition)
+            throws InterruptedException {
+        try {
+            await(what, seconds, condition);
+        } catch (AssertionError e) {
+            throw new AssertionError(e.getMessage() + " (" + call(w.dap::state) + ")\n" + console(w), e);
+        }
+    }
+
     /** The server's address: the status line names it once the server is started. */
     private static String awaitServing(Window w) throws InterruptedException {
         String[] url = new String[1];
-        await("the server's address", 180, () -> {
+        awaitOr(w, "the server's address", 180, () -> {
             String console = console(w);
             java.util.regex.Matcher m = java.util.regex.Pattern.compile("Listening on (http://127\\.0\\.0\\.1:\\d+)")
                     .matcher(console);
