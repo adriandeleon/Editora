@@ -130,7 +130,8 @@ final class DebugOpsHost implements DebugCoordinator.Ops {
     public void editCompounds(@Nullable String name) {
         DebugCompoundsWindow window = compoundsWindow;
         if (window == null) {
-            window = new DebugCompoundsWindow(mc.config, compound -> mc.debugCoordinator.debugRunCompound(compound));
+            window = new DebugCompoundsWindow(
+                    mc.config, compound -> mc.debugCoordinator.launchJson.debugRunCompound(compound));
             compoundsWindow = window;
         }
         window.show(name, mc.stage);

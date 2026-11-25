@@ -137,7 +137,7 @@ class ServerReadyProbeFxTest {
             EditorBuffer js = FxTestSupport.callOnFx(c::activeBuffer);
             FxTestSupport.runOnFx(() -> js.toggleBreakpoint(SCRIPT_LINE));
             LaunchJson.File parsed = LaunchJson.parse(Files.readString(launchJson));
-            FxTestSupport.runOnFx(() -> debug.runLaunchConfiguration(
+            FxTestSupport.runOnFx(() -> debug.launchJson.runLaunchConfiguration(
                     launchJson, root, parsed, parsed.configurations().getFirst(), js));
             await(
                     "the server running",

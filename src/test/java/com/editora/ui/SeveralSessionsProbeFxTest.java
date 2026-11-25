@@ -140,8 +140,8 @@ class SeveralSessionsProbeFxTest {
             Path launchJson = app.resolve(".vscode/launch.json");
             com.editora.dap.LaunchJson.File parsed = com.editora.dap.LaunchJson.parse(Files.readString(launchJson));
             DebugCoordinator.LaunchFile launch = new DebugCoordinator.LaunchFile(launchJson, app, parsed);
-            FxTestSupport.runOnFx(
-                    () -> debug.runLaunchCompound(launch, parsed.compounds().getFirst(), first));
+            FxTestSupport.runOnFx(() -> debug.launchJson.runLaunchCompound(
+                    launch, parsed.compounds().getFirst(), first));
             await("two sessions", 30, () -> call(() -> debug.sessions().size()) == 2);
             List<DebugSession> both = call(() -> debug.sessions().all());
             DebugSession a = both.getFirst();

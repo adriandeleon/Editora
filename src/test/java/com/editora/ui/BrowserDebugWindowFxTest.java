@@ -320,7 +320,7 @@ class BrowserDebugWindowFxTest {
                 """);
         LaunchJson.File parsed = LaunchJson.parse(Files.readString(launchJson));
         EditorBuffer js = call(fx.controller::activeBuffer);
-        FxTestSupport.runOnFx(() -> debug.runLaunchConfiguration(
+        FxTestSupport.runOnFx(() -> debug.launchJson.runLaunchConfiguration(
                 launchJson, site, parsed, parsed.configurations().getFirst(), js));
         Map<String, Object> launch = session("launch").launchArgs;
         assertEquals(BrowserLaunch.EDGE, launch.get("type"), launch.toString());

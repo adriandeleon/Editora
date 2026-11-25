@@ -2306,11 +2306,11 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.startCompound",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::startCompound)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().launchJson::startCompound)));
         host.registry()
                 .register(Command.of(
                         "debug.editCompounds",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::editCompounds)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().launchJson::editCompounds)));
         host.registry()
                 .register(Command.of(
                         "debug.restart", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::restart)));
@@ -2474,7 +2474,8 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.startConfiguration",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::startLaunchConfiguration)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().launchJson::startLaunchConfiguration)));
         host.registry()
                 .register(Command.of(
                         "debug.historyBack",
@@ -2490,7 +2491,7 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.editCustomAdapters",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::editCustomAdapters)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().launchJson::editCustomAdapters)));
         host.registry()
                 .register(Command.of(
                         "debug.stepOverInstruction",

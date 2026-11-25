@@ -809,8 +809,8 @@ class DebugCoordinatorCommandsFxTest {
         mainClasses("demo.Args");
         configs.add(config("Server", "java", "demo.Args", ""));
         configs.add(config("Client", "java", "demo.Args", ""));
-        FxTestSupport.runOnFx(() ->
-                debug.debugRunCompound(new com.editora.config.RunCompound("Both", List.of("Server", "Client"), true)));
+        FxTestSupport.runOnFx(() -> debug.launchJson.debugRunCompound(
+                new com.editora.config.RunCompound("Both", List.of("Server", "Client"), true)));
         FakeDebugAdapter.Session server = session("launch");
         FakeDebugAdapter.Session client = session("launch");
         assertEquals(2, FxTestSupport.callOnFx(() -> debug.sessions().size()), "a session each");
@@ -822,7 +822,7 @@ class DebugCoordinatorCommandsFxTest {
         assertTrue(server.disconnected.await(10, TimeUnit.SECONDS));
         assertTrue(client.disconnected.await(10, TimeUnit.SECONDS), "and the client stops with it");
 
-        FxTestSupport.runOnFx(() -> debug.debugRunCompound(
+        FxTestSupport.runOnFx(() -> debug.launchJson.debugRunCompound(
                 new com.editora.config.RunCompound("Missing", List.of("Server", "Gone"), false)));
         assertEquals(
                 tr("status.debug.compoundMissing", "Missing", "Gone"),
@@ -842,8 +842,8 @@ class DebugCoordinatorCommandsFxTest {
         configs.add(config("Client", "java", "demo.Args", ""));
         List<Runnable> held = new ArrayList<>();
         DebugPlanning.planner = (name, task) -> held.add(task); // read later, as the planner thread does
-        FxTestSupport.runOnFx(() ->
-                debug.debugRunCompound(new com.editora.config.RunCompound("Both", List.of("Server", "Client"), true)));
+        FxTestSupport.runOnFx(() -> debug.launchJson.debugRunCompound(
+                new com.editora.config.RunCompound("Both", List.of("Server", "Client"), true)));
         DebugPlanning.planner = (name, task) -> task.run();
         FxTestSupport.runOnFx(() -> {
             while (!held.isEmpty()) {
@@ -873,8 +873,8 @@ class DebugCoordinatorCommandsFxTest {
         configs.add(config("Server", "java", "demo.Args", ""));
         configs.add(config("Client", "java", "demo.Args", ""));
         heldSaves = new ArrayList<>();
-        FxTestSupport.runOnFx(() ->
-                debug.debugRunCompound(new com.editora.config.RunCompound("Both", List.of("Server", "Client"), true)));
+        FxTestSupport.runOnFx(() -> debug.launchJson.debugRunCompound(
+                new com.editora.config.RunCompound("Both", List.of("Server", "Client"), true)));
         List<Runnable> saves = heldSaves;
         heldSaves = null;
         FxTestSupport.runOnFx(() -> saves.forEach(Runnable::run));

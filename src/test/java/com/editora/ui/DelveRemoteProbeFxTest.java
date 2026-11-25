@@ -203,7 +203,7 @@ class DelveRemoteProbeFxTest {
             DebugCoordinator debug = FxTestSupport.field(c, "debugCoordinator");
             DapManager dap = FxTestSupport.field(c, "dapManager");
             LaunchJson.File parsed = LaunchJson.parse(Files.readString(launchJson));
-            FxTestSupport.runOnFx(() -> debug.runLaunchConfiguration(
+            FxTestSupport.runOnFx(() -> debug.launchJson.runLaunchConfiguration(
                     launchJson, here, parsed, parsed.configurations().getFirst(), b));
             awaitStop(debug, dap, main);
 

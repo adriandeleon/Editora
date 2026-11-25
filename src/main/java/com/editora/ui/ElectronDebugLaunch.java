@@ -96,7 +96,7 @@ final class ElectronDebugLaunch {
                 List.of(),
                 List.of(group));
         d.ops.openToolWindow();
-        d.runLaunchCompound(
+        d.launchJson.runLaunchCompound(
                 new DebugCoordinator.LaunchFile(app.root().resolve(".vscode/launch.json"), app.root(), launch),
                 group,
                 b);
