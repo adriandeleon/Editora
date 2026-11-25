@@ -19,7 +19,7 @@ import org.jspecify.annotations.Nullable;
  *       is one line only and Jinja has no {@code {% comment %}}.
  *   <li>Liquid ({@code .liquid}, a Jekyll page with front matter or in {@code _includes}, {@code _layouts}):
  *       {@code {% comment %} … {% endcomment %}}.
- *   <li>ERB, EJS ({@code .erb .ejs}): each tag on the lines becomes a comment tag, {@code <%= x %>} →
+ *   <li>ERB, EJS, EEx and HEEx ({@code .erb .ejs .eex .leex .heex}): each tag on the lines becomes a comment tag, {@code <%= x %>} →
  *       {@code <%#= x %>}. Wrapping the line in {@code <%# … %>} would end at the line's first {@code %>}. A tag
  *       that already is a comment gets a second {@code #} ({@code <%## note %>}, still a comment), so uncommenting,
  *       which takes one {@code #} off every tag, gives the user's own comment back (HTML review 3 C203).
@@ -92,7 +92,7 @@ final class TemplateComments {
         String ext = n.substring(n.lastIndexOf('.') + 1);
         return switch (ext) {
             case "jinja", "jinja2", "j2", "njk", "twig" -> Engine.JINJA;
-            case "erb", "ejs" -> Engine.ERB;
+            case "erb", "ejs", "eex", "leex", "heex" -> Engine.ERB; // EEx and HEEx have ERB's <% %> tags
             case "hbs", "handlebars" -> Engine.HANDLEBARS;
             case "mustache" -> Engine.MUSTACHE;
             case "liquid" -> Engine.LIQUID;

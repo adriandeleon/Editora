@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **EEx and HEEx templates.** Phoenix's `.html.eex`, `.leex` and `.heex` files colour their Elixir as Elixir and their
+  HTML as HTML (HEEx's `{@assigns}`, `:if={…}` attributes and `<.component>` tags included), and open as HTML templates
+  (tag auto-close, Structure, the HTML language server, `<%# %>` comments). The Elixir inside an Elixir file's `~H` and
+  `~L` sigils is coloured too.
 - **Rack and Sinatra apps: run and debug the server.** In a Ruby project with a `config.ru` (Sinatra, Roda, a bare Rack
   app), Run File and F5 on the `config.ru`, a Ruby file at the project's top such as `app.rb`, or a file under `app/` or
   `config/` start the app under rackup on the first free port from 9292; under the debugger a request stops in your

@@ -62,6 +62,9 @@ public final class LanguageRegistry {
             // (the template syntax would come back as errors and formatting edits); Handlebars, which the server
             // serves too, under its own id. A name like config.yaml.j2 is the inner file's language: see forFileName.
             Map.entry("erb", HtmlElements.TEMPLATE_LANGUAGE),
+            Map.entry("eex", HtmlElements.TEMPLATE_LANGUAGE), // Elixir's EEx (Phoenix's .html.eex)
+            Map.entry("leex", HtmlElements.TEMPLATE_LANGUAGE),
+            Map.entry("heex", HtmlElements.TEMPLATE_LANGUAGE), // Phoenix's HEEx
             Map.entry("ejs", HtmlElements.TEMPLATE_LANGUAGE),
             Map.entry("njk", HtmlElements.TEMPLATE_LANGUAGE),
             Map.entry("jinja", HtmlElements.TEMPLATE_LANGUAGE),

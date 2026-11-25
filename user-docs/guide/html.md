@@ -23,9 +23,12 @@ A `.txt` file stays plain text.
 
 **Templates** open as HTML too:
 
-- Jinja, Nunjucks, Twig, Liquid, Mustache, ERB and EJS files (`.html.erb`,
-  `.erb`, `.ejs`, `.njk`, `.jinja`, `.jinja2`, `.j2`, `.twig`, `.liquid`,
-  `.mustache`) are **HTML Template** in the status bar.
+- Jinja, Nunjucks, Twig, Liquid, Mustache, ERB, EJS and Elixir's EEx and
+  HEEx files (`.html.erb`, `.erb`, `.ejs`, `.njk`, `.jinja`, `.jinja2`, `.j2`,
+  `.twig`, `.liquid`, `.mustache`, `.html.eex`, `.leex`, `.heex`) are **HTML
+  Template** in the status bar. EEx and HEEx colour the Elixir in them as
+  Elixir: `<%= %>`, and in HEEx `{@assigns}` and attributes such as
+  `:if={…}`, with `<.component>` tags.
 - Handlebars files (`.hbs`, `.handlebars`) are **Handlebars**.
 
 Both get the HTML colours, tag auto-close and rename, folding, Structure,
