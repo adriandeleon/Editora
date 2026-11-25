@@ -100,7 +100,7 @@ console on the output it had just streamed; like Test Results, the window stays 
 
 A Java launch in a Maven or Gradle project builds first. jdtls runs with autobuild off, so the classpath it
 resolves is right while the class files in it are whatever the last build left: `RunCoordinator.buildBeforeLaunch`
-and `DebugCoordinator.buildToolThenLaunch` run the build tool's compile (`compile`/`test-compile` for a class under
+and `JavaDebugLaunch.buildToolThenLaunch` run the build tool's compile (`compile`/`test-compile` for a class under
 `src/test`; Gradle `compileJava`/`compileTestJava`) as a `BeforeLaunchStep.Command` in the Run or Debug console
 before the jdtls launch, on the project's JDK, aborting on a non-zero exit — behind `Settings.buildBeforeRun`
 ("Build before Run and Debug", on). A configuration with its own before-launch step keeps that step instead; with

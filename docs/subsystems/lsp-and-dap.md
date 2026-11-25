@@ -1182,7 +1182,7 @@ CodeLLDB has it, sent as the profile's default: see **External adapters**).
 **Run configurations for C, C++, Go and Rust.** The types `c`, `cpp`, `go` and `rust`
 (`ScriptRunCommand.isCompiled`) name a source file, resolved like a script's (`RunConfigWorkingDirectory.script`).
 What is built for it is decided at launch, by the code F5 uses:
-- **Debug.** `DebugCoordinator.debugCompiledConfig` runs the configuration's before-launch step, then calls
+- **Debug.** `JavaDebugLaunch.debugCompiledConfig` runs the configuration's before-launch step, then calls
   `debugNative`, `debugGo` or `debugRust`, the same methods Debug File reaches. `LaunchExtras` carries what the
   configuration adds: its variables for the program's environment, its working directory (null when blank: the
   folder F5 uses) and whether a step of its own has already written to the Debug console. No caret picks a test,
@@ -1205,7 +1205,7 @@ What is built for it is decided at launch, by the code F5 uses:
   it) and `file.run`. `RunCoordinator.launchCompiledFile` builds a `CompiledRun` with the file's own program
   arguments and no working directory of its own and hands it to the same `runNative`, `runGo` or `runRust` a
   configuration uses; nothing it finds wrong opens a configuration form (`CompiledRun.configured` is false). A file
-  without a `main` keeps Debug File of its own (`DebugCoordinator.offersOwnDebugFile`), and Debug: Debug Current File
+  without a `main` keeps Debug File of its own (`BreakpointMenus.offersOwnDebugFile`), and Debug: Debug Current File
   accepts either kind.
 
 **Attach to Process: native programs.** On Linux `LocalProcesses` lists a program built with debug information
@@ -1453,7 +1453,7 @@ shown, Flutter's device and Debug Test at Caret; `RunCoordinatorFlowsFxTest` cov
 adapters (`setup-dotnet`, the runner's Ruby with the debug gem, `php-xdebug`). `PresetDebugWindowFxTest` drives the
 window against stand-ins for all three adapters and for `dotnet` (`CompiledDebugLaunch.dotnetCommand`).
 
-**launch.json.** *Debug: Start Configuration…* (`DebugCoordinator.startLaunchConfiguration`) lists the configurations
+**launch.json.** *Debug: Start Configuration…* (`LaunchJsonSessions.startLaunchConfiguration`) lists the configurations
 of the project's `.vscode/launch.json`, else the nearest one above the active file (`LaunchJson.find`). The one started
 last comes first.
 
@@ -2145,7 +2145,7 @@ Breakpoints…* writes every breakpoint, or one group's (asked when there are gr
 file relative to the project with `/` when under it, else its stored form; an encrypted file's line text is left out.
 *Debug: Import Breakpoints…* reads one back (`BreakpointExport.read` refuses another format or a later version):
 breakpoints of an open tab are re-anchored to the line their text is on now and added where the line has none; a
-file with no tab gets them in its saved list, and a live session is sent them (`DebugCoordinator.sendClosed`, off the
+file with no tab gets them in its saved list, and a live session is sent them (`BreakpointMenus.sendClosed`, off the
 FX thread); files that are not there are counted, not set. An imported id that another breakpoint already has is
 replaced, and what waits for it follows (`BreakpointExport.freshIds`). The file choosers are `chooseSave` /
 `chooseOpen`, which tests answer. `BreakpointGroupsTest`, `BreakpointExportTest` and `BreakpointGroupsWindowFxTest` (a
@@ -2366,7 +2366,7 @@ are, or which first ones are shown. A filter keeps the rows with the text in a c
 rows, or all shown, on the clipboard as tab-separated text; Open as CSV opens them in a CSV tab; Refresh evaluates the
 expression again in the shown frame (`watch` context) and loads what it is now, and needs a paused program. The table
 is the stop's: it keeps its values after the program goes on. One window per collection asked for
-(`DebugCoordinator.tableWindows`). `DebugTableWindowFxTest` covers it against `FakeDebugAdapter`;
+(`ValueWindows.tableWindows`). `DebugTableWindowFxTest` covers it against `FakeDebugAdapter`;
 `DebugTableProbeFxTest` opens a list of two objects on debugpy (a Python list), java-debug (a `List<Order>`) and Delve
 (a `[]*Order`): two rows, the fields as columns, none of the debuggers' own rows.
 **View as DataFrame / View as Array** (the same menu row, named for the value, in a Python session; PyCharm's data
@@ -2394,7 +2394,7 @@ memory of a program that crashed, or that `gcore` dumped, to look at its threads
 lists the files the process had mapped, the program among them, and `NT_PRPSINFO` the process's name (cut to 15
 characters), which picks the program when it is not the first mapped (`programOf`). Another core — a macOS Mach-O one,
 a Windows minidump — names none, nor does a core whose program has since moved: the program is then asked for
-(`DebugCoordinator.chooseFile`, a test's hook). `languageOf` reads the program's bytes: Go's build information
+(`DebugAttach.chooseFile`, a test's hook). `languageOf` reads the program's bytes: Go's build information
 (`\xff Go buildinf:`, in every Go program since 1.13) is Go, opened on Delve (`"mode": "core"`, `coreFilePath`);
 Rust's library path (`/rustc/`) is Rust, and anything else C/C++, both on CodeLLDB, whose launch has
 `targetCreateCommands: ["target create "<program>" --core "<core>""]` and an empty `processCreateCommands` (nothing

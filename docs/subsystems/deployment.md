@@ -63,7 +63,7 @@ for remote commands applies.
   `build/GradleHostClasspath` (an init script with an `editoraClasspath` task, `sh ./gradlew` when the build
   has a wrapper). Projects with neither are refused with a message.
 - Debug (Java): the JVM gets `-agentlib:jdwp=…,suspend=y,address=127.0.0.1:0`; its "Listening" line is
-  tunnelled with `forwardLocal` and `DebugCoordinator.attachToPort` attaches through an open Java file of the
+  tunnelled with `forwardLocal` and `DebugAttach.attachToPort` attaches through an open Java file of the
   local project (needed as the anchor). The tunnel closes when the program ends.
 - The console's first line is the deploy's summary; its file links resolve in the local project
   (`consoleDir` is the local folder). Rerun deploys again.
