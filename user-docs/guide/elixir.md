@@ -23,7 +23,11 @@ debugger. **Debug: Start / Continue** (F5) or **Debug File** in a Mix project
 - on another script (`.exs`) runs it with the project loaded, `mix run
   script.exs`;
 - on a module (`.ex`) runs the project, `mix run` (with `--no-halt` when its
-  application starts a supervision tree, which runs until you stop it).
+  application starts a supervision tree, which runs until you stop it);
+- on a module of a **Phoenix** app (`:phoenix` among the dependencies in
+  `mix.exs`) runs its web server, `mix phx.server`: open a page in the
+  browser, and a breakpoint in a controller, a LiveView or a plug stops while
+  that request waits. The server runs until you press **Stop**.
 
 Breakpoints stop in your project's modules and tests, with their variables.
 ElixirLS runs Mix tasks only, so a script outside a Mix project isn't debugged:
@@ -32,7 +36,8 @@ and its dependencies, which runs their code, so Editora asks you to trust the
 folder first.
 
 *Run File* runs the same commands without the debugger: `mix test` on a test
-file, `mix run` on a script, `elixir file` outside a Mix project.
+file, `mix run` on a script, `mix phx.server` on a Phoenix app's module,
+`elixir file` outside a Mix project.
 
 Editora finds ElixirLS as set on the **Elixir (ElixirLS)** card of **Settings →
 Debugging** (its `debug_adapter.sh`, or the unpacked release folder), else in

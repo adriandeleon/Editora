@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   HTML as HTML (HEEx's `{@assigns}`, `:if={…}` attributes and `<.component>` tags included), and open as HTML templates
   (tag auto-close, Structure, the HTML language server, `<%# %>` comments). The Elixir inside an Elixir file's `~H` and
   `~L` sigils is coloured too.
+- **Phoenix: run and debug the web server.** F5 or Run File on a module of a Phoenix app runs `mix phx.server`; under
+  the debugger a breakpoint in a controller, LiveView or plug stops while the browser's request waits, and the server
+  runs until Stop.
 - **Editora says when it is drawing on the CPU.** When JavaFX cannot start its GPU pipeline (on Linux, typically a
   graphics driver updated without a reboot) it falls back to software rendering and the whole window lags. The
   status bar now says so once, Doctor gains a Graphics Rendering row with the reason and the fix, and menus drop

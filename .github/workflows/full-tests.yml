@@ -477,6 +477,9 @@ jobs:
           unzip -q /tmp/elixir-ls.zip -d "$dest"
           test -f "$dest/debug_adapter.sh"
           echo "" | MIX_ENV=prod elixir "$dest/quiet_install.exs"
+          # The Phoenix probe generates an app with mix phx.new (pinned) and fetches its Hex dependencies.
+          mix local.hex --force
+          mix archive.install hex phx_new 1.8.17 --force
 
       # PowerShellProbeFxTest: pwsh comes with the runner image; PowerShell Editor Services is unpacked where Editora
       # looks for its own install.
@@ -535,7 +538,8 @@ jobs:
       # (Go, Cargo, Dart, node:test, Deno, RSpec, PHPUnit, ExUnit); a runner not installed is skipped.
       # ElixirDebugProbeFxTest: on ElixirLS, Debug Test at Caret runs an ExUnit test alone and stops in the project's
       # module with its values; F5 on a project script runs it under mix run; a script with no Mix project is run, not
-      # debugged; Run File on a test file runs its tests.
+      # debugged; Run File on a test file runs its tests; F5 on a Phoenix app's controller runs mix phx.server, a
+      # request stops in the controller, and Stop ends the server.
       # RubyAppsProbeFxTest: under rdbg, Debug Test at Caret runs an RSpec example and a Minitest test alone and stops
       # in them, a Rails test stops in its controller, and F5 in a Rails controller serves the app and a request stops.
       # CppTestsProbeFxTest: GoogleTest, Catch2 3 and doctest in a CMake project: a ▶ per test, Run File into Test
