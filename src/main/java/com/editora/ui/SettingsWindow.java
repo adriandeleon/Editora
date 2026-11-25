@@ -648,10 +648,16 @@ public class SettingsWindow {
     /**
      * Opens Settings focused on the page a Doctor row's "Settings…" action targets. The keys are the
      * Doctor check catalog's stable {@code settingsKey} strings, mapped here so the private
-     * {@link Category} enum never leaks; an unknown key just opens Settings unfocused.
+     * {@link Category} enum never leaks; an unknown key just opens Settings unfocused. A key may name one
+     * language after a colon ({@code lsp:powershell}, {@code debug:go}): the page's Language picker then shows that
+     * language's card. An unknown language leaves the picker where it was.
      */
-    public void showDoctorTarget(String key, Window owner) {
-        Category target = switch (key == null ? "" : key) {
+    public void showDoctorTarget(@Nullable String key, Window owner) {
+        String full = key == null ? "" : key;
+        int colon = full.indexOf(':');
+        String page = colon < 0 ? full : full.substring(0, colon);
+        String language = colon < 0 ? "" : full.substring(colon + 1);
+        Category target = switch (page) {
             case "git" -> Category.GIT;
             case "github" -> Category.GITHUB;
             case "search" -> Category.SEARCH;
@@ -670,6 +676,13 @@ public class SettingsWindow {
             default -> null;
         };
         showAt(target, owner);
+        if (!language.isEmpty()) {
+            SettingsLanguagePicker picker =
+                    target == Category.LSP ? lspPage.languages : target == Category.DEBUG ? debugPage.languages : null;
+            if (picker != null) {
+                picker.show(language);
+            }
+        }
     }
 
     /** Reads/mutates the trusted-workspace-root store for the Workspace page's Trusted Folders list. */

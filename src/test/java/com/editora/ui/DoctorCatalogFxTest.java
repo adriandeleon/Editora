@@ -470,6 +470,24 @@ class DoctorCatalogFxTest {
     }
 
     @Test
+    void serverAndDebuggerRowsOpenTheirOwnLanguageInSettings() throws Exception {
+        // Settings… on a server's row opened Language Servers on whatever language the picker held.
+        Host host = new Host();
+        Ops ops = new Ops();
+        ops.servers = List.of("powershell", "json");
+        ops.debug = true;
+        host.settings.setGoDebugEnabled(true);
+        host.settings.setDartDebugEnabled(true);
+        List<DoctorService.CheckSpec> specs = specs(host, ops);
+        assertEquals(
+                "lsp:powershell", spec(specs, "lsp.powershell").placeholder().settingsKey());
+        assertEquals("lsp:json", spec(specs, "lsp.json").placeholder().settingsKey());
+        assertEquals("debug:go", spec(specs, "debug.go").placeholder().settingsKey());
+        assertEquals(
+                "debug:dart", spec(specs, "debug.flutter").placeholder().settingsKey(), "Flutter is on Dart's card");
+    }
+
+    @Test
     void aMissingGitOrRipgrepIsNamedByItsConfiguredCommand(@TempDir Path dir) throws Exception {
         Host host = new Host();
         String noGit = dir.resolve("no-git").toString();

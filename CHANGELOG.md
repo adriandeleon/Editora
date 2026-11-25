@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Doctor's Settings… opens the row's own language.** On a language server or debugger row (PowerShell, Go, …),
+  Settings… opened Language Servers or Debugging on whichever language the page's Language picker last held; it now
+  picks the row's language. ESLint, Prettier and Biome open the TypeScript card, Flutter the Dart card.
+
 ## [0.29.0] - 2026-11-25
 
 ### Added
