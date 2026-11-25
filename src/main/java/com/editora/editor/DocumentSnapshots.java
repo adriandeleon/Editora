@@ -50,6 +50,7 @@ final class DocumentSnapshots {
 
     private @Nullable Snapshot current;
     private final AtomicLong materializations = new AtomicLong();
+    private final AtomicLong fxMaterializations = new AtomicLong();
 
     private @Nullable String expected;
 
@@ -64,8 +65,7 @@ final class DocumentSnapshots {
                 expected = null;
             } else {
                 Supplier<String> source = Objects.requireNonNull(capture.get());
-                current = new Snapshot(
-                        version, new DocumentText.Memo(null, source).onBuilt(materializations::incrementAndGet));
+                current = new Snapshot(version, new DocumentText.Memo(null, source).onBuilt(this::built));
             }
         }
         return current;
@@ -107,6 +107,22 @@ final class DocumentSnapshots {
         }
         current = null;
         return true;
+    }
+
+    private void built() {
+        materializations.incrementAndGet();
+        if (javafx.application.Platform.isFxApplicationThread()) {
+            fxMaterializations.incrementAndGet();
+        }
+    }
+
+    /**
+     * Whole-document Strings built through this cache on the FX thread. A test asking "was the text built on the
+     * FX thread" reads this, not {@link #materializations()}: a pass's worker may build its String at any moment
+     * after the pass is dispatched, even before the FX thread's next statement.
+     */
+    long fxMaterializations() {
+        return fxMaterializations.get();
     }
 
     /** Whole-document Strings built through this cache, on any thread. */

@@ -5892,6 +5892,11 @@ public class EditorBuffer implements TabContent {
         return documentSnapshots.materializations();
     }
 
+    /** As {@link #documentSnapshotMaterializations()}, counting only the strings built on the FX thread (tests). */
+    long documentSnapshotFxMaterializations() {
+        return documentSnapshots.fxMaterializations();
+    }
+
     /** Number of settled-edit tasks sharing this buffer's one document subscription (tests). */
     int settledEditTaskCount() {
         return settledEdits.taskCount();
