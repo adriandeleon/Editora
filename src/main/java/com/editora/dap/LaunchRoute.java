@@ -25,6 +25,8 @@ public final class LaunchRoute {
         GDB,
         /** Delve ({@code go}). */
         DELVE,
+        /** A program under Delve's headless server ({@code go} with {@code mode: remote}): the client connects to it. */
+        DELVE_REMOTE,
         /** debugpy ({@code debugpy}, {@code python}). */
         DEBUGPY,
         /** vscode-js-debug ({@code node}, {@code pwa-node}). */
@@ -109,10 +111,14 @@ public final class LaunchRoute {
                 return new Route(Kind.GDB, DebugLanguages.GDB, gdbRequest(body, attach), attach, "");
             }
             case "go" -> {
-                if ("remote".equals(text(body.get("mode")))) {
-                    return unsupported(body, "remote Delve (mode: remote)");
-                }
                 request.put("type", "go");
+                if (GoLaunch.isRemote(body)) {
+                    if (GoLaunch.remotePort(body) < 0) {
+                        return unsupported(body, "a remote Delve attach without a port");
+                    }
+                    request.put("request", "attach");
+                    return new Route(Kind.DELVE_REMOTE, DebugLanguages.GO, request, true, "");
+                }
                 return new Route(Kind.DELVE, DebugLanguages.GO, request, attach, "");
             }
             case "debugpy", "python" -> {

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Attach to a remote Go program.** Debug: Attach to Remote Delve… (also in Run ▸ Launch and Attach) debugs a Go
+  program under Delve's headless server (`dlv debug --headless --listen=:2345`) on another machine, in a container or
+  here, with no Delve needed on this machine. Give the folder it was built from over there and Delve maps your
+  project's files to it, so breakpoints bind and stops open the files here. Stop takes your breakpoints out and leaves
+  the program running. A launch.json `go` configuration with `"mode": "remote"` (and its `substitutePath`) attaches the
+  same way.
+
 ### Fixed
 
 - **Doctor's Settings… opens the row's own language.** On a language server or debugger row (PowerShell, Go, …),

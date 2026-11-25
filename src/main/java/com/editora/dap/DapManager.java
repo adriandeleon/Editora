@@ -2859,6 +2859,27 @@ public final class DapManager {
      * runs on.
      */
     public void startPortAttach(Path anchor, DebugLanguage language, int port, Map<String, Object> attach) {
+        startSocketAttach(anchor, language, "127.0.0.1", port, attach, false);
+    }
+
+    /**
+     * Attaches to a Go program under Delve's headless server at {@code host:port} ({@code dlv debug --headless
+     * --listen=…}, here or on another machine; {@link GoLaunch#remoteAttach}): that server talks DAP itself, so no
+     * Delve runs here. Stop takes the session's breakpoints out and resumes the program before it detaches, which
+     * leaves a multi-client server ({@code --accept-multiclient}) and its program running for the next attach; a
+     * single-client one ends, and ends the program it started.
+     */
+    public void startRemoteDelve(Path anchor, String host, int port, Map<String, Object> attach) {
+        startSocketAttach(anchor, DebugLanguages.GO, host, port, attach, true);
+    }
+
+    private void startSocketAttach(
+            Path anchor,
+            DebugLanguage language,
+            String host,
+            int port,
+            Map<String, Object> attach,
+            boolean releaseOnDetach) {
         if (managerClosed) {
             return;
         }
@@ -2869,7 +2890,7 @@ public final class DapManager {
         if (client != null) {
             stop(); // one session at a time
         }
-        restartAction = () -> startPortAttach(anchor, language, port, attach);
+        restartAction = () -> startSocketAttach(anchor, language, host, port, attach, releaseOnDetach);
         debugFile = anchor;
         long epoch = beginSession();
         setState(State.STARTING);
@@ -2885,12 +2906,14 @@ public final class DapManager {
                 c.setBreakpoints(bps);
                 c.setExceptionFilters(filters);
                 c.setTerminateOnDisconnect(false); // Stop detaches; the program runs on
+                c.setReleaseBeforeDetach(releaseOnDetach);
                 if (!publishClient(epoch, c)) {
                     c.dispose();
                     return;
                 }
-                onOutput(epoch, tr("debug.console.attaching", "127.0.0.1:" + port) + "\n", COMMAND_CATEGORY);
-                c.connect(port, language.adapterId()).whenComplete((caps, e) -> {
+                String address = host.contains(":") && !host.startsWith("[") ? "[" + host + "]" : host;
+                onOutput(epoch, tr("debug.console.attaching", address + ":" + port) + "\n", COMMAND_CATEGORY);
+                c.connect(host, port, language.adapterId()).whenComplete((caps, e) -> {
                     if (e != null) {
                         fail(epoch, tr("debug.error.adapterConnect", language.displayName(), msg(e)));
                         return;

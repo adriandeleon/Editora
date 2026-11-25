@@ -1489,7 +1489,7 @@ the fields VS Code reads itself are left out (`name`, its tasks, `console`, `pre
 | `lldb` | CodeLLDB | as written, the Rust or C/C++ profile by `sourceLanguages`. Its `cargo` field runs `cargo <args>`, then the executable its JSON messages name, narrowed by `filter`, becomes `program` (`LaunchRoute.cargoExecutable`). |
 | `gdb` | GDB's DAP mode | `program`, `args`, `cwd`, `env`, `stopAtBeginningOfMainSubprogram`; attach by `pid`. |
 | `cppdbg` | GDB, or CodeLLDB with `MIMode: lldb` | its fields told in the target's own: the `environment` list becomes `env`, `stopAtEntry` the entry stop, `processId` the `pid`. |
-| `go` | Delve | as written, `output` in the temporary folder when not given; `mode: remote` is not supported. |
+| `go` | Delve | as written, `output` in the temporary folder when not given; `mode: remote` (with a `port`) connects to that headless Delve (`DELVE_REMOTE`). |
 | `debugpy`, `python` | debugpy | laid over the launch Editora plans for the program (`DapManager.startConfigured` → `overlay`, which keeps Editora's console); an attach connects to `connect`. |
 | `node`, `pwa-node` | vscode-js-debug | as Python; an attach to `address` / `port`. |
 | `chrome`, `pwa-chrome`, `msedge`, `pwa-msedge` | vscode-js-debug, driving the browser | as written with js-debug's type (`BrowserLaunch.configured`): `webRoot` defaults to the workspace folder, a launch's `userDataDir` to Editora's own profile and its `timeout` to 30 s; a launch needs a `url` or a `file`; an attach goes to `port` (9222 by default). |
@@ -2461,8 +2461,22 @@ holds the program before its first instruction, which GDB reports as a stop with
 `SIGTRAP` exception (sometimes twice) in the loader; `DapManager.passesRemoteEntry` resumes stops of a remote attach
 (`RemoteNativeAttach.isRemote`, set in `startExternal`) until one is at a breakpoint or in code with a source, so the
 program runs on to its breakpoints as a launched one does. Stop ends the program, and gdbserver with it.
-`RemoteNativeAttachProbeFxTest` drives GDB, CodeLLDB and a `cppdbg` configuration against a real gdbserver. Delve's
-headless server (`go` with `mode: remote`) is not covered yet.
+`RemoteNativeAttachProbeFxTest` drives GDB, CodeLLDB and a `cppdbg` configuration against a real gdbserver.
+**Attach to Remote Delve** (`debug.attachRemoteGo`; [`ui/RemoteDelveLaunch`](../../src/main/java/com/editora/ui/RemoteDelveLaunch.java),
+`GoLaunch.remoteAttach`) attaches to a Go program under Delve's headless server (`dlv debug|exec|attach --headless
+--listen=host:port`), which serves DAP itself: `DapManager.startRemoteDelve` connects to `host:port`
+(`DapClient.connect(host, port, id)`: a loopback name tries this machine's loopbacks as for a spawned adapter, any other
+host is tried 5 times with a 2 s timeout) and sends `attach` with `mode: remote`; no Delve need be installed here. It
+asks for the address, then (with a project) the folder the program was built from over there, which becomes
+`substitutePath: [{from: <project>, to: <folder>}]` — Delve maps the paths both ways, so the client keeps
+`DapPaths.LOCAL`. launch.json `go` with `mode: remote` and a `port` routes to `DELVE_REMOTE` (`host` defaults to
+`127.0.0.1`, as VS Code's Go extension). Probed with Delve 1.27.2: the program is held until `configurationDone`, with no
+entry stop; a detach leaves a multi-client server's breakpoints and halt in place ("leaving multi-client DAP server …
+with debuggee halted"), so the program stops at its next breakpoint with nobody attached, and `suspendDebuggee: false`
+does not change that. So the session's client is `setReleaseBeforeDetach`: Stop sends `setBreakpoints` with none for
+each file and an empty `setFunctionBreakpoints`, then `continue`, then `disconnect` with `terminateDebuggee: false`. A
+single-client server ends at the disconnect, and ends a program it started. `DelveRemoteProbeFxTest` drives both (the
+program built in one folder and debugged from a copy in another).
 
 **Attach to Process** (`debug.attachToProcess`; [`dap/LocalProcesses`](../../src/main/java/com/editora/dap/LocalProcesses.java))
 reads every process's command line (`ProcessHandle.Info`; on Windows, where other processes' arguments are not given
