@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **EEx and HEEx templates.** Phoenix's `.html.eex`, `.leex` and `.heex` files colour their Elixir as Elixir and their
+  HTML as HTML (HEEx's `{@assigns}`, `:if={…}` attributes and `<.component>` tags included), and open as HTML templates
+  (tag auto-close, Structure, the HTML language server, `<%# %>` comments). The Elixir inside an Elixir file's `~H` and
+  `~L` sigils is coloured too.
 - **Attach to a remote Go program.** Debug: Attach to Remote Delve… (also in Run ▸ Launch and Attach) debugs a Go
   program under Delve's headless server (`dlv debug --headless --listen=:2345`) on another machine, in a container or
   here, with no Delve needed on this machine. Give the folder it was built from over there and Delve maps your

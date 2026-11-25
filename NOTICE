@@ -74,9 +74,11 @@ vendored unmodified.
 
 The Elixir grammar (elixir.tmLanguage.json) is shiki's copy of the one in
 elixir-editors/elixir-tmbundle (Syntaxes/Elixir.tmLanguage, commit 43c8cd9),
-under the Apache License, Version 2.0; it is vendored unmodified. Its ~L and
-~H sigils include an EEx grammar (text.elixir) that is not bundled, so their
-Elixir parts stay plain; the HTML in them is highlighted.
+under the Apache License, Version 2.0; it is vendored unmodified. The EEx
+grammars (eex.tmLanguage.json, html-eex.tmLanguage.json) are that bundle's
+Syntaxes/EEx.tmLanguage and "HTML (EEx).tmLanguage" (commit 2b5739d),
+converted from property lists to JSON and otherwise unmodified; the Elixir
+grammar's ~L and ~H sigils include the first.
 
     https://github.com/elixir-editors/elixir-tmbundle
 
@@ -93,6 +95,35 @@ Elixir parts stay plain; the HTML in them is highlighted.
     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
     See the License for the specific language governing permissions and
     limitations under the License.
+
+The HEEx grammar (heex.tmLanguage.json) is phoenixframework/vscode-phoenix's
+syntaxes/heex.json (commit 15af010), under the MIT License; it is vendored
+unmodified.
+
+    https://github.com/phoenixframework/vscode-phoenix
+
+    The MIT License (MIT)
+
+    Copyright (c) 2021 Marlus Saraiva
+
+    Permission is hereby granted, free of charge, to any person obtaining
+    a copy of this software and associated documentation files (the
+    "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to
+    permit persons to whom the Software is furnished to do so, subject to
+    the following conditions:
+
+    The above copyright notice and this permission notice shall be
+    included in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+    EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+    NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+    LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+    OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+    WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 These are aggregated by shiki from their respective upstream projects, each
 under its original license (predominantly MIT, with some under other permissive

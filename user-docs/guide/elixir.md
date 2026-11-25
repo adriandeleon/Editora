@@ -7,6 +7,10 @@ order: 17
 
 Elixir gets code intelligence and debugging from ElixirLS, the server and debugger in one (see [language servers](/docs/lsp#servers-are-auto-detected-never-bundled)).
 
+Phoenix's templates, EEx (`.html.eex`, `.leex`) and HEEx (`.heex`), are
+[HTML templates](/docs/html) whose Elixir is coloured as Elixir, and so is the
+Elixir inside an Elixir file's `~H` and `~L` sigils.
+
 ## Debugging
 
 Elixir is debugged with ElixirLS (the debugger of VS Code's ElixirLS

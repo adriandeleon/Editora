@@ -1,6 +1,7 @@
 package com.editora.editops;
 
 import java.nio.file.Path;
+import java.util.List;
 
 import com.editora.editops.Commenter.Edit;
 import org.junit.jupiter.api.Test;
@@ -67,6 +68,16 @@ class CommenterTemplateTest {
                 "{# {% if a %}<b>{% endif %} #}\n",
                 roundTrip("{% if a %}<b>{% endif %}\n", 3, 3, "html", "/site/templates/base.html"));
         assertNull(apply("{% if a %}\n{# x #} {{ y }}\n", 0, 20, "html", "/s/base.html"), "would nest");
+    }
+
+    @Test
+    void elixirTemplatesTagsBecomeCommentTagsAsErbs() {
+        String eex = "<%= for item <- @items do %>\n<li><%= item %></li>\n<% end %>\n";
+        for (String file : List.of("index.html.eex", "live.html.leex", "show.html.heex")) {
+            assertEquals(
+                    "<%#= for item <- @items do %>\n<li><%= item %></li>\n<% end %>\n",
+                    roundTrip(eex, 0, 0, "html-template", file), file);
+        }
     }
 
     @Test

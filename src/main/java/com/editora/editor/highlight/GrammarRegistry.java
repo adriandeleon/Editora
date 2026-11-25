@@ -298,8 +298,12 @@ public final class GrammarRegistry {
         scopeToResource.put("source.scala", "scala");
         scopeToResource.put("source.clojure", "clojure");
         scopeToResource.put("source.ruby", "ruby");
-        // Elixir's ~L/~H sigils include EEx (text.elixir), which is not bundled: their Elixir stays plain.
-        scopeToResource.put("source.elixir", "elixir");
+        scopeToResource.put("source.elixir", "elixir"); // its ~L/~H sigils include EEx (text.elixir) and HTML
+        // EEx: Elixir inside <%= %> in any text (text.elixir), and in HTML (text.html.elixir: .html.eex, .leex);
+        // HEEx, Phoenix's HTML-aware templates: {@assigns}, <.component>, :if/:for attributes and <%= %>.
+        scopeToResource.put("text.elixir", "eex");
+        scopeToResource.put("text.html.elixir", "html-eex");
+        scopeToResource.put("source.heex", "heex");
         scopeToResource.put("source.c", "c");
         scopeToResource.put("source.cpp", "cpp");
         scopeToResource.put("source.rust", "rust");
@@ -417,6 +421,8 @@ public final class GrammarRegistry {
         mapExtensions("source.clojure", "clj", "cljs", "cljc", "cljx", "edn", "bb"); // .bb: a Babashka script
         mapExtensions("source.ruby", "rb", "rake", "gemspec");
         mapExtensions("source.elixir", "ex", "exs");
+        mapExtensions("text.html.elixir", "eex", "leex"); // page.html.eex: an EEx template of a page, mostly HTML
+        mapExtensions("source.heex", "heex");
         mapExtensions("source.c", "c", "h");
         mapExtensions("source.cpp", "cpp", "cc", "cxx", "c++", "hpp", "hh", "hxx", "h++", "ipp", "inl");
         mapExtensions("source.rust", "rs");
