@@ -53,8 +53,9 @@ shfmt, a JavaScript project's ESLint, Prettier and Biome, the debug adapters (ja
 (with a JDK 25 check for Java, and the Python interpreter and Node.js that Run,
 Debug and the language servers share), the Node.js for HTTP scripts, the build
 tools, the AI provider and agent, the container engine (and WSL on Windows),
-elevated save, browsers, the in-app installer's prerequisites, and plugins that
-failed to load or start.
+elevated save, browsers, the in-app installer's prerequisites, whether the window
+draws on the GPU ([Graphics Rendering](#the-whole-window-lags-menus-scrolling-typing)),
+and plugins that failed to load or start.
 
 A missing tool is a problem only when the window needs it: a file of that
 language is open, the project has the tool's marker file, or you set its command.
@@ -616,6 +617,21 @@ match. If editing or scrolling feels heavy:
 - The native builds set conservative heap and GC options and bake in an AOT
   class cache for faster startup; a missing cache just falls back to a normal
   start.
+
+### The whole window lags (menus, scrolling, typing)
+
+If everything feels slow, not one file, Editora may be drawing on the CPU. It
+asks JavaFX for the GPU first; when that cannot start, JavaFX falls back to
+software rendering. Editora then says so once in the status bar, the
+**Graphics Rendering** row of [Doctor](#doctor) shows **software (CPU)**, and
+menus open without their shadow, which is costly to redraw on the CPU.
+
+On Linux the usual cause is a graphics driver updated without a reboot: the
+driver's libraries no longer match the kernel module still loaded, and OpenGL
+cannot start. `nvidia-smi` then reports `Driver/library version mismatch`.
+Restart the computer. A remote X display (`ssh -X`), a virtual machine without
+3D acceleration, or a missing driver cause it too. To see JavaFX's own reason,
+start Editora from a terminal with `-Dprism.verbose=true` in its Java options.
 
 ## Reset or isolate your config
 
