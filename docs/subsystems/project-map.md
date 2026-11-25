@@ -259,7 +259,7 @@ read the rest —", which opens the file when clicked.
 **The card's gutter** (Map gaps round 3, item 1; `MapCardGutter`). Beside each line number a code card shows what
 the editor's gutter shows there, in its look (the rows carry `fold-gutter`, so the editor themes' gutter rules apply):
 a **breakpoint** strip while debugging is on and the file's language debugs where its tools run (a click sets or
-removes one, through the file's tab when it has one — `DebugCoordinator.toggleCardBreakpoint` — else in the stored
+removes one, through the file's tab when it has one — `MapDebugFollow.toggleCardBreakpoint` — else in the stored
 breakpoints, `BreakpointsPicker.rewriteClosed`, which a live session is sent; a blank or comment line gets none and
 the status says so), **bookmarks**, a **▶** on a JUnit test class or method and on a Java `main` method in a
 Maven or Gradle project (the Test Runner's and Run's gates; a click runs it through the build tool or as the
@@ -285,7 +285,7 @@ even where breakpoints are not) and the `project-map-debug-stop` accent border o
 picked cards, so the orphan check leaves it, and the Map pans to it (`MapCards.panTo`) without taking the keyboard.
 Beside it `MapCallStack` (a `MapSideColumn`, shown without focus) lists the stack top first, the shown frame marked,
 frames with no file greyed and label or fold rows unpickable; Enter or a click hands the frame to
-`DebugCoordinator.selectFrameFromMap`, which selects it in the Debug window (the frame already shown is sent again), and
+`MapDebugFollow.selectFrameFromMap`, which selects it in the Debug window (the frame already shown is sent again), and
 the card follows. × or Escape closes the column until the next stop. A frame with no file leaves the card unmarked with
 the column still listed; a resume takes the mark and the column away; turning the option off does too.
 

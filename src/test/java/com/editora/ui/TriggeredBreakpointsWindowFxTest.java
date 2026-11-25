@@ -169,7 +169,8 @@ class TriggeredBreakpointsWindowFxTest {
 
         FxTestSupport.runOnFx(() -> b.toggleBreakpoint(1)); // the trigger: "x += 1"
         BreakpointsPicker.Entry trigger = entryAt(1);
-        FxTestSupport.runOnFx(() -> debug.linkTriggered(b, 3, trigger)); // what the picker's choice runs
+        FxTestSupport.runOnFx(
+                () -> debug.caretBreakpoints.linkTriggered(b, 3, trigger)); // what the picker's choice runs
         Breakpoint triggerBp = call(() -> mgr.get(1));
         Breakpoint waiting = call(() -> mgr.get(3));
         assertFalse(triggerBp.id().isEmpty(), "the trigger is given an id");
@@ -240,7 +241,7 @@ class TriggeredBreakpointsWindowFxTest {
             throws Exception {
         FxTestSupport.runOnFx(() -> {
             b.getFocusedArea().moveTo(line, 0);
-            debug.editBreakpointAtCaret();
+            debug.caretBreakpoints.editBreakpointAtCaret();
         });
         FxTestSupport.runOnFx(() -> {
             var combo = (javafx.scene.control.ComboBox<BreakpointsPicker.Entry>)

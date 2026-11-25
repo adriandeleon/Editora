@@ -1099,7 +1099,7 @@ does:
 - `output` is a file of its own in the temporary folder. Left to Delve, it is `__debug_bin…` in the package, and it
   stays there when Stop kills Delve.
 
-`DebugCoordinator.debugGoFile` takes the `go` the Go build tool runs (`buildExecutable(GO, module)`) and puts its
+`CompiledDebugLaunch.debugGoFile` takes the `go` the Go build tool runs (`buildExecutable(GO, module)`) and puts its
 folder first on Delve's PATH, since Delve builds with it. Before each start and Restart it saves the folder's Go files,
 because Delve builds from disk. Restart repeats the same test wherever the caret is now. Debug Test at Caret on a Go
 test file (`debugGoTestAtCaret`) is the same launch.
@@ -1133,7 +1133,7 @@ nearest `Cargo.toml`):
 - **Otherwise:** the package's program (`cargo build`, or `--example x`).
 - **A library without a program:** the file's tests.
 
-`DebugCoordinator.debugRustFile` asks for the package's trust (`buildExecutable(CARGO, root)`), saves its Rust files,
+`CompiledDebugLaunch.debugRustFile` asks for the package's trust (`buildExecutable(CARGO, root)`), saves its Rust files,
 and runs the build as a before-launch step in the Debug console (Stop ends it). It then runs the same command again
 with `--message-format=json`, which builds nothing, and launches the executable whose target root is the file
 (`RustLaunch.artifacts` / `pick`). Test binaries carry a hash in their names, which is why they're found this way.
@@ -1171,7 +1171,7 @@ first:
 - **A lone file.** `cc` / `c++ -g -O0 -o <config>/cache/native-debug/<stem>-<hash>`. A lone header says to open
   its source.
 
-CMake and Make run the project's code, so `DebugCoordinator.debugNativeFile` asks the folder's trust first
+CMake and Make run the project's code, so `CompiledDebugLaunch.debugNativeFile` asks the folder's trust first
 (`Ops.trustBuild`, the build-trust prompt with one line about the build file). A compiler run asks nothing. The
 build steps run one after another as before-launch steps in the Debug console; later steps keep the earlier ones'
 output (`beforeLaunchConsole(false)`). Restart builds again.
@@ -1182,7 +1182,7 @@ CodeLLDB has it, sent as the profile's default: see **External adapters**).
 **Run configurations for C, C++, Go and Rust.** The types `c`, `cpp`, `go` and `rust`
 (`ScriptRunCommand.isCompiled`) name a source file, resolved like a script's (`RunConfigWorkingDirectory.script`).
 What is built for it is decided at launch, by the code F5 uses:
-- **Debug.** `DebugCoordinator.debugCompiledConfig` runs the configuration's before-launch step, then calls
+- **Debug.** `JavaDebugLaunch.debugCompiledConfig` runs the configuration's before-launch step, then calls
   `debugNative`, `debugGo` or `debugRust`, the same methods Debug File reaches. `LaunchExtras` carries what the
   configuration adds: its variables for the program's environment, its working directory (null when blank: the
   folder F5 uses) and whether a step of its own has already written to the Debug console. No caret picks a test,
@@ -1205,7 +1205,7 @@ What is built for it is decided at launch, by the code F5 uses:
   it) and `file.run`. `RunCoordinator.launchCompiledFile` builds a `CompiledRun` with the file's own program
   arguments and no working directory of its own and hands it to the same `runNative`, `runGo` or `runRust` a
   configuration uses; nothing it finds wrong opens a configuration form (`CompiledRun.configured` is false). A file
-  without a `main` keeps Debug File of its own (`DebugCoordinator.offersOwnDebugFile`), and Debug: Debug Current File
+  without a `main` keeps Debug File of its own (`BreakpointMenus.offersOwnDebugFile`), and Debug: Debug Current File
   accepts either kind.
 
 **Attach to Process: native programs.** On Linux `LocalProcesses` lists a program built with debug information
@@ -1451,9 +1451,9 @@ shown, Flutter's device and Debug Test at Caret; `RunCoordinatorFlowsFxTest` cov
 
 `CsharpDebugProbeFxTest`, `RubyDebugProbeFxTest` and `PhpDebugProbeFxTest`, opt-in, run in CI with the pinned
 adapters (`setup-dotnet`, the runner's Ruby with the debug gem, `php-xdebug`). `PresetDebugWindowFxTest` drives the
-window against stand-ins for all three adapters and for `dotnet` (`DebugCoordinator.dotnetCommand`).
+window against stand-ins for all three adapters and for `dotnet` (`CompiledDebugLaunch.dotnetCommand`).
 
-**launch.json.** *Debug: Start Configuration…* (`DebugCoordinator.startLaunchConfiguration`) lists the configurations
+**launch.json.** *Debug: Start Configuration…* (`LaunchJsonSessions.startLaunchConfiguration`) lists the configurations
 of the project's `.vscode/launch.json`, else the nearest one above the active file (`LaunchJson.find`). The one started
 last comes first.
 
@@ -2145,7 +2145,7 @@ Breakpoints…* writes every breakpoint, or one group's (asked when there are gr
 file relative to the project with `/` when under it, else its stored form; an encrypted file's line text is left out.
 *Debug: Import Breakpoints…* reads one back (`BreakpointExport.read` refuses another format or a later version):
 breakpoints of an open tab are re-anchored to the line their text is on now and added where the line has none; a
-file with no tab gets them in its saved list, and a live session is sent them (`DebugCoordinator.sendClosed`, off the
+file with no tab gets them in its saved list, and a live session is sent them (`BreakpointMenus.sendClosed`, off the
 FX thread); files that are not there are counted, not set. An imported id that another breakpoint already has is
 replaced, and what waits for it follows (`BreakpointExport.freshIds`). The file choosers are `chooseSave` /
 `chooseOpen`, which tests answer. `BreakpointGroupsTest`, `BreakpointExportTest` and `BreakpointGroupsWindowFxTest` (a
@@ -2203,7 +2203,7 @@ earlier stop shows what it kept. Each adapter quotes a string its own way (measu
 text as it is, debugpy and js-debug as a literal of their language, escapes and all (`StringViews.content`).
 `ObjectMarksTest`, `StringViewsTest`, `MarkObjectWindowFxTest` (a fake adapter) and the opt-in
 `MarkObjectProbeFxTest` (java-debug, debugpy) cover it.
-**Add Logpoint** (`DebugCoordinator.addLogpoint`): *Debug: Add Logpoint…* and a Shift+click on the breakpoint strip
+**Add Logpoint** (`CaretBreakpoints.addLogpoint`): *Debug: Add Logpoint…* and a Shift+click on the breakpoint strip
 (`FoldManager.setBreakpointShiftClick` → `EditorBuffer.setGutterLogpointClick`; unset, a Shift+click toggles like a
 plain click) open a one-field form for the log message, with the `{expression}` completion of the full form. OK is
 disabled while the message is blank, so it never leaves a breakpoint that stops; the breakpoint is created only on OK,
@@ -2366,7 +2366,7 @@ are, or which first ones are shown. A filter keeps the rows with the text in a c
 rows, or all shown, on the clipboard as tab-separated text; Open as CSV opens them in a CSV tab; Refresh evaluates the
 expression again in the shown frame (`watch` context) and loads what it is now, and needs a paused program. The table
 is the stop's: it keeps its values after the program goes on. One window per collection asked for
-(`DebugCoordinator.tableWindows`). `DebugTableWindowFxTest` covers it against `FakeDebugAdapter`;
+(`ValueWindows.tableWindows`). `DebugTableWindowFxTest` covers it against `FakeDebugAdapter`;
 `DebugTableProbeFxTest` opens a list of two objects on debugpy (a Python list), java-debug (a `List<Order>`) and Delve
 (a `[]*Order`): two rows, the fields as columns, none of the debuggers' own rows.
 **View as DataFrame / View as Array** (the same menu row, named for the value, in a Python session; PyCharm's data
@@ -2394,7 +2394,7 @@ memory of a program that crashed, or that `gcore` dumped, to look at its threads
 lists the files the process had mapped, the program among them, and `NT_PRPSINFO` the process's name (cut to 15
 characters), which picks the program when it is not the first mapped (`programOf`). Another core — a macOS Mach-O one,
 a Windows minidump — names none, nor does a core whose program has since moved: the program is then asked for
-(`DebugCoordinator.chooseFile`, a test's hook). `languageOf` reads the program's bytes: Go's build information
+(`DebugAttach.chooseFile`, a test's hook). `languageOf` reads the program's bytes: Go's build information
 (`\xff Go buildinf:`, in every Go program since 1.13) is Go, opened on Delve (`"mode": "core"`, `coreFilePath`);
 Rust's library path (`/rustc/`) is Rust, and anything else C/C++, both on CodeLLDB, whose launch has
 `targetCreateCommands: ["target create "<program>" --core "<core>""]` and an empty `processCreateCommands` (nothing
@@ -2658,7 +2658,19 @@ LSP (restarting jdtls when it changed), async-detects python/js, and gates each 
 gutter. `debugEffectiveFor(language)` gates start (java = the jdtls server enabled + available + plugin
 found, via `lspCoordinator.isServerAvailable("java")`; python/js = their enable + detected adapter).
 `DapManager` stays a `MainController` field (built on `lspManager`) and is passed in, mirroring the
-`lspManager`/`LspCoordinator` split. The coordinator holds it as the first session of
+`lspManager`/`LspCoordinator` split.
+
+The coordinator keeps the state and the event sink; the flows hang off it as package-private helpers that each hold it
+(`d`) and are fields of it, one per concern (2026-11-25 split, 9,998 → about 4,600 lines; `SourceFileSizeTest` fails a
+file at 10,000): `DebugFileLaunch` (F5, Debug File, the per-language dispatch, Debug Test at Caret routing),
+`CompiledDebugLaunch` (build-then-debug for Go, Rust, C/C++, C#), `JavaDebugLaunch` (main classes, run configurations,
+build before launch), `PythonDebugLaunch`, `NodeDebugLaunch`, `LaunchJsonSessions` (launch.json, compounds, user
+adapters), `DebugAttach` (Attach, Reattach, Attach to Process, core dumps), `RemoteAttachLaunch`/`RemoteDelveLaunch`,
+`CaretBreakpoints` and `BreakpointMenus` (breakpoint commands, the list, mute, gutter and editor menus),
+`ValuePopups`, `ValueWindows` (Evaluate, View as Table), `ExecutionLine` (the execution line and exception card),
+`DisassemblyMemoryViews`, `JavaCodeChanges` (hot code replace, Restart Frame, Smart Step Into), `MapDebugFollow` (the
+Project Map), and the per-language launches (`DartDebugLaunch`, `ElixirDebugLaunch`, `RubyDebugLaunch`, …). New flows
+go in a helper of their own, not in the coordinator. The coordinator holds it as the first session of
 [`ui/DebugSessions`](../../src/main/java/com/editora/ui/DebugSessions.java). Each
 [`ui/DebugSession`](../../src/main/java/com/editora/ui/DebugSession.java) has its manager, its own `DebugPanel`
 (console, call stack, variables, Debug History) and what the coordinator keeps about it: the launch in progress, its

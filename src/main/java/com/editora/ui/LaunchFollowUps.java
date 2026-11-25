@@ -127,7 +127,7 @@ final class LaunchFollowUps {
     private void startFollowing(LaunchFollowUp f, String name, String uri, java.util.Map<String, Object> body) {
         d.panel().appendNotice(tr("debug.serverReady.starting", name, uri));
         DebugSession server = d.s();
-        d.askInputs(
+        d.launchJson.askInputs(
                 f.parsed.inputs(),
                 com.editora.dap.LaunchJson.inputsUsed(body),
                 0,
@@ -138,7 +138,8 @@ final class LaunchFollowUps {
                     f.childAt = target.runtimeGeneration;
                     d.inSession(
                             target,
-                            () -> d.resolveAndRun(f.launchJson, f.workspace, f.parsed, name, body, answers, f.buffer));
+                            () -> d.launchJson.resolveAndRun(
+                                    f.launchJson, f.workspace, f.parsed, name, body, answers, f.buffer));
                 });
     }
 
@@ -167,7 +168,7 @@ final class LaunchFollowUps {
             return;
         }
         String task = f.postDebugTask;
-        d.preLaunchTask(f.launchJson, f.workspace, task, f.buffer, f.answers, argv -> {
+        d.launchJson.preLaunchTask(f.launchJson, f.workspace, task, f.buffer, f.answers, argv -> {
             if (d.beforeLaunchActive() || d.s().pendingBuild != null) {
                 d.host.setStatus(tr("status.run.busy"));
                 return;

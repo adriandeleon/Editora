@@ -210,7 +210,7 @@ class FirefoxDebugProbeFxTest {
             EditorBuffer js = FxTestSupport.callOnFx(c::activeBuffer);
             FxTestSupport.runOnFx(() -> js.toggleBreakpoint(SCRIPT_LINE));
             LaunchJson.File parsed = LaunchJson.parse(Files.readString(launchJson));
-            FxTestSupport.runOnFx(() -> debug.runLaunchConfiguration(
+            FxTestSupport.runOnFx(() -> debug.launchJson.runLaunchConfiguration(
                     launchJson, site.root(), parsed, parsed.configurations().getFirst(), js));
             awaitStop(c, dap, debug, SCRIPT_LINE, "app.js", dir.resolve("adapter.log"));
             assertEquals("Shelf in Firefox", call(() -> (String) FxTestSupport.field(debug.panel(), "sessionFile")));

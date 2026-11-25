@@ -134,7 +134,7 @@ class TriggeredBreakpointsProbeFxTest {
                             .filter(e -> e.line() == trigger)
                             .findFirst()
                             .orElseThrow());
-            FxTestSupport.runOnFx(() -> debug.linkTriggered(b, waiting, target));
+            FxTestSupport.runOnFx(() -> debug.caretBreakpoints.linkTriggered(b, waiting, target));
             assertTrue(call(() -> b.getBreakpointManager().get(waiting).isTriggered()));
 
             FxTestSupport.runOnFx(() -> ((CommandRegistry) FxTestSupport.field(c, "registry")).run("debug.start"));

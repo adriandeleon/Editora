@@ -128,7 +128,7 @@ final class TestNavigationCoordinator {
             public void debugTests(
                     Path anchor, Path cwd, List<String> pytestIds, List<String> unittestIds, @Nullable String label) {
                 if (host.debugCoordinator() != null) {
-                    host.debugCoordinator().debugPythonTests(anchor, cwd, pytestIds, unittestIds, label);
+                    host.debugCoordinator().python.debugPythonTests(anchor, cwd, pytestIds, unittestIds, label);
                 }
             }
 
@@ -677,15 +677,21 @@ final class TestNavigationCoordinator {
             return;
         }
         // A live or starting debug launch: the same check as F5's — said, or asked about (review 3, A208).
-        if (debug && host.debugCoordinator() != null && !host.debugCoordinator().clearToDebugTest()) {
+        if (debug
+                && host.debugCoordinator() != null
+                && !host.debugCoordinator().fileLaunch.clearToDebugTest()) {
             return;
         }
         // A pytest file's test at the caret is debugged with debugpy running pytest (Fixer D's hunk).
-        if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugPythonTestAtCaret(b, classLevel)) {
+        if (debug
+                && host.debugCoordinator() != null
+                && host.debugCoordinator().python.debugPythonTestAtCaret(b, classLevel)) {
             return;
         }
         // A JavaScript/TypeScript test file's test at the caret is debugged under node --test (review D7).
-        if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugJsTestAtCaret(b)) {
+        if (debug
+                && host.debugCoordinator() != null
+                && host.debugCoordinator().fileLaunch.debugJsTestAtCaret(b)) {
             return;
         }
         // An RSpec example or a Minitest test at the caret is debugged under rdbg: RSpec or Rails by its line.
@@ -707,17 +713,22 @@ final class TestNavigationCoordinator {
             return;
         }
         // A Dart test file's test or group at the caret is debugged on dart (or flutter) debug_adapter --test.
-        if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugDartTestAtCaret(b)) {
+        if (debug
+                && host.debugCoordinator() != null
+                && host.debugCoordinator().fileLaunch.debugDartTestAtCaret(b)) {
             return;
         }
         // A Go test file's test at the caret is debugged under Delve's test mode.
-        if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugGoTestAtCaret(b)) {
+        if (debug
+                && host.debugCoordinator() != null
+                && host.debugCoordinator().fileLaunch.debugGoTestAtCaret(b)) {
             return;
         }
         // A C or C++ test at the caret (GoogleTest, Catch2, doctest): its program debugged, filtered to it.
         if (debug
                 && host.debugCoordinator() != null
                 && host.debugCoordinator()
+                        .fileLaunch
                         .debugCppTestAtCaret(b, () -> runTestAtCaretAfterCsharp(b, classLevel, debug))) {
             return;
         }
@@ -736,7 +747,9 @@ final class TestNavigationCoordinator {
         // A Rust test at the caret is debugged on CodeLLDB: its test binary, filtered to it.
         if (debug
                 && host.debugCoordinator() != null
-                && host.debugCoordinator().debugRustTestAtCaret(b, () -> runJavaTestAtCaret(b, classLevel, debug))) {
+                && host.debugCoordinator()
+                        .fileLaunch
+                        .debugRustTestAtCaret(b, () -> runJavaTestAtCaret(b, classLevel, debug))) {
             return;
         }
         runJavaTestAtCaret(b, classLevel, debug);
@@ -758,17 +771,18 @@ final class TestNavigationCoordinator {
 
     /** Editor context-menu path for a scanned JUnit class/method. */
     void debugSingleTest(com.editora.test.JavaTestScanner.TestTarget target) {
-        if (host.debugCoordinator() != null && !host.debugCoordinator().clearToDebugTest()) {
+        if (host.debugCoordinator() != null
+                && !host.debugCoordinator().fileLaunch.clearToDebugTest()) {
             return; // the editor menu's Debug Test: F5's check (review 3, A208)
         }
         // A pytest test's ▶ (its editor-menu Debug Test): debugpy runs it under pytest (Fixer D's hunk).
         EditorBuffer b = host.activeBuffer();
         if (b != null && b.isPython() && host.debugCoordinator() != null) {
-            host.debugCoordinator().debugPythonGlyph(b, target);
+            host.debugCoordinator().python.debugPythonGlyph(b, target);
             return;
         }
         if (b != null && isCppTest(b) && host.debugCoordinator() != null) {
-            host.debugCoordinator().debugCppGlyph(b, target);
+            host.debugCoordinator().fileLaunch.debugCppGlyph(b, target);
             return;
         }
         for (BuildCoordinator c : host.buildCoordinators()) {

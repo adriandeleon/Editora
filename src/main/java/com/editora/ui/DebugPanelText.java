@@ -85,7 +85,7 @@ final class DebugPanelText {
         if (!supported) {
             return "row.unavailable.cannotRestartFrame";
         }
-        return frame != null && frames != null && DebugCoordinator.canRestartFrame(true, true, frame, frames)
+        return frame != null && frames != null && JavaCodeChanges.canRestartFrame(true, true, frame, frames)
                 ? null
                 : "row.unavailable.bottomFrame";
     }
