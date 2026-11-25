@@ -93,4 +93,51 @@ class ElixirRunTest {
         assertEquals(
                 LaunchRoute.Kind.ELIXIR_LS, LaunchRoute.of(launch, Map.of()).kind(), "launch.json mix_task too");
     }
+
+    /** A Phoenix 1.8 project's {@code mix.exs}, as {@code mix phx.new} writes it (cut down). */
+    private static final String PHOENIX_MIX = """
+            def application do
+              [mod: {Hello.Application, []}, extra_applications: [:logger, :runtime_tools]]
+            end
+            defp deps do
+              [
+                {:phoenix, "~> 1.8.17"},
+                {:phoenix_html, "~> 4.1"},
+                {:bandit, "~> 1.5"}
+              ]
+            end
+            """;
+
+    @Test
+    void aPhoenixProjectsModuleRunsItsWebServer() {
+        ElixirRun.Plan server =
+                plan(ROOT.resolve("lib/hello_web/controllers/page_controller.ex"), -1, project(), PHOENIX_MIX);
+        assertEquals(ElixirRun.Kind.PHOENIX, server.kind());
+        assertEquals(List.of("mix", "phx.server"), server.command());
+        assertEquals("phx.server", server.task());
+        assertEquals(ROOT, server.cwd());
+        assertEquals(
+                ElixirRun.Kind.TESTS,
+                plan(ROOT.resolve("test/hello_web/page_test.exs"), 3, project(), PHOENIX_MIX)
+                        .kind(),
+                "its tests still run as tests");
+        assertEquals(
+                List.of("mix", "run", "priv/repo/seeds.exs"),
+                plan(ROOT.resolve("priv/repo/seeds.exs"), -1, project(), PHOENIX_MIX)
+                        .command(),
+                "and its scripts as scripts");
+        assertEquals(
+                ElixirRun.Kind.MIX_RUN,
+                plan(ROOT.resolve("lib/x.ex"), -1, project(), "[{:phoenix_html, \"~> 4.1\"}]")
+                        .kind(),
+                "phoenix_html alone is not Phoenix");
+
+        Map<String, Object> launch = ElixirLaunch.launch(server);
+        assertEquals("phx.server", launch.get("task"));
+        assertEquals(List.of(), launch.get("taskArgs"));
+        assertEquals(false, launch.get("startApps"));
+        assertEquals(false, launch.get("exitAfterTaskReturns"), "phx.server returns once the server is up");
+        assertFalse(ElixirLaunch.launch(plan(ROOT.resolve("lib/calc.ex"), -1, project(), ""))
+                .containsKey("exitAfterTaskReturns"));
+    }
 }

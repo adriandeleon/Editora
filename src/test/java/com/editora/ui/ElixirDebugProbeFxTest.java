@@ -141,6 +141,92 @@ class ElixirDebugProbeFxTest {
         }
     }
 
+    /**
+     * A Phoenix app made by {@code mix phx.new} (no Ecto, no assets) with its dependencies fetched, its server on
+     * {@code port}; skips without the phx_new archive or the network {@code mix deps.get} needs.
+     */
+    private static Path phoenix(Path dir, int port) throws Exception {
+        Process phx = new ProcessBuilder(ProcessRunner.resolveExecutable(List.of(
+                        "mix",
+                        "phx.new",
+                        "hello",
+                        "--no-ecto",
+                        "--no-assets",
+                        "--no-tailwind",
+                        "--no-esbuild",
+                        "--no-gettext",
+                        "--no-mailer",
+                        "--no-dashboard",
+                        "--install")))
+                .directory(dir.toFile())
+                .redirectErrorStream(true)
+                .redirectOutput(dir.resolve("phx.new.log").toFile())
+                .start();
+        boolean made = phx.waitFor(300, TimeUnit.SECONDS) && phx.exitValue() == 0;
+        assumeTrue(
+                made && Files.isDirectory(dir.resolve("hello/deps/phoenix")),
+                "needs the phx_new archive (mix archive.install hex phx_new) and Hex: "
+                        + Files.readString(dir.resolve("phx.new.log")));
+        Path root = dir.resolve("hello").toRealPath();
+        Path runtime = root.resolve("config/runtime.exs");
+        String text = Files.readString(runtime);
+        assertTrue(text.contains("System.get_env(\"PORT\", \"4000\")"), "the port is read where mix phx.new puts it");
+        Files.writeString(runtime, text.replace("System.get_env(\"PORT\", \"4000\")", "\"" + port + "\""));
+        return root;
+    }
+
+    /** {@code GET url}'s status, or -1 when nothing answers. */
+    private static int get(String url, int seconds) {
+        try {
+            java.net.HttpURLConnection c = (java.net.HttpURLConnection)
+                    java.net.URI.create(url).toURL().openConnection();
+            c.setConnectTimeout(1000);
+            c.setReadTimeout(seconds * 1000);
+            return c.getResponseCode();
+        } catch (java.io.IOException e) {
+            return -1;
+        }
+    }
+
+    @Test
+    void f5OnAPhoenixModuleRunsItsServerAndARequestStopsInTheController(@TempDir Path dir) throws Exception {
+        String configured = assumeElixirLs();
+        int port;
+        try (var socket = new java.net.ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())) {
+            port = socket.getLocalPort();
+        }
+        Path root = phoenix(dir, port);
+        Path controller = root.resolve("lib/hello_web/controllers/page_controller.ex");
+        Window w = open(dir, configured, controller);
+        String home = "http://127.0.0.1:" + port + "/";
+        try {
+            FxTestSupport.runOnFx(() -> w.b.toggleBreakpoint(4)); // render(conn, :home)
+            run(w, "debug.start");
+            await("the session started", 60, () -> call(w.dap::isActive));
+            // The server runs on after phx.server returns: the session must still be there to stop.
+            await("the server up", 240, () -> get(home + "nothing-here", 5) == 404 || !call(w.dap::isActive));
+            assertTrue(call(w.dap::isActive), "the session runs on with the server:\n" + console(w) + "\nstatus: " + status(w));
+            java.util.concurrent.CompletableFuture<Integer> page =
+                    java.util.concurrent.CompletableFuture.supplyAsync(() -> get(home, 120));
+            awaitStop(w, 4, "page_controller.ex");
+            await(
+                    "conn in Variables",
+                    60,
+                    () -> call(() -> {
+                        javafx.scene.control.TreeView<DebugPanel.VarRow> tree =
+                                FxTestSupport.field(w.debug.panel(), "variables");
+                        return tree.getRoot() != null && named(tree.getRoot(), "conn");
+                    }));
+            FxTestSupport.runOnFx(w.dap::resume);
+            assertEquals(200, (int) page.get(120, TimeUnit.SECONDS), "the page, once resumed");
+            FxTestSupport.runOnFx(w.dap::stop);
+            await("the session's end", 60, () -> !call(w.dap::isActive));
+            await("the server's end with it", 60, () -> get(home, 2) == -1);
+        } finally {
+            w.close();
+        }
+    }
+
     @Test
     void aScriptWithNoMixProjectIsRunNotDebugged(@TempDir Path dir) throws Exception {
         String configured = assumeElixirLs();
@@ -258,6 +344,13 @@ class ElixirDebugProbeFxTest {
                             FxTestSupport.field(w.debug.panel(), "variables");
                     return tree.getRoot() != null && find(tree.getRoot(), name, value);
                 }));
+    }
+
+    private static boolean named(javafx.scene.control.TreeItem<DebugPanel.VarRow> item, String name) {
+        if (item.getValue() != null && name.equals(item.getValue().name())) {
+            return true;
+        }
+        return item.getChildren().stream().anyMatch(child -> named(child, name));
     }
 
     private static boolean find(javafx.scene.control.TreeItem<DebugPanel.VarRow> item, String name, String value) {
