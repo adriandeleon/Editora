@@ -115,6 +115,13 @@ In an HTML page, Go to Definition and Ctrl/Cmd-click on an `href` or `src`
 open the file the link names, at the element its `#fragment` names, with or
 without a server; see [Following links](/docs/html#following-links).
 
+Hold Ctrl (Cmd on macOS) over code to see where Ctrl/Cmd-click would go: the
+symbol under the mouse is underlined and the pointer becomes a hand when Go to
+Definition can take you somewhere from there, that is a symbol the language
+server resolves, or an HTML page's `href` or `src`. Click to go there; let go
+of the key and the underline goes away. Nothing is underlined where a click
+would find nothing.
+
 ## Sticky scroll
 
 **Sticky scroll** pins the enclosing scope headers above the viewport, so deep

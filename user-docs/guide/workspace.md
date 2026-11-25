@@ -1346,8 +1346,9 @@ edge resize and snapping all stay the platform's own; only the position of the
 menus changes. The window drags from the
 title in the middle of the bar as well as from its empty parts.
 
-It is **experimental**, off by default, and **applies on restart**, because a
-window's style is fixed once it has been shown. **Linux and Windows only:** on
+It is **on by default** and **applies on restart**, because a window's style
+is fixed once it has been shown. Turn it off for the system title bar with the
+menu bar below it. **Linux and Windows only:** on
 macOS the menus are in the system menu bar, so the checkbox is disabled, with a
 note saying why. Also on the palette as `view.toggleExtendedWindow`.
 

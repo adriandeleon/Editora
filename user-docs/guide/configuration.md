@@ -523,11 +523,9 @@ copy back, provided the file left in its place still holds only defaults.
   `.bak` backups and installed plugins are included. Local History is left out,
   because it holds the text of your files rather than configuration. A dialog
   asks before exporting when there is something sensitive to leave out:
-  - AI API keys kept in the system keychain are never exported. Keys kept in
-    `settings.json`, where there is no keychain, are blank in the exported
-    `settings.json` and its backups unless you tick **Include AI API keys**. A
-    key is a billable credential. When keys were left out, the status bar says
-    so.
+  - AI API keys are never exported: neither the system keychain nor the
+    encrypted `keys/` folder that holds them where there is no keychain (see
+    [Where API keys are kept](/docs/ai#where-api-keys-are-kept)).
   - The HTTP client's response history is left out unless you tick **Include
     HTTP response history**: saved responses hold response bodies and full
     request URLs, which can contain tokens or keys.

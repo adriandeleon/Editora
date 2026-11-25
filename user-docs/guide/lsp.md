@@ -1,6 +1,6 @@
 ---
 title: Language servers (LSP)
-description: Go to definition, code actions, Java refactorings, rename, signature help, inlay hints, code lenses, hierarchy, diagnostics, and completion from 26 language servers.
+description: Go to definition, code actions, Java refactorings, rename, signature help, inlay hints, code lenses, hierarchy, diagnostics, and completion from 29 language servers.
 category: Code intelligence
 order: 2
 ---
@@ -515,7 +515,7 @@ status bar says so, Doctor shows the server as a warning with the reason, and
 
 Editora doesn't ship language servers. It looks for each one on your `PATH` (a
 Settings field can override the command per server) and uses it if present.
-Twenty-six servers are supported:
+Twenty-nine servers are supported:
 
 - **Java** (`jdtls`), **TypeScript / JavaScript** (`typescript-language-server`),
   **Python** (`pyright-langserver`), **Go** (`gopls`), **Rust**
@@ -523,7 +523,8 @@ Twenty-six servers are supported:
 - **Ruby** (`ruby-lsp`), **PHP** (`phpactor`), **Kotlin**
   (JetBrains' Kotlin LSP, `kotlin-lsp`), **Groovy** (`gls`, from gvy), **Clojure** (`clojure-lsp`),
   **Scala** (Metals), **Lua** (`lua-language-server`), **Elixir** (ElixirLS, `elixir-ls`),
-  **PowerShell** ([PowerShell Editor Services](/docs/powershell#code-intelligence), on `pwsh`)
+  **PowerShell** ([PowerShell Editor Services](/docs/powershell#code-intelligence), on `pwsh`),
+  **Dart** ([Dart's analysis server](/docs/dart#code-intelligence), `dart language-server`)
 - **Astro** (`astro-ls`), **HTML** (`vscode-html-language-server`), **CSS**
   (`vscode-css-language-server`), **JSON** (`vscode-json-language-server`),
   **YAML**, **XML** (`lemminx`), **Bash** (`bash-language-server`),
@@ -541,7 +542,9 @@ folder gets dependency, plugin and GAV completion from it while every other XML
 file keeps the fast native lemminx; see
 [pom.xml and the Maven server](/docs/xml#pomxml-and-the-maven-server).
 
-Each server has a card on the **Settings → LSP** page: its enable switch, its
+**Settings → LSP** shows one language's servers at a time: pick it in
+**Language**. A search in Settings ignores the pick and shows every language
+with a match. Each server has a card there: its enable switch, its
 command field with **Browse…**, and a **Detected** line such as *jdtls: found
 (/usr/bin/jdtls)* or *rust-analyzer: not found*, with an **Install…** button
 while it is missing. A command left blank uses the program on your `PATH`. While
@@ -595,6 +598,8 @@ scripts, Maven build extensions, Rust build scripts and proc macros, a
 | Ruby (Ruby LSP) | Waits when the folder has a `Gemfile` or `gems.rb`. |
 | C# (csharp-ls) | Waits when the folder, or a folder up to two levels down, has a solution, a project file or `Directory.Build.props`/`.targets`. |
 | Clojure (clojure-lsp) | Waits when the folder has a `project.clj`, `build.boot` or `shadow-cljs.edn`. A `deps.edn` or `bb.edn` is read as data and does not hold it back. |
+| Dart (analysis server) | Waits when the folder has an `analysis_options.yaml`, which can name analyzer plugins that the server runs. |
+| Elixir (ElixirLS) | Waits when the folder has a `mix.exs`: the server compiles the Mix project, and `mix.exs` is Elixir code. |
 
 A file of one of these languages says so, with **Trust Folder** and **Not
 now**. Trusting the folder (the button, or **Workspace: Trust This Folder**)

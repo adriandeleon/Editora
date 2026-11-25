@@ -12,7 +12,8 @@ Editora debugs [**Java**](/docs/java#debugging), [**Python**](/docs/python#debug
 [**Rust**](/docs/rust#debugging), [**C and C++**](/docs/c-cpp#debugging),
 [**C#**](/docs/csharp#debugging), [**Ruby**](/docs/ruby#debugging),
 [**PHP**](/docs/php#debugging), [**Bash**](/docs/shell#debugging),
-[**Elixir**](/docs/elixir#debugging) and [**PowerShell**](/docs/powershell#debugging) through the Debug Adapter Protocol, with an IntelliJ-style Debug tool window (`M-g d`). Debugging
+[**Elixir**](/docs/elixir#debugging), [**PowerShell**](/docs/powershell#debugging),
+[**Dart and Flutter**](/docs/dart#debugging) and [**Lua**](/docs/lua#debugging) through the Debug Adapter Protocol, with an IntelliJ-style Debug tool window (`M-g d`). Debugging
 is **on by default**, and each language's debugger starts once its adapter is
 found ([Installing adapters](#installing-adapters)); the switch is **Enable
 debugging (DAP)** in **Settings → Debugging**. A project's
@@ -980,6 +981,20 @@ was not there before, such as one just declared, is not highlighted, and a new
 session starts with nothing to compare. Choosing another frame and coming back,
 or setting a value, keeps the highlights of the current stop.
 
+### Autos
+
+At each stop, the end of the Variables view has an **Autos** list, as Visual
+Studio has: open it to see the values of the variables and fields used on the
+line the program stopped at and on the line before. Once you open it, it stays
+open from stop to stop. It works with every debugger Editora runs.
+
+### Return values
+
+When a step leaves a function, Variables shows what the function returned,
+first in the caller's locals, as `(return) name`. This works in Python, and in
+Kotlin, Groovy and Clojure on Editora's own JVM debugger, for the function you
+step out of. JavaScript's debugger shows a "Return value" of its own.
+
 In the Variables tree, the right-click menu has **Copy Value** (a string is
 copied without its quotes and escapes), **Copy Name**, **Copy as Expression**,
 **Add to Watches**, which adds the row's whole expression, such as
@@ -1625,8 +1640,8 @@ Studio and IntelliJ do. Three toggles in the area's header switch between
 **Console** (`debug.showConsoleArea`), **Disassembly** and **Memory**. **Debug: Show Disassembly**
 (`debug.showDisassembly`) and **Debug: Show Memory** (`debug.showMemory`), also
 in **Run ▸ Debugger**, open the Debug window on them. Both views need a
-debugger that offers them: CodeLLDB, which debugs Rust, C and C++, and Delve,
-which debugs Go, do. With another debugger, the view says it can't.
+debugger that offers them: CodeLLDB, which debugs Rust, C and C++, GDB, which
+debugs C and C++, and Delve, which debugs Go, do. With another debugger, the view says it can't.
 
 **Disassembly** shows the machine instructions around the selected frame,
 about 120 of them, with their addresses. The instruction the frame is at is
@@ -1655,6 +1670,23 @@ Enter: an expression shows the memory where its value is. **View Memory**
 opens the view at that variable.
 Memory that can't be read, or an expression with no address, is said in the
 view.
+
+To change memory while the program is paused, double-click a row of the
+Memory view, press F2, or choose **Edit Bytes…** in its right-click menu, and
+type the new bytes, in hexadecimal or as "quoted text". Only the bytes you
+changed are written, and the Memory view and Variables show the new values.
+This works on CodeLLDB, GDB and Delve.
+
+### Instruction breakpoints
+
+In the Disassembly view, click the margin before an instruction's address,
+press F9, or use the row's right-click menu to put a breakpoint on that one
+machine instruction. The program stops there, and the Disassembly view opens
+at it. **Edit Breakpoint…** on the row gives it a condition and a hit count,
+as a line breakpoint has. The Breakpoints list shows the session's
+instruction breakpoints too: Enter opens the Disassembly view at one, and
+Alt+D removes it. An address belongs to one run of the program, so instruction
+breakpoints last for the debug session. They work on CodeLLDB, GDB and Delve.
 
 ## Loaded Sources and Modules
 
@@ -1768,6 +1800,7 @@ listed first. With no `launch.json`, the status bar says so.
 | `rdbg` | rdbg, with `useBundler` for `bundle exec`; an attach connects to a local `debugPort` |
 | `php` | PHP Debug; without a `program`, it listens for Xdebug |
 | `bashdb` | Bash Debug, which launches a script under bashdb; it can't attach |
+| `lua-local` | [Local Lua Debugger](/docs/lua#debugging), which launches its `program` (`lua` and `file`) with its `args`; it can't attach |
 | `PowerShell` | [PowerShell Editor Services](/docs/powershell#debugging), which launches a `script` (a file or a command) with its `args`; it can't attach |
 | `chrome`, `msedge` | vscode-js-debug driving a [browser](/docs/javascript-typescript#debugging-in-a-browser): a launch needs a `url` or a `file`; an attach connects to its `port` |
 
@@ -1987,10 +2020,13 @@ The Java and Python cards on the **Settings → Debugging** page have the same
 vscode-js-debug. The **Go (Delve)** card's **Install…** runs `go install` for
 Delve, the **Rust, C and C++ (CodeLLDB)** card's downloads CodeLLDB, the **C#
 (netcoredbg)** card's downloads netcoredbg, the **Ruby (rdbg)** card's runs
-`gem install` for the debug gem, and the **PHP (Xdebug)** card's downloads PHP
-Debug; see [Debugging Go](/docs/go#debugging), [Debugging Rust](/docs/rust#debugging),
-[Debugging C#](/docs/csharp#debugging), [Debugging Ruby](/docs/ruby#debugging) and
-[Debugging PHP](/docs/php#debugging). An install fetches only what is missing. When one tool's
+`gem install` for the debug gem, the **PHP (Xdebug)** card's downloads PHP
+Debug, and the **Lua (local-lua-debugger)** card's downloads Local Lua
+Debugger; Dart's debugger comes with the Dart SDK. See
+[Debugging Go](/docs/go#debugging), [Debugging Rust](/docs/rust#debugging),
+[Debugging C#](/docs/csharp#debugging), [Debugging Ruby](/docs/ruby#debugging),
+[Debugging PHP](/docs/php#debugging), [Debugging Lua](/docs/lua#debugging) and
+[Debugging Dart](/docs/dart#debugging). An install fetches only what is missing. When one tool's
 runtime is missing, the others still install and the status bar names the one
 that waits (debugpy installs without Node.js, for example). When Python has no
 `pip`, the error says so. After a debugger installs while debugging is off, the
