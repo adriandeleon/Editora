@@ -119,4 +119,65 @@ class RubyAppsTest {
         assertFalse(RubyApps.isMinitest("test_helper.rb", "require 'minitest'"), "no test class");
         assertFalse(RubyApps.isMinitest("calc.rb", MINITEST));
     }
+
+    @Test
+    void aRackAppsFilesServeItUnderRackupOnTheFirstFreePort() {
+        Set<Path> sinatra = Set.of(ROOT.resolve("Gemfile"), ROOT.resolve("Gemfile.lock"), ROOT.resolve("config.ru"));
+        for (String file : List.of("config.ru", "app.rb", "app/routes/hello.rb", "config/puma.rb")) {
+            RubyApps.Plan plan = RubyApps.plan(
+                    ROOT.resolve(file),
+                    "require 'sinatra'\n",
+                    List.of(),
+                    -1,
+                    null,
+                    ROOT,
+                    new RubyApps.Lookups(sinatra::contains, p -> p >= 9293));
+            assertEquals(RubyApps.Kind.RACK_SERVER, plan.kind(), file);
+            assertEquals(
+                    List.of("bundle", "exec", "ruby", "-e", RubyApps.RACKUP, "--", "-p", "9293", "-o", "127.0.0.1"),
+                    plan.command(),
+                    file);
+            assertEquals(ROOT, plan.cwd());
+            assertEquals("http://127.0.0.1:9293", plan.url());
+        }
+        assertEquals(
+                RubyApps.Kind.SCRIPT,
+                plan(ROOT.resolve("lib/seed.rb"), "puts 1", -1, null, sinatra).kind(),
+                "a script elsewhere runs as itself");
+        assertEquals(
+                RubyApps.Kind.RSPEC,
+                plan(ROOT.resolve("spec/app_spec.rb"), "", -1, null, sinatra).kind(),
+                "and a spec as a spec");
+        assertEquals(
+                List.of("ruby", "-e", RubyApps.RACKUP, "--", "-p", "9292", "-o", "127.0.0.1"),
+                RubyApps.plan(
+                                ROOT.resolve("app.rb"),
+                                "",
+                                List.of(),
+                                -1,
+                                null,
+                                ROOT,
+                                new RubyApps.Lookups(
+                                        Set.of(ROOT.resolve("Gemfile"), ROOT.resolve("config.ru"))::contains,
+                                        p -> true))
+                        .command(),
+                "no bundle installed: rackup itself, on rackup's own port");
+        assertEquals(
+                RubyApps.Kind.SCRIPT,
+                plan(ROOT.resolve("app.rb"), "", -1, null, Set.of(ROOT.resolve("Gemfile")))
+                        .kind(),
+                "no config.ru: not a Rack app");
+        Set<Path> railsWithRackup = new java.util.HashSet<>(rails());
+        railsWithRackup.add(ROOT.resolve("config.ru"));
+        assertEquals(
+                RubyApps.Kind.RAILS_SERVER,
+                plan(ROOT.resolve("config.ru"), "", -1, null, railsWithRackup).kind(),
+                "a Rails app's config.ru is Rails's");
+    }
+
+    @Test
+    void aConfigRuIsRuby() {
+        assertEquals("ruby", com.editora.text.LanguageRegistry.forFileName("config.ru"));
+        assertTrue(com.editora.editor.highlight.GrammarRegistry.shared().hasGrammarFor("config.ru"));
+    }
 }

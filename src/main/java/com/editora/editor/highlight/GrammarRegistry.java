@@ -415,7 +415,7 @@ public final class GrammarRegistry {
         mapExtensions("source.scala", "scala", "sc", "sbt", "mill");
         // Clojure, ClojureScript, shared .cljc (and the older .cljx), EDN data files and Babashka scripts.
         mapExtensions("source.clojure", "clj", "cljs", "cljc", "cljx", "edn", "bb"); // .bb: a Babashka script
-        mapExtensions("source.ruby", "rb", "rake", "gemspec");
+        mapExtensions("source.ruby", "rb", "rake", "gemspec", "ru"); // .ru: a Rack app's config.ru
         mapExtensions("source.elixir", "ex", "exs");
         mapExtensions("source.c", "c", "h");
         mapExtensions("source.cpp", "cpp", "cc", "cxx", "c++", "hpp", "hh", "hxx", "h++", "ipp", "inl");
