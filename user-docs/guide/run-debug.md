@@ -12,7 +12,8 @@ particular to one language is on its page under **Languages** in the sidebar.
 ## Running files
 
 You can run single-file Java programs, Python scripts, Node.js scripts, shell scripts,
-Groovy scripts, Kotlin files, Clojure files, Scala files and PHP files with
+Groovy scripts, Kotlin files, Clojure files, Scala files, PHP files, Dart
+files and C, C++, Go and Rust programs with
 [language services](/docs/lsp) disabled. A green ▶ appears in the gutter of a
 runnable file:
 
@@ -55,6 +56,14 @@ runnable file:
 - a **PHP** script with code of its own, a web app's `index.php`, Laravel's
   `artisan` (the ▶ on the first line), or a PHPUnit test file (the ▶ on its
   class). A file of classes alone gets none. See [PHP files](/docs/php#running-php-files).
+- a **C, C++, Go or Rust** program: a lone C or C++ file, or one of a CMake or
+  Make project, with a `main`; a Go file of `package main` (or a Go test file);
+  a Rust file of a Cargo package with a `main`. Run File builds it as
+  [Debug File](/docs/debugging) does (`cc -g -O0` for a lone C file, the
+  project's own build otherwise) and runs the program in the Run console, with
+  its output and exit code.
+- a **Dart** file with a top-level `main`, run with `dart run`, or with
+  `flutter run` in a Flutter app. See [Dart](/docs/dart#running).
 
 Click the ▶, use the right-click *Run File*, or bind `file.run` (`C-c r`). Output
 streams to the **Run** tool window (`M-9`), which accepts **stdin** so

@@ -94,6 +94,19 @@ Help:
 - **[FAQ](/docs/faq)**, **[Command line](/docs/cli)**, and
   **[Troubleshooting](/docs/troubleshooting)**.
 
+## This guide inside Editora
+
+**Help ▸ Documentation** (`help.documentation`) opens this guide in your
+browser from the copy that ships inside Editora: the same pages as the website,
+with their pictures, search and every command's page, for the version you are
+running, and without a network connection. A command's page from the
+Command Palette (the help key its footer names, on the selected command), the
+*Help for* links in Settings and Pauta Conformance open it too. Links to pages it
+doesn't hold, such as the news, go to the website. **Help ▸ Online
+Documentation** (`help.onlineDocumentation`) opens the website's copy for your
+version instead. A build that carries no copy, such as one built from source
+without the website next to it, opens the website for both.
+
 ## Reference
 
 - **[Commands](/commands)**: every command, grouped by area.

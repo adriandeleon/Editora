@@ -641,3 +641,11 @@ history".
 
 Cookies last for one run: Run All shares them between its requests, and a
 request run on its own starts without any.
+
+## From the command line
+
+`editora http api.http` runs a file's requests without a window, as Run All
+does, and prints each response and test result, for CI and scripts. Its
+options choose the environment, set variables, and write a JUnit XML report;
+it exits with 1 when a request or a test fails. See
+[Running .http files](/docs/cli#running-http-files).
