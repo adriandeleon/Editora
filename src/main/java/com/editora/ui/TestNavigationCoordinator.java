@@ -718,7 +718,8 @@ final class TestNavigationCoordinator {
         if (debug
                 && host.debugCoordinator() != null
                 && host.debugCoordinator()
-                        .debugCppTestAtCaret(b, () -> runTestAtCaretAfterCsharp(b, classLevel, debug))) {
+                        .cppTests
+                        .debugAtCaret(b, () -> runTestAtCaretAfterCsharp(b, classLevel, debug))) {
             return;
         }
         // A C# test at the caret: dotnet test runs it, its host waiting, and netcoredbg attaches to it.
@@ -768,7 +769,7 @@ final class TestNavigationCoordinator {
             return;
         }
         if (b != null && isCppTest(b) && host.debugCoordinator() != null) {
-            host.debugCoordinator().debugCppGlyph(b, target);
+            host.debugCoordinator().cppTests.debugGlyph(b, target);
             return;
         }
         for (BuildCoordinator c : host.buildCoordinators()) {
