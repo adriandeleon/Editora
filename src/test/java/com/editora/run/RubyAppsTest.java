@@ -48,9 +48,17 @@ class RubyAppsTest {
         String text = "class HelloControllerTest < ActionDispatch::IntegrationTest\nend\n";
         RubyApps.Plan plan = plan(test, text, 8, "test_x", rails());
         assertEquals(RubyApps.Kind.MINITEST, plan.kind());
+        // Under the bundle: rdbg's own json, loaded first, must not beat the Gemfile.lock's (CI, system Ruby 3.3).
         assertEquals(
-                List.of("ruby", "bin/rails", "test", "test/controllers/hello_controller_test.rb:9"), plan.command());
+                List.of("bundle", "exec", "ruby", "bin/rails", "test", "test/controllers/hello_controller_test.rb:9"),
+                plan.command());
         assertEquals(ROOT, plan.cwd());
+        Set<Path> notInstalled = new java.util.HashSet<>(rails());
+        notInstalled.remove(ROOT.resolve("Gemfile.lock"));
+        assertEquals(
+                List.of("ruby", "bin/rails", "test", "test/controllers/hello_controller_test.rb:9"),
+                plan(test, text, 8, "test_x", notInstalled).command(),
+                "bundle install not run");
     }
 
     @Test
@@ -70,7 +78,9 @@ class RubyAppsTest {
                 List.of("app/controllers/hello_controller.rb", "config/routes.rb", "config.ru", "bin/rails")) {
             RubyApps.Plan plan = plan(ROOT.resolve(file), "class X\nend\n", -1, null, rails());
             assertEquals(RubyApps.Kind.RAILS_SERVER, plan.kind(), file);
-            assertEquals(List.of("ruby", "bin/rails", "server", "-p", "3001", "-b", "127.0.0.1"), plan.command());
+            assertEquals(
+                    List.of("bundle", "exec", "ruby", "bin/rails", "server", "-p", "3001", "-b", "127.0.0.1"),
+                    plan.command());
             assertEquals(ROOT, plan.cwd());
             assertEquals("http://127.0.0.1:3001", plan.url());
         }

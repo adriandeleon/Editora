@@ -149,13 +149,26 @@ class ServerReadyProbeFxTest {
             await("the browser's session", 90, () -> call(() -> debug.sessions().size()) == 2);
             DebugSession page = call(() -> debug.sessions().all().getLast());
             assertNotSame(server, page);
+            boolean[] live = {false};
             await(
                     "a stop in the page's script",
                     90,
-                    () -> call(() -> page.dap.state() == DapManager.State.SUSPENDED
-                            && !page.panel.callStack().isEmpty()
-                            && page.panel.callStack().getFirst().line() == SCRIPT_LINE),
-                    () -> console(server) + "\n---\n" + console(page));
+                    () -> {
+                        // A page session that has ended stops nowhere: say so now rather than wait the rest out.
+                        DapManager.State state = call(page.dap::state);
+                        if (live[0] && state == DapManager.State.INACTIVE) {
+                            throw new AssertionError("the page's session ended before it stopped");
+                        }
+                        live[0] |= state != DapManager.State.INACTIVE;
+                        return call(() -> state == DapManager.State.SUSPENDED
+                                && !page.panel.callStack().isEmpty()
+                                && page.panel.callStack().getFirst().line() == SCRIPT_LINE);
+                    },
+                    () -> "page " + call(page.dap::state) + ", " + top(page) + "; "
+                            + call(() -> debug.sessions().size())
+                            + " sessions\nstatus messages (newest first): "
+                            + call(() -> BrowserDebugProbeFxTest.status(c)) + "\n" + console(server) + "\n---\n"
+                            + console(page));
             assertTrue(console(server).contains("http://localhost:"), console(server));
             assertEquals(browser.equals("edge") ? "Edge" : "Chrome", call(() -> page.sessionLabel));
 
@@ -178,6 +191,15 @@ class ServerReadyProbeFxTest {
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    /** The session's top frame, or "no frames". FX-safe. */
+    private static String top(DebugSession session) {
+        return call(() -> session.panel.callStack().isEmpty()
+                ? "no frames"
+                : session.panel.callStack().getFirst().name() + " at "
+                        + session.panel.callStack().getFirst().file() + ":"
+                        + (session.panel.callStack().getFirst().line() + 1));
     }
 
     private static String console(DebugSession session) {

@@ -27,6 +27,11 @@ import org.jspecify.annotations.Nullable;
  * Probed under rdbg 1.11 ({@code rdbg --command}) with Ruby 4.0, RSpec 3.13 and Rails 8.1: breakpoints stop in a spec,
  * in a controller under {@code bin/rails test file:line}, in a request to {@code bin/rails server}, and under {@code
  * bundle exec} with no {@code debug} gem in the bundle.
+ *
+ * <p>{@code bin/rails} sets the bundle up itself, but under rdbg that is too late: rdbg's DAP server loads Ruby's
+ * built-in {@code json} first, and a bundle that locks another {@code json} then refuses to start ("You have already
+ * activated json 2.7.2, but your Gemfile requires json 3.2.0", system Ruby 3.3). {@code bundle exec} puts {@code
+ * -rbundler/setup} ahead of what rdbg adds to {@code RUBYOPT}, so a Rails app runs under it like everything else.
  */
 public final class RubyApps {
 
@@ -115,6 +120,9 @@ public final class RubyApps {
         }
         if (isMinitest(name, text)) {
             if (app != null) {
+                if (bundled) {
+                    command.addAll(List.of("bundle", "exec"));
+                }
                 command.addAll(
                         List.of("ruby", "bin/rails", "test", relative(app, abs) + (line >= 0 ? ":" + (line + 1) : "")));
                 command.addAll(args);
@@ -134,6 +142,9 @@ public final class RubyApps {
         if (app != null && servesRails(app, abs)) {
             int port = port(look.portFree());
             String address = HOST + ":" + port;
+            if (bundled) {
+                command.addAll(List.of("bundle", "exec"));
+            }
             command.addAll(List.of("ruby", "bin/rails", "server", "-p", String.valueOf(port), "-b", HOST));
             command.addAll(args);
             return new Plan(Kind.RAILS_SERVER, command, app, "http://" + address);
