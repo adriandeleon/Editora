@@ -292,6 +292,13 @@ final class Chrome {
             java.util.Set.of("file.saveAsAdmin", "view.toggleAdminSave");
 
     /**
+     * The switches for the in-window menu bar: hiding it, and drawing it in the title bar. On macOS the menu
+     * belongs to the system menu bar, so neither has anything to act on.
+     */
+    private static final java.util.Set<String> WINDOW_MENU_BAR_COMMANDS =
+            java.util.Set.of("view.toggleMenuBar", "view.toggleExtendedWindow");
+
+    /**
      * Why operating system {@code os} cannot serve command {@code id}, or null when it can. Such a command is
      * registered and listed on every OS all the same: it is grayed where it cannot run, with this as the reason,
      * never left out. Pure.
@@ -299,6 +306,9 @@ final class Chrome {
     static @Nullable DisabledReason osReason(String id, com.editora.Os.Kind os) {
         if (ADMIN_SAVE_COMMANDS.contains(id) && !com.editora.process.ElevatedSave.supportedOnOs(os)) {
             return new DisabledReason("palette.disabled.adminSaveWindows", null);
+        }
+        if (WINDOW_MENU_BAR_COMMANDS.contains(id) && !ExtendedWindow.supportedOn(os)) {
+            return new DisabledReason("palette.disabled.systemMenuBarMac", null);
         }
         return null;
     }
