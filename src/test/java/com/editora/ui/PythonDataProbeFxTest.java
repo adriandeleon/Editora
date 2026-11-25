@@ -141,7 +141,7 @@ class PythonDataProbeFxTest {
             assertEquals("23", call(() -> grid.table().getItems().getLast().cell("3")));
 
             FxTestSupport.runOnFx(() -> {
-                debug.tableWindows().forEach(DebugTableWindow::hide);
+                debug.valueWindows.tableWindows().forEach(DebugTableWindow::hide);
                 dap.stop();
             });
             await("stopped", 60, () -> !call(dap::isActive));
@@ -152,10 +152,13 @@ class PythonDataProbeFxTest {
 
     /** Opens the Variables menu's row {@code key} on {@code name}, and the window it opens. */
     private static DebugTableWindow open(DebugCoordinator debug, String name, String key) throws Exception {
-        int before = call(() -> debug.tableWindows().size());
+        int before = call(() -> debug.valueWindows.tableWindows().size());
         FxTestSupport.runOnFx(() -> menuItem(debug, name, key).fire());
-        await(name + "'s table", 30, () -> call(() -> debug.tableWindows().size() > before));
-        return call(() -> debug.tableWindows().getLast());
+        await(
+                name + "'s table",
+                30,
+                () -> call(() -> debug.valueWindows.tableWindows().size() > before));
+        return call(() -> debug.valueWindows.tableWindows().getLast());
     }
 
     private static List<String> headers(DebugTableWindow w) {

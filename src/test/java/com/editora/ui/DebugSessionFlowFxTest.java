@@ -279,8 +279,8 @@ class DebugSessionFlowFxTest {
 
         // A stop at file line 24 is the region's line 4, and Run to Cursor from there names file line 24.
         DapModels.StackFrameInfo frame = new DapModels.StackFrameInfo(1, "f", file, 24, 0);
-        FxTestSupport.runOnFx(
-                () -> FxTestSupport.call(debug, "highlightFrame", new Class[] {DapModels.StackFrameInfo.class}, frame));
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                debug.execLine, "highlightFrame", new Class[] {DapModels.StackFrameInfo.class}, frame));
         FxTestSupport.drainFx();
         assertEquals(
                 List.of("exec-line"),
@@ -290,7 +290,7 @@ class DebugSessionFlowFxTest {
                 () -> (Integer) FxTestSupport.call(debug, "fileLineAtCaret", new Class[] {EditorBuffer.class}, b)));
 
         FxTestSupport.runOnFx(() -> {
-            FxTestSupport.call(debug, "clearExecHighlight", new Class[] {});
+            FxTestSupport.call(debug.execLine, "clearExecHighlight", new Class[] {});
             b.widen();
         });
         assertEquals(List.of(4, 21, 24), sentLines(file));

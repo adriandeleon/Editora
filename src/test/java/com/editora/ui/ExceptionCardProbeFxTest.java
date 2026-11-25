@@ -102,7 +102,8 @@ class ExceptionCardProbeFxTest {
             FxTestSupport.runOnFx(() -> ((CommandRegistry) FxTestSupport.field(c, "registry")).run("debug.start"));
             awaitStop(dap, THROW_LINE, debug);
             awaitCard(debug, "negative: -1");
-            DapModels.ExceptionInfo caught = call(() -> debug.exceptionCard().shown());
+            DapModels.ExceptionInfo caught =
+                    call(() -> debug.execLine.exceptionCard().shown());
             assertEquals("java.lang.IllegalArgumentException", caught.type());
             assertTrue(caught.caught(), "java-debug says always for a caught exception");
             assertEquals(tr("debug.exceptionCard.caught"), title(debug));
@@ -110,19 +111,23 @@ class ExceptionCardProbeFxTest {
 
             // Don't Stop on Caught Exceptions: the card closes and the caught stops are off.
             FxTestSupport.runOnFx(() -> caughtOff(debug).fire());
-            await("the card closed", 10, () -> !call(() -> debug.exceptionCard().isShowing()));
+            await(
+                    "the card closed",
+                    10,
+                    () -> !call(() -> debug.execLine.exceptionCard().isShowing()));
             assertFalse(call(() -> debug.exceptionToggleOn(true)));
 
             FxTestSupport.runOnFx(dap::resume);
             awaitCard(debug, "negative: -2"); // the uncaught one, on the same line
-            DapModels.ExceptionInfo uncaught = call(() -> debug.exceptionCard().shown());
+            DapModels.ExceptionInfo uncaught =
+                    call(() -> debug.execLine.exceptionCard().shown());
             assertTrue(uncaught.uncaught());
             assertEquals(tr("debug.exceptionCard.uncaught"), title(debug));
             assertFalse(call(() -> caughtOff(debug).isVisible()), "nothing to turn off for an uncaught one");
 
             FxTestSupport.runOnFx(dap::stop);
             await("stopped", 20, () -> !call(dap::isActive));
-            assertFalse(call(() -> debug.exceptionCard().isShowing()), "the session's end closes it");
+            assertFalse(call(() -> debug.execLine.exceptionCard().isShowing()), "the session's end closes it");
         } finally {
             fx.dispose();
         }
@@ -134,7 +139,7 @@ class ExceptionCardProbeFxTest {
                     "the card for " + message,
                     60,
                     () -> call(() -> {
-                        DebugExceptionCard card = debug.exceptionCard();
+                        DebugExceptionCard card = debug.execLine.exceptionCard();
                         return card != null
                                 && card.isShowing()
                                 && card.shown() != null
@@ -142,7 +147,7 @@ class ExceptionCardProbeFxTest {
                     }));
         } catch (AssertionError e) {
             String state = call(() -> {
-                DebugExceptionCard card = debug.exceptionCard();
+                DebugExceptionCard card = debug.execLine.exceptionCard();
                 return card == null ? "no card" : "showing=" + card.isShowing() + " shown=" + card.shown();
             });
             throw new AssertionError(e.getMessage() + " (" + state + ")", e);
@@ -150,11 +155,11 @@ class ExceptionCardProbeFxTest {
     }
 
     private static String title(DebugCoordinator debug) {
-        return call(() -> ((Label) debug.exceptionCard().card().lookup(".debug-exception-title")).getText());
+        return call(() -> ((Label) debug.execLine.exceptionCard().card().lookup(".debug-exception-title")).getText());
     }
 
     private static Button caughtOff(DebugCoordinator debug) {
-        for (Node n : debug.exceptionCard().card().lookupAll(".button")) {
+        for (Node n : debug.execLine.exceptionCard().card().lookupAll(".button")) {
             if (n instanceof Button b && tr("debug.exceptionCard.caughtOff").equals(b.getText())) {
                 return b;
             }

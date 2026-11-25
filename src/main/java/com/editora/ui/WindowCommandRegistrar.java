@@ -2395,7 +2395,7 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.threadDump",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::threadDump)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().stacks::threadDump)));
         host.registry()
                 .register(Command.of(
                         "debug.stepBack", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::stepBack)));
@@ -2410,11 +2410,11 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.parallelStacks",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::parallelStacks)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().stacks::parallelStacks)));
         host.registry()
                 .register(Command.of(
                         "debug.showException",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::showException)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().execLine::showException)));
         host.registry()
                 .register(Command.of(
                         "debug.pinValue",
@@ -2425,11 +2425,12 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.evaluate",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::evaluateExpression)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().valueWindows::evaluateExpression)));
         host.registry()
                 .register(Command.of(
                         "debug.focusEvaluate",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::focusEvaluate)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().valueWindows::focusEvaluate)));
         host.registry()
                 .register(Command.of(
                         "debug.endProgramInput",
@@ -2465,10 +2466,12 @@ final class WindowCommandRegistrar {
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::setSelectedValue)));
         host.registry()
                 .register(Command.of(
-                        "debug.stepOver", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::stepOver)));
+                        "debug.stepOver",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().lowLevel::stepOver)));
         host.registry()
                 .register(Command.of(
-                        "debug.stepInto", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::stepInto)));
+                        "debug.stepInto",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().lowLevel::stepInto)));
         host.registry()
                 .register(Command.of(
                         "debug.stepOut", () -> host.debugCoordinator().ifDebug(host.dapManager()::stepOut)));
@@ -2497,22 +2500,25 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "debug.stepOverInstruction",
                         () -> host.debugCoordinator()
-                                .ifDebug(() -> host.debugCoordinator().stepInstruction(false))));
+                                .ifDebug(() -> host.debugCoordinator().lowLevel.stepInstruction(false))));
         host.registry()
                 .register(Command.of(
                         "debug.stepIntoInstruction",
                         () -> host.debugCoordinator()
-                                .ifDebug(() -> host.debugCoordinator().stepInstruction(true))));
+                                .ifDebug(() -> host.debugCoordinator().lowLevel.stepInstruction(true))));
         host.registry()
                 .register(Command.of(
                         "debug.showDisassembly",
                         () -> host.debugCoordinator()
-                                .ifDebug(() -> host.debugCoordinator().showLowLevelView(DebugPanel.AREA_DISASSEMBLY))));
+                                .ifDebug(() -> host.debugCoordinator()
+                                        .lowLevel
+                                        .showLowLevelView(DebugPanel.AREA_DISASSEMBLY))));
         host.registry()
                 .register(Command.of(
                         "debug.showMemory",
                         () -> host.debugCoordinator()
-                                .ifDebug(() -> host.debugCoordinator().showLowLevelView(DebugPanel.AREA_MEMORY))));
+                                .ifDebug(() ->
+                                        host.debugCoordinator().lowLevel.showLowLevelView(DebugPanel.AREA_MEMORY))));
         host.registry()
                 .register(Command.of(
                         "debug.toggleBreakpoint",

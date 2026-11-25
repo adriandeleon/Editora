@@ -180,7 +180,7 @@ class EvaluateProbeFxTest {
                     "PROBE " + language + " fragment failed=" + fragmentRow.failed() + " value=" + fragmentRow.value());
 
             // The Evaluate window, in the same frame.
-            DebugEvaluateWindow window = call(() -> debug.openEvaluateWindow(size));
+            DebugEvaluateWindow window = call(() -> debug.valueWindows.openEvaluateWindow(size));
             FxTestSupport.runOnFx(() -> window.evaluate(size));
             await(
                     "the window's result",

@@ -77,7 +77,7 @@ class DebugThreadDumpWindowFxTest {
     @AfterEach
     void endSession() throws Exception {
         FxTestSupport.runOnFx(() -> {
-            DebugThreadDumpWindow window = debug.threadDumpWindowIfOpen();
+            DebugThreadDumpWindow window = debug.stacks.threadDumpWindow;
             if (window != null) {
                 window.hide();
             }
@@ -140,10 +140,10 @@ class DebugThreadDumpWindowFxTest {
         await(
                 "the Thread Dump window",
                 () -> call(() -> {
-                    DebugThreadDumpWindow w = debug.threadDumpWindowIfOpen();
+                    DebugThreadDumpWindow w = debug.stacks.threadDumpWindow;
                     return w != null && w.isShowing() && w.dump() != null;
                 }));
-        return call(debug::threadDumpWindowIfOpen);
+        return call(() -> debug.stacks.threadDumpWindow);
     }
 
     /** The rows' first thread names, in order. */
@@ -275,7 +275,7 @@ class DebugThreadDumpWindowFxTest {
         // ifDebug may refuse first (debugging off); with it on, the coordinator answers — in the command's own FX
         // turn, so what it did shows once what that turn queued has run.
         FxTestSupport.drainFx();
-        DebugThreadDumpWindow w = call(debug::threadDumpWindowIfOpen);
+        DebugThreadDumpWindow w = call(() -> debug.stacks.threadDumpWindow);
         assertTrue(w == null || !call(w::isShowing), "no window without a session");
     }
 

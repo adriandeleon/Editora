@@ -144,9 +144,9 @@ class LowLevelViewsFxTest {
         session.stop(1, "breakpoint");
         await(
                 "the instructions",
-                () -> call(() -> disassembly.list().getItems().size()) == DebugCoordinator.DISASSEMBLY_COUNT);
+                () -> call(() -> disassembly.list().getItems().size()) == DisassemblyMemoryViews.DISASSEMBLY_COUNT);
         assertEquals(
-                DebugCoordinator.DISASSEMBLY_BEFORE,
+                DisassemblyMemoryViews.DISASSEMBLY_BEFORE,
                 call(() -> disassembly.list().getSelectionModel().getSelectedIndex()),
                 "the instruction pointer's row");
         assertEquals(
@@ -154,7 +154,7 @@ class LowLevelViewsFxTest {
                 session.disassembles.getLast().getMemoryReference(),
                 "from the frame's instruction pointer");
         assertEquals(
-                -DebugCoordinator.DISASSEMBLY_BEFORE,
+                -DisassemblyMemoryViews.DISASSEMBLY_BEFORE,
                 session.disassembles.getLast().getInstructionOffset());
 
         // F10 with the keyboard in the view: one instruction; elsewhere: one line.
@@ -179,8 +179,8 @@ class LowLevelViewsFxTest {
         stopAgain(session);
 
         // Double-clicking an instruction opens its source line.
-        FxTestSupport.runOnFx(
-                () -> FxTestSupport.call(debug, "openSourceLine", new Class<?>[] {Path.class, int.class}, file, 2));
+        FxTestSupport.runOnFx(() ->
+                FxTestSupport.call(debug.lowLevel, "openSourceLine", new Class<?>[] {Path.class, int.class}, file, 2));
         assertEquals(2, call(() -> fx.controller.activeBuffer().getFocusedArea().getCurrentParagraph()));
 
         // View Memory on a variable, then the next page, then an expression with no address and an unreadable one.
@@ -252,9 +252,9 @@ class LowLevelViewsFxTest {
         DebugDisassemblyView view = call(() -> debug.panel().disassemblyView());
         await(
                 "the instructions",
-                () -> call(() -> view.list().getItems().size()) == DebugCoordinator.DISASSEMBLY_COUNT);
+                () -> call(() -> view.list().getItems().size()) == DisassemblyMemoryViews.DISASSEMBLY_COUNT);
         assertTrue(call(manager::supportsInstructionBreakpoints));
-        int ipRow = DebugCoordinator.DISASSEMBLY_BEFORE;
+        int ipRow = DisassemblyMemoryViews.DISASSEMBLY_BEFORE;
         String next = call(() -> view.list().getItems().get(ipRow + 1).address());
 
         // The row's Toggle Breakpoint: on, then off; each time the adapter is given the whole set.
@@ -350,7 +350,7 @@ class LowLevelViewsFxTest {
         DebugDisassemblyView view = call(() -> debug.panel().disassemblyView());
         await(
                 "the instructions",
-                () -> call(() -> view.list().getItems().size()) == DebugCoordinator.DISASSEMBLY_COUNT);
+                () -> call(() -> view.list().getItems().size()) == DisassemblyMemoryViews.DISASSEMBLY_COUNT);
         return view;
     }
 
@@ -359,7 +359,7 @@ class LowLevelViewsFxTest {
         // An adapter that takes no conditions: Edit Breakpoint… says so.
         FakeDebugAdapter.Session[] s = new FakeDebugAdapter.Session[1];
         DebugDisassemblyView view = stopWithDisassembly(s);
-        int row = DebugCoordinator.DISASSEMBLY_BEFORE + 1;
+        int row = DisassemblyMemoryViews.DISASSEMBLY_BEFORE + 1;
         assertTrue(call(() -> {
             view.list().getSelectionModel().clearAndSelect(row);
             return view.toggleSelected();
@@ -611,7 +611,8 @@ class LowLevelViewsFxTest {
             run("debug.showDisassembly");
             assertEquals(tr("debugpanel.disassembly.unsupported"), placeholder(disassembly.list()));
             run("debug.showMemory");
-            FxTestSupport.runOnFx(() -> FxTestSupport.call(debug, "memoryGo", new Class<?>[] {String.class}, "0x10"));
+            FxTestSupport.runOnFx(
+                    () -> FxTestSupport.call(debug.lowLevel, "memoryGo", new Class<?>[] {String.class}, "0x10"));
             assertEquals(tr("debugpanel.memory.unsupported"), placeholder(memory.rowList()));
             DebugPanel.Actions actions = FxTestSupport.field(debug.panel(), "actions");
             assertTrue(!call(actions::canViewMemory), "no View Memory on a variable");

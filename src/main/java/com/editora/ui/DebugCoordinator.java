@@ -340,7 +340,8 @@ final class DebugCoordinator {
     private List<String> appliedDebugBundles = List.of();
 
     /** The buffer currently carrying the execution-line highlight (cleared on resume/terminate). */
-    private @Nullable EditorBuffer execHighlightBuffer;
+    @Nullable
+    EditorBuffer execHighlightBuffer;
 
     /** The buffer currently carrying inline values + an active hover (cleared on resume/terminate). */
     private @Nullable EditorBuffer debugValuesBuffer;
@@ -433,7 +434,7 @@ final class DebugCoordinator {
     /** Python launches: Run's plan for debugpy, and Debug of a Python run configuration. */
     final PythonDebugLaunch python = new PythonDebugLaunch(this);
 
-    private final InstructionBreakpoints instructionBreakpoints = new InstructionBreakpoints(this);
+    final InstructionBreakpoints instructionBreakpoints = new InstructionBreakpoints(this);
     private final MemoryEdits memoryEdits = new MemoryEdits(this);
 
     final DartDebugLaunch dart = new DartDebugLaunch(this); // Dart, and a Flutter app's Dart
@@ -457,6 +458,9 @@ final class DebugCoordinator {
     final MapDebugFollow mapFollow = new MapDebugFollow(this); // the Project Map: stops, card breakpoint strips
     final CaretBreakpoints caretBreakpoints = new CaretBreakpoints(this); // breakpoint commands on the caret line
     final JavaCodeChanges javaCode = new JavaCodeChanges(this); // hot code replace, Restart Frame, Smart Step Into
+    final DisassemblyMemoryViews lowLevel = new DisassemblyMemoryViews(this); // Disassembly, Memory, steps
+    final ExecutionLine execLine = new ExecutionLine(this); // the execution line in the editor and its exception card
+    final ValueWindows valueWindows = new ValueWindows(this); // the Evaluate and View as Table windows
 
     /** The build facts a launch asks: looked at off the FX thread first when not known ({@link DebugFacts}). */
     final DebugFacts facts = new DebugFacts(this::executableFacts, this::sayBusy, this::lookFailed);
@@ -631,7 +635,7 @@ final class DebugCoordinator {
     private final PinnedValues pinnedValues;
 
     /** Thread Dump and Parallel Stacks. */
-    private final DebugStacks stacks;
+    final DebugStacks stacks;
 
     PinnedValues pinnedValues() {
         return pinnedValues;
@@ -730,7 +734,7 @@ final class DebugCoordinator {
         if (s().panel == null) {
             DebugSession session = s();
             DebugPanel built = new DebugPanel(
-                    inSessionProxy(DebugPanel.Actions.class, debugActions(), session), evaluateHistory());
+                    inSessionProxy(DebugPanel.Actions.class, debugActions(), session), valueWindows.evaluateHistory());
             built.setPrompt(host::promptText);
             built.setRemovalUndo(
                     host.removalUndo(), () -> sessions.all().stream().anyMatch(x -> x.panel == built));
@@ -738,8 +742,8 @@ final class DebugCoordinator {
             built.setOnLink(ops::openLink); // double-clicked stack-trace line → jump
             built.setWatches(ops.debugWatches());
             built.setPausedWatches(ops.debugPausedWatches());
-            built.setOnHistoryChanged(
-                    () -> ops.persistDebugEvaluateHistory(evaluateHistory().entries()));
+            built.setOnHistoryChanged(() -> ops.persistDebugEvaluateHistory(
+                    valueWindows.evaluateHistory().entries()));
             built.setChordLookup(id -> java.util.Objects.requireNonNullElse(ops.chordFor(id), ""));
             built.setSourceCheck(this::canShow);
             built.setObjectMarks(session.marks);
@@ -762,15 +766,15 @@ final class DebugCoordinator {
             }
             built.setPlainValueColours(plainValueColours()); // values legible on mixed themes (C111)
             built.setState(dap().state()); // a session may already be running (the window opened mid-session)
-            built.setOnAreaShown(area -> refreshLowLevelViews());
-            built.disassemblyView().setOnOpenSource(this::openSourceLine);
+            built.setOnAreaShown(area -> lowLevel.refreshLowLevelViews());
+            built.disassemblyView().setOnOpenSource(lowLevel::openSourceLine);
             instructionBreakpoints.install(built.disassemblyView());
-            built.memoryView().setOnGo(this::memoryGo);
+            built.memoryView().setOnGo(lowLevel::memoryGo);
             memoryEdits.install(built.memoryView());
             built.memoryView().setOnPage(direction -> {
                 if (s().memoryReference != null) {
                     s().memoryOffset += (long) direction * DebugMemoryView.PAGE;
-                    readMemory();
+                    lowLevel.readMemory();
                 }
             });
             s().panel = built;
@@ -840,7 +844,7 @@ final class DebugCoordinator {
             DapModels.StackFrameInfo frame = s().shownFrame;
             if (dap().state() == DapManager.State.SUSPENDED && frame != null && s().quietStop != s().stopSerial) {
                 s().debugFrameId = frame.id(); // the hover evaluator's frame again
-                highlightFrame(frame);
+                execLine.highlightFrame(frame);
                 dap().scopes(frame.id(), scopes -> applyInlineValues(frame, scopes));
                 pinnedValues.refresh(frame.id());
             }
@@ -1009,7 +1013,7 @@ final class DebugCoordinator {
         }
     }
 
-    private boolean plainValueColours() {
+    boolean plainValueColours() {
         var s = host.settings();
         return DebugPanel.themesDisagree(
                 Themes.backgroundFor(s.getTheme()), EditorThemes.editorBackgroundFor(s.getEditorTheme()));
@@ -2021,7 +2025,7 @@ final class DebugCoordinator {
             return;
         }
         clearExecHighlight();
-        paintExecutionLine(buffer, frame);
+        execLine.paintExecutionLine(buffer, frame);
         dap().scopes(frame.id(), scopes -> applyInlineValues(frame, scopes));
     }
 
@@ -2334,7 +2338,7 @@ final class DebugCoordinator {
                 javaCode.closeSmartStepPicker(state); // review E108
                 timeRun(state);
                 if (state != DapManager.State.SUSPENDED) {
-                    hideExceptionCard(); // Continue, a step, the session's end: the stop it described is over
+                    execLine.hideExceptionCard(); // Continue, a step, the session's end: the stop it described is over
                     s().stopException = null;
                 }
                 // INACTIVE with no panel built is what startup (configure, stop) reports: a panel built later
@@ -2364,10 +2368,11 @@ final class DebugCoordinator {
                     panel().setBackward(dap().isGdbSession(), dap().isRecording(), dap().canRunBackward());
                     panel().setState(state);
                 }
-                evaluateWindows.forEach(DebugEvaluateWindow::sessionChanged); // their results were that stop's
+                valueWindows.evaluateWindows.forEach(
+                        DebugEvaluateWindow::sessionChanged); // their results were that stop's
                 stacks.sessionChanged(); // Take Again needs a live session
-                tableWindows.removeIf(w -> !w.isShowing());
-                tableWindows.forEach(DebugTableWindow::sessionChanged); // Refresh needs a paused program
+                valueWindows.tableWindows.removeIf(w -> !w.isShowing());
+                valueWindows.tableWindows.forEach(DebugTableWindow::sessionChanged); // Refresh needs a paused program
                 if (state != DapManager.State.RUNNING && state != DapManager.State.SUSPENDED) {
                     s().dumpPause = false; // the pause it waited for will not come
                     s().dumpForParallel = false;
@@ -2485,7 +2490,7 @@ final class DebugCoordinator {
                 s().stopDeferred = false; // the newest stop is the one shown
                 s().stopSerial++;
                 s().stopException = null; // a new stop: the last one's exception is not this one's
-                hideExceptionCard();
+                execLine.hideExceptionCard();
                 List<DapModels.StackFrameInfo> frames = currentLines(stopFrames);
                 if (s().filtersPassed) {
                     s().filtersPassed = false;
@@ -2645,7 +2650,7 @@ final class DebugCoordinator {
                 if (s().quietStop == s().stopSerial) {
                     return; // a stop not shown (or not yet: exception breakpoints are deciding)
                 }
-                showExceptionInfo(info);
+                execLine.showExceptionInfo(info);
             }
 
             @Override
@@ -2789,12 +2794,12 @@ final class DebugCoordinator {
 
             @Override
             public void stepOver() {
-                DebugCoordinator.this.stepOver();
+                lowLevel.stepOver();
             }
 
             @Override
             public void stepInto() {
-                DebugCoordinator.this.stepInto();
+                lowLevel.stepInto();
             }
 
             @Override
@@ -2807,7 +2812,7 @@ final class DebugCoordinator {
                 ops.openToolWindow();
                 panel().memoryView().setAddressText(expression);
                 panel().showArea(DebugPanel.AREA_MEMORY);
-                memoryGo(expression);
+                lowLevel.memoryGo(expression);
             }
 
             @Override
@@ -2835,14 +2840,14 @@ final class DebugCoordinator {
                 if (s().quietStop == s().stopSerial) {
                     return; // a recording breakpoint's stop: kept, not shown (recordAndContinue)
                 }
-                highlightFrame(frame);
+                execLine.highlightFrame(frame);
                 noteChangedSinceLaunch(frame);
                 dap().scopes(frame.id(), scopes -> {
                     panel().setScopes(scopes);
                     applyInlineValues(frame, scopes);
                 });
                 pinnedValues.refresh(frame.id()); // every pinned value, evaluated in this frame
-                refreshLowLevelViews(); // the Disassembly view follows the frame; Memory is read again
+                lowLevel.refreshLowLevelViews(); // the Disassembly view follows the frame; Memory is read again
             }
 
             @Override
@@ -2928,7 +2933,7 @@ final class DebugCoordinator {
 
             @Override
             public void viewAsTable(String name, String expression, int ref, int named, int indexed) {
-                DebugCoordinator.this.viewAsTable(name, expression, ref, named, indexed);
+                valueWindows.viewAsTable(name, expression, ref, named, indexed);
             }
 
             @Override
@@ -2938,7 +2943,7 @@ final class DebugCoordinator {
 
             @Override
             public void viewAsData(String name, String expression) {
-                DebugCoordinator.this.viewAsData(name, expression);
+                valueWindows.viewAsData(name, expression);
             }
 
             @Override
@@ -3019,12 +3024,12 @@ final class DebugCoordinator {
 
             @Override
             public void threadDump() {
-                DebugCoordinator.this.threadDump();
+                stacks.threadDump();
             }
 
             @Override
             public void parallelStacks() {
-                DebugCoordinator.this.parallelStacks();
+                stacks.parallelStacks();
             }
 
             @Override
@@ -3143,7 +3148,7 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.noSource", frame.name()));
             return;
         }
-        Node keepFocus = debugPanelFocusOwner();
+        Node keepFocus = execLine.debugPanelFocusOwner();
         ops.openPath(frame.file());
         EditorBuffer b = ops.bufferForPath(frame.file());
         if (keepFocus != null) {
@@ -3174,7 +3179,7 @@ final class DebugCoordinator {
         pinnedValues.clear();
         DapModels.StackFrameInfo frame = s().shownFrame;
         if (dap().state() == DapManager.State.SUSPENDED && frame != null) {
-            highlightFrame(frame);
+            execLine.highlightFrame(frame);
             dap().scopes(frame.id(), scopes -> applyInlineValues(frame, scopes));
             pinnedValues.refresh(frame.id());
         } else {
@@ -3550,7 +3555,7 @@ final class DebugCoordinator {
             then.accept(known.buffer());
             return;
         }
-        Node keepFocus = debugPanelFocusOwner();
+        Node keepFocus = execLine.debugPanelFocusOwner();
         dap().sourceContent(
                         source,
                         text -> inSession(session, () -> {
@@ -3695,333 +3700,9 @@ final class DebugCoordinator {
         return sessionLive() ? openSession() : s();
     }
 
-    // --- Disassembly and Memory views ---------------------------------------------------------------------
-
-    /** Instructions shown before and after the instruction pointer. */
-    static final int DISASSEMBLY_BEFORE = 40;
-
-    static final int DISASSEMBLY_COUNT = 120;
-
-    /**
-     * Step Over (F10, the toolbar): one machine instruction while the Disassembly view has the keyboard, as in VS
-     * Code; one line otherwise.
-     */
-    void stepOver() {
-        if (s().panel != null && s().panel.disassemblyView().hasFocus() && dap().supportsInstructionStepping()) {
-            dap().stepOverInstruction();
-        } else {
-            dap().stepOver();
-        }
-    }
-
-    /** Step Into: as {@link #stepOver}, one instruction (into a call) while the Disassembly view has the keyboard. */
-    void stepInto() {
-        if (s().panel != null && s().panel.disassemblyView().hasFocus() && dap().supportsInstructionStepping()) {
-            dap().stepIntoInstruction();
-        } else {
-            dap().stepInto();
-        }
-    }
-
-    /** Debug: Step Over Instruction (and Into): one machine instruction, wherever the keyboard is. */
-    void stepInstruction(boolean into) {
-        if (!dap().supportsInstructionStepping()) {
-            host.setStatus(tr("status.debug.noInstructionStepping"));
-            return;
-        }
-        if (into) {
-            dap().stepIntoInstruction();
-        } else {
-            dap().stepOverInstruction();
-        }
-    }
-
-    /** Debug: Show Disassembly / Show Memory: the Debug window's view, filled for the frame shown. */
-    void showLowLevelView(String area) {
-        ops.openToolWindow();
-        panel().showArea(area);
-    }
-
-    /** Fills the Disassembly or Memory view, when shown, for the stop and frame shown. */
-    private void refreshLowLevelViews() {
-        if (s().panel == null) {
-            return;
-        }
-        DebugPanel p = s().panel;
-        String area = p.shownArea();
-        if (dap().state() != DapManager.State.SUSPENDED) {
-            if (DebugPanel.AREA_DISASSEMBLY.equals(area)) {
-                p.disassemblyView().setMessage(tr("debugpanel.disassembly.idle"));
-            }
-            return;
-        }
-        if (DebugPanel.AREA_DISASSEMBLY.equals(area)) {
-            DapModels.StackFrameInfo frame = s().shownFrame;
-            String ip = frame == null ? null : frame.instructionPointer();
-            if (!dap().supportsDisassemble()) {
-                p.disassemblyView().setMessage(tr("debugpanel.disassembly.unsupported"));
-            } else if (ip == null) {
-                p.disassemblyView().setMessage(tr("debugpanel.disassembly.noPointer"));
-            } else {
-                dap().disassemble(ip, -DISASSEMBLY_BEFORE, DISASSEMBLY_COUNT, list -> {
-                    if (s().shownFrame == frame) {
-                        p.disassemblyView().show(list, ip);
-                        instructionBreakpoints.show();
-                    }
-                });
-            }
-        } else if (DebugPanel.AREA_MEMORY.equals(area)) {
-            if (!dap().supportsReadMemory()) {
-                p.memoryView().setMessage(tr("debugpanel.memory.unsupported"));
-            } else if (s().memoryReference != null) {
-                readMemory();
-            }
-        }
-    }
-
-    /** The Memory view at {@code text}: an address as typed, else the address of the expression's value. */
-    private void memoryGo(String text) {
-        DebugMemoryView view = panel().memoryView();
-        if (text == null || text.isBlank()) {
-            return;
-        }
-        if (dap().state() != DapManager.State.SUSPENDED) {
-            view.setMessage(tr("debugpanel.memory.idle"));
-            return;
-        }
-        if (!dap().supportsReadMemory()) {
-            view.setMessage(tr("debugpanel.memory.unsupported"));
-            return;
-        }
-        String literal = DebugMemoryView.literalAddress(text);
-        if (literal != null) {
-            s().memoryReference = literal;
-            s().memoryOffset = 0;
-            readMemory();
-            return;
-        }
-        dap().memoryReferenceOf(text, s().debugFrameId, ref -> {
-            if (ref == null) {
-                view.setMessage(tr("debugpanel.memory.noAddress", text));
-                return;
-            }
-            s().memoryReference = ref;
-            s().memoryOffset = 0;
-            readMemory();
-        });
-    }
-
-    /** Reads a page at the Memory view's reference and offset into it. */
-    void readMemory() {
-        String ref = s().memoryReference;
-        if (ref == null || s().panel == null) {
-            return;
-        }
-        DebugMemoryView view = s().panel.memoryView();
-        dap().readMemory(
-                        ref,
-                        s().memoryOffset,
-                        DebugMemoryView.PAGE,
-                        view::show,
-                        why -> view.setMessage(tr("debugpanel.memory.failed", ref, why)));
-    }
-
-    /** Opens {@code file} at 0-based {@code line}: a double-clicked instruction's source line. */
-    void openSourceLine(Path file, int line) {
-        ops.openPath(file);
-        EditorBuffer b = ops.bufferForPath(file);
-        if (b != null && line >= 0) {
-            int first = b.getBreakpointManager().regionFirstLine();
-            b.getFocusedArea().moveTo(Math.max(0, line - first), 0);
-            b.getFocusedArea().requestFollowCaret();
-        }
-    }
-
-    /** Opens the frame's file and paints the execution-line highlight there. */
-    private void highlightFrame(DapModels.StackFrameInfo frame) {
-        if (!shown()) {
-            return; // another session's: the editor shows the focused one's
-        }
-        clearExecHighlight();
-        if (frame == null) {
-            mapFollow.mapStop(MapDebugStop.RUNNING);
-            return;
-        }
-        DebugPanel stackPanel = s().panel;
-        mapFollow.mapStop(new MapDebugStop(
-                frame, stackPanel == null ? List.of() : stackPanel.callStack(), frame.id() == s().exceptionFrameId));
-        if (!hasSource(frame)) {
-            if (frame.sourceUri() != null && dap().debugFile() != null) {
-                // B5: a JDK or library class jdtls can supply the text of (java/classFileContents) — shown in its
-                // read-only library tab, as go-to-definition and the console's stack-trace links already do.
-                ops.openLibraryFrame(dap().debugFile(), frame.sourceUri(), frame.line(), lib -> {
-                    if (s().shownFrame == frame && dap().state() == DapManager.State.SUSPENDED) {
-                        clearExecHighlight();
-                        paintExecutionLine(lib, frame);
-                    }
-                });
-                return;
-            }
-            if (frame.reference() != null) {
-                // Code the debugger has only in memory (Node's internals, eval'd code): its text, read-only, with the
-                // execution line, as VS Code shows it.
-                openReferenceSource(frame.reference(), doc -> {
-                    if (s().shownFrame == frame && dap().state() == DapManager.State.SUSPENDED) {
-                        clearExecHighlight();
-                        paintExecutionLine(doc, frame);
-                    }
-                });
-                return;
-            }
-            // Asking for it anyway opened a loading tab, failed, removed the tab again and reported "Failed to
-            // open" as an error — on every stop and step inside library code. Say what is the case instead;
-            // the frame stays selected with its variables, and the other frames stay a click away.
-            host.setStatus(tr("status.debug.noSource", frame.name()));
-            return;
-        }
-        // Revealing the line focuses the editor (openPath calls requestFocus on the buffer). When the user
-        // is driving the session from the Debug panel — the single-key step shortcuts — that yanks focus to
-        // the code after every step, so the next key press is lost and they must re-focus the panel each
-        // time. Preserve the panel's focus across the reveal in that case only; a fresh breakpoint hit while
-        // editing (focus not in the panel) still lands in the code at the stopped line, as before.
-        Node keepFocus = debugPanelFocusOwner();
-        ops.openPath(frame.file()); // opens or focuses the tab
-        // Take the frame's OWN buffer, not whatever is active — mirrors applyInlineValues.
-        EditorBuffer b = ops.bufferForPath(frame.file());
-        if (b != null) {
-            paintExecutionLine(b, frame);
-        }
-        if (keepFocus != null) {
-            later(keepFocus::requestFocus); // after openPath's own requestFocus, so the panel wins
-        }
-    }
-
-    /** The frame whose line the editor marks as the execution line, or null. */
-    private DapModels.@Nullable StackFrameInfo paintedFrame;
-
-    private @Nullable DebugExceptionCard exceptionCard;
-
-    /**
-     * Opens the exception card under the line that threw, when that frame is the one shown and the adapter has said
-     * which exception it is. By itself ({@code asked} false) only once per stop: closing it keeps it closed.
-     */
-    private void showExceptionCard(boolean asked) {
-        if (!shown()) {
-            return; // another session's: the editor shows the focused one's
-        }
-        DapModels.ExceptionInfo info = s().stopException;
-        DapModels.StackFrameInfo frame = paintedFrame;
-        EditorBuffer b = execHighlightBuffer;
-        if (info == null
-                || frame == null
-                || b == null
-                || frame.id() != s().exceptionFrameId
-                || dap().state() != DapManager.State.SUSPENDED) {
-            return;
-        }
-        if (!asked && s().exceptionCardStop == s().stopSerial) {
-            return;
-        }
-        s().exceptionCardStop = s().stopSerial;
-        if (exceptionCard == null) {
-            exceptionCard = new DebugExceptionCard(new DebugExceptionCard.Actions(
-                    () -> {
-                        if (exceptionToggleOn(true)) {
-                            toggleExceptionKind(true); // says so on the status line
-                        }
-                    },
-                    () -> host.setStatus(tr("status.debug.exceptionCopied"))));
-        }
-        int line = frame.line() - b.getBreakpointManager().regionFirstLine();
-        exceptionCard.show(b.getFocusedArea(), line, info, info.caught() && exceptionToggleOn(true));
-    }
-
-    private void hideExceptionCard() {
-        if (!shown()) {
-            return; // another session's: the editor shows the focused one's
-        }
-        if (exceptionCard != null) {
-            exceptionCard.hide();
-        }
-    }
-
-    /** The exception card (test read; null until an exception stop opened it). */
-    @Nullable
-    DebugExceptionCard exceptionCard() {
-        return exceptionCard;
-    }
-
-    /**
-     * Debug: Show Exception — opens the card of the exception the program stopped on again, going back to the frame
-     * that threw when another one is shown.
-     */
-    void showException() {
-        if (s().stopException == null || dap().state() != DapManager.State.SUSPENDED) {
-            host.setStatus(tr("status.debug.noException"));
-            return;
-        }
-        DapModels.StackFrameInfo frame = paintedFrame;
-        if (frame == null || frame.id() != s().exceptionFrameId) {
-            if (!panel().selectFrameById(s().exceptionFrameId)) {
-                host.setStatus(tr("status.debug.noException"));
-                return;
-            }
-            s().exceptionCardStop = -1; // the frame's paint opens it, once laid out
-            return;
-        }
-        showExceptionCard(true);
-    }
-
-    private void paintExecutionLine(EditorBuffer b, DapModels.StackFrameInfo frame) {
-        if (!shown()) {
-            return; // another session's: the editor shows the focused one's
-        }
-        execHighlightBuffer = b;
-        ops.afterBufferLoad(b, () -> {
-            // The user may resume or select another frame while this file is still loading. Never let
-            // that obsolete completion repaint an execution marker that clearExecHighlight removed.
-            if (execHighlightBuffer == b) {
-                // A narrowed buffer shows only its region: the frame's file line is region-relative
-                // there (a stop outside the region has no line to show and paints nothing).
-                b.setExecutionLine(frame.line() - b.getBreakpointManager().regionFirstLine());
-                b.setExecutionLineException(frame.id() == s().exceptionFrameId);
-                if (frame.id() == s().stepTimeFrameId && s().stepTime != null) {
-                    b.setStepTime(frame.line() - b.getBreakpointManager().regionFirstLine(), s().stepTime);
-                }
-                paintedFrame = frame;
-                if (frame.id() == s().exceptionFrameId) {
-                    later(() -> showExceptionCard(false)); // once the line has been laid out
-                } else {
-                    hideExceptionCard(); // another frame's line: the card belongs to the one that threw
-                }
-            }
-        });
-    }
-
-    /** The Debug-panel descendant that currently owns keyboard focus (so it can be restored across an
-     *  editor-focusing reveal), or {@code null} when focus is elsewhere. */
-    private @Nullable Node debugPanelFocusOwner() {
-        var window = host.window();
-        var scene = window == null ? null : window.getScene();
-        Node owner = scene == null ? null : scene.getFocusOwner();
-        for (Node n = owner; n != null; n = n.getParent()) {
-            if (s().panel != null && n == s().panel) {
-                return owner;
-            }
-        }
-        return null;
-    }
-
+    /** Takes the execution-line highlight off ({@link ExecutionLine#clearExecHighlight}). */
     private void clearExecHighlight() {
-        if (!shown()) {
-            return; // another session's: the editor shows the focused one's
-        }
-        paintedFrame = null;
-        hideExceptionCard();
-        if (execHighlightBuffer != null) {
-            execHighlightBuffer.clearExecutionLine();
-            execHighlightBuffer = null;
-        }
+        execLine.clearExecHighlight();
     }
 
     // --- debug commands ----------------------------------------------------------------------------
@@ -4714,7 +4395,7 @@ final class DebugCoordinator {
      * value's own (Editora's reference), else the debugger's — {@code filter}, {@code start} and {@code count} page
      * them as DAP does ({@code null} and 0: all) — each with its type's renderer applied.
      */
-    private void renderedVariables(
+    void renderedVariables(
             int ref, @Nullable String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
         TypeRendering rendering = rendering();
         if (rendering.owns(ref)) {
@@ -4735,7 +4416,7 @@ final class DebugCoordinator {
      * value when its type has a renderer — only when evaluating it again cannot change anything (no call, no
      * assignment): the renderer's expressions are the value's expression with more after it.
      */
-    private void renderedEvaluate(String expression, int frameId, String context, Consumer<DapModels.EvalResult> cb) {
+    void renderedEvaluate(String expression, int frameId, String context, Consumer<DapModels.EvalResult> cb) {
         TypeRendering rendering = rendering();
         dap().evaluateFull(expression, frameId, context, r -> {
             TypeRenderer renderer = r == null || r.failed() || !TypeRenderers.safeToRepeat(expression)
@@ -4822,98 +4503,7 @@ final class DebugCoordinator {
         panel().showThreadsView(true);
     }
 
-    // --- Thread Dump: every thread's stack at one moment (IntelliJ's Get Thread Dump) -----------------
-
-    /** The View as Table windows open: one per collection asked for. */
-    private final List<DebugTableWindow> tableWindows = new ArrayList<>();
-
-    /**
-     * View as Table: opens a window showing the collection {@code ref} (named {@code name}, given by {@code
-     * expression}) as a table of its elements and their fields ({@link DebugTableWindow}).
-     */
-    void viewAsTable(String name, String expression, int ref, int named, int indexed) {
-        tableWindow().show(host.window(), name, expression, ref, named, indexed);
-    }
-
-    /**
-     * View as DataFrame / View as Array: opens a window showing the pandas DataFrame or Series, or numpy array, {@code
-     * expression} (named {@code name}) of the Python program, as a table of its rows ({@link PythonDataTable}).
-     */
-    void viewAsData(String name, String expression) {
-        tableWindow().showData(host.window(), name, expression);
-    }
-
-    /** A new View as Table window, of the session shown. */
-    private DebugTableWindow tableWindow() {
-        DebugSession session = s();
-        DebugTableWindow window = new DebugTableWindow(new DebugTableWindow.Actions() {
-            @Override
-            public void children(
-                    int ref, @Nullable String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
-                if (session != s()) {
-                    cb.accept(List.of()); // another session is shown: this one's references are not its
-                    return;
-                }
-                renderedVariables(ref, filter, start, count, cb);
-            }
-
-            @Override
-            public void openText(String title, String text, String language) {
-                ops.openReadOnlyDoc(title, text, language);
-            }
-
-            @Override
-            public void evaluate(String expression, Consumer<DapModels.@Nullable EvalResult> cb) {
-                if (!canRefresh()) {
-                    cb.accept(null);
-                    return;
-                }
-                renderedEvaluate(expression, panel().selectedFrameId(), "watch", cb::accept);
-            }
-
-            @Override
-            public void evaluateData(String expression, Consumer<DapModels.@Nullable EvalResult> cb) {
-                if (!canRefresh()) {
-                    cb.accept(null);
-                    return;
-                }
-                // debugpy's clipboard context: the helper's answer whole, where the others cut a string at 1,000.
-                dap().evaluateFull(expression, panel().selectedFrameId(), "clipboard", cb::accept);
-            }
-
-            @Override
-            public boolean canRefresh() {
-                return session == s() && dap().state() == DapManager.State.SUSPENDED;
-            }
-        });
-        tableWindows.removeIf(w -> !w.isShowing());
-        tableWindows.add(window);
-        return window;
-    }
-
-    /** The View as Table windows open (tests). */
-    List<DebugTableWindow> tableWindows() {
-        tableWindows.removeIf(w -> !w.isShowing());
-        return List.copyOf(tableWindows);
-    }
-
-    /**
-     * Debug: Thread Dump ({@code debug.threadDump}): every thread of the program with its call stack, in the Thread
-     * Dump window. Suspended, the dump is of the stop. Running, the program is paused for it and goes on after, the
-     * editor left where it is — the way to see what a program that hangs is doing.
-     */
-    void threadDump() {
-        stacks.take(false);
-    }
-
-    /**
-     * Debug: Parallel Stacks ({@code debug.parallelStacks}): every thread's call stack merged into one tree, in the
-     * Parallel Stacks window ({@link ParallelStacks}). The stacks are taken as Thread Dump takes them: a running
-     * program is paused for them and goes on after.
-     */
-    void parallelStacks() {
-        stacks.take(true);
-    }
+    // --- reverse debugging (Step Back, Reverse Continue, Record Execution), values fetched again ----------
 
     /**
      * Debug: Step Back ({@code debug.stepBack}): the program goes back over the last statement — where it can run
@@ -4940,35 +4530,6 @@ final class DebugCoordinator {
                         : tr(manager.isRecording() ? "status.debug.recordingOn" : "status.debug.recordingOff")));
     }
 
-    /** Says which exception the stop is on: the Debug window's state line, the exception card and the status bar. */
-    void showExceptionInfo(DapModels.ExceptionInfo info) {
-        // Which exception: the one thing an exception stop has to say, and the stop event does not.
-        panel().setStoppedException(DebugFeedback.exceptionSummary(info, true));
-        panel().setExceptionInfo(info);
-        s().stopException = info;
-        showExceptionCard(false); // under the line that threw, when it is the one shown
-        host.setStatus(tr("status.debug.stoppedOnException", DebugFeedback.exceptionSummary(info, false)));
-    }
-
-    /** The Parallel Stacks window, when one was opened (test read). */
-    @Nullable
-    DebugParallelStacksWindow parallelStacksWindowIfOpen() {
-        return stacks.parallelStacksWindow;
-    }
-
-    /** The Thread Dump window, when one was opened (test read). */
-    @Nullable
-    DebugThreadDumpWindow threadDumpWindowIfOpen() {
-        return stacks.threadDumpWindow;
-    }
-
-    /** Focuses the evaluate field at the top of Variables ({@code debug.focusEvaluate}). */
-    void focusEvaluate() {
-        ops.openToolWindow();
-        panel().focusEvaluate();
-        later(panel()::focusEvaluate); // a window opened just now is laid out on the next pulse
-    }
-
     /**
      * Fetches the selected frame's variables, watches and inline values again: an evaluation or Set Value may have
      * changed them (B205). False when there is nothing to fetch them from.
@@ -4985,118 +4546,6 @@ final class DebugCoordinator {
             applyInlineValues(frame, scopes);
         });
         return true;
-    }
-
-    // --- the Evaluate window ------------------------------------------------------------------------------
-
-    /** The expressions evaluated in this window's evaluate fields, oldest first: one list, walked by every field. */
-    private DebugPanelText.@Nullable History evaluateHistory;
-
-    /** Every Evaluate window opened; a closed one is reused by the next Evaluate. */
-    private final List<DebugEvaluateWindow> evaluateWindows = new ArrayList<>();
-
-    DebugPanelText.History evaluateHistory() {
-        if (evaluateHistory == null) {
-            evaluateHistory = new DebugPanelText.History();
-            ops.debugEvaluateHistory().forEach(evaluateHistory::add);
-        }
-        return evaluateHistory;
-    }
-
-    /**
-     * Debug: Evaluate Expression ({@code debug.evaluate}, IntelliJ's Alt+F8): opens an Evaluate window, its
-     * expression the editor's selection (one line) or the expression at the caret. Another Evaluate while one is open
-     * opens another, as IntelliJ does — unless the open one was opened for the same text.
-     */
-    void evaluateExpression() {
-        EditorBuffer b = host.activeBuffer();
-        String initial = null;
-        if (b != null) {
-            var area = b.getFocusedArea();
-            String selected = area.getSelectedText();
-            initial = selected != null && !selected.isBlank()
-                    ? selected.strip()
-                    : com.editora.editor.debug.DebugExpressions.atCaret(area);
-        }
-        openEvaluateWindow(initial);
-    }
-
-    /** Opens an Evaluate window with {@code initial} as its expression (null: the field as it was). */
-    DebugEvaluateWindow openEvaluateWindow(@Nullable String initial) {
-        javafx.stage.Window owner = host.window();
-        DebugEvaluateWindow window = null;
-        int open = 0;
-        for (DebugEvaluateWindow w : evaluateWindows) {
-            if (w.isShowing()) {
-                open++;
-            } else if (window == null) {
-                window = w;
-            }
-        }
-        if (window == null) {
-            window = new DebugEvaluateWindow(evaluateSource(), evaluateHistory());
-            evaluateWindows.add(window);
-        }
-        window.setPlainValueColours(plainValueColours());
-        window.show(owner, initial, s().panel == null ? "" : panel().expressionLanguageFile(), open * UiZoom.px(28.0));
-        return window;
-    }
-
-    /** The Evaluate windows (tests). */
-    List<DebugEvaluateWindow> evaluateWindows() {
-        return List.copyOf(evaluateWindows);
-    }
-
-    private DebugEvaluateWindow.Source evaluateSource() {
-        return new DebugEvaluateWindow.Source() {
-            @Override
-            public boolean paused() {
-                return dap().state() == DapManager.State.SUSPENDED;
-            }
-
-            @Override
-            public String frameName() {
-                DapModels.StackFrameInfo frame = s().shownFrame;
-                if (frame == null) {
-                    return "";
-                }
-                String where = frame.file() == null
-                        ? ""
-                        : (frame.line() >= 0 ? ":" + (frame.line() + 1) : "") + ", "
-                                + DebugValues.sourceName(frame.file());
-                return DebugPanelText.frameName(frame.name()) + where;
-            }
-
-            @Override
-            public void evaluate(String expression, Consumer<DapModels.EvalResult> cb) {
-                renderedEvaluate(expression, s().debugFrameId, "repl", cb);
-            }
-
-            @Override
-            public void complete(String text, int caret, Consumer<List<DapModels.CompletionTarget>> cb) {
-                dap().completions(s().debugFrameId, text, caret, cb);
-            }
-
-            @Override
-            public void addWatch(String expression) {
-                ops.openToolWindow();
-                panel().addWatchExpression(expression);
-            }
-
-            @Override
-            public void evaluated(boolean succeeded) {
-                ops.persistDebugEvaluateHistory(evaluateHistory().entries());
-                if (succeeded) {
-                    refreshStopValues(); // what it changed shows in Variables, the watches and the inline values
-                }
-            }
-
-            @Override
-            public void children(
-                    int ref, @Nullable String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
-                renderedVariables(ref, filter, start, count, cb);
-            }
-        };
     }
 
     /**
@@ -5556,7 +5005,7 @@ final class DebugCoordinator {
             items.add(menuItem("debug.runToCursor", Icons.debugRunToCursor(), this::debugRunToCursor));
             items.add(menuItem("debug.forceRunToCursor", Icons.debugRunToCursor(), this::debugForceRunToCursor));
             items.add(menuItem("debug.showValue", Icons.find(), this::showValueAtCaret));
-            items.add(menuItem("debug.evaluate", Icons.debug(), this::evaluateExpression));
+            items.add(menuItem("debug.evaluate", Icons.debug(), valueWindows::evaluateExpression));
             String expression = watchExpression(b);
             if (expression != null) {
                 javafx.scene.control.MenuItem watch =

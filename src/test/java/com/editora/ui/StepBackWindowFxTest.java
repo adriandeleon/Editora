@@ -231,9 +231,9 @@ class StepBackWindowFxTest {
         adapter.outOfStepListings = 1; // the first listing decodes out of step; a byte further back each time
         FakeDebugAdapter.Session session = stoppedInGdbDisassembly();
         java.util.List<com.editora.dap.DapModels.Instruction> shown =
-                shownInstructions(DebugCoordinator.DISASSEMBLY_COUNT);
+                shownInstructions(DisassemblyMemoryViews.DISASSEMBLY_COUNT);
         assertEquals(
-                DebugCoordinator.DISASSEMBLY_BEFORE,
+                DisassemblyMemoryViews.DISASSEMBLY_BEFORE,
                 DebugDisassemblyView.indexOf(shown, FakeDebugAdapter.LOW_LEVEL_IP),
                 "the pointer after the instructions before it");
         java.util.List<org.eclipse.lsp4j.debug.DisassembleArguments> asked = session.disassembles;
@@ -242,7 +242,7 @@ class StepBackWindowFxTest {
             assertEquals(0, a.getInstructionOffset(), "never GDB's negative instruction offset");
         }
         assertEquals(
-                -DebugCoordinator.DISASSEMBLY_BEFORE * DapManager.GDB_BYTES_PER_INSTRUCTION,
+                -DisassemblyMemoryViews.DISASSEMBLY_BEFORE * DapManager.GDB_BYTES_PER_INSTRUCTION,
                 asked.getFirst().getOffset());
         assertEquals(asked.getFirst().getOffset() - 4, asked.getLast().getOffset());
     }
@@ -252,7 +252,7 @@ class StepBackWindowFxTest {
         adapter.outOfStepListings = Integer.MAX_VALUE;
         FakeDebugAdapter.Session session = stoppedInGdbDisassembly();
         java.util.List<com.editora.dap.DapModels.Instruction> shown =
-                shownInstructions(DebugCoordinator.DISASSEMBLY_COUNT - DebugCoordinator.DISASSEMBLY_BEFORE);
+                shownInstructions(DisassemblyMemoryViews.DISASSEMBLY_COUNT - DisassemblyMemoryViews.DISASSEMBLY_BEFORE);
         assertEquals(0, DebugDisassemblyView.indexOf(shown, FakeDebugAdapter.LOW_LEVEL_IP), "from the pointer on");
         assertEquals(DapManager.GDB_SYNC_TRIES + 1, session.disassembles.size());
         assertEquals(0, session.disassembles.getLast().getOffset());

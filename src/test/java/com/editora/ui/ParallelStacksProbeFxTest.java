@@ -170,11 +170,10 @@ class ParallelStacksProbeFxTest {
                     "the Parallel Stacks window",
                     60,
                     () -> call(() -> {
-                        DebugParallelStacksWindow w = debug.parallelStacksWindowIfOpen();
+                        DebugParallelStacksWindow w = debug.stacks.parallelStacksWindow;
                         return w != null && w.isShowing() && w.stacks() != null;
                     }));
-            ParallelStacks stacks =
-                    call(() -> debug.parallelStacksWindowIfOpen().stacks());
+            ParallelStacks stacks = call(() -> debug.stacks.parallelStacksWindow.stacks());
             String text = call(stacks::text);
             assertTrue(stacks.dump().pausedForIt(), text);
             List<DapModels.ThreadStack> pool = workers(stacks.dump(), worker);
@@ -189,7 +188,8 @@ class ParallelStacksProbeFxTest {
             // Paused for it, the workers' stacks are walked (the JVM's own threads may have no Java frames).
             assertTrue(pool.stream().noneMatch(t -> t.frames().isEmpty()), "the workers' stacks: " + text);
             assertTrue(
-                    call(() -> debug.parallelStacksWindowIfOpen()
+                    call(() -> debug.stacks
+                                    .parallelStacksWindow
                                     .canvas()
                                     .lookupAll(".parallel-stacks-box")
                                     .size())
