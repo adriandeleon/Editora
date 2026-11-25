@@ -826,6 +826,7 @@ final class MacroSettingsPane extends HBox {
             }
         });
         Platform.runLater(filter::requestFocus);
+        Dialogs.adoptOwner(dialog);
         if (dialog.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
             return null;
         }

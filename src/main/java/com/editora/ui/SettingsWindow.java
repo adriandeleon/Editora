@@ -752,10 +752,7 @@ public class SettingsWindow {
         if (stage.isShowing()) {
             stage.toFront();
         } else {
-            if (!placed) { // later opens come back where the user left the window
-                centerOnOwner(owner);
-                placed = true;
-            }
+            centerOnOwner(owner); // every open, so Settings comes up over the editor wherever it has moved
             stage.show();
         }
         // A search left in the box is kept, but selected: typing replaces it rather than appending to it.
@@ -774,8 +771,6 @@ public class SettingsWindow {
             sidebar.getSelectionModel().select(target);
         }
     }
-
-    private boolean placed; // centred once; afterwards the window keeps the place the user gave it
 
     /** Centres on the owner using the size the window actually has, kept on the owner's screen. */
     private void centerOnOwner(Window owner) {

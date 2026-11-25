@@ -287,7 +287,9 @@ final class ConfigImportFlow {
     }
 
     private static Optional<Set<Part>> askDialog(Question q) {
-        return build(q).showAndWait();
+        Dialog<Set<Part>> dialog = build(q);
+        Dialogs.adoptOwner(dialog);
+        return dialog.showAndWait();
     }
 
     private static void tellDialog(Outcome o) {
