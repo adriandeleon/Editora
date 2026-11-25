@@ -91,7 +91,8 @@ class PrefixKeyHintFxTest {
     }
 
     private static String title(String commandId) {
-        return MenuTitles.of(
+        return MenuTitles.forCommand(
+                commandId,
                 fx.controller.registry.get(commandId).map(Command::title).orElseThrow());
     }
 

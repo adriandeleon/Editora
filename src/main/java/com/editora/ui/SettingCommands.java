@@ -543,6 +543,7 @@ final class SettingCommands {
         items.add(flag("settings.buildBeforeRun", Settings::isBuildBeforeRun, Settings::setBuildBeforeRun));
         items.add(text(under("Maven", "settings.maven.jdk"), Settings::getMavenJdkHome, Settings::setMavenJdkHome));
         items.add(text(key("settings.debug.nodePath"), Settings::getNodePath, (s, v) -> s.setNodePath(v.strip())));
+        items.add(text(under("jkit", "settings.jkit.path"), Settings::getJkitPath, Settings::setJkitPath));
         return items;
     }
 

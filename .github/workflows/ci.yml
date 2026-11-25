@@ -132,6 +132,15 @@ jobs:
           trap 'kill "$dumper" 2>/dev/null || true' EXIT
           ./mvnw -B --no-transfer-progress -Dspotless.check.skip=true -Dsurefire.rerunFailingTestsCount=2 -Dsurefire.includesFile=target/shard-includes.txt test
 
+      # The classes whose numbers depend on what their JVM ran before (ShardTests.ALONE: the perf budget gate), in
+      # a JVM of their own. Also when the shard failed, so that one failure does not hide the other.
+      - name: Test the classes that run alone
+        if: matrix.shard == 1 && (success() || failure())
+        timeout-minutes: 8
+        run: |
+          java scripts/ci/ShardTests.java alone > target/alone-includes.txt
+          ./mvnw -B --no-transfer-progress -Dspotless.check.skip=true -Dsurefire.rerunFailingTestsCount=2 -Dsurefire.includesFile=target/alone-includes.txt test
+
       - name: Thread dumps of a hung test run
         if: always()
         run: |

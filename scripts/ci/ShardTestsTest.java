@@ -77,6 +77,12 @@ class ShardTestsTest implements AutoCloseable {
     }
 
     @Test
+    void theClassesThatRunAloneAreInNoShard() {
+        var classes = List.of("a/ATest.java", "com/editora/ui/PerfBudgetFxTest.java", "z/ZFxTest.java");
+        assertEquals(List.of("a/ATest.java", "z/ZFxTest.java"), ShardTests.withoutAlone(classes));
+    }
+
+    @Test
     void theSlowFxClassesAreSpreadEvenly() {
         var classes = new ArrayList<>(names("p/C%03dTest.java", 40));
         classes.addAll(names("p/U%03dFxTest.java", 22));

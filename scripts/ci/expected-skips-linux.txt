@@ -66,6 +66,7 @@ com.editora.ui.RubyAppsProbeFxTest
 com.editora.ui.ElixirDebugProbeFxTest
 com.editora.ui.RunTestAtCaretProbeFxTest
 com.editora.ui.ToolTestResultsProbeFxTest
+com.editora.ui.CppTestsProbeFxTest
 com.editora.ui.BashDebugProbeFxTest
 com.editora.ui.LuaDebugProbeFxTest
 com.editora.ui.JvmLanguageTestsProbeFxTest
@@ -80,6 +81,7 @@ com.editora.ui.SourcelessFramesProbeFxTest
 com.editora.ui.MarkObjectProbeFxTest
 com.editora.ui.BrowserDebugProbeFxTest
 com.editora.ui.FirefoxDebugProbeFxTest
+com.editora.ui.ServerReadyProbeFxTest
 com.editora.ui.ElectronDebugProbeFxTest
 com.editora.ui.DebugSmallWinsProbeFxTest
 com.editora.ui.ThreadDumpProbeFxTest

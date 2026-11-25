@@ -13,12 +13,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class RunScanTest {
 
     private static RunScan.Inputs inputs(String language, String name) {
-        return new RunScan.Inputs(true, false, false, false, language, name, false);
+        return new RunScan.Inputs(true, false, false, false, language, name, false, false);
     }
 
     @Test
     void nothingIsScannedWhenNoFeatureApplies() {
-        RunScan.Inputs none = new RunScan.Inputs(false, false, false, false, "java", "A.java", false);
+        RunScan.Inputs none = new RunScan.Inputs(false, false, false, false, "java", "A.java", false, false);
         assertFalse(none.needsText());
         RunScan.Result r = RunScan.scan(none, "");
         assertFalse(r.runnable());
@@ -53,7 +53,7 @@ class RunScanTest {
                 .runnable());
         assertFalse(RunScan.scan(inputs("typescriptreact", "App.tsx"), "x\n").runnable());
         assertFalse(RunScan.scan(inputs("javascriptreact", "App.jsx"), "x\n").runnable());
-        RunScan.Inputs off = new RunScan.Inputs(false, false, false, false, "javascript", "app.js", false);
+        RunScan.Inputs off = new RunScan.Inputs(false, false, false, false, "javascript", "app.js", false, false);
         assertFalse(RunScan.scan(off, "x\n").runnable(), "the Run feature off: no ▶");
     }
 
@@ -133,7 +133,7 @@ class RunScanTest {
         RunScan.Result r = RunScan.scan(inputs("shell", "a.sh"), "echo hi\n");
         assertTrue(r.runnable());
         assertEquals(0, r.line(), "the whole script runs from the top");
-        RunScan.Inputs off = new RunScan.Inputs(false, false, false, false, "shell", "a.sh", false);
+        RunScan.Inputs off = new RunScan.Inputs(false, false, false, false, "shell", "a.sh", false, false);
         assertFalse(RunScan.scan(off, "echo hi\n").runnable());
     }
 
@@ -155,21 +155,54 @@ class RunScanTest {
         assertFalse(RunScan.scan(inputs("java", "Hello.java"), "class A {}\n").runnable());
         // An extensionless script needs the java shebang to count.
         assertFalse(RunScan.scan(inputs("java", "hello"), "void main() {}\n").runnable());
-        RunScan.Inputs shebang = new RunScan.Inputs(true, false, false, false, "java", "hello", true);
+        RunScan.Inputs shebang = new RunScan.Inputs(true, false, false, false, "java", "hello", true, false);
         assertTrue(RunScan.scan(shebang, "#!/usr/bin/env -S java --source 25\nvoid main() {}\n")
                 .runnable());
     }
 
     @Test
+    void aClassicSingleFileProgramRunsFromItsFirstClassMain() {
+        String hello = "public class Hello {\n    public static void main(String[] args) {\n    }\n}\n";
+        RunScan.Result r = RunScan.scan(inputs("java", "Hello.java"), hello);
+        assertTrue(r.runnable(), "java Hello.java runs it");
+        assertEquals(1, r.line());
+        assertTrue(r.classicJava());
+        assertEquals(11, r.javaRelease(), "a public static main runs on JDK 11's source launcher");
+
+        // Not public: only JDK 25's launcher takes it.
+        RunScan.Result quiet =
+                RunScan.scan(inputs("java", "Hello.java"), "class Hello {\n    static void main(String[] a) {}\n}\n");
+        assertTrue(quiet.runnable());
+        assertEquals(25, quiet.javaRelease());
+
+        // A class of a Maven or Gradle project runs through the build (its project ▶), never as one file.
+        RunScan.Inputs inBuild = new RunScan.Inputs(true, false, false, false, "java", "Hello.java", false, true);
+        assertFalse(RunScan.scan(inBuild, hello).runnable());
+
+        // The launcher runs the first class: a main in a later one, or none at all, is no program.
+        assertFalse(RunScan.scan(
+                        inputs("java", "Two.java"),
+                        "class Util {}\nclass Two {\n    public static void main(String[] a) {}\n}\n")
+                .runnable());
+        assertFalse(RunScan.scan(inputs("java", "Lib.java"), "public class Lib {\n    int x;\n}\n")
+                .runnable());
+
+        // A compact source keeps its own kind and JDK.
+        RunScan.Result compact = RunScan.scan(inputs("java", "C.java"), "void main() {}\n");
+        assertFalse(compact.classicJava());
+        assertEquals(25, compact.javaRelease());
+    }
+
+    @Test
     void testAndMainGlyphsAreAdditive() {
         String test = "import org.junit.jupiter.api.Test;\nclass ATest {\n    @Test\n    void works() {}\n}\n";
-        RunScan.Inputs tests = new RunScan.Inputs(false, false, true, false, "java", "ATest.java", false);
+        RunScan.Inputs tests = new RunScan.Inputs(false, false, true, false, "java", "ATest.java", false, false);
         RunScan.Result r = RunScan.scan(tests, test);
         assertFalse(r.testLines().isEmpty());
         assertTrue(r.runnable(), "a file with tests is runnable even with the run feature off");
 
         String main = "class A {\n    public static void main(String[] args) {}\n}\n";
-        RunScan.Inputs mains = new RunScan.Inputs(false, false, false, true, "java", "A.java", false);
+        RunScan.Inputs mains = new RunScan.Inputs(false, false, false, true, "java", "A.java", false, false);
         RunScan.Result m = RunScan.scan(mains, main);
         assertFalse(m.mainLines().isEmpty());
         assertFalse(m.runnable(), "a project main does not make the file runnable as one file");
@@ -258,7 +291,21 @@ class RunScanTest {
         assertTrue(RunScan.scan(inputs("go", "a.go"), "package main\nfunc main() {}\n")
                 .runnable());
         assertTrue(RunScan.scan(inputs("rust", "main.rs"), "fn main() {}\n").runnable());
-        RunScan.Inputs off = new RunScan.Inputs(false, false, false, false, "c", "tally.c", false);
+        RunScan.Inputs off = new RunScan.Inputs(false, false, false, false, "c", "tally.c", false, false);
         assertFalse(RunScan.scan(off, "int main(void) {}\n").runnable(), "the Run feature off");
+    }
+
+    @Test
+    void aCppTestFileHasAGlyphPerTestAndOneForTheWholeFile() {
+        String gtest = "#include <gtest/gtest.h>\n\nTEST(Math, Adds) {\n}\nTEST(Math, Fails) {}\n";
+        RunScan.Result r = RunScan.scan(inputs("cpp", "calc_test.cpp"), gtest);
+        assertTrue(r.runnable(), "Run File runs the tests, though the file has no main");
+        assertEquals(List.of(0, 2, 4), List.copyOf(r.testLines().keySet()));
+        assertEquals("Math.Fails", r.testLines().get(4).methodName());
+        assertEquals("GTEST", r.testLines().get(4).className());
+        assertEquals(null, r.testLines().get(0).methodName(), "the whole file");
+        RunScan.Result plain = RunScan.scan(inputs("cpp", "main.cpp"), "int main() {}\n");
+        assertTrue(plain.testLines().isEmpty(), "a program: its main's ▶ only");
+        assertEquals(0, plain.line());
     }
 }

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Catch2TestRun name="ct" rng-seed="1242667637" xml-format-version="3" catch2-version="3.8.1">
+  <TestCase name="multiplies" tags="[math]" filename="/work/tests/catch_test.cpp" line="3">
+    <OverallResult success="true" skips="0"/>
+  </TestCase>
+  <TestCase name="fails here" tags="[math]" filename="/work/tests/catch_test.cpp" line="4">
+    <Section name="first" filename="/work/tests/catch_test.cpp" line="5">
+      <Expression success="false" type="REQUIRE" filename="/work/tests/catch_test.cpp" line="5">
+        <Original>
+          mul(2, 2) == 5
+        </Original>
+        <Expanded>
+          4 == 5
+        </Expanded>
+      </Expression>
+      <OverallResults successes="0" failures="1" expectedFailures="0" skipped="false"/>
+    </Section>
+    <OverallResult success="false" skips="0"/>
+  </TestCase>
+  <TestCase name="Skipped one" tags="[!mayfail]" filename="/work/tests/catch_test.cpp" line="7">
+    <Skip filename="/work/tests/catch_test.cpp" line="7">
+      later
+    </Skip>
+    <OverallResult success="true" skips="1"/>
+  </TestCase>
+  <TestCase name="odd, name [x] * ~y \ &quot;q&quot;" filename="/work/tests/catch_test.cpp" line="8">
+    <OverallResult success="true" skips="0"/>
+  </TestCase>
+  <TestCase name="odd" filename="/work/tests/catch_test.cpp" line="9">
+    <OverallResult success="true" skips="0"/>
+  </TestCase>
+  <TestCase name="Scenario: a story" filename="/work/tests/catch_test.cpp" line="10">
+    <OverallResult success="true" skips="0"/>
+  </TestCase>
+  <OverallResults successes="4" failures="1" expectedFailures="0" skips="1"/>
+  <OverallResultsCases successes="4" failures="1" expectedFailures="0" skips="1"/>
+</Catch2TestRun>

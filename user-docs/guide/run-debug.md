@@ -11,7 +11,7 @@ particular to one language is on its page under **Languages** in the sidebar.
 
 ## Running files
 
-You can run compact Java files, Python scripts, Node.js scripts, shell scripts,
+You can run single-file Java programs, Python scripts, Node.js scripts, shell scripts,
 Groovy scripts, Kotlin files, Clojure files, Scala files and PHP files with
 [language services](/docs/lsp) disabled. A green ▶ appears in the gutter of a
 runnable file:
@@ -19,6 +19,14 @@ runnable file:
 - a **Java compact source file** (JEP 512, a `.java` with a top-level
   `void main`) or an extensionless Java file with a `java --source 25+`
   shebang,
+- a **single-file Java program**: a `.java` outside a Maven or Gradle project
+  whose first class has a `static void main(String[] args)`. The ▶ sits on that
+  `main`, and Run File runs the file with the source launcher
+  (`java Hello.java`), which compiles it in memory first. A `public` main runs
+  on JDK 11 or newer; one that is not `public` needs JDK 25. The launcher runs
+  the first class in the file, so a `main` in a later class gets no ▶. In a
+  Maven or Gradle project a class's `main` runs through the build instead, from
+  its own ▶ (see [Running a project's main class](#running-a-projects-main-class)),
 - a **Python** script (the ▶ sits on the `if __name__ == "__main__"` guard,
   written either way round, with either quote or in parentheses; see
   [Python scripts](/docs/python#running-scripts)),

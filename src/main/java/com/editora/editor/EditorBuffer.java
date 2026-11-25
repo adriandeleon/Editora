@@ -3087,6 +3087,16 @@ public class EditorBuffer implements TabContent {
         runGutter.setMainGutterEnabled(enabled);
     }
 
+    /** Whether this file belongs to a Maven or Gradle project; Run File then never runs a class of it as one file. */
+    public void setJvmBuildProject(boolean inBuild) {
+        runGutter.setJvmBuildProject(inBuild);
+    }
+
+    /** The JDK release Run File's single-file Java program needs: 25 (compact source), 11 (classic class), else 0. */
+    public int javaRunRelease() {
+        return runGutter.javaRelease();
+    }
+
     public void setMainRunHandler(java.util.function.Consumer<com.editora.run.MainMethodScanner.MainMethod> handler) {
         runGutter.setMainRunHandler(handler);
     }
@@ -4764,6 +4774,11 @@ public class EditorBuffer implements TabContent {
 
     public void setDebugFileHandler(Runnable handler, java.util.function.BooleanSupplier shown) {
         runGutter.setDebugFileHandler(handler, shown);
+    }
+
+    /** Whether the editor menu offers Debug File beside Run File for this file now. */
+    public boolean debugFileOffered() {
+        return runGutter.debugFileHandler != null && runGutter.debugFileShown.getAsBoolean();
     }
 
     /** Callback fired after any note change (for persistence + the Notes panel). */

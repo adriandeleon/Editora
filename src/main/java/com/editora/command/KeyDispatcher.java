@@ -426,6 +426,11 @@ public class KeyDispatcher {
         if (commandId != null) {
             event.consume();
             consumedPress = true; // set before run(): a modal command defers the paired KEY_TYPED
+            if (!pending.isEmpty()) {
+                // The chord is complete: its "C-x -" echo goes with it, before the command runs, so a status the
+                // command sets is kept. Left there, it read as a prefix still waiting (smoke test 2026-11-24).
+                statusListener.accept("");
+            }
             reset();
             if (handledByFocusOwner(event.getTarget(), commandId)) {
                 prefixArg.reset(); // the component ran its own version of the command, once

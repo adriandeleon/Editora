@@ -86,7 +86,7 @@ class ToolchainCommandsTest {
 
         Confirm.Choice where = ToolchainCommands.whereQuestion(jdk, "21.0.9-tem");
         assertTrue(where.message().contains("java=21.0.9-tem"));
-        assertEquals(2, where.answers().size());
+        assertEquals(List.of("Write jkit.toml", "Write .sdkmanrc", "Editora Project Settings"), where.answers());
 
         Confirm.Question upgrade = ToolchainCommands.upgradeQuestion(List.of(
                 new JkitCli.UpgradeLine("jdk", 21, "temurin", false, "21.0.5+11", "21.0.9+10", "available", null),
@@ -98,6 +98,117 @@ class ToolchainCommandsTest {
                         List.of(new JkitCli.UpgradeLine("gradle", 8, null, false, "8.1", "8.14", "available", null)))
                 .header()
                 .startsWith("One newer build"));
+    }
+
+    @Test
+    void theChoiceGoesWhereTheProjectAlreadyKeepsIt() {
+        assertEquals(ToolchainCommands.Where.JKIT_TOML, ToolchainCommands.preferredWhere(true, true, true));
+        assertEquals(ToolchainCommands.Where.SDKMANRC, ToolchainCommands.preferredWhere(false, true, true));
+        assertEquals(ToolchainCommands.Where.JKIT_TOML, ToolchainCommands.preferredWhere(false, false, true));
+        assertEquals(ToolchainCommands.Where.SDKMANRC, ToolchainCommands.preferredWhere(true, false, false));
+    }
+
+    @Test
+    void aPinNamesExactlyTheInstall() {
+        ToolInstall zuluFx = install("jdk", "21.0.9+10", "zulu", true, "jkit", "21.0.9+10-zulu-fx");
+        assertEquals(new JkitCli.PinSpec("jdk", "21.0.9+10", "zulu", true), ToolchainCommands.pinFor("jdk", zuluFx));
+        ToolInstall graal = install("jdk", "25.0.1", "graalvm-ce", false, "jkit", "25.0.1-graalvm-ce");
+        assertEquals(
+                new JkitCli.PinSpec("graalvm", "25.0.1", "graalvm-ce", false),
+                ToolchainCommands.pinFor("graalvm", graal));
+        ToolInstall sbt = install("sbt", "1.11.7", null, false, "jkit", "1.11.7");
+        assertEquals(new JkitCli.PinSpec("sbt", "1.11.7", null, false), ToolchainCommands.pinFor("sbt", sbt));
+    }
+
+    @Test
+    void jkitsAnswersReadAsPopups() {
+        JkitCli.Status status = new JkitCli.Status(
+                java.nio.file.Path.of("/src/app"),
+                List.of("/src/app/jkit.toml"),
+                List.of("jkit.toml:3: unknown tool 'ant', skipped"),
+                null,
+                null,
+                List.of(
+                        new JkitCli.StatusTool(
+                                "jdk",
+                                new JkitCli.PinSpec("jdk", "21", null, false),
+                                null,
+                                "project",
+                                null,
+                                null,
+                                "jkit sync"),
+                        new JkitCli.StatusTool(
+                                "maven", null, null, "global", "/m", "/h/.jkit/tools/maven/3.9.11", null),
+                        new JkitCli.StatusTool("gradle", null, null, "none", null, null, null)));
+        String text = ToolchainCommands.statusText(status);
+        // The project's folder as this system writes it (\src\app on Windows).
+        assertTrue(text.startsWith("Project " + java.nio.file.Path.of("/src/app") + " (jkit.toml)"), text);
+        assertTrue(text.contains("! jkit.toml:3: unknown tool 'ant', skipped"));
+        assertTrue(text.contains("JDK: pins 21 → not installed"));
+        assertTrue(text.contains("\n    jkit sync"));
+        assertTrue(text.contains("Maven: global default /h/.jkit/tools/maven/3.9.11"));
+        assertTrue(text.contains("Gradle: none"));
+
+        List<JkitCli.DoctorCheck> checks = List.of(
+                new JkitCli.DoctorCheck("home", "ok", "jkit 0.4.0", null),
+                new JkitCli.DoctorCheck("hook", "warn", "hook not loaded", "jkit hook --install"));
+        assertEquals("One thing to look at.", ToolchainCommands.doctorHeader(checks));
+        assertEquals(
+                "✓ jkit 0.4.0\n! hook not loaded\n    Fix: jkit hook --install", ToolchainCommands.doctorText(checks));
+        assertEquals(
+                "2 checks failed.",
+                ToolchainCommands.doctorHeader(List.of(
+                        new JkitCli.DoctorCheck("a", "fail", "x", null),
+                        new JkitCli.DoctorCheck("b", "fail", "y", null))));
+
+        Confirm.Question prune = ToolchainCommands.pruneQuestion(new JkitCli.Prune(
+                List.of(install("jdk", "21.0.5+11", "temurin", false, "jkit", "21.0.5+11-temurin")),
+                List.of("/h/.jkit/tmp/install-1"),
+                List.of(),
+                200L * 1024 * 1024));
+        assertEquals("Free 200 MB?", prune.header());
+        assertTrue(prune.message().contains("• JDK 21.0.5+11 · temurin"));
+        assertTrue(prune.message().contains("one leftover"));
+
+        Confirm.Question unverified = ToolchainCommands.unverifiedQuestion(List.of(
+                new JkitCli.SyncLine("jdk", "would-install", "21.0.9+10 temurin"),
+                new JkitCli.SyncLine("jdk", "would-refuse", "21.0.9 openlogic")));
+        assertTrue(unverified.message().startsWith("• JDK 21.0.9 openlogic\n"), unverified.message());
+        assertEquals("Install Anyway", unverified.action());
+    }
+
+    @Test
+    void doctorsJkitRowNamesTheFirstFailureAndItsFix() {
+        assertNull(DoctorCoordinator.jkitFailure(List.of(new JkitCli.DoctorCheck("hook", "warn", "no hook", "x"))));
+        assertEquals(
+                "global maven is gone — jkit use maven@3.9.11 --global",
+                DoctorCoordinator.jkitFailure(List.of(
+                        new JkitCli.DoctorCheck("home", "ok", "fine", null),
+                        new JkitCli.DoctorCheck(
+                                "links", "fail", "global maven is gone", "jkit use maven@3.9.11 --global"))));
+    }
+
+    @Test
+    void jkitsVendorsForGraalvmAreGraalvmBased() {
+        assertTrue(ToolchainCommands.vendorChoices(false).contains("temurin"));
+        assertTrue(ToolchainCommands.vendorChoices(true).stream().allMatch(ToolInstall::graalvmVendor));
+        assertTrue(ToolchainCommands.vendorChoices(true).contains("mandrel"));
+    }
+
+    @Test
+    void theSettingsDialogWritesOnlyWhatChanged() {
+        JkitCli.ConfigSetting fromFile =
+                new JkitCli.ConfigSetting("jdk.vendor", "zulu", "file", "JKIT_JDK_VENDOR", "temurin", "");
+        JkitCli.ConfigSetting fromDefault =
+                new JkitCli.ConfigSetting("graalvm.vendor", "graalvm-ce", "default", null, "graalvm-ce", "");
+        assertEquals("zulu", JkitSettingsDialog.initial(fromFile));
+        assertEquals("", JkitSettingsDialog.initial(fromDefault), "jkit's default is shown as unset");
+        assertEquals(
+                java.util.Map.of("jdk.vendor", "", "shell.auto_switch", "true"),
+                JkitSettingsDialog.changes(List.of(
+                        new JkitSettingsDialog.Row("jdk.vendor", "zulu", () -> ""),
+                        new JkitSettingsDialog.Row("graalvm.vendor", "", () -> " "),
+                        new JkitSettingsDialog.Row("shell.auto_switch", "", () -> "true"))));
     }
 
     @Test

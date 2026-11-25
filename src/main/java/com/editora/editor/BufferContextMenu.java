@@ -139,7 +139,7 @@ final class BufferContextMenu {
                     }
                 });
                 items.add(run);
-                if (b.runGutter.debugFileHandler != null && b.runGutter.debugFileShown.getAsBoolean()) {
+                if (b.debugFileOffered()) {
                     MenuItem debugFile = MenuChords.tag(new MenuItem(tr("editmenu.debugFile")), "debug.debugFile");
                     debugFile.setGraphic(MenuIcons.debug());
                     debugFile.setOnAction(ev -> {

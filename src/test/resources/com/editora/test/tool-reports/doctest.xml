@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<doctest binary="./dt" version="2.4.12">
+  <Options order_by="file" rand_seed="0" first="0" last="4294967295" abort_after="0" subcase_filter_levels="2147483647" case_sensitive="false" no_throw="false" no_skip="false"/>
+  <TestSuite>
+    <TestCase name="subtracts" filename="/work/tests/doctest_test.cpp" line="4">
+      <OverallResultsAsserts successes="1" failures="0" test_case_success="true"/>
+    </TestCase>
+    <TestCase name="sub fails" filename="/work/tests/doctest_test.cpp" line="5">
+      <Expression success="false" type="CHECK" filename="/work/tests/doctest_test.cpp" line="5">
+        <Original>
+          sub(3, 1) == 5
+        </Original>
+        <Expanded>
+          2 == 5
+        </Expanded>
+      </Expression>
+      <OverallResultsAsserts successes="0" failures="1" test_case_success="false"/>
+    </TestCase>
+  </TestSuite>
+  <TestSuite name="suite">
+    <TestCase name="in suite" filename="/work/tests/doctest_test.cpp" line="6">
+      <OverallResultsAsserts successes="1" failures="0" test_case_success="true"/>
+    </TestCase>
+  </TestSuite>
+  <TestSuite>
+    <TestCase name="odd, name * ? \ x" filename="/work/tests/doctest_test.cpp" line="7">
+      <OverallResultsAsserts successes="1" failures="0" test_case_success="true"/>
+    </TestCase>
+    <TestCase name="odd" filename="/work/tests/doctest_test.cpp" line="8">
+      <OverallResultsAsserts successes="1" failures="0" test_case_success="true"/>
+    </TestCase>
+    <TestCase name="  Scenario: a story" filename="/work/tests/doctest_test.cpp" line="9">
+      <OverallResultsAsserts successes="1" failures="0" test_case_success="true"/>
+    </TestCase>
+  </TestSuite>
+  <OverallResultsAsserts successes="5" failures="1"/>
+  <OverallResultsTestCases successes="5" failures="1" skipped="0"/>
+</doctest>

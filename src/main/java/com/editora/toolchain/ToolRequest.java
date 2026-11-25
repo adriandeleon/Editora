@@ -45,7 +45,7 @@ public record ToolRequest(
             String expanded = s.startsWith("~") ? System.getProperty("user.home", "~") + s.substring(1) : s;
             return new ToolRequest(tool, s, "", null, null, Path.of(expanded));
         }
-        if (!ToolInstall.JDK.equals(tool)) {
+        if (!ToolInstall.JDK.equals(tool) && !ToolInstall.GRAALVM.equals(tool)) {
             return new ToolRequest(tool, s, s, null, null, null);
         }
         // jkit's id: <version>-<vendor>[-fx], the vendor possibly dashed itself (graalvm-ce, liberica-nik)
@@ -61,6 +61,21 @@ public record ToolRequest(
             return new ToolRequest(tool, s, sdkman.version(), sdkman.vendor(), sdkman.fx(), null);
         }
         return new ToolRequest(tool, s, s, null, null, null);
+    }
+
+    /**
+     * A pin as jkit reads it ({@code jkit status}): a version or prefix (null for the newest), a vendor, JavaFX.
+     * A pin without {@code fx = true} does not ask for a JavaFX build, but takes one when that is all there is.
+     */
+    public static ToolRequest of(JkitCli.PinSpec pin) {
+        String vendor = pin.vendor() == null || pin.vendor().isBlank() ? null : Vendors.normalize(pin.vendor());
+        return new ToolRequest(
+                pin.tool(),
+                pin.label(),
+                pin.version() == null ? "" : pin.version(),
+                vendor,
+                pin.fx() ? Boolean.TRUE : null,
+                null);
     }
 
     private static boolean looksLikePath(String s) {
@@ -92,7 +107,8 @@ public record ToolRequest(
 
     /** Whether {@code install} answers this request (the path, or version, vendor and JavaFX). */
     public boolean matches(ToolInstall install) {
-        if (!tool.equals(install.tool())) {
+        boolean sameTool = ToolInstall.GRAALVM.equals(tool) ? install.graalvm() : tool.equals(install.tool());
+        if (!sameTool) {
             return false;
         }
         if (path != null) {
@@ -137,8 +153,15 @@ public record ToolRequest(
 
     /** How jkit names this request: {@code jdk@21.0.9 temurin}, for a {@code jkit install} command. */
     public @Nullable List<String> jkitInstallArgs() {
-        if (path != null || version.isEmpty()) {
+        if (path != null) {
             return null;
+        }
+        if (version.isEmpty()) {
+            List<String> latest = new java.util.ArrayList<>(List.of("install", tool + "@latest"));
+            if (vendor != null) {
+                latest.add(vendor);
+            }
+            return List.copyOf(latest);
         }
         List<String> args = new java.util.ArrayList<>(List.of("install", tool + "@" + version));
         if (vendor != null) {

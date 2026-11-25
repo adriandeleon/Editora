@@ -1,6 +1,6 @@
 ---
 title: "C & C++"
-description: "Debugging C and C++ with CodeLLDB or GDB."
+description: "Debugging C and C++ with CodeLLDB or GDB, and running GoogleTest, Catch2 and doctest tests."
 category: Languages
 order: 13
 ---
@@ -55,3 +55,37 @@ finds `gdb` as set in **GDB path** on the same card, else on the PATH; without
 it, Debug says GDB was not found. GDB isn't installed by Editora.
 
 ![The Language picker of Settings → Debugging set to Rust, C and C++ (CodeLLDB), and under it that card: Enable Rust debugging (CodeLLDB) on, Enable C and C++ debugging (CodeLLDB) on, C and C++ debugger set to CodeLLDB with the hint that GDB debugs through its own DAP mode (GDB 14 or later), an empty GDB path, an empty CodeLLDB (codelldb) path with Browse…, and Detected codelldb: found](/screenshots/docs/debug-settings-cpp.png "The Rust, C and C++ card: C and C++ can switch from CodeLLDB to GDB.")
+
+## Tests
+
+A C or C++ file that includes GoogleTest (`gtest/gtest.h`, `gmock/gmock.h`),
+Catch2 (`catch2/catch_…`, or Catch2 2's `catch.hpp`) or doctest
+(`doctest/doctest.h`, `doctest.h`) is a test file. Each test has a ▶ in the
+gutter, and the first line has one for the whole file:
+
+- **GoogleTest:** `TEST`, `TEST_F`, `TEST_P` (every value it is instantiated
+  with), `TYPED_TEST` and `TYPED_TEST_P`.
+- **Catch2:** `TEST_CASE`, `TEST_CASE_METHOD`, `SCENARIO` and the template test
+  cases (every type).
+- **doctest:** `TEST_CASE`, `TEST_CASE_FIXTURE`, `SCENARIO` and
+  `TEST_CASE_TEMPLATE`.
+
+A test made by a macro of your project's own isn't seen.
+
+Its program is built as [Debug File](#debugging) builds it (CMake, Make, or
+the file alone), then run with the test's own filter: `--gtest_filter` for
+GoogleTest, the test's name as a Catch2 test spec, `--test-case` for doctest.
+
+- **Run File** and the first line's ▶ run every test of the program.
+- **Run Test at Caret** (`test.runAtCaret`) and a test's ▶ run that test; with
+  the caret outside every test, every test runs.
+- **Debug Test at Caret** (`test.debugAtCaret`), and **Debug Test** in a ▶'s
+  menu, debug the program on CodeLLDB or GDB, run with the test's filter.
+
+The results fill [Test Results](/docs/build-tools#test-runner): each test
+passed, failed or skipped, a failed check with its values and its section, and
+a row that opens the line where it failed. **Rerun**, **Rerun Failed** and
+**Rerun This Test** build the program again first. The test frameworks aren't
+installed by Editora; CMake's `find_package` (or your Makefile) finds them.
+CTest isn't run: the test program runs directly.
+

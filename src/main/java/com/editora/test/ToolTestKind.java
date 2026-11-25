@@ -22,7 +22,15 @@ public enum ToolTestKind {
     MINITEST(""),
     PHPUNIT(".xml"),
     EXUNIT(""),
-    DART(".json");
+    DART(".json"),
+    /** A GoogleTest program: {@code --gtest_output=xml}. */
+    GTEST(".xml"),
+    /** A Catch2 3 program: its XML reporter to the file, its console reporter kept. */
+    CATCH2(".xml"),
+    /** A Catch2 2 program ({@code catch.hpp}): one reporter only, so its console says little. */
+    CATCH2_V2(".xml"),
+    /** A doctest program: its XML reporter, to the file. */
+    DOCTEST(".xml");
 
     /** The report file's suffix; empty for a runner read from its console. */
     private final String reportSuffix;
@@ -42,10 +50,10 @@ public enum ToolTestKind {
 
     /**
      * Whether its report lists the tests a filter left out, as skipped (Jest's {@code -t}, Vitest's, Deno's
-     * {@code --filter}): a narrowed run's skipped rows are dropped.
+     * {@code --filter}, doctest's {@code --test-case}): a narrowed run's skipped rows are dropped.
      */
     public boolean reportsFilteredAsSkipped() {
-        return this == JEST || this == VITEST || this == DENO;
+        return this == JEST || this == VITEST || this == DENO || this == DOCTEST;
     }
 
     /**
@@ -94,6 +102,10 @@ public enum ToolTestKind {
             case PHPUNIT -> List.of("--log-junit", report.toString());
             case EXUNIT -> List.of("--trace");
             case DART -> List.of("--file-reporter", "json:" + report);
+            case GTEST -> List.of("--gtest_output=xml:" + report);
+            case CATCH2 -> List.of("--reporter", "console::out=-", "--reporter", "xml::out=" + report);
+            case CATCH2_V2 -> List.of("--reporter", "xml", "--out", report.toString());
+            case DOCTEST -> List.of("--reporters=xml", "--out=" + report);
         };
         return insert(argv, add);
     }
@@ -110,6 +122,9 @@ public enum ToolTestKind {
             if (a.equals("--")) {
                 tests = true;
             }
+            if (!tests && i > 0 && narrowingWhole(a)) {
+                continue; // a filter written as one argument, or a Catch2 test spec
+            }
             if (!tests && narrowing(a) && i + 1 < argv.size()) {
                 i++; // and its value
                 continue;
@@ -117,6 +132,16 @@ public enum ToolTestKind {
             out.add(tests ? a : withoutLine(a));
         }
         return List.copyOf(out);
+    }
+
+    /** A native test program's narrowing, all in one argument (the program itself is never one). */
+    private boolean narrowingWhole(String arg) {
+        return switch (this) {
+            case GTEST -> arg.startsWith("--gtest_filter=");
+            case DOCTEST -> arg.startsWith("--test-case=") || arg.startsWith("-tc=");
+            case CATCH2, CATCH2_V2 -> !arg.startsWith("-"); // its test specs: what is not an option
+            default -> false;
+        };
     }
 
     private boolean narrowing(String arg) {
@@ -127,6 +152,7 @@ public enum ToolTestKind {
             case DART -> arg.equals("--plain-name") || arg.equals("--name") || arg.equals("-N") || arg.equals("-n");
             case RSPEC -> arg.equals("-e") || arg.equals("--example");
             case EXUNIT -> arg.equals("--only");
+            case GTEST, CATCH2, CATCH2_V2, DOCTEST -> false;
         };
     }
 
@@ -192,6 +218,17 @@ public enum ToolTestKind {
                 }
             }
             case DART -> add.addAll(List.of("--name", "^(" + alternatives(names) + ")$"));
+            case GTEST -> add.addAll(CppTests.filterArgs(this, names)); // Suite.Test, as the report names it
+            case CATCH2, CATCH2_V2 -> {
+                List<String> each = new ArrayList<>();
+                names.forEach(n -> each.add(CppTests.catchEscape(n)));
+                add.addAll(CppTests.filterArgs(this, each));
+            }
+            case DOCTEST -> {
+                List<String> each = new ArrayList<>();
+                names.forEach(n -> each.add(n.replace(",", "\\,")));
+                add.addAll(CppTests.filterArgs(this, each));
+            }
         }
         return insert(wholeFile, add);
     }
@@ -235,6 +272,8 @@ public enum ToolTestKind {
             case DART -> DartJsonReport.parse(text, dir);
             case PHPUNIT, DENO -> JUnitXmlParser.parseAll(text, dir);
             case MINITEST, EXUNIT -> List.of();
+            case GTEST -> NativeTestReports.googleTest(text, dir);
+            case CATCH2, CATCH2_V2, DOCTEST -> NativeTestReports.catchOrDoctest(text, dir);
         };
     }
 
