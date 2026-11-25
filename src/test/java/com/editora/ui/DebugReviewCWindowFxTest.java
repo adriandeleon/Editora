@@ -89,7 +89,7 @@ class DebugReviewCWindowFxTest {
         FxTestSupport.runOnFx(manager::stop);
         FxTestSupport.drainFx();
         if (FxTestSupport.callOnFx(debug::breakpointsMuted)) {
-            FxTestSupport.runOnFx(debug::toggleMuteBreakpoints);
+            FxTestSupport.runOnFx(debug.breakpointMenus::toggleMuteBreakpoints);
         }
     }
 
@@ -459,7 +459,7 @@ class DebugReviewCWindowFxTest {
             assertEquals("x * 2 = val(x * 2)", shown.get(2));
 
             // Pinned while paused: it shows at once; Pin to Line in the value popup pins to the popup's line.
-            DebugValuePopup.Source source = FxTestSupport.field(debug.valuePopup(), "source");
+            DebugValuePopup.Source source = FxTestSupport.field(debug.valuePopups.valuePopup(), "source");
             FxTestSupport.runOnFx(() -> source.pin(b.getFocusedArea(), 0, "n"));
             await("the popup's pin painted", () -> "n = val(n)".equals(pinned(b).get(0)));
 
@@ -549,7 +549,7 @@ class DebugReviewCWindowFxTest {
     void theEditorMenuOffersBreakpointsAndWhilePausedRunToCursorShowValueAndWatch() throws Exception {
         Path util = file("util.py", UTIL);
         EditorBuffer b = open(util);
-        List<String> idle = FxTestSupport.callOnFx(() -> labels(debug.editorMenuItems(b)));
+        List<String> idle = FxTestSupport.callOnFx(() -> labels(debug.breakpointMenus.editorMenuItems(b)));
         assertEquals(
                 List.of(
                         tr("editmenu.breakpoints"),
@@ -569,7 +569,7 @@ class DebugReviewCWindowFxTest {
             FakeDebugAdapter.Session session = connect(adapter, util);
             stopAt(session, util, 3, "breakpoint");
             FxTestSupport.runOnFx(() -> b.getArea().moveTo(2, 5)); // on "y" of "y = x * 2"
-            List<String> paused = FxTestSupport.callOnFx(() -> labels(debug.editorMenuItems(b)));
+            List<String> paused = FxTestSupport.callOnFx(() -> labels(debug.breakpointMenus.editorMenuItems(b)));
             assertTrue(paused.contains(DebugPanelText.bareTitle(tr("command.debug.runToCursor"))), paused.toString());
             assertTrue(paused.contains(DebugPanelText.bareTitle(tr("command.debug.showValue"))), paused.toString());
             assertTrue(paused.contains(tr("debugpanel.addToWatches", "y")), paused.toString());
@@ -589,7 +589,7 @@ class DebugReviewCWindowFxTest {
         // A single-file program now runs on its own, so Debug File sits beside Run File, not twice.
         assertTrue(FxTestSupport.callOnFx(b::isRunnable), "java Main.java runs it");
         assertTrue(FxTestSupport.callOnFx(b::debugFileOffered), "Debug File beside Run File");
-        List<String> labels = FxTestSupport.callOnFx(() -> labels(debug.editorMenuItems(b)));
+        List<String> labels = FxTestSupport.callOnFx(() -> labels(debug.breakpointMenus.editorMenuItems(b)));
         assertFalse(labels.contains(tr("editmenu.debugFile")), "beside Run File, not twice: " + labels);
         // Review 2 C110: not while that file is being debugged — it offered a second launch of it.
         try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
@@ -699,7 +699,7 @@ class DebugReviewCWindowFxTest {
             return find(graphic, "breakpoint-slot");
         });
         assertNotNull(slot);
-        ContextMenu menu = FxTestSupport.callOnFx(debug::gutterMenu);
+        ContextMenu menu = FxTestSupport.callOnFx(debug.breakpointMenus::gutterMenu);
         FxTestSupport.runOnFx(() -> slot.fireEvent(
                 new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 1, 1, 100, 100, false, null)));
         FxTestSupport.drainFx();
@@ -744,11 +744,11 @@ class DebugReviewCWindowFxTest {
         String runnables = LAMBDAS.lines().toList().get(5);
         FxTestSupport.runOnFx(() -> {
             b.getFocusedArea().moveTo(4, 2); // before the lambda: the line's first one
-            debug.toggleLambdaBreakpointAtCaret();
+            debug.breakpointMenus.toggleLambdaBreakpointAtCaret();
             b.getFocusedArea().moveTo(5, runnables.lastIndexOf("{}"));
-            debug.toggleLambdaBreakpointAtCaret(); // the second Runnable
+            debug.breakpointMenus.toggleLambdaBreakpointAtCaret(); // the second Runnable
             b.getFocusedArea().moveTo(0, 3);
-            debug.toggleLambdaBreakpointAtCaret(); // "import" starts no lambda
+            debug.breakpointMenus.toggleLambdaBreakpointAtCaret(); // "import" starts no lambda
         });
         assertEquals(List.of(1), FxTestSupport.callOnFx(() -> mgr.get(4).lambdas()));
         assertTrue(FxTestSupport.callOnFx(() -> mgr.get(4).lambdasOnly()));
@@ -758,16 +758,18 @@ class DebugReviewCWindowFxTest {
         assertTrue(FxTestSupport.callOnFx(() -> mgr.tooltip(4)).contains(tr("debug.breakpoint.lambdasOnly", "1")));
         String title = DebugPanelText.bareTitle(tr("command.debug.toggleLambdaBreakpoint"));
         assertFalse(
-                FxTestSupport.callOnFx(() -> labels(debug.editorMenuItems(b)).contains(title)),
+                FxTestSupport.callOnFx(
+                        () -> labels(debug.breakpointMenus.editorMenuItems(b)).contains(title)),
                 "the caret's line starts no lambda");
         FxTestSupport.runOnFx(() -> b.getFocusedArea().moveTo(4, 2));
-        assertTrue(FxTestSupport.callOnFx(() -> labels(debug.editorMenuItems(b)).contains(title)));
+        assertTrue(FxTestSupport.callOnFx(
+                () -> labels(debug.breakpointMenus.editorMenuItems(b)).contains(title)));
 
         // The gutter menu of line 6: on the line too, and the first lambda as well.
         FxTestSupport.drainFx();
         Node slot = FxTestSupport.callOnFx(
                 () -> find(b.getArea().getParagraphGraphicFactory().apply(5), "breakpoint-slot"));
-        ContextMenu menu = FxTestSupport.callOnFx(debug::gutterMenu);
+        ContextMenu menu = FxTestSupport.callOnFx(debug.breakpointMenus::gutterMenu);
         FxTestSupport.runOnFx(() -> slot.fireEvent(
                 new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 1, 1, 100, 100, false, null)));
         FxTestSupport.drainFx();
@@ -811,8 +813,9 @@ class DebugReviewCWindowFxTest {
                             sb.getColumn() != null && sb.getColumn() >= 40 ? "not loaded yet" : null))
                     .toList();
             FakeDebugAdapter.Session session = connect(adapter, main);
-            FxTestSupport.runOnFx(debug::toggleMuteBreakpoints); // muted and back: the breakpoints are sent again
-            FxTestSupport.runOnFx(debug::toggleMuteBreakpoints);
+            FxTestSupport.runOnFx(
+                    debug.breakpointMenus::toggleMuteBreakpoints); // muted and back: the breakpoints are sent again
+            FxTestSupport.runOnFx(debug.breakpointMenus::toggleMuteBreakpoints);
             await(
                     "the file's breakpoints sent",
                     () -> session.breakpoints.stream()
@@ -846,13 +849,13 @@ class DebugReviewCWindowFxTest {
         // The command on line 5's only lambda again: the breakpoint stopped nowhere else, so it goes.
         FxTestSupport.runOnFx(() -> {
             b.getFocusedArea().moveTo(4, forEach.indexOf("System"));
-            debug.toggleLambdaBreakpointAtCaret();
+            debug.breakpointMenus.toggleLambdaBreakpointAtCaret();
         });
         assertFalse(FxTestSupport.callOnFx(() -> mgr.isBreakpoint(4)));
         // Taking a lambda from a breakpoint that also stops on its line keeps it.
         FxTestSupport.runOnFx(() -> {
             b.getFocusedArea().moveTo(5, runnables.lastIndexOf("{}"));
-            debug.toggleLambdaBreakpointAtCaret();
+            debug.breakpointMenus.toggleLambdaBreakpointAtCaret();
         });
         assertEquals(List.of(1), FxTestSupport.callOnFx(() -> mgr.get(5).lambdas()));
         FxTestSupport.runOnFx(() -> b.toggleBreakpoint(5));
@@ -864,10 +867,10 @@ class DebugReviewCWindowFxTest {
         EditorBuffer b = open(util);
         FxTestSupport.runOnFx(() -> {
             b.getFocusedArea().moveTo(0, 4);
-            debug.toggleLambdaBreakpointAtCaret();
+            debug.breakpointMenus.toggleLambdaBreakpointAtCaret();
         });
         assertFalse(FxTestSupport.callOnFx(() -> b.getBreakpointManager().isBreakpoint(0)));
-        assertFalse(FxTestSupport.callOnFx(() -> labels(debug.editorMenuItems(b))
+        assertFalse(FxTestSupport.callOnFx(() -> labels(debug.breakpointMenus.editorMenuItems(b))
                 .contains(DebugPanelText.bareTitle(tr("command.debug.toggleLambdaBreakpoint")))));
     }
 
@@ -907,7 +910,7 @@ class DebugReviewCWindowFxTest {
         // Right-click: the watchpoint's own menu.
         Node slot = FxTestSupport.callOnFx(
                 () -> find(b.getArea().getParagraphGraphicFactory().apply(3), "breakpoint-slot"));
-        ContextMenu menu = FxTestSupport.callOnFx(debug::gutterMenu);
+        ContextMenu menu = FxTestSupport.callOnFx(debug.breakpointMenus::gutterMenu);
         FxTestSupport.runOnFx(() -> slot.fireEvent(
                 new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 1, 1, 100, 100, false, null)));
         FxTestSupport.drainFx();
@@ -928,9 +931,9 @@ class DebugReviewCWindowFxTest {
         assertEquals("field disabled", FxTestSupport.callOnFx(() -> mgr.glyphClasses(3)), "greyed at once");
 
         // Muted: faded like every glyph.
-        FxTestSupport.runOnFx(debug::toggleMuteBreakpoints);
+        FxTestSupport.runOnFx(debug.breakpointMenus::toggleMuteBreakpoints);
         assertEquals("method muted", FxTestSupport.callOnFx(() -> mgr.glyphClasses(4)));
-        FxTestSupport.runOnFx(debug::toggleMuteBreakpoints);
+        FxTestSupport.runOnFx(debug.breakpointMenus::toggleMuteBreakpoints);
 
         // A click on the method's mark removes the method breakpoint (a line breakpoint is not set).
         java.util.function.BiConsumer<EditorBuffer, Integer> click = FxTestSupport.field(b, "gutterBreakpointClick");
@@ -1066,13 +1069,13 @@ class DebugReviewCWindowFxTest {
 
         try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
             FakeDebugAdapter.Session session = connect(adapter, util);
-            FxTestSupport.runOnFx(debug::toggleMuteBreakpoints);
+            FxTestSupport.runOnFx(debug.breakpointMenus::toggleMuteBreakpoints);
             await(
                     "Mute did not tell the adapter",
                     () -> !session.breakpoints.isEmpty()
                             && session.breakpoints.getLast().getBreakpoints().length == 0);
             int sent = session.breakpoints.size();
-            FxTestSupport.runOnFx(debug::toggleMuteBreakpoints);
+            FxTestSupport.runOnFx(debug.breakpointMenus::toggleMuteBreakpoints);
             await(
                     "unmuting did not re-send",
                     () -> session.breakpoints.size() > sent
@@ -1202,7 +1205,7 @@ class DebugReviewCWindowFxTest {
         assertEquals(2, FxTestSupport.callOnFx(this::completingFields).size(), "the condition and the log message");
         FxTestSupport.runOnFx(overlay::hide);
         assertSame(
-                FxTestSupport.field(debug, "valuePresenter"),
+                FxTestSupport.field(debug.valuePopups, "valuePresenter"),
                 FxTestSupport.callOnFx(() -> FxTestSupport.field(FxTestSupport.field(b, "debugHover"), "presenter")),
                 "the editor shows values with the window's popup, made when first wanted");
 
@@ -1214,8 +1217,8 @@ class DebugReviewCWindowFxTest {
             stopAt(session, util, 3, "breakpoint");
             List<List<com.editora.dap.DapModels.CompletionTarget>> got = new java.util.ArrayList<>();
             FxTestSupport.runOnFx(() -> {
-                assertTrue(debug.completionSource(false).paused());
-                debug.completionSource(true).complete("n={na", 5, got::add);
+                assertTrue(debug.valuePopups.completionSource(false).paused());
+                debug.valuePopups.completionSource(true).complete("n={na", 5, got::add);
             });
             await("no completions came back", () -> !got.isEmpty());
             var asked = session.completionRequests.getFirst();

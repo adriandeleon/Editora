@@ -437,7 +437,7 @@ class LowLevelViewsFxTest {
                     call(() -> manager.instructionConditions().get(address)));
 
             // The Breakpoints list has it, with what it asks; Remove takes it off.
-            BreakpointsPicker picker = call(debug::breakpointsPicker);
+            BreakpointsPicker picker = call(debug.breakpointMenus::breakpointsPicker);
             BreakpointsPicker.Entry entry = call(() -> picker.entries().stream()
                     .filter(e -> address.equals(e.instruction()))
                     .findFirst()

@@ -63,7 +63,7 @@ final class DebugRowCommands {
             // is the one it fires; elsewhere the Debug window's.
             mc.registry.register(Command.of(id, () -> {
                 if (!FocusCommands.runWhereFocused(id, mc::setStatus, javafx.stage.Window.getWindows())) {
-                    mc.debugCoordinator.ifDebug(() -> mc.debugCoordinator.runPanelRow(id));
+                    mc.debugCoordinator.ifDebug(() -> mc.debugCoordinator.breakpointMenus.runPanelRow(id));
                 }
             }));
         }

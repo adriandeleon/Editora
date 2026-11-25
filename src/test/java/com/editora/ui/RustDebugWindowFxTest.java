@@ -279,7 +279,7 @@ class RustDebugWindowFxTest {
     void theEditorMenuOffersDebugFileBesideRunFile() throws Exception {
         EditorBuffer b = open(root.resolve("src/main.rs"));
         await("the Run scan", () -> call(b::isRunnable));
-        List<String> items = FxTestSupport.callOnFx(() -> debug.editorMenuItems(b).stream()
+        List<String> items = FxTestSupport.callOnFx(() -> debug.breakpointMenus.editorMenuItems(b).stream()
                 .map(javafx.scene.control.MenuItem::getText)
                 .toList());
         assertFalse(items.contains(tr("editmenu.debugFile")), "beside Run File, not twice: " + items);

@@ -5,36 +5,36 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** {@link DebugCoordinator#offersOwnDebugFile}: which files the editor menu gives a Debug File entry of its own. */
+/** {@link BreakpointMenus#offersOwnDebugFile}: which files the editor menu gives a Debug File entry of its own. */
 class DebugFileEntryTest {
 
     @Test
     void goAndRustFilesGetOneSinceRunFileCannotRunThem() {
-        assertTrue(DebugCoordinator.offersOwnDebugFile("go", false, false));
-        assertTrue(DebugCoordinator.offersOwnDebugFile("rust", false, false));
+        assertTrue(BreakpointMenus.offersOwnDebugFile("go", false, false));
+        assertTrue(BreakpointMenus.offersOwnDebugFile("rust", false, false));
         for (String language : java.util.List.of("c", "cpp", "csharp", "ruby", "php")) {
-            assertTrue(DebugCoordinator.offersOwnDebugFile(language, false, false), language);
+            assertTrue(BreakpointMenus.offersOwnDebugFile(language, false, false), language);
         }
-        assertFalse(DebugCoordinator.offersOwnDebugFile("python", false, false), "Run File runs it");
+        assertFalse(BreakpointMenus.offersOwnDebugFile("python", false, false), "Run File runs it");
     }
 
     @Test
     void aClassicJavaMainClassGetsOneOnlyOutsideAProject() {
-        assertTrue(DebugCoordinator.offersOwnDebugFile("java", false, false));
-        assertFalse(DebugCoordinator.offersOwnDebugFile("java", false, true), "a project's class: Debug Main Class");
+        assertTrue(BreakpointMenus.offersOwnDebugFile("java", false, false));
+        assertFalse(BreakpointMenus.offersOwnDebugFile("java", false, true), "a project's class: Debug Main Class");
     }
 
     @Test
     void aRunnableFileHasDebugFileBesideRunFileInstead() {
-        assertFalse(DebugCoordinator.offersOwnDebugFile("go", true, false));
-        assertFalse(DebugCoordinator.offersOwnDebugFile("rust", true, false));
-        assertFalse(DebugCoordinator.offersOwnDebugFile("java", true, false));
+        assertFalse(BreakpointMenus.offersOwnDebugFile("go", true, false));
+        assertFalse(BreakpointMenus.offersOwnDebugFile("rust", true, false));
+        assertFalse(BreakpointMenus.offersOwnDebugFile("java", true, false));
     }
 
     @Test
     void otherLanguagesGetNone() {
-        assertFalse(DebugCoordinator.offersOwnDebugFile("python", false, false));
-        assertFalse(DebugCoordinator.offersOwnDebugFile("javascript", false, false));
-        assertFalse(DebugCoordinator.offersOwnDebugFile("kotlin", false, false));
+        assertFalse(BreakpointMenus.offersOwnDebugFile("python", false, false));
+        assertFalse(BreakpointMenus.offersOwnDebugFile("javascript", false, false));
+        assertFalse(BreakpointMenus.offersOwnDebugFile("kotlin", false, false));
     }
 }

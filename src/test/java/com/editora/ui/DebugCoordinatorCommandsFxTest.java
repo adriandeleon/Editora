@@ -368,12 +368,12 @@ class DebugCoordinatorCommandsFxTest {
             assertEquals("disabled", marks.get(2).classes());
             assertEquals("triggered", marks.get(3).classes());
             assertFalse(marks.get(3).tooltip().isBlank(), "it says what it waits for");
-            debug.toggleMuteBreakpoints();
+            debug.breakpointMenus.toggleMuteBreakpoints();
             marks = debug.cardBreakpoints(closed);
             assertEquals("muted", marks.get(0).classes());
             assertEquals("disabled muted", marks.get(2).classes());
             assertTrue(marks.get(0).tooltip().startsWith(tr("debug.breakpoint.muted")));
-            debug.toggleMuteBreakpoints();
+            debug.breakpointMenus.toggleMuteBreakpoints();
 
             debug.toggleCardBreakpoint(closed, 2, text);
             assertEquals(
@@ -389,9 +389,9 @@ class DebugCoordinatorCommandsFxTest {
 
             // A tab's breakpoints as its gutter draws them, muted ones too; a line with no code gets none.
             debug.toggleCardBreakpoint(openFile, 3, SOURCE);
-            debug.toggleMuteBreakpoints();
+            debug.breakpointMenus.toggleMuteBreakpoints();
             assertEquals("muted", debug.cardBreakpoints(openFile).get(3).classes());
-            debug.toggleMuteBreakpoints();
+            debug.breakpointMenus.toggleMuteBreakpoints();
             debug.toggleCardBreakpoint(openFile, 6, SOURCE);
             assertFalse(open.getBreakpointManager().isBreakpoint(6), "the empty last line");
             debug.toggleCardBreakpoint(openFile, 3, SOURCE);
@@ -700,10 +700,10 @@ class DebugCoordinatorCommandsFxTest {
         FxTestSupport.runOnFx(() -> debug.memberBreakpoints().watchVariable(5, "local"));
         awaitStatus(tr("status.debug.notAField", "local"));
 
-        FxTestSupport.runOnFx(debug::toggleMuteBreakpoints);
+        FxTestSupport.runOnFx(debug.breakpointMenus::toggleMuteBreakpoints);
         assertEquals(List.of(), awaitNth(session.functionBreakpoints, 3), "muted: none");
         assertEquals(List.of(), awaitNth(session.dataBreakpoints, 3));
-        FxTestSupport.runOnFx(debug::toggleMuteBreakpoints);
+        FxTestSupport.runOnFx(debug.breakpointMenus::toggleMuteBreakpoints);
         assertEquals(List.of("demo.Args#run"), awaitNth(session.functionBreakpoints, 4));
         assertEquals(List.of("demo.Args#count/WRITE"), awaitNth(session.dataBreakpoints, 4));
 
@@ -1999,7 +1999,7 @@ class DebugCoordinatorCommandsFxTest {
             b.getFocusedArea().moveTo(2, 0);
             debug.toggleBreakpointAtCaret(); // an ordinary one on line 3
             b.getFocusedArea().moveTo(3, 0);
-            debug.toggleTemporaryBreakpointAtCaret();
+            debug.breakpointMenus.toggleTemporaryBreakpointAtCaret();
         });
         assertEquals(List.of(tr("status.debug.temporaryAdded", 4)), statuses());
         assertTrue(FxTestSupport.callOnFx(() -> b.getBreakpointManager().get(3).temporary()));
@@ -2024,10 +2024,10 @@ class DebugCoordinatorCommandsFxTest {
         // Toggled on an ordinary breakpoint it makes that one temporary; on a temporary one it removes it.
         FxTestSupport.runOnFx(() -> {
             b.getFocusedArea().moveTo(2, 0);
-            debug.toggleTemporaryBreakpointAtCaret();
+            debug.breakpointMenus.toggleTemporaryBreakpointAtCaret();
         });
         assertTrue(FxTestSupport.callOnFx(() -> b.getBreakpointManager().get(2).temporary()));
-        FxTestSupport.runOnFx(() -> debug.toggleTemporaryBreakpointAtCaret());
+        FxTestSupport.runOnFx(() -> debug.breakpointMenus.toggleTemporaryBreakpointAtCaret());
         assertFalse(FxTestSupport.callOnFx(() -> b.getBreakpointManager().isBreakpoint(2)));
     }
 

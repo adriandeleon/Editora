@@ -16,8 +16,6 @@ import java.util.function.Predicate;
 
 import javafx.application.Platform;
 import javafx.scene.Node;
-import javafx.scene.control.Label;
-import javafx.scene.control.TextField;
 
 import com.editora.config.Breakpoint;
 import com.editora.config.BreakpointStore;
@@ -430,7 +428,7 @@ final class DebugCoordinator {
      * Starts {@code work} on a virtual thread called {@code name}, given the session being handled now (read here, on
      * the FX thread) so that what it hands back runs as that session's ({@link #laterIn}).
      */
-    private void startOffFx(String name, Function<DebugSession, Runnable> work) {
+    void startOffFx(String name, Function<DebugSession, Runnable> work) {
         Runnable job = work.apply(s());
         Thread.ofVirtual().name(name).start(job);
     }
@@ -438,7 +436,7 @@ final class DebugCoordinator {
     /** Python launches: Run's plan for debugpy, and Debug of a Python run configuration. */
     private final PythonDebugLaunch python = new PythonDebugLaunch(this);
 
-    private final InstructionBreakpoints instructionBreakpoints = new InstructionBreakpoints(this);
+    final InstructionBreakpoints instructionBreakpoints = new InstructionBreakpoints(this);
     private final MemoryEdits memoryEdits = new MemoryEdits(this);
 
     private final DartDebugLaunch dart = new DartDebugLaunch(this); // Dart, and a Flutter app's Dart
@@ -453,6 +451,9 @@ final class DebugCoordinator {
     final BrowserDebugLaunch browser = new BrowserDebugLaunch(this); // a page in Chrome, Edge, Firefox…
     final RubyDebugLaunch ruby = new RubyDebugLaunch(this); // Ruby scripts, RSpec, Minitest, a Rails app's server
     final PhpDebugLaunch php = new PhpDebugLaunch(this); // PHP files, web apps, PHPUnit tests, Listen for Xdebug
+    final BreakpointMenus breakpointMenus =
+            new BreakpointMenus(this); // breakpoints list, mute, gutter and editor menus
+    final ValuePopups valuePopups = new ValuePopups(this); // expression-field completion, the value popup
 
     /** The build facts a launch asks: looked at off the FX thread first when not known ({@link DebugFacts}). */
     private final DebugFacts facts = new DebugFacts(this::executableFacts, this::sayBusy, this::lookFailed);
@@ -479,7 +480,7 @@ final class DebugCoordinator {
     }
 
     /** Runs {@code r} later on the FX thread as {@code session}'s; callable from any thread. */
-    private void laterIn(DebugSession session, Runnable r) {
+    void laterIn(DebugSession session, Runnable r) {
         Platform.runLater(() -> inSession(session, r));
     }
 
@@ -512,7 +513,7 @@ final class DebugCoordinator {
     }
 
     /** {@code r}, run as the session being handled now whenever it runs, as {@link #asThisSession} does. */
-    private Runnable bound(Runnable r) {
+    Runnable bound(Runnable r) {
         Consumer<Object> c = asThisSession(ignored -> r.run());
         return () -> c.accept(null);
     }
@@ -610,7 +611,8 @@ final class DebugCoordinator {
                 () -> debugAdapterLabel(dap().sessionLanguage()),
                 source -> openReferenceSource(source, doc -> {}));
         triggered = new TriggeredBreakpoints(host, ops);
-        groups = new BreakpointGroups(host, ops, this::breakpointsPicker, memberBreakpoints, this::sendClosed);
+        groups = new BreakpointGroups(
+                host, ops, breakpointMenus::breakpointsPicker, memberBreakpoints, breakpointMenus::sendClosed);
         stacks = new DebugStacks(this);
         // Delve's binaries of earlier sessions (it leaves them when Stop ends one) go; a recent one may still run.
         Thread.ofVirtual().name("editora-dlv-cleanup").start(com.editora.dap.GoLaunch::deleteStaleDebugBinaries);
@@ -730,7 +732,8 @@ final class DebugCoordinator {
             built.setPrompt(host::promptText);
             built.setRemovalUndo(
                     host.removalUndo(), () -> sessions.all().stream().anyMatch(x -> x.panel == built));
-            built.setExpressionPrompt(this::expressionPrompt); // Add / Edit Watch: the field completes (follow-up 5)
+            built.setExpressionPrompt(
+                    valuePopups::expressionPrompt); // Add / Edit Watch: the field completes (follow-up 5)
             built.setOnLink(ops::openLink); // double-clicked stack-trace line → jump
             built.setWatches(ops.debugWatches());
             built.setPausedWatches(ops.debugPausedWatches());
@@ -983,7 +986,7 @@ final class DebugCoordinator {
     }
 
     /** Runs {@code action} on each session's Debug panel that has been built. */
-    private void forEachPanel(Consumer<DebugPanel> action) {
+    void forEachPanel(Consumer<DebugPanel> action) {
         for (DebugSession session : sessions.all()) {
             DebugPanel panel = session.panel;
             if (panel != null) {
@@ -1000,12 +1003,13 @@ final class DebugCoordinator {
     void refreshValueColours() {
         boolean plain = plainValueColours();
         forEachPanel(panel -> panel.setPlainValueColours(plain));
-        if (valuePopup != null && valuePopup.popup().getSkin() != null) {
-            DebugPanel.setPlainValueColours(valuePopup.popup().getSkin().getNode(), plain);
+        if (valuePopups.valuePopup != null && valuePopups.valuePopup.popup().getSkin() != null) {
+            DebugPanel.setPlainValueColours(
+                    valuePopups.valuePopup.popup().getSkin().getNode(), plain);
         }
     }
 
-    private boolean plainValueColours() {
+    boolean plainValueColours() {
         var s = host.settings();
         return DebugPanel.themesDisagree(
                 Themes.backgroundFor(s.getTheme()), EditorThemes.editorBackgroundFor(s.getEditorTheme()));
@@ -2025,7 +2029,7 @@ final class DebugCoordinator {
      * The enabled breakpoints of {@code buffer} as a DAP {@code FileBreakpoints} (empty list if none), in
      * whole-file lines even while the buffer is narrowed.
      */
-    private DapModels.FileBreakpoints fileBreakpoints(EditorBuffer buffer, Path file) {
+    DapModels.FileBreakpoints fileBreakpoints(EditorBuffer buffer, Path file) {
         List<DapModels.LineBreakpoint> lines = new ArrayList<>();
         // B1: in the numbering of the code the program runs — a breakpoint whose line was added since the
         // session started has no place in it, and waits for the next session.
@@ -2265,7 +2269,7 @@ final class DebugCoordinator {
      * Which saved breakpoints {@code session} is told of now: all but the triggered ones whose trigger it has not hit.
      * Read on the FX thread; the answer may be asked off it.
      */
-    private Predicate<Breakpoint> sentPredicate(DebugSession session) {
+    Predicate<Breakpoint> sentPredicate(DebugSession session) {
         Set<String> ids = triggered.ids();
         Set<String> hit = Set.copyOf(session.hitTriggers);
         return bp -> !TriggeredBreakpoints.waits(bp, ids, hit);
@@ -2552,7 +2556,7 @@ final class DebugCoordinator {
                     recordAndContinue(frames.getFirst());
                     return;
                 }
-                removeTemporaryBreakpointHit(reason, frames);
+                breakpointMenus.removeTemporaryBreakpointHit(reason, frames);
                 instructionBreakpoints.stopped(reason, frames);
                 dap().stopShown(); // a Run to Cursor ends at a stop the user sees
                 if (shown > 0) {
@@ -4927,7 +4931,7 @@ final class DebugCoordinator {
     }
 
     /** A launch of {@code file} is live or getting ready. */
-    private boolean launchLiveFor(Path file) {
+    boolean launchLiveFor(Path file) {
         if (launchPreparing()) {
             return samePath(file, preparingFile());
         }
@@ -7972,7 +7976,9 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.noCodeOnLine"));
             return;
         }
-        breakpointsPicker().rewriteClosed(file, key, line, set ? null : Breakpoint.plain(line, lineOf(text, line)));
+        breakpointMenus
+                .breakpointsPicker()
+                .rewriteClosed(file, key, line, set ? null : Breakpoint.plain(line, lineOf(text, line)));
     }
 
     /** Line {@code line} (0-based) of {@code text}, or "" past its end. */
@@ -8010,7 +8016,7 @@ final class DebugCoordinator {
     }
 
     /** {@code command} asked again once a check lands, only while the caret is still on {@code line}. */
-    private Runnable onSameLine(EditorBuffer b, int line, Runnable command) {
+    Runnable onSameLine(EditorBuffer b, int line, Runnable command) {
         return () -> { // the command reads the active tab: still the one it was given, its caret on the same line
             if (!b.isDisposed() && breakpointBuffer() == b && b.getFocusedArea().getCurrentParagraph() == line) {
                 command.run();
@@ -8022,7 +8028,7 @@ final class DebugCoordinator {
      * Whether a breakpoint may go on {@code line} of {@code b}: anywhere a debugger can stop, which in a {@code .http}
      * file is only a script line (adl, 2026-10-16) — else says so. Removing one is always allowed.
      */
-    private boolean breakpointAllowed(EditorBuffer b, int line, Runnable retry) {
+    boolean breakpointAllowed(EditorBuffer b, int line, Runnable retry) {
         if (b.getBreakpointManager().isBreakpoint(line)) {
             return true;
         }
@@ -8057,7 +8063,8 @@ final class DebugCoordinator {
      * debug adapter has no breakpoint gutter: a breakpoint toggled there by key was invisible, could only be
      * removed by pressing the key again on the same line, and was still sent to the adapter in every session.
      */
-    private @Nullable EditorBuffer breakpointBuffer() {
+    @Nullable
+    EditorBuffer breakpointBuffer() {
         EditorBuffer b = host.activeBuffer();
         if (b == null) {
             return null;
@@ -8091,8 +8098,8 @@ final class DebugCoordinator {
                 host.overlayHost(),
                 b,
                 line,
-                completionSource(false),
-                completionSource(true),
+                valuePopups.completionSource(false),
+                valuePopups.completionSource(true),
                 groups,
                 triggered,
                 s().marks.labels());
@@ -8179,7 +8186,8 @@ final class DebugCoordinator {
         if (!breakpointAllowed(b, line, () -> addLogpoint(b, line))) {
             return;
         }
-        BreakpointEditForm.showLogpoint(host.overlayHost(), b, line, completionSource(true), host::setStatus);
+        BreakpointEditForm.showLogpoint(
+                host.overlayHost(), b, line, valuePopups.completionSource(true), host::setStatus);
     }
 
     /**
@@ -8274,7 +8282,7 @@ final class DebugCoordinator {
         if (ops.debugBreakpointsMuted() && !breakpointsMuted) {
             breakpointsMuted = true; // Mute Breakpoints is kept per project, like the exception choices
             dap().setExceptionsMuted(true);
-            showBreakpointsMuted();
+            breakpointMenus.showBreakpointsMuted();
         }
         memberBreakpoints.push(); // the method breakpoints and field watchpoints this project keeps
         pushExceptionBreakpoints(); // and the exception filters its exception breakpoints need
@@ -8432,7 +8440,8 @@ final class DebugCoordinator {
         buffer.setOnBreakpointsChanged(() -> onBreakpointsChanged(buffer));
         // Hover value tooltip while suspended: evaluate the hovered identifier in the selected frame.
         buffer.setDebugHoverEvaluator((expr, cb) -> dap().evaluateHover(expr, s().debugFrameId, cb));
-        buffer.setDebugValuePresenter(valuePresenter); // an object's fields unfold in the popup (follow-up 6)
+        buffer.setDebugValuePresenter(
+                valuePopups.valuePresenter); // an object's fields unfold in the popup (follow-up 6)
         // "Debug File" beside "Run File" in the editor's menu: Debug was only in the Run menu and the palette.
         // Through F5's check: a live launch of another file is replaced only after asking (review 3, C202).
         // Not while this very file is being debugged or built for it, as in editorMenuItems (review 2 C110): a
@@ -8442,8 +8451,9 @@ final class DebugCoordinator {
                 () -> debugSupportEnabled()
                         && isDebuggableBuffer(buffer)
                         && (buffer.getPath() == null || !launchLiveFor(buffer.getPath())));
-        buffer.setGutterBreakpointMenu(this::showGutterMenu); // right-click a breakpoint: Edit / Disable / Remove
-        buffer.setDebugMenuContributor(() -> editorMenuItems(buffer));
+        buffer.setGutterBreakpointMenu(
+                breakpointMenus::showGutterMenu); // right-click a breakpoint: Edit / Disable / Remove
+        buffer.setDebugMenuContributor(() -> breakpointMenus.editorMenuItems(buffer));
     }
 
     // --- type renderers: a value of a type shown as the user's expressions say (TypeRendering) ----------
@@ -8471,7 +8481,7 @@ final class DebugCoordinator {
      * value's own (Editora's reference), else the debugger's — {@code filter}, {@code start} and {@code count} page
      * them as DAP does ({@code null} and 0: all) — each with its type's renderer applied.
      */
-    private void renderedVariables(
+    void renderedVariables(
             int ref, @Nullable String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
         TypeRendering rendering = rendering();
         if (rendering.owns(ref)) {
@@ -8492,7 +8502,7 @@ final class DebugCoordinator {
      * value when its type has a renderer — only when evaluating it again cannot change anything (no call, no
      * assignment): the renderer's expressions are the value's expression with more after it.
      */
-    private void renderedEvaluate(String expression, int frameId, String context, Consumer<DapModels.EvalResult> cb) {
+    void renderedEvaluate(String expression, int frameId, String context, Consumer<DapModels.EvalResult> cb) {
         TypeRendering rendering = rendering();
         dap().evaluateFull(expression, frameId, context, r -> {
             TypeRenderer renderer = r == null || r.failed() || !TypeRenderers.safeToRepeat(expression)
@@ -9277,722 +9287,9 @@ final class DebugCoordinator {
      * Mute Breakpoints: the adapter is told no breakpoints until it is turned off again. Kept per project in the
      * workspace state and restored when the window starts; every breakpoint glyph is drawn faded meanwhile.
      */
-    private boolean breakpointsMuted;
+    boolean breakpointsMuted;
 
     boolean breakpointsMuted() {
         return breakpointsMuted;
-    }
-
-    /** Debug: Breakpoints — the palette-style list of every breakpoint (see {@link BreakpointsPicker}). */
-    void showBreakpoints() {
-        breakpointsPicker().show();
-    }
-
-    /** The breakpoints of the window's files, and what can be done to them (see {@link BreakpointsPicker}). */
-    BreakpointsPicker breakpointsPicker() {
-        return new BreakpointsPicker(
-                        host,
-                        ops,
-                        this::allManagers,
-                        this::toggleMuteBreakpoints,
-                        () -> breakpointsMuted,
-                        memberBreakpoints)
-                .sendingClosed(this::sendClosed)
-                .instructions(instructionBreakpoints);
-    }
-
-    /** Debug: Move Breakpoint to Group… — on the caret line (see {@link BreakpointGroups#moveToGroupAtCaret}). */
-    void moveBreakpointToGroupAtCaret() {
-        EditorBuffer b = breakpointBuffer();
-        if (b != null) {
-            groups.moveToGroupAtCaret(b);
-        }
-    }
-
-    /** Debug: Enable / Disable Breakpoint Group… (see {@link BreakpointGroups#toggleGroupPicker}). */
-    void toggleBreakpointGroup() {
-        groups.toggleGroupPicker();
-    }
-
-    /** Debug: Export Breakpoints… (see {@link BreakpointGroups#exportBreakpoints}). */
-    void exportBreakpoints() {
-        groups.exportBreakpoints();
-    }
-
-    /** Debug: Import Breakpoints… (see {@link BreakpointGroups#importBreakpoints}). */
-    void importBreakpoints() {
-        groups.importBreakpoints();
-    }
-
-    /** The file a breakpoint store key names, or null (a remote host not connected, a key it cannot read). */
-    private static @Nullable Path storedPath(String key) {
-        try {
-            return com.editora.vfs.Vfs.parseStorable(key);
-        } catch (RuntimeException e) {
-            return null;
-        }
-    }
-
-    /**
-     * Breakpoints just saved for files with no tab ({@code saved}, by file key; an empty list: none left) are sent to
-     * each live session as its start would have: re-anchored off the FX thread, triggered ones held back, lambdas
-     * aimed at. An import mid-session, an edit in the Breakpoints list or on a Map card.
-     */
-    void sendClosed(Map<String, List<Breakpoint>> saved) {
-        // Muted, each session still learns them (Unmute sends what it knows); only the adapter is told nothing yet.
-        Map<String, List<Breakpoint>> copy = new LinkedHashMap<>(saved);
-        forEachSession(() -> {
-            if (!dap().isActive()) {
-                return;
-            }
-            Predicate<Breakpoint> sent = sentPredicate(s());
-            startOffFx("debug-import", session -> () -> {
-                List<DapModels.FileBreakpoints> computed = ClosedFileBreakpoints.of(
-                        copy, Set.of(), RemoteExec::runsFor, ClosedFileBreakpoints::readLinesOrNull, sent);
-                laterIn(session, () -> {
-                    if (!dap().isActive()) {
-                        return;
-                    }
-                    Map<String, DapModels.FileBreakpoints> byKey = new LinkedHashMap<>();
-                    computed.forEach(fb -> byKey.put(key(fb.file()), fb));
-                    for (String k : copy.keySet()) { // a file left with none is told so: its last one was removed
-                        Path p = byKey.containsKey(k) ? null : storedPath(k);
-                        if (p != null) {
-                            byKey.put(k, new DapModels.FileBreakpoints(p, List.of()));
-                        }
-                    }
-                    for (DapModels.FileBreakpoints fb : byKey.values()) {
-                        if (ops.bufferForPath(fb.file()) == null) { // opened meanwhile: its tab sent them
-                            s().closedBreakpoints.put(key(fb.file()), fb);
-                            if (!breakpointsMuted) {
-                                dap().updateBreakpoints(fb);
-                            }
-                        }
-                    }
-                });
-            });
-        });
-    }
-
-    /**
-     * Debug: Mute Breakpoints — none of them stops the program until muted again; a live session is told at once
-     * (every file it knows is sent again: empty while muted, its enabled breakpoints after).
-     */
-    void toggleMuteBreakpoints() {
-        breakpointsMuted = !breakpointsMuted;
-        memberBreakpoints.push(); // and method breakpoints and field watchpoints
-        forEachSession(() -> {
-            dap().setExceptionsMuted(breakpointsMuted); // exception stops too (review 2, B109)
-            if (dap().isActive()) {
-                Set<String> open = new HashSet<>();
-                host.forEachBuffer(b -> {
-                    if (b.getPath() != null && open.add(key(b.getPath()))) {
-                        DapModels.FileBreakpoints fb = fileBreakpoints(b, b.getPath());
-                        s().sentBreakpoints.put(b.getPath(), fb);
-                        dap().updateBreakpoints(fb);
-                    }
-                });
-                for (DapModels.FileBreakpoints fb : s().closedBreakpoints.values()) {
-                    if (fb.file() != null && !open.contains(key(fb.file()))) {
-                        dap().updateBreakpoints(
-                                        breakpointsMuted ? new DapModels.FileBreakpoints(fb.file(), List.of()) : fb);
-                    }
-                }
-            }
-        });
-        ops.persistDebugBreakpointsMuted(breakpointsMuted);
-        showBreakpointsMuted();
-        panel().setBreakpointsMuted(breakpointsMuted);
-        host.setStatus(tr(breakpointsMuted ? "status.debug.breakpointsMuted" : "status.debug.breakpointsUnmuted"));
-    }
-
-    /** Shows Mute Breakpoints on every breakpoint glyph (faded, and said on hover) and in the Debug window. */
-    private void showBreakpointsMuted() {
-        String hover = breakpointsMuted ? tr("debug.breakpoint.muted") : ""; // "": not muted
-        host.forEachBuffer(b -> b.getBreakpointManager().setMuted(hover));
-        forEachPanel(panel -> panel.setBreakpointsMuted(breakpointsMuted));
-    }
-
-    /**
-     * Debug: Toggle Temporary Breakpoint — a breakpoint on the caret line that is removed once the program stops on
-     * it (IntelliJ's Ctrl+Alt+Shift+F8). On a line with a temporary breakpoint it removes it; on one with an
-     * ordinary breakpoint it makes that one temporary.
-     */
-    void toggleTemporaryBreakpointAtCaret() {
-        EditorBuffer b = breakpointBuffer();
-        if (b == null) {
-            return;
-        }
-        int line = b.getFocusedArea().getCurrentParagraph();
-        if (!breakpointAllowed(b, line, onSameLine(b, line, this::toggleTemporaryBreakpointAtCaret))) {
-            return;
-        }
-        var mgr = b.getBreakpointManager();
-        Breakpoint bp = mgr.get(line);
-        if (bp != null && bp.temporary()) {
-            b.toggleBreakpoint(line);
-            return;
-        }
-        if (bp == null) {
-            b.toggleBreakpoint(line);
-        }
-        mgr.setTemporary(line, true);
-        b.refreshGutterLine(line);
-        host.setStatus(tr("status.debug.temporaryAdded", line + 1));
-    }
-
-    /**
-     * Debug: Toggle Recording Breakpoint — a breakpoint on the caret line whose stops Debug History keeps while the
-     * program goes on, as Visual Studio's tracepoints and IntelliJ's non-suspending breakpoints log. On a line with a
-     * recording breakpoint it removes it; on one with an ordinary breakpoint it makes that one record.
-     */
-    void toggleRecordingBreakpointAtCaret() {
-        EditorBuffer b = breakpointBuffer();
-        if (b == null) {
-            return;
-        }
-        int line = b.getFocusedArea().getCurrentParagraph();
-        if (!breakpointAllowed(b, line, onSameLine(b, line, this::toggleRecordingBreakpointAtCaret))) {
-            return;
-        }
-        var mgr = b.getBreakpointManager();
-        Breakpoint bp = mgr.get(line);
-        if (bp != null && bp.recording()) {
-            b.toggleBreakpoint(line);
-            return;
-        }
-        if (bp == null) {
-            b.toggleBreakpoint(line);
-        }
-        mgr.setRecording(line, true);
-        b.refreshGutterLine(line);
-        host.setStatus(tr("status.debug.recordingAdded", line + 1));
-    }
-
-    /**
-     * The program stopped on a breakpoint: when it is a temporary one, it is removed, which also takes it out of the
-     * live session. Waits for the stopped file's buffer to load: the stop may have just opened it.
-     */
-    private void removeTemporaryBreakpointHit(String reason, List<DapModels.StackFrameInfo> frames) {
-        if (!"breakpoint".equals(reason) || frames.isEmpty() || frames.get(0).file() == null) {
-            return;
-        }
-        DapModels.StackFrameInfo top = frames.get(0);
-        EditorBuffer b = ops.bufferForPath(top.file());
-        if (b == null) {
-            return;
-        }
-        ops.afterBufferLoad(b, () -> {
-            var mgr = b.getBreakpointManager();
-            int line = top.line() - mgr.regionFirstLine();
-            Breakpoint bp = mgr.get(line);
-            if (bp != null && bp.temporary() && bp.enabled() && !bp.isLogpoint()) {
-                b.dropBreakpoint(line); // the program's removal, not the user's: no undo is recorded
-                host.setStatus(tr("status.debug.temporaryRemoved", top.line() + 1));
-            }
-        });
-    }
-
-    /**
-     * Debug: Toggle Lambda Breakpoint — a breakpoint that stops inside the lambda at the caret when its body runs
-     * (see {@link LambdaBreakpoints}).
-     */
-    void toggleLambdaBreakpointAtCaret() {
-        EditorBuffer b = breakpointBuffer();
-        if (b != null
-                && breakpointAllowed(
-                        b,
-                        b.getFocusedArea().getCurrentParagraph(),
-                        onSameLine(b, b.getFocusedArea().getCurrentParagraph(), this::toggleLambdaBreakpointAtCaret))) {
-            lambdaBreakpoints.toggleAtCaret(b);
-        }
-    }
-
-    /** Debug: Enable / Disable Breakpoint — flips the caret line's breakpoint without removing it. */
-    void toggleBreakpointEnabledAtCaret() {
-        EditorBuffer b = breakpointBuffer();
-        if (b == null) {
-            return;
-        }
-        int line = b.getFocusedArea().getCurrentParagraph();
-        var mgr = b.getBreakpointManager();
-        Breakpoint bp = mgr.get(line);
-        if (bp == null) {
-            host.setStatus(tr("status.debug.noBreakpointHere"));
-            return;
-        }
-        mgr.setEnabled(line, !bp.enabled());
-        b.refreshGutterLine(line);
-    }
-
-    /** Debug: Show Value at Caret — the value popup for the name at the caret, from the keyboard. */
-    void showValueAtCaret() {
-        EditorBuffer b = host.activeBuffer();
-        if (dap().state() != DapManager.State.SUSPENDED) {
-            host.setStatus(tr("palette.disabled.needsSuspended"));
-        } else if (b == null || !b.showDebugValueAtCaret()) {
-            host.setStatus(tr("status.debug.noValueAtCaret"));
-        }
-    }
-
-    /**
-     * F11 in the CUA and Sublime keymaps: Step Into while the program is paused, Full Screen otherwise — what F11
-     * does in VS Code, whose debugging keys those keymaps now carry (review C8).
-     */
-    void stepIntoOrElse(Runnable otherwise) {
-        if (debugSupportEnabled() && dap().state() == DapManager.State.SUSPENDED) {
-            dap().stepInto();
-        } else {
-            otherwise.run();
-        }
-    }
-
-    /** A right-click on a breakpoint glyph: Edit…, Enable / Disable, Remove (review C11). */
-    private void showGutterMenu(EditorBuffer b, int line, javafx.scene.input.ContextMenuEvent e) {
-        var mgr = b.getBreakpointManager();
-        Breakpoint bp = mgr.get(line);
-        if (bp == null) {
-            var mark = mgr.memberMark(line);
-            if (mark != null) {
-                showGutterMenu(memberGutterItems(b, line, mark), e);
-            }
-            return;
-        }
-        // Bare titles, as every other row of this menu ("Debug: Edit Breakpoint…" beside "Remove Breakpoint",
-        // review 2 C110).
-        javafx.scene.control.MenuItem edit = menuItem("debug.editBreakpoint", Icons.edit(), () -> {
-            b.getFocusedArea().moveTo(line, 0);
-            editBreakpointAtCaret();
-        });
-        boolean enabled = bp.enabled();
-        javafx.scene.control.MenuItem flip =
-                new javafx.scene.control.MenuItem(tr(enabled ? "debug.gutter.disable" : "debug.gutter.enable"));
-        // As Edit…: the caret goes to the line, and the command for the breakpoint there runs.
-        flip.setOnAction(ev -> {
-            b.getFocusedArea().moveTo(line, 0);
-            toggleBreakpointEnabledAtCaret();
-        });
-        com.editora.editor.MenuChords.tag(flip, "debug.toggleBreakpointEnabled");
-        javafx.scene.control.MenuItem remove = new javafx.scene.control.MenuItem(tr("debug.gutter.remove"));
-        remove.setGraphic(Icons.remove());
-        remove.getStyleClass().add("danger"); // a destructive row reads red
-        remove.setOnAction(ev -> {
-            if (mgr.isBreakpoint(line)) {
-                b.getFocusedArea().moveTo(line, 0);
-                toggleBreakpointAtCaret();
-            }
-        });
-        com.editora.editor.MenuChords.tag(remove, "debug.toggleBreakpoint");
-        javafx.scene.control.MenuItem list = menuItem("debug.breakpoints", null, this::showBreakpoints);
-        javafx.scene.control.MenuItem waitFor = menuItem("debug.addTriggeredBreakpoint", null, () -> {
-            b.getFocusedArea().moveTo(line, 0);
-            addTriggeredBreakpointAtCaret();
-        });
-        javafx.scene.control.MenuItem toGroup = menuItem("debug.moveBreakpointToGroup", null, () -> {
-            b.getFocusedArea().moveTo(line, 0);
-            moveBreakpointToGroupAtCaret();
-        });
-        gutterMenu().getItems().setAll(edit, flip, remove, waitFor, toGroup);
-        List<javafx.scene.control.MenuItem> lambdas = lambdaBreakpoints.choices(b, line, bp);
-        if (!lambdas.isEmpty()) {
-            gutterMenu().getItems().add(new javafx.scene.control.SeparatorMenuItem());
-            gutterMenu().getItems().addAll(lambdas);
-        }
-        gutterMenu().getItems().addAll(new javafx.scene.control.SeparatorMenuItem(), list);
-        showGutterMenu(List.copyOf(gutterMenu().getItems()), e);
-    }
-
-    /** The gutter menu of a method breakpoint's or field watchpoint's mark: Enable / Disable, Remove, Breakpoints. */
-    private List<javafx.scene.control.MenuItem> memberGutterItems(
-            EditorBuffer b, int line, com.editora.editor.debug.BreakpointManager.MemberMark mark) {
-        List<javafx.scene.control.MenuItem> rows = new ArrayList<>(memberBreakpoints.gutterRows(b, line, mark));
-        rows.addAll(List.of(
-                new javafx.scene.control.SeparatorMenuItem(),
-                menuItem("debug.breakpoints", null, this::showBreakpoints)));
-        return rows;
-    }
-
-    private void showGutterMenu(List<javafx.scene.control.MenuItem> items, javafx.scene.input.ContextMenuEvent e) {
-        gutterMenu().getItems().setAll(items);
-        Node source = e.getSource() instanceof Node n ? n : null;
-        if (source != null && source.getScene() != null && source.getScene().getWindow() != null) {
-            gutterMenu().show(source, e.getScreenX(), e.getScreenY());
-        } else if (host.window() != null) {
-            gutterMenu().show(host.window(), e.getScreenX(), e.getScreenY());
-        }
-    }
-
-    /** A breakpoint mark's right-click menu, made on the first such right-click (it is a popup window of its own). */
-    private javafx.scene.control.@Nullable ContextMenu gutterMenu;
-
-    javafx.scene.control.ContextMenu gutterMenu() {
-        if (gutterMenu == null) {
-            gutterMenu = new javafx.scene.control.ContextMenu();
-        }
-        return gutterMenu;
-    }
-
-    /**
-     * Whether the editor menu offers Debug File of its own for a file of {@code language}: one that Run File can't
-     * run ({@code runnable} false; a runnable file has Debug File beside Run File) but Debug can. That is a classic
-     * Java main class outside a Maven or Gradle project ({@code inJavaProject} false), a Go, Rust, C or C++ file
-     * without a program's {@code main} (a test file, a library file), and any C#, Ruby or PHP file, which only the
-     * debugger's own launch runs. Pure.
-     */
-    static boolean offersOwnDebugFile(String language, boolean runnable, boolean inJavaProject) {
-        if (runnable) {
-            return false;
-        }
-        return switch (language) {
-            case "java" -> !inJavaProject;
-            case "go", "rust", "c", "cpp", "csharp", "ruby", "php" -> true;
-            default -> false;
-        };
-    }
-
-    /**
-     * The editor's right-click debugger items (review C10): the Breakpoints submenu on a debuggable file, and while
-     * paused Run to Cursor, Show Value and Add to Watches for the name at the click. Empty when debugging is off.
-     */
-    List<javafx.scene.control.MenuItem> editorMenuItems(EditorBuffer b) {
-        List<javafx.scene.control.MenuItem> items = new ArrayList<>();
-        if (!debugSupportEnabled() || !isDebuggableBuffer(b)) {
-            return items;
-        }
-        Path menuPath = b.getPath();
-        if (menuPath != null
-                && offersDebugFile(b)
-                // Not while this file is being debugged or built for it: it offered a second launch of it (review 2
-                // C110). Another file's live launch is replaced only after asking (review 3, C202).
-                && !launchLiveFor(menuPath)) {
-            // Debug File sits beside Run File for a runnable file; a file Run File can't run but Debug can gets
-            // it here, or Debug was only in the Run menu and the palette.
-            javafx.scene.control.MenuItem debugFile = new javafx.scene.control.MenuItem(tr("editmenu.debugFile"));
-            debugFile.setGraphic(Icons.debug());
-            debugFile.setOnAction(e -> debugFile(b));
-            items.add(com.editora.editor.MenuChords.tag(debugFile, "debug.debugFile"));
-        }
-        items.add(breakpointsMenu(b));
-        if (dap().state() == DapManager.State.SUSPENDED) {
-            items.add(menuItem("debug.runToCursor", Icons.debugRunToCursor(), this::debugRunToCursor));
-            items.add(menuItem("debug.forceRunToCursor", Icons.debugRunToCursor(), this::debugForceRunToCursor));
-            items.add(menuItem("debug.showValue", Icons.find(), this::showValueAtCaret));
-            items.add(menuItem("debug.evaluate", Icons.debug(), this::evaluateExpression));
-            String expression = watchExpression(b);
-            if (expression != null) {
-                javafx.scene.control.MenuItem watch =
-                        new javafx.scene.control.MenuItem(tr("debugpanel.addToWatches", expression));
-                watch.setGraphic(Icons.newFile()); // as Add to Watches in the Variables menu
-                watch.setOnAction(ev -> addWatch(expression));
-                items.add(com.editora.editor.MenuChords.tag(watch, "debug.addWatchAtCaret"));
-            }
-        }
-        return items;
-    }
-
-    /**
-     * The commands behind the Debug window's right-click rows ({@link DebugRowCommands}): runs the row that
-     * {@code commandId} stands for on the window's selection, as choosing it would; says so when the window is closed
-     * (its selection is not something the user can see) or the row is not offered for the selection.
-     */
-    void runPanelRow(String commandId) {
-        if (!ops.isToolWindowOpen() || !panel().runMenuRow(commandId)) {
-            host.setStatus(
-                    ops.isToolWindowOpen()
-                            ? panel().rowRefusal(commandId)
-                            : tr("status.debug.rowNotOffered", DebugPanelText.bareTitle(tr("command." + commandId))));
-        }
-    }
-
-    /** Whether the editor menu offers Debug File for {@code b}: a file Debug can launch on its own. */
-    private boolean offersDebugFile(EditorBuffer b) {
-        Path path = b.getPath();
-        return path != null
-                && offersOwnDebugFile(
-                        b.getLanguage(),
-                        b.isRunnable(),
-                        "java".equals(b.getLanguage()) && JavaProjectRoot.inProjectOrUnknown(path));
-    }
-
-    /**
-     * Debug: Debug Current File ({@code debug.debugFile}): what the editor menu's Debug File row does, for the active
-     * file; says so when Debug File is not offered for it.
-     */
-    void debugActiveFile() {
-        EditorBuffer b = host.activeBuffer();
-        if (b != null && b.runScanPending()) { // whether it is runnable is the Run scan's, made off the FX thread
-            b.whenRunScanned(bound(() -> {
-                if (host.activeBuffer() == b) {
-                    debugActiveFile();
-                }
-            }));
-            return;
-        }
-        // A runnable file has the row beside Run File (the editor menu's own), any other one the Debug File of its own.
-        if (b == null || !isDebuggableBuffer(b) || !((b.isRunnable() && !b.isHttpFile()) || offersDebugFile(b))) {
-            host.setStatus(tr("status.debug.noDebugFile"));
-            return;
-        }
-        debugFile(b);
-    }
-
-    /**
-     * Debug: Debug Main Class at Caret ({@code debug.mainClassAtCaret}): what the editor menu's Debug row on a
-     * {@code main} method does; says so when the caret is on none.
-     */
-    void debugMainClassAtCaret() {
-        EditorBuffer b = host.activeBuffer();
-        if (b != null && b.runScanPending()) { // the load's scan runs off FX: decide once it has landed
-            b.whenRunScanned(bound(this::debugMainClassAtCaret));
-            return;
-        }
-        var main = b == null ? null : b.mainTargetAtCaret();
-        if (main == null) {
-            host.setStatus(tr("status.debug.noMainAtCaret"));
-            return;
-        }
-        debugMainClassNamed(main.fqn());
-    }
-
-    /** The expression the editor menu offers to watch in {@code b}: a one-line selection, else the one at the caret. */
-    private static @Nullable String watchExpression(EditorBuffer b) {
-        var area = b.getFocusedArea();
-        String selected = area.getSelectedText();
-        return selected != null && !selected.isBlank() && !selected.contains("\n")
-                ? selected.strip()
-                : com.editora.editor.debug.DebugExpressions.atCaret(area);
-    }
-
-    /** Opens the Debug window and asks to add {@code expression} to the watches, as Add to Watches rows do. */
-    private void addWatch(String expression) {
-        ops.openToolWindow();
-        panel().addWatchPrompt(expression);
-    }
-
-    /**
-     * Debug: Add Expression at Caret to Watches… ({@code debug.addWatchAtCaret}): what the editor menu's Add to
-     * Watches row does while the program is paused; says so when it is not, or the caret is on no expression.
-     */
-    void addWatchAtCaret() {
-        EditorBuffer b = host.activeBuffer();
-        String expression = b == null || dap().state() != DapManager.State.SUSPENDED ? null : watchExpression(b);
-        if (expression == null) {
-            host.setStatus(tr("status.debug.noWatchAtCaret"));
-            return;
-        }
-        addWatch(expression);
-    }
-
-    /**
-     * The editor menu's <b>Breakpoints</b> submenu: every breakpoint action for the right-clicked line (the caret is
-     * there by now), then the list and Mute Breakpoints. One row instead of four to six flat ones, which pushed the
-     * rest of the menu down on every debuggable file — the shape of the LSP and AI submenus.
-     */
-    private javafx.scene.control.Menu breakpointsMenu(EditorBuffer b) {
-        javafx.scene.control.Menu menu =
-                new javafx.scene.control.Menu(tr("editmenu.breakpoints"), breakpointGlyph()); // icons: review 2 C110
-        var items = menu.getItems();
-        items.add(menuItem("debug.toggleBreakpoint", breakpointGlyph(), this::toggleBreakpointAtCaret));
-        items.add(
-                menuItem("debug.toggleTemporaryBreakpoint", breakpointGlyph(), this::toggleTemporaryBreakpointAtCaret));
-        items.add(
-                menuItem("debug.toggleRecordingBreakpoint", breakpointGlyph(), this::toggleRecordingBreakpointAtCaret));
-        if (LambdaBreakpoints.caretLineHasLambdas(b)) {
-            items.add(menuItem("debug.toggleLambdaBreakpoint", breakpointGlyph(), this::toggleLambdaBreakpointAtCaret));
-        }
-        items.add(menuItem("debug.addLogpoint", logpointGlyph(), this::addLogpointAtCaret));
-        items.add(menuItem("debug.addTriggeredBreakpoint", breakpointGlyph(), this::addTriggeredBreakpointAtCaret));
-        items.add(menuItem("debug.editBreakpoint", Icons.edit(), this::editBreakpointAtCaret));
-        javafx.scene.control.MenuItem toGroup =
-                menuItem("debug.moveBreakpointToGroup", null, this::moveBreakpointToGroupAtCaret);
-        com.editora.editor.RowReasons.when(
-                toGroup, DebugPanelText.hasBreakpointAtCaret(b), "row.unavailable.noBreakpointHere");
-        items.add(toGroup);
-        javafx.scene.control.MenuItem flip =
-                menuItem("debug.toggleBreakpointEnabled", Icons.check(), this::toggleBreakpointEnabledAtCaret);
-        com.editora.editor.RowReasons.when(
-                flip, DebugPanelText.hasBreakpointAtCaret(b), "row.unavailable.noBreakpointHere");
-        items.add(flip);
-        items.add(new javafx.scene.control.SeparatorMenuItem());
-        items.add(menuItem("debug.breakpoints", Icons.outline(), this::showBreakpoints));
-        javafx.scene.control.CheckMenuItem mute =
-                new javafx.scene.control.CheckMenuItem(DebugPanelText.bareTitle(tr("command.debug.muteBreakpoints")));
-        mute.setGraphic(Icons.hidden());
-        mute.setSelected(breakpointsMuted);
-        mute.setOnAction(e -> toggleMuteBreakpoints());
-        com.editora.editor.MenuChords.tag(mute, "debug.muteBreakpoints");
-        items.add(mute);
-        return menu;
-    }
-
-    private static javafx.scene.control.MenuItem menuItem(String commandId, @Nullable Node icon, Runnable action) {
-        javafx.scene.control.MenuItem item =
-                new javafx.scene.control.MenuItem(DebugPanelText.bareTitle(tr("command." + commandId)));
-        com.editora.editor.MenuChords.tag(item, commandId);
-        item.setGraphic(icon);
-        item.setOnAction(e -> action.run());
-        return item;
-    }
-
-    /** A small breakpoint dot for Toggle Breakpoint in the editor menu (the gutter's red, from CSS). */
-    static Node breakpointGlyph() {
-        javafx.scene.shape.Circle dot = new javafx.scene.shape.Circle();
-        UiZoom.follow(dot, () -> dot.setRadius(UiZoom.px(4)));
-        dot.getStyleClass().add("debug-menu-breakpoint");
-        return dot;
-    }
-
-    /** Add Logpoint's mark in the same menu: the gutter's logpoint diamond, blue, at the dot's size. */
-    private static Node logpointGlyph() {
-        javafx.scene.shape.Polygon diamond = new javafx.scene.shape.Polygon();
-        UiZoom.follow(diamond, () -> {
-            double u = UiZoom.px(4);
-            diamond.getPoints().setAll(u, 0.0, 2 * u, u, u, 2 * u, 0.0, u);
-        });
-        diamond.getStyleClass().add("debug-menu-logpoint");
-        return diamond;
-    }
-
-    // --- follow-ups 5 and 6: completion in expression fields, the expandable value popup ----------------
-
-    /**
-     * What a debugger expression field completes against: the selected frame of a stopped session (DAP
-     * {@code completions}). {@code braces}: a log message, where only the {@code {expression}} at the caret is code.
-     */
-    DebugCompletion.Source completionSource(boolean braces) {
-        return new DebugCompletion.Source() {
-            @Override
-            public boolean paused() {
-                return dap().state() == DapManager.State.SUSPENDED && s().debugFrameId >= 0;
-            }
-
-            @Override
-            public void complete(String text, int caret, Consumer<List<DapModels.CompletionTarget>> cb) {
-                int from = braces ? DebugCompletionText.braceStart(text, caret) : 0;
-                if (from < 0) {
-                    cb.accept(List.of()); // outside {…}: plain log text
-                    return;
-                }
-                dap().completions(s().debugFrameId, text.substring(from, caret), caret - from, cb);
-            }
-        };
-    }
-
-    /** Add / Edit Watch: the window's one-field prompt, its field completing expressions in the stopped frame. */
-    private void expressionPrompt(String title, String label, String initial, Consumer<String> onAccept) {
-        Label promptLabel = new Label(label);
-        TextField field = new TextField(initial == null ? "" : initial);
-        field.setPrefColumnCount(32);
-        DebugCompletion.attach(field, completionSource(false));
-        com.editora.command.TextInputKeymap.installShared(field);
-        OverlayInput.show(
-                host.overlayHost(),
-                title,
-                UiZoom.spacing(new javafx.scene.layout.VBox(promptLabel, field), 6),
-                field,
-                tr("dialog.ok"),
-                null,
-                () -> onAccept.accept(field.getText()),
-                null,
-                false);
-    }
-
-    private @Nullable DebugValuePopup valuePopup;
-
-    /**
-     * What the editors show a value with: the {@link #valuePopup} (a popup window and two menus of its own),
-     * made the first time a value is shown, not with every editor of a window that may never debug.
-     */
-    private final com.editora.editor.debug.DebugValuePresenter valuePresenter =
-            new com.editora.editor.debug.DebugValuePresenter() {
-                @Override
-                public void show(org.fxmisc.richtext.CodeArea area, String expr, double x, double y, boolean key) {
-                    valuePopup().show(area, expr, x, y, key);
-                }
-
-                @Override
-                public void showEvaluated(org.fxmisc.richtext.CodeArea area, String expr, double x, double y) {
-                    valuePopup().showEvaluated(area, expr, x, y);
-                }
-
-                @Override
-                public void hide() {
-                    if (valuePopup != null) {
-                        valuePopup.hide();
-                    }
-                }
-
-                @Override
-                public void mouseLeft() {
-                    if (valuePopup != null) {
-                        valuePopup.mouseLeft();
-                    }
-                }
-
-                @Override
-                public boolean mouseInside() {
-                    return valuePopup != null && valuePopup.mouseInside();
-                }
-
-                @Override
-                public boolean isShowing() {
-                    return valuePopup != null && valuePopup.isShowing();
-                }
-            };
-
-    /** The hover / Show Value at Caret popup, shared by this window's editors. */
-    DebugValuePopup valuePopup() {
-        if (valuePopup == null) {
-            valuePopup = new DebugValuePopup(new DebugValuePopup.Source() {
-                @Override
-                public void evaluate(String expression, Consumer<DapModels.EvalResult> cb) {
-                    renderedEvaluate(expression, s().debugFrameId, "hover", cb);
-                }
-
-                @Override
-                public void children(
-                        int ref,
-                        @Nullable String filter,
-                        int start,
-                        int count,
-                        Consumer<List<DapModels.VariableInfo>> cb) {
-                    renderedVariables(ref, filter, start, count, cb);
-                }
-
-                @Override
-                public void addWatch(String expression) {
-                    ops.openToolWindow();
-                    panel().addWatchPrompt(expression);
-                }
-
-                @Override
-                public void evaluateCode(String expression, Consumer<DapModels.EvalResult> cb) {
-                    dap().evaluateFull(expression, s().debugFrameId, "repl", r -> {
-                        cb.accept(r);
-                        if (r != null && !r.failed()) {
-                            refreshStopValues(); // Quick Evaluate runs a call: what it changed shows (B205)
-                        }
-                    });
-                }
-
-                @Override
-                public void pin(org.fxmisc.richtext.CodeArea area, int line, String expression) {
-                    EditorBuffer[] owner = new EditorBuffer[1];
-                    host.forEachBuffer(b -> {
-                        if (owner[0] == null && (b.getArea() == area || b.getFocusedArea() == area)) {
-                            owner[0] = b;
-                        }
-                    });
-                    if (owner[0] != null) {
-                        pinnedValues.toggle(owner[0], line, expression);
-                    }
-                }
-            });
-            if (valuePopup.popup().getSkin() != null) {
-                DebugPanel.setPlainValueColours(valuePopup.popup().getSkin().getNode(), plainValueColours()); // C111
-            }
-            valuePopup.setMarks(value -> s().marks.labelOf(value)); // the focused session's marks
-        }
-        return valuePopup;
     }
 }
