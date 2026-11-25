@@ -339,21 +339,22 @@ class DebugCoordinatorCommandsFxTest {
         EditorBuffer open = buffer(openFile, SOURCE);
         FxTestSupport.runOnFx(() -> {
             debug.wireBuffer(open);
-            assertTrue(debug.cardBreakpointsOn(closed), "a Java file with no tab");
-            assertTrue(debug.cardBreakpointsOn(openFile), "a Java tab");
-            assertFalse(debug.cardBreakpointsOn(project.resolve("notes.txt")), "a language that does not debug");
+            assertTrue(debug.mapFollow.cardBreakpointsOn(closed), "a Java file with no tab");
+            assertTrue(debug.mapFollow.cardBreakpointsOn(openFile), "a Java tab");
+            assertFalse(
+                    debug.mapFollow.cardBreakpointsOn(project.resolve("notes.txt")), "a language that does not debug");
 
             // A file with no tab: its stored breakpoints change, and the other windows are told.
-            debug.toggleCardBreakpoint(closed, 2, text);
+            debug.mapFollow.toggleCardBreakpoint(closed, 2, text);
             List<Breakpoint> set = store.get(key);
             assertEquals(List.of(2), set.stream().map(Breakpoint::line).toList());
             assertEquals("  int a = 1;", set.getFirst().lineText());
             assertTrue(stored.contains(key));
-            Map<Integer, com.editora.ui.MapCardGutter.Breakpoint> marks = debug.cardBreakpoints(closed);
+            Map<Integer, com.editora.ui.MapCardGutter.Breakpoint> marks = debug.mapFollow.cardBreakpoints(closed);
             assertEquals(java.util.Set.of(2), marks.keySet());
             assertNull(marks.get(2).classes(), "a plain breakpoint");
 
-            debug.toggleCardBreakpoint(closed, 1, text);
+            debug.mapFollow.toggleCardBreakpoint(closed, 1, text);
             assertTrue(log.contains("status:" + tr("status.debug.noCodeOnLine")), "a comment line has no code");
             assertEquals(1, store.get(key).size());
 
@@ -364,56 +365,59 @@ class DebugCoordinatorCommandsFxTest {
                             Breakpoint.plain(0, "class Closed {").withId("first"),
                             Breakpoint.plain(2, "  int a = 1;").withEnabled(false),
                             Breakpoint.plain(3, "  int b = 2;").withTriggeredBy("first"))));
-            marks = debug.cardBreakpoints(closed);
+            marks = debug.mapFollow.cardBreakpoints(closed);
             assertEquals("disabled", marks.get(2).classes());
             assertEquals("triggered", marks.get(3).classes());
             assertFalse(marks.get(3).tooltip().isBlank(), "it says what it waits for");
             debug.toggleMuteBreakpoints();
-            marks = debug.cardBreakpoints(closed);
+            marks = debug.mapFollow.cardBreakpoints(closed);
             assertEquals("muted", marks.get(0).classes());
             assertEquals("disabled muted", marks.get(2).classes());
             assertTrue(marks.get(0).tooltip().startsWith(tr("debug.breakpoint.muted")));
             debug.toggleMuteBreakpoints();
 
-            debug.toggleCardBreakpoint(closed, 2, text);
+            debug.mapFollow.toggleCardBreakpoint(closed, 2, text);
             assertEquals(
                     List.of(0, 3), store.get(key).stream().map(Breakpoint::line).toList(), "a second click removes it");
             store.remove(key);
 
             // A file with a tab: through the tab, as its gutter would.
-            debug.toggleCardBreakpoint(openFile, 2, SOURCE);
+            debug.mapFollow.toggleCardBreakpoint(openFile, 2, SOURCE);
             assertTrue(open.getBreakpointManager().isBreakpoint(2));
-            assertEquals(java.util.Set.of(2), debug.cardBreakpoints(openFile).keySet());
-            debug.toggleCardBreakpoint(openFile, 2, SOURCE);
+            assertEquals(
+                    java.util.Set.of(2),
+                    debug.mapFollow.cardBreakpoints(openFile).keySet());
+            debug.mapFollow.toggleCardBreakpoint(openFile, 2, SOURCE);
             assertFalse(open.getBreakpointManager().isBreakpoint(2));
 
             // A tab's breakpoints as its gutter draws them, muted ones too; a line with no code gets none.
-            debug.toggleCardBreakpoint(openFile, 3, SOURCE);
+            debug.mapFollow.toggleCardBreakpoint(openFile, 3, SOURCE);
             debug.toggleMuteBreakpoints();
-            assertEquals("muted", debug.cardBreakpoints(openFile).get(3).classes());
+            assertEquals(
+                    "muted", debug.mapFollow.cardBreakpoints(openFile).get(3).classes());
             debug.toggleMuteBreakpoints();
-            debug.toggleCardBreakpoint(openFile, 6, SOURCE);
+            debug.mapFollow.toggleCardBreakpoint(openFile, 6, SOURCE);
             assertFalse(open.getBreakpointManager().isBreakpoint(6), "the empty last line");
-            debug.toggleCardBreakpoint(openFile, 3, SOURCE);
+            debug.mapFollow.toggleCardBreakpoint(openFile, 3, SOURCE);
 
             // One that waits for a breakpoint there is none of yet is drawn as a plain one.
             store.put(
                     key,
                     new ArrayList<>(List.of(Breakpoint.plain(2, "  int a = 1;").withTriggeredBy("nobody"))));
-            assertNull(debug.cardBreakpoints(closed).get(2).classes());
+            assertNull(debug.mapFollow.cardBreakpoints(closed).get(2).classes());
             store.remove(key);
-            assertFalse(debug.cardBreakpointsOn(project.resolve("NOTICE")), "a file of no language");
+            assertFalse(debug.mapFollow.cardBreakpointsOn(project.resolve("NOTICE")), "a file of no language");
 
             // Debugging off: no strip, and a click does nothing.
             host.settings.setDebugSupport(false);
-            assertFalse(debug.cardBreakpointsOn(closed));
-            debug.toggleCardBreakpoint(closed, 2, text);
+            assertFalse(debug.mapFollow.cardBreakpointsOn(closed));
+            debug.mapFollow.toggleCardBreakpoint(closed, 2, text);
             assertNull(store.get(key));
             host.settings.setDebugSupport(true);
         });
-        assertEquals("b", DebugCoordinator.lineOf("a\r\nb\r\n", 1));
-        assertEquals("", DebugCoordinator.lineOf("a\nb", 5));
-        assertEquals("b", DebugCoordinator.lineOf("a\nb", 1));
+        assertEquals("b", MapDebugFollow.lineOf("a\r\nb\r\n", 1));
+        assertEquals("", MapDebugFollow.lineOf("a\nb", 5));
+        assertEquals("b", MapDebugFollow.lineOf("a\nb", 1));
     }
 
     // --- harness --------------------------------------------------------------------------------------
@@ -1952,11 +1956,12 @@ class DebugCoordinatorCommandsFxTest {
 
     @Test
     void aBreakpointIsToggledAtTheCaretOnlyWhereThereIsAGutterForIt() throws Exception {
-        FxTestSupport.runOnFx(() -> debug.toggleBreakpointAtCaret()); // no file in front: nothing to say
+        FxTestSupport.runOnFx(
+                () -> debug.caretBreakpoints.toggleBreakpointAtCaret()); // no file in front: nothing to say
         assertEquals(List.of(), statuses());
 
         buffer(loose.resolve("notes.txt"), "plain\ntext\n");
-        FxTestSupport.runOnFx(() -> debug.toggleBreakpointAtCaret());
+        FxTestSupport.runOnFx(() -> debug.caretBreakpoints.toggleBreakpointAtCaret());
         assertEquals(List.of(tr("status.debug.noBreakpointsHere")), statuses());
 
         clearLog();
@@ -1965,7 +1970,7 @@ class DebugCoordinatorCommandsFxTest {
         FxTestSupport.runOnFx(() -> {
             debug.wireBuffer(b);
             b.getFocusedArea().moveTo(3, 0);
-            debug.toggleBreakpointAtCaret();
+            debug.caretBreakpoints.toggleBreakpointAtCaret();
         });
         assertEquals(
                 List.of(3),
@@ -1976,13 +1981,13 @@ class DebugCoordinatorCommandsFxTest {
                 List.of(3),
                 store.get(b.getPath().toString()).stream().map(Breakpoint::line).toList());
 
-        FxTestSupport.runOnFx(() -> debug.toggleBreakpointAtCaret());
+        FxTestSupport.runOnFx(() -> debug.caretBreakpoints.toggleBreakpointAtCaret());
         assertNull(store.get(b.getPath().toString()), "the last breakpoint of a file takes its entry with it");
 
         FxTestSupport.runOnFx(() -> {
             host.settings.setDebugSupport(false);
-            debug.toggleBreakpointAtCaret();
-            debug.editBreakpointAtCaret();
+            debug.caretBreakpoints.toggleBreakpointAtCaret();
+            debug.caretBreakpoints.editBreakpointAtCaret();
         });
         assertEquals(List.of(tr("statusbar.tip.debugDisabled"), tr("statusbar.tip.debugDisabled")), statuses());
         assertEquals(
@@ -1997,7 +2002,7 @@ class DebugCoordinatorCommandsFxTest {
         FxTestSupport.runOnFx(() -> {
             debug.wireBuffer(b);
             b.getFocusedArea().moveTo(2, 0);
-            debug.toggleBreakpointAtCaret(); // an ordinary one on line 3
+            debug.caretBreakpoints.toggleBreakpointAtCaret(); // an ordinary one on line 3
             b.getFocusedArea().moveTo(3, 0);
             debug.toggleTemporaryBreakpointAtCaret();
         });

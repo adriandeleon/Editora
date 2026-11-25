@@ -220,7 +220,7 @@ class BreakpointGroupsWindowFxTest {
         // The breakpoint form has the field too, offering the groups there are.
         FxTestSupport.runOnFx(() -> {
             b.getFocusedArea().moveTo(1, 0);
-            debug.editBreakpointAtCaret();
+            debug.caretBreakpoints.editBreakpointAtCaret();
         });
         @SuppressWarnings("unchecked")
         List<String> offered = call(() -> List.copyOf(OverlayDriver.card(fx.controller).lookupAll(".combo-box").stream()

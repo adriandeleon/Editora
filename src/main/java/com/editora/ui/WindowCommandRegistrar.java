@@ -2514,7 +2514,8 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.toggleBreakpoint",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleBreakpointAtCaret)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().caretBreakpoints::toggleBreakpointAtCaret)));
         host.registry()
                 .register(Command.of(
                         "debug.toggleRecordingBreakpoint",
@@ -2523,7 +2524,8 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.addTriggeredBreakpoint",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::addTriggeredBreakpointAtCaret)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().caretBreakpoints::addTriggeredBreakpointAtCaret)));
         host.registry()
                 .register(Command.of(
                         "debug.toggleTemporaryBreakpoint",
@@ -2544,11 +2546,13 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.addLogpoint",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::addLogpointAtCaret)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().caretBreakpoints::addLogpointAtCaret)));
         host.registry()
                 .register(Command.of(
                         "debug.editBreakpoint",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::editBreakpointAtCaret)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().caretBreakpoints::editBreakpointAtCaret)));
         host.registry()
                 .register(Command.of(
                         "debug.toggleExceptionBreakpoints",
@@ -2561,19 +2565,19 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.applyCodeChanges",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::applyCodeChanges)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().javaCode::applyCodeChanges)));
         host.registry()
                 .register(Command.of(
                         "debug.restartFrame",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::restartFrame)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().javaCode::restartFrame)));
         host.registry()
                 .register(Command.of(
                         "debug.dontStepIntoFrame",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::dontStepIntoFrame)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().javaCode::dontStepIntoFrame)));
         host.registry()
                 .register(Command.of(
                         "debug.smartStepInto",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::smartStepInto)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().javaCode::smartStepInto)));
         host.registry()
                 .register(Command.of(
                         "tool.debug",

@@ -271,7 +271,11 @@ class JavaCodeChangesProbeFxTest {
 
             FxTestSupport.runOnFx(() -> w.registry().run("debug.smartStepInto"));
             QuickOpen<DapModels.StepTarget>[] picker = new QuickOpen[1];
-            await(w, "the picker", 100, () -> (picker[0] = FxTestSupport.field(w.debug(), "smartStepPicker")) != null);
+            await(
+                    w,
+                    "the picker",
+                    100,
+                    () -> (picker[0] = FxTestSupport.field(w.debug().javaCode, "smartStepPicker")) != null);
             java.util.function.Consumer<DapModels.StepTarget> choose = FxTestSupport.field(picker[0], "onChoose");
             DapModels.StepTarget add = targets.stream()
                     .filter(t -> t.label().startsWith("add"))
