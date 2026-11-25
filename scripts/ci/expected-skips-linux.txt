@@ -52,6 +52,7 @@ com.editora.ui.JsDebugProbeFxTest
 com.editora.ui.DenoDebugProbeFxTest
 com.editora.ui.JsTestRunnerProbeFxTest
 com.editora.ui.GoDebugProbeFxTest
+com.editora.ui.DelveRemoteProbeFxTest
 com.editora.ui.RustDebugProbeFxTest
 com.editora.ui.NativeDebugProbeFxTest
 com.editora.ui.DisassemblyMemoryProbeFxTest
