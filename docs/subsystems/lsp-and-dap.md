@@ -2461,7 +2461,15 @@ holds the program before its first instruction, which GDB reports as a stop with
 `SIGTRAP` exception (sometimes twice) in the loader; `DapManager.passesRemoteEntry` resumes stops of a remote attach
 (`RemoteNativeAttach.isRemote`, set in `startExternal`) until one is at a breakpoint or in code with a source, so the
 program runs on to its breakpoints as a launched one does. Stop ends the program, and gdbserver with it.
-`RemoteNativeAttachProbeFxTest` drives GDB, CodeLLDB and a `cppdbg` configuration against a real gdbserver.
+Source maps (round 6 item 8): the command's third prompt (the folder the program was built in over there) and
+launch.json's `sourceFileMap` (`cppdbg`, and kept on a `gdb` configuration) become one map,
+`RemoteNativeAttach.sourceFileMap` (a string or `{editorPath}` per compiled path). CodeLLDB gets it as its own `sourceMap`;
+GDB's DAP mode has none, so the request carries it as `sourceFileMap` and `DapManager.runExternal` turns it into
+`-iex "set substitute-path FROM TO"` on GDB's command line (`gdbSubstitutions`) and leaves it out of the request. Probed
+with GDB 16.3 and CodeLLDB over gdbserver: without a map a breakpoint in a copy of the sources never binds and the
+program runs to its end; with it, it binds and the stop names the file here.
+`RemoteNativeAttachProbeFxTest` drives GDB, CodeLLDB and a `cppdbg` configuration against a real gdbserver, and the
+command on each debugger with the program built in one folder and debugged from a copy in another.
 **Attach to Remote Delve** (`debug.attachRemoteGo`; [`ui/RemoteDelveLaunch`](../../src/main/java/com/editora/ui/RemoteDelveLaunch.java),
 `GoLaunch.remoteAttach`) attaches to a Go program under Delve's headless server (`dlv debug|exec|attach --headless
 --listen=host:port`), which serves DAP itself: `DapManager.startRemoteDelve` connects to `host:port`
