@@ -291,7 +291,7 @@ class BrowserDebugProbeFxTest {
     }
 
     /** Every message the status line showed, newest first (a launch's error can be overwritten). FX thread. */
-    private static String status(MainController c) {
+    static String status(MainController c) {
         MessageLog log = FxTestSupport.field(FxTestSupport.field(c, "statusBar"), "messageLog");
         return String.join(
                 " | ", log.entries().stream().map(MessageLog.Entry::text).toList());
