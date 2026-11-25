@@ -585,13 +585,16 @@ class DebugReviewCWindowFxTest {
     void aPlainFolderJavaClassOffersDebugFileInTheEditorMenu() throws Exception {
         Path main = file("Main.java", "public class Main {\n    public static void main(String[] a) {\n    }\n}\n");
         EditorBuffer b = open(main);
+        FxTestSupport.runOnFx(b::settleRunScanForTest);
+        // A single-file program now runs on its own, so Debug File sits beside Run File, not twice.
+        assertTrue(FxTestSupport.callOnFx(b::isRunnable), "java Main.java runs it");
+        assertTrue(FxTestSupport.callOnFx(b::debugFileOffered), "Debug File beside Run File");
         List<String> labels = FxTestSupport.callOnFx(() -> labels(debug.editorMenuItems(b)));
-        assertEquals(tr("editmenu.debugFile"), labels.getFirst(), labels.toString());
+        assertFalse(labels.contains(tr("editmenu.debugFile")), "beside Run File, not twice: " + labels);
         // Review 2 C110: not while that file is being debugged — it offered a second launch of it.
         try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
             connect(adapter, main);
-            List<String> during = FxTestSupport.callOnFx(() -> labels(debug.editorMenuItems(b)));
-            assertFalse(during.contains(tr("editmenu.debugFile")), during.toString());
+            assertFalse(FxTestSupport.callOnFx(b::debugFileOffered), "no second launch of the file being debugged");
         }
     }
 

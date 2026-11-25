@@ -352,11 +352,20 @@ RichTextFX — io.github.adriandeleon:richtextfx
     The styled code-editing control. This is a fork of FXMisc RichTextFX
     (https://github.com/adriandeleon/RichTextFX) adding multiple carets,
     column selection and inlay support, vendored under m2-repo/. It pulls
-    org.reactfx:reactfx, org.fxmisc.flowless:flowless, org.fxmisc.undo:undofx
-    and org.fxmisc.wellbehaved:wellbehavedfx (all BSD-2-Clause).
+    org.reactfx:reactfx, Flowless (below), org.fxmisc.undo:undofx and
+    org.fxmisc.wellbehaved:wellbehavedfx (all BSD-2-Clause).
     Copyright (c) 2013-2023, Tomas Mikula and contributors.
     License: BSD-2-Clause / GPL-2.0-with-classpath-exception (dual)
     https://github.com/FXMisc/RichTextFX
+
+Flowless — io.github.adriandeleon:flowless
+    The virtual flow under the code-editing control. This is a fork of
+    FXMisc Flowless 0.7.4 with one layout-performance change, vendored
+    under m2-repo/ in place of org.fxmisc.flowless:flowless
+    (https://github.com/adriandeleon/Flowless).
+    Copyright (c) 2014, TomasMikula. All rights reserved.
+    License: BSD-2-Clause
+    https://github.com/FXMisc/Flowless
 
 AtlantaFX — io.github.mkpaz:atlantafx-base
     JavaFX CSS theme library.

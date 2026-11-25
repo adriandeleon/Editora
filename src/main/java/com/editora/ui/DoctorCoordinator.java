@@ -1029,6 +1029,8 @@ final class DoctorCoordinator {
             for (com.editora.build.BuildTool tool : com.editora.build.BuildTool.values()) {
                 specs.add(buildTool(tool, s, needs));
             }
+            com.editora.toolchain.JkitCli.useProgram(s.getJkitPath());
+            specs.add(jkitRow(ops.projectRoot()));
         }
 
         // AI & agents -----------------------------------------------------------------------------
@@ -1627,6 +1629,40 @@ final class DoctorCoordinator {
                 keyMissing
                         ? row.missing("doctor.tip.aiKey", name)
                         : row.ok(endpoint == null || endpoint.isBlank() ? provider.defaultEndpoint() : endpoint));
+    }
+
+    /**
+     * jkit (jkit-project.dev), which installs and picks the project's JDK, Maven, Gradle, sbt and GraalVM: its
+     * version, and the worst of its own {@code jkit doctor} checks. Optional: without it Editora reads
+     * {@code .sdkmanrc} itself and uses the JDKs it finds.
+     */
+    private DoctorService.CheckSpec jkitRow(@Nullable Path projectRoot) {
+        DoctorCheck row = DoctorCheck.checking("build.jkit", "build", "jkit", "jkit doctor")
+                .withSettings("buildTools");
+        return probe(row, base -> {
+            String jkit = com.editora.toolchain.JkitCli.locate();
+            if (jkit == null) {
+                return base.optional("doctor.tip.jkitOptional");
+            }
+            String version = com.editora.toolchain.JkitCli.version(jkit);
+            String detail = (version == null ? "" : version + " — ") + jkit;
+            Path dir =
+                    projectRoot != null && com.editora.process.ExecTargets.runsHere(projectRoot) ? projectRoot : null;
+            List<com.editora.toolchain.JkitCli.DoctorCheck> checks = com.editora.toolchain.JkitCli.parseDoctor(
+                    com.editora.toolchain.JkitCli.doctor(jkit, dir, false).doc());
+            String failed = jkitFailure(checks);
+            return failed == null ? base.ok(detail) : base.warn(detail, "doctor.tip.jkitProblem", failed);
+        });
+    }
+
+    /** The first failed {@code jkit doctor} check, with its fix, or null when none failed. Pure. */
+    static @Nullable String jkitFailure(List<com.editora.toolchain.JkitCli.DoctorCheck> checks) {
+        for (com.editora.toolchain.JkitCli.DoctorCheck c : checks) {
+            if ("fail".equals(c.level())) {
+                return c.fix() == null ? c.message() : c.message() + " — " + c.fix();
+            }
+        }
+        return null;
     }
 
     /**

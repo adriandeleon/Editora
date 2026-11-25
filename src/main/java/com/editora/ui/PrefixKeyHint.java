@@ -220,12 +220,12 @@ final class PrefixKeyHint {
             if (id != null) {
                 String title = registry.get(id).map(Command::title).orElse(id);
                 full.put(id, title);
-                shortCount.merge(MenuTitles.of(title), 1, Integer::sum);
+                shortCount.merge(MenuTitles.forCommand(id, title), 1, Integer::sum);
             }
         }
         Map<String, String> titles = new HashMap<>();
         full.forEach((id, title) -> {
-            String bare = MenuTitles.of(title);
+            String bare = MenuTitles.forCommand(id, title);
             titles.put(id, shortCount.getOrDefault(bare, 0) > 1 ? title : bare);
         });
         return titles;

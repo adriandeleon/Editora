@@ -105,6 +105,63 @@ A Java run configuration's before-launch command runs in the project root,
 whatever the configuration's working directory, so a `mvn compile` or
 `gradle classes` step finds the build file.
 
+## The project's JDK, Maven, Gradle, sbt and GraalVM
+
+A project can name its own JDK, Maven, Gradle, sbt and GraalVM, so everyone who
+opens it builds with the same versions. Editora reads them, in this order for
+each tool:
+
+1. **Editora's project settings** (`toolchain` in `.editora/settings.json`),
+   applied only in a [trusted folder](/docs/workspace#trusted-folders).
+2. **The project's files**, the way [jkit](https://jkit-project.dev/) reads
+   them: `jkit.toml` (or `.jkit.toml`), or else `.sdkmanrc`, `.tool-versions`
+   (asdf, mise) and `.java-version` together. When jkit is installed, Editora
+   asks jkit itself (`jkit status`), so the editor, your shells and CI agree;
+   without jkit, Editora reads the `.sdkmanrc`.
+3. Your own choice in Settings (the **Default JDK** above), else `PATH`.
+
+The JDK found this way runs Java Run and Debug, Maven and Gradle builds and the
+Java language server; the Maven, Gradle or sbt runs that project's builds when it
+has no wrapper. The versions are matched among what jkit and SDKMAN installed
+and every other JDK on the machine. When the project names one that is not
+installed, the status line says so once; **Java Toolchain: Install the Project's
+Tools** (`toolchain.installProjectTools`) installs it with `jkit sync`.
+
+**Java Toolchain: Set Project JDK…** (and Maven, Gradle, sbt, GraalVM) picks an
+install and asks where to keep the choice: `jkit.toml` (written by `jkit pin`,
+read by jkit everywhere), `.sdkmanrc`, or Editora's project settings. A new
+`jkit.toml` takes over from the folder's `.sdkmanrc`, `.tool-versions` and
+`.java-version` for jkit, so the pins they made are copied into it first.
+Choosing **My own (Settings)** removes the project's choice from all three.
+
+### jkit
+
+[jkit](https://jkit-project.dev/) installs and switches JDKs, Maven, Gradle and
+sbt. Editora drives it through its `--json` output: every jkit command is in the
+Command Palette under **Java Toolchain**, and in **Tools ▸ Java Toolchain**.
+
+| Command | jkit |
+| --- | --- |
+| Install a JDK / GraalVM / Maven / Gradle / sbt with jkit… | `jkit search`, `jkit install` |
+| Sync the Project with jkit | `jkit sync` (a dry run first; builds jkit cannot verify only if you say so) |
+| Show jkit Status | `jkit status`: each tool's pin, what it picks, and jkit's hints |
+| Upgrade jkit's Installs | `jkit upgrade` (newest build of each installed version) |
+| Show jkit Installs… / Set jkit's Default… / Remove a jkit Install… | `jkit list`, `jkit use --global`, `jkit remove` |
+| Remove Older jkit Builds… | `jkit prune` |
+| jkit Settings… / Set jkit's Default JDK or GraalVM Vendor… / Toggle jkit Switching on cd | `jkit config` |
+| Check jkit Setup (and Network) | `jkit doctor` |
+| Add jkit to My Shell… | `jkit hook --install` |
+| Update jkit | `jkit self-update` |
+
+**Settings → Build Tools → jkit** sets the jkit program (blank finds `jkit` on
+`PATH`), shows whether it was found, and links to **jkit Settings…** and
+**Check Setup**. jkit's own settings (the default vendors, switching on `cd`)
+live in jkit's `~/.jkit/config.toml`; a value set by an environment variable
+wins there and is shown but cannot be changed. [Doctor](/docs/troubleshooting#doctor)'s
+Build Tools section has a jkit row with the first problem `jkit doctor` finds.
+Editora needs jkit 0.4.0 or newer for its settings and **Update jkit**; an older
+jkit says so.
+
 In a [remote project](/docs/remote#allowing-a-host-to-run-commands), Maven,
 Gradle, npm, Cargo and Go builds and test runs start on the host, over the same
 SSH connection, with output and Stop as for a local build (the Output console
@@ -529,7 +586,28 @@ of its parent's, is read too), Go uses `go test -json`, npm reads TAP when the
 reporter emits it, and Cargo parses libtest output. For `node --test`, Test Results also reads
 node:test's own default output, so `"test": "node --test"` fills the tree with no
 reporter flag. In TAP output a `describe` block is a group, not a failed test,
-and a failure shows its error and stack. sbt, Mill and Scala CLI tests are not
+and a failure shows its error and stack.
+
+A test file that *Run File* or *Run Test at Caret* runs under its own runner
+fills Test Results too, while the Run console shows the runner's usual report:
+
+| Runner | How Test Results reads it |
+| --- | --- |
+| Jest | `--json --outputFile`, when the run ends |
+| Vitest | its `json` reporter beside the default one, when the run ends |
+| Deno | `deno test --junit-path`, when the run ends |
+| RSpec | `--format json --out` beside the console format your `.rspec` names (else `progress`), when the run ends |
+| Minitest, `bin/rails test` | the verbose console (`-v`), test by test |
+| PHPUnit | `--log-junit`, when the run ends |
+| ExUnit | `mix test --trace`, test by test |
+| `dart test`, `flutter test` | `--file-reporter json:`, when the run ends |
+
+A row opens its test where it failed, else where it is declared. **Rerun
+Failed** and **Rerun This Test** narrow the file's run with the runner's own
+filter: `-t` for Jest and Vitest, `--filter` for Deno and PHPUnit, `--example`
+for RSpec, `-n` for Minitest, `--only test:` for ExUnit and `--name` for Dart.
+*Run File* on a Dart test file now runs `dart test` (`flutter test` in a
+Flutter package) rather than `dart run`. sbt, Mill and Scala CLI tests are not
 read yet: their output stays in the Output console. Where a structured format isn't available, the
 window says so and points at the Output console.
 
@@ -567,8 +645,8 @@ test (`--test-name-pattern`, into Test Results), a Deno test, a Jest or Vitest
 test, an RSpec example (`rspec file:line`), a Minitest test (`bin/rails test
 file:line` in a Rails app, else `-n`), a PHPUnit test (`--filter`), an ExUnit
 test (`mix test file:line`) and a C# test (`dotnet test --filter`). Its output
-goes where *Run File*'s does: the Run console, or Test Results for `node:test`
-and Python.
+goes where *Run File*'s does: the Run console, and Test Results for every one
+of these runners but Go, Rust and C#.
 
 Tests in **nested classes** have their own icons: a method inside a JUnit
 `@Nested` class, or inside a static nested test class, gets a ▶, and so does

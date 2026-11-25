@@ -103,6 +103,8 @@ class ProjectScopeFxTest {
             scope.toolchainReads = Runnable::run;
             scope.installs = () -> new com.editora.toolchain.ProjectToolchain.Installs(
                     List.of(jdk21, jdk25), List.of(maven), List.of());
+            scope.filePins = r -> com.editora.toolchain.ProjectToolchain.sdkmanrcPins(
+                    com.editora.toolchain.SdkmanRc.read(r)); // as without jkit, whatever this machine has
             scope.reload();
             assertEquals("/jk/jdk21", scope.jdkHome(config.getSettings()), "untrusted: .sdkmanrc's java=");
             assertEquals(
@@ -121,6 +123,47 @@ class ProjectScopeFxTest {
         FxTestSupport.runOnFx(() -> {
             scope().reload();
             assertEquals("/mine/jdk", scope().jdkHome(config.getSettings()), "nothing named: the user's Default JDK");
+        });
+    }
+
+    /**
+     * With jkit installed, the project's pins are what jkit says ({@code jkit status}): the install jkit picked is
+     * the project's JDK, and an sbt it pins is the sbt the build runs.
+     */
+    @Test
+    void jkitsPinsChooseTheProjectsJdkAndSbt() throws Exception {
+        Files.writeString(project.resolve("jkit.toml"), "[tools]\njdk = \"21\"\nsbt = \"1.11\"\n");
+        com.editora.toolchain.ToolInstall picked = new com.editora.toolchain.ToolInstall(
+                "jdk", "21.0.9+10", "zulu", false, Path.of("/jk/zulu21"), "jkit", "21.0.9+10-zulu");
+        com.editora.toolchain.ToolInstall sbt = new com.editora.toolchain.ToolInstall(
+                "sbt", "1.11.7", null, false, Path.of("/jk/sbt"), "jkit", "1.11.7");
+        FxTestSupport.runOnFx(() -> {
+            config.getSettings().setMavenJdkHome("/mine/jdk");
+            ProjectScope scope = scope();
+            scope.reads = Runnable::run;
+            scope.toolchainReads = Runnable::run;
+            scope.installs = () ->
+                    new com.editora.toolchain.ProjectToolchain.Installs(List.of(), List.of(), List.of(), List.of(sbt));
+            scope.filePins = r -> List.of(
+                    new com.editora.toolchain.ProjectToolchain.FilePin(
+                            com.editora.toolchain.ToolRequest.of(
+                                    new com.editora.toolchain.JkitCli.PinSpec("jdk", "21", null, false)),
+                            com.editora.toolchain.ProjectToolchain.Origin.JKIT,
+                            "jkit.toml",
+                            picked),
+                    new com.editora.toolchain.ProjectToolchain.FilePin(
+                            com.editora.toolchain.ToolRequest.of(
+                                    new com.editora.toolchain.JkitCli.PinSpec("sbt", "1.11", null, false)),
+                            com.editora.toolchain.ProjectToolchain.Origin.JKIT,
+                            "jkit.toml",
+                            null));
+            scope.reload();
+            assertEquals("/jk/zulu21", scope.jdkHome(config.getSettings()), "the JDK jkit picked");
+            assertEquals(
+                    Path.of("/jk/sbt", "bin", com.editora.Os.isWindows() ? "sbt.bat" : "sbt")
+                            .toString(),
+                    scope.buildCommand(com.editora.build.BuildTool.SBT, config.getSettings()),
+                    "the sbt jkit.toml pins, matched among the installs");
         });
     }
 

@@ -1,5 +1,6 @@
 package com.editora.editor.logviewer;
 
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -17,6 +18,7 @@ import com.editora.editor.TabSurface;
 import com.editora.logviewer.LogLevel;
 import com.editora.logviewer.LogMatcher;
 import com.editora.logviewer.LogPatterns;
+import com.editora.logviewer.LogSources;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 
@@ -47,6 +49,54 @@ public final class LogHighlightOverlay extends Region implements SecondaryPane.F
         default @Nullable Pattern highlight() {
             return null;
         }
+
+        /** The 0-based line, in the complete text, that visible paragraph {@code paragraph} shows. */
+        default int lineAt(int paragraph) {
+            return paragraph;
+        }
+    }
+
+    /** A merged log's sources (see {@link #setSources}), or null for a log of one file. */
+    private @Nullable LogSources sources;
+
+    private Color[] sourceColors = new Color[0];
+    /** Each source name's width in the chip font, measured once per merge. */
+    private double[] sourceWidths = new double[0];
+
+    private static final double SOURCE_STRIP_WIDTH = 3.0;
+    private static final double CHIP_PAD = 4.0;
+
+    /**
+     * Tags each line of a merged log with the log it came from: a strip in that log's colour at the right edge
+     * (the left one is the level's, and the text starts just after it), and its name beside the strip. Null
+     * takes the tags away.
+     */
+    public void setSources(@Nullable LogSources sources) {
+        if (follower != null) {
+            follower.setSources(sources);
+        }
+        this.sources = sources;
+        List<String> names = sources == null ? List.of() : sources.names();
+        int n = names.size();
+        sourceColors = new Color[n];
+        sourceWidths = new double[n];
+        javafx.scene.text.Text probe = new javafx.scene.text.Text();
+        probe.setFont(chipFont());
+        for (int i = 0; i < n; i++) {
+            sourceColors[i] = sourceColor(i);
+            probe.setText(names.get(i));
+            sourceWidths[i] = probe.getLayoutBounds().getWidth();
+        }
+        scheduleRedraw();
+    }
+
+    /** Source {@code i}'s colour: hues spread by the golden angle, so neighbours differ however many logs. */
+    static Color sourceColor(int i) {
+        return Color.hsb((205 + i * 137.508) % 360, 0.62, 0.78);
+    }
+
+    private static javafx.scene.text.Font chipFont() {
+        return javafx.scene.text.Font.font(com.editora.editor.UiZoom.px(10));
     }
 
     /** Resolved from the editor background on a theme change, never per paint. */
@@ -134,6 +184,7 @@ public final class LogHighlightOverlay extends Region implements SecondaryPane.F
         LogHighlightOverlay second = new LogHighlightOverlay(view, levels);
         second.setRenderingActive(rendering);
         second.setActive(active);
+        second.setSources(sources);
         follower = second;
         return second;
     }
@@ -261,6 +312,10 @@ public final class LogHighlightOverlay extends Region implements SecondaryPane.F
                 if (marks != null) {
                     paintMatches(g, p, marks, w);
                 }
+                LogSources tagged = sources;
+                if (tagged != null) {
+                    paintSource(g, p, tagged, w);
+                }
             }
         } catch (RuntimeException ignored) {
             // Viewport mid-layout — skip this frame; a later event redraws.
@@ -326,6 +381,36 @@ public final class LogHighlightOverlay extends Region implements SecondaryPane.F
         }
         g.setFill(barFor(level));
         g.fillRect(0, y, level == LogLevel.FATAL ? FATAL_BAR_WIDTH : BAR_WIDTH, height);
+    }
+
+    /** Line {@code paragraph}'s source tag: a strip at the right edge, and the log's name beside it. */
+    private void paintSource(GraphicsContext g, int paragraph, LogSources sources, double w) {
+        int source = sources.sourceOf(levels.lineAt(paragraph));
+        if (source < 0 || source >= sourceColors.length) {
+            return;
+        }
+        Bounds b = toLocal(area.getParagraphBoundsOnScreen(paragraph).orElse(null));
+        if (b == null || b.getMaxY() < 0 || b.getMinY() > canvas.getHeight()) {
+            return;
+        }
+        // The text's right edge, not the overlay's: the overlay also spans the vertical scrollbar and the overview
+        // stripes over it, which would cover the tag.
+        double edge = area.getWidth() > 0 ? Math.min(w, area.getWidth()) : w;
+        Color color = sourceColors[source];
+        g.setFill(color);
+        g.fillRect(edge - SOURCE_STRIP_WIDTH, b.getMinY(), SOURCE_STRIP_WIDTH, b.getHeight());
+        double rowHeight = Math.min(b.getHeight(), com.editora.editor.UiZoom.px(16));
+        double chipW = sourceWidths[source] + 2 * CHIP_PAD;
+        double x = edge - SOURCE_STRIP_WIDTH - chipW - CHIP_PAD;
+        if (x < edge / 2) {
+            return; // a narrow view: the strip alone
+        }
+        g.setFill(color.deriveColor(0, 1, 1, 0.16));
+        g.fillRoundRect(x, b.getMinY() + 1, chipW, rowHeight - 2, 6, 6);
+        g.setFill(color);
+        g.setFont(chipFont());
+        g.setTextBaseline(javafx.geometry.VPos.CENTER);
+        g.fillText(sources.names().get(source), x + CHIP_PAD, b.getMinY() + rowHeight / 2);
     }
 
     private Color barFor(LogLevel level) {

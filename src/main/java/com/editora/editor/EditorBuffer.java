@@ -560,6 +560,7 @@ public class EditorBuffer implements TabContent {
     private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area, this::documentText);
 
     private @Nullable LogHighlightOverlay logOverlay; // lazily attached on first activation — see logOverlay()
+    private com.editora.logviewer.@Nullable LogSources logSources; // a merged log's (Log: Merge Logs…)
     /** A log's WARN/ERROR overview over the scrollbar, attached with the log overlay — see logStripe(). */
     private com.editora.editor.logviewer.@Nullable LogStripe logStripe;
 
@@ -2065,6 +2066,11 @@ public class EditorBuffer implements TabContent {
                         public java.util.regex.@Nullable Pattern highlight() {
                             return logView.patterns().include();
                         }
+
+                        @Override
+                        public int lineAt(int paragraph) {
+                            return logView.filtered() ? logView.lineNumberAt(paragraph) - 1 : paragraph;
+                        }
                     }),
                     OverlayLayer.LOG);
         }
@@ -3081,6 +3087,16 @@ public class EditorBuffer implements TabContent {
         runGutter.setMainGutterEnabled(enabled);
     }
 
+    /** Whether this file belongs to a Maven or Gradle project; Run File then never runs a class of it as one file. */
+    public void setJvmBuildProject(boolean inBuild) {
+        runGutter.setJvmBuildProject(inBuild);
+    }
+
+    /** The JDK release Run File's single-file Java program needs: 25 (compact source), 11 (classic class), else 0. */
+    public int javaRunRelease() {
+        return runGutter.javaRelease();
+    }
+
     public void setMainRunHandler(java.util.function.Consumer<com.editora.run.MainMethodScanner.MainMethod> handler) {
         runGutter.setMainRunHandler(handler);
     }
@@ -3841,6 +3857,19 @@ public class EditorBuffer implements TabContent {
     /** Runs when the log view's counts, follow or trimmed state change (the log control shows them). */
     public void setOnLogStateChanged(Runnable listener) {
         logView.setOnStateChanged(listener);
+    }
+
+    /** Tags each line of a merged log with the log it came from (see {@code LogMerge}); null for none. */
+    public void setLogSources(com.editora.logviewer.@Nullable LogSources sources) {
+        logSources = sources;
+        if (sources != null || logOverlay != null) {
+            logOverlay().setSources(sources);
+        }
+    }
+
+    /** The sources of a merged log, or null. */
+    public com.editora.logviewer.@Nullable LogSources getLogSources() {
+        return logSources;
     }
 
     /** Appends {@code text} read from the file's tail (filtered when a filter is active); never dirties. */
@@ -4745,6 +4774,11 @@ public class EditorBuffer implements TabContent {
 
     public void setDebugFileHandler(Runnable handler, java.util.function.BooleanSupplier shown) {
         runGutter.setDebugFileHandler(handler, shown);
+    }
+
+    /** Whether the editor menu offers Debug File beside Run File for this file now. */
+    public boolean debugFileOffered() {
+        return runGutter.debugFileHandler != null && runGutter.debugFileShown.getAsBoolean();
     }
 
     /** Callback fired after any note change (for persistence + the Notes panel). */

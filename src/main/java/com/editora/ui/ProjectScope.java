@@ -73,6 +73,13 @@ final class ProjectScope {
                     .map(com.editora.lsp.JavaRuntimes.Jdk::path)
                     .toList());
 
+    /**
+     * How the project files' requests are read (a seam: a test stands in for jkit): jkit's {@code jkit status}
+     * when jkit is installed, else the {@code .sdkmanrc}.
+     */
+    java.util.function.Function<Path, java.util.List<ProjectToolchain.FilePin>> filePins =
+            com.editora.toolchain.ProjectFiles::pins;
+
     /** Where a toolchain read runs: a thread of its own (a seam: a test may read in place). */
     java.util.concurrent.Executor toolchainReads = com.editora.process.BlockingTasks.named("project-toolchain-read");
 
@@ -153,7 +160,8 @@ final class ProjectScope {
     }
 
     /**
-     * Reads {@code r}'s toolchain requests ({@code .editora/settings.json}, {@code .sdkmanrc}) and what is installed
+     * Reads {@code r}'s toolchain requests ({@code .editora/settings.json}, its project files through jkit or its
+     * {@code .sdkmanrc}) and what is installed
      * off the FX thread, and keeps both resolutions when it lands, if no newer read was started meanwhile. A remote
      * project's tools are its host's: nothing is resolved here for it.
      */
@@ -170,9 +178,10 @@ final class ProjectScope {
             return;
         }
         java.util.function.Supplier<ProjectToolchain.Installs> scan = installs;
+        java.util.function.Function<Path, java.util.List<ProjectToolchain.FilePin>> readPins = filePins;
         java.util.concurrent.CompletableFuture.supplyAsync(
                         () -> {
-                            Map<String, String> rc = com.editora.toolchain.SdkmanRc.read(r);
+                            java.util.List<ProjectToolchain.FilePin> rc = readPins.apply(r);
                             Map<String, String> own = ProjectSettings.load(r).getToolchain();
                             boolean asks =
                                     !rc.isEmpty() || own.values().stream().anyMatch(v -> v != null && !v.isBlank());
@@ -368,9 +377,12 @@ final class ProjectScope {
         if (!own.isBlank()) {
             return own;
         }
-        String toolchainTool = tool == com.editora.build.BuildTool.MAVEN
-                ? com.editora.toolchain.ToolInstall.MAVEN
-                : tool == com.editora.build.BuildTool.GRADLE ? com.editora.toolchain.ToolInstall.GRADLE : null;
+        String toolchainTool = switch (tool) {
+            case MAVEN -> com.editora.toolchain.ToolInstall.MAVEN;
+            case GRADLE -> com.editora.toolchain.ToolInstall.GRADLE;
+            case SBT -> com.editora.toolchain.ToolInstall.SBT;
+            default -> null;
+        };
         String home = toolchainTool == null ? null : toolchain().home(toolchainTool);
         if (toolchainTool != null && home != null) {
             // the Maven or Gradle the project names (.sdkmanrc's maven=, …); the project's wrapper still wins

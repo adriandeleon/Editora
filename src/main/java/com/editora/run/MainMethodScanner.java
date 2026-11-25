@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Finds {@code public static void main(String[])} entry points in Java source text, for the editor's gutter
  * ▶ Run/Debug markers and the jdtls-free fallback (a build-tool run needs a main class to launch). A
@@ -75,6 +77,53 @@ public final class MainMethodScanner {
             }
         }
         return out;
+    }
+
+    /**
+     * Where {@code java File.java} (the source-file launcher, JEP 330) starts a classic single-file program: the
+     * {@code static void main(String[])} of the file's <em>first</em> top-level class, which is the class the
+     * launcher runs. {@code jdk25}: the method is not {@code public}, which only JDK 25's launcher accepts (JEP
+     * 512); a {@code public} one runs on JDK 11 and later.
+     */
+    public record SourceLaunch(int line, boolean jdk25) {}
+
+    private static final Pattern PUBLIC = Pattern.compile("\\bpublic\\b");
+
+    /**
+     * The {@link SourceLaunch} of a classic single-file program, or null when the first top-level class has no
+     * {@code main} (a library class, or a main further down in another class, which the launcher would not run).
+     */
+    public static @Nullable SourceLaunch sourceLaunch(String source) {
+        if (source == null || source.isBlank()) {
+            return null;
+        }
+        String[] lines = blank(source).split("\n", -1);
+        String first = null;
+        int depth = 0;
+        for (int li = 0; li < lines.length; li++) {
+            String line = lines[li];
+            if (depth == 0) {
+                Matcher tm = TYPE_DECL.matcher(line);
+                if (tm.find()) {
+                    if (first != null) {
+                        return null; // past the first top-level class: the launcher runs only that one
+                    }
+                    first = tm.group(1);
+                }
+            }
+            if (depth == 1 && first != null) {
+                Matcher mm = MAIN.matcher(line);
+                if (mm.find()) {
+                    return new SourceLaunch(
+                            li, !PUBLIC.matcher(line.substring(0, mm.end())).find());
+                }
+            }
+            depth += braceDelta(line);
+            if (depth < 0) {
+                depth = 0;
+            }
+        }
+        return null;
     }
 
     /** The {@code package} a Java source declares, or {@code ""} for the default package. */

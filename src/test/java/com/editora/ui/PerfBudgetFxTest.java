@@ -8,13 +8,21 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import javafx.application.Platform;
+import javafx.scene.Scene;
 import javafx.scene.control.TabPane;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
+import javafx.stage.PopupWindow;
+import javafx.stage.Stage;
+import javafx.stage.Window;
 
 import com.editora.editor.EditorBuffer;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -30,6 +38,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * registered — so it holds on any machine and fails the pull request that adds the work rather than the release
  * that ships it. Each value is printed as a {@code PERF-BUDGET} line; {@code -Dperf.budget.jfr=<directory>} also
  * records the typing window with JFR to find what a change added.
+ *
+ * <p>The suite runs many test classes in one JVM, and a window one of them leaves open keeps laying out and
+ * rendering on the same FX thread. Each test here first hides every window that is not its own
+ * ({@link #hideOtherWindows}), so the gate measures this window's work and not what an earlier class left behind.
  *
  * <p>Each budget is the value measured on master when it was set, plus headroom for run-to-run variation (noted
  * beside it). A change that needs a higher budget raises it in the same pull request and says why there, with the
@@ -47,10 +59,12 @@ class PerfBudgetFxTest {
     /** Rendered frames per paced keystroke in a 2,000-line Java file (measured 1.020–1.025). */
     static final double TYPING_FRAMES_PER_KEY = 1.25;
     /**
-     * Kilobytes the FX thread allocates per paced keystroke, warm JIT (measured 6,760–7,230). Two thirds of it is
-     * Flowless's {@code SizeTracker.forgetSizeOf} rebuilding the size tree of every line on each layout pass.
+     * Kilobytes the FX thread allocates per paced keystroke, warm JIT (measured 2,362–2,366; 6,760–7,230 before the
+     * Flowless fork 0.7.4-editora.1 stopped re-splicing the size tree of every dirty-but-unchanged cell on each
+     * layout pass). About 1.8 MB of what is left is spent inside the key event itself, rebuilding the edited line's
+     * cell and applying CSS to its nodes among it.
      */
-    static final double TYPING_FX_ALLOC_KB_PER_KEY = 8_000;
+    static final double TYPING_FX_ALLOC_KB_PER_KEY = 2_700;
     /** Frames a focused, untouched editor renders in 10 s: the caret blink, and nothing else (measured 20–21). */
     static final double IDLE_FRAMES_PER_10S = 24;
     /** Live heap per open tab of a 20–60 KB Java source, in MB (measured 3.26–3.50). */
@@ -75,6 +89,11 @@ class PerfBudgetFxTest {
             shared.getSettings().setMermaidSupport(false);
             shared.getSettings().setMarkdownLint(false);
         });
+    }
+
+    @BeforeEach
+    void measureOnlyThisWindow() throws Exception {
+        report("other_windows_hidden", hideOtherWindows(), Double.NaN);
     }
 
     @AfterAll
@@ -206,6 +225,79 @@ class PerfBudgetFxTest {
                     "closing every tab left " + (receivers - receivers0) + " more AnimationTimer/pulse receivers"
                             + " registered than before they opened: each one runs on every pulse for good");
         }
+    }
+
+    // ---------------------------------------------------------------- isolation
+
+    /**
+     * A window another test class left open is not charged to this one. In CI's Linux shard, three main windows left
+     * by earlier classes, one laying out a Settings page on every pulse, made the FX thread allocate 10–72 MB per
+     * keystroke instead of 7 and failed the typing budget on every pull request whose shard put it after them.
+     */
+    @Test
+    void aWindowAnotherTestLeftOpenIsNotCharged() throws Exception {
+        Stage[] other = new Stage[1];
+        FxTestSupport.runOnFx(() -> {
+            other[0] = new Stage();
+            other[0].setScene(new Scene(new StackPane(new ChurningRegion()), 200, 100));
+            other[0].show();
+        });
+        try {
+            OnFx.pulses(5);
+            long a0 = fxAllocated();
+            OnFx.pulses(30);
+            double before = (fxAllocated() - a0) / 1048576.0;
+            assertTrue(
+                    before >= 15,
+                    "the left-open window allocates a megabyte per pulse, so it would be charged: " + before + " MB");
+
+            assertTrue(hideOtherWindows() >= 1, "the left-open window is hidden");
+            OnFx.pulses(5);
+            a0 = fxAllocated();
+            OnFx.pulses(30);
+            double after = (fxAllocated() - a0) / 1048576.0;
+            report("isolation.other_window_mb_per_30_pulses", after, 3);
+            assertTrue(after < 3, "a hidden window still costs the FX thread " + after + " MB in 30 pulses");
+        } finally {
+            FxTestSupport.runOnFx(() -> other[0].hide());
+        }
+    }
+
+    /** Lays itself out again on every pulse and allocates a megabyte each time: a window that never settles. */
+    private static final class ChurningRegion extends Region {
+        @SuppressWarnings("unused")
+        private byte[] sink = new byte[0];
+
+        @Override
+        protected void layoutChildren() {
+            sink = new byte[1 << 20];
+            Platform.runLater(this::requestLayout);
+        }
+    }
+
+    /**
+     * Hides every showing window that is neither this test's window nor owned by it (its popups stay), and says how
+     * many it hid. A hidden window's scene leaves the pulse, so its layout and rendering stop costing the FX thread.
+     */
+    private int hideOtherWindows() throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            Window mine = tabPane().getScene().getWindow();
+            List<Window> others = Window.getWindows().stream()
+                    .filter(w -> w.isShowing() && !ownedBy(w, mine))
+                    .toList();
+            others.forEach(Window::hide);
+            return others.size();
+        });
+    }
+
+    private static boolean ownedBy(@org.jspecify.annotations.Nullable Window w, Window mine) {
+        while (w != null) {
+            if (w == mine) {
+                return true;
+            }
+            w = w instanceof Stage s ? s.getOwner() : w instanceof PopupWindow p ? p.getOwnerWindow() : null;
+        }
+        return false;
     }
 
     // ---------------------------------------------------------------- helpers (as in src/perf's PerfProbe)

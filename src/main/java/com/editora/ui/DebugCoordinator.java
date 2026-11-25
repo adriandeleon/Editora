@@ -410,7 +410,7 @@ final class DebugCoordinator {
     }
 
     /** As {@link #inSession(DebugSession, Runnable)}, for an answer. */
-    private <T> T inSession(DebugSession session, java.util.function.Supplier<T> r) {
+    <T> T inSession(DebugSession session, java.util.function.Supplier<T> r) {
         DebugSession before = dispatching;
         dispatching = session;
         try {
@@ -421,7 +421,7 @@ final class DebugCoordinator {
     }
 
     /** Runs {@code r} later on the FX thread, as the session being handled now ({@link #s()}). */
-    private void later(Runnable r) {
+    void later(Runnable r) {
         DebugSession session = s();
         Platform.runLater(() -> inSession(session, r));
     }
@@ -445,6 +445,9 @@ final class DebugCoordinator {
     final ElixirDebugLaunch elixir = new ElixirDebugLaunch(this); // a Mix project's tests, scripts and app
     private final ElectronDebugLaunch electron = new ElectronDebugLaunch(this); // an Electron app: main + renderer
     final RemoteAttachLaunch remote = new RemoteAttachLaunch(this); // a native program under a debug server elsewhere
+    /** launch.json's serverReadyAction and postDebugTask ({@link LaunchFollowUps}). */
+    final LaunchFollowUps followUps = new LaunchFollowUps(this);
+
     final BrowserDebugLaunch browser = new BrowserDebugLaunch(this); // a page in Chrome, Edge, Firefox…
     final RubyDebugLaunch ruby = new RubyDebugLaunch(this); // Ruby scripts, RSpec, Minitest, a Rails app's server
     final PhpDebugLaunch php = new PhpDebugLaunch(this); // PHP files, web apps, PHPUnit tests, Listen for Xdebug
@@ -1201,6 +1204,15 @@ final class DebugCoordinator {
         }
         if (again == null) {
             dap().restart();
+            return;
+        }
+        LaunchFollowUp followUp = s().followUp;
+        if (followUp != null && followUp.started) {
+            // Its end is this restart's: the postDebugTask, then the launch again (as VS Code). Taken before the
+            // stop, whose end can be reported at once.
+            s().followUp = null;
+            dap().stop();
+            followUps.ended(followUp, again);
             return;
         }
         dap().stop();
@@ -2272,6 +2284,7 @@ final class DebugCoordinator {
             @Override
             public void onState(DapManager.State state) {
                 DebugSession session = s();
+                followUps.state(session, state);
                 if (state == DapManager.State.SUSPENDED
                         && (session.suspendHeld || session.uiState != DapManager.State.SUSPENDED)) {
                     // A new stop: shown once onStopped knows it is one the user sees (showSuspended). Filters, token
@@ -2553,6 +2566,7 @@ final class DebugCoordinator {
             @Override
             public void onOutput(String text, String category) {
                 panel().appendOutput(text, category);
+                followUps.output(text, category);
             }
 
             @Override
@@ -3907,7 +3921,10 @@ final class DebugCoordinator {
                     String name = members.get(i).name();
                     java.util.Map<String, Object> body = bodies.get(i);
                     compound.join(target);
-                    inSession(target, () -> resolveAndRun(launch.path(), launch.workspace(), name, body, answers, b));
+                    inSession(
+                            target,
+                            () -> resolveAndRun(
+                                    launch.path(), launch.workspace(), launch.parsed(), name, body, answers, b));
                 }
             };
             if (group.preLaunchTask().isBlank()) {
@@ -4045,11 +4062,12 @@ final class DebugCoordinator {
                 0,
                 new java.util.LinkedHashMap<>(),
                 answers -> inSession(
-                        sessionForLaunch(), () -> resolveAndRun(launchJson, workspace, c.name(), body, answers, b)));
+                        sessionForLaunch(),
+                        () -> resolveAndRun(launchJson, workspace, parsed, c.name(), body, answers, b)));
     }
 
     /** Asks inputs {@code ids} from {@code index} on, one after another, then hands the answers to {@code done}. */
-    private void askInputs(
+    void askInputs(
             java.util.Map<String, com.editora.dap.LaunchJson.Input> inputs,
             List<String> ids,
             int index,
@@ -4087,9 +4105,10 @@ final class DebugCoordinator {
      * Puts the variables in, runs the {@code preLaunchTask} (a plain {@code tasks.json} command), and starts the
      * configuration on its debugger ({@link com.editora.dap.LaunchRoute}).
      */
-    private void resolveAndRun(
+    void resolveAndRun(
             Path launchJson,
             Path workspace,
+            com.editora.dap.LaunchJson.File parsed,
             String name,
             java.util.Map<String, Object> raw,
             java.util.Map<String, String> answers,
@@ -4112,7 +4131,7 @@ final class DebugCoordinator {
         }
         // Restart runs all of this again (the task included), not only the adapter's start: an edited program is
         // saved and built again before it is debugged.
-        Runnable again = () -> resolveAndRun(launchJson, workspace, name, raw, answers, b);
+        Runnable again = () -> resolveAndRun(launchJson, workspace, parsed, name, raw, answers, b);
         boolean launch = !"attach".equals(body.get("request"));
         Runnable[] start = new Runnable[1];
         start[0] = () -> {
@@ -4121,6 +4140,7 @@ final class DebugCoordinator {
             if (!savedOrThen(buffersUnder(workspace, null), () -> inSession(session, start[0]))) {
                 return;
             }
+            s().followUp = followUps.followUp(launchJson, workspace, parsed, name, body, answers, b);
             startRoute(workspace, name, body, b);
             if (launch) {
                 s().relaunch = again;
@@ -4147,7 +4167,7 @@ final class DebugCoordinator {
     }
 
     /** The command line of {@code tasks.json}'s task {@code label}, to {@code then} ({@link DebugPlanning}). */
-    private void preLaunchTask(
+    void preLaunchTask(
             Path launchJson,
             Path workspace,
             String label,
@@ -4855,6 +4875,7 @@ final class DebugCoordinator {
 
     /** {@code path}'s launch is let through: until its last save or plan has answered, it is getting ready. */
     private void launching(@Nullable Path path) {
+        s().followUp = null; // another launch: what a launch.json configuration asked for is not its
         s().launching = true;
         s().launchAskedFile = path;
     }
@@ -8322,7 +8343,13 @@ final class DebugCoordinator {
         buffer.setDebugValuePresenter(valuePresenter); // an object's fields unfold in the popup (follow-up 6)
         // "Debug File" beside "Run File" in the editor's menu: Debug was only in the Run menu and the palette.
         // Through F5's check: a live launch of another file is replaced only after asking (review 3, C202).
-        buffer.setDebugFileHandler(() -> debugFile(buffer), () -> debugSupportEnabled() && isDebuggableBuffer(buffer));
+        // Not while this very file is being debugged or built for it, as in editorMenuItems (review 2 C110): a
+        // runnable file's Debug File sits here, and a classic Java program became runnable (single-file Run).
+        buffer.setDebugFileHandler(
+                () -> debugFile(buffer),
+                () -> debugSupportEnabled()
+                        && isDebuggableBuffer(buffer)
+                        && (buffer.getPath() == null || !launchLiveFor(buffer.getPath())));
         buffer.setGutterBreakpointMenu(this::showGutterMenu); // right-click a breakpoint: Edit / Disable / Remove
         buffer.setDebugMenuContributor(() -> editorMenuItems(buffer));
     }

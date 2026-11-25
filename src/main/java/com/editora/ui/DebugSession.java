@@ -39,6 +39,10 @@ final class DebugSession {
     @Nullable
     DebugCompound compound;
 
+    /** Its launch.json configuration's {@code serverReadyAction} and {@code postDebugTask}, or null. */
+    @Nullable
+    LaunchFollowUp followUp;
+
     /** This session's before-launch steps and the service they run on; null until its first step. */
     @Nullable
     BeforeLaunchStep beforeLaunch;

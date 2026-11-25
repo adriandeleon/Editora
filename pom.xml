@@ -44,8 +44,8 @@
         <jackson.version>2.23.0</jackson.version>
         <junit.version>6.1.3</junit.version>
         <tm4e.version>RELEASE260</tm4e.version>
-        <joni.version>2.2.10</joni.version>
-        <jcodings.version>1.0.65</jcodings.version>
+        <joni.version>2.2.12</joni.version>
+        <jcodings.version>1.0.67</jcodings.version>
         <gson.version>2.15.0</gson.version>
         <lsp4j.version>1.0.0</lsp4j.version>
         <commonmark.version>0.32.0</commonmark.version>
@@ -78,7 +78,7 @@
         <jna.version>5.19.1</jna.version>
         <kotlin.version>2.4.21</kotlin.version>
         <moditect.version>1.3.0.Final</moditect.version>
-        <spotless.version>3.11.0</spotless.version>
+        <spotless.version>3.12.0</spotless.version>
         <palantir.version>2.102.0</palantir.version>
         <!-- 0.8.15 adds Java 27 class-file instrumentation (experimental upstream support). -->
         <jacoco.version>0.8.16</jacoco.version>
@@ -105,7 +105,11 @@
         <!-- Transitive automatic-module deps patched by moditect for jlink/jpackage. -->
         <reactfx.version>2.0-M5</reactfx.version>
         <undofx.version>2.1.1</undofx.version>
-        <flowless.version>0.7.4</flowless.version>
+        <!-- Personal fork of Flowless 0.7.4 (io.github.adriandeleon:flowless, vendored in m2-repo like RichTextFX):
+             a cell whose layout is dirty keeps its memoized size when it measures the same, instead of
+             re-splicing the size trees on every layout pass. Source: https://github.com/adriandeleon/Flowless
+             (branch editora: v0.7.4 plus our commits); its -sources.jar is vendored beside the jar. -->
+        <flowless.version>0.7.4-editora.1</flowless.version>
         <wellbehavedfx.version>0.3.3</wellbehavedfx.version>
     </properties>
 
@@ -174,7 +178,17 @@
                     <groupId>org.openjfx</groupId>
                     <artifactId>*</artifactId>
                 </exclusion>
+                <!-- Upstream Flowless: our fork (below) replaces it, same module and packages. -->
+                <exclusion>
+                    <groupId>org.fxmisc.flowless</groupId>
+                    <artifactId>flowless</artifactId>
+                </exclusion>
             </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>io.github.adriandeleon</groupId>
+            <artifactId>flowless</artifactId>
+            <version>${flowless.version}</version>
         </dependency>
         <dependency>
             <groupId>io.github.mkpaz</groupId>
@@ -1179,7 +1193,7 @@
                                 </module>
                                 <module>
                                     <artifact>
-                                        <groupId>org.fxmisc.flowless</groupId>
+                                        <groupId>io.github.adriandeleon</groupId>
                                         <artifactId>flowless</artifactId>
                                         <version>${flowless.version}</version>
                                     </artifact>

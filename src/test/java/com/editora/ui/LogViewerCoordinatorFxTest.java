@@ -441,6 +441,54 @@ class LogViewerCoordinatorFxTest {
     }
 
     @Test
+    void summarizeOpensAMarkdownReportOfTheWholeLog() throws Exception {
+        FakeHost host = new FakeHost();
+        LogViewerCoordinator c = new LogViewerCoordinator(host);
+        EditorBuffer log = sampleLog(host, c);
+        FxTestSupport.runOnFx(
+                () -> log.applyLogFilter(com.editora.logviewer.LogLevel.ERROR, com.editora.logviewer.LogQuery.NONE));
+        FxTestSupport.runOnFx(c::summarize);
+        FxTestSupport.awaitFxCondition(() -> !host.opened.isEmpty(), "the report opens");
+        EditorBuffer report = host.opened.get(0);
+        String md = FxTestSupport.callOnFx(report::getContent);
+        assertTrue(md.contains("| Records | 4 |"), "the whole log, not the filtered view: " + md);
+        assertEquals("markdown", FxTestSupport.callOnFx(report::getLanguage));
+        assertTrue(host.lastStatus.startsWith("Summary of"), host.lastStatus);
+    }
+
+    @Test
+    void mergedLogsOpenInOneTabInTheOrderTheyWereWritten(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        Path api = java.nio.file.Files.writeString(
+                dir.resolve("api.log"), "2026-11-24 10:00:00 INFO  api up\n2026-11-24 10:00:02 ERROR api down\n");
+        var bytes = new java.io.ByteArrayOutputStream();
+        try (var gz = new java.util.zip.GZIPOutputStream(bytes)) {
+            gz.write("2026-11-24 10:00:01 WARN  db slow\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+        Path db = java.nio.file.Files.write(dir.resolve("db.log.1.gz"), bytes.toByteArray());
+        FakeHost host = new FakeHost();
+        host.settings.setLogViewer(true);
+        LogViewerCoordinator c = new LogViewerCoordinator(host);
+
+        FxTestSupport.runOnFx(() -> c.mergeFiles(List.of(api)));
+        assertTrue(host.lastStatus.startsWith("Choose two"), host.lastStatus);
+
+        FxTestSupport.runOnFx(() -> c.mergeFiles(List.of(api, db)));
+        FxTestSupport.awaitFxCondition(() -> !host.opened.isEmpty(), "the merged tab opens");
+        EditorBuffer merged = host.opened.get(0);
+        assertEquals(
+                "2026-11-24 10:00:00 INFO  api up\n2026-11-24 10:00:01 WARN  db slow\n2026-11-24 10:00:02 ERROR api down\n",
+                FxTestSupport.callOnFx(merged::getContent),
+                "a compressed log is read decompressed");
+        assertTrue(FxTestSupport.callOnFx(merged::isLog));
+        assertTrue(FxTestSupport.callOnFx(merged::isReadOnly));
+        assertEquals(1, FxTestSupport.callOnFx(() -> merged.getLogSources().sourceOf(1)), "line 2 is db's");
+        assertTrue(host.lastStatus.contains("3 lines"), host.lastStatus);
+
+        FxTestSupport.runOnFx(() -> c.mergeFiles(List.of(api, dir.resolve("missing.log"))));
+        FxTestSupport.awaitFxCondition(() -> host.lastStatus.startsWith("Could not merge"), "a missing file is said");
+    }
+
+    @Test
     void nextProblemStepsThroughWarningsAndErrorsInALog() throws Exception {
         FakeHost host = new FakeHost();
         LogViewerCoordinator c = new LogViewerCoordinator(host);

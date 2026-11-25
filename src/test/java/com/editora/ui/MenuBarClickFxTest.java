@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
  * A click on a menu bar title opens that menu with its rows, as a person clicks it.
@@ -59,6 +60,8 @@ class MenuBarClickFxTest {
         // macOS uses the system menu bar: its rows are built up front and the in-window bar is never clicked
         Assumptions.assumeFalse(KeymapManager.isMac(), "the system menu bar opens its own menus");
         MainMenuBar menuBar = FxTestSupport.field(fx.controller, "menuBar");
+        // macOS: the menus are the system's, built whole up front, and have no title buttons in the window.
+        assumeFalse(FxTestSupport.callOnFx(menuBar::onSystemMenuBar), "the in-window menu bar");
         MenuBar bar = FxTestSupport.callOnFx(() -> (MenuBar) menuBar.node());
         assertTrue(FxTestSupport.callOnFx(menuBar::rowsUnbuilt), "precondition: no menu has been opened yet");
 

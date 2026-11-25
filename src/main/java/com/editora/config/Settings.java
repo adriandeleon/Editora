@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 184;
+    public static final int SCHEMA_VERSION = 185;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -616,6 +616,11 @@ public class Settings {
      * version nvm has, else {@code node} on the PATH (see {@code run/NodeRuntimes}).
      */
     private String nodePath = "";
+    /**
+     * The jkit program (jkit-project.dev) Editora drives for the project's JDK, Maven, Gradle, sbt and GraalVM:
+     * blank = automatic, {@code jkit} on the PATH or where its packages install it.
+     */
+    private String jkitPath = "";
     /**
      * Let the TypeScript server download type definitions for plain JavaScript (automatic type acquisition: runs
      * {@code npm install} against the registry into {@code ~/.cache/typescript}): off by default.
@@ -1367,6 +1372,14 @@ public class Settings {
 
     public void setHttpInlineResults(boolean httpInlineResults) {
         this.httpInlineResults = httpInlineResults;
+    }
+
+    public String getJkitPath() {
+        return jkitPath == null ? "" : jkitPath;
+    }
+
+    public void setJkitPath(String jkitPath) {
+        this.jkitPath = jkitPath == null ? "" : jkitPath.strip();
     }
 
     public String getNodePath() {

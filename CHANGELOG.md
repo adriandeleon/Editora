@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Full jkit support.** Editora drives [jkit](https://jkit-project.dev/) for every command it has: the project's pins
+  come from jkit itself (`jkit status`: `jkit.toml`, `.sdkmanrc`, `.tool-versions`, `.java-version`), **Set Project
+  JDK…** can keep the choice in `jkit.toml` (`jkit pin`), and sbt and GraalVM join JDK, Maven and Gradle. New **Java
+  Toolchain** commands sync the project (`jkit sync`), show jkit's status, check its setup (`jkit doctor`), remove
+  older builds (`jkit prune`), browse installs, set jkit's default vendors and switching on `cd` (`jkit config`), add
+  jkit's hook to your shell, and update jkit. **Settings → Build Tools → jkit** names the jkit program and opens jkit's
+  own settings; Doctor has a jkit row.
+- **Run File runs single-file Java programs.** A `.java` outside a Maven or Gradle project whose first class has a
+  `static void main(String[] args)` gets a ▶ on that `main`, and Run File runs it with the source launcher
+  (`java Hello.java`): no project, no build. A `public` main runs on JDK 11 or newer; Run File says when the JDK is
+  older. Until now only compact source files (a top-level `void main`) ran on their own.
+- **launch.json `serverReadyAction` and `postDebugTask`.** A configuration's `serverReadyAction` watches the
+  program's output for the server's address (VS Code's pattern and `uriFormat`), then opens it in the browser, debugs
+  it in Chrome or Edge beside the server, or starts another configuration; `killOnServerStop` stops that session with
+  the server. Its `postDebugTask` runs when the session ends, and before the launch again on Restart.
+- **Summary of a log.** **Log: Summarize** opens a Markdown report of the active log: its records per level, a
+  records-over-time table with warnings and errors and a bar per interval, the most frequent messages counted with
+  their numbers and ids masked, and the longest silences.
+- **Merge logs by time.** **Log: Merge Logs…** opens two or more logs as one read-only log, their records in the order
+  they were written (stack traces stay with theirs, each file keeps its own order), each line tagged with its file's
+  colour and name.
+- **Test Results for more test runners.** Running a test file under Jest, Vitest, Deno, RSpec, Minitest (and
+  `bin/rails test`), PHPUnit, ExUnit or `dart test` fills Test Results: each test passed, failed or skipped, a
+  failure's message and stack, a row that opens the test where it failed. Rerun Failed and Rerun This Test run
+  just those tests with the runner's own filter. The Run console keeps the runner's usual report. Run File on a
+  Dart test file now runs `dart test`.
 - **Warnings and errors on a log's scrollbar.** A stripe over the scrollbar marks a log's WARN lines in amber and its
   ERROR and FATAL lines in red; hover a mark to read the line, click it to go there. A filtered log marks what the
   filter kept.
@@ -182,6 +208,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Run File says why a Java file does not run on its own.** On a `.java` that is neither a single-file program nor a
+  compact source file (a library class, a class of a Maven or Gradle project), Run File now says what runs as one
+  file and that a project class's `main` runs from its ▶. Its other "Not a runnable file" message no longer lists a
+  few languages of the many it runs.
+
+- **Typing allocates about two thirds less.** Each keystroke in a 2,000-line Java file made the UI thread allocate
+  about 7 MB, and now about 2.4 MB, so the garbage collector runs less often while you type. The editor's scrolling
+  layer (Flowless, now a vendored fork like RichTextFX) measured every visible line again on each layout pass and
+  rebuilt its size index whenever a line was restyled, even though the line's size had not changed; it now keeps the
+  size when the line measures the same.
 - **Faster typing, startup and large projects** (performance review of 2026-11-23).
   - Typing renders about a third fewer frames (3.7 → 2.6 per key) and takes about half the UI-thread time: the
     overlays drawn over the text share one look at where it is per frame instead of each measuring it again on the
@@ -317,6 +353,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OpenPGP signature beside it (`<file>.asc`), by the key attached to the release as `editora-signing-key.asc`.
 
 ### Fixed
+
+- **Menu rows read alike.** Rows that kept their palette prefix because one word would be left ("File: Save",
+  "Edit: Occur…", "Tool Window: Project", "Git: Push") have menu titles of their own ("Save", "List Matching
+  Lines…", "Project", "Push"), in every language.
+- **The C-x echo goes when the chord ends.** After C-x C-f or another chord the status bar kept showing "C-x -" until
+  something else replaced it.
+- **A new file in a folder not made yet gets its language server.** The server was started in the missing folder
+  and failed to launch.
+- **A question with nothing more to say has no empty band.** "Quit Editora?" with no terminal running showed a blank
+  row between the question and its buttons.
 
 - **A window closed in the first seconds of a session no longer lingers in memory.** Each open file asks for its
   spell-check dictionary (and prose completion for its word list), and the first one built in a session takes a few

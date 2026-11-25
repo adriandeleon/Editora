@@ -115,6 +115,11 @@ final class RunOpsHost implements RunCoordinator.Ops {
     }
 
     @Override
+    public boolean runToolTests(ToolTestRunner.Spec spec) {
+        return mc.testNavigation.runToolTests(spec);
+    }
+
+    @Override
     public boolean runNodeTestFile(java.nio.file.Path file) {
         return mc.testNavigation.runNodeTestFile(file);
     }

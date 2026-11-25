@@ -910,7 +910,8 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "install.shellTools", () -> host.installCoordinator().installShellTools()));
         host.registry().register(Command.of("install.languageServer", host::chooseInstallServer));
-        // The project's JDK, Maven and Gradle (.sdkmanrc, .editora/settings.json), and jkit (jkit-project.dev).
+        // The project's JDK, Maven, Gradle, sbt and GraalVM (jkit.toml, .sdkmanrc, .editora/settings.json), and every
+        // jkit command (jkit-project.dev).
         host.registry()
                 .register(Command.of(
                         "toolchain.installProjectTools",
@@ -949,6 +950,69 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "toolchain.jkit.remove", () -> host.toolchainCommands().removeJkitInstall()));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.setProjectSbt",
+                        () -> host.toolchainCommands().setProjectTool("sbt")));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.setProjectGraalvm",
+                        () -> host.toolchainCommands().setProjectTool("graalvm")));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.installSbt",
+                        () -> host.toolchainCommands().installWithJkit("sbt")));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.installGraalvm",
+                        () -> host.toolchainCommands().installWithJkit("graalvm")));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.sync", () -> host.toolchainCommands().syncProject()));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.status", () -> host.toolchainCommands().showStatus()));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.doctor", () -> host.toolchainCommands().doctor(false)));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.doctorNetwork",
+                        () -> host.toolchainCommands().doctor(true)));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.prune", () -> host.toolchainCommands().prune()));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.selfUpdate",
+                        () -> host.toolchainCommands().selfUpdate()));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.setJdkVendor",
+                        () -> host.toolchainCommands().setDefaultVendor(false)));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.setGraalvmVendor",
+                        () -> host.toolchainCommands().setDefaultVendor(true)));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.toggleAutoSwitch",
+                        () -> host.toolchainCommands().toggleAutoSwitch()));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.installHook",
+                        () -> host.toolchainCommands().installShellHook()));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.installs",
+                        () -> host.toolchainCommands().showInstalls()));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.settings",
+                        () -> host.toolchainCommands().openSettings()));
+        host.registry()
+                .register(Command.of(
+                        "toolchain.jkit.website", () -> host.toolchainCommands().openWebsite()));
         host.registry().register(Command.of("view.toggleColumnRuler", host.editorSettings()::toggleColumnRuler));
         host.registry().register(Command.of("editor.setRulers", host.editorSettings()::promptRulers));
         host.registry().register(Command.of("editor.setLanguageRulers", host.editorSettings()::promptLanguageRulers));
@@ -1148,6 +1212,8 @@ final class WindowCommandRegistrar {
                 .register(Command.of("log.showUpToCaret", () -> host.logViewer().timeRangeAtCaret(false)));
         host.registry().register(Command.of("log.clearTimeRange", host.logViewer()::clearTimeRange));
         host.registry().register(Command.of("log.openStream", host.logViewer()::openLogStream));
+        host.registry().register(Command.of("log.summarize", host.logViewer()::summarize));
+        host.registry().register(Command.of("log.mergeLogs", host.logViewer()::mergeLogs));
         host.registry().register(Command.of("log.nextError", host.logViewer()::jumpToNextError));
         host.registry().register(Command.of("log.previousError", host.logViewer()::jumpToPreviousError));
         host.registry().register(Command.of("view.toggleLogViewer", host.logViewer()::toggleViewer));
