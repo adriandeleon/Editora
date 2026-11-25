@@ -55,8 +55,11 @@ class DebugExecutionLineFxTest {
         // The debugger stops in a frame whose file is nowhere on disk (a dependency / a CI build path).
         DapModels.StackFrameInfo frame =
                 new DapModels.StackFrameInfo(1, "Foo.bar", Path.of("/nonexistent/build/src/Foo.java"), 3, 0);
-        FxTestSupport.runOnFx(
-                () -> FxTestSupport.call(debug, "highlightFrame", new Class[] {DapModels.StackFrameInfo.class}, frame));
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                FxTestSupport.field(debug, "execLine"),
+                "highlightFrame",
+                new Class[] {DapModels.StackFrameInfo.class},
+                frame));
 
         for (int line = 0;
                 line
@@ -80,8 +83,11 @@ class DebugExecutionLineFxTest {
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
                 FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, real));
         DapModels.StackFrameInfo frame = new DapModels.StackFrameInfo(1, "Real.go", real, 2, 0);
-        FxTestSupport.runOnFx(
-                () -> FxTestSupport.call(debug, "highlightFrame", new Class[] {DapModels.StackFrameInfo.class}, frame));
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                FxTestSupport.field(debug, "execLine"),
+                "highlightFrame",
+                new Class[] {DapModels.StackFrameInfo.class},
+                frame));
 
         Tab tab = FxTestSupport.callOnFx(
                 () -> (Tab) FxTestSupport.call(fx.controller, "tabForPath", new Class[] {Path.class}, real));

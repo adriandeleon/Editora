@@ -90,7 +90,7 @@ class PresetDebugWindowFxTest {
             s.setRubyDebugPath(rdbg.toString());
             s.setPhpDebugPath(phpDebug.toString());
             fx.shared.getTrustStore().trust(root);
-            debug.dotnetCommand = List.of(dotnet.toString());
+            debug.compiled.dotnetCommand = List.of(dotnet.toString());
             debug.applySupport();
         });
         for (String language : List.of("csharp", "ruby", "php")) {
@@ -254,7 +254,7 @@ class PresetDebugWindowFxTest {
                   {"name": "Server", "type": "rdbg", "request": "attach", "debugPort": "%d"}
                 ]}
                 """.formatted(adapter.port()));
-        FxTestSupport.runOnFx(() -> debug.runLaunchConfiguration(
+        FxTestSupport.runOnFx(() -> debug.launchJson.runLaunchConfiguration(
                 launchJson, root, parsed, parsed.configurations().get(0), b));
         FakeDebugAdapter.Session launched = nextSession("launch");
         assertEquals("spec", launched.launchArgs.get("script"));
@@ -263,7 +263,7 @@ class PresetDebugWindowFxTest {
         FxTestSupport.runOnFx(manager::stop);
         await("stopped", () -> !call(manager::isActive));
 
-        FxTestSupport.runOnFx(() -> debug.runLaunchConfiguration(
+        FxTestSupport.runOnFx(() -> debug.launchJson.runLaunchConfiguration(
                 launchJson, root, parsed, parsed.configurations().get(1), b));
         FakeDebugAdapter.Session attached = nextSession("attach");
         assertTrue(attached.attached);

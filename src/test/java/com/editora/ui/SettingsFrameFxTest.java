@@ -540,7 +540,7 @@ class SettingsFrameFxTest {
     }
 
     @Test
-    void aReopenComesBackWhereTheUserLeftTheWindow() throws Exception {
+    void aReopenIsCentredOnTheEditorAgainAtTheSizeTheUserLeft() throws Exception {
         try (var fx = FxWindowFixture.create()) {
             SettingsWindow window = fx.controller.settingsWindow;
             Stage owner = FxTestSupport.field(fx.controller, "stage");
@@ -552,12 +552,20 @@ class SettingsFrameFxTest {
                 stage.setWidth(910);
                 stage.setHeight(500);
                 stage.close();
+                owner.setX(owner.getX() + 40); // the editor moved while Settings was closed
+                owner.setY(owner.getY() + 20);
                 window.show(owner);
             });
             FxTestSupport.runOnFx(() -> {
-                assertEquals(12, stage.getX(), 0.5, "not re-centred with the preferred size");
-                assertEquals(34, stage.getY(), 0.5);
-                assertEquals(910, stage.getWidth(), 0.5);
+                javafx.geometry.Point2D centred = WindowPlacement.centered(
+                        new javafx.geometry.Rectangle2D(
+                                owner.getX(), owner.getY(), owner.getWidth(), owner.getHeight()),
+                        910,
+                        500,
+                        WindowPlacement.screenOf(owner));
+                assertEquals(centred.getX(), stage.getX(), 0.5, "centred on where the editor is now");
+                assertEquals(centred.getY(), stage.getY(), 0.5);
+                assertEquals(910, stage.getWidth(), 0.5, "at the size the user left it");
                 stage.hide();
             });
         }

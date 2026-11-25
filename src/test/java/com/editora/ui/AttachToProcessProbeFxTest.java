@@ -153,7 +153,7 @@ class AttachToProcessProbeFxTest {
             EditorBuffer b = buffer(c, file);
             FxTestSupport.runOnFx(() -> {
                 b.toggleBreakpoint(line);
-                debug.attachToProcess(target);
+                debug.attach.attachToProcess(target);
             });
             awaitStop(dap, line, debug);
             FxTestSupport.runOnFx(dap::stop);

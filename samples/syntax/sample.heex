@@ -1,0 +1,17 @@
+<%!-- A HEEx template, as a Phoenix 1.8 LiveView renders it --%>
+<.header>
+  Listing {@title}
+  <:actions>
+    <.button phx-click="new" disabled={@saving}>New item</.button>
+  </:actions>
+</.header>
+
+<p :if={@items == []} class="empty">Nothing yet.</p>
+<ul :if={@items != []}>
+  <li :for={item <- @items} id={"item-#{item.id}"} class={["row", item.done && "done"]}>
+    {String.upcase(item.name)} ({length(item.tags)} tags)
+    <%= if item.urgent do %><span class="badge">urgent</span><% end %>
+  </li>
+</ul>
+
+<.live_component module={ItemForm} id="form" item={@item} />

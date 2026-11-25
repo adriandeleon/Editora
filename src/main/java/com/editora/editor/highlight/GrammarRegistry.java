@@ -80,6 +80,7 @@ public final class GrammarRegistry {
         // inverse of scopeToResource resolves a language name to its scope.
         scopeToResource.forEach((scope, resource) -> languageNameToScope.put(resource, scope));
         languageNameToScope.remove("html-derivative"); // only ever embedded; not a language to pick for a file
+        languageNameToScope.remove("eex"); // EEx in plain text: only embedded (sigils, HTML EEx)
         languageNameToScope.remove("javadoc");
         registry = new Registry(new IRegistryOptions() {
             @Override

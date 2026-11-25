@@ -40,7 +40,7 @@ final class DebugRetargetPrompt {
     }
 
     /** Asks {@code question} over {@code owner} and waits. Closing the dialog is Cancel. */
-    static DebugCoordinator.Retarget ask(@Nullable Window owner, String question, boolean bothOffered) {
+    static DebugFileLaunch.Retarget ask(@Nullable Window owner, String question, boolean bothOffered) {
         Confirm.Choice words = words(question, bothOffered);
         ButtonType both = bothOffered ? new ButtonType(words.answer(0), ButtonBar.ButtonData.OK_DONE) : null;
         ButtonType stop = new ButtonType(
@@ -63,7 +63,7 @@ final class DebugRetargetPrompt {
         }
         ButtonType answer = Dialogs.showAndWait(alert).orElse(cancel);
         return answer == both
-                ? DebugCoordinator.Retarget.BOTH
-                : answer == stop ? DebugCoordinator.Retarget.STOP : DebugCoordinator.Retarget.CANCEL;
+                ? DebugFileLaunch.Retarget.BOTH
+                : answer == stop ? DebugFileLaunch.Retarget.STOP : DebugFileLaunch.Retarget.CANCEL;
     }
 }

@@ -1,0 +1,14 @@
+<%# An EEx template, as a Phoenix 1.6 view renders it: HTML with Elixir in <% %> %>
+<h1>Listing <%= @title %></h1>
+
+<%= if @items == [] do %>
+  <p class="empty">Nothing yet.</p>
+<% else %>
+  <ul>
+    <%= for item <- @items, item.visible do %>
+      <li id="item-<%= item.id %>"><%= String.upcase(item.name) %> (<%= length(item.tags) %> tags)</li>
+    <% end %>
+  </ul>
+<% end %>
+
+<%= link "New item", to: Routes.item_path(@conn, :new), class: "button" %>

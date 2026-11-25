@@ -152,7 +152,7 @@ final class CsharpTestDebug {
         RunService run = new RunService();
         session.testHost = run;
         BeforeLaunchStep.Console console = d.beforeLaunchConsole(true);
-        List<String> argv = command(d.dotnetCommand, project, target);
+        List<String> argv = command(d.compiled.dotnetCommand, project, target);
         boolean[] attached = {false};
         host.setStatus(tr("status.debug.dotnetTestStarting", target.displayName()));
         console.started(String.join(" ", argv));

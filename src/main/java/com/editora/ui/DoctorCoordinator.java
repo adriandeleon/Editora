@@ -743,7 +743,7 @@ final class DoctorCoordinator {
             ProjectScope scope = host.projectScope(); // a trusted project's debugger paths, else the user's
             String javaPluginPath = scope.debugTool("java", s.getJavaDebugPluginPath());
             DoctorCheck javaDebug = DoctorCheck.checking("debug.java", "debug", tr("doctor.label.javaDebug"), "")
-                    .withSettings("debug")
+                    .withSettings("debug:java")
                     .withInstall(DoctorCheck.Install.LANG, InstallCatalog.Lang.JAVA.name());
             boolean fromServer = ops.javaDebugFromServer();
             if (!lspOn) {
@@ -753,7 +753,7 @@ final class DoctorCoordinator {
                         .missing("doctor.tip.needsLsp")
                         .withoutInstall()
                         .withEnable("lsp")
-                        .withSettings("lsp")));
+                        .withSettings("lsp:java")));
             } else {
                 // A jdtls that ships java-debug has no jar to find (review A7).
                 specs.add(probe(
@@ -769,7 +769,7 @@ final class DoctorCoordinator {
                         "python", scope.debugTool("python", s.getPythonDebugCommand()));
                 DoctorCheck debugpy = DoctorCheck.checking(
                                 "debug.python", "debug", tr("doctor.label.debugpy"), String.join(" ", py))
-                        .withSettings("debug")
+                        .withSettings("debug:python")
                         .withInstall(DoctorCheck.Install.LANG, InstallCatalog.Lang.PYTHON.name());
                 specs.add(probe(debugpy, base -> {
                     if (py.isEmpty()) {
@@ -797,7 +797,7 @@ final class DoctorCoordinator {
                 String jsPath = scope.debugTool("javascript", s.getJsDebugPath());
                 String nodeSetting = s.getNodePath();
                 DoctorCheck jsDebug = DoctorCheck.checking("debug.javascript", "debug", tr("doctor.label.jsDebug"), "")
-                        .withSettings("debug")
+                        .withSettings("debug:javascript")
                         .withInstall(DoctorCheck.Install.LANG, InstallCatalog.Lang.JAVASCRIPT.name());
                 PinnedVersions.Pin jsPin = PinnedVersions.forStep("js-debug").orElse(null);
                 Path config = host.configDir();
@@ -848,7 +848,7 @@ final class DoctorCoordinator {
                 String dlvPath = scope.debugTool("go", s.getGoDebugPath());
                 // Its Install is on Settings → Debugging → Go (go install), where Settings… leads.
                 DoctorCheck delve = DoctorCheck.checking("debug.go", "debug", tr("doctor.label.delve"), "")
-                        .withSettings("debug");
+                        .withSettings("debug:go");
                 specs.add(probe(delve, base -> {
                     String dlv = com.editora.dap.DapManager.locateExternal(com.editora.dap.DebugLanguages.GO, dlvPath);
                     return dlv != null ? base.ok(dlv) : base.missing("doctor.tip.missing", "dlv");
@@ -858,7 +858,7 @@ final class DoctorCoordinator {
                 String codelldbPath = scope.debugTool("rust", s.getRustDebugPath());
                 // Its Install is on Settings → Debugging → Rust, where Settings… leads.
                 DoctorCheck codelldb = DoctorCheck.checking("debug.rust", "debug", tr("doctor.label.codelldb"), "")
-                        .withSettings("debug");
+                        .withSettings("debug:rust");
                 specs.add(probe(codelldb, base -> {
                     String found = com.editora.dap.DapManager.locateExternal(
                             com.editora.dap.DebugLanguages.RUST, codelldbPath);
@@ -869,7 +869,7 @@ final class DoctorCoordinator {
                 String configured = scope.debugTool("csharp", s.getCsharpDebugPath());
                 // Its Install is on Settings → Debugging → C#, where Settings… leads.
                 DoctorCheck check = DoctorCheck.checking("debug.csharp", "debug", tr("doctor.label.netcoredbg"), "")
-                        .withSettings("debug");
+                        .withSettings("debug:csharp");
                 specs.add(probe(check, base -> {
                     String found = com.editora.dap.DapManager.locateExternal(
                             com.editora.dap.DebugLanguages.CSHARP, configured);
@@ -879,7 +879,7 @@ final class DoctorCoordinator {
             if (s.isRubyDebugEnabled()) {
                 String configured = scope.debugTool("ruby", s.getRubyDebugPath());
                 DoctorCheck check = DoctorCheck.checking("debug.ruby", "debug", tr("doctor.label.rdbg"), "")
-                        .withSettings("debug");
+                        .withSettings("debug:ruby");
                 specs.add(probe(check, base -> {
                     String found =
                             com.editora.dap.DapManager.locateExternal(com.editora.dap.DebugLanguages.RUBY, configured);
@@ -889,7 +889,7 @@ final class DoctorCoordinator {
             if (s.isDartDebugEnabled()) {
                 String dart = scope.debugTool("dart", s.getDartDebugPath());
                 DoctorCheck check = DoctorCheck.checking("debug.dart", "debug", tr("doctor.label.dartDebug"), "")
-                        .withSettings("debug");
+                        .withSettings("debug:dart");
                 specs.add(probe(check, base -> {
                     String found = com.editora.dap.DapManager.locateExternal(com.editora.dap.DebugLanguages.DART, dart);
                     return found != null ? base.ok(found) : base.missing("doctor.tip.missing", "dart");
@@ -898,7 +898,7 @@ final class DoctorCoordinator {
                 String flutter = scope.debugTool("flutter", s.getFlutterDebugPath());
                 DoctorCheck flutterCheck = DoctorCheck.checking(
                                 "debug.flutter", "debug", tr("doctor.label.flutterDebug"), "")
-                        .withSettings("debug");
+                        .withSettings("debug:dart");
                 specs.add(probe(flutterCheck, base -> {
                     String found =
                             com.editora.dap.DapManager.locateExternal(com.editora.dap.DebugLanguages.FLUTTER, flutter);
@@ -908,7 +908,7 @@ final class DoctorCoordinator {
             if (s.isBashDebugEnabled()) {
                 String configured = scope.debugTool("bash", s.getBashDebugPath());
                 DoctorCheck check = DoctorCheck.checking("debug.bash", "debug", tr("doctor.label.bashDebug"), "")
-                        .withSettings("debug");
+                        .withSettings("debug:bash");
                 specs.add(probe(check, base -> {
                     String found =
                             com.editora.dap.DapManager.locateExternal(com.editora.dap.DebugLanguages.BASH, configured);
@@ -918,7 +918,7 @@ final class DoctorCoordinator {
             if (s.isLuaDebugEnabled()) {
                 String configured = scope.debugTool("lua", s.getLuaDebugPath());
                 DoctorCheck check = DoctorCheck.checking("debug.lua", "debug", tr("doctor.label.luaDebug"), "")
-                        .withSettings("debug");
+                        .withSettings("debug:lua");
                 specs.add(probe(check, base -> {
                     String found =
                             com.editora.dap.DapManager.locateExternal(com.editora.dap.DebugLanguages.LUA, configured);
@@ -928,7 +928,7 @@ final class DoctorCoordinator {
             if (s.isFirefoxDebugEnabled()) {
                 String configured = scope.debugTool("firefox", s.getFirefoxDebugPath());
                 DoctorCheck check = DoctorCheck.checking("debug.firefox", "debug", tr("doctor.label.firefoxDebug"), "")
-                        .withSettings("debug");
+                        .withSettings("debug:firefox");
                 specs.add(probe(check, base -> {
                     String found = com.editora.dap.DapManager.locateExternal(
                             com.editora.dap.DebugLanguages.FIREFOX, configured);
@@ -938,7 +938,7 @@ final class DoctorCoordinator {
             if (s.isElixirDebugEnabled()) {
                 String configured = scope.debugTool("elixir", s.getElixirDebugPath());
                 DoctorCheck check = DoctorCheck.checking("debug.elixir", "debug", tr("doctor.label.elixirDebug"), "")
-                        .withSettings("debug");
+                        .withSettings("debug:elixir");
                 specs.add(probe(check, base -> {
                     String found = com.editora.dap.DapManager.locateExternal(
                             com.editora.dap.DebugLanguages.ELIXIR, configured);
@@ -949,7 +949,7 @@ final class DoctorCoordinator {
                 String configured = scope.debugTool("powershell", s.getPowershellDebugPath());
                 DoctorCheck check = DoctorCheck.checking(
                                 "debug.powershell", "debug", tr("doctor.label.powershellDebug"), "")
-                        .withSettings("debug");
+                        .withSettings("debug:powershell");
                 specs.add(probe(check, base -> {
                     String found = com.editora.dap.DapManager.locateExternal(
                             com.editora.dap.DebugLanguages.POWERSHELL, configured);
@@ -961,7 +961,7 @@ final class DoctorCoordinator {
             if (s.isPhpDebugEnabled()) {
                 String configured = scope.debugTool("php", s.getPhpDebugPath());
                 DoctorCheck check = DoctorCheck.checking("debug.php", "debug", tr("doctor.label.phpDebug"), "")
-                        .withSettings("debug");
+                        .withSettings("debug:php");
                 specs.add(probe(check, base -> {
                     String found =
                             com.editora.dap.DapManager.locateExternal(com.editora.dap.DebugLanguages.PHP, configured);
@@ -1119,6 +1119,12 @@ final class DoctorCoordinator {
             why = why != null ? why : com.editora.io.WatchServices.fallbackReason();
             return why == null ? base.ok(tr("doctor.fileWatch.native")) : base.warn(why, "doctor.tip.fileWatchPolling");
         }));
+        // JavaFX drawing on the CPU because its GPU pipeline could not start: the whole window lags, and says nothing.
+        DoctorCheck rendering = DoctorCheck.checking("rendering", "system", tr("doctor.label.rendering"), "");
+        specs.add(terminal(
+                RenderPipeline.softwareFallback()
+                        ? rendering.warn(tr("doctor.rendering.software"), "doctor.tip.renderingSoftware")
+                        : rendering.ok(tr("doctor.rendering.hardware"))));
         com.editora.Os.Kind os = com.editora.Os.current();
         if (s.isAdminSave() && ElevatedSave.supportedOnOs(os)) {
             DoctorCheck admin = DoctorCheck.checking(
@@ -1313,7 +1319,7 @@ final class DoctorCoordinator {
         Path config = host.configDir();
         DoctorCheck row = DoctorCheck.checking(
                         "lsp." + serverId, "lsp", serverLabel(serverId), shownCommand(argv, config))
-                .withSettings("lsp");
+                .withSettings("lsp:" + serverId); // the page's Language picker on this server's card
         DoctorCheck.Install install = installKindFor(serverId);
         // a command other than the default (the default text is not the user's own, HTML review 2 A106)
         boolean configured = ops.lspServerCommandSet(serverId);
@@ -1550,7 +1556,7 @@ final class DoctorCoordinator {
         String command = ops.bashTool(toolId);
         String label = InstallCoordinator.toolName(toolId);
         DoctorCheck row = DoctorCheck.checking("lsp.bash." + toolId, "format", label, command)
-                .withSettings("lsp")
+                .withSettings("lsp:bash") // bash-language-server's card holds its tools' paths
                 .withInstall(DoctorCheck.Install.TOOL, toolId);
         List<String> argv = List.of(command);
         boolean needed = needs.shellOpen();
@@ -1774,7 +1780,7 @@ final class DoctorCoordinator {
         var resolver = ops.pythonInterpreter();
         boolean elsewhere = resolver != null && ops.pythonInterpreterElsewhere();
         DoctorCheck row = DoctorCheck.checking("run.python", "run", tr("doctor.label.pythonInterpreter"), "python")
-                .withSettings("lsp"); // the LSP page's Python card, editable with debugging off (Python 2, C101)
+                .withSettings("lsp:python"); // the LSP page's Python card, editable with debugging off (Python 2, C101)
         return probe(row, base -> {
             com.editora.run.PythonInterpreters.PythonInterpreter py = resolver != null
                     ? resolver.get()
@@ -1949,7 +1955,7 @@ final class DoctorCoordinator {
      */
     static DoctorService.CheckSpec xmlCacheRow(Path dir) {
         DoctorCheck row = DoctorCheck.checking(XML_CACHE_ID, "lsp", tr("doctor.label.xmlCache"), "")
-                .withSettings("lsp");
+                .withSettings("lsp:" + com.editora.lsp.XmlServerSettings.SERVER_ID);
         return probe(row, base -> {
             long size = com.editora.lsp.XmlSchemaCache.size(dir);
             return size == 0
@@ -1989,7 +1995,7 @@ final class DoctorCoordinator {
      */
     static DoctorService.CheckSpec mavenStoreRow(java.util.function.Supplier<Path> where) {
         DoctorCheck row = DoctorCheck.checking(MAVEN_STORE_ID, "lsp", tr("doctor.label.mavenStore"), "")
-                .withSettings("lsp");
+                .withSettings("lsp:" + com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID);
         return probe(row, base -> {
             Path dir = where.get();
             long size = com.editora.lsp.XmlSchemaCache.size(dir);

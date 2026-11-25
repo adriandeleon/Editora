@@ -74,7 +74,7 @@ class DebugTestFileFxTest {
         EditorBuffer b = FxTestSupport.callOnFx(c::activeBuffer);
         DebugCoordinator debug = FxTestSupport.field(c, "debugCoordinator");
         FxTestSupport.runOnFx(() -> {
-            debug.setTestDebugger(debugged::add);
+            debug.fileLaunch.setTestDebugger(debugged::add);
             b.setTestGutterEnabled(true); // what a detected Maven/Gradle build turns on (applyTestGutter)
         });
         EventuallyFx.untilOnFx(

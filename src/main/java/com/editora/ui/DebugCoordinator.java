@@ -16,28 +16,20 @@ import java.util.function.Predicate;
 
 import javafx.application.Platform;
 import javafx.scene.Node;
-import javafx.scene.control.Label;
-import javafx.scene.control.TextField;
 
 import com.editora.config.Breakpoint;
 import com.editora.config.BreakpointStore;
 import com.editora.config.PathKeys;
 import com.editora.config.RunConfiguration;
-import com.editora.dap.CodeLessLines;
 import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
 import com.editora.dap.DapServerRegistry;
-import com.editora.dap.JsLaunch;
-import com.editora.dap.RustLaunch;
 import com.editora.dap.TypeRenderer;
 import com.editora.editor.EditorBuffer;
-import com.editora.editor.UiZoom;
 import com.editora.editor.debug.BreakpointManager;
 import com.editora.lsp.LspManager;
-import com.editora.run.BuildBeforeLaunch;
 import com.editora.run.ProgramArgs;
 import com.editora.run.StackTraceLinks;
-import com.editora.test.PytestScanner;
 import com.editora.vfs.Vfs;
 import org.jspecify.annotations.Nullable;
 
@@ -307,10 +299,10 @@ final class DebugCoordinator {
 
     final CoordinatorHost host;
     /** The window's debug sessions; the focused one is shown and acted on ({@link #s()}). */
-    private final DebugSessions sessions;
+    final DebugSessions sessions;
 
-    private final LspManager lspManager;
-    private final LspCoordinator lsp;
+    final LspManager lspManager;
+    final LspCoordinator lsp;
     final Ops ops;
     /** The console font to apply when the panel is built (set by every settings apply, panel or not). */
     private @Nullable String consoleFontFamily;
@@ -345,7 +337,8 @@ final class DebugCoordinator {
     private List<String> appliedDebugBundles = List.of();
 
     /** The buffer currently carrying the execution-line highlight (cleared on resume/terminate). */
-    private @Nullable EditorBuffer execHighlightBuffer;
+    @Nullable
+    EditorBuffer execHighlightBuffer;
 
     /** The buffer currently carrying inline values + an active hover (cleared on resume/terminate). */
     private @Nullable EditorBuffer debugValuesBuffer;
@@ -370,7 +363,7 @@ final class DebugCoordinator {
     record EvaluationFailure(String expression, String message) {}
 
     /** {@link #relaunch} of a session attached to a JVM a build or test run started: it cannot be redone. */
-    private static final Runnable ONE_SHOT_ATTACH = () -> {};
+    static final Runnable ONE_SHOT_ATTACH = () -> {};
 
     /**
      * {@link #relaunch} of a session attached to an HTTP Client script: redoing it would send the request again,
@@ -430,21 +423,21 @@ final class DebugCoordinator {
      * Starts {@code work} on a virtual thread called {@code name}, given the session being handled now (read here, on
      * the FX thread) so that what it hands back runs as that session's ({@link #laterIn}).
      */
-    private void startOffFx(String name, Function<DebugSession, Runnable> work) {
+    void startOffFx(String name, Function<DebugSession, Runnable> work) {
         Runnable job = work.apply(s());
         Thread.ofVirtual().name(name).start(job);
     }
 
     /** Python launches: Run's plan for debugpy, and Debug of a Python run configuration. */
-    private final PythonDebugLaunch python = new PythonDebugLaunch(this);
+    final PythonDebugLaunch python = new PythonDebugLaunch(this);
 
-    private final InstructionBreakpoints instructionBreakpoints = new InstructionBreakpoints(this);
+    final InstructionBreakpoints instructionBreakpoints = new InstructionBreakpoints(this);
     private final MemoryEdits memoryEdits = new MemoryEdits(this);
 
-    private final DartDebugLaunch dart = new DartDebugLaunch(this); // Dart, and a Flutter app's Dart
+    final DartDebugLaunch dart = new DartDebugLaunch(this); // Dart, and a Flutter app's Dart
     final ElixirDebugLaunch elixir = new ElixirDebugLaunch(this); // a Mix project's tests, scripts and app
     final PowerShellDebugLaunch powershell = new PowerShellDebugLaunch(this); // .ps1 on PowerShell Editor Services
-    private final ElectronDebugLaunch electron = new ElectronDebugLaunch(this); // an Electron app: main + renderer
+    final ElectronDebugLaunch electron = new ElectronDebugLaunch(this); // an Electron app: main + renderer
     final RemoteAttachLaunch remote = new RemoteAttachLaunch(this); // a native program under a debug server elsewhere
     final RemoteDelveLaunch delve = new RemoteDelveLaunch(this); // a Go program under a headless Delve
     /** launch.json's serverReadyAction and postDebugTask ({@link LaunchFollowUps}). */
@@ -453,9 +446,24 @@ final class DebugCoordinator {
     final BrowserDebugLaunch browser = new BrowserDebugLaunch(this); // a page in Chrome, Edge, Firefox…
     final RubyDebugLaunch ruby = new RubyDebugLaunch(this); // Ruby scripts, RSpec, Minitest, a Rails app's server
     final PhpDebugLaunch php = new PhpDebugLaunch(this); // PHP files, web apps, PHPUnit tests, Listen for Xdebug
+    final DebugFileLaunch fileLaunch = new DebugFileLaunch(this); // F5, Debug File, Debug Test at Caret
+    final CompiledDebugLaunch compiled = new CompiledDebugLaunch(this); // Go, Rust, C/C++, C#: built, then debugged
+    final JavaDebugLaunch javaLaunch = new JavaDebugLaunch(this); // Java main classes, run configurations, build first
+    final LaunchJsonSessions launchJson = new LaunchJsonSessions(this); // launch.json, compounds, own adapters
+    final DebugAttach attach = new DebugAttach(this); // Attach, Reattach, Attach to Process, Open Core Dump
+    final NodeDebugLaunch node = new NodeDebugLaunch(this); // a .js or .ts file, a node or npm configuration
+    final MapDebugFollow mapFollow = new MapDebugFollow(this); // the Project Map: stops, card breakpoint strips
+    final CaretBreakpoints caretBreakpoints = new CaretBreakpoints(this); // breakpoint commands on the caret line
+    final JavaCodeChanges javaCode = new JavaCodeChanges(this); // hot code replace, Restart Frame, Smart Step Into
+    final DisassemblyMemoryViews lowLevel = new DisassemblyMemoryViews(this); // Disassembly, Memory, steps
+    final ExecutionLine execLine = new ExecutionLine(this); // the execution line in the editor and its exception card
+    final ValueWindows valueWindows = new ValueWindows(this); // the Evaluate and View as Table windows
+    final BreakpointMenus breakpointMenus =
+            new BreakpointMenus(this); // breakpoints list, mute, gutter and editor menus
+    final ValuePopups valuePopups = new ValuePopups(this); // expression-field completion, the value popup
 
     /** The build facts a launch asks: looked at off the FX thread first when not known ({@link DebugFacts}). */
-    private final DebugFacts facts = new DebugFacts(this::executableFacts, this::sayBusy, this::lookFailed);
+    final DebugFacts facts = new DebugFacts(this::executableFacts, this::sayBusy, this::lookFailed);
 
     /** The scans of a document a debug command decides by, made off the FX thread (PERF-01). */
     private final DebugTextScans scans = new DebugTextScans();
@@ -473,13 +481,13 @@ final class DebugCoordinator {
         host.setStatus(tr("status.run.busy"));
     }
 
-    private boolean factsKnown(String name, Runnable asks, Runnable again) {
+    boolean factsKnown(String name, Runnable asks, Runnable again) {
         DebugSession session = s();
         return facts.known(name, session, asks, () -> inSession(session, again));
     }
 
     /** Runs {@code r} later on the FX thread as {@code session}'s; callable from any thread. */
-    private void laterIn(DebugSession session, Runnable r) {
+    void laterIn(DebugSession session, Runnable r) {
         Platform.runLater(() -> inSession(session, r));
     }
 
@@ -502,7 +510,7 @@ final class DebugCoordinator {
      * {@code c}, run as the session being handled now ({@link #s()}) whenever it is called; not at all once that
      * session is gone (its tab closed, or made room for another), when a launch it was planning has no tab to run in.
      */
-    private <T extends @Nullable Object> Consumer<T> asThisSession(Consumer<T> c) {
+    <T extends @Nullable Object> Consumer<T> asThisSession(Consumer<T> c) {
         DebugSession session = s();
         return value -> {
             if (sessions.all().contains(session)) {
@@ -512,13 +520,13 @@ final class DebugCoordinator {
     }
 
     /** {@code r}, run as the session being handled now whenever it runs, as {@link #asThisSession} does. */
-    private Runnable bound(Runnable r) {
+    Runnable bound(Runnable r) {
         Consumer<Object> c = asThisSession(ignored -> r.run());
         return () -> c.accept(null);
     }
 
     /** {@link DebugTextScans#scan}, its retry run as the session that asked (a save, a plan may come between). */
-    private <T> DebugTextScans.@Nullable Known<T> scan(
+    <T> DebugTextScans.@Nullable Known<T> scan(
             EditorBuffer b, String what, Function<String, @Nullable T> fn, Runnable retry) {
         return scans.scan(b, what, fn, bound(retry));
     }
@@ -534,7 +542,7 @@ final class DebugCoordinator {
      * Whether the session being handled is the one the window shows: only its stop marks the editor (execution line,
      * inline values, the exception card, breakpoint states) and the status bar's debug state.
      */
-    private boolean shown() {
+    boolean shown() {
         return s() == sessions.focused();
     }
 
@@ -547,7 +555,7 @@ final class DebugCoordinator {
         session.dap.setListener(inSessionProxy(DapManager.Listener.class, events, session));
         session.dap.setCallbackWrapper(r -> () -> inSession(session, r));
         session.dap.setCodeReplaceNotices(
-                (type, message) -> inSession(session, () -> codeReplaceNotice(type, message)));
+                (type, message) -> inSession(session, () -> javaCode.codeReplaceNotice(type, message)));
         session.dap.setBreakpointsSupplier(this::collectBreakpoints);
     }
 
@@ -610,7 +618,8 @@ final class DebugCoordinator {
                 () -> debugAdapterLabel(dap().sessionLanguage()),
                 source -> openReferenceSource(source, doc -> {}));
         triggered = new TriggeredBreakpoints(host, ops);
-        groups = new BreakpointGroups(host, ops, this::breakpointsPicker, memberBreakpoints, this::sendClosed);
+        groups = new BreakpointGroups(
+                host, ops, breakpointMenus::breakpointsPicker, memberBreakpoints, breakpointMenus::sendClosed);
         stacks = new DebugStacks(this);
         // Delve's binaries of earlier sessions (it leaves them when Stop ends one) go; a recent one may still run.
         Thread.ofVirtual().name("editora-dlv-cleanup").start(com.editora.dap.GoLaunch::deleteStaleDebugBinaries);
@@ -627,7 +636,7 @@ final class DebugCoordinator {
     private final PinnedValues pinnedValues;
 
     /** Thread Dump and Parallel Stacks. */
-    private final DebugStacks stacks;
+    final DebugStacks stacks;
 
     PinnedValues pinnedValues() {
         return pinnedValues;
@@ -648,7 +657,7 @@ final class DebugCoordinator {
     }
 
     /** Method breakpoints and field watchpoints. */
-    private final MemberBreakpointCommands memberBreakpoints;
+    final MemberBreakpointCommands memberBreakpoints;
 
     /** Their marks on the declaration lines of the open files. */
     private final MemberBreakpointMarks memberMarks;
@@ -683,10 +692,10 @@ final class DebugCoordinator {
     }
 
     /** Breakpoints that wait for another to be hit (see {@link TriggeredBreakpoints}). */
-    private final TriggeredBreakpoints triggered;
+    final TriggeredBreakpoints triggered;
 
     /** Breakpoint groups, and breakpoints exported to a file and imported (see {@link BreakpointGroups}). */
-    private final BreakpointGroups groups;
+    final BreakpointGroups groups;
 
     BreakpointGroups groups() {
         return groups;
@@ -726,16 +735,17 @@ final class DebugCoordinator {
         if (s().panel == null) {
             DebugSession session = s();
             DebugPanel built = new DebugPanel(
-                    inSessionProxy(DebugPanel.Actions.class, debugActions(), session), evaluateHistory());
+                    inSessionProxy(DebugPanel.Actions.class, debugActions(), session), valueWindows.evaluateHistory());
             built.setPrompt(host::promptText);
             built.setRemovalUndo(
                     host.removalUndo(), () -> sessions.all().stream().anyMatch(x -> x.panel == built));
-            built.setExpressionPrompt(this::expressionPrompt); // Add / Edit Watch: the field completes (follow-up 5)
+            built.setExpressionPrompt(
+                    valuePopups::expressionPrompt); // Add / Edit Watch: the field completes (follow-up 5)
             built.setOnLink(ops::openLink); // double-clicked stack-trace line → jump
             built.setWatches(ops.debugWatches());
             built.setPausedWatches(ops.debugPausedWatches());
-            built.setOnHistoryChanged(
-                    () -> ops.persistDebugEvaluateHistory(evaluateHistory().entries()));
+            built.setOnHistoryChanged(() -> ops.persistDebugEvaluateHistory(
+                    valueWindows.evaluateHistory().entries()));
             built.setChordLookup(id -> java.util.Objects.requireNonNullElse(ops.chordFor(id), ""));
             built.setSourceCheck(this::canShow);
             built.setObjectMarks(session.marks);
@@ -758,15 +768,15 @@ final class DebugCoordinator {
             }
             built.setPlainValueColours(plainValueColours()); // values legible on mixed themes (C111)
             built.setState(dap().state()); // a session may already be running (the window opened mid-session)
-            built.setOnAreaShown(area -> refreshLowLevelViews());
-            built.disassemblyView().setOnOpenSource(this::openSourceLine);
+            built.setOnAreaShown(area -> lowLevel.refreshLowLevelViews());
+            built.disassemblyView().setOnOpenSource(lowLevel::openSourceLine);
             instructionBreakpoints.install(built.disassemblyView());
-            built.memoryView().setOnGo(this::memoryGo);
+            built.memoryView().setOnGo(lowLevel::memoryGo);
             memoryEdits.install(built.memoryView());
             built.memoryView().setOnPage(direction -> {
                 if (s().memoryReference != null) {
                     s().memoryOffset += (long) direction * DebugMemoryView.PAGE;
-                    readMemory();
+                    lowLevel.readMemory();
                 }
             });
             s().panel = built;
@@ -824,10 +834,10 @@ final class DebugCoordinator {
         }
         inSession(before, () -> {
             closeMainClassPicker(); // it chose for that session's launch
-            closeSmartStepPicker(DapManager.State.INACTIVE);
+            javaCode.closeSmartStepPicker(DapManager.State.INACTIVE);
             clearExecHighlight();
             clearDebugEditorSurfaces();
-            mapStop(MapDebugStop.RUNNING); // the target's own stop, if it has one, is shown next
+            mapFollow.mapStop(MapDebugStop.RUNNING); // the target's own stop, if it has one, is shown next
         });
         sessions.focus(target);
         inSession(target, () -> {
@@ -836,7 +846,7 @@ final class DebugCoordinator {
             DapModels.StackFrameInfo frame = s().shownFrame;
             if (dap().state() == DapManager.State.SUSPENDED && frame != null && s().quietStop != s().stopSerial) {
                 s().debugFrameId = frame.id(); // the hover evaluator's frame again
-                highlightFrame(frame);
+                execLine.highlightFrame(frame);
                 dap().scopes(frame.id(), scopes -> applyInlineValues(frame, scopes));
                 pinnedValues.refresh(frame.id());
             }
@@ -849,7 +859,7 @@ final class DebugCoordinator {
      * A session for a launch while the focused one is live ("Debug Both"), focused from now on: the launch that asked
      * for it is its own. Past {@link DebugSessions#MAX_SESSIONS}, the oldest session that has ended makes room.
      */
-    private DebugSession openSession() {
+    DebugSession openSession() {
         makeRoom();
         DebugSession session = new DebugSession(sessions.focused().dap.newSession());
         setUp(session);
@@ -983,7 +993,7 @@ final class DebugCoordinator {
     }
 
     /** Runs {@code action} on each session's Debug panel that has been built. */
-    private void forEachPanel(Consumer<DebugPanel> action) {
+    void forEachPanel(Consumer<DebugPanel> action) {
         for (DebugSession session : sessions.all()) {
             DebugPanel panel = session.panel;
             if (panel != null) {
@@ -1000,12 +1010,13 @@ final class DebugCoordinator {
     void refreshValueColours() {
         boolean plain = plainValueColours();
         forEachPanel(panel -> panel.setPlainValueColours(plain));
-        if (valuePopup != null && valuePopup.popup().getSkin() != null) {
-            DebugPanel.setPlainValueColours(valuePopup.popup().getSkin().getNode(), plain);
+        if (valuePopups.valuePopup != null && valuePopups.valuePopup.popup().getSkin() != null) {
+            DebugPanel.setPlainValueColours(
+                    valuePopups.valuePopup.popup().getSkin().getNode(), plain);
         }
     }
 
-    private boolean plainValueColours() {
+    boolean plainValueColours() {
         var s = host.settings();
         return DebugPanel.themesDisagree(
                 Themes.backgroundFor(s.getTheme()), EditorThemes.editorBackgroundFor(s.getEditorTheme()));
@@ -1071,7 +1082,7 @@ final class DebugCoordinator {
     }
 
     /** Whether C and C++ are debugged on GDB (Settings → Debugging), not CodeLLDB. */
-    private boolean gdbForCpp() {
+    boolean gdbForCpp() {
         return "gdb".equals(host.settings().getCppDebugger());
     }
 
@@ -1187,7 +1198,7 @@ final class DebugCoordinator {
      * edited file, running the configuration's before-launch build, re-anchoring closed-file breakpoints.
      * Re-running only the adapter launch debugged the previous code against the edited buffer's breakpoint
      * lines. An attach has nothing to redo and is simply re-attached — except one a build or test run
-     * opened ({@link #attachToPort}): that JVM stops listening once it is resumed, so re-attaching would
+     * opened ({@link DebugAttach#attachToPort}): that JVM stops listening once it is resumed, so re-attaching would
      * only let it run to its end and leave a session with no debuggee showing "Running".
      */
     void restart() {
@@ -1385,7 +1396,7 @@ final class DebugCoordinator {
                         on,
                         scope.debugTool("gdb", s.getGdbPath()),
                         found -> applyGating());
-        loadCustomAdapters(on);
+        launchJson.loadCustomAdapters(on);
         // netcoredbg: as configured, else Editora's install, a VS Code extension's, or the PATH.
         dap().configureExternal(
                         com.editora.dap.DebugLanguages.CSHARP,
@@ -2017,7 +2028,7 @@ final class DebugCoordinator {
             return;
         }
         clearExecHighlight();
-        paintExecutionLine(buffer, frame);
+        execLine.paintExecutionLine(buffer, frame);
         dap().scopes(frame.id(), scopes -> applyInlineValues(frame, scopes));
     }
 
@@ -2025,7 +2036,7 @@ final class DebugCoordinator {
      * The enabled breakpoints of {@code buffer} as a DAP {@code FileBreakpoints} (empty list if none), in
      * whole-file lines even while the buffer is narrowed.
      */
-    private DapModels.FileBreakpoints fileBreakpoints(EditorBuffer buffer, Path file) {
+    DapModels.FileBreakpoints fileBreakpoints(EditorBuffer buffer, Path file) {
         List<DapModels.LineBreakpoint> lines = new ArrayList<>();
         // B1: in the numbering of the code the program runs — a breakpoint whose line was added since the
         // session started has no place in it, and waits for the next session.
@@ -2059,7 +2070,7 @@ final class DebugCoordinator {
 
     /**
      * {@link #rebaselineLines(Path)} for each of {@code files}: after a hot code replace, the Java files saved
-     * since the last successful replace (see {@link #codeReplaced}).
+     * since the last successful replace (see {@link JavaCodeChanges#codeReplaced}).
      */
     void rebaselineLines(Set<Path> files) {
         if (files != null) {
@@ -2265,7 +2276,7 @@ final class DebugCoordinator {
      * Which saved breakpoints {@code session} is told of now: all but the triggered ones whose trigger it has not hit.
      * Read on the FX thread; the answer may be asked off it.
      */
-    private Predicate<Breakpoint> sentPredicate(DebugSession session) {
+    Predicate<Breakpoint> sentPredicate(DebugSession session) {
         Set<String> ids = triggered.ids();
         Set<String> hit = Set.copyOf(session.hitTriggers);
         return bp -> !TriggeredBreakpoints.waits(bp, ids, hit);
@@ -2327,10 +2338,10 @@ final class DebugCoordinator {
                     s().suspendsShown++;
                 }
                 s().uiState = state;
-                closeSmartStepPicker(state); // review E108
+                javaCode.closeSmartStepPicker(state); // review E108
                 timeRun(state);
                 if (state != DapManager.State.SUSPENDED) {
-                    hideExceptionCard(); // Continue, a step, the session's end: the stop it described is over
+                    execLine.hideExceptionCard(); // Continue, a step, the session's end: the stop it described is over
                     s().stopException = null;
                 }
                 // INACTIVE with no panel built is what startup (configure, stop) reports: a panel built later
@@ -2360,10 +2371,11 @@ final class DebugCoordinator {
                     panel().setBackward(dap().isGdbSession(), dap().isRecording(), dap().canRunBackward());
                     panel().setState(state);
                 }
-                evaluateWindows.forEach(DebugEvaluateWindow::sessionChanged); // their results were that stop's
+                valueWindows.evaluateWindows.forEach(
+                        DebugEvaluateWindow::sessionChanged); // their results were that stop's
                 stacks.sessionChanged(); // Take Again needs a live session
-                tableWindows.removeIf(w -> !w.isShowing());
-                tableWindows.forEach(DebugTableWindow::sessionChanged); // Refresh needs a paused program
+                valueWindows.tableWindows.removeIf(w -> !w.isShowing());
+                valueWindows.tableWindows.forEach(DebugTableWindow::sessionChanged); // Refresh needs a paused program
                 if (state != DapManager.State.RUNNING && state != DapManager.State.SUSPENDED) {
                     s().dumpPause = false; // the pause it waited for will not come
                     s().dumpForParallel = false;
@@ -2399,8 +2411,8 @@ final class DebugCoordinator {
                     }
                 }
                 updateDebugStatus(state);
-                forgetCodeReplace(state);
-                primeCodeReplace(state);
+                javaCode.forgetCodeReplace(state);
+                javaCode.primeCodeReplace(state);
                 if (state == DapManager.State.STARTING || state == DapManager.State.INACTIVE) {
                     closeMainClassPicker(); // it chose for a launch that has been replaced or has ended (A106)
                 }
@@ -2425,7 +2437,7 @@ final class DebugCoordinator {
                     clearExecHighlight();
                     clearDebugEditorSurfaces(); // inline values + hover live only while suspended
                     if (shown()) {
-                        mapStop(MapDebugStop.RUNNING);
+                        mapFollow.mapStop(MapDebugStop.RUNNING);
                     }
                 }
                 if (state == DapManager.State.INACTIVE
@@ -2481,7 +2493,7 @@ final class DebugCoordinator {
                 s().stopDeferred = false; // the newest stop is the one shown
                 s().stopSerial++;
                 s().stopException = null; // a new stop: the last one's exception is not this one's
-                hideExceptionCard();
+                execLine.hideExceptionCard();
                 List<DapModels.StackFrameInfo> frames = currentLines(stopFrames);
                 if (s().filtersPassed) {
                     s().filtersPassed = false;
@@ -2492,7 +2504,7 @@ final class DebugCoordinator {
                 } else if (stepFilters().stop(reason, frames)) {
                     return; // a step into code the user does not step into: out of it again
                 }
-                oldCodeHintFrom(stopFrames); // B209: the stack after a replace names the old-code frames
+                javaCode.oldCodeHintFrom(stopFrames); // B209: the stack after a replace names the old-code frames
                 // A recording breakpoint: the stop is kept in Debug History and the program goes on, so the editor
                 // is not taken to it (recordAndContinue).
                 boolean recording = recordingHit(reason, frames);
@@ -2552,7 +2564,7 @@ final class DebugCoordinator {
                     recordAndContinue(frames.getFirst());
                     return;
                 }
-                removeTemporaryBreakpointHit(reason, frames);
+                breakpointMenus.removeTemporaryBreakpointHit(reason, frames);
                 instructionBreakpoints.stopped(reason, frames);
                 dap().stopShown(); // a Run to Cursor ends at a stop the user sees
                 if (shown > 0) {
@@ -2641,7 +2653,7 @@ final class DebugCoordinator {
                 if (s().quietStop == s().stopSerial) {
                     return; // a stop not shown (or not yet: exception breakpoints are deciding)
                 }
-                showExceptionInfo(info);
+                execLine.showExceptionInfo(info);
             }
 
             @Override
@@ -2669,7 +2681,7 @@ final class DebugCoordinator {
     }
 
     /** The status bar's debug spinner, for the session shown. */
-    private void debugLoading(boolean on) {
+    void debugLoading(boolean on) {
         if (shown()) {
             ops.setStatusDebugLoading(on);
         }
@@ -2697,7 +2709,7 @@ final class DebugCoordinator {
             @Override
             public List<javafx.scene.control.MenuItem> stackMenuItems(
                     DapModels.StackFrameInfo frame, List<DapModels.StackFrameInfo> frames) {
-                return DebugCoordinator.this.stackMenuItems(frame, frames);
+                return javaCode.stackMenuItems(frame, frames);
             }
 
             @Override
@@ -2776,7 +2788,7 @@ final class DebugCoordinator {
                             clearExecHighlight();
                             clearDebugEditorSurfaces();
                             if (shown()) {
-                                mapStop(MapDebugStop.RUNNING);
+                                mapFollow.mapStop(MapDebugStop.RUNNING);
                             }
                         }
                     });
@@ -2785,12 +2797,12 @@ final class DebugCoordinator {
 
             @Override
             public void stepOver() {
-                DebugCoordinator.this.stepOver();
+                lowLevel.stepOver();
             }
 
             @Override
             public void stepInto() {
-                DebugCoordinator.this.stepInto();
+                lowLevel.stepInto();
             }
 
             @Override
@@ -2803,7 +2815,7 @@ final class DebugCoordinator {
                 ops.openToolWindow();
                 panel().memoryView().setAddressText(expression);
                 panel().showArea(DebugPanel.AREA_MEMORY);
-                memoryGo(expression);
+                lowLevel.memoryGo(expression);
             }
 
             @Override
@@ -2831,14 +2843,14 @@ final class DebugCoordinator {
                 if (s().quietStop == s().stopSerial) {
                     return; // a recording breakpoint's stop: kept, not shown (recordAndContinue)
                 }
-                highlightFrame(frame);
+                execLine.highlightFrame(frame);
                 noteChangedSinceLaunch(frame);
                 dap().scopes(frame.id(), scopes -> {
                     panel().setScopes(scopes);
                     applyInlineValues(frame, scopes);
                 });
                 pinnedValues.refresh(frame.id()); // every pinned value, evaluated in this frame
-                refreshLowLevelViews(); // the Disassembly view follows the frame; Memory is read again
+                lowLevel.refreshLowLevelViews(); // the Disassembly view follows the frame; Memory is read again
             }
 
             @Override
@@ -2924,7 +2936,7 @@ final class DebugCoordinator {
 
             @Override
             public void viewAsTable(String name, String expression, int ref, int named, int indexed) {
-                DebugCoordinator.this.viewAsTable(name, expression, ref, named, indexed);
+                valueWindows.viewAsTable(name, expression, ref, named, indexed);
             }
 
             @Override
@@ -2934,7 +2946,7 @@ final class DebugCoordinator {
 
             @Override
             public void viewAsData(String name, String expression) {
-                DebugCoordinator.this.viewAsData(name, expression);
+                valueWindows.viewAsData(name, expression);
             }
 
             @Override
@@ -3015,12 +3027,12 @@ final class DebugCoordinator {
 
             @Override
             public void threadDump() {
-                DebugCoordinator.this.threadDump();
+                stacks.threadDump();
             }
 
             @Override
             public void parallelStacks() {
-                DebugCoordinator.this.parallelStacks();
+                stacks.parallelStacks();
             }
 
             @Override
@@ -3139,7 +3151,7 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.noSource", frame.name()));
             return;
         }
-        Node keepFocus = debugPanelFocusOwner();
+        Node keepFocus = execLine.debugPanelFocusOwner();
         ops.openPath(frame.file());
         EditorBuffer b = ops.bufferForPath(frame.file());
         if (keepFocus != null) {
@@ -3170,7 +3182,7 @@ final class DebugCoordinator {
         pinnedValues.clear();
         DapModels.StackFrameInfo frame = s().shownFrame;
         if (dap().state() == DapManager.State.SUSPENDED && frame != null) {
-            highlightFrame(frame);
+            execLine.highlightFrame(frame);
             dap().scopes(frame.id(), scopes -> applyInlineValues(frame, scopes));
             pinnedValues.refresh(frame.id());
         } else {
@@ -3546,7 +3558,7 @@ final class DebugCoordinator {
             then.accept(known.buffer());
             return;
         }
-        Node keepFocus = debugPanelFocusOwner();
+        Node keepFocus = execLine.debugPanelFocusOwner();
         dap().sourceContent(
                         source,
                         text -> inSession(session, () -> {
@@ -3665,127 +3677,10 @@ final class DebugCoordinator {
         return DebugFrameChoice.firstFrameWithSource(frames, has);
     }
 
-    // --- launch.json and the user's own adapters ------------------------------------------------------
-
-    /** The user's own adapters ({@code debug-adapters.json}), by type, with what F5 sends each. */
-    private java.util.Map<String, com.editora.dap.CustomAdapters.Adapter> customAdapters = java.util.Map.of();
-
-    /** The launch.json configuration last started, by launch.json: the picker offers it first. */
-    private final java.util.Map<Path, String> lastConfiguration = new java.util.HashMap<>();
+    // --- launch.json and the user's own adapters (the rest in LaunchJsonSessions) ---------------------
 
     /** Show Value As: the radix chosen for each value, by language and expression, while the window is open. */
     private final java.util.Map<String, com.editora.dap.NumberViews.Radix> valueFormats = new java.util.HashMap<>();
-
-    /** The user's {@code debug-adapters.json}: the config folder's (null without one). */
-    private @Nullable Path userAdaptersFile() {
-        Path config = host.configDir();
-        return config == null ? null : config.resolve("debug-adapters.json");
-    }
-
-    /**
-     * Reads the user's own adapters — the config folder's {@code debug-adapters.json}, then a trusted project's
-     * {@code .editora/debug-adapters.json}, whose adapters replace those of the same type — and looks for each one's
-     * program. One that cannot be read is said in the status bar.
-     */
-    private void loadCustomAdapters(boolean on) {
-        List<Path> paths = new ArrayList<>();
-        Path user = userAdaptersFile();
-        if (user != null) {
-            paths.add(user);
-        }
-        Path project = ops.projectRoot();
-        if (project != null && host.projectScope().trusted()) {
-            paths.add(project.resolve(".editora").resolve("debug-adapters.json"));
-        }
-        long read = ++adaptersRead; // the files are read off the FX thread (PERF-01): the last ask's answer wins
-        planOffFx("debug-adapters-read", () -> DebugPlanning.readAdapters(paths), answer -> {
-            var found = answer.value();
-            if (read != adaptersRead || found == null) {
-                return;
-            }
-            List<com.editora.dap.CustomAdapters.Adapter> adapters = com.editora.dap.CustomAdapters.merge(found.files());
-            java.util.Map<String, com.editora.dap.CustomAdapters.Adapter> byType = new java.util.LinkedHashMap<>();
-            adapters.forEach(a -> byType.put(a.profile().id(), a));
-            customAdapters = byType;
-            com.editora.dap.DebugLanguages.setCustom(adapters.stream()
-                    .map(com.editora.dap.CustomAdapters.Adapter::profile)
-                    .toList());
-            for (var a : adapters) {
-                dap().configureExternal(a.profile(), on, "", f -> applyGating());
-            }
-            if (!found.problems().isEmpty()) {
-                host.setStatus(tr("status.debug.customAdaptersInvalid", String.join("; ", found.problems())));
-            }
-        });
-    }
-
-    private long adaptersRead;
-
-    /** Debug: Edit Debug Adapters: the user's {@code debug-adapters.json}, written with an example the first time. */
-    void editCustomAdapters() {
-        Path file = userAdaptersFile();
-        if (file == null) {
-            return;
-        }
-        planOffFx("debug-adapters-edit", () -> DebugPlanning.ensureAdaptersFile(file), answer -> {
-            if (answer.failure() != null) {
-                host.setStatus(tr("debug.error.startFailed", answer.why()));
-            } else {
-                ops.openPath(file);
-            }
-        });
-    }
-
-    /** F5 on a file of one of the user's own adapters' languages: its {@code launch} template, variables put in. */
-    private void debugCustomFile(EditorBuffer b, Path path, com.editora.dap.DebugLanguage profile, List<String> args) {
-        com.editora.dap.CustomAdapters.Adapter adapter = customAdapters.get(profile.id());
-        if (adapter == null || adapter.launch().isEmpty()) {
-            host.setStatus(tr("status.debug.customNoLaunch", profile.displayName()));
-            return;
-        }
-        Path root = ops.projectRoot();
-        Path workspace = root != null && path.toAbsolutePath().startsWith(root.toAbsolutePath())
-                ? root
-                : java.util.Objects.requireNonNullElse(path.toAbsolutePath().getParent(), path);
-        java.util.Map<String, Object> request = new java.util.LinkedHashMap<>();
-        request.put("type", profile.id());
-        request.put("request", "launch");
-        try {
-            Object body = com.editora.dap.LaunchJson.substitute(
-                    adapter.launch(),
-                    launchContext(workspace, b, java.util.Map.of()),
-                    java.util.Map.of(),
-                    new java.util.HashMap<>());
-            if (body instanceof java.util.Map<?, ?> m) {
-                m.forEach((k, v) -> request.put(String.valueOf(k), v));
-            }
-        } catch (com.editora.dap.LaunchJson.LaunchJsonException e) {
-            host.setStatus(tr("status.debug.launchVariable", e.getMessage()));
-            return;
-        } catch (com.editora.dap.LaunchJson.Cancelled e) {
-            return;
-        }
-        if (!request.containsKey("args") && !args.isEmpty()) {
-            request.put("args", args);
-        }
-        startExternalSession(path, profile, request, String.valueOf(path.getFileName()));
-    }
-
-    /** What VS Code's variables stand for: {@code workspace}, the active file and its caret, the answered inputs. */
-    private com.editora.dap.LaunchJson.Context launchContext(
-            Path workspace, @Nullable EditorBuffer b, java.util.Map<String, String> answers) {
-        Path file = b == null ? null : b.getPath();
-        int line = b == null ? 1 : caretLine(b) + 1;
-        String selected = b == null ? "" : b.getFocusedArea().getSelectedText();
-        return new com.editora.dap.LaunchJson.Context(
-                workspace,
-                file,
-                line,
-                selected,
-                System.getenv(),
-                Path.of(System.getProperty("user.home", "")),
-                in -> answers.get(in.id()));
-    }
 
     /** Starts {@code request} on external adapter {@code profile}, anchored at {@code anchor}; Restart repeats it. */
     void startExternalSession(
@@ -3797,88 +3692,8 @@ final class DebugCoordinator {
         start.run();
     }
 
-    /**
-     * Debug: Start Configuration: the configurations and compounds of the project's {@code .vscode/launch.json} (or the
-     * nearest one above the active file), picked from a list — the one started last first — and started as VS Code
-     * starts them: beside the running session, when there is one.
-     */
-    void startLaunchConfiguration() {
-        EditorBuffer b = host.activeBuffer();
-        readLaunchJson(b, true, launch -> {
-            if (launch != null) {
-                startLaunchConfiguration(launch, b);
-            }
-        });
-    }
-
-    private void startLaunchConfiguration(LaunchFile launch, @Nullable EditorBuffer b) {
-        if (launch.parsed().configurations().isEmpty()
-                && launch.parsed().compounds().isEmpty()) {
-            host.setStatus(tr("status.debug.noConfigurations", launch.path()));
-            return;
-        }
-        List<LaunchChoice> choices = new ArrayList<>();
-        launch.parsed().configurations().forEach(c -> choices.add(new LaunchChoice(c, null)));
-        launch.parsed().compounds().forEach(c -> choices.add(new LaunchChoice(null, c)));
-        String last = lastConfiguration.get(launch.path());
-        choices.sort(java.util.Comparator.comparing(c -> !c.name().equals(last)));
-        QuickOpen<LaunchChoice> picker = new QuickOpen<>(
-                tr("debug.launchJson.title"),
-                tr("debug.launchJson.prompt"),
-                () -> choices,
-                LaunchChoice::name,
-                LaunchChoice::detail,
-                c -> {
-                    if (c != null) {
-                        lastConfiguration.put(launch.path(), c.name());
-                        startLaunchChoice(launch, c, b);
-                    }
-                });
-        picker.setOverlayHost(host.overlayHost());
-        picker.show(host.window());
-    }
-
     /** A project's launch.json, read: where it is, the folder it is for, what it holds. */
     record LaunchFile(Path path, Path workspace, com.editora.dap.LaunchJson.File parsed) {}
-
-    /** The launch.json for the active file's project, read off the FX thread ({@link DebugPlanning#readLaunchJson}). */
-    private void readLaunchJson(@Nullable EditorBuffer b, boolean sayNone, Consumer<@Nullable LaunchFile> then) {
-        DebugPlanning.readLaunchJson(
-                host, ops.projectRoot(), b == null ? null : b.getPath(), sayNone, asThisSession(then));
-    }
-
-    /** An entry of Debug: Start Configuration: one of launch.json's configurations, or one of its compounds. */
-    record LaunchChoice(
-            com.editora.dap.LaunchJson.@Nullable Configuration configuration,
-            com.editora.dap.LaunchJson.@Nullable Compound compound) {
-
-        String name() {
-            com.editora.dap.LaunchJson.Configuration c = configuration;
-            com.editora.dap.LaunchJson.Compound group = compound;
-            return c != null ? c.name() : group != null ? group.name() : "";
-        }
-
-        String detail() {
-            com.editora.dap.LaunchJson.Configuration c = configuration;
-            com.editora.dap.LaunchJson.Compound group = compound;
-            return c != null
-                    ? c.type() + " · " + c.request()
-                    : tr(
-                            "debug.compound.detail",
-                            group == null ? 0 : group.configurations().size());
-        }
-    }
-
-    /** Starts {@code choice} of {@code launch}: a configuration, or every configuration of a compound. */
-    private void startLaunchChoice(LaunchFile launch, LaunchChoice choice, @Nullable EditorBuffer b) {
-        com.editora.dap.LaunchJson.Configuration c = choice.configuration();
-        com.editora.dap.LaunchJson.Compound group = choice.compound();
-        if (c != null) {
-            runLaunchConfiguration(launch.path(), launch.workspace(), launch.parsed(), c, b);
-        } else if (group != null) {
-            runLaunchCompound(launch, group, b);
-        }
-    }
 
     /**
      * The session a launch asked for now goes into: the one being handled when it is free, else a new one beside it,
@@ -3888,866 +3703,9 @@ final class DebugCoordinator {
         return sessionLive() ? openSession() : s();
     }
 
-    /**
-     * Starts launch.json compound {@code group}: asks the inputs its configurations use (each once), runs its
-     * {@code preLaunchTask}, then starts each configuration in a session of its own, in the order listed — each with
-     * its own {@code preLaunchTask}. Stopping one stops them all when the compound says {@code stopAll}.
-     */
-    void runLaunchCompound(LaunchFile launch, com.editora.dap.LaunchJson.Compound group, @Nullable EditorBuffer b) {
-        List<com.editora.dap.LaunchJson.Configuration> members = new ArrayList<>();
-        for (String name : group.configurations()) {
-            com.editora.dap.LaunchJson.Configuration c = launch.parsed().configuration(name);
-            if (c == null) {
-                host.setStatus(tr("status.debug.compoundMissing", group.name(), name));
-                return;
-            }
-            members.add(c);
-        }
-        if (members.isEmpty()) {
-            host.setStatus(tr("status.debug.compoundEmpty", group.name()));
-            return;
-        }
-        String os = com.editora.dap.LaunchJson.osKey(com.editora.Os.current());
-        List<java.util.Map<String, Object>> bodies = members.stream()
-                .map(c -> com.editora.dap.LaunchJson.forPlatform(c.body(), os))
-                .toList();
-        List<String> ids = bodies.stream()
-                .flatMap(body -> com.editora.dap.LaunchJson.inputsUsed(body).stream())
-                .distinct()
-                .toList();
-        askInputs(launch.parsed().inputs(), ids, 0, new java.util.LinkedHashMap<>(), answers -> {
-            DebugCompound compound = new DebugCompound(group.name(), group.stopAll());
-            DebugSession first = sessionForLaunch();
-            Runnable startAll = () -> {
-                for (int i = 0; i < members.size(); i++) {
-                    DebugSession target = i == 0 ? first : openSession();
-                    String name = members.get(i).name();
-                    java.util.Map<String, Object> body = bodies.get(i);
-                    compound.join(target);
-                    inSession(
-                            target,
-                            () -> resolveAndRun(
-                                    launch.path(), launch.workspace(), launch.parsed(), name, body, answers, b));
-                }
-            };
-            if (group.preLaunchTask().isBlank()) {
-                startAll.run();
-                return;
-            }
-            inSession(
-                    first,
-                    () -> preLaunchTask(launch.path(), launch.workspace(), group.preLaunchTask(), b, answers, argv -> {
-                        nameSession(group.name());
-                        beforeLaunch()
-                                .run(
-                                        host,
-                                        new BeforeLaunchStep.Command(
-                                                group.preLaunchTask(), argv, "status.run.preLaunchTask"),
-                                        launch.workspace(),
-                                        java.util.Map.of(),
-                                        beforeLaunchConsole(),
-                                        () -> later(startAll)); // once the step has ended: its service is free again
-                    }));
-        });
-    }
-
-    /**
-     * Debugs compound {@code compound} of saved run configurations: each in a session of its own, in the order listed,
-     * as Debug ▸ Run Configuration debugs one. Says which configuration is missing, and starts none, when one is.
-     */
-    void debugRunCompound(com.editora.config.RunCompound compound) {
-        List<com.editora.config.RunConfiguration> saved = ops.runConfigurations();
-        List<com.editora.config.RunConfiguration> members = new ArrayList<>();
-        for (String name : compound.configurations()) {
-            com.editora.config.RunConfiguration cfg = saved.stream()
-                    .filter(c -> c.name().equals(name))
-                    .findFirst()
-                    .orElse(null);
-            if (cfg == null) {
-                host.setStatus(tr("status.debug.compoundMissing", compound.name(), name));
-                return;
-            }
-            members.add(cfg);
-        }
-        if (members.isEmpty()) {
-            host.setStatus(tr("status.debug.compoundEmpty", compound.name()));
-            return;
-        }
-        DebugCompound group = new DebugCompound(compound.name(), compound.stopAll());
-        for (int i = 0; i < members.size(); i++) {
-            DebugSession target = i == 0 ? sessionForLaunch() : openSession();
-            com.editora.config.RunConfiguration cfg = members.get(i);
-            group.join(target);
-            inSession(target, () -> debugConfig(cfg));
-        }
-    }
-
-    /**
-     * Debug: Start Compound — the project's compounds (its own and its launch.json's), picked from a list and debugged
-     * together; the last entry makes a new one.
-     */
-    void startCompound() {
-        EditorBuffer b = host.activeBuffer();
-        readLaunchJson(b, false, launch -> startCompound(launch, b));
-    }
-
-    private void startCompound(@Nullable LaunchFile launch, @Nullable EditorBuffer b) {
-        List<CompoundChoice> choices = new ArrayList<>();
-        ops.runCompounds().forEach(c -> choices.add(new CompoundChoice(c, null)));
-        if (launch != null) {
-            launch.parsed().compounds().forEach(c -> choices.add(new CompoundChoice(null, c)));
-        }
-        choices.add(new CompoundChoice(null, null)); // New Compound…
-        QuickOpen<CompoundChoice> picker = new QuickOpen<>(
-                tr("debug.compound.title"),
-                tr("debug.compound.prompt"),
-                () -> choices,
-                CompoundChoice::name,
-                CompoundChoice::detail,
-                c -> {
-                    if (c == null) {
-                        return;
-                    }
-                    com.editora.config.RunCompound own = c.own();
-                    com.editora.dap.LaunchJson.Compound fromJson = c.launchJson();
-                    if (own != null) {
-                        debugRunCompound(own);
-                    } else if (fromJson != null && launch != null) {
-                        runLaunchCompound(launch, fromJson, b);
-                    } else {
-                        ops.editCompounds(null);
-                    }
-                });
-        picker.setOverlayHost(host.overlayHost());
-        picker.show(host.window());
-    }
-
-    /** Debug: Edit Compounds… — the project's own compounds, in their editor. */
-    void editCompounds() {
-        ops.editCompounds(
-                ops.runCompounds().isEmpty()
-                        ? null
-                        : ops.runCompounds().getFirst().name());
-    }
-
-    /** An entry of Debug: Start Compound: one of the project's own, one of its launch.json's, or New Compound…. */
-    record CompoundChoice(
-            com.editora.config.@Nullable RunCompound own, com.editora.dap.LaunchJson.@Nullable Compound launchJson) {
-
-        String name() {
-            com.editora.config.RunCompound o = own;
-            com.editora.dap.LaunchJson.Compound j = launchJson;
-            return o != null ? o.name() : j != null ? j.name() : tr("debug.compound.new");
-        }
-
-        String detail() {
-            com.editora.config.RunCompound o = own;
-            com.editora.dap.LaunchJson.Compound j = launchJson;
-            if (o != null) {
-                return String.join(", ", o.configurations());
-            }
-            return j != null ? "launch.json · " + String.join(", ", j.configurations()) : "";
-        }
-    }
-
-    /** Runs configuration {@code c}: asks its inputs, then {@link #resolveAndRun}. */
-    void runLaunchConfiguration(
-            Path launchJson,
-            Path workspace,
-            com.editora.dap.LaunchJson.File parsed,
-            com.editora.dap.LaunchJson.Configuration c,
-            @Nullable EditorBuffer b) {
-        java.util.Map<String, Object> body = com.editora.dap.LaunchJson.forPlatform(
-                c.body(), com.editora.dap.LaunchJson.osKey(com.editora.Os.current()));
-        askInputs(
-                parsed.inputs(),
-                com.editora.dap.LaunchJson.inputsUsed(body),
-                0,
-                new java.util.LinkedHashMap<>(),
-                answers -> inSession(
-                        sessionForLaunch(),
-                        () -> resolveAndRun(launchJson, workspace, parsed, c.name(), body, answers, b)));
-    }
-
-    /** Asks inputs {@code ids} from {@code index} on, one after another, then hands the answers to {@code done}. */
-    void askInputs(
-            java.util.Map<String, com.editora.dap.LaunchJson.Input> inputs,
-            List<String> ids,
-            int index,
-            java.util.Map<String, String> answers,
-            Consumer<java.util.Map<String, String>> done) {
-        if (index >= ids.size()) {
-            done.accept(answers);
-            return;
-        }
-        String id = ids.get(index);
-        com.editora.dap.LaunchJson.Input in = inputs.get(id);
-        if (in == null) {
-            host.setStatus(tr("status.debug.launchVariable", "${input:" + id + "}"));
-            return;
-        }
-        String title = in.description().isBlank() ? id : in.description();
-        Consumer<String> next = value -> {
-            answers.put(id, value);
-            askInputs(inputs, ids, index + 1, answers, done);
-        };
-        if ("pickString".equals(in.type()) && !in.options().isEmpty()) {
-            QuickOpen<String> pick = new QuickOpen<>(title, title, in::options, o -> o, o -> "", o -> {
-                if (o != null) {
-                    next.accept(o);
-                }
-            });
-            pick.setOverlayHost(host.overlayHost());
-            pick.show(host.window());
-        } else {
-            host.promptText(title, title, in.defaultValue(), next);
-        }
-    }
-
-    /**
-     * Puts the variables in, runs the {@code preLaunchTask} (a plain {@code tasks.json} command), and starts the
-     * configuration on its debugger ({@link com.editora.dap.LaunchRoute}).
-     */
-    void resolveAndRun(
-            Path launchJson,
-            Path workspace,
-            com.editora.dap.LaunchJson.File parsed,
-            String name,
-            java.util.Map<String, Object> raw,
-            java.util.Map<String, String> answers,
-            @Nullable EditorBuffer b) {
-        java.util.Map<String, Object> body;
-        try {
-            @SuppressWarnings("unchecked")
-            java.util.Map<String, Object> substituted =
-                    (java.util.Map<String, Object>) com.editora.dap.LaunchJson.substitute(
-                            raw,
-                            launchContext(workspace, b, answers),
-                            java.util.Map.of(),
-                            new java.util.HashMap<>(answers));
-            body = substituted == null ? raw : substituted;
-        } catch (com.editora.dap.LaunchJson.LaunchJsonException e) {
-            host.setStatus(tr("status.debug.launchVariable", e.getMessage()));
-            return;
-        } catch (com.editora.dap.LaunchJson.Cancelled e) {
-            return;
-        }
-        // Restart runs all of this again (the task included), not only the adapter's start: an edited program is
-        // saved and built again before it is debugged.
-        Runnable again = () -> resolveAndRun(launchJson, workspace, parsed, name, raw, answers, b);
-        boolean launch = !"attach".equals(body.get("request"));
-        Runnable[] start = new Runnable[1];
-        start[0] = () -> {
-            // The adapter reads the program from disk: edits are saved first (off the FX thread, then this again).
-            DebugSession session = s(); // the saves answer later: then again as this session
-            if (!savedOrThen(buffersUnder(workspace, null), () -> inSession(session, start[0]))) {
-                return;
-            }
-            s().followUp = followUps.followUp(launchJson, workspace, parsed, name, body, answers, b);
-            startRoute(workspace, name, body, b);
-            if (launch) {
-                s().relaunch = again;
-            }
-        };
-        if (!(body.get("preLaunchTask") instanceof String task) || task.isBlank()) {
-            start[0].run();
-            return;
-        }
-        preLaunchTask(launchJson, workspace, task, b, answers, argv -> {
-            if (beforeLaunchActive() || s().pendingBuild != null) {
-                host.setStatus(tr("status.run.busy"));
-                return;
-            }
-            beforeLaunch()
-                    .run(
-                            host,
-                            new BeforeLaunchStep.Command(task, argv, "status.run.preLaunchTask"),
-                            workspace,
-                            java.util.Map.of(),
-                            beforeLaunchConsole(),
-                            () -> later(start[0]));
-        });
-    }
-
-    /** The command line of {@code tasks.json}'s task {@code label}, to {@code then} ({@link DebugPlanning}). */
-    void preLaunchTask(
-            Path launchJson,
-            Path workspace,
-            String label,
-            @Nullable EditorBuffer b,
-            java.util.Map<String, String> answers,
-            Consumer<List<String>> then) {
-        DebugPlanning.preLaunchTask(
-                host, launchJson, label, () -> launchContext(workspace, b, answers), answers, asThisSession(argv -> {
-                    // A tasks.json command is the folder's own code: it runs only in a folder the user trusts, as a
-                    // build does.
-                    if (ops.trustBuild(workspace, List.of(tr("dialog.trust.item.preLaunchTask", label)))) {
-                        Runnable[] run = new Runnable[1];
-                        DebugSession session = s();
-                        run[0] = () -> { // the task builds what is on disk: edits are saved first
-                            if (savedOrThen(buffersUnder(workspace, null), () -> inSession(session, run[0]))) {
-                                then.accept(argv);
-                            }
-                        };
-                        run[0].run();
-                    }
-                }));
-    }
-
-    /** Starts a resolved configuration on the debugger its type names. */
-    private void startRoute(Path workspace, String name, java.util.Map<String, Object> body, @Nullable EditorBuffer b) {
-        java.util.Map<String, com.editora.dap.DebugLanguage> own = new java.util.LinkedHashMap<>();
-        customAdapters.forEach((type, a) -> own.put(type, a.profile()));
-        com.editora.dap.LaunchRoute.Route route = com.editora.dap.LaunchRoute.of(body, own);
-        Path active = b == null ? null : b.getPath();
-        Path program = body.get("program") instanceof String p && !p.isBlank() ? Path.of(p) : null;
-        Path anchor = active != null ? active : program != null ? program : workspace;
-        com.editora.dap.DebugLanguage profile = route.profile();
-        switch (route.kind()) {
-            case UNSUPPORTED -> host.setStatus(tr("status.debug.launchUnsupported", name, route.reason()));
-            case JAVA -> debugJavaConfiguration(name, body, workspace);
-            case DEBUGPY -> {
-                if (!debugEffectiveFor("python")) {
-                    host.setStatus(unavailableMessage("python", null));
-                } else if (route.attach()) {
-                    String[] where = DebugLaunchArgs.attachAddress(body, 5678);
-                    ops.openToolWindow();
-                    nameSession(name);
-                    s().relaunch = null;
-                    withClosedBreakpoints(() -> dap().startPythonAttach(anchor, where[0], Integer.parseInt(where[1])));
-                } else {
-                    ops.openToolWindow();
-                    nameSession(name);
-                    Path file = program != null ? program : anchor;
-                    s().relaunch = null;
-                    withClosedBreakpoints(() -> dap().startConfigured(file, "python", route.request()));
-                }
-            }
-            case JS_DEBUG -> {
-                if (!debugEffectiveFor("javascript")) {
-                    host.setStatus(unavailableMessage("javascript", null));
-                } else if (route.attach()) {
-                    String[] where =
-                            DebugLaunchArgs.attachAddress(body, com.editora.dap.JsLaunch.DEFAULT_INSPECTOR_PORT);
-                    ops.openToolWindow();
-                    nameSession(name);
-                    s().relaunch = null;
-                    withClosedBreakpoints(() -> dap().startJsAttach(
-                                    where[0],
-                                    Integer.parseInt(where[1]),
-                                    name,
-                                    workspace,
-                                    List.of(com.editora.dap.JsLaunch.NODE_INTERNALS),
-                                    true));
-                } else {
-                    ops.openToolWindow();
-                    nameSession(name);
-                    Path file = program != null ? program : anchor;
-                    s().relaunch = null;
-                    withClosedBreakpoints(() -> dap().startConfigured(file, "javascript", route.request()));
-                }
-            }
-            case BROWSER -> {
-                if (!debugEffectiveFor("javascript")) {
-                    host.setStatus(unavailableMessage("javascript", null));
-                } else {
-                    boolean edge = com.editora.dap.BrowserLaunch.EDGE.equals(
-                            route.request().get("type"));
-                    java.util.Map<String, Object> request = com.editora.dap.BrowserLaunch.configured(
-                            route.request(), workspace, browser.browserProfile(edge ? "edge" : "chrome"));
-                    ops.openToolWindow();
-                    nameSession(name);
-                    s().relaunch = null;
-                    withClosedBreakpoints(() -> dap().startBrowser(workspace, request));
-                }
-            }
-            case FIREFOX -> browser.startConfigured(workspace, name, anchor, route.request());
-            case DELVE_REMOTE -> delve.startConfigured(name, route.request());
-            case DELVE,
-                    CODELLDB,
-                    NETCOREDBG,
-                    RDBG,
-                    PHP_DEBUG,
-                    BASH_DEBUG,
-                    LUA_DEBUG,
-                    ELIXIR_LS,
-                    POWERSHELL,
-                    GDB,
-                    CUSTOM -> {
-                if (profile == null) {
-                    return;
-                }
-                // GDB and the user's own adapters are ready when their program was found; Delve and CodeLLDB as F5
-                // finds them (their language's switch too).
-                boolean byProgram = route.kind() == com.editora.dap.LaunchRoute.Kind.GDB
-                        || route.kind() == com.editora.dap.LaunchRoute.Kind.CUSTOM;
-                boolean ready = byProgram
-                        ? debugSupportEnabled() && dap().isExternalLocated(profile)
-                        : debugEffectiveFor(profile.editorLanguages().iterator().next());
-                if (!ready) {
-                    host.setStatus(
-                            route.kind() == com.editora.dap.LaunchRoute.Kind.GDB
-                                    ? tr("status.debug.gdbMissing")
-                                    : byProgram
-                                            ? tr("debug.error.customUnavailable")
-                                            : unavailableMessage(profile.id(), null));
-                    return;
-                }
-                java.util.Map<String, Object> request = new java.util.LinkedHashMap<>(route.request());
-                if (route.kind() == com.editora.dap.LaunchRoute.Kind.DELVE
-                        && !route.attach()
-                        && !request.containsKey("output")) {
-                    request.put("output", com.editora.dap.GoLaunch.debugBinary()); // not __debug_bin in the package
-                }
-                if (route.kind() == com.editora.dap.LaunchRoute.Kind.CODELLDB
-                        && request.get("cargo") instanceof java.util.Map<?, ?> cargo) {
-                    cargoThenStart(workspace, name, anchor, profile, request, cargo);
-                    return;
-                }
-                if (route.kind() == com.editora.dap.LaunchRoute.Kind.RDBG) {
-                    rdbgSession(anchor, request, route.attach(), name);
-                    return;
-                }
-                startExternalSession(anchor, profile, request, name);
-            }
-        }
-    }
-
-    /**
-     * An {@code rdbg} configuration: a launch runs its script under rdbg ({@link com.editora.dap.LaunchRoute#rdbgTail});
-     * an attach connects to the program already under {@code rdbg --open} on its {@code debugPort}.
-     */
-    private void rdbgSession(Path anchor, java.util.Map<String, Object> request, boolean attach, String label) {
-        ops.openToolWindow();
-        nameSession(label);
-        com.editora.dap.DebugLanguage ruby = com.editora.dap.DebugLanguages.RUBY;
-        Runnable start = attach
-                ? () -> withClosedBreakpoints(() ->
-                        dap().startPortAttach(anchor, ruby, com.editora.dap.LaunchRoute.rdbgPort(request), request))
-                : () -> withClosedBreakpoints(() ->
-                        dap().startExternal(anchor, ruby, request, com.editora.dap.LaunchRoute.rdbgTail(request)));
-        s().relaunch = start;
-        start.run();
-    }
-
-    /**
-     * CodeLLDB's {@code cargo} field, as its VS Code extension runs it: {@code cargo <args>} (after the folder's
-     * trust), then the executable its JSON messages name — the one {@code filter} ({@code name}, {@code kind})
-     * picks — becomes the {@code program}.
-     */
-    private void cargoThenStart(
-            Path workspace,
-            String name,
-            Path anchor,
-            com.editora.dap.DebugLanguage profile,
-            java.util.Map<String, Object> request,
-            java.util.Map<?, ?> cargo) {
-        if (!factsKnown(
-                "debug-cargo-trust-look",
-                facts.executable(com.editora.build.BuildTool.CARGO, workspace),
-                () -> cargoThenStart(workspace, name, anchor, profile, request, cargo))) {
-            return;
-        }
-        List<String> cargoArgv = ops.buildExecutable(com.editora.build.BuildTool.CARGO, workspace);
-        if (cargoArgv == null) {
-            return; // not trusted
-        }
-        List<String> args = new ArrayList<>();
-        if (cargo.get("args") instanceof List<?> l) {
-            l.forEach(a -> args.add(String.valueOf(a)));
-        }
-        java.util.Map<?, ?> filter = cargo.get("filter") instanceof java.util.Map<?, ?> f ? f : java.util.Map.of();
-        List<String> build = new ArrayList<>(cargoArgv);
-        build.addAll(args);
-        List<String> json = new ArrayList<>(build);
-        json.add("--message-format=json");
-        if (beforeLaunchActive() || s().pendingBuild != null) {
-            host.setStatus(tr("status.run.busy"));
-            return;
-        }
-        beforeLaunch()
-                .run(
-                        host,
-                        new BeforeLaunchStep.Command(name, build, "status.run.cargoBuild"),
-                        workspace,
-                        java.util.Map.of(),
-                        beforeLaunchConsole(),
-                        () -> startOffFx("editora-cargo-artifacts", session -> () -> {
-                            var listed = com.editora.dap.RustLaunch.listArtifacts(workspace, json, CARGO_LIST_TIMEOUT);
-                            laterIn(session, () -> {
-                                Path exe = listed.ok()
-                                        ? com.editora.dap.LaunchRoute.cargoExecutable(
-                                                com.editora.dap.RustLaunch.artifacts(listed.out()),
-                                                args.contains("test"),
-                                                filter.get("name") instanceof String n ? n : null,
-                                                filter.get("kind") instanceof String k ? k : null)
-                                        : null;
-                                if (exe == null) {
-                                    host.setStatus(tr("status.debug.cargoNoArtifact", name));
-                                    return;
-                                }
-                                java.util.Map<String, Object> resolved = new java.util.LinkedHashMap<>(request);
-                                resolved.remove("cargo");
-                                resolved.put("program", exe.toString());
-                                Runnable whole = s().relaunch; // Restart builds with cargo again (resolveAndRun)
-                                startExternalSession(anchor, profile, resolved, name);
-                                if (whole != null) {
-                                    s().relaunch = whole;
-                                }
-                            });
-                        }));
-    }
-
-    /**
-     * A {@code java} configuration as a run configuration of this window ({@code mainClass}, {@code projectName},
-     * {@code args}, {@code vmArgs}, {@code cwd}, {@code env}), debugged as one is; a {@code mainClass} that is a
-     * {@code .java} file debugs that file.
-     */
-    private void debugJavaConfiguration(String name, java.util.Map<String, Object> body, Path workspace) {
-        String mainClass = body.get("mainClass") instanceof String m ? m : "";
-        if (mainClass.endsWith(".java")) {
-            Path file = Path.of(mainClass);
-            ops.openPath(file);
-            EditorBuffer opened = ops.bufferForPath(file);
-            if (opened != null) {
-                launchBuffer(opened);
-            }
-            return;
-        }
-        if (mainClass.isBlank()) {
-            host.setStatus(tr("status.debug.launchUnsupported", name, "a Java configuration without a mainClass"));
-            return;
-        }
-        debugConfig(com.editora.dap.LaunchRoute.javaRunConfiguration(name, body, workspace));
-    }
-
-    // --- Disassembly and Memory views ---------------------------------------------------------------------
-
-    /** Instructions shown before and after the instruction pointer. */
-    static final int DISASSEMBLY_BEFORE = 40;
-
-    static final int DISASSEMBLY_COUNT = 120;
-
-    /**
-     * Step Over (F10, the toolbar): one machine instruction while the Disassembly view has the keyboard, as in VS
-     * Code; one line otherwise.
-     */
-    void stepOver() {
-        if (s().panel != null && s().panel.disassemblyView().hasFocus() && dap().supportsInstructionStepping()) {
-            dap().stepOverInstruction();
-        } else {
-            dap().stepOver();
-        }
-    }
-
-    /** Step Into: as {@link #stepOver}, one instruction (into a call) while the Disassembly view has the keyboard. */
-    void stepInto() {
-        if (s().panel != null && s().panel.disassemblyView().hasFocus() && dap().supportsInstructionStepping()) {
-            dap().stepIntoInstruction();
-        } else {
-            dap().stepInto();
-        }
-    }
-
-    /** Debug: Step Over Instruction (and Into): one machine instruction, wherever the keyboard is. */
-    void stepInstruction(boolean into) {
-        if (!dap().supportsInstructionStepping()) {
-            host.setStatus(tr("status.debug.noInstructionStepping"));
-            return;
-        }
-        if (into) {
-            dap().stepIntoInstruction();
-        } else {
-            dap().stepOverInstruction();
-        }
-    }
-
-    /** Debug: Show Disassembly / Show Memory: the Debug window's view, filled for the frame shown. */
-    void showLowLevelView(String area) {
-        ops.openToolWindow();
-        panel().showArea(area);
-    }
-
-    /** Fills the Disassembly or Memory view, when shown, for the stop and frame shown. */
-    private void refreshLowLevelViews() {
-        if (s().panel == null) {
-            return;
-        }
-        DebugPanel p = s().panel;
-        String area = p.shownArea();
-        if (dap().state() != DapManager.State.SUSPENDED) {
-            if (DebugPanel.AREA_DISASSEMBLY.equals(area)) {
-                p.disassemblyView().setMessage(tr("debugpanel.disassembly.idle"));
-            }
-            return;
-        }
-        if (DebugPanel.AREA_DISASSEMBLY.equals(area)) {
-            DapModels.StackFrameInfo frame = s().shownFrame;
-            String ip = frame == null ? null : frame.instructionPointer();
-            if (!dap().supportsDisassemble()) {
-                p.disassemblyView().setMessage(tr("debugpanel.disassembly.unsupported"));
-            } else if (ip == null) {
-                p.disassemblyView().setMessage(tr("debugpanel.disassembly.noPointer"));
-            } else {
-                dap().disassemble(ip, -DISASSEMBLY_BEFORE, DISASSEMBLY_COUNT, list -> {
-                    if (s().shownFrame == frame) {
-                        p.disassemblyView().show(list, ip);
-                        instructionBreakpoints.show();
-                    }
-                });
-            }
-        } else if (DebugPanel.AREA_MEMORY.equals(area)) {
-            if (!dap().supportsReadMemory()) {
-                p.memoryView().setMessage(tr("debugpanel.memory.unsupported"));
-            } else if (s().memoryReference != null) {
-                readMemory();
-            }
-        }
-    }
-
-    /** The Memory view at {@code text}: an address as typed, else the address of the expression's value. */
-    private void memoryGo(String text) {
-        DebugMemoryView view = panel().memoryView();
-        if (text == null || text.isBlank()) {
-            return;
-        }
-        if (dap().state() != DapManager.State.SUSPENDED) {
-            view.setMessage(tr("debugpanel.memory.idle"));
-            return;
-        }
-        if (!dap().supportsReadMemory()) {
-            view.setMessage(tr("debugpanel.memory.unsupported"));
-            return;
-        }
-        String literal = DebugMemoryView.literalAddress(text);
-        if (literal != null) {
-            s().memoryReference = literal;
-            s().memoryOffset = 0;
-            readMemory();
-            return;
-        }
-        dap().memoryReferenceOf(text, s().debugFrameId, ref -> {
-            if (ref == null) {
-                view.setMessage(tr("debugpanel.memory.noAddress", text));
-                return;
-            }
-            s().memoryReference = ref;
-            s().memoryOffset = 0;
-            readMemory();
-        });
-    }
-
-    /** Reads a page at the Memory view's reference and offset into it. */
-    void readMemory() {
-        String ref = s().memoryReference;
-        if (ref == null || s().panel == null) {
-            return;
-        }
-        DebugMemoryView view = s().panel.memoryView();
-        dap().readMemory(
-                        ref,
-                        s().memoryOffset,
-                        DebugMemoryView.PAGE,
-                        view::show,
-                        why -> view.setMessage(tr("debugpanel.memory.failed", ref, why)));
-    }
-
-    /** Opens {@code file} at 0-based {@code line}: a double-clicked instruction's source line. */
-    void openSourceLine(Path file, int line) {
-        ops.openPath(file);
-        EditorBuffer b = ops.bufferForPath(file);
-        if (b != null && line >= 0) {
-            int first = b.getBreakpointManager().regionFirstLine();
-            b.getFocusedArea().moveTo(Math.max(0, line - first), 0);
-            b.getFocusedArea().requestFollowCaret();
-        }
-    }
-
-    /** Opens the frame's file and paints the execution-line highlight there. */
-    private void highlightFrame(DapModels.StackFrameInfo frame) {
-        if (!shown()) {
-            return; // another session's: the editor shows the focused one's
-        }
-        clearExecHighlight();
-        if (frame == null) {
-            mapStop(MapDebugStop.RUNNING);
-            return;
-        }
-        DebugPanel stackPanel = s().panel;
-        mapStop(new MapDebugStop(
-                frame, stackPanel == null ? List.of() : stackPanel.callStack(), frame.id() == s().exceptionFrameId));
-        if (!hasSource(frame)) {
-            if (frame.sourceUri() != null && dap().debugFile() != null) {
-                // B5: a JDK or library class jdtls can supply the text of (java/classFileContents) — shown in its
-                // read-only library tab, as go-to-definition and the console's stack-trace links already do.
-                ops.openLibraryFrame(dap().debugFile(), frame.sourceUri(), frame.line(), lib -> {
-                    if (s().shownFrame == frame && dap().state() == DapManager.State.SUSPENDED) {
-                        clearExecHighlight();
-                        paintExecutionLine(lib, frame);
-                    }
-                });
-                return;
-            }
-            if (frame.reference() != null) {
-                // Code the debugger has only in memory (Node's internals, eval'd code): its text, read-only, with the
-                // execution line, as VS Code shows it.
-                openReferenceSource(frame.reference(), doc -> {
-                    if (s().shownFrame == frame && dap().state() == DapManager.State.SUSPENDED) {
-                        clearExecHighlight();
-                        paintExecutionLine(doc, frame);
-                    }
-                });
-                return;
-            }
-            // Asking for it anyway opened a loading tab, failed, removed the tab again and reported "Failed to
-            // open" as an error — on every stop and step inside library code. Say what is the case instead;
-            // the frame stays selected with its variables, and the other frames stay a click away.
-            host.setStatus(tr("status.debug.noSource", frame.name()));
-            return;
-        }
-        // Revealing the line focuses the editor (openPath calls requestFocus on the buffer). When the user
-        // is driving the session from the Debug panel — the single-key step shortcuts — that yanks focus to
-        // the code after every step, so the next key press is lost and they must re-focus the panel each
-        // time. Preserve the panel's focus across the reveal in that case only; a fresh breakpoint hit while
-        // editing (focus not in the panel) still lands in the code at the stopped line, as before.
-        Node keepFocus = debugPanelFocusOwner();
-        ops.openPath(frame.file()); // opens or focuses the tab
-        // Take the frame's OWN buffer, not whatever is active — mirrors applyInlineValues.
-        EditorBuffer b = ops.bufferForPath(frame.file());
-        if (b != null) {
-            paintExecutionLine(b, frame);
-        }
-        if (keepFocus != null) {
-            later(keepFocus::requestFocus); // after openPath's own requestFocus, so the panel wins
-        }
-    }
-
-    /** The frame whose line the editor marks as the execution line, or null. */
-    private DapModels.@Nullable StackFrameInfo paintedFrame;
-
-    private @Nullable DebugExceptionCard exceptionCard;
-
-    /**
-     * Opens the exception card under the line that threw, when that frame is the one shown and the adapter has said
-     * which exception it is. By itself ({@code asked} false) only once per stop: closing it keeps it closed.
-     */
-    private void showExceptionCard(boolean asked) {
-        if (!shown()) {
-            return; // another session's: the editor shows the focused one's
-        }
-        DapModels.ExceptionInfo info = s().stopException;
-        DapModels.StackFrameInfo frame = paintedFrame;
-        EditorBuffer b = execHighlightBuffer;
-        if (info == null
-                || frame == null
-                || b == null
-                || frame.id() != s().exceptionFrameId
-                || dap().state() != DapManager.State.SUSPENDED) {
-            return;
-        }
-        if (!asked && s().exceptionCardStop == s().stopSerial) {
-            return;
-        }
-        s().exceptionCardStop = s().stopSerial;
-        if (exceptionCard == null) {
-            exceptionCard = new DebugExceptionCard(new DebugExceptionCard.Actions(
-                    () -> {
-                        if (exceptionToggleOn(true)) {
-                            toggleExceptionKind(true); // says so on the status line
-                        }
-                    },
-                    () -> host.setStatus(tr("status.debug.exceptionCopied"))));
-        }
-        int line = frame.line() - b.getBreakpointManager().regionFirstLine();
-        exceptionCard.show(b.getFocusedArea(), line, info, info.caught() && exceptionToggleOn(true));
-    }
-
-    private void hideExceptionCard() {
-        if (!shown()) {
-            return; // another session's: the editor shows the focused one's
-        }
-        if (exceptionCard != null) {
-            exceptionCard.hide();
-        }
-    }
-
-    /** The exception card (test read; null until an exception stop opened it). */
-    @Nullable
-    DebugExceptionCard exceptionCard() {
-        return exceptionCard;
-    }
-
-    /**
-     * Debug: Show Exception — opens the card of the exception the program stopped on again, going back to the frame
-     * that threw when another one is shown.
-     */
-    void showException() {
-        if (s().stopException == null || dap().state() != DapManager.State.SUSPENDED) {
-            host.setStatus(tr("status.debug.noException"));
-            return;
-        }
-        DapModels.StackFrameInfo frame = paintedFrame;
-        if (frame == null || frame.id() != s().exceptionFrameId) {
-            if (!panel().selectFrameById(s().exceptionFrameId)) {
-                host.setStatus(tr("status.debug.noException"));
-                return;
-            }
-            s().exceptionCardStop = -1; // the frame's paint opens it, once laid out
-            return;
-        }
-        showExceptionCard(true);
-    }
-
-    private void paintExecutionLine(EditorBuffer b, DapModels.StackFrameInfo frame) {
-        if (!shown()) {
-            return; // another session's: the editor shows the focused one's
-        }
-        execHighlightBuffer = b;
-        ops.afterBufferLoad(b, () -> {
-            // The user may resume or select another frame while this file is still loading. Never let
-            // that obsolete completion repaint an execution marker that clearExecHighlight removed.
-            if (execHighlightBuffer == b) {
-                // A narrowed buffer shows only its region: the frame's file line is region-relative
-                // there (a stop outside the region has no line to show and paints nothing).
-                b.setExecutionLine(frame.line() - b.getBreakpointManager().regionFirstLine());
-                b.setExecutionLineException(frame.id() == s().exceptionFrameId);
-                if (frame.id() == s().stepTimeFrameId && s().stepTime != null) {
-                    b.setStepTime(frame.line() - b.getBreakpointManager().regionFirstLine(), s().stepTime);
-                }
-                paintedFrame = frame;
-                if (frame.id() == s().exceptionFrameId) {
-                    later(() -> showExceptionCard(false)); // once the line has been laid out
-                } else {
-                    hideExceptionCard(); // another frame's line: the card belongs to the one that threw
-                }
-            }
-        });
-    }
-
-    /** The Debug-panel descendant that currently owns keyboard focus (so it can be restored across an
-     *  editor-focusing reveal), or {@code null} when focus is elsewhere. */
-    private @Nullable Node debugPanelFocusOwner() {
-        var window = host.window();
-        var scene = window == null ? null : window.getScene();
-        Node owner = scene == null ? null : scene.getFocusOwner();
-        for (Node n = owner; n != null; n = n.getParent()) {
-            if (s().panel != null && n == s().panel) {
-                return owner;
-            }
-        }
-        return null;
-    }
-
+    /** Takes the execution-line highlight off ({@link ExecutionLine#clearExecHighlight}). */
     private void clearExecHighlight() {
-        if (!shown()) {
-            return; // another session's: the editor shows the focused one's
-        }
-        paintedFrame = null;
-        hideExceptionCard();
-        if (execHighlightBuffer != null) {
-            execHighlightBuffer.clearExecutionLine();
-            execHighlightBuffer = null;
-        }
+        execLine.clearExecHighlight();
     }
 
     // --- debug commands ----------------------------------------------------------------------------
@@ -4763,258 +3721,10 @@ final class DebugCoordinator {
         }
     }
 
-    /**
-     * Debug ▸ Start for the active file (saving first, like Run) — or Continue, when the session there is
-     * paused or stepping.
-     */
-    void debugStart() {
-        EditorBuffer b = host.activeBuffer();
-        if (!clearToStart(b, true)) {
-            return;
-        }
-        if (b == null || testDebugger == null || !"java".equals(b.getLanguage())) {
-            launchBuffer(b);
-            return;
-        }
-        // The test lines are the Run scan's and the main class a parse: both made off the FX thread (PERF-01).
-        b.whenRunScanned(bound(() -> {
-            String text = b.getContent();
-            planOffFx("debug-own-main", () -> DebugPlanning.ownMainClass(text), a -> {
-                s().startCleared = true; // Debug Test's own check (clearToDebugTest) has been answered here
-                boolean test = debugsTest(b, a.value());
-                s().startCleared = false;
-                if (!test) {
-                    launchBuffer(b);
-                }
-            });
-        }));
-    }
-
-    /** Debug File (the editor menu, the Debug File handler): {@code b}, after the same check as F5's. */
-    void debugFile(EditorBuffer b) {
-        if (clearToStart(b, false)) {
-            launchBuffer(b);
-        }
-    }
-
-    /** Debug Test at the caret or from the editor menu: false when a live launch stays (said, or asked and kept). */
-    boolean clearToDebugTest() {
-        return s().startCleared || clearToStart(host.activeBuffer(), false);
-    }
-
-    /**
-     * The one check every way to start goes through (review 3, C202–C204, A208, A209). A launch is live — or still
-     * getting ready: a build before it, a before-launch step, a test run waiting for its JVM, a compile, the
-     * main-class picker. For F5 ({@code f5}) a paused (or mid-step) session is continued: never yank a paused
-     * session. Otherwise the same file is already being debugged (said so, in words that fit how far it has got),
-     * and another file replaces it — after asking, since that ends the program (review A106: a starting launch was
-     * replaced unasked; review 3 C202: the editor menu's Debug File ended a paused session unasked). True when
-     * {@code b} may be launched now.
-     */
-    private boolean clearToStart(@Nullable EditorBuffer b, boolean f5) {
-        Path path = b == null ? null : b.getPath();
-        if (path != null) {
-            for (DebugSession other : sessions.all()) {
-                if (other != s() && inSession(other, () -> launchLiveFor(path))) {
-                    focusSession(other); // the file is another session's: that one is shown, and asked about
-                    return clearToStart(b, f5);
-                }
-            }
-        }
-        boolean preparing = launchPreparing();
-        Path liveFile = preparing ? preparingFile() : dap().debugFile();
-        boolean differentFile = path != null && !samePath(path, liveFile);
-        boolean debuggable = b != null && path != null && debugEffectiveFor(b.getLanguage(), path);
-        boolean active = dap().isActive();
-        DapManager.State state = dap().state();
-        DebugStartChoice choice = f5
-                ? DebugStartChoice.of(active, state, dap().isStepping(), preparing, differentFile, debuggable)
-                : DebugStartChoice.forFile(active, state, preparing, differentFile);
-        DebugStartChoice.Phase phase = DebugStartChoice.Phase.of(active, state, dap().isStepping(), preparing);
-        String label = preparing && s().pendingBuild == null && s().pendingAttachFile != null
-                ? String.valueOf(s().pendingAttachFile.getFileName())
-                : s().sessionLabel;
-        switch (choice) {
-            case CONTINUE -> {
-                dap().resume(); // F5-style continue
-                return false;
-            }
-            case ALREADY_RUNNING -> {
-                host.setStatus(tr(phase.busyKey, label));
-                return false;
-            }
-            case ASK_RETARGET -> {
-                if (path == null) {
-                    return false;
-                }
-                // Both at once beside a session that has started; one still getting ready (a build, a test run's
-                // JVM) is replaced or kept, as before.
-                boolean both = active && !preparing;
-                Retarget answer = askRetarget(
-                        DebugRetargetPrompt.question(both, phase.retargetKey, label, path.getFileName()), both);
-                switch (answer) {
-                    case BOTH -> {
-                        openSession(); // the launch asked for is the new session's
-                        launching(path);
-                        return true;
-                    }
-                    case STOP -> {
-                        endLiveLaunch(); // retarget to the file asked for
-                        launching(path);
-                        return true;
-                    }
-                    default -> {
-                        return false;
-                    }
-                }
-            }
-            default -> {
-                launching(path); // getting ready while it saves and plans
-                return true; // nothing to end first
-            }
-        }
-    }
-
-    /**
-     * The longest a session's answers still to come (a save, a plan, a scan: off the FX thread since PERF-01) count
-     * as a launch getting ready: one that never answers (a save that failed) does not hold F5 for longer.
-     */
-    static final long STEPS_PENDING_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(15);
-
     /** A launch's plan could not be read (the disk, a remote host gone): says so, instead of doing nothing. */
-    private void planFailed(Path file, @Nullable Exception why) {
+    void planFailed(Path file, @Nullable Exception why) {
         String reason = why == null || why.getMessage() == null ? String.valueOf(why) : why.getMessage();
         host.setStatus(tr("status.debug.planFailed", file.getFileName(), reason));
-    }
-
-    /** {@code path}'s launch is let through: until its last save or plan has answered, it is getting ready. */
-    private void launching(@Nullable Path path) {
-        s().followUp = null; // another launch: what a launch.json configuration asked for is not its
-        s().launching = true;
-        s().launchAskedFile = path;
-    }
-
-    /**
-     * A launch let through is still saving its files or reading its plan: an answer is still to come, not long ago.
-     * A second F5 meanwhile launched the program twice.
-     */
-    private boolean launchAskedRecently() {
-        return s().launching
-                && s().stepsPending > 0
-                && dap().state() == DapManager.State.INACTIVE
-                && System.nanoTime() - s().stepsPendingSince < STEPS_PENDING_NANOS;
-    }
-
-    /**
-     * A launch is getting ready with no session yet: a jdtls build, a before-launch step, a test run's JVM, or one
-     * still saving its files or reading its plan.
-     */
-    private boolean launchPreparing() {
-        return !dap().isActive()
-                && (s().pendingBuild != null
-                        || beforeLaunchActive()
-                        || s().pendingAttachStop != null
-                        || launchAskedRecently());
-    }
-
-    /** The file the launch getting ready is for, when known. */
-    private @Nullable Path preparingFile() {
-        return s().pendingBuild != null
-                ? s().pendingBuildFile
-                : s().pendingAttachStop != null
-                        ? s().pendingAttachFile
-                        : launchAskedRecently() ? s().launchAskedFile : null;
-    }
-
-    /** A launch of {@code file} is live or getting ready. */
-    private boolean launchLiveFor(Path file) {
-        if (launchPreparing()) {
-            return samePath(file, preparingFile());
-        }
-        return dap().state() != DapManager.State.INACTIVE && samePath(file, dap().debugFile());
-    }
-
-    /** Ends whatever launch is live or getting ready, for a launch of another file. */
-    private void endLiveLaunch() {
-        if (beforeLaunchActive()) {
-            beforeLaunch().stop();
-        }
-        dropPendingBuild();
-        stop(); // the session, or a test run waiting for its JVM
-    }
-
-    /** Debugs a JUnit test at the caret ({@code true}: the whole class), as the gutter's Debug Test; set by the
-     *  window. Null: Debug ▶ launches a test file like any other. */
-    private @Nullable Consumer<Boolean> testDebugger;
-
-    void setTestDebugger(Consumer<Boolean> testDebugger) {
-        this.testDebugger = testDebugger;
-    }
-
-    /** Debug ▶ in a JUnit test file debugs the test at the caret, or its class (review A102); true when it did. */
-    private boolean debugsTest(EditorBuffer b, @Nullable String ownMain) {
-        DebugTestRoute.Route route = DebugTestRoute.route(
-                true,
-                b.isCompactSource(),
-                b.testClassTarget() != null,
-                ownMain != null,
-                b.testTargetAtCaret(false) != null);
-        if (route == DebugTestRoute.Route.LAUNCH) {
-            return false;
-        }
-        java.util.Objects.requireNonNull(testDebugger).accept(route == DebugTestRoute.Route.TEST_CLASS);
-        return true;
-    }
-
-    /**
-     * Asks before F5 in another tab ends the running session (review A13); a test replaces it. The answer is
-     * the user's: a running server is not stopped by a key pressed in the wrong tab.
-     */
-    @Nullable
-    Predicate<String> confirmRetarget;
-
-    /** What to do with the live launch when another file is asked to be debugged. */
-    enum Retarget {
-        /** Debug the other file in a session of its own, beside the live one. */
-        BOTH,
-        /** End the live launch and debug the other file instead. */
-        STOP,
-        /** Leave things as they are. */
-        CANCEL
-    }
-
-    /**
-     * Answers {@link #askRetarget} in tests: the question, and whether Debug Both was offered. Null: ask the user.
-     * When only {@link #confirmRetarget} is set, its yes is {@link Retarget#STOP}.
-     */
-    java.util.function.@Nullable BiFunction<String, Boolean, Retarget> retargetChoice;
-
-    /**
-     * Asks before F5 in another tab ends the live launch: Debug Both (when {@code bothOffered}: the default, a running
-     * server is not stopped by a key pressed in the wrong tab), Stop and Debug, or Cancel.
-     */
-    private Retarget askRetarget(String question, boolean bothOffered) {
-        if (retargetChoice != null) {
-            return retargetChoice.apply(question, bothOffered);
-        }
-        if (confirmRetarget != null) {
-            return confirmRetarget.test(question) ? Retarget.STOP : Retarget.CANCEL;
-        }
-        return DebugRetargetPrompt.ask(host.window(), question, bothOffered);
-    }
-
-    /** Saves {@code b} and launches a debug session for it; also what Restart repeats for such a session. */
-    private void launchBuffer(@Nullable EditorBuffer b) {
-        launchBuffer(b, List.of());
-    }
-
-    /**
-     * Debugs Go file {@code path} on Delve: in a test file the test at the caret (its package's tests outside any), else
-     * its package — the file alone outside a module — with {@code args} as the program's or the test binary's. Delve
-     * builds it with the {@code go} the Go build tool runs, after the module's trust as a Go task asks it.
-     */
-    private void debugGoFile(EditorBuffer b, Path path, List<String> args) {
-        debugGo(path, b.getContent(), caretLine(b), args, LaunchExtras.NONE);
     }
 
     /**
@@ -5022,464 +3732,13 @@ final class DebugCoordinator {
      * in (null: where Debug File runs it), and whether a before-launch step of its own has already written to the
      * Debug console, which the build's output then follows instead of replacing.
      */
-    private record LaunchExtras(
+    record LaunchExtras(
             java.util.Map<String, String> env, @Nullable Path cwd, boolean afterStep, boolean config) {
         static final LaunchExtras NONE = new LaunchExtras(java.util.Map.of(), null, false, false);
     }
 
-    /** Names the session and its Restart for a file's launch; a configuration's launch did both itself already. */
-    private void named(LaunchExtras extras, String name, Runnable relaunch) {
-        if (!extras.config()) {
-            nameSession(name);
-            s().relaunch = relaunch;
-        }
-    }
-
-    /** {@link #debugGoFile} for {@code path} with text {@code text} and the caret on {@code caret} (-1: nowhere). */
-    private void debugGo(Path path, String text, int caret, List<String> args, LaunchExtras extras) {
-        planOffFx( // the module is a folder walk, the test at the caret a scan: off the FX thread (PERF-01)
-                "debug-go-plan",
-                () -> {
-                    Path module = com.editora.dap.GoLaunch.moduleRoot(path);
-                    return new GoPlan(
-                            module,
-                            com.editora.dap.GoLaunch.launch(
-                                    path, text, caret, module != null, args, extras.env(), false, extras.cwd()),
-                            com.editora.dap.GoLaunch.sessionName(path, text, caret));
-                },
-                a -> {
-                    if (a.value() != null) {
-                        debugGoIn(path, extras, a.value());
-                    } else {
-                        planFailed(path, a.failure());
-                    }
-                });
-    }
-
-    /** A Go launch planned off the FX thread: its module (null: a loose file), launch arguments and session name. */
-    private record GoPlan(@Nullable Path module, java.util.Map<String, Object> launch, String name) {}
-
-    private void debugGoIn(Path path, LaunchExtras extras, GoPlan plan) {
-        Path module = plan.module();
-        if (module != null
-                && !factsKnown(
-                        "debug-go-trust-look",
-                        facts.executable(com.editora.build.BuildTool.GO, module),
-                        () -> debugGoIn(path, extras, plan))) {
-            return;
-        }
-        List<String> go = module != null
-                ? ops.buildExecutable(com.editora.build.BuildTool.GO, module)
-                : com.editora.build.BuildExecutable.resolve(
-                        List.of(), host.settings().getGoCommand(), "go");
-        if (go == null) {
-            return; // the module was not trusted: nothing is built
-        }
-        java.util.Map<String, Object> launch = plan.launch();
-        dap().setExternalPathDirs("go", goToolDirs(go));
-        Path built = module != null ? module : path.toAbsolutePath().getParent();
-        named(extras, plan.name(), () -> startGo(path, built, launch));
-        startGo(path, built, launch);
-    }
-
-    /**
-     * Saves the edited Go files under {@code built} (the module, or the loose file's folder: Delve builds them from
-     * disk), then starts {@code launch} for {@code path}.
-     */
-    private void startGo(Path path, @Nullable Path built, java.util.Map<String, Object> launch) {
-        if (!savedOrThen(buffersUnder(built, "go"), () -> startGo(path, built, launch))) {
-            return;
-        }
-        withClosedBreakpoints(() -> dap().startExternal(path, com.editora.dap.DebugLanguages.GO, launch));
-    }
-
-    /** The folder of {@code go} (its argv) when it is a path, for Delve's PATH: Delve builds with the {@code go} found there. */
-    static List<String> goToolDirs(List<String> go) {
-        if (go.isEmpty()) {
-            return List.of();
-        }
-        Path exe;
-        try {
-            exe = Path.of(go.getFirst());
-        } catch (java.nio.file.InvalidPathException e) {
-            return List.of();
-        }
-        Path dir = exe.isAbsolute() ? exe.getParent() : null;
-        return dir == null ? List.of() : List.of(dir.toString());
-    }
-
-    /**
-     * Debugs Rust file {@code path} on CodeLLDB: the test at the caret (its test binary, filtered to it), else in an
-     * integration test all its tests, else the package's program — or, in a library, the file's tests. Cargo builds
-     * it first in the Debug console (after the package's trust, as a Cargo task asks it); its JSON messages then say
-     * which executable to launch.
-     */
-    private void debugRustFile(EditorBuffer b, Path path, List<String> args) {
-        debugRust(path, b.getContent(), caretLine(b), args, LaunchExtras.NONE);
-    }
-
-    /** {@link #debugRustFile} for {@code path} with text {@code text} and the caret on {@code caret} (-1: nowhere). */
-    private void debugRust(Path path, String text, int caret, List<String> args, LaunchExtras extras) {
-        planOffFx( // the package and its programs are looked for off the FX thread (PERF-01)
-                "debug-rust-plan",
-                () -> {
-                    Path root = com.editora.dap.RustLaunch.packageRoot(path);
-                    boolean program = root != null
-                            && (java.nio.file.Files.isRegularFile(
-                                            root.resolve("src").resolve("main.rs"))
-                                    || java.nio.file.Files.isDirectory(
-                                            root.resolve("src").resolve("bin")));
-                    // and the plan, whose test at the caret is a scan of the text
-                    return root == null ? null : new Object[] {root, RustLaunch.plan(root, path, text, caret, program)};
-                },
-                a -> {
-                    Object[] found = a.value();
-                    debugRustIn(
-                            path,
-                            args,
-                            extras,
-                            found == null ? null : (Path) found[0],
-                            found == null ? null : (RustLaunch.Plan) found[1]);
-                });
-    }
-
-    private void debugRustIn(
-            Path path, List<String> args, LaunchExtras extras, @Nullable Path root, RustLaunch.@Nullable Plan plan) {
-        if (root == null || plan == null) {
-            host.setStatus(tr("status.debug.rustNoPackage", path.getFileName()));
-            return;
-        }
-        if (!factsKnown(
-                "debug-rust-trust-look",
-                facts.executable(com.editora.build.BuildTool.CARGO, root),
-                () -> debugRustIn(path, args, extras, root, plan))) {
-            return;
-        }
-        List<String> cargo = ops.buildExecutable(com.editora.build.BuildTool.CARGO, root);
-        if (cargo == null) {
-            return; // the package was not trusted: nothing is built
-        }
-        named(extras, plan.sessionName(), () -> startRust(path, root, cargo, plan, args, extras)); // the test again
-        startRust(path, root, cargo, plan, args, extras);
-    }
-
-    /**
-     * Saves the package's edited Rust files, builds {@code plan} with Cargo as a before-launch step (its output in the
-     * Debug console; Stop ends it), asks Cargo again for the executables it built (nothing is left to build), and
-     * launches the one for {@code path} on CodeLLDB.
-     */
-    private void startRust(
-            Path path,
-            Path root,
-            List<String> cargo,
-            com.editora.dap.RustLaunch.Plan plan,
-            List<String> args,
-            LaunchExtras extras) {
-        if (!savedOrThen(buffersUnder(root, "rust"), () -> startRust(path, root, cargo, plan, args, extras))) {
-            return;
-        }
-        if (beforeLaunchActive() || s().pendingBuild != null) {
-            host.setStatus(tr("status.run.busy"));
-            return;
-        }
-        List<String> build = new java.util.ArrayList<>(cargo);
-        build.addAll(plan.buildArgs());
-        List<String> json = new java.util.ArrayList<>(cargo);
-        json.addAll(plan.jsonArgs());
-        boolean terminal = host.settings().isDebugProgramConsole();
-        beforeLaunch()
-                .run(
-                        host,
-                        new BeforeLaunchStep.Command(
-                                String.valueOf(path.getFileName()), build, "status.run.cargoBuild"),
-                        root,
-                        java.util.Map.of(),
-                        beforeLaunchConsole(!extras.afterStep()),
-                        () -> startOffFx("editora-cargo-artifacts", session -> () -> {
-                            var listed = com.editora.dap.RustLaunch.listArtifacts(root, json, CARGO_LIST_TIMEOUT);
-                            laterIn(
-                                    session,
-                                    () -> launchRustArtifact(path, root, plan, args, terminal, listed, extras));
-                        }));
-        updateDebugAvailability();
-    }
-
     /** How long Cargo has to list what it just built. */
-    private static final java.time.Duration CARGO_LIST_TIMEOUT = java.time.Duration.ofMinutes(2);
-
-    /** Launches the executable Cargo's {@code listed} messages name for {@code path}, or says why there is none. */
-    private void launchRustArtifact(
-            Path path,
-            Path root,
-            com.editora.dap.RustLaunch.Plan plan,
-            List<String> args,
-            boolean terminal,
-            com.editora.process.ProcessRunner.Result listed,
-            LaunchExtras extras) {
-        if (!listed.ok()) {
-            String why = listed.err().strip();
-            host.setStatus(tr(
-                    "status.debug.rustBuildFailed",
-                    why.isEmpty()
-                            ? "exit " + listed.exit()
-                            : why.lines().reduce((a, z) -> z).orElse(why)));
-            return;
-        }
-        com.editora.dap.RustLaunch.Artifact artifact =
-                com.editora.dap.RustLaunch.pick(com.editora.dap.RustLaunch.artifacts(listed.out()), path, plan.mode());
-        if (artifact == null) {
-            host.setStatus(tr("status.debug.rustNoProgram", path.getFileName()));
-            return;
-        }
-        List<String> programArgs = new java.util.ArrayList<>(plan.testArgs());
-        programArgs.addAll(args);
-        java.util.Map<String, Object> launch = com.editora.dap.RustLaunch.launch(
-                artifact.executable(),
-                programArgs,
-                extras.cwd() != null ? extras.cwd() : root,
-                extras.env(),
-                false,
-                terminal);
-        ops.openToolWindow();
-        withClosedBreakpoints(() -> dap().startExternal(path, com.editora.dap.DebugLanguages.RUST, launch));
-    }
-
-    /**
-     * Debugs C or C++ file {@code path} on CodeLLDB: built first — its CMake project's Debug build, its Make project's
-     * default goal (each after the folder's trust: their build files are code), or the file alone by the C or C++
-     * compiler — then the executable that made is launched ({@link com.editora.dap.NativeBuild}).
-     */
-    private void debugNativeFile(EditorBuffer b, Path path, List<String> args) {
-        debugNative(path, "cpp".equals(b.getLanguage()), args, LaunchExtras.NONE);
-    }
-
-    /** {@link #debugNativeFile} for {@code path}, a lone file compiled as C++ ({@code cpp}) or as C. */
-    private void debugNative(Path path, boolean cpp, List<String> args, LaunchExtras extras) {
-        Path out = nativeOutputDir();
-        planOffFx( // the project's build files are looked for off the FX thread (PERF-01)
-                "debug-native-plan",
-                () -> {
-                    Path cmake = com.editora.dap.NativeBuild.cmakeRoot(path);
-                    Path make = cmake == null ? com.editora.dap.NativeBuild.makeRoot(path) : null;
-                    return java.util.Optional.ofNullable(com.editora.dap.NativeBuild.plan(path, cpp, cmake, make, out));
-                },
-                a -> debugNativePlanned(
-                        path, args, extras, a.value() == null ? null : a.value().orElse(null)));
-    }
-
-    private void debugNativePlanned(
-            Path path, List<String> args, LaunchExtras extras, com.editora.dap.NativeBuild.@Nullable Plan plan) {
-        if (plan == null) {
-            host.setStatus(tr("status.debug.nativeHeaderAlone", path.getFileName()));
-            return;
-        }
-        if (plan.tool() != com.editora.dap.NativeBuild.Tool.COMPILER) {
-            String buildFile = plan.tool() == com.editora.dap.NativeBuild.Tool.CMAKE ? "CMakeLists.txt" : "Makefile";
-            String key = plan.tool() == com.editora.dap.NativeBuild.Tool.CMAKE
-                    ? "dialog.trust.item.cmake"
-                    : "dialog.trust.item.make";
-            if (!ops.trustBuild(plan.root(), List.of(tr(key, buildFile)))) {
-                return; // not trusted: nothing is built
-            }
-        }
-        named(extras, plan.sessionName(), () -> startNative(path, plan, args, extras));
-        startNative(path, plan, args, extras);
-    }
-
-    /** Where a lone C or C++ file's program is compiled to: the config folder's cache, else the temporary folder. */
-    private Path nativeOutputDir() {
-        Path config = host.configDir();
-        return config != null
-                ? config.resolve("cache").resolve("native-debug")
-                : Path.of(System.getProperty("java.io.tmpdir"), "editora-native-debug");
-    }
-
-    /** Saves the project's C and C++ files, runs {@code plan}'s build steps in the Debug console, then launches. */
-    private void startNative(Path path, com.editora.dap.NativeBuild.Plan plan, List<String> args, LaunchExtras extras) {
-        List<EditorBuffer> sources = new ArrayList<>(buffersUnder(plan.root(), "c"));
-        sources.addAll(buffersUnder(plan.root(), "cpp"));
-        if (!savedOrThen(sources, () -> startNative(path, plan, args, extras))) {
-            return;
-        }
-        if (beforeLaunchActive() || s().pendingBuild != null) {
-            host.setStatus(tr("status.run.busy"));
-            return;
-        }
-        boolean terminal = host.settings().isDebugProgramConsole();
-        planOffFx( // CMake's codemodel request and the output folder are written off the FX thread
-                "debug-native-prepare",
-                () -> {
-                    if (plan.buildDir() != null) {
-                        com.editora.dap.NativeBuild.requestCodemodel(plan.buildDir());
-                    }
-                    if (plan.output() != null && plan.output().getParent() != null) {
-                        java.nio.file.Files.createDirectories(plan.output().getParent());
-                    }
-                    return plan;
-                },
-                a -> {
-                    if (a.failure() != null) {
-                        host.setStatus(tr("debug.error.startFailed", a.why()));
-                        return;
-                    }
-                    runNativeSteps(
-                            path, plan, 0, !extras.afterStep(), () -> launchNative(path, plan, args, terminal, extras));
-                });
-        updateDebugAvailability();
-    }
-
-    /**
-     * Runs {@code plan}'s build step {@code index} and those after it, then {@code then}; a failed one ends it. The
-     * first one starts the Debug console afresh when {@code fresh}.
-     */
-    private void runNativeSteps(
-            Path path, com.editora.dap.NativeBuild.Plan plan, int index, boolean fresh, Runnable then) {
-        if (index >= plan.steps().size()) {
-            then.run();
-            return;
-        }
-        beforeLaunch()
-                .run(
-                        host,
-                        new BeforeLaunchStep.Command(
-                                String.valueOf(path.getFileName()), plan.steps().get(index), "status.run.nativeBuild"),
-                        plan.root(),
-                        java.util.Map.of(),
-                        beforeLaunchConsole(fresh && index == 0),
-                        // after the step has ended: the next one is not refused as "still running"
-                        () -> later(() -> runNativeSteps(path, plan, index + 1, fresh, then)));
-    }
-
-    /** Finds the executable {@code plan} built (off the FX thread) and launches it, or says there is none. */
-    private void launchNative(
-            Path path,
-            com.editora.dap.NativeBuild.Plan plan,
-            List<String> args,
-            boolean terminal,
-            LaunchExtras extras) {
-        startOffFx("editora-native-executable", session -> () -> {
-            Path exe = com.editora.dap.NativeBuild.executable(plan, path);
-            laterIn(session, () -> {
-                if (exe == null) {
-                    host.setStatus(tr("status.debug.nativeNoProgram", path.getFileName()));
-                    return;
-                }
-                boolean gdb = gdbForCpp();
-                Path cwd = extras.cwd() != null ? extras.cwd() : plan.root();
-                java.util.Map<String, Object> launch = gdb
-                        ? com.editora.dap.NativeBuild.gdbLaunch(exe, args, cwd, extras.env())
-                        : com.editora.dap.NativeBuild.launch(exe, args, cwd, extras.env(), terminal);
-                com.editora.dap.DebugLanguage profile =
-                        gdb ? com.editora.dap.DebugLanguages.GDB : com.editora.dap.DebugLanguages.CPP;
-                ops.openToolWindow();
-                withClosedBreakpoints(() -> dap().startExternal(path, profile, launch));
-            });
-        });
-    }
-
-    /**
-     * Debugs C# file {@code path} on netcoredbg: its project — after the folder's trust, as MSBuild runs the project's
-     * targets — or, outside every project, the file as a .NET 10 file-based app, is built with {@code dotnet build} in
-     * the Debug console; the assembly that made is then launched in the project's folder
-     * ({@link com.editora.dap.DotnetLaunch}).
-     */
-    private void debugCsharpFile(Path path, List<String> args) {
-        planOffFx( // the project file is a folder walk with listings: off the FX thread (PERF-01)
-                "debug-dotnet-plan",
-                () -> com.editora.dap.DotnetLaunch.plan(path, com.editora.dap.DotnetLaunch.projectFile(path)),
-                a -> {
-                    if (a.value() != null) {
-                        debugCsharpPlanned(path, args, a.value());
-                    }
-                });
-    }
-
-    private void debugCsharpPlanned(Path path, List<String> args, com.editora.dap.DotnetLaunch.Plan plan) {
-        // A lone file too: the SDK's build of it imports the folders' Directory.Build.props / .targets, which are code.
-        if (!ops.trustBuild(
-                plan.root(),
-                List.of(tr("dialog.trust.item.dotnet", plan.target().getFileName())))) {
-            return; // not trusted: nothing is built
-        }
-        nameSession(plan.sessionName());
-        s().relaunch = () -> startCsharp(path, plan, args);
-        startCsharp(path, plan, args);
-    }
-
-    /** The .NET SDK's command (a test's stand-in replaces it). */
-    List<String> dotnetCommand = List.of("dotnet");
-
-    /** How long {@code dotnet} has to name the assembly it built (it only evaluates the project). */
-    private static final java.time.Duration DOTNET_QUERY_TIMEOUT = java.time.Duration.ofMinutes(2);
-
-    /** Saves the C# files under the project, builds it in the Debug console, then launches its assembly. */
-    private void startCsharp(Path path, com.editora.dap.DotnetLaunch.Plan plan, List<String> args) {
-        if (!savedOrThen(buffersUnder(plan.root(), "csharp"), () -> startCsharp(path, plan, args))) {
-            return;
-        }
-        if (beforeLaunchActive() || s().pendingBuild != null) {
-            host.setStatus(tr("status.run.busy"));
-            return;
-        }
-        List<String> dotnet = dotnetCommand;
-        List<String> build = new java.util.ArrayList<>(dotnet);
-        build.addAll(plan.buildArgs());
-        beforeLaunch()
-                .run(
-                        host,
-                        new BeforeLaunchStep.Command(
-                                String.valueOf(path.getFileName()), build, "status.run.dotnetBuild"),
-                        plan.root(),
-                        com.editora.dap.DotnetLaunch.BUILD_ENV,
-                        beforeLaunchConsole(),
-                        () -> startOffFx("editora-dotnet-target", session -> () -> {
-                            var listed =
-                                    com.editora.dap.DotnetLaunch.queryTargetPath(dotnet, plan, DOTNET_QUERY_TIMEOUT);
-                            Path built = listed.ok() ? com.editora.dap.DotnetLaunch.targetPath(listed.out()) : null;
-                            boolean there = built != null && java.nio.file.Files.isRegularFile(built); // off FX
-                            laterIn(session, () -> launchCsharpAssembly(path, plan, args, listed, there));
-                        }));
-        updateDebugAvailability();
-    }
-
-    /** Launches the assembly {@code listed} names for {@code path} on netcoredbg, or says why there is none. */
-    private void launchCsharpAssembly(
-            Path path,
-            com.editora.dap.DotnetLaunch.Plan plan,
-            List<String> args,
-            com.editora.process.ProcessRunner.Result listed,
-            boolean there) {
-        Path assembly = listed.ok() ? com.editora.dap.DotnetLaunch.targetPath(listed.out()) : null;
-        if (!listed.ok()) {
-            String why = (listed.err().isBlank() ? listed.out() : listed.err()).strip();
-            host.setStatus(tr(
-                    "status.debug.csharpBuildFailed",
-                    why.isEmpty()
-                            ? "exit " + listed.exit()
-                            : why.lines().reduce((a, z) -> z).orElse(why)));
-            return;
-        }
-        if (assembly == null || !there) {
-            host.setStatus(tr("status.debug.csharpNoProgram", path.getFileName()));
-            return;
-        }
-        java.util.Map<String, Object> launch = com.editora.dap.DotnetLaunch.launch(assembly, args, plan.root());
-        ops.openToolWindow();
-        withClosedBreakpoints(() -> dap().startExternal(path, com.editora.dap.DebugLanguages.CSHARP, launch));
-    }
-
-    /**
-     * Debugs a Ruby, Bash or Lua script {@code path} in its folder: under rdbg, the bashdb vscode-bash-debug ships, or
-     * Local Lua Debugger ({@link com.editora.dap.ScriptLaunch#plan}); a PHP file goes to {@link PhpDebugLaunch}.
-     */
-    private void debugScriptFile(Path path, String language, List<String> args) {
-        Path cwd = path.toAbsolutePath().getParent();
-        var plan = com.editora.dap.ScriptLaunch.plan(language, path, args, cwd != null ? cwd : path.toAbsolutePath());
-        Runnable start = () ->
-                withClosedBreakpoints(() -> dap().startExternal(path, plan.language(), plan.launch(), plan.tail()));
-        s().relaunch = start;
-        start.run();
-    }
+    static final java.time.Duration CARGO_LIST_TIMEOUT = java.time.Duration.ofMinutes(2);
 
     /** The edited buffers of {@code language} (null: of any) under {@code root}: a build reads them from disk. */
     List<EditorBuffer> buffersUnder(@Nullable Path root, @Nullable String language) {
@@ -5525,582 +3784,95 @@ final class DebugCoordinator {
                 + b.getBreakpointManager().regionFirstLine();
     }
 
-    /**
-     * Debug Test at Caret in a Rust file: the {@code #[test]} function at the caret, its test binary filtered to it
-     * ({@link #debugRustFile}). False — nothing done — outside a test, or for any other buffer.
-     */
-    boolean debugRustTestAtCaret(@Nullable EditorBuffer b, Runnable otherwise) {
-        if (b == null || b.getPath() == null || !"rust".equals(b.getLanguage())) {
-            return false;
-        }
-        int caret = caretLine(b); // the test is found off the FX thread (PERF-01): the command goes on once it is
-        var test = scan(b, "rustTest:" + caret, t -> RustLaunch.testAt(t, caret), () -> {
-            if (!debugRustTestAtCaret(b, otherwise)) {
-                otherwise.run();
-            }
-        });
-        if (test != null && test.value() == null) {
-            return false;
-        }
-        if (test != null) {
-            launchBuffer(b);
-        }
-        return true;
+    /** {@link DebugFileLaunch#debugStart}: F5. */
+    void debugStart() {
+        fileLaunch.debugStart();
     }
 
-    /**
-     * Debug Test at Caret in a C or C++ test file (GoogleTest, Catch2, doctest — {@link com.editora.test.CppTests}): its
-     * program built and debugged as Debug File debugs it, run with the filter of the test at the caret, or every test
-     * outside one. False — nothing done — for any other buffer.
-     */
-    boolean debugCppTestAtCaret(@Nullable EditorBuffer b, Runnable otherwise) {
-        if (b == null || b.getPath() == null || !("c".equals(b.getLanguage()) || "cpp".equals(b.getLanguage()))) {
-            return false;
-        }
-        int caret = caretLine(b); // the test is found off the FX thread (PERF-01): the command goes on once it is
-        var found = scan(b, "cppTest:" + caret, CppTestAt::of, () -> {
-            if (!debugCppTestAtCaret(b, otherwise)) {
-                otherwise.run();
-            }
-        });
-        if (found == null) {
-            return true; // asked again once the scan answers
-        }
-        CppTestAt at = found.value();
-        if (at == null) {
-            return false;
-        }
-        CppTestAt here = at.at(caret);
-        debugCppTests(b, here.kind(), here.filter());
-        return true;
+    /** {@link DebugFileLaunch#debugFile}: Debug File. */
+    void debugFile(EditorBuffer b) {
+        fileLaunch.debugFile(b);
     }
 
-    /** A C or C++ test file's framework and its tests, as scanned; {@link #at} the one a line is in. */
-    private record CppTestAt(
-            com.editora.test.ToolTestKind kind,
-            String text,
-            @Nullable String filter) {
-
-        static @Nullable CppTestAt of(String text) {
-            com.editora.test.ToolTestKind kind = com.editora.test.CppTests.framework(text);
-            return kind == null ? null : new CppTestAt(kind, text, null);
-        }
-
-        CppTestAt at(int line) {
-            com.editora.test.CppTests.Test t = com.editora.test.CppTests.at(kind, text, line);
-            return new CppTestAt(kind, text, t == null ? null : t.filter());
-        }
+    /** {@link DebugFileLaunch#launchLiveFor}: a launch of {@code file} is live or getting ready. */
+    boolean launchLiveFor(Path file) {
+        return fileLaunch.launchLiveFor(file);
     }
 
-    /** A C or C++ test's ▶ (its editor menu's Debug Test): that test, or every test of the file on its first line. */
-    void debugCppGlyph(EditorBuffer b, com.editora.test.JavaTestScanner.TestTarget target) {
-        String text = b.getContent();
-        com.editora.test.ToolTestKind kind = com.editora.test.CppTests.framework(text);
-        if (kind == null || b.getPath() == null) {
-            return;
-        }
-        String filter = null;
-        if (target.methodName() != null) {
-            for (com.editora.test.CppTests.Test t : com.editora.test.CppTests.scan(kind, text)) {
-                if (t.line() == target.line()) {
-                    filter = t.filter();
-                }
-            }
-        }
-        debugCppTests(b, kind, filter);
+    /** {@link DebugFileLaunch#launchBuffer}: saves {@code b} and launches a debug session for it. */
+    void launchBuffer(@Nullable EditorBuffer b) {
+        fileLaunch.launchBuffer(b);
     }
 
-    private void debugCppTests(EditorBuffer b, com.editora.test.ToolTestKind kind, @Nullable String filter) {
-        Path path = b.getPath();
-        if (path == null) {
-            return;
-        }
-        debugNative(
-                path,
-                "cpp".equals(b.getLanguage()),
-                com.editora.test.CppTests.filterArgs(kind, filter == null ? List.of() : List.of(filter)),
-                LaunchExtras.NONE);
+    /** {@link CompiledDebugLaunch#debugGo}. */
+    void debugGo(Path path, String text, int caret, List<String> args, LaunchExtras extras) {
+        compiled.debugGo(path, text, caret, args, extras);
     }
 
-    /**
-     * Debug Test at Caret on a Go test file ({@code *_test.go}): the test at the caret under Delve's test mode, the
-     * package's tests outside any. False — nothing done — for any other buffer.
-     */
-    boolean debugDartTestAtCaret(@Nullable EditorBuffer b) {
-        return dart.debugTestAtCaret(b); // its test or group, on the adapter's test mode
+    /** {@link CompiledDebugLaunch#debugRust}. */
+    void debugRust(Path path, String text, int caret, List<String> args, LaunchExtras extras) {
+        compiled.debugRust(path, text, caret, args, extras);
     }
 
-    boolean debugGoTestAtCaret(@Nullable EditorBuffer b) {
-        if (b == null
-                || b.getPath() == null
-                || !"go".equals(b.getLanguage())
-                || !com.editora.dap.GoLaunch.isTestFile(b.getPath())) {
-            return false;
-        }
-        launchBuffer(b);
-        return true;
+    /** {@link CompiledDebugLaunch#debugNative}. */
+    void debugNative(Path path, boolean cpp, List<String> args, LaunchExtras extras) {
+        compiled.debugNative(path, cpp, args, extras);
     }
 
-    /**
-     * Debug Test at Caret on a JavaScript/TypeScript test file ({@link com.editora.dap.JsLaunch#isTestFile}): the
-     * file runs under {@code node --test} (in a Deno project, {@code deno test}), narrowed to the test at the caret by
-     * name when there is one. False —
-     * nothing done — for any other buffer.
-     */
-    boolean debugJsTestAtCaret(@Nullable EditorBuffer b) {
-        if (b == null
-                || b.getPath() == null
-                || !"javascript".equals(DapServerRegistry.adapterLanguage(b.getLanguage()))
-                || !com.editora.dap.JsLaunch.isTestFile(b.getPath())) {
-            return false;
-        }
-        int caret = b.getFocusedArea().getCurrentParagraph()
-                + b.getBreakpointManager().regionFirstLine();
-        List<String> nodeArgs = new java.util.ArrayList<>(List.of("--test"));
-        var named = scan(b, "jsTest:" + caret, t -> JsLaunch.testArgsAt(t, caret), () -> debugJsTestAtCaret(b));
-        if (named == null) {
-            return true; // found off the FX thread (PERF-01): asked again once it is
-        }
-        nodeArgs.addAll(java.util.Objects.requireNonNull(named.value())); // Node's test pattern, Deno's test name
-        launchBuffer(b, nodeArgs);
-        return true;
-    }
+    // --- Java launch preparation: in JavaDebugLaunch; these are called from elsewhere in this class ---
 
-    /** {@link #launchBuffer(EditorBuffer)} with Node.js arguments for a JavaScript program ({@code --test}). */
-    private void launchBuffer(@Nullable EditorBuffer b, List<String> nodeArgs) {
-        if (b != null && b.isHttpFile()) {
-            ops.debugHttpRequest(); // its scripts, around the request at the caret
-            return;
-        }
-        // A file no adapter can debug is told so first: an untitled one used to get a Save As dialog, and then
-        // a shell script "Debugging is unavailable for this file (check Settings → Debugging)", which no
-        // setting can change.
-        if (b != null && b.isShell() && !com.editora.dap.ScriptLaunch.isBashScript(b.getPath(), b.getContent())) {
-            host.setStatus(tr("status.debug.shellNotBash")); // bashdb debugs Bash scripts alone
-            return;
-        }
-        if (b != null && b.getPath() == null && !DapServerRegistry.isDebuggable(b.getLanguage())) {
-            host.setStatus(tr("status.debug.languageNotDebuggable"));
-            return;
-        }
-        if (b != null && b.isHtml()) {
-            browser.debugHtmlPage(b); // its scripts run in a browser
-            return;
-        }
-        if (b == null || b.getPath() == null) { // an untitled file is saved first, off the FX thread (PERF-01)
-            savedOrThen(b == null ? List.of() : List.of(b), () -> launchBuffer(b, nodeArgs));
-            if (b == null) {
-                host.setStatus(tr("status.debug.saveFirst"));
-            }
-            return;
-        }
-        String language = DapServerRegistry.adapterLanguage(b.getLanguage()); // a .ts file: JavaScript
-        if (!debugEffectiveFor(language, b.getPath())) {
-            host.setStatus(unavailableMessage(language, b.getPath()));
-            return;
-        }
-        if (b.isDirty() || b.getPath() == null) { // saved off the FX thread, then launched (PERF-01, Pauta 6.2.0)
-            ops.saveThen(
-                    b,
-                    asThisSession(
-                            saved -> { // the session that asked, whichever is focused when it lands
-                                if (saved && b.getPath() != null && !b.isDirty()) {
-                                    launchBuffer(b, nodeArgs);
-                                } else if (saved) { // typed into while it saved: said, not dropped unseen
-                                    Path edited = b.getPath();
-                                    host.setStatus(tr(
-                                            "status.debug.editedWhileSaving",
-                                            edited == null ? "" : String.valueOf(edited.getFileName())));
-                                }
-                            }));
-            return;
-        }
-        Path path = java.util.Objects.requireNonNull(b.getPath()); // checked above
-        String text = b.getContent();
-        String settingsJdk = host.projectScope().jdkHome(host.settings());
-        // What the launch reads from the disk is looked at off the FX thread first (PERF-01): the trust gate's
-        // project files, the build root and its pom, the JDK's java, PATH's java. What follows answers from that.
-        planOffFx("debug-file-plan", () -> DebugPlanning.warmJavaLaunch(language, path, text, settingsJdk), a -> {
-            if (a.value() != null) {
-                launchBufferPlanned(b, path, language, nodeArgs, a.value());
-            } else {
-                planFailed(path, a.failure());
-            }
-        });
-    }
-
-    private void launchBufferPlanned(
-            EditorBuffer b, Path path, String language, List<String> nodeArgs, DebugPlanning.FileRead read) {
-        if (b.runScanPending()) { // compact-source detection is the Run scan, made off FX: decide from its result
-            b.whenRunScanned(bound(() -> launchBufferPlanned(b, path, language, nodeArgs, read)));
-            return;
-        }
-        // A Clojure file of a Leiningen, deps.edn or bb.edn project, a file of a Scala CLI project: its tool loads
-        // the project, not just the file — the workspace-trust gate first, as Run asks it, so "no" starts nothing.
-        // The gate's facts and a Java file's project are looked at off the FX thread first when not known (PERF-01).
-        if (!factsKnown(
-                        "debug-file-look",
-                        facts.fileLaunch(read.gate(), language, path),
-                        () -> launchBufferPlanned(b, path, language, nodeArgs, read))
-                || !trusted(read.gate())) {
-            return;
-        }
-        Integer shebangSource = b.getShebangJavaSource();
-        if ("java".equals(language) && b.isCompactSource() && shebangSource != null && shebangSource < 25) {
-            host.setStatus(tr("status.debug.needSource25", shebangSource));
-            return;
-        }
-        // The debuggee gets the same per-file program arguments the Run feature uses, read the same way.
-        List<String> fileArgs = debugArgs(ops.programArgs(path));
-        if (fileArgs == null) {
-            return;
-        }
-        ops.openToolWindow();
-        nameSession(path.getFileName().toString());
-        // Said once it runs: "Saved …" or the last run's exit stood in the status bar while it was paused (choice 12).
-        s().announceStart = true;
-        dap().setProgramArgs(fileArgs);
-        dap().setVmArgs(""); // no user VM args on a plain debug
-        dap().setHostJavaExec("");
-        if (b.isPython()) {
-            python.plan(path, PythonDebugLaunch.firstLine(b.getContent()));
-        }
-        dap().setJsProjectRoot(ops.projectRoot()); // a JavaScript file's Node.js, package root, workspace
-        dap().setJsNodeArgs(nodeArgs);
-        dap().setJsProgram(null); // the file itself, not a configuration's planned launch
-        if ("javascript".equals(language) && com.editora.process.ExecTargets.runsHere(path)) {
-            // Planned exactly as Run plans it (review D104, D106): the same Node.js, flags, environment and
-            // folder — and for a TypeScript file whatever Run runs for it (tsx, or the compiled file).
-            Path launchedJs = path;
-            s().relaunch = () -> relaunchFor(launchedJs, again -> launchBuffer(again, nodeArgs));
-            debugJsFile(path, fileArgs, nodeArgs);
-            return;
-        }
-        if ("go".equals(language)) {
-            debugGoFile(b, path, fileArgs);
-            return;
-        }
-        if ("rust".equals(language)) {
-            debugRustFile(b, path, fileArgs);
-            return;
-        }
-        if ("cpp".equals(language)) {
-            debugNativeFile(b, path, fileArgs);
-            return;
-        }
-        if ("csharp".equals(language)) {
-            debugCsharpFile(path, fileArgs);
-            return;
-        }
-        if ("php".equals(language)) {
-            php.debug(path, b.getContent(), fileArgs); // a script, a web app's server, a PHPUnit test file
-            return;
-        }
-        if ("ruby".equals(language)) {
-            ruby.debug(path, b.getContent(), fileArgs); // a script, a spec or test file, a Rails app's server
-            return;
-        }
-        if ("elixir".equals(language)) {
-            elixir.debug(path, b.getContent(), fileArgs); // a Mix project's tests, a script, the project
-            return;
-        }
-        if ("powershell".equals(language)) {
-            powershell.debug(path, fileArgs); // a .ps1 on PowerShell Editor Services
-            return;
-        }
-        if (java.util.Set.of("bash", "lua").contains(language)) {
-            debugScriptFile(path, language, fileArgs);
-            return;
-        }
-        if ("dart".equals(language)) {
-            dart.debug(path, fileArgs, java.util.Map.of(), null, false);
-            return;
-        }
-        com.editora.dap.DebugLanguage own = com.editora.dap.DebugLanguages.forLanguage(b.getLanguage());
-        if (own != null && com.editora.dap.DebugLanguages.custom().contains(own)) {
-            debugCustomFile(b, path, own, fileArgs);
-            return;
-        }
-        // Re-anchor closed files' breakpoints first (off-thread) so the initial setBreakpoints arms them too.
-        boolean java = "java".equals(language);
-        Path projectRoot = java ? JavaProjectRoot.find(path) : null;
-        boolean compactSource = java && b.isCompactSource();
-        // A plain-folder project window: its program runs in the project root, like Run's (review A16).
-        Path project = java ? JavaLaunchPrep.projectOf(path, projectRoot, ops.projectRoot()) : null;
-        if (java
-                && !savedOrThen(
-                        javaBuffers(path, project, false),
-                        () -> launchBufferPlanned(b, path, language, nodeArgs, read))) {
-            return; // the launched file was saved above; the others of the project first, off the FX thread
-        }
-        if (projectRoot != null && !compactSource) {
-            // A saved configuration for this class is how the project runs it — its before-launch build,
-            // arguments, environment, working directory — exactly as Run ▶ uses it (review D1).
-            String ownMain = read.ownMain(); // parsed with the plan, off the FX thread (PERF-01)
-            RunConfiguration configured = ownMain == null
-                    ? null
-                    : com.editora.run.JavaLaunchPlan.configurationFor(ownMain, ops.runConfigurations());
-            if (configured != null) {
-                debugConfig(configured);
-                return;
-            }
-        }
-        // A remote file's program runs on its host: none of this machine's JDK setting, PATH or JAVA_HOME.
-        // A Groovy script runs on the Settings JDK too (its JAVA_HOME), as Run runs it.
-        boolean jvmScript = com.editora.run.JvmScriptRun.supports(language);
-        String jdkHome = presentJdk(
-                !(java || jvmScript) || !com.editora.process.ExecTargets.runsHere(path)
-                        ? ""
-                        : compactSource || jvmScript
-                                ? host.projectScope().jdkHome(host.settings())
-                                : configuredJdkHome(projectRoot, null));
-        String selectedJava = com.editora.run.JdkToolchain.javaExecutable(jdkHome);
-        // A Java file without a build tool runs on Run's JDK: the Settings JDK, else PATH's java (review 2, B102).
-        String javaExec = java && projectRoot == null && com.editora.process.ExecTargets.runsHere(path)
-                ? looseJava(selectedJava)
-                : selectedJava;
-        dap().setEnv(com.editora.run.JdkToolchain.environment(
-                jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
-        Path launched = path;
-        s().relaunch = () -> relaunchFor(launched, again -> launchBuffer(again, nodeArgs));
-        if ("kotlin".equals(language)
-                && com.editora.run.KotlinRun.shape(launched.getFileName().toString())
-                        == com.editora.run.KotlinRun.Shape.PROGRAM) {
-            // Compiled first (into the Debug console), then `java -jar` with the agent: Restart compiles an edit.
-            debugKotlinProgram(
-                    launched,
-                    null,
-                    javaExec,
-                    com.editora.run.JdkToolchain.environment(
-                            jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
-            return;
-        }
-        Path looseCwd = projectRoot == null ? project : null;
-        Runnable start = () -> withClosedBreakpoints(() -> {
-            Path file = b.getPath(); // read when the launch starts, after any build
-            if (file == null) {
-                return;
-            }
-            if (compactSource && shebangSource != null) {
-                dap().startCompactShebang(file, shebangSource, javaExec);
-            } else if (compactSource && file.getFileName().toString().endsWith(".java")) {
-                dap().startCompactSource(file, javaExec);
-            } else if (java) {
-                dap().startLaunch(file, this::pickMainClass, javaExec, projectRoot, looseCwd);
-            } else {
-                dap().startLaunch(file, language, this::pickMainClass, javaExec, projectRoot);
-            }
-        });
-        if (projectRoot != null && !compactSource) {
-            buildThenLaunch(path, start);
-        } else if (java && !compactSource) {
-            looseBuildThenLaunch(path, start); // a loose file or a plain folder is built too (review 2, A101)
-        } else {
-            start.run();
-        }
-    }
-
-    // --- Java launch preparation (review A2, B3, D1) ------------------------------------------------------
-
-    /**
-     * {@code home}, or "" — PATH's java — when it names a JDK that is no longer there: the Debug console and the
-     * status bar say so and where to choose another, where java-debug's raw "Cannot run program" stood beside an
-     * empty console (review 3, A206).
-     */
     private String presentJdk(String home) {
-        if (!com.editora.run.JdkToolchain.isGone(home)) {
-            return home;
-        }
-        String said = tr("debug.console.defaultJdkMissing", home.strip());
-        panel().clearConsole(); // this launch's console: kept when its session starts
-        panel().appendNotice(said);
-        s().consoleStarted = true;
-        host.setStatus(said);
-        return "";
+        return javaLaunch.presentJdk(home);
     }
 
-    /** The {@code java} a file without a build tool runs on: {@code selected} (the Settings JDK's), else PATH's. */
     private static String looseJava(String selected) {
-        if (selected != null && !selected.isBlank()) {
-            return selected;
-        }
-        List<String> onPath = com.editora.process.ProcessRunner.resolveExecutable(List.of("java"));
-        return com.editora.dap.LooseJavaLaunch.launchJava(selected, onPath.isEmpty() ? null : onPath.get(0));
+        return JavaDebugLaunch.looseJava(selected);
     }
 
-    /**
-     * {@link #buildThenLaunch} for a Java file with no Maven or Gradle build — a loose file or a plain-folder
-     * project (review 2, A101). jdtls built that folder's classes once, at import, and nothing rebuilt them: every
-     * later launch ran old code, and a file that did not compile ran as "Unresolved compilation problem". Its
-     * source folder is corrected first (a packaged class in a folder jdtls guessed wrong would not build), then
-     * jdtls builds it, and only a launch whose build succeeded may use jdtls's output
-     * ({@link DapManager#setLooseClassesBuilt}); any other compiles the file with javac from its declared source
-     * root, and javac's errors — only those the program reaches — stop it ({@link JavaLaunchPrep#afterBuild}).
-     */
     private void looseBuildThenLaunch(Path routing, Runnable launch) {
-        lsp.ensureManaged(routing);
-        Object token = new Object();
-        s().pendingBuild = token;
-        showPreparing(routing); // from the first moment: the source-folder step can wait seconds on jdtls (C203)
-        DebugSession session = s();
-        planOffFx( // the file's package clause is read off the FX thread (PERF-01)
-                "debug-loose-package",
-                () -> com.editora.dap.JavaSourceRootFix.declaredPackage(readQuietly(routing)),
-                a -> com.editora.dap.JavaSourceRootFix.correct(
-                        lspManager,
-                        routing,
-                        a.value() == null ? "" : a.value(),
-                        () -> session.pendingBuild == token,
-                        asThisSession(fixed -> {
-                            if (s().pendingBuild == token) {
-                                buildThenLaunch(routing, launch, true);
-                            }
-                        })));
+        javaLaunch.looseBuildThenLaunch(routing, launch);
     }
 
-    /**
-     * The build before {@code routing}'s launch has begun: the Debug window opens with "Building…", a Stop that cancels
-     * it and the spinner, and F5 there says the launch is still starting (review 3, C203, C204).
-     */
-    private void showPreparing(Path routing) {
-        boolean shown = s().pendingBuildFile != null && samePath(s().pendingBuildFile, routing);
-        s().pendingBuildFile = routing;
-        ops.openToolWindow();
-        panel().setPreparing(true);
-        debugLoading(true);
-        updateDebugAvailability();
-        if (!shown) {
-            host.setStatus(tr("status.debug.building", String.valueOf(routing.getFileName())));
-        }
-    }
-
-    /** Drops the build before a launch, if one is running: it finishes on its own, but nothing is launched. */
     private void dropPendingBuild() {
-        if (s().pendingBuild == null) {
-            return;
-        }
-        s().pendingBuild = null;
-        s().pendingBuildFile = null;
-        panel().setPreparing(false);
-        debugLoading(false);
-        updateDebugAvailability();
+        javaLaunch.dropPendingBuild();
     }
 
-    /**
-     * Every unsaved Java file of {@code project} (the launched file's folder tree without one), saved before a Java
-     * launch: the program is compiled from what is on disk, and a breakpoint in an unsaved file would sit on lines
-     * the program does not have (review B3).
-     */
     private List<EditorBuffer> javaBuffers(Path launched, @Nullable Path project, boolean includeLaunched) {
-        List<EditorBuffer> dirty = new ArrayList<>();
-        host.forEachBuffer(buf -> {
-            if (buf.isDirty()
-                    && (includeLaunched || !samePath(buf.getPath(), launched))
-                    && JavaLaunchPrep.saveBeforeLaunch(buf.getPath(), buf.getLanguage(), launched, project)) {
-                dirty.add(buf);
-            }
-        });
-        return dirty;
+        return javaLaunch.javaBuffers(launched, project, includeLaunched);
     }
 
-    /**
-     * Builds {@code project} with jdtls ({@code java/buildWorkspace}, what VS Code's build before launch does)
-     * and runs {@code launch} when it compiled. Editora runs jdtls with autobuild off, so nothing else writes
-     * the class files a project launch runs: a fresh project ended in ClassNotFoundException and an edited one
-     * ran its old code under breakpoints placed on the new lines (review A2). Compile errors in the project are
-     * listed in the Debug console (each a link to its line) and nothing is launched. A build that cannot run
-     * launches anyway; the launch then checks the class files itself (missing: refused; older: a warning).
-     */
     private void buildThenLaunch(Path routing, Runnable launch) {
-        buildThenLaunch(routing, launch, false);
+        javaLaunch.buildThenLaunch(routing, launch);
     }
 
-    /** As above; {@code loose}: a file without a build tool, whose launch is told whether its build succeeded. */
-    private void buildThenLaunch(Path routing, Runnable launch, boolean loose) {
-        Object token = new Object();
-        s().pendingBuild = token;
-        lsp.ensureManaged(routing);
-        showPreparing(routing);
-        lspManager.buildJavaWorkspaceForLaunch(routing, asThisSession(result -> {
-            if (s().pendingBuild != token) {
-                return; // stopped, or replaced by another launch
-            }
-            s().pendingBuild = null;
-            s().pendingBuildFile = null;
-            panel().setPreparing(false);
-            debugLoading(false);
-            JavaLaunchPrep.AfterBuild next = JavaLaunchPrep.afterBuild(result.outcome(), loose);
-            if (next == JavaLaunchPrep.AfterBuild.REFUSE) {
-                showBuildErrors(routing, result.errors(), BUILD_ERROR_WAITS);
-                return;
-            }
-            if (loose) { // without jdtls's output, javac compiles it from its declared source root (review 3, A201)
-                dap().setLooseClassesBuilt(next == JavaLaunchPrep.AfterBuild.LAUNCH_BUILT);
-            }
-            launch.run();
-        }));
+    private void relaunchFor(Path file, Consumer<EditorBuffer> launch) {
+        javaLaunch.relaunchFor(file, launch);
+    }
+
+    void debugConfig(RunConfiguration cfg) {
+        javaLaunch.debugConfig(cfg);
+    }
+
+    private void debugKotlinProgram(Path source, @Nullable Path cwd, String java, java.util.Map<String, String> env) {
+        javaLaunch.debugKotlinProgram(source, cwd, java, env);
+    }
+
+    private String configuredJdkHome(@Nullable Path root, @Nullable RunConfiguration cfg) {
+        return javaLaunch.configuredJdkHome(root, cfg);
+    }
+
+    void debugMainClassNamed(String fqn) {
+        javaLaunch.debugMainClassNamed(fqn);
     }
 
     /**
-     * Lists a failed build's compile errors in the Debug console and says so; nothing is launched. jdtls's
-     * workspace is this project. Its build reports the errors of files that are not open as it finds them; an
-     * open file's come from the editor's copy (the Problems view has them, and the copy on disk is the same:
-     * every Java file of the project was saved first) — and may still be on their way, so with none known yet
-     * this looks again a few times before saying only that there are errors.
+     * Whether a debug launch that loads {@code gate}'s project may start: that tool's tasks tree asks for workspace
+     * trust as it would before its own build ({@link Ops#buildExecutable}), as Run does
+     * ({@code RunCoordinator.trusted}). True when there is no gate. Declining starts nothing; the gate said why.
      */
-    private void showBuildErrors(Path routing, Map<Path, List<com.editora.text.LspDiagnostic>> published, int waits) {
-        if (!factsKnown(
-                "debug-build-errors-look",
-                () -> JavaProjectRoot.find(routing),
-                () -> showBuildErrors(routing, published, waits))) {
-            return;
-        }
-        Map<Path, List<com.editora.text.LspDiagnostic>> found = new java.util.TreeMap<>(lsp.problems());
-        found.putAll(published);
-        // Only this launch's project: the Problems window holds every open file's, of every language (review 2, A104).
-        Path project = JavaLaunchPrep.projectOf(routing, JavaProjectRoot.find(routing), ops.projectRoot());
-        java.util.function.Predicate<Path> scope = JavaLaunchPrep.errorScope(routing, project);
-        int errors = JavaLaunchPrep.javaErrorCount(found, scope);
-        List<String> importErrors = JavaLaunchPrep.importErrors(found, project);
-        if (errors == 0 && importErrors.isEmpty() && waits > 0) {
-            javafx.animation.PauseTransition later =
-                    new javafx.animation.PauseTransition(javafx.util.Duration.millis(250));
-            later.setOnFinished(e -> showBuildErrors(routing, published, waits - 1));
-            later.play();
-            return;
-        }
-        panel().clearConsole();
-        s().consoleStarted = false;
-        List<String> lines = JavaLaunchPrep.javaErrorLines(found, scope, ops.projectRoot(), MAX_BUILD_ERROR_LINES);
-        for (String line : lines) {
-            panel().appendOutput(line + "\n", "stderr");
-        }
-        if (errors > lines.size()) {
-            panel().appendNotice(tr("debug.console.moreBuildErrors", errors - lines.size()));
-        }
-        // A failed Maven/Gradle import is no compile error: it says so, and where its JDK is chosen (review 2, A103).
-        for (String message : importErrors) {
-            panel().appendOutput(message + "\n", "stderr");
-        }
-        boolean importFailed = errors == 0 && !importErrors.isEmpty();
-        panel().appendNotice(tr(importFailed ? "debug.console.importFailed" : "debug.console.buildFailed"));
-        host.setStatus(
-                importFailed
-                        ? tr("status.debug.importFailed")
-                        : errors > 0 ? tr("status.debug.buildErrors", errors) : tr("status.debug.buildErrorsUnlisted"));
-        panel().setLaunchRefused(tr(importFailed ? "debugpanel.state.importFailed" : "debugpanel.state.buildFailed"));
-        updateDebugAvailability();
+    boolean trusted(com.editora.run.RunTrust.@Nullable Gate gate) {
+        return gate == null || ops.buildExecutable(gate.tool(), gate.root()) != null;
     }
-
-    private static String readQuietly(Path file) {
-        return DebugPlanning.readQuietly(file);
-    }
-
-    /** How many times a failed build's errors are looked for again before the console says only that there are some. */
-    private static final int BUILD_ERROR_WAITS = 8;
-
-    /** How many compile errors the Debug console lists before saying how many more there are. */
-    private static final int MAX_BUILD_ERROR_LINES = 50;
 
     /**
      * Why {@code language} cannot be debugged here, as the user can act on it: Python or JavaScript debugging
@@ -6152,667 +3924,6 @@ final class DebugCoordinator {
     }
 
     /**
-     * Debug Test at Caret on a pytest file ({@code test_*.py}, {@code *_test.py}): the test at the caret (its class
-     * with {@code classLevel}, the whole file outside any test) runs under pytest in debugpy. False — nothing
-     * done — for any other buffer, which the caller then handles as before.
-     */
-    boolean debugPythonTestAtCaret(@Nullable EditorBuffer b, boolean classLevel) {
-        if (b == null
-                || b.getPath() == null
-                || !b.isPython()
-                || !com.editora.test.PytestScanner.isTestFile(
-                        b.getPath().getFileName().toString())) {
-            return false;
-        }
-        int caret = b.getFocusedArea().getCurrentParagraph()
-                + b.getBreakpointManager().regionFirstLine();
-        var found = scan(
-                b, "pytest:" + caret, t -> PytestScanner.atLine(t, caret), () -> debugPythonTestAtCaret(b, classLevel));
-        if (found == null) {
-            return true; // found off the FX thread (PERF-01): asked again once it is
-        }
-        PytestScanner.TestTarget target = found.value();
-        if (classLevel && target != null && target.className() != null) {
-            target = new com.editora.test.PytestScanner.TestTarget(
-                    target.line(), target.endLine(), target.className(), null);
-        }
-        debugPythonTest(b, target);
-        return true;
-    }
-
-    /**
-     * Debugs {@code target} of pytest file {@code b} ({@code null}: the whole file): {@code python -m pytest
-     * <node id>} under debugpy, from the project root (the file's folder with no project), under the file's
-     * interpreter. Without pytest, a {@code unittest.TestCase} test runs under {@code python -m unittest}
-     * instead. Public for the per-test gutter ▶'s Debug entry ({@code TestNavigationCoordinator}).
-     */
-    public void debugPythonTest(EditorBuffer b, com.editora.test.PytestScanner.@Nullable TestTarget target) {
-        Path file = b == null ? null : b.getPath();
-        if (file == null) {
-            host.setStatus(tr("status.debug.saveFirst"));
-            return;
-        }
-        Path root = python.rootOf(file);
-        Path cwd = root != null ? root : file.getParent();
-        if (cwd == null) {
-            return; // a saved file is always in a folder
-        }
-        String relative = cwd.relativize(file).toString().replace('\\', '/');
-        var fallback = scan( // the class header is looked for off the FX thread (PERF-01)
-                b, "unittest:" + target, t -> unittestFallback(t, relative, target), () -> debugPythonTest(b, target));
-        if (fallback == null) {
-            return;
-        }
-        debugPythonTests(
-                file,
-                cwd,
-                List.of(com.editora.test.PytestScanner.nodeId(relative, target)),
-                java.util.Objects.requireNonNullElse(fallback.value(), List.of()),
-                file.getFileName() + (target == null ? "" : " :: " + target.displayName()));
-    }
-
-    /**
-     * Pure: the pytest test a Python test glyph stands for. The glyphs carry {@link
-     * com.editora.test.JavaTestScanner.TestTarget}s ({@code RunScan.pythonTestLines}): a class (method null), a
-     * module-level function (class {@code ""}), or — class {@code ""} and no method — the whole file (null here).
-     */
-    void debugPythonGlyph(EditorBuffer b, com.editora.test.JavaTestScanner.TestTarget glyph) {
-        var found = scan(b, "glyph:" + glyph, t -> pytestTarget(t, glyph), () -> debugPythonGlyph(b, glyph));
-        if (found != null) { // the test's end is found off the FX thread (PERF-01): asked again once it is
-            debugPythonTest(b, found.value());
-        }
-    }
-
-    static com.editora.test.PytestScanner.@Nullable TestTarget pytestTarget(
-            String source, com.editora.test.JavaTestScanner.TestTarget glyph) {
-        if (glyph == null || (glyph.className().isEmpty() && glyph.methodName() == null)) {
-            return null;
-        }
-        com.editora.test.PytestScanner.TestTarget found = com.editora.test.PytestScanner.atLine(source, glyph.line());
-        int end = found == null ? glyph.line() : found.endLine();
-        return new com.editora.test.PytestScanner.TestTarget(
-                glyph.line(), end, glyph.className().isEmpty() ? null : glyph.className(), glyph.methodName());
-    }
-
-    /**
-     * Debugs Python tests by id in {@code cwd}, under {@code anchor}'s interpreter (the test file, or the folder
-     * a run was in): pytest node ids — with {@code unittestIds} to fall back on when the interpreter has no
-     * pytest — or, with no pytest ids, {@code python -m unittest} on {@code unittestIds} (a run that was
-     * unittest's). What a Test Results row's Debug and a test ▶'s Debug Test come to.
-     */
-    void debugPythonTests(
-            Path anchor, Path cwd, List<String> pytestIds, List<String> unittestIds, @Nullable String label) {
-        if (!debugEffectiveFor("python", anchor)) {
-            host.setStatus(unavailableMessage("python", anchor));
-            return;
-        }
-        EditorBuffer open = ops.bufferForPath(anchor);
-        if (open != null
-                && !savedOrThen(List.of(open), () -> debugPythonTests(anchor, cwd, pytestIds, unittestIds, label))) {
-            return;
-        }
-        List<String> fallback = unittestIds == null ? List.of() : unittestIds;
-        ops.openToolWindow();
-        nameSession(label);
-        dap().setProgramArgs(List.of());
-        python.plan(anchor, open == null ? null : PythonDebugLaunch.firstLine(open.getContent()));
-        s().relaunch = () -> debugPythonTests(anchor, cwd, pytestIds, unittestIds, label);
-        withClosedBreakpoints(() -> {
-            if (pytestIds == null || pytestIds.isEmpty()) {
-                dap().startPythonModule(anchor, "unittest", fallback, cwd);
-            } else {
-                dap().startPythonTest(anchor, pytestIds, fallback, cwd);
-            }
-        });
-    }
-
-    /**
-     * Pure: the {@code python -m unittest} arguments that run {@code target} when pytest is missing — only for a
-     * {@code unittest.TestCase} class (or a method of one), named as a dotted path from the folder it runs in;
-     * empty when unittest cannot run it.
-     */
-    static List<String> unittestFallback(
-            String source, String relative, com.editora.test.PytestScanner.@Nullable TestTarget target) {
-        if (target == null || target.className() == null || !relative.endsWith(".py")) {
-            return List.of();
-        }
-        String[] lines = source.split("\n", -1);
-        String header = target.line() < lines.length ? lines[target.line()] : "";
-        if (!header.contains("TestCase")) {
-            // the method's class header: the nearest "class Name" above
-            header = "";
-            for (int i = Math.min(target.line(), lines.length - 1); i >= 0; i--) {
-                if (lines[i].stripLeading().startsWith("class " + target.className())) {
-                    header = lines[i];
-                    break;
-                }
-            }
-        }
-        if (!header.contains("TestCase")) {
-            return List.of();
-        }
-        String module = relative.substring(0, relative.length() - 3).replace('/', '.');
-        return List.of(
-                module + "." + target.className() + (target.functionName() == null ? "" : "." + target.functionName()));
-    }
-
-    /** Restart of a session started from {@code file}'s tab: repeat it there, or plainly if the tab is gone. */
-    private void relaunchFor(Path file, Consumer<EditorBuffer> launch) {
-        EditorBuffer b = ops.bufferForPath(file);
-        if (b != null) {
-            launch.accept(b);
-        } else {
-            dap().restart();
-        }
-    }
-
-    /**
-     * {@code debug.mainClass}: debug an arbitrary main class in the active file's Maven/Gradle project (not
-     * just the active file's own). Requires a Java file open in a Maven/Gradle project to route jdtls; jdtls
-     * enumerates every project main class, the user picks one (when several), and it launches with the project
-     * root as the working directory.
-     */
-    void debugMainClass() {
-        startMainClassDebug(null);
-    }
-
-    /** Debugs a specific main class by fully-qualified name (the gutter ▶ / editor menu on a {@code main}). */
-    void debugMainClassNamed(String fqn) {
-        startMainClassDebug(fqn);
-    }
-
-    /**
-     * Debugs a saved {@link RunConfiguration} — its main class, program args, VM args, environment and
-     * working directory, and its before-launch step.
-     *
-     * <p>Java, Groovy, Kotlin, Clojure, Scala, Python, Node.js and npm, and C, C++, Go and Rust: the other script
-     * types run but do not debug yet.
-     */
-    void debugConfig(RunConfiguration cfg) {
-        if (cfg.isDeployed()) {
-            ops.debugDeployed(cfg); // the program runs on the host; the debugger attaches through a tunnel
-            return;
-        }
-        if (com.editora.run.ScriptRunCommand.isJvmScript(cfg.type())) {
-            debugJvmScriptConfig(cfg);
-            return;
-        }
-        if (com.editora.run.ScriptRunCommand.NODE.equals(cfg.type())
-                || com.editora.run.ScriptRunCommand.NPM.equals(cfg.type())) {
-            debugNodeConfig(cfg); // planned as Run plans it (NodeRunPlan / the package manager)
-            return;
-        }
-        if (com.editora.run.ScriptRunCommand.isCompiled(cfg.type())) {
-            debugCompiledConfig(cfg); // built and launched as Debug File does its source file
-            return;
-        }
-        if (com.editora.run.ScriptRunCommand.isPython(cfg.type())) {
-            python.debugConfig(cfg); // a script or module, planned as Run plans it
-            return;
-        }
-        if (!cfg.isJava()) {
-            // Script types run but do not debug yet. Say so plainly: falling through would resolve a Java
-            // main class that a Python configuration does not have and report a confusing Java error.
-            host.setStatus(
-                    com.editora.run.ScriptRunCommand.SHELL.equals(cfg.type())
-                            ? tr("status.debug.shellNotDebuggable")
-                            : tr("status.debug.configTypeUnsupported", tr("settings.runConfig.type." + cfg.type())));
-            return;
-        }
-        // Same guard as the Run path: a blank main class is an internal NPE from jdtls, not an error.
-        if (cfg.missingMainClass()) {
-            host.setStatus(tr("status.run.configNeedsMainClass", cfg.name()));
-            ops.editConfiguration(cfg.name()); // take them to the field that would make it run
-            return;
-        }
-        if (cfg.mainClassLooksLikeAFile()) { // see the Run path: an empty classpath, not an error
-            host.setStatus(tr("status.run.mainClassIsAFile", cfg.mainClass()));
-            ops.editConfiguration(cfg.name());
-            return;
-        }
-        // Same reasoning as RunCoordinator.runConfig: a named configuration must not depend on which tab is
-        // in front, only on a Java file being open somewhere in its project.
-        Path routing = RunCoordinator.routingFor(host, cfg);
-        if (!debugEffectiveFor("java", routing)) { // a remote project is debugged on its host (review A9)
-            host.setStatus(unavailableMessage("java", routing));
-            return;
-        }
-        if (routing == null) {
-            host.setStatus(tr("status.run.configNeedsJavaFile"));
-            return;
-        }
-        Path window = ops.projectRoot();
-        String jdk =
-                host.projectScope().jdkHome(host.settings()); // the project and the plan are read off the FX thread
-        planOffFx("debug-config-plan", () -> DebugPlanning.planJava(cfg, routing, window, jdk), a -> {
-            if (a.value() != null) {
-                debugJavaConfig(cfg, routing, a.value());
-            }
-        });
-    }
-
-    private void debugJavaConfig(RunConfiguration cfg, Path routing, DebugPlanning.JavaRead read) {
-        Path buildRoot = read.buildRoot();
-        Path root = read.root();
-        com.editora.run.JavaLaunchPlan.Result planned = read.planned();
-        if (root == null || planned == null) {
-            host.setStatus(tr("status.debug.noProject"));
-            return;
-        }
-        if (!factsKnown(
-                "debug-java-build-look",
-                facts.javaConfig(cfg, buildRoot, root),
-                () -> debugJavaConfig(cfg, routing, read))) {
-            return;
-        }
-        if (!savedOrThen(javaBuffers(routing, root, true), () -> debugJavaConfig(cfg, routing, read))) {
-            return; // every unsaved Java file of the project is written first (review B3)
-        }
-        com.editora.run.JavaLaunchPlan plan = planned.plan();
-        if (plan == null) { // not ok: the plan names its problem
-            if (planned.problem() instanceof com.editora.run.JavaLaunchPlan.Problem problem) {
-                String quote = String.valueOf(problem.quote());
-                host.setStatus(
-                        !problem.envFile().isEmpty()
-                                ? tr("status.run.envFileUnreadable", cfg.name(), problem.envFile())
-                                : problem.field() == com.editora.run.JavaLaunchPlan.Field.ENV
-                                        ? tr("status.run.envUnclosedQuote", cfg.name(), quote)
-                                        : tr("status.run.argsUnclosedQuote", quote));
-            }
-            ops.editConfiguration(cfg.name());
-            return;
-        }
-        // The same gate the Run path has always had: a failed build aborts the launch rather than debugging
-        // the previous class files, where every breakpoint would sit on a stale line number.
-        //
-        // Placed after the guards above rather than around the whole method — unlike Run, which wraps its
-        // dispatch — because those guards reject a configuration that cannot launch at all (a script type, a
-        // blank main class), and spending a multi-minute build on one before saying so is worse than not
-        // building.
-        if (beforeLaunchActive() || s().pendingBuild != null) {
-            host.setStatus(tr("status.run.busy"));
-            return;
-        }
-        // Restart reads the configuration again: an edit made since the first launch applies (review A14).
-        String name = cfg.name();
-        s().relaunch = () -> debugConfig(currentConfiguration(name, cfg));
-        boolean plainFolder = buildRoot == null;
-        Runnable launch = () -> {
-            // routing may be a background tab whose server start was deferred; open it on jdtls first, or the
-            // resolve below comes back "no language server for file" while jdtls is running perfectly.
-            lsp.ensureManaged(routing);
-            dap().resolveMainClasses(routing, options -> {
-                DapManager.MainClassOption match =
-                        DebugLaunchArgs.matchConfiguredClass(options, cfg.mainClass(), plainFolder);
-                if (match == null) {
-                    host.setStatus(
-                            options.isEmpty()
-                                    ? tr("status.debug.noMainClassYet")
-                                    : tr("status.debug.configClassNotFound", cfg.name(), cfg.mainClass()));
-                    return;
-                }
-                ops.openToolWindow();
-                nameSession(shortName(match.mainClass()));
-                dap().setProgramArgs(plan.args());
-                dap().setVmArgs(plan.vmArgs());
-                dap().setEnv(plan.environment());
-                // On a remote host the plan names the host's configured JDK, as Run uses it (review D9).
-                boolean onHost = !com.editora.process.ExecTargets.runsHere(routing);
-                dap().setHostJavaExec(onHost ? plan.javaExecutable() : "");
-                String java = onHost ? "" : plainFolder ? looseJava(plan.javaExecutable()) : plan.javaExecutable();
-                withClosedBreakpoints(() -> dap().startLaunchMainClass(routing, match, plan.cwd(), java, plainFolder));
-            });
-        };
-        // A before-launch step builds the project the user's way, in the project root (review A12); without
-        // one, jdtls builds it (review A2). A plain folder is built by jdtls after any step (review 2, A101).
-        boolean hasStep = cfg.beforeLaunch() != null && !cfg.beforeLaunch().isBlank();
-        Path toolRoot = buildRoot != null ? buildRoot : root;
-        beforeLaunch()
-                .run(
-                        host,
-                        cfg,
-                        tool -> ops.buildExecutable(
-                                tool, toolRoot), // a symbolic step (maven:compile) runs the tree's Maven
-                        root,
-                        plan.jdkEnvironment(),
-                        beforeLaunchConsole(),
-                        () -> {
-                            if (plainFolder) {
-                                looseBuildThenLaunch(routing, launch); // after its own step too: jdtls's output (A101)
-                            } else if (!hasStep) {
-                                buildToolThenLaunch(
-                                        buildRoot, routing, shortName(cfg.mainClass()), plan.jdkEnvironment(), launch);
-                            } else { // the user's step built it; a Gradle launch still runs jdtls's bin/main (A202)
-                                afterToolBuild(
-                                                buildRoot == null ? null : BuildBeforeLaunch.toolAt(buildRoot),
-                                                routing,
-                                                launch)
-                                        .run();
-                            }
-                        });
-    }
-
-    /**
-     * The build before a main-class launch in a Maven or Gradle project: with "Build before Run and Debug" on,
-     * the build tool's compile ({@code test-compile} / {@code compileTestJava} for a class under
-     * {@code src/test}) in the Debug console, through the executable the tasks tree uses, aborting the launch
-     * when it fails (review D2) — the tool is the authority on how the project compiles, where jdtls's own
-     * build knows nothing of annotation processors or generated sources; with the setting off, jdtls's
-     * workspace build as before (review A2). {@code source} decides the scope; {@code env} is the JDK's.
-     */
-    private void buildToolThenLaunch(
-            @Nullable Path buildRoot, Path source, String label, Map<String, String> env, Runnable launch) {
-        if (buildRoot != null
-                && !factsKnown(
-                        "debug-build-before-look",
-                        facts.buildRoot(buildRoot),
-                        () -> buildToolThenLaunch(buildRoot, source, label, env, launch))) {
-            return;
-        }
-        com.editora.build.BuildTool tool = buildRoot != null && com.editora.process.ExecTargets.runsHere(buildRoot)
-                ? BuildBeforeLaunch.toolAt(buildRoot)
-                : null;
-        if (tool == null
-                || buildRoot == null
-                || !BuildBeforeLaunch.wanted(host.settings().isBuildBeforeRun(), "", tool)) {
-            buildThenLaunch(source, launch);
-            return;
-        }
-        List<String> executable = ops.buildExecutable(tool, buildRoot);
-        if (executable == null) {
-            return; // the trust gate said why
-        }
-        List<String> argv =
-                BuildBeforeLaunch.compileArgv(tool, executable, BuildBeforeLaunch.isTestSource(source, buildRoot));
-        beforeLaunch()
-                .run(
-                        host,
-                        new BeforeLaunchStep.Command(label, argv, "status.run.buildBeforeLaunch"),
-                        buildRoot,
-                        env,
-                        beforeLaunchConsole(),
-                        afterToolBuild(tool, source, launch));
-        updateDebugAvailability();
-    }
-
-    /**
-     * Whether a debug launch that loads {@code gate}'s project may start: that tool's tasks tree asks for workspace
-     * trust as it would before its own build ({@link Ops#buildExecutable}), as Run does
-     * ({@code RunCoordinator.trusted}). True when there is no gate. Declining starts nothing; the gate said why.
-     */
-    private boolean trusted(com.editora.run.RunTrust.@Nullable Gate gate) {
-        return gate == null || ops.buildExecutable(gate.tool(), gate.root()) != null;
-    }
-
-    /** {@code launch}, after jdtls's build too when the launch runs jdtls's output, not the tool's (Gradle, A202). */
-    private Runnable afterToolBuild(com.editora.build.@Nullable BuildTool tool, Path source, Runnable launch) {
-        return BuildBeforeLaunch.jdtlsBuildsAfter(tool) ? () -> buildThenLaunch(source, launch) : launch;
-    }
-
-    /**
-     * Debugs a Groovy, Clojure or Scala script configuration: its script, arguments, folder, environment, JDK
-     * and VM arguments (where the tool hands them to its JVM, beside the debugger's agent: Scala CLI's as
-     * {@code --java-opt}), after its before-launch step.
-     * On this machine only: a configuration whose folder is on a remote host runs there but does not debug yet.
-     */
-    private void debugJvmScriptConfig(RunConfiguration cfg) {
-        List<String> args = debugArgs(cfg.args());
-        if (args == null) {
-            return;
-        }
-        Path root = ops.projectRoot(); // its files are read off the FX thread (PERF-01)
-        planOffFx("debug-config-plan", () -> DebugPlanning.readConfig(cfg, root, false, true), a -> {
-            if (a.value() != null) {
-                debugJvmScriptConfig(cfg, args, a.value());
-            }
-        });
-    }
-
-    private void debugJvmScriptConfig(RunConfiguration cfg, List<String> args, DebugPlanning.ConfigRead read) {
-        Path cwd = read.cwd();
-        Path script = read.script();
-        if (cwd == null || script == null) {
-            host.setStatus(tr("status.run.configNeedsTarget", cfg.name()));
-            ops.editConfiguration(cfg.name());
-            return;
-        }
-        if (!com.editora.process.ExecTargets.runsHere(script)) {
-            host.setStatus(tr("debug.error.remoteLanguage"));
-            return;
-        }
-        if (read.scriptMissing()) {
-            host.setStatus(tr("status.run.scriptMissing", cfg.name(), script.toString()));
-            ops.editConfiguration(cfg.name());
-            return;
-        }
-        if (!debugEffectiveFor(cfg.type(), script)) {
-            host.setStatus(unavailableMessage(cfg.type(), script));
-            return;
-        }
-        if (DebugPlanning.envProblem(host, ops::editConfiguration, cfg, read.env(), read.envError())) {
-            return;
-        }
-        java.util.Map<String, String> env = read.env();
-        if (beforeLaunchActive() || s().pendingBuild != null) {
-            host.setStatus(tr("status.run.busy"));
-            return;
-        }
-        if (!factsKnown("debug-jvm-script-look", facts.gate(read.gate()), () -> debugJvmScriptConfig(cfg, args, read))
-                || !trusted(read.gate())) { // the project's trust first, as Run asks it, so "no" starts nothing
-            return;
-        }
-        String jdkHome = cfg.jdkHome().isBlank() ? host.projectScope().jdkHome(host.settings()) : cfg.jdkHome();
-        java.util.Map<String, String> launchEnv = new java.util.LinkedHashMap<>(
-                com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
-        launchEnv.putAll(env);
-        // A Kotlin program is started by `java` itself: its VM arguments go on that command line.
-        boolean program = com.editora.run.ScriptRunCommand.KOTLIN.equals(cfg.type())
-                && com.editora.run.KotlinRun.shape(script.getFileName().toString())
-                        == com.editora.run.KotlinRun.Shape.PROGRAM;
-        java.util.Map<String, String> programEnv = launchEnv;
-        // A Clojure file runs in its project's folder unless the configuration names one.
-        Path folder =
-                cfg.workingDir().isBlank() && com.editora.run.ScriptRunCommand.CLOJURE.equals(cfg.type()) ? null : cwd;
-        String name = cfg.name();
-        s().relaunch = () -> debugConfig(currentConfiguration(name, cfg));
-        beforeLaunch()
-                .run(
-                        host,
-                        cfg,
-                        cwd,
-                        com.editora.run.JdkToolchain.environment(
-                                jdkHome, com.editora.process.ProcessRunner.augmentedPath()),
-                        beforeLaunchConsole(),
-                        () -> {
-                            ops.openToolWindow();
-                            nameSession(cfg.name());
-                            dap().setProgramArgs(args);
-                            if (program || com.editora.run.JvmScriptRun.takesJvmOptionsInArgv(cfg.type())) {
-                                // `java` (a Kotlin program) and Scala CLI take VM arguments on their command line.
-                                dap().setVmArgs(com.editora.run.ProgramArgs.tokenize(cfg.vmArgs()));
-                            } else {
-                                dap().setVmArgs(cfg.vmArgs()
-                                        .strip()); // placed where the tool reads them (JvmScriptRun)
-                            }
-                            dap().setHostJavaExec("");
-                            dap().setEnv(programEnv);
-                            if (program) {
-                                debugKotlinProgram(
-                                        script, cwd, com.editora.run.JdkToolchain.javaExecutable(jdkHome), programEnv);
-                            } else {
-                                withClosedBreakpoints(() -> dap().startJvmScript(script, cfg.type(), folder));
-                            }
-                        });
-    }
-
-    /**
-     * Debugs a C, C++, Go or Rust configuration: its source file exactly as Debug File debugs it — a C or C++ file's
-     * CMake or Make project built, or the file alone compiled, and the program on CodeLLDB (or GDB); a Go file's
-     * package, or the file alone, on Delve; a Rust file's Cargo package built and its program on CodeLLDB — with the
-     * configuration's arguments, its variables in the program's environment, its working directory when it names
-     * one (blank: where Debug File runs the program), after its before-launch step. No caret picks a test: a Go or
-     * Rust test file debugs all its tests. On this machine only.
-     */
-    private void debugCompiledConfig(RunConfiguration cfg) {
-        List<String> args = debugArgs(cfg.args());
-        if (args == null) {
-            return;
-        }
-        Path root = ops.projectRoot(); // its files are read off the FX thread (PERF-01)
-        boolean text = com.editora.run.ScriptRunCommand.GO.equals(cfg.type())
-                || com.editora.run.ScriptRunCommand.RUST.equals(cfg.type());
-        planOffFx("debug-config-plan", () -> DebugPlanning.readConfig(cfg, root, text, false), a -> {
-            if (a.value() != null) {
-                debugCompiledConfig(cfg, args, a.value());
-            }
-        });
-    }
-
-    private void debugCompiledConfig(RunConfiguration cfg, List<String> args, DebugPlanning.ConfigRead read) {
-        Path cwd = read.cwd();
-        Path source = read.script();
-        if (cwd == null || source == null) {
-            host.setStatus(tr("status.run.configNeedsTarget", cfg.name()));
-            ops.editConfiguration(cfg.name());
-            return;
-        }
-        if (!com.editora.process.ExecTargets.runsHere(source)) {
-            host.setStatus(tr("debug.error.remoteLanguage"));
-            return;
-        }
-        if (read.scriptMissing()) {
-            host.setStatus(tr("status.run.scriptMissing", cfg.name(), source.toString()));
-            ops.editConfiguration(cfg.name());
-            return;
-        }
-        boolean ownDir = !cfg.workingDir().isBlank();
-        if (read.dirMissing()) {
-            host.setStatus(tr("status.run.workingDirMissing", cfg.name(), cwd.toString()));
-            ops.editConfiguration(cfg.name());
-            return;
-        }
-        // C and C++ share one adapter (CodeLLDB, or GDB), registered as C++'s.
-        String type = cfg.type();
-        boolean nativeCode =
-                com.editora.run.ScriptRunCommand.C.equals(type) || com.editora.run.ScriptRunCommand.CPP.equals(type);
-        String language = nativeCode ? "cpp" : type;
-        if (!debugEffectiveFor(language, source)) {
-            host.setStatus(unavailableMessage(language, source));
-            return;
-        }
-        if (DebugPlanning.envProblem(host, ops::editConfiguration, cfg, read.env(), read.envError())) {
-            return;
-        }
-        java.util.Map<String, String> env = read.env();
-        if (beforeLaunchActive() || s().pendingBuild != null) {
-            host.setStatus(tr("status.run.busy"));
-            return;
-        }
-        String name = cfg.name();
-        boolean hasStep = !cfg.beforeLaunch().isBlank();
-        LaunchExtras extras = new LaunchExtras(env, ownDir ? cwd : null, hasStep, true);
-        Runnable launch = () -> {
-            ops.openToolWindow();
-            s().announceStart = true;
-            if (com.editora.run.ScriptRunCommand.GO.equals(type)) {
-                debugGo(source, sourceText(source, read.text()), -1, args, extras);
-            } else if (com.editora.run.ScriptRunCommand.RUST.equals(type)) {
-                debugRust(source, sourceText(source, read.text()), -1, args, extras);
-            } else if (com.editora.run.ScriptRunCommand.DART.equals(type)) {
-                dart.debug(source, args, extras.env(), extras.cwd(), true);
-            } else {
-                debugNative(source, com.editora.run.ScriptRunCommand.CPP.equals(type), args, extras);
-            }
-            nameSession(name);
-            // Restart reads the configuration again: an edit made since the first launch applies.
-            s().relaunch = () -> debugConfig(currentConfiguration(name, cfg));
-        };
-        beforeLaunch()
-                .run(
-                        host,
-                        cfg,
-                        cwd,
-                        java.util.Map.of(),
-                        beforeLaunchConsole(),
-                        // after the step has ended: the build that follows is not refused as "still running"
-                        () -> later(launch));
-    }
-
-    /** The text of {@code file}: its open tab's (edits not saved yet count), else what is on disk, else none. */
-    private String sourceText(Path file, String onDisk) {
-        String[] open = new String[1];
-        host.forEachBuffer(b -> {
-            if (open[0] == null && b.getPath() != null && samePath(b.getPath(), file)) {
-                open[0] = b.getContent();
-            }
-        });
-        return open[0] != null ? open[0] : onDisk; // what the plan read (empty: unreadable)
-    }
-
-    /**
-     * Debugs Kotlin program {@code source}: compiled by {@code kotlinc} into its cached jar (in the Debug
-     * console, as a step Stop can end) unless this content's jar is there, then run as {@code java -jar} with the
-     * debugger's agent, in {@code cwd} (null: its folder), on {@code java}. The arguments, VM arguments and
-     * environment are already set on the session.
-     */
-    private void debugKotlinProgram(Path source, @Nullable Path cwd, String java, java.util.Map<String, String> env) {
-        Path config = host.configDir(); // the compiler, the source's hash and the jar cache: off the FX thread
-        planOffFx("debug-kotlin-plan", () -> DebugPlanning.readKotlin(source, config), a -> {
-            var read = a.value();
-            if (a.failure() != null || read == null) {
-                host.setStatus(tr("debug.error.startFailed", a.why()));
-            } else if (read.plan() == null) {
-                host.setStatus(tr(com.editora.run.JvmScriptRun.missingToolKey("kotlin")));
-            } else {
-                debugKotlinPlanned(source, cwd, java, env, read.plan());
-            }
-        });
-    }
-
-    private void debugKotlinPlanned(
-            Path source,
-            @Nullable Path cwd,
-            String java,
-            java.util.Map<String, String> env,
-            com.editora.run.KotlinBuild.Plan plan) {
-        String javaExec = java == null || java.isBlank() ? "java" : java;
-        Runnable start = () -> {
-            ops.openToolWindow();
-            withClosedBreakpoints(() -> dap().startJvmProgram(source, "kotlin", cwd, plan.jar(), javaExec));
-        };
-        if (plan.compile().isEmpty()) {
-            start.run();
-            return;
-        }
-        if (beforeLaunchActive() || s().pendingBuild != null) {
-            host.setStatus(tr("status.run.busy"));
-            return;
-        }
-        beforeLaunch()
-                .run(
-                        host,
-                        new BeforeLaunchStep.Command(
-                                source.getFileName().toString(), plan.compile(), "status.run.kotlinCompile"),
-                        cwd != null ? cwd : source.getParent(),
-                        env,
-                        beforeLaunchConsole(),
-                        () -> planOffFx(
-                                "debug-kotlin-finish",
-                                () -> {
-                                    com.editora.run.KotlinBuild.finish(plan);
-                                    return plan;
-                                },
-                                a -> {
-                                    if (a.failure() != null) {
-                                        host.setStatus(tr("debug.error.startFailed", a.why()));
-                                    } else {
-                                        start.run();
-                                    }
-                                }));
-        updateDebugAvailability();
-    }
-
-    /**
      * The language of {@code file} when Editora's own JVM adapter debugs it (Kotlin, Groovy) — an attach for it
      * goes there, since java-debug never binds a breakpoint outside a {@code .java} file; null otherwise. Pure.
      */
@@ -6836,155 +3947,8 @@ final class DebugCoordinator {
         return fallback;
     }
 
-    private void startMainClassDebug(@Nullable String targetFqn) {
-        startMainClassDebug(host.activeBuffer(), targetFqn);
-    }
-
-    private void startMainClassDebug(@Nullable EditorBuffer b, @Nullable String targetFqn) {
-        if (b != null && b.getLanguage() != null && !"java".equals(b.getLanguage())) {
-            // Said first: "turn on LSP for Java" on a JavaScript file sent the user the wrong way (review D7).
-            host.setStatus(tr("status.debug.needJavaFile"));
-            return;
-        }
-        if (!debugEffectiveFor("java", b == null ? null : b.getPath())) {
-            host.setStatus(unavailableMessage("java", b == null ? null : b.getPath()));
-            return;
-        }
-        if (b == null || b.getPath() == null || !"java".equals(b.getLanguage())) {
-            host.setStatus(tr("status.debug.needJavaFile"));
-            return;
-        }
-        Path routing = b.getPath();
-        if (!factsKnown("debug-main-class-look", facts.mainClass(routing), () -> startMainClassDebug(b, targetFqn))) {
-            return;
-        }
-        Path buildRoot = JavaProjectRoot.find(routing);
-        // A plain-folder project window has main classes too (review A16).
-        Path root = JavaLaunchPrep.projectOf(routing, buildRoot, ops.projectRoot());
-        if (root == null) {
-            host.setStatus(tr("status.debug.noProject"));
-            return;
-        }
-        if (!savedOrThen(javaBuffers(routing, root, true), () -> startMainClassDebug(b, targetFqn))) {
-            return;
-        }
-        boolean plainFolder = buildRoot == null;
-        dap().resolveMainClasses(routing, options -> {
-            if (options.isEmpty()) {
-                host.setStatus(tr("status.debug.noMainClass"));
-                return;
-            }
-            Consumer<DapManager.@Nullable MainClassOption> launch = opt -> {
-                if (opt == null) {
-                    return;
-                }
-                // The configuration for this class is how the project runs it, as for Run ▶ (review D1).
-                RunConfiguration configured = plainFolder || opt.className() == null
-                        ? null
-                        : com.editora.run.JavaLaunchPlan.configurationFor(opt.className(), ops.runConfigurations());
-                if (configured != null) {
-                    debugConfig(configured);
-                    return;
-                }
-                List<String> mainArgs = debugArgs(programArgsForMain(opt, routing));
-                if (mainArgs == null) {
-                    return;
-                }
-                ops.openToolWindow();
-                nameSession(shortName(opt.mainClass()));
-                dap().setProgramArgs(mainArgs);
-                dap().setVmArgs(""); // the gutter/command debug carries no VM args/env
-                dap().setHostJavaExec("");
-                dap().setEnv(configuredJdkEnvironment(buildRoot, null));
-                lsp.ensureManaged(routing); // see above
-                s().relaunch = () -> relaunchFor(routing, again -> startMainClassDebug(again, opt.className()));
-                String javaExec = configuredJavaExecutable(buildRoot, null);
-                Runnable go = () -> withClosedBreakpoints(
-                        () -> dap().startLaunchMainClass(routing, opt, root, javaExec, plainFolder));
-                if (plainFolder) {
-                    looseBuildThenLaunch(routing, go); // built like a loose file (review 2, A101)
-                } else {
-                    Path source =
-                            opt.filePath() == null || opt.filePath().isBlank() ? routing : Path.of(opt.filePath());
-                    buildToolThenLaunch(
-                            buildRoot,
-                            source,
-                            shortName(opt.mainClass()),
-                            configuredJdkEnvironment(buildRoot, null),
-                            go);
-                }
-            };
-            if (targetFqn != null) {
-                DapManager.MainClassOption match =
-                        DebugLaunchArgs.matchConfiguredClass(options, targetFqn, plainFolder);
-                if (match == null) {
-                    host.setStatus(tr("status.debug.noMainClass"));
-                    return;
-                }
-                launch.accept(match);
-            } else if (options.size() == 1) {
-                launch.accept(options.get(0));
-            } else {
-                pickMainClass(options, launch);
-            }
-        });
-    }
-
-    /** Per-main-class program args, reusing the per-file store keyed by the main class's own source file. */
-    private String programArgsForMain(DapManager.MainClassOption opt, Path routing) {
-        if (opt.filePath() == null || opt.filePath().isBlank()) {
-            return "";
-        }
-        try {
-            // jdtls names the file as the machine it runs on does (a remote host's, a container's path).
-            return ops.programArgs(
-                    com.editora.process.ExecTargets.forPath(routing).toPath(opt.filePath()));
-        } catch (RuntimeException e) {
-            return "";
-        }
-    }
-
-    /** The default JDK for a loose file or Maven project; a saved configuration may override it. */
-    private String configuredJdkHome(@Nullable Path root, @Nullable RunConfiguration cfg) {
-        if (root != null && !com.editora.process.ExecTargets.runsHere(root)) {
-            return ""; // a JDK setting names a folder on this machine; the jdtls where it runs resolves its own
-        }
-        // A Gradle (or any other) project runs on its build's own JDK, unless it names one itself (.sdkmanrc, its
-        // settings): its build then compiles with that JDK, and the program must run on it too.
-        if (root != null
-                && !RunOpsHost.isMavenProject(root) // the plan looked at it off the FX thread
-                && !host.projectScope().projectJdk()) {
-            return "";
-        }
-        return com.editora.run.JdkToolchain.effectiveHome(
-                cfg == null ? "" : cfg.jdkHome(), host.projectScope().jdkHome(host.settings()));
-    }
-
-    private String configuredJavaExecutable(@Nullable Path root, @Nullable RunConfiguration cfg) {
-        String selected = com.editora.run.JdkToolchain.javaExecutable(presentJdk(configuredJdkHome(root, cfg)));
-        // No build tool (a plain folder): the Settings JDK, else PATH's java, as Run (review 2, B102).
-        return root == null ? looseJava(selected) : selected;
-    }
-
-    private java.util.Map<String, String> configuredJdkEnvironment(
-            @Nullable Path root, @Nullable RunConfiguration cfg) {
-        String home = configuredJdkHome(root, cfg);
-        return com.editora.run.JdkToolchain.environment(
-                com.editora.run.JdkToolchain.isGone(home) ? "" : home,
-                com.editora.process.ProcessRunner.augmentedPath());
-    }
-
-    /** The simple class name of a fully-qualified main class (for the session label). */
-    private static String shortName(@Nullable String fqn) {
-        if (fqn == null) {
-            return "";
-        }
-        int dot = fqn.lastIndexOf('.');
-        return dot < 0 ? fqn : fqn.substring(dot + 1);
-    }
-
     /** Whether two paths refer to the same file (normalized absolute comparison; null-safe). */
-    private static boolean samePath(@Nullable Path a, @Nullable Path b) {
+    static boolean samePath(@Nullable Path a, @Nullable Path b) {
         return a != null && b != null && PathKeys.sameNormalized(a, b);
     }
 
@@ -7114,1072 +4078,34 @@ final class DebugCoordinator {
     }
 
     /**
-     * Attaches to an already-suspended JVM on {@code host:port} without prompting — used by the Test Results
-     * "Debug Test" action, where Surefire/Gradle forked the test JVM suspended and printed its JDWP port.
-     * {@code anchorFile} names the debug session and anchors breakpoint resolution.
-     */
-    void attachToPort(Path anchorFile, String attachHost, int port) {
-        attachToPort(anchorFile, attachHost, port, null);
-    }
-
-    /**
      * The session a Debug Test run is waiting for its JVM in ({@link #setPendingAttach}): the run's callbacks come
      * from the test runner, while the user may have focused another session meanwhile — its attach goes here.
      */
-    private @Nullable DebugSession attachWaiter;
-
-    /** The session waiting for a test run's JVMs is no longer: the attach was refused there. */
-    private void releaseAttachWaiter() {
-        if (attachWaiter == s()) {
-            attachWaiter = null;
-        }
-    }
-
-    /**
-     * A Debug Test run's JVM: attached in the session waiting for that run ({@link #attachWaiter}), whichever is
-     * focused. Only the test run's own: a run configuration's or Run's JVM attaches where it is started.
-     */
-    void attachTestJvm(Path anchorFile, String attachHost, int port, @Nullable Runnable stopOwner) {
-        DebugSession waiter = attachWaiter;
-        if (waiter != null && sessions.all().contains(waiter)) {
-            inSession(waiter, () -> attachToPort(anchorFile, attachHost, port, stopOwner));
-        } else {
-            attachToPort(anchorFile, attachHost, port, stopOwner);
-        }
-    }
-
-    /**
-     * As above; {@code stopOwner} ends the test or build run that started the JVM: Stop on this session runs
-     * it after detaching, so Stop ends the program as it does every other session's — detaching alone left
-     * the test or app running on (review A4).
-     */
-    void attachToPort(Path anchorFile, String attachHost, int port, @Nullable Runnable stopOwner) {
-        if (anchorFile != null
-                && !factsKnown( // the anchor's project routes the attach: looked at off the FX thread (PERF-01)
-                        "debug-attach-look",
-                        () -> JavaProjectRoot.find(anchorFile),
-                        () -> attachToPort(anchorFile, attachHost, port, stopOwner))) {
-            return;
-        }
-        if (s().relaunch == ONE_SHOT_ATTACH && dap().isActive()) {
-            s().queuedAttaches.add(() -> attachToPort(anchorFile, attachHost, port, stopOwner));
-            host.setStatus(tr("status.debug.attachQueued", port));
-            return;
-        }
-        if (s().pendingAttachStop != null) {
-            DebugSession run = attachWaiter; // the run's next forks still attach here, until the run ends
-            setPendingAttach(null); // the wait is over: from here Stop goes through the session (ownerStop)
-            attachWaiter = run;
-        }
-        s().ownerStop = stopOwner;
-        s().announceStart = stopOwner != null; // "Attaching the debugger on port …" would outlive it (review 2, A105)
-        String jvmLanguage = jvmAdapterLanguage(anchorFile);
-        if (jvmLanguage != null) {
-            // A Kotlin (or Groovy) program of a build: Editora's JVM adapter, which binds by source name.
-            if (!debugEffectiveFor(jvmLanguage, anchorFile)) {
-                host.setStatus(unavailableMessage(jvmLanguage, anchorFile));
-                releaseAttachWaiter(); // refused: the run attaches nothing here
-                return;
-            }
-            ops.openToolWindow();
-            nameSession(anchorFile.getFileName().toString());
-            s().relaunch = ONE_SHOT_ATTACH;
-            withClosedBreakpoints(() -> dap().startJvmAttach(anchorFile, jvmLanguage, attachHost, port));
-            return;
-        }
-        // On a remote anchor's host the adapter attaches from there: "localhost" is the host itself.
-        if (!debugEffectiveFor("java", anchorFile)) {
-            host.setStatus(unavailableMessage("java", anchorFile));
-            releaseAttachWaiter(); // refused: the run attaches nothing here
-            return;
-        }
-        ops.openToolWindow();
-        nameSession(anchorFile == null ? "" : anchorFile.getFileName().toString());
-        // The anchor names the session, but the adapter is started through jdtls, which only answers for a
-        // document it has open: a test class found on disk (Debug Test with no tab for it) has no session.
-        Path routing = attachRouting(anchorFile);
-        lsp.ensureManaged(routing); // an open tab whose server start was deferred
-        s().relaunch = ONE_SHOT_ATTACH; // the run that owns this JVM has to be started again instead
-        withClosedBreakpoints(() -> dap().startAttach(routing, attachHost, port));
-    }
-
-    /** The open Java file an attach anchored at {@code anchor} is routed through — see {@link #attachRouting}. */
-    private @Nullable Path attachRouting(Path anchor) {
-        List<Path> openJava = new ArrayList<>();
-        host.forEachBuffer(b -> {
-            // Java files whose tools run where the anchor's do: the attach goes through that machine's jdtls.
-            if (b.getPath() != null
-                    && "java".equals(b.getLanguage())
-                    && (anchor == null
-                            ? host.isLocalBuffer(b) && com.editora.process.ExecTargets.runsHere(b.getPath())
-                            : com.editora.process.ExecTargets.forPath(b.getPath())
-                                    .id()
-                                    .equals(com.editora.process.ExecTargets.forPath(anchor)
-                                            .id()))) {
-                openJava.add(b.getPath());
-            }
-        });
-        return DebugAttach.attachRouting(anchor, openJava, JavaProjectRoot.find(anchor), host::isLspManaged);
-    }
-
-    /** What Attach offers when this project has attached nowhere yet: the JDWP default. */
-    private static final String DEFAULT_ATTACH_ADDRESS = "localhost:5005";
-
-    /** The JVM adapter language of the active file Attach starts from, or null when it cannot (it says why). */
-    private @Nullable String attachLanguage(@Nullable EditorBuffer b) {
-        if (b == null || b.getPath() == null) {
-            host.setStatus(tr("status.debug.saveFirst"));
-            return null;
-        }
-        String jvmLanguage = jvmAdapterLanguage(b.getPath());
-        if (jvmLanguage == null && !"java".equals(b.getLanguage())) {
-            host.setStatus(tr("status.debug.attachLanguages"));
-            return null;
-        }
-        String adapterLanguage = jvmLanguage != null ? jvmLanguage : "java";
-        if (!debugEffectiveFor(adapterLanguage, b.getPath())) { // a remote file attaches from its host (review A9)
-            host.setStatus(unavailableMessage(adapterLanguage, b.getPath()));
-            return null;
-        }
-        return adapterLanguage;
-    }
-
-    /**
-     * Debug ▸ Attach: picks an address this project attached to before (most recent first), or asks for another,
-     * pre-filled with the most recent one.
-     */
-    void debugAttach() {
-        EditorBuffer b = host.activeBuffer();
-        if (b != null && b.isHtml()) {
-            browser.debugAttachToBrowser(); // a page's scripts run in a browser, not in Node.js
-            return;
-        }
-        if (b != null && "javascript".equals(DapServerRegistry.adapterLanguage(b.getLanguage()))) {
-            attachToNode(b); // review D7: a Node.js inspector, not a JVM
-            return;
-        }
-        String language = attachLanguage(b);
-        if (b == null || language == null) {
-            return;
-        }
-        List<String> earlier = ops.debugAttachTargets();
-        if (earlier.isEmpty()) {
-            promptAttachAddress(b, language, DEFAULT_ATTACH_ADDRESS);
-            return;
-        }
-        List<String> rows = new ArrayList<>(earlier);
-        rows.add(""); // "Another address…"
-        rows.add(PROCESS_ROW); // "A program on this machine…"
-        QuickOpen<String> picker = new QuickOpen<>(
-                tr("dialog.debug.attachTitle"),
-                tr("debug.attach.pickPrompt"),
-                () -> rows,
-                a -> a.isEmpty() ? tr("debug.attach.another") : PROCESS_ROW.equals(a) ? tr("debug.attach.process") : a,
-                a -> "",
-                a -> {
-                    if (a == null) {
-                        return;
-                    }
-                    if (a.isEmpty()) {
-                        promptAttachAddress(b, language, earlier.get(0));
-                    } else if (PROCESS_ROW.equals(a)) {
-                        debugAttachToProcess();
-                    } else {
-                        attachTo(b, language, a);
-                    }
-                });
-        picker.setOverlayHost(host.overlayHost());
-        picker.show(host.window());
-    }
-
-    /** The Attach picker's row that opens Attach to Process (no address can look like it). */
-    private static final String PROCESS_ROW = "\u0000process";
-
-    /**
-     * Debug: Attach to Process — the Java, Node.js and Python programs running on this machine, those listening for
-     * a debugger first (a JVM's JDWP agent, Node's inspector, debugpy's {@code --listen}); picking one attaches the
-     * right debugger to it. One started without debugging says what to start it with.
-     */
-    void debugAttachToProcess() {
-        host.setStatus(tr("status.debug.scanningProcesses"));
-        Thread.ofPlatform().daemon().name("editora-process-scan").start(() -> {
-            List<com.editora.dap.LocalProcesses.Target> found;
-            try {
-                found = com.editora.dap.LocalProcesses.scan();
-            } catch (RuntimeException e) {
-                found = List.of();
-            }
-            List<com.editora.dap.LocalProcesses.Target> targets = found;
-            Platform.runLater(() -> showProcessPicker(targets)); // for the session shown when the scan ends
-        });
-    }
-
-    private void showProcessPicker(List<com.editora.dap.LocalProcesses.Target> targets) {
-        host.setStatus(null);
-        QuickOpen<com.editora.dap.LocalProcesses.Target> picker = new QuickOpen<>(
-                tr("debug.attachProcess.title"),
-                tr("debug.attachProcess.prompt"),
-                () -> targets,
-                t -> tr("debug.attachProcess.row", t.name(), t.pid()),
-                DebugAttach::processDetail,
-                t -> {
-                    if (t != null) {
-                        attachToProcess(t);
-                    }
-                });
-        if (targets.isEmpty()) {
-            picker.setPlaceholder(tr("debug.attachProcess.none"));
-        }
-        picker.setOverlayHost(host.overlayHost());
-        picker.show(host.window());
-    }
-
-    /** Attaches the debugger of {@code t}'s kind to it, or says what to start it with when it is not listening. */
-    void attachToProcess(com.editora.dap.LocalProcesses.Target t) {
-        if (!t.attachable()) {
-            host.setStatus(tr("status.debug.processNotListening", t.name(), DebugAttach.startFlag(t.kind())));
-            return;
-        }
-        switch (t.kind()) {
-            case JAVA -> {
-                EditorBuffer anchor = jvmAnchor();
-                if (anchor == null) {
-                    host.setStatus(tr("status.debug.attachNeedsJavaFile"));
-                    return;
-                }
-                String language = attachLanguage(anchor);
-                if (language != null) {
-                    attachTo(anchor, language, t.address());
-                }
-            }
-            case NODE -> {
-                if (!debugEffectiveFor("javascript")) {
-                    host.setStatus(unavailableMessage("javascript", null));
-                    return;
-                }
-                EditorBuffer b = host.activeBuffer();
-                Path dir = b != null && b.getPath() != null ? b.getPath().getParent() : ops.projectRoot();
-                String label = t.name() + " (" + t.pid() + ")";
-                ops.openToolWindow();
-                nameSession(label);
-                s().relaunch = null; // an attach is re-attached as it was
-                withClosedBreakpoints(() -> dap().startJsAttach(
-                                t.host(),
-                                t.port(),
-                                label,
-                                dir,
-                                List.of(com.editora.dap.JsLaunch.NODE_INTERNALS),
-                                false));
-            }
-            case PYTHON -> {
-                if (!debugSupportEnabled()) {
-                    host.setStatus(tr("statusbar.tip.debugDisabled"));
-                    return; // the program brings its own debugpy: none is needed here
-                }
-                EditorBuffer b = host.activeBuffer();
-                Path active = b != null && "python".equals(b.getLanguage()) ? b.getPath() : null;
-                Path root = ops.projectRoot();
-                Path anchor = active != null ? active : root != null ? root : Path.of(System.getProperty("user.home"));
-                ops.openToolWindow();
-                nameSession(t.name() + " (" + t.pid() + ")");
-                s().relaunch = null;
-                withClosedBreakpoints(() -> dap().startPythonAttach(anchor, t.host(), t.port()));
-            }
-            case GO -> attachToGo(t.pid(), t.name());
-            case RUST -> attachToNative(t.pid(), t.name(), com.editora.dap.DebugLanguages.RUST);
-            case NATIVE -> attachToNative(t.pid(), t.name(), com.editora.dap.DebugLanguages.CPP);
-        }
-    }
-
-    /**
-     * Attaches CodeLLDB to native program {@code pid} of this machine (Rust's or C and C++'s, {@code language}): Stop
-     * detaches and leaves it running. The session is anchored at the active file of that language, else the project.
-     */
-    private void attachToNative(long pid, String name, com.editora.dap.DebugLanguage language) {
-        if (!debugEffectiveFor(language.id())) {
-            host.setStatus(unavailableMessage(language.id(), null));
-            return;
-        }
-        EditorBuffer b = host.activeBuffer();
-        Path active = b != null && language.editorLanguages().contains(b.getLanguage()) ? b.getPath() : null;
-        Path root = ops.projectRoot();
-        Path anchor = active != null ? active : root != null ? root : Path.of(System.getProperty("user.home"));
-        java.util.Map<String, Object> attach = com.editora.dap.NativeBuild.attach(pid, language.id());
-        ops.openToolWindow();
-        nameSession(name + " (" + pid + ")");
-        Runnable start = () -> withClosedBreakpoints(() -> dap().startExternal(anchor, language, attach));
-        s().relaunch = start; // attaches again
-        start.run();
-    }
-
-    /** The file a core dump or its program is chosen with: the open dialog, or what a test answers. */
-    java.util.function.@Nullable Function<javafx.stage.FileChooser, java.io.@Nullable File> chooseFile;
-
-    private @Nullable Path chooseFile(String title, @Nullable Path folder) {
-        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
-        chooser.setTitle(title);
-        ChooserStart.set(chooser, folder); // no look at the disk on the FX thread first (PERF-01, Pauta 6.2.0)
-        java.io.File chosen = ChooserStart.show(
-                chooser, c -> chooseFile != null ? chooseFile.apply(c) : c.showOpenDialog(host.window()));
-        return chosen == null ? null : chosen.toPath();
-    }
-
-    /**
-     * Debug: Open Core Dump… — asks for a core dump, finds the program it is the memory of (a Linux core names it;
-     * otherwise, or when that file is gone, asks for it too), and opens the core in the program's debugger: Delve
-     * for Go, CodeLLDB for C, C++ and Rust. The session shows the crashed thread's stack, the other threads and
-     * their variables; nothing runs ({@link com.editora.dap.CoreDumps}).
-     */
-    void debugOpenCoreDump() {
-        Path root = ops.projectRoot();
-        Path core = chooseFile(tr("debug.core.chooseCore"), root);
-        if (core == null) {
-            return;
-        }
-        host.setStatus(tr("status.debug.core.reading", String.valueOf(core.getFileName())));
-        Thread.ofPlatform().daemon().name("editora-core-dump").start(() -> {
-            Path named = com.editora.dap.CoreDumps.programOf(core);
-            boolean there = named != null && Files.isRegularFile(named); // here, off the FX thread (PERF-01)
-            Platform.runLater(() -> {
-                host.setStatus(null);
-                Path program = there
-                        ? named
-                        : chooseFile(
-                                tr("debug.core.chooseProgram", String.valueOf(core.getFileName())), core.getParent());
-                if (program != null) {
-                    openCoreDump(core, program);
-                }
-            });
-        });
-    }
-
-    /** Opens {@code core}, the memory of {@code program}, in the debugger of the language {@code program} is in. */
-    void openCoreDump(Path core, Path program) {
-        Thread.ofPlatform().daemon().name("editora-core-dump").start(() -> {
-            com.editora.dap.DebugLanguage language = com.editora.dap.CoreDumps.languageOf(program);
-            Platform.runLater(() -> openCoreDump(core, program, language));
-        });
-    }
-
-    private void openCoreDump(Path core, Path program, com.editora.dap.DebugLanguage language) {
-        if (!debugEffectiveFor(language.id())) {
-            host.setStatus(unavailableMessage(language.id(), null));
-            return;
-        }
-        EditorBuffer b = host.activeBuffer();
-        Path active = b != null && language.editorLanguages().contains(b.getLanguage()) ? b.getPath() : null;
-        Path root = ops.projectRoot();
-        Path anchor = active != null ? active : root != null ? root : program;
-        java.util.Map<String, Object> launch = com.editora.dap.CoreDumps.launch(language, program, core);
-        ops.openToolWindow();
-        nameSession(
-                tr("debug.core.session", String.valueOf(core.getFileName()), String.valueOf(program.getFileName())));
-        s().coreProgram = program;
-        Runnable start = () -> withClosedBreakpoints(() -> dap().startExternal(anchor, language, launch));
-        s().relaunch = start; // opens the core again
-        start.run();
-    }
-
-    /**
-     * Attaches Delve to Go program {@code pid} of this machine ({@code dlv attach}): Stop detaches and leaves it running.
-     * The session is anchored at the active Go file, else the project; breakpoints are its Go files'.
-     */
-    private void attachToGo(long pid, String name) {
-        if (!debugEffectiveFor("go")) {
-            host.setStatus(unavailableMessage("go", null));
-            return;
-        }
-        EditorBuffer b = host.activeBuffer();
-        Path active = b != null && "go".equals(b.getLanguage()) ? b.getPath() : null;
-        Path root = ops.projectRoot();
-        Path anchor = active != null ? active : root != null ? root : Path.of(System.getProperty("user.home"));
-        java.util.Map<String, Object> attach = com.editora.dap.GoLaunch.attach(pid);
-        ops.openToolWindow();
-        nameSession(name + " (" + pid + ")");
-        Runnable start = () ->
-                withClosedBreakpoints(() -> dap().startExternal(anchor, com.editora.dap.DebugLanguages.GO, attach));
-        s().relaunch = start; // attaches again
-        start.run();
-    }
-
-    /**
-     * The file a JVM attach is made from: the active one when it is Java (or another JVM language), else the first
-     * such tab — java-debug resolves the attached program's classes through that file's project.
-     */
-    private @Nullable EditorBuffer jvmAnchor() {
-        EditorBuffer active = host.activeBuffer();
-        if (isJvmFile(active)) {
-            return active;
-        }
-        EditorBuffer[] found = new EditorBuffer[1];
-        host.forEachBuffer(b -> {
-            if (found[0] == null && isJvmFile(b)) {
-                found[0] = b;
-            }
-        });
-        return found[0];
-    }
-
-    private static boolean isJvmFile(@Nullable EditorBuffer b) {
-        return b != null
-                && b.getPath() != null
-                && ("java".equals(b.getLanguage()) || jvmAdapterLanguage(b.getPath()) != null);
-    }
-
-    /**
-     * Debug: Reattach — attaches again to the address this project attached to last (Visual Studio's Reattach to
-     * Process), without asking.
-     */
-    void debugReattach() {
-        EditorBuffer b = host.activeBuffer();
-        if (b != null && "javascript".equals(DapServerRegistry.adapterLanguage(b.getLanguage()))) {
-            attachToNode(b);
-            return;
-        }
-        String language = attachLanguage(b);
-        if (b == null || language == null) {
-            return;
-        }
-        List<String> earlier = ops.debugAttachTargets();
-        if (earlier.isEmpty()) {
-            host.setStatus(tr("status.debug.noEarlierAttach"));
-            return;
-        }
-        attachTo(b, language, earlier.get(0));
-    }
-
-    private void promptAttachAddress(EditorBuffer b, String language, String initial) {
-        host.promptText(
-                tr("dialog.debug.attachTitle"),
-                tr("dialog.debug.attachContent"),
-                initial,
-                input -> attachTo(b, language, input == null ? "" : input));
-    }
-
-    /** Attaches the {@code language} adapter to {@code address} ({@code host:port}, or a port on localhost). */
-    private void attachTo(EditorBuffer b, String language, String address) {
-        String jvmLanguage = "java".equals(language) ? null : language;
-        String text = address.trim();
-        String hostName = "localhost";
-        String portStr = text;
-        int colon = text.lastIndexOf(':');
-        if (colon >= 0) {
-            hostName = text.substring(0, colon);
-            portStr = text.substring(colon + 1);
-        }
-        int port;
-        try {
-            port = Integer.parseInt(portStr.trim());
-        } catch (NumberFormatException e) {
-            host.setStatus(tr("status.debug.badAddress", text));
-            return;
-        }
-        Path file = b.getPath(); // checked by attachLanguage; a saved buffer keeps a path
-        if (file == null) {
-            return;
-        }
-        // Offered first next time, in this project (review 2, A109: it was only kept for the window).
-        ops.persistDebugAttachTargets(DebugAttach.rememberAttachTarget(ops.debugAttachTargets(), text));
-        ops.openToolWindow();
-        nameSession(file.getFileName().toString());
-        String attachHost = hostName;
-        s().relaunch = null; // an attach is re-attached as it was
-        if (jvmLanguage != null) {
-            withClosedBreakpoints(() -> dap().startJvmAttach(file, jvmLanguage, attachHost, port));
-        } else {
-            withClosedBreakpoints(() -> dap().startAttach(file, attachHost, port));
-        }
-    }
-
-    /**
-     * Debug ▸ Attach on a JavaScript or TypeScript file: asks for the inspector's {@code host:port} (a Node.js started
-     * with {@code --inspect} or {@code --inspect-brk}) and attaches vscode-js-debug to it, with every breakpoint.
-     * Restart attaches again; Stop detaches.
-     */
-    private void attachToNode(EditorBuffer b) {
-        if (!debugEffectiveFor("javascript")) {
-            host.setStatus(unavailableMessage("javascript", null));
-            return;
-        }
-        String defaultAddress = "localhost:" + com.editora.dap.JsLaunch.DEFAULT_INSPECTOR_PORT;
-        host.promptText(
-                tr("dialog.debug.attachNodeTitle"), tr("dialog.debug.attachNodeContent"), defaultAddress, input -> {
-                    if (input == null) {
-                        return; // cancelled
-                    }
-                    var address = com.editora.dap.JsLaunch.parseAddress(input);
-                    if (address.isEmpty()) {
-                        host.setStatus(tr("status.debug.badAddress", input.strip()));
-                        return;
-                    }
-                    String label = address.get().host() + ":" + address.get().port();
-                    Path dir = b.getPath() != null ? b.getPath().getParent() : ops.projectRoot();
-                    ops.openToolWindow();
-                    nameSession(label);
-                    s().relaunch = null; // an attach is re-attached as it was
-                    withClosedBreakpoints(() -> dap().startJsAttach(
-                                    address.get().host(),
-                                    address.get().port(),
-                                    label,
-                                    dir,
-                                    List.of(com.editora.dap.JsLaunch.NODE_INTERNALS),
-                                    false));
-                });
-    }
-
-    /**
-     * Debug on a {@code node} or {@code npm} run configuration: the same launch Run makes ({@link NodeDebugConfigs}),
-     * under vscode-js-debug. Restart reads the configuration again.
-     */
-    private void debugNodeConfig(RunConfiguration cfg) {
-        if (!debugEffectiveFor("javascript")) {
-            host.setStatus(unavailableMessage("javascript", null));
-            return;
-        }
-        String name = cfg.name();
-        List<String> args;
-        List<String> nodeOptions;
-        try {
-            args = com.editora.run.ProgramArgs.parse(cfg.args());
-        } catch (com.editora.run.ProgramArgs.UnclosedQuoteException e) {
-            host.setStatus(tr("status.run.argsUnclosedQuote", String.valueOf(e.quote())));
-            ops.editConfiguration(name);
-            return;
-        }
-        try {
-            nodeOptions = com.editora.run.ProgramArgs.parse(cfg.interpreterOptions());
-        } catch (com.editora.run.ProgramArgs.UnclosedQuoteException e) {
-            host.setStatus(tr("status.run.optionsUnclosedQuote", name, String.valueOf(e.quote())));
-            ops.editConfiguration(name);
-            return;
-        }
-        Path root = ops.projectRoot(); // its files are read off the FX thread (PERF-01)
-        planOffFx("debug-config-plan", () -> DebugPlanning.readNode(cfg, root), a -> {
-            if (a.value() != null) {
-                debugNodeConfig(cfg, args, nodeOptions, root, a.value());
-            }
-        });
-    }
-
-    private void debugNodeConfig(
-            RunConfiguration cfg,
-            List<String> args,
-            List<String> nodeOptions,
-            @Nullable Path root,
-            DebugPlanning.NodeRead read) {
-        String name = cfg.name();
-        Path cwd = read.cwd();
-        if (cwd == null) {
-            host.setStatus(tr("status.run.configNeedsWorkingDir", name));
-            ops.editConfiguration(name);
-            return;
-        }
-        if (!com.editora.process.ExecTargets.runsHere(cwd)) {
-            host.setStatus(tr("status.debug.nodeConfigRemote", tr("settings.runConfig.type." + cfg.type())));
-            return;
-        }
-        if (DebugPlanning.envProblem(host, ops::editConfiguration, cfg, read.env(), read.envError())) {
-            return;
-        }
-        Map<String, String> env = read.env();
-        s().relaunch = () -> debugConfig(currentConfiguration(name, cfg));
-        if (com.editora.run.ScriptRunCommand.NPM.equals(cfg.type())) {
-            com.editora.run.RunTrust.Gate npmGate = com.editora.run.RunTrust.npm(cwd);
-            if (!factsKnown(
-                            "debug-npm-trust-look",
-                            facts.gate(npmGate),
-                            () -> debugNodeConfig(cfg, args, nodeOptions, root, read))
-                    || !trusted(npmGate)) {
-                return; // a package script runs its pre/post hooks: npm's workspace-trust gate, as Run asks it
-            }
-            // The project's own package manager, as Run and the npm tool window use it.
-            var detected = read.npm();
-            if (detected == null) {
-                return; // not reached: an npm configuration's plan detects its manager
-            }
-            String override = host.settings().getNpmCommand();
-            List<String> manager = com.editora.build.BuildExecutable.resolve(
-                    List.of(),
-                    com.editora.build.NpmPackageManager.overrideApplies(override, detected.manager()) ? override : "",
-                    detected.manager());
-            Map<String, String> npmEnv = new LinkedHashMap<>(NpmRunSupport.environment(System.getenv("NO_COLOR")));
-            npmEnv.putAll(env);
-            startJsProgram(
-                    cwd.resolve("package.json"),
-                    NodeDebugConfigs.forPackageManager(
-                            com.editora.run.ScriptRunCommand.npm(manager, cfg.target(), args), cwd, npmEnv),
-                    name);
-            return;
-        }
-        Path script = read.script();
-        if (script == null || read.scriptMissing()) {
-            host.setStatus(tr("status.run.scriptMissing", name, String.valueOf(script)));
-            ops.editConfiguration(name);
-            return;
-        }
-        NodeRunLauncher.plan(
-                new NodeRunLauncher.Spec(
-                        script,
-                        root,
-                        cfg.interpreter(),
-                        host.settings().getNodePath(),
-                        args,
-                        nodeOptions,
-                        false,
-                        env,
-                        cfg.workingDir().isBlank() ? null : cwd),
-                ready -> {
-                    if (ready.plan().error() != null) {
-                        host.setStatus(tr(ready.plan().error()));
-                        return;
-                    }
-                    var program = NodeDebugConfigs.fromRunPlan(
-                            ready.plan().argv(),
-                            ready.target(), // the compiled .js when that runs instead of a .ts
-                            ready.plan().env(),
-                            ready.dir());
-                    if (program == null) {
-                        host.setStatus(
-                                tr("status.debug.configTypeUnsupported", tr("settings.runConfig.type." + cfg.type())));
-                        return;
-                    }
-                    startJsProgram(script, program, name);
-                });
-    }
-
-    /**
-     * Debug on a local JavaScript or TypeScript file: planned by {@link NodeRunLauncher} as Run plans it, then split
-     * into js-debug's launch ({@link NodeDebugConfigs#fromRunPlan}). A plan js-debug cannot launch — a shebang
-     * naming Deno or Bun — falls back to the file under the resolved Node.js.
-     */
-    private void debugJsFile(Path file, List<String> fileArgs, List<String> nodeArgs) {
-        if (nodeArgs.isEmpty()) { // an Electron app's main-process file starts the app, else Node.js runs the file
-            electron.debugOr(file, fileArgs, () -> debugNodeFile(file, fileArgs, nodeArgs));
-        } else {
-            debugNodeFile(file, fileArgs, nodeArgs);
-        }
-    }
-
-    private void debugNodeFile(Path file, List<String> fileArgs, List<String> nodeArgs) {
-        String problem = com.editora.dap.JsLaunch.launchProblemKey(String.valueOf(file.getFileName()), null);
-        NodeRunLauncher.plan(
-                new NodeRunLauncher.Spec(
-                        file,
-                        ops.projectRoot(),
-                        "",
-                        host.settings().getNodePath(),
-                        fileArgs,
-                        nodeArgs,
-                        false,
-                        Map.of(),
-                        null),
-                ready -> {
-                    String why = ready.plan().error() != null
-                            ? ready.plan().error()
-                            : NodeDebugConfigs.nodeRuns(ready, file) ? problem : null; // JSX/TSX on plain Node
-                    if (why != null) {
-                        host.setStatus(tr(why, "?"));
-                        return;
-                    }
-                    var program = NodeDebugConfigs.fromRunPlan(
-                            ready.plan().argv(), ready.target(), ready.plan().env(), ready.dir());
-                    if (program == null || !NodeDebugConfigs.debuggableRuntime(program.runtime())) {
-                        withClosedBreakpoints(
-                                () -> dap().startLaunch(file, "javascript", this::pickMainClass, "", null));
-                        return;
-                    }
-                    dap().setProgramArgs(List.of());
-                    dap().setJsNodeArgs(List.of());
-                    dap().setJsProgram(program);
-                    withClosedBreakpoints(() -> dap().startLaunch(file, "javascript", this::pickMainClass, "", null));
-                });
-    }
-
-    /** Starts a planned JavaScript session called {@code label}, anchored at {@code anchor} (FX thread). */
-    private void startJsProgram(Path anchor, com.editora.dap.DapManager.@Nullable JsProgram program, String label) {
-        if (program == null) {
-            return;
-        }
-        ops.openToolWindow();
-        nameSession(label);
-        dap().setProgramArgs(List.of());
-        dap().setJsNodeArgs(List.of());
-        dap().setJsProjectRoot(ops.projectRoot());
-        dap().setJsProgram(program);
-        withClosedBreakpoints(() -> dap().startLaunch(anchor, "javascript", this::pickMainClass, "", null));
-    }
+    @Nullable
+    DebugSession attachWaiter;
 
     /** Main-class chooser (QuickOpen) when jdtls finds several. */
-    private void pickMainClass(
+    void pickMainClass(
             List<DapManager.MainClassOption> options, Consumer<DapManager.@Nullable MainClassOption> chosen) {
-        closeMainClassPicker();
-        QuickOpen<DapManager.MainClassOption> picker = new QuickOpen<>(
-                tr("debug.pickMainTitle"),
-                tr("debug.pickMainPrompt"),
-                () -> options,
-                o -> o.mainClass() == null ? "" : o.mainClass(),
-                o -> JavaLaunchPrep.projectLabel(o.projectName()),
-                o -> chosen.accept(o));
-        // Esc ends the launch it was asked for: it used to sit in "Starting…" with nothing left to start.
-        picker.setOnCancelled(() -> chosen.accept(null));
-        picker.setOverlayHost(host.overlayHost());
-        mainClassPicker = picker;
-        picker.show(host.window());
+        javaLaunch.pickMainClass(options, chosen);
     }
 
-    /** The main-class picker last shown, while it may still be open. */
-    private @Nullable QuickOpen<DapManager.MainClassOption> mainClassPicker;
-
-    /** Closes the main-class picker if it is still open; its answer goes to a launch that no longer waits. */
     private void closeMainClassPicker() {
-        if (!shown()) {
-            return; // another session's: the editor shows the focused one's
-        }
-        QuickOpen<DapManager.MainClassOption> picker = mainClassPicker;
-        mainClassPicker = null;
-        if (picker != null && picker.isShown()) {
-            picker.hide();
-        }
+        javaLaunch.closeMainClassPicker();
     }
 
-    /** The main-class picker, while it is open (tests). */
+    // The shared caret-line checks ({@link CaretBreakpoints}), used by many breakpoint commands here.
+    Runnable onSameLine(EditorBuffer b, int line, Runnable command) {
+        return caretBreakpoints.onSameLine(b, line, command);
+    }
+
+    boolean breakpointAllowed(EditorBuffer b, int line, Runnable retry) {
+        return caretBreakpoints.breakpointAllowed(b, line, retry);
+    }
+
     @Nullable
-    QuickOpen<DapManager.MainClassOption> openMainClassPicker() {
-        QuickOpen<DapManager.MainClassOption> picker = mainClassPicker;
-        return picker != null && picker.isShown() ? picker : null;
-    }
-
-    // --- The Project Map follows the debugger (Map gaps round 3, item 2) ---
-
-    /** Told each frame the editor shows, and when nothing is paused any more. */
-    private Consumer<MapDebugStop> onMapStop = stop -> {};
-
-    private MapDebugStop mapStop = MapDebugStop.RUNNING;
-
-    /** Where the Project Map hears of each stop; told the current one at once. */
-    void setOnMapStop(Consumer<MapDebugStop> listener) {
-        onMapStop = listener;
-        listener.accept(mapStop);
-    }
-
-    private void mapStop(MapDebugStop stop) {
-        mapStop = stop;
-        onMapStop.accept(stop);
-    }
-
-    /** What the Map was last told. For tests. */
-    MapDebugStop mapStop() {
-        return mapStop;
-    }
-
-    /**
-     * A frame picked in the Map's call stack: shown as a click on it in the Debug window would show it; when the stack
-     * there no longer lists it (folded runtime frames, a newer stop), the status says so.
-     */
-    void selectFrameFromMap(DapModels.StackFrameInfo frame) {
-        if (dap().state() != DapManager.State.SUSPENDED || s().panel == null) {
-            return;
-        }
-        DapModels.StackFrameInfo shown = s().shownFrame;
-        if (shown != null && shown.id() == frame.id()) {
-            mapStop(mapStop); // the frame on show: the Map shows it again, as it was picked there
-            return;
-        }
-        if (!panel().selectFrameById(frame.id())) {
-            host.setStatus(tr("status.debug.frameNotListed", frame.name()));
-        }
-    }
-
-    // --- Project Map cards' gutters (Map gaps round 3, item 1) ---
-
-    /**
-     * Whether a Map card of {@code file} has a breakpoint strip: debugging is on, and the file's language debugs where
-     * the file's tools run — as its tab's gutter would have one.
-     */
-    boolean cardBreakpointsOn(Path file) {
-        if (!debugSupportEnabled()) {
-            return false;
-        }
-        EditorBuffer open = ops.bufferForPath(file);
-        if (open != null) {
-            return isDebuggableBuffer(open);
-        }
-        String language = com.editora.editor.debug.LineFunctions.languageOf(file);
-        if (language == null || !DapServerRegistry.isDebuggable(language)) {
-            return false;
-        }
-        return Vfs.isLocal(file) && com.editora.process.ExecTargets.runsHere(file)
-                || DapManager.debuggableOnHost(language) && RemoteExec.runsFor(file);
-    }
-
-    /**
-     * {@code file}'s breakpoint glyphs by 0-based line, for a Map card's gutter: its tab's, with what a live session
-     * says of them, or the stored ones of a file with no tab (or a narrowed one).
-     */
-    Map<Integer, MapCardGutter.Breakpoint> cardBreakpoints(Path file) {
-        Map<Integer, MapCardGutter.Breakpoint> out = new java.util.HashMap<>();
-        EditorBuffer open = ops.bufferForPath(file);
-        if (open != null && !open.isNarrowed()) {
-            var manager = open.getBreakpointManager();
-            Set<Integer> lines = new HashSet<>(manager.memberMarks().keySet());
-            manager.snapshot().forEach(bp -> lines.add(bp.line()));
-            for (int line : lines) {
-                if (manager.hasGlyph(line)) {
-                    String tip = manager.glyphTooltip(line);
-                    out.put(line, new MapCardGutter.Breakpoint(manager.glyphClasses(line), tip == null ? "" : tip));
-                }
-            }
-            return out;
-        }
-        String muted = breakpointsMuted ? tr("debug.breakpoint.muted") : null;
-        for (Breakpoint bp : ops.breakpointMap().getOrDefault(key(file), List.of())) {
-            boolean waits = bp.isTriggered() && triggered.labelOf(bp.triggeredBy()) != null;
-            String classes = com.editora.editor.debug.BreakpointManager.kindClasses(bp, waits);
-            if (muted != null) {
-                classes = classes == null ? "muted" : classes + " muted";
-            }
-            String tip = com.editora.editor.debug.BreakpointDescription.tooltip(bp, null, triggered::labelOf);
-            tip = muted == null ? tip : tip == null || tip.isBlank() ? muted : muted + "\n" + tip;
-            out.put(bp.line(), new MapCardGutter.Breakpoint(classes, tip == null ? "" : tip));
-        }
-        return out;
-    }
-
-    /**
-     * A click in a Map card's breakpoint strip on {@code line} of {@code file}, whose text is {@code text}: what a
-     * click in its tab's gutter does — through that tab when it has one — else the stored breakpoints of the file are
-     * changed and a live session is told. A line with no code to stop on gets none, and the status says so.
-     */
-    void toggleCardBreakpoint(Path file, int line, String text) {
-        if (!cardBreakpointsOn(file)) {
-            return;
-        }
-        EditorBuffer open = ops.bufferForPath(file);
-        if (open != null && !open.isNarrowed()) {
-            var manager = open.getBreakpointManager();
-            var mark = manager.isBreakpoint(line) ? null : manager.memberMark(line);
-            if (mark != null) {
-                mark.members().forEach(memberBreakpoints::toggle); // a method breakpoint's mark: removes it
-            } else if (breakpointAllowed(open, line, () -> toggleCardBreakpoint(file, line, text))) {
-                open.toggleBreakpoint(line);
-            }
-            return;
-        }
-        String key = key(file);
-        boolean set = ops.breakpointMap().getOrDefault(key, List.of()).stream().anyMatch(bp -> bp.line() == line);
-        String language = com.editora.editor.debug.LineFunctions.languageOf(file);
-        if (!set && com.editora.dap.CodeLessLines.isCodeLess(text, line, language == null ? "" : language)) {
-            host.setStatus(tr("status.debug.noCodeOnLine"));
-            return;
-        }
-        breakpointsPicker().rewriteClosed(file, key, line, set ? null : Breakpoint.plain(line, lineOf(text, line)));
-    }
-
-    /** Line {@code line} (0-based) of {@code text}, or "" past its end. */
-    static String lineOf(String text, int line) {
-        int start = 0;
-        for (int i = 0; i < line; i++) {
-            int next = text.indexOf('\n', start);
-            if (next < 0) {
-                return "";
-            }
-            start = next + 1;
-        }
-        int end = text.indexOf('\n', start);
-        String found = end < 0 ? text.substring(start) : text.substring(start, end);
-        return found.endsWith("\r") ? found.substring(0, found.length() - 1) : found;
-    }
-
-    /** Toggles a breakpoint on the active buffer's caret line. */
-    void toggleBreakpointAtCaret() {
-        if (s().panel != null && s().panel.disassemblyView().hasFocus()) {
-            s().panel.disassemblyView().toggleSelected(); // the selected instruction's (InstructionBreakpoints)
-            return;
-        }
-        EditorBuffer b = breakpointBuffer();
-        if (b != null) {
-            toggleBreakpointOn(b, b.getFocusedArea().getCurrentParagraph());
-        }
-    }
-
-    /** Toggles a breakpoint on {@code line}, the caret's when pressed: a check landing later acts on that line. */
-    private void toggleBreakpointOn(EditorBuffer b, int line) {
-        if (!b.isDisposed() && breakpointAllowed(b, line, () -> toggleBreakpointOn(b, line))) {
-            b.toggleBreakpoint(line);
-        }
-    }
-
-    /** {@code command} asked again once a check lands, only while the caret is still on {@code line}. */
-    private Runnable onSameLine(EditorBuffer b, int line, Runnable command) {
-        return () -> { // the command reads the active tab: still the one it was given, its caret on the same line
-            if (!b.isDisposed() && breakpointBuffer() == b && b.getFocusedArea().getCurrentParagraph() == line) {
-                command.run();
-            }
-        };
-    }
-
-    /**
-     * Whether a breakpoint may go on {@code line} of {@code b}: anywhere a debugger can stop, which in a {@code .http}
-     * file is only a script line (adl, 2026-10-16) — else says so. Removing one is always allowed.
-     */
-    private boolean breakpointAllowed(EditorBuffer b, int line, Runnable retry) {
-        if (b.getBreakpointManager().isBreakpoint(line)) {
-            return true;
-        }
-        if (b.isHttpFile()) {
-            com.editora.http.HttpScriptLines.Map scripts = b.httpScriptMap();
-            if (scripts == null) {
-                b.whenHttpScriptMap(retry); // its script lines are parsed off FX: the command goes on when they land
-                return false;
-            }
-            if (scripts.isScriptLine(line)) {
-                return true;
-            }
-            host.setStatus(tr("status.debug.httpScriptLinesOnly"));
-            return false;
-        }
-        // B8: a blank or comment-only line has no code to stop on. java-debug even called such a breakpoint
-        // verified, and it never stopped.
-        String language = b.getLanguage(); // the text is scanned off the FX thread (PERF-01): asked again once known
-        var codeLess = scan(b, "codeLess:" + line, t -> CodeLessLines.isCodeLess(t, line, language), retry);
-        if (codeLess == null) {
-            return false;
-        }
-        if (Boolean.TRUE.equals(codeLess.value())) {
-            host.setStatus(tr("status.debug.noCodeOnLine"));
-            return false;
-        }
-        return true;
-    }
-
-    /**
-     * The active buffer if breakpoints can be set in it, else {@code null} after saying why. A file with no
-     * debug adapter has no breakpoint gutter: a breakpoint toggled there by key was invisible, could only be
-     * removed by pressing the key again on the same line, and was still sent to the adapter in every session.
-     */
-    private @Nullable EditorBuffer breakpointBuffer() {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null) {
-            return null;
-        }
-        if (!debugSupportEnabled()) {
-            host.setStatus(tr("statusbar.tip.debugDisabled"));
-            return null;
-        }
-        if (!isDebuggableBuffer(b)) {
-            host.setStatus(tr("status.debug.noBreakpointsHere"));
-            return null;
-        }
-        return b;
-    }
-
-    /**
-     * Edits the caret line's breakpoint (creating one if absent): its condition, its log message — which
-     * makes it a logpoint: the adapter logs and does not suspend — and whether it is enabled. All three
-     * already persist, re-anchor and reach the adapter; this form is what reaches them.
-     */
-    void editBreakpointAtCaret() {
-        EditorBuffer b = breakpointBuffer();
-        if (b == null) {
-            return;
-        }
-        int line = b.getFocusedArea().getCurrentParagraph();
-        if (!breakpointAllowed(b, line, onSameLine(b, line, this::editBreakpointAtCaret))) {
-            return;
-        }
-        BreakpointEditForm.show(
-                host.overlayHost(),
-                b,
-                line,
-                completionSource(false),
-                completionSource(true),
-                groups,
-                triggered,
-                s().marks.labels());
-    }
-
-    /**
-     * Debug: Add Triggered Breakpoint — a breakpoint on the caret line that waits, in each debug session, until the
-     * breakpoint chosen from a list is hit (VS Code's Add Triggered Breakpoint, IntelliJ's "Disable until hitting the
-     * following breakpoint"). On a line with a breakpoint it makes that one wait; choosing the one it waits for
-     * already makes it wait for none.
-     */
-    void addTriggeredBreakpointAtCaret() {
-        EditorBuffer b = breakpointBuffer();
-        if (b == null || b.getPath() == null) {
-            return;
-        }
-        int line = b.getFocusedArea().getCurrentParagraph();
-        if (!breakpointAllowed(b, line, onSameLine(b, line, this::addTriggeredBreakpointAtCaret))) {
-            return;
-        }
-        var mgr = b.getBreakpointManager();
-        Breakpoint existing = mgr.get(line);
-        String selfId = existing == null ? "" : existing.id();
-        String waitsFor = existing == null ? "" : existing.triggeredBy();
-        List<BreakpointsPicker.Entry> choices = TriggeredBreakpoints.choices(
-                key(b.getPath()), line + mgr.regionFirstLine(), selfId, triggered.entries());
-        if (choices.isEmpty()) {
-            host.setStatus(tr("status.debug.noTriggerChoices"));
-            return;
-        }
-        QuickOpen<BreakpointsPicker.Entry> picker = new QuickOpen<>(
-                tr("command.debug.addTriggeredBreakpoint"),
-                tr("debug.triggered.prompt", line + 1),
-                () -> choices,
-                e -> (!waitsFor.isEmpty() && waitsFor.equals(e.breakpoint().id()) ? "✓ " : "    ")
-                        + BreakpointsPicker.label(e),
-                e -> String.join("  ·  ", com.editora.editor.debug.BreakpointDescription.lines(e.breakpoint())),
-                e -> {
-                    if (e != null) {
-                        linkTriggered(b, line, e);
-                    }
-                });
-        picker.setOverlayHost(host.overlayHost());
-        picker.show(host.window());
-    }
-
-    /**
-     * Makes the breakpoint on {@code line} of {@code b} (setting one when there is none) wait for {@code trigger}'s,
-     * or — when it waits for that one already — for none; says which.
-     */
-    void linkTriggered(EditorBuffer b, int line, BreakpointsPicker.Entry trigger) {
-        var mgr = b.getBreakpointManager();
-        if (!mgr.isBreakpoint(line)) {
-            b.toggleBreakpoint(line);
-        }
-        Breakpoint bp = mgr.get(line);
-        if (bp == null) {
-            return;
-        }
-        if (bp.isTriggered() && bp.triggeredBy().equals(trigger.breakpoint().id())) {
-            triggered.link(b, line, null);
-            host.setStatus(tr("status.debug.triggeredRemoved", line + 1));
-            return;
-        }
-        triggered.link(b, line, trigger);
-        host.setStatus(tr("status.debug.triggeredAdded", line + 1, TriggeredBreakpoints.place(trigger)));
-    }
-
-    /**
-     * Debug: Add Logpoint — asks for the message to log on the caret line and makes that line a logpoint: the
-     * adapter logs the message each time the line runs and the program never suspends (VS Code's Add Logpoint,
-     * IntelliJ's Shift+click in the gutter). On a line that already has a breakpoint it edits that one's message,
-     * keeping its condition and hit count.
-     */
-    void addLogpointAtCaret() {
-        EditorBuffer b = breakpointBuffer();
-        if (b != null) {
-            addLogpoint(b, b.getFocusedArea().getCurrentParagraph());
-        }
-    }
-
-    /** {@link #addLogpointAtCaret} for {@code line} of {@code b} — also what a Shift+click in the gutter runs. */
-    void addLogpoint(EditorBuffer b, int line) {
-        if (!breakpointAllowed(b, line, () -> addLogpoint(b, line))) {
-            return;
-        }
-        BreakpointEditForm.showLogpoint(host.overlayHost(), b, line, completionSource(true), host::setStatus);
+    EditorBuffer breakpointBuffer() {
+        return caretBreakpoints.breakpointBuffer();
     }
 
     /**
@@ -8274,7 +4200,7 @@ final class DebugCoordinator {
         if (ops.debugBreakpointsMuted() && !breakpointsMuted) {
             breakpointsMuted = true; // Mute Breakpoints is kept per project, like the exception choices
             dap().setExceptionsMuted(true);
-            showBreakpointsMuted();
+            breakpointMenus.showBreakpointsMuted();
         }
         memberBreakpoints.push(); // the method breakpoints and field watchpoints this project keeps
         pushExceptionBreakpoints(); // and the exception filters its exception breakpoints need
@@ -8405,7 +4331,8 @@ final class DebugCoordinator {
         buffer.setGutterLogpointClick((b, line) -> {
             if (b.getBreakpointManager().isBreakpoint(line)
                     || b.getBreakpointManager().memberMark(line) == null) {
-                addLogpoint(b, line); // IntelliJ's Shift+click: a breakpoint that logs and does not suspend
+                // IntelliJ's Shift+click: a breakpoint that logs and does not suspend
+                caretBreakpoints.addLogpoint(b, line);
             }
         });
         buffer.setGutterRunToHere(new EditorBuffer.GutterRunToHere() {
@@ -8432,7 +4359,8 @@ final class DebugCoordinator {
         buffer.setOnBreakpointsChanged(() -> onBreakpointsChanged(buffer));
         // Hover value tooltip while suspended: evaluate the hovered identifier in the selected frame.
         buffer.setDebugHoverEvaluator((expr, cb) -> dap().evaluateHover(expr, s().debugFrameId, cb));
-        buffer.setDebugValuePresenter(valuePresenter); // an object's fields unfold in the popup (follow-up 6)
+        buffer.setDebugValuePresenter(
+                valuePopups.valuePresenter); // an object's fields unfold in the popup (follow-up 6)
         // "Debug File" beside "Run File" in the editor's menu: Debug was only in the Run menu and the palette.
         // Through F5's check: a live launch of another file is replaced only after asking (review 3, C202).
         // Not while this very file is being debugged or built for it, as in editorMenuItems (review 2 C110): a
@@ -8442,8 +4370,9 @@ final class DebugCoordinator {
                 () -> debugSupportEnabled()
                         && isDebuggableBuffer(buffer)
                         && (buffer.getPath() == null || !launchLiveFor(buffer.getPath())));
-        buffer.setGutterBreakpointMenu(this::showGutterMenu); // right-click a breakpoint: Edit / Disable / Remove
-        buffer.setDebugMenuContributor(() -> editorMenuItems(buffer));
+        buffer.setGutterBreakpointMenu(
+                breakpointMenus::showGutterMenu); // right-click a breakpoint: Edit / Disable / Remove
+        buffer.setDebugMenuContributor(() -> breakpointMenus.editorMenuItems(buffer));
     }
 
     // --- type renderers: a value of a type shown as the user's expressions say (TypeRendering) ----------
@@ -8471,7 +4400,7 @@ final class DebugCoordinator {
      * value's own (Editora's reference), else the debugger's — {@code filter}, {@code start} and {@code count} page
      * them as DAP does ({@code null} and 0: all) — each with its type's renderer applied.
      */
-    private void renderedVariables(
+    void renderedVariables(
             int ref, @Nullable String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
         TypeRendering rendering = rendering();
         if (rendering.owns(ref)) {
@@ -8492,7 +4421,7 @@ final class DebugCoordinator {
      * value when its type has a renderer — only when evaluating it again cannot change anything (no call, no
      * assignment): the renderer's expressions are the value's expression with more after it.
      */
-    private void renderedEvaluate(String expression, int frameId, String context, Consumer<DapModels.EvalResult> cb) {
+    void renderedEvaluate(String expression, int frameId, String context, Consumer<DapModels.EvalResult> cb) {
         TypeRendering rendering = rendering();
         dap().evaluateFull(expression, frameId, context, r -> {
             TypeRenderer renderer = r == null || r.failed() || !TypeRenderers.safeToRepeat(expression)
@@ -8579,98 +4508,7 @@ final class DebugCoordinator {
         panel().showThreadsView(true);
     }
 
-    // --- Thread Dump: every thread's stack at one moment (IntelliJ's Get Thread Dump) -----------------
-
-    /** The View as Table windows open: one per collection asked for. */
-    private final List<DebugTableWindow> tableWindows = new ArrayList<>();
-
-    /**
-     * View as Table: opens a window showing the collection {@code ref} (named {@code name}, given by {@code
-     * expression}) as a table of its elements and their fields ({@link DebugTableWindow}).
-     */
-    void viewAsTable(String name, String expression, int ref, int named, int indexed) {
-        tableWindow().show(host.window(), name, expression, ref, named, indexed);
-    }
-
-    /**
-     * View as DataFrame / View as Array: opens a window showing the pandas DataFrame or Series, or numpy array, {@code
-     * expression} (named {@code name}) of the Python program, as a table of its rows ({@link PythonDataTable}).
-     */
-    void viewAsData(String name, String expression) {
-        tableWindow().showData(host.window(), name, expression);
-    }
-
-    /** A new View as Table window, of the session shown. */
-    private DebugTableWindow tableWindow() {
-        DebugSession session = s();
-        DebugTableWindow window = new DebugTableWindow(new DebugTableWindow.Actions() {
-            @Override
-            public void children(
-                    int ref, @Nullable String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
-                if (session != s()) {
-                    cb.accept(List.of()); // another session is shown: this one's references are not its
-                    return;
-                }
-                renderedVariables(ref, filter, start, count, cb);
-            }
-
-            @Override
-            public void openText(String title, String text, String language) {
-                ops.openReadOnlyDoc(title, text, language);
-            }
-
-            @Override
-            public void evaluate(String expression, Consumer<DapModels.@Nullable EvalResult> cb) {
-                if (!canRefresh()) {
-                    cb.accept(null);
-                    return;
-                }
-                renderedEvaluate(expression, panel().selectedFrameId(), "watch", cb::accept);
-            }
-
-            @Override
-            public void evaluateData(String expression, Consumer<DapModels.@Nullable EvalResult> cb) {
-                if (!canRefresh()) {
-                    cb.accept(null);
-                    return;
-                }
-                // debugpy's clipboard context: the helper's answer whole, where the others cut a string at 1,000.
-                dap().evaluateFull(expression, panel().selectedFrameId(), "clipboard", cb::accept);
-            }
-
-            @Override
-            public boolean canRefresh() {
-                return session == s() && dap().state() == DapManager.State.SUSPENDED;
-            }
-        });
-        tableWindows.removeIf(w -> !w.isShowing());
-        tableWindows.add(window);
-        return window;
-    }
-
-    /** The View as Table windows open (tests). */
-    List<DebugTableWindow> tableWindows() {
-        tableWindows.removeIf(w -> !w.isShowing());
-        return List.copyOf(tableWindows);
-    }
-
-    /**
-     * Debug: Thread Dump ({@code debug.threadDump}): every thread of the program with its call stack, in the Thread
-     * Dump window. Suspended, the dump is of the stop. Running, the program is paused for it and goes on after, the
-     * editor left where it is — the way to see what a program that hangs is doing.
-     */
-    void threadDump() {
-        stacks.take(false);
-    }
-
-    /**
-     * Debug: Parallel Stacks ({@code debug.parallelStacks}): every thread's call stack merged into one tree, in the
-     * Parallel Stacks window ({@link ParallelStacks}). The stacks are taken as Thread Dump takes them: a running
-     * program is paused for them and goes on after.
-     */
-    void parallelStacks() {
-        stacks.take(true);
-    }
+    // --- reverse debugging (Step Back, Reverse Continue, Record Execution), values fetched again ----------
 
     /**
      * Debug: Step Back ({@code debug.stepBack}): the program goes back over the last statement — where it can run
@@ -8697,35 +4535,6 @@ final class DebugCoordinator {
                         : tr(manager.isRecording() ? "status.debug.recordingOn" : "status.debug.recordingOff")));
     }
 
-    /** Says which exception the stop is on: the Debug window's state line, the exception card and the status bar. */
-    void showExceptionInfo(DapModels.ExceptionInfo info) {
-        // Which exception: the one thing an exception stop has to say, and the stop event does not.
-        panel().setStoppedException(DebugFeedback.exceptionSummary(info, true));
-        panel().setExceptionInfo(info);
-        s().stopException = info;
-        showExceptionCard(false); // under the line that threw, when it is the one shown
-        host.setStatus(tr("status.debug.stoppedOnException", DebugFeedback.exceptionSummary(info, false)));
-    }
-
-    /** The Parallel Stacks window, when one was opened (test read). */
-    @Nullable
-    DebugParallelStacksWindow parallelStacksWindowIfOpen() {
-        return stacks.parallelStacksWindow;
-    }
-
-    /** The Thread Dump window, when one was opened (test read). */
-    @Nullable
-    DebugThreadDumpWindow threadDumpWindowIfOpen() {
-        return stacks.threadDumpWindow;
-    }
-
-    /** Focuses the evaluate field at the top of Variables ({@code debug.focusEvaluate}). */
-    void focusEvaluate() {
-        ops.openToolWindow();
-        panel().focusEvaluate();
-        later(panel()::focusEvaluate); // a window opened just now is laid out on the next pulse
-    }
-
     /**
      * Fetches the selected frame's variables, watches and inline values again: an evaluation or Set Value may have
      * changed them (B205). False when there is nothing to fetch them from.
@@ -8742,118 +4551,6 @@ final class DebugCoordinator {
             applyInlineValues(frame, scopes);
         });
         return true;
-    }
-
-    // --- the Evaluate window ------------------------------------------------------------------------------
-
-    /** The expressions evaluated in this window's evaluate fields, oldest first: one list, walked by every field. */
-    private DebugPanelText.@Nullable History evaluateHistory;
-
-    /** Every Evaluate window opened; a closed one is reused by the next Evaluate. */
-    private final List<DebugEvaluateWindow> evaluateWindows = new ArrayList<>();
-
-    DebugPanelText.History evaluateHistory() {
-        if (evaluateHistory == null) {
-            evaluateHistory = new DebugPanelText.History();
-            ops.debugEvaluateHistory().forEach(evaluateHistory::add);
-        }
-        return evaluateHistory;
-    }
-
-    /**
-     * Debug: Evaluate Expression ({@code debug.evaluate}, IntelliJ's Alt+F8): opens an Evaluate window, its
-     * expression the editor's selection (one line) or the expression at the caret. Another Evaluate while one is open
-     * opens another, as IntelliJ does — unless the open one was opened for the same text.
-     */
-    void evaluateExpression() {
-        EditorBuffer b = host.activeBuffer();
-        String initial = null;
-        if (b != null) {
-            var area = b.getFocusedArea();
-            String selected = area.getSelectedText();
-            initial = selected != null && !selected.isBlank()
-                    ? selected.strip()
-                    : com.editora.editor.debug.DebugExpressions.atCaret(area);
-        }
-        openEvaluateWindow(initial);
-    }
-
-    /** Opens an Evaluate window with {@code initial} as its expression (null: the field as it was). */
-    DebugEvaluateWindow openEvaluateWindow(@Nullable String initial) {
-        javafx.stage.Window owner = host.window();
-        DebugEvaluateWindow window = null;
-        int open = 0;
-        for (DebugEvaluateWindow w : evaluateWindows) {
-            if (w.isShowing()) {
-                open++;
-            } else if (window == null) {
-                window = w;
-            }
-        }
-        if (window == null) {
-            window = new DebugEvaluateWindow(evaluateSource(), evaluateHistory());
-            evaluateWindows.add(window);
-        }
-        window.setPlainValueColours(plainValueColours());
-        window.show(owner, initial, s().panel == null ? "" : panel().expressionLanguageFile(), open * UiZoom.px(28.0));
-        return window;
-    }
-
-    /** The Evaluate windows (tests). */
-    List<DebugEvaluateWindow> evaluateWindows() {
-        return List.copyOf(evaluateWindows);
-    }
-
-    private DebugEvaluateWindow.Source evaluateSource() {
-        return new DebugEvaluateWindow.Source() {
-            @Override
-            public boolean paused() {
-                return dap().state() == DapManager.State.SUSPENDED;
-            }
-
-            @Override
-            public String frameName() {
-                DapModels.StackFrameInfo frame = s().shownFrame;
-                if (frame == null) {
-                    return "";
-                }
-                String where = frame.file() == null
-                        ? ""
-                        : (frame.line() >= 0 ? ":" + (frame.line() + 1) : "") + ", "
-                                + DebugValues.sourceName(frame.file());
-                return DebugPanelText.frameName(frame.name()) + where;
-            }
-
-            @Override
-            public void evaluate(String expression, Consumer<DapModels.EvalResult> cb) {
-                renderedEvaluate(expression, s().debugFrameId, "repl", cb);
-            }
-
-            @Override
-            public void complete(String text, int caret, Consumer<List<DapModels.CompletionTarget>> cb) {
-                dap().completions(s().debugFrameId, text, caret, cb);
-            }
-
-            @Override
-            public void addWatch(String expression) {
-                ops.openToolWindow();
-                panel().addWatchExpression(expression);
-            }
-
-            @Override
-            public void evaluated(boolean succeeded) {
-                ops.persistDebugEvaluateHistory(evaluateHistory().entries());
-                if (succeeded) {
-                    refreshStopValues(); // what it changed shows in Variables, the watches and the inline values
-                }
-            }
-
-            @Override
-            public void children(
-                    int ref, @Nullable String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
-                renderedVariables(ref, filter, start, count, cb);
-            }
-        };
     }
 
     /**
@@ -8876,308 +4573,6 @@ final class DebugCoordinator {
 
     void setSelectedValue() {
         panel().setSelectedValue();
-    }
-
-    // --- Java code changes and frame control: hot code replace, restart frame, smart step into -----------
-
-    private DapManager.CodeReplaceMode codeReplaceMode() {
-        return DapManager.CodeReplaceMode.of(host.settings().getDebugHotCodeReplace());
-    }
-
-    private static boolean isJavaSource(@Nullable Path file) {
-        return file != null
-                && file.getFileName() != null
-                && file.getFileName()
-                        .toString()
-                        .toLowerCase(java.util.Locale.ROOT)
-                        .endsWith(".java");
-    }
-
-    /**
-     * A user save (not an autosave) reached the language server. During a Java session in {@code auto} mode
-     * the change goes into the running program at once and the console says what happened; in {@code manual}
-     * mode the status bar says how to apply it. Every Java session that can take it, not only the one shown (a
-     * client and its server). FX thread.
-     */
-    void sourceSaved(EditorBuffer buffer) {
-        Path file = buffer == null ? null : buffer.getPath();
-        if (!isJavaSource(file)) {
-            return;
-        }
-        forEachSession(() -> {
-            if (!dap().canReplaceCode()) {
-                return;
-            }
-            s().savedSinceReplace.add(file);
-            switch (codeReplaceMode()) {
-                case AUTO -> requestCodeReplace(file, false);
-                case MANUAL -> host.setStatus(tr("debug.hcr.manualHint"));
-                case OFF -> {
-                    // the user chose to keep the running code as it is
-                }
-            }
-        });
-    }
-
-    /**
-     * A session started or ended: a replace still running belongs to the one before, and so do the saves it has
-     * not applied. Left set, the running flag held every later save and Apply Code Changes of the window, which
-     * then did nothing at all (review D101).
-     */
-    private void forgetCodeReplace(DapManager.State state) {
-        if (state != DapManager.State.STARTING && state != DapManager.State.INACTIVE) {
-            return;
-        }
-        s().codeReplaceSession++;
-        s().codeReplaceRunning = false;
-        s().codeReplaceAgain = null;
-        s().savedSinceReplace.clear();
-        s().lastCodeReplaceError = "";
-    }
-
-    /**
-     * A reasonless refusal said with its likely reason ({@link CodeReplaceJdk}): the program's Java (its runtime
-     * chip) and the one jdtls builds a file without a build tool for; null when that cannot be told.
-     */
-    private @Nullable String explainCodeReplace(@Nullable String message) {
-        Path file = dap().sessionFile();
-        if (!CodeReplaceJdk.reasonless(message) || file == null) {
-            return null;
-        }
-        if (!com.editora.perf.Looked.allKnown(() -> JavaProjectRoot.find(file))) {
-            JavaProjectRoot.warmLater(file); // not looked at yet: the reason is told once it is (PERF-01)
-            return null;
-        }
-        if (JavaProjectRoot.find(file) != null) {
-            return null; // a build project is compiled for its own release, not jdtls's default
-        }
-        return CodeReplaceJdk.explain(
-                message, CodeReplaceJdk.programMajor(panel().runtimeText()), lspManager.javaDefaultMajor(file));
-    }
-
-    /** A Java session started running: let jdtls build what it will compare saved changes with. */
-    private void primeCodeReplace(DapManager.State state) {
-        if (state == DapManager.State.RUNNING && codeReplaceMode() != DapManager.CodeReplaceMode.OFF) {
-            dap().primeCodeReplace();
-        }
-    }
-
-    /** {@code debug.applyCodeChanges}: loads what is saved into the running program (auto and manual modes). */
-    void applyCodeChanges() {
-        if (!dap().canReplaceCode()) {
-            host.setStatus(tr("debug.hcr.noSession"));
-            return;
-        }
-        if (codeReplaceMode() == DapManager.CodeReplaceMode.OFF) {
-            host.setStatus(tr("debug.hcr.off"));
-            return;
-        }
-        EditorBuffer active = host.activeBuffer();
-        Path file = active != null && isJavaSource(active.getPath()) ? active.getPath() : dap().sessionFile();
-        if (active != null && active.isDirty() && isJavaSource(active.getPath())) {
-            panel().appendNotice(tr("debug.hcr.unsavedNote")); // only saved files are compiled
-        }
-        requestCodeReplace(file, true);
-    }
-
-    /** Starts a replace, or folds this request into the one running (one more round once it ends). */
-    private void requestCodeReplace(@Nullable Path file, boolean asked) {
-        if (s().codeReplaceRunning) {
-            s().codeReplaceAgain = file;
-            return;
-        }
-        s().codeReplaceRunning = true;
-        s().lastCodeReplaceError = "";
-        Set<Path> covered = new LinkedHashSet<>(s().savedSinceReplace);
-        long session = s().codeReplaceSession;
-        host.setStatus(tr("debug.hcr.applying"));
-        dap().applyCodeChanges(
-                        file,
-                        asThisSession(
-                                outcome -> { // answered as the session that asked
-                                    if (session != s().codeReplaceSession) {
-                                        return; // its session ended meanwhile, which reset all of this (review D101)
-                                    }
-                                    s().codeReplaceRunning = false;
-                                    reportCodeReplace(outcome, covered, asked);
-                                    Path again = s().codeReplaceAgain;
-                                    s().codeReplaceAgain = null;
-                                    if (again != null && dap().canReplaceCode()) {
-                                        requestCodeReplace(again, false);
-                                    }
-                                }));
-    }
-
-    /** Says how a replace ended: status bar always, Debug console for anything the user must act on. */
-    private void reportCodeReplace(DapManager.CodeReplaceOutcome outcome, Set<Path> covered, boolean asked) {
-        switch (outcome.result()) {
-            case APPLIED -> {
-                String names = CodeReplaceText.appliedNames(outcome.classes(), covered);
-                panel().appendNotice(tr("debug.hcr.applied", names));
-                if (outcome.message() == null || outcome.message().isEmpty()) {
-                    host.setStatus(tr("debug.hcr.appliedStatus", names));
-                } else {
-                    // Methods that were running keep their old code (java-debug's "obsolete methods"): say how to
-                    // run one again with the new code (review 2, B103).
-                    explainOldCode();
-                    host.setStatus(tr("debug.hcr.appliedOldStatus", names));
-                }
-                s().savedSinceReplace.removeAll(covered);
-                codeReplaced(covered);
-            }
-            case NOTHING_CHANGED -> {
-                s().savedSinceReplace.removeAll(covered); // the program already runs what these files say
-                codeReplaced(covered);
-                host.setStatus(tr(asked ? "debug.hcr.nothing" : "debug.hcr.nothingQuiet"));
-            }
-            case COMPILE_ERRORS -> {
-                panel().appendNotice(tr("debug.hcr.compileErrors"));
-                host.setStatus(tr("debug.hcr.compileErrors"));
-            }
-            case JAVAC_CLASSES -> {
-                panel().appendNotice(tr("debug.hcr.javacClasses"));
-                host.setStatus(tr("debug.hcr.javacClassesStatus"));
-            }
-            case FAILED -> {
-                String explained = explainCodeReplace(outcome.message());
-                if (explained != null && !explained.equals(s().lastCodeReplaceError)) {
-                    panel().appendNotice(tr("debug.hcr.notice", explained));
-                } else if (explained != null
-                        || CodeReplaceText.saidAlready(outcome.message(), s().lastCodeReplaceError)) {
-                    panel().appendNotice(tr("debug.hcr.restartNeeded")); // the adapter's event gave the reason
-                } else {
-                    panel().appendNotice(tr("debug.hcr.failed", outcome.message()));
-                }
-                host.setStatus(tr("debug.hcr.failedStatus"));
-            }
-            case BUILD_FAILED -> {
-                panel().appendNotice(tr("debug.hcr.buildFailed"));
-                host.setStatus(tr("debug.hcr.buildFailed"));
-            }
-            case NO_SESSION -> host.setStatus(tr("debug.hcr.noSession"));
-        }
-    }
-
-    /**
-     * Says how to run a method left on its old code again — Restart Frame, or, when the only such method is the
-     * thread's first one ({@code main}), restarting the program (review 3, B209). java-debug names an old-code frame
-     * {@code Obsolete method()} only in the stack it stops on after the replace, so the hint waits for that stack (a
-     * second at most; then it reads the stack shown).
-     */
-    private void explainOldCode() {
-        // While java-debug replaces, the program reads as running: the stack it stops on again names the frames.
-        List<String> shown =
-                panel().callStack().stream().map(DapModels.StackFrameInfo::name).toList();
-        if (shown.stream().anyMatch(DebugPanelText::isObsoleteFrame)) {
-            panel().appendNotice(CodeReplaceText.oldCodeHint(shown)); // that stack came before the answer
-            return;
-        }
-        long asked = ++s().oldCodeHintAsked;
-        s().oldCodeHintPending = asked;
-        javafx.animation.PauseTransition wait = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(1));
-        wait.setOnFinished(e -> {
-            if (s().oldCodeHintPending == asked) {
-                s().oldCodeHintPending = 0;
-                panel().appendNotice(CodeReplaceText.oldCodeHint(panel().callStack().stream()
-                        .map(DapModels.StackFrameInfo::name)
-                        .toList()));
-            }
-        });
-        wait.play();
-    }
-
-    /** A stack arrived: say the waiting old-code hint from it (B209). */
-    private void oldCodeHintFrom(List<DapModels.StackFrameInfo> frames) {
-        if (s().oldCodeHintPending != 0) {
-            s().oldCodeHintPending = 0;
-            panel().appendNotice(CodeReplaceText.oldCodeHint(
-                    frames.stream().map(DapModels.StackFrameInfo::name).toList()));
-        }
-    }
-
-    /**
-     * The running program now runs what {@code files} say on disk: a successful replace, or one that found
-     * nothing to change. Breakpoint and frame lines of these files no longer need mapping to launch-time lines.
-     */
-    private void codeReplaced(Set<Path> files) {
-        rebaselineLines(files); // B1: the code that runs matches the saved file again
-    }
-
-    /**
-     * java-debug's own hot code replace events. A replace it could not finish leaves the program on the old code
-     * somewhere: that is said in the console. Progress events need no words — Editora reports the outcome.
-     */
-    private void codeReplaceNotice(String changeType, String rawMessage) {
-        String explained = "ERROR".equals(changeType) ? explainCodeReplace(rawMessage) : null;
-        String message = explained != null ? explained : rawMessage;
-        String text = CodeReplaceText.notice(changeType, message);
-        if ("ERROR".equals(changeType)) {
-            s().lastCodeReplaceError = message == null ? "" : message.strip();
-        }
-        if (text != null) {
-            panel().appendNotice(tr("debug.hcr.notice", text));
-        }
-    }
-
-    /**
-     * {@code debug.restartFrame}: runs the selected call-stack frame's method again from its start (the top frame
-     * when none is selected). Paused Java sessions only; the adapter says when a frame cannot be restarted.
-     */
-    void restartFrame() {
-        restartFrame(s().shownFrame);
-    }
-
-    private void restartFrame(DapModels.@Nullable StackFrameInfo frame) {
-        if (dap().state() != DapManager.State.SUSPENDED || frame == null) {
-            host.setStatus(tr("debug.frame.notPaused"));
-            return;
-        }
-        if (!dap().supportsRestartFrame()) {
-            host.setStatus(tr("debug.restartFrame.unsupported"));
-            return;
-        }
-        List<DapModels.StackFrameInfo> frames = panel().callStack();
-        if (frames.contains(frame) && !canRestartFrame(true, true, frame, frames)) {
-            // The thread's first method: nothing called it, so nothing can call it again (review 3, B209).
-            host.setStatus(tr("debug.restartFrame.bottom"));
-            return;
-        }
-        dap().restartFrame(frame.id());
-    }
-
-    /**
-     * Whether the call-stack menu offers Restart Frame for {@code frame} of {@code frames}: a paused session whose
-     * adapter restarts frames, and not the bottom frame of a complete stack (nothing called it, so nothing can
-     * call it again).
-     */
-    static boolean canRestartFrame(
-            boolean suspended,
-            boolean supported,
-            DapModels.StackFrameInfo frame,
-            List<DapModels.StackFrameInfo> frames) {
-        if (!suspended || !supported || frame == null || frames == null || frames.isEmpty()) {
-            return false;
-        }
-        int index = frames.indexOf(frame);
-        return index >= 0 && index < frames.size() - 1;
-    }
-
-    /** The call-stack context menu for {@code frame} (Restart Frame). */
-    List<javafx.scene.control.MenuItem> stackMenuItems(
-            DapModels.StackFrameInfo frame, List<DapModels.StackFrameInfo> frames) {
-        javafx.scene.control.MenuItem restart = new javafx.scene.control.MenuItem(tr("debugpanel.restartFrame"));
-        com.editora.editor.RowReasons.because(
-                restart,
-                DebugPanelText.restartFrameReason(
-                        dap().state() == DapManager.State.SUSPENDED, dap().supportsRestartFrame(), frame, frames));
-        restart.setOnAction(e -> restartFrame(frame));
-        com.editora.editor.MenuChords.tag(restart, "debug.restartFrame"); // the selected frame is the shown one
-        return List.of(restart, stepFilters().menuItem(frame));
-    }
-
-    /** Debug: Don't Step Into This… ({@code debug.dontStepIntoFrame}), for the frame shown. */
-    void dontStepIntoFrame() {
-        stepFilters().dontStepInto(null);
     }
 
     private @Nullable StepFilterCommands stepFilterCommands;
@@ -9209,790 +4604,15 @@ final class DebugCoordinator {
         return c;
     }
 
-    /** The last Smart Step Into picker shown (null before the first). */
-    private @Nullable QuickOpen<DapModels.StepTarget> smartStepPicker;
-
-    /**
-     * {@code debug.smartStepInto}: lists the calls on the current line and steps into the one picked — straight
-     * into it when there is only one. Plain Step Into is unchanged.
-     */
-    void smartStepInto() {
-        if (dap().state() != DapManager.State.SUSPENDED) {
-            host.setStatus(tr("debug.frame.notPaused"));
-            return;
-        }
-        if (!dap().supportsStepInTargets()) {
-            host.setStatus(tr("debug.smartStep.unsupported"));
-            return;
-        }
-        String lineText = shownLineText();
-        dap().stepInTargets(found -> {
-            List<DapModels.StepTarget> targets = StepTargetOrder.sort(found, lineText);
-            if (targets.isEmpty()) {
-                host.setStatus(tr("debug.smartStep.none"));
-            } else if (targets.size() == 1) {
-                dap().stepIntoTarget(targets.get(0).id());
-            } else {
-                QuickOpen<DapModels.StepTarget> picker = smartStepPicker = new QuickOpen<>(
-                        tr("debug.smartStep.title"),
-                        tr("debug.smartStep.prompt"),
-                        () -> targets,
-                        DapModels.StepTarget::label,
-                        t -> t.line() >= 0 ? tr("debug.smartStep.line", t.line() + 1) : "",
-                        t -> dap().stepIntoTarget(t.id()));
-                picker.setOverlayHost(host.overlayHost());
-                picker.show(host.window());
-            }
-        });
-    }
-
-    /** The text of the stopped line Smart Step Into lists the calls of ("" when its file is not open). */
-    private String shownLineText() {
-        DapModels.StackFrameInfo frame = s().shownFrame;
-        if (frame == null || frame.file() == null) {
-            return "";
-        }
-        EditorBuffer b = ops.bufferForPath(frame.file());
-        int line = frame.line();
-        return b == null || line < 0 || line >= b.getArea().getParagraphs().size()
-                ? ""
-                : b.getArea().getParagraph(line).getText();
-    }
-
-    /** A Smart Step Into list belongs to one stop: it closes once the program runs on or the session ends. */
-    private void closeSmartStepPicker(DapManager.State state) {
-        if (!shown()) {
-            return; // another session's: the editor shows the focused one's
-        }
-        QuickOpen<DapModels.StepTarget> picker = smartStepPicker;
-        if (picker != null && state != DapManager.State.SUSPENDED) {
-            smartStepPicker = null;
-            picker.hide();
-        }
-    }
-
     // --- review C: breakpoints list, mute, gutter and editor menus, Show Value -----------------------------
 
     /**
      * Mute Breakpoints: the adapter is told no breakpoints until it is turned off again. Kept per project in the
      * workspace state and restored when the window starts; every breakpoint glyph is drawn faded meanwhile.
      */
-    private boolean breakpointsMuted;
+    boolean breakpointsMuted;
 
     boolean breakpointsMuted() {
         return breakpointsMuted;
-    }
-
-    /** Debug: Breakpoints — the palette-style list of every breakpoint (see {@link BreakpointsPicker}). */
-    void showBreakpoints() {
-        breakpointsPicker().show();
-    }
-
-    /** The breakpoints of the window's files, and what can be done to them (see {@link BreakpointsPicker}). */
-    BreakpointsPicker breakpointsPicker() {
-        return new BreakpointsPicker(
-                        host,
-                        ops,
-                        this::allManagers,
-                        this::toggleMuteBreakpoints,
-                        () -> breakpointsMuted,
-                        memberBreakpoints)
-                .sendingClosed(this::sendClosed)
-                .instructions(instructionBreakpoints);
-    }
-
-    /** Debug: Move Breakpoint to Group… — on the caret line (see {@link BreakpointGroups#moveToGroupAtCaret}). */
-    void moveBreakpointToGroupAtCaret() {
-        EditorBuffer b = breakpointBuffer();
-        if (b != null) {
-            groups.moveToGroupAtCaret(b);
-        }
-    }
-
-    /** Debug: Enable / Disable Breakpoint Group… (see {@link BreakpointGroups#toggleGroupPicker}). */
-    void toggleBreakpointGroup() {
-        groups.toggleGroupPicker();
-    }
-
-    /** Debug: Export Breakpoints… (see {@link BreakpointGroups#exportBreakpoints}). */
-    void exportBreakpoints() {
-        groups.exportBreakpoints();
-    }
-
-    /** Debug: Import Breakpoints… (see {@link BreakpointGroups#importBreakpoints}). */
-    void importBreakpoints() {
-        groups.importBreakpoints();
-    }
-
-    /** The file a breakpoint store key names, or null (a remote host not connected, a key it cannot read). */
-    private static @Nullable Path storedPath(String key) {
-        try {
-            return com.editora.vfs.Vfs.parseStorable(key);
-        } catch (RuntimeException e) {
-            return null;
-        }
-    }
-
-    /**
-     * Breakpoints just saved for files with no tab ({@code saved}, by file key; an empty list: none left) are sent to
-     * each live session as its start would have: re-anchored off the FX thread, triggered ones held back, lambdas
-     * aimed at. An import mid-session, an edit in the Breakpoints list or on a Map card.
-     */
-    void sendClosed(Map<String, List<Breakpoint>> saved) {
-        // Muted, each session still learns them (Unmute sends what it knows); only the adapter is told nothing yet.
-        Map<String, List<Breakpoint>> copy = new LinkedHashMap<>(saved);
-        forEachSession(() -> {
-            if (!dap().isActive()) {
-                return;
-            }
-            Predicate<Breakpoint> sent = sentPredicate(s());
-            startOffFx("debug-import", session -> () -> {
-                List<DapModels.FileBreakpoints> computed = ClosedFileBreakpoints.of(
-                        copy, Set.of(), RemoteExec::runsFor, ClosedFileBreakpoints::readLinesOrNull, sent);
-                laterIn(session, () -> {
-                    if (!dap().isActive()) {
-                        return;
-                    }
-                    Map<String, DapModels.FileBreakpoints> byKey = new LinkedHashMap<>();
-                    computed.forEach(fb -> byKey.put(key(fb.file()), fb));
-                    for (String k : copy.keySet()) { // a file left with none is told so: its last one was removed
-                        Path p = byKey.containsKey(k) ? null : storedPath(k);
-                        if (p != null) {
-                            byKey.put(k, new DapModels.FileBreakpoints(p, List.of()));
-                        }
-                    }
-                    for (DapModels.FileBreakpoints fb : byKey.values()) {
-                        if (ops.bufferForPath(fb.file()) == null) { // opened meanwhile: its tab sent them
-                            s().closedBreakpoints.put(key(fb.file()), fb);
-                            if (!breakpointsMuted) {
-                                dap().updateBreakpoints(fb);
-                            }
-                        }
-                    }
-                });
-            });
-        });
-    }
-
-    /**
-     * Debug: Mute Breakpoints — none of them stops the program until muted again; a live session is told at once
-     * (every file it knows is sent again: empty while muted, its enabled breakpoints after).
-     */
-    void toggleMuteBreakpoints() {
-        breakpointsMuted = !breakpointsMuted;
-        memberBreakpoints.push(); // and method breakpoints and field watchpoints
-        forEachSession(() -> {
-            dap().setExceptionsMuted(breakpointsMuted); // exception stops too (review 2, B109)
-            if (dap().isActive()) {
-                Set<String> open = new HashSet<>();
-                host.forEachBuffer(b -> {
-                    if (b.getPath() != null && open.add(key(b.getPath()))) {
-                        DapModels.FileBreakpoints fb = fileBreakpoints(b, b.getPath());
-                        s().sentBreakpoints.put(b.getPath(), fb);
-                        dap().updateBreakpoints(fb);
-                    }
-                });
-                for (DapModels.FileBreakpoints fb : s().closedBreakpoints.values()) {
-                    if (fb.file() != null && !open.contains(key(fb.file()))) {
-                        dap().updateBreakpoints(
-                                        breakpointsMuted ? new DapModels.FileBreakpoints(fb.file(), List.of()) : fb);
-                    }
-                }
-            }
-        });
-        ops.persistDebugBreakpointsMuted(breakpointsMuted);
-        showBreakpointsMuted();
-        panel().setBreakpointsMuted(breakpointsMuted);
-        host.setStatus(tr(breakpointsMuted ? "status.debug.breakpointsMuted" : "status.debug.breakpointsUnmuted"));
-    }
-
-    /** Shows Mute Breakpoints on every breakpoint glyph (faded, and said on hover) and in the Debug window. */
-    private void showBreakpointsMuted() {
-        String hover = breakpointsMuted ? tr("debug.breakpoint.muted") : ""; // "": not muted
-        host.forEachBuffer(b -> b.getBreakpointManager().setMuted(hover));
-        forEachPanel(panel -> panel.setBreakpointsMuted(breakpointsMuted));
-    }
-
-    /**
-     * Debug: Toggle Temporary Breakpoint — a breakpoint on the caret line that is removed once the program stops on
-     * it (IntelliJ's Ctrl+Alt+Shift+F8). On a line with a temporary breakpoint it removes it; on one with an
-     * ordinary breakpoint it makes that one temporary.
-     */
-    void toggleTemporaryBreakpointAtCaret() {
-        EditorBuffer b = breakpointBuffer();
-        if (b == null) {
-            return;
-        }
-        int line = b.getFocusedArea().getCurrentParagraph();
-        if (!breakpointAllowed(b, line, onSameLine(b, line, this::toggleTemporaryBreakpointAtCaret))) {
-            return;
-        }
-        var mgr = b.getBreakpointManager();
-        Breakpoint bp = mgr.get(line);
-        if (bp != null && bp.temporary()) {
-            b.toggleBreakpoint(line);
-            return;
-        }
-        if (bp == null) {
-            b.toggleBreakpoint(line);
-        }
-        mgr.setTemporary(line, true);
-        b.refreshGutterLine(line);
-        host.setStatus(tr("status.debug.temporaryAdded", line + 1));
-    }
-
-    /**
-     * Debug: Toggle Recording Breakpoint — a breakpoint on the caret line whose stops Debug History keeps while the
-     * program goes on, as Visual Studio's tracepoints and IntelliJ's non-suspending breakpoints log. On a line with a
-     * recording breakpoint it removes it; on one with an ordinary breakpoint it makes that one record.
-     */
-    void toggleRecordingBreakpointAtCaret() {
-        EditorBuffer b = breakpointBuffer();
-        if (b == null) {
-            return;
-        }
-        int line = b.getFocusedArea().getCurrentParagraph();
-        if (!breakpointAllowed(b, line, onSameLine(b, line, this::toggleRecordingBreakpointAtCaret))) {
-            return;
-        }
-        var mgr = b.getBreakpointManager();
-        Breakpoint bp = mgr.get(line);
-        if (bp != null && bp.recording()) {
-            b.toggleBreakpoint(line);
-            return;
-        }
-        if (bp == null) {
-            b.toggleBreakpoint(line);
-        }
-        mgr.setRecording(line, true);
-        b.refreshGutterLine(line);
-        host.setStatus(tr("status.debug.recordingAdded", line + 1));
-    }
-
-    /**
-     * The program stopped on a breakpoint: when it is a temporary one, it is removed, which also takes it out of the
-     * live session. Waits for the stopped file's buffer to load: the stop may have just opened it.
-     */
-    private void removeTemporaryBreakpointHit(String reason, List<DapModels.StackFrameInfo> frames) {
-        if (!"breakpoint".equals(reason) || frames.isEmpty() || frames.get(0).file() == null) {
-            return;
-        }
-        DapModels.StackFrameInfo top = frames.get(0);
-        EditorBuffer b = ops.bufferForPath(top.file());
-        if (b == null) {
-            return;
-        }
-        ops.afterBufferLoad(b, () -> {
-            var mgr = b.getBreakpointManager();
-            int line = top.line() - mgr.regionFirstLine();
-            Breakpoint bp = mgr.get(line);
-            if (bp != null && bp.temporary() && bp.enabled() && !bp.isLogpoint()) {
-                b.dropBreakpoint(line); // the program's removal, not the user's: no undo is recorded
-                host.setStatus(tr("status.debug.temporaryRemoved", top.line() + 1));
-            }
-        });
-    }
-
-    /**
-     * Debug: Toggle Lambda Breakpoint — a breakpoint that stops inside the lambda at the caret when its body runs
-     * (see {@link LambdaBreakpoints}).
-     */
-    void toggleLambdaBreakpointAtCaret() {
-        EditorBuffer b = breakpointBuffer();
-        if (b != null
-                && breakpointAllowed(
-                        b,
-                        b.getFocusedArea().getCurrentParagraph(),
-                        onSameLine(b, b.getFocusedArea().getCurrentParagraph(), this::toggleLambdaBreakpointAtCaret))) {
-            lambdaBreakpoints.toggleAtCaret(b);
-        }
-    }
-
-    /** Debug: Enable / Disable Breakpoint — flips the caret line's breakpoint without removing it. */
-    void toggleBreakpointEnabledAtCaret() {
-        EditorBuffer b = breakpointBuffer();
-        if (b == null) {
-            return;
-        }
-        int line = b.getFocusedArea().getCurrentParagraph();
-        var mgr = b.getBreakpointManager();
-        Breakpoint bp = mgr.get(line);
-        if (bp == null) {
-            host.setStatus(tr("status.debug.noBreakpointHere"));
-            return;
-        }
-        mgr.setEnabled(line, !bp.enabled());
-        b.refreshGutterLine(line);
-    }
-
-    /** Debug: Show Value at Caret — the value popup for the name at the caret, from the keyboard. */
-    void showValueAtCaret() {
-        EditorBuffer b = host.activeBuffer();
-        if (dap().state() != DapManager.State.SUSPENDED) {
-            host.setStatus(tr("palette.disabled.needsSuspended"));
-        } else if (b == null || !b.showDebugValueAtCaret()) {
-            host.setStatus(tr("status.debug.noValueAtCaret"));
-        }
-    }
-
-    /**
-     * F11 in the CUA and Sublime keymaps: Step Into while the program is paused, Full Screen otherwise — what F11
-     * does in VS Code, whose debugging keys those keymaps now carry (review C8).
-     */
-    void stepIntoOrElse(Runnable otherwise) {
-        if (debugSupportEnabled() && dap().state() == DapManager.State.SUSPENDED) {
-            dap().stepInto();
-        } else {
-            otherwise.run();
-        }
-    }
-
-    /** A right-click on a breakpoint glyph: Edit…, Enable / Disable, Remove (review C11). */
-    private void showGutterMenu(EditorBuffer b, int line, javafx.scene.input.ContextMenuEvent e) {
-        var mgr = b.getBreakpointManager();
-        Breakpoint bp = mgr.get(line);
-        if (bp == null) {
-            var mark = mgr.memberMark(line);
-            if (mark != null) {
-                showGutterMenu(memberGutterItems(b, line, mark), e);
-            }
-            return;
-        }
-        // Bare titles, as every other row of this menu ("Debug: Edit Breakpoint…" beside "Remove Breakpoint",
-        // review 2 C110).
-        javafx.scene.control.MenuItem edit = menuItem("debug.editBreakpoint", Icons.edit(), () -> {
-            b.getFocusedArea().moveTo(line, 0);
-            editBreakpointAtCaret();
-        });
-        boolean enabled = bp.enabled();
-        javafx.scene.control.MenuItem flip =
-                new javafx.scene.control.MenuItem(tr(enabled ? "debug.gutter.disable" : "debug.gutter.enable"));
-        // As Edit…: the caret goes to the line, and the command for the breakpoint there runs.
-        flip.setOnAction(ev -> {
-            b.getFocusedArea().moveTo(line, 0);
-            toggleBreakpointEnabledAtCaret();
-        });
-        com.editora.editor.MenuChords.tag(flip, "debug.toggleBreakpointEnabled");
-        javafx.scene.control.MenuItem remove = new javafx.scene.control.MenuItem(tr("debug.gutter.remove"));
-        remove.setGraphic(Icons.remove());
-        remove.getStyleClass().add("danger"); // a destructive row reads red
-        remove.setOnAction(ev -> {
-            if (mgr.isBreakpoint(line)) {
-                b.getFocusedArea().moveTo(line, 0);
-                toggleBreakpointAtCaret();
-            }
-        });
-        com.editora.editor.MenuChords.tag(remove, "debug.toggleBreakpoint");
-        javafx.scene.control.MenuItem list = menuItem("debug.breakpoints", null, this::showBreakpoints);
-        javafx.scene.control.MenuItem waitFor = menuItem("debug.addTriggeredBreakpoint", null, () -> {
-            b.getFocusedArea().moveTo(line, 0);
-            addTriggeredBreakpointAtCaret();
-        });
-        javafx.scene.control.MenuItem toGroup = menuItem("debug.moveBreakpointToGroup", null, () -> {
-            b.getFocusedArea().moveTo(line, 0);
-            moveBreakpointToGroupAtCaret();
-        });
-        gutterMenu().getItems().setAll(edit, flip, remove, waitFor, toGroup);
-        List<javafx.scene.control.MenuItem> lambdas = lambdaBreakpoints.choices(b, line, bp);
-        if (!lambdas.isEmpty()) {
-            gutterMenu().getItems().add(new javafx.scene.control.SeparatorMenuItem());
-            gutterMenu().getItems().addAll(lambdas);
-        }
-        gutterMenu().getItems().addAll(new javafx.scene.control.SeparatorMenuItem(), list);
-        showGutterMenu(List.copyOf(gutterMenu().getItems()), e);
-    }
-
-    /** The gutter menu of a method breakpoint's or field watchpoint's mark: Enable / Disable, Remove, Breakpoints. */
-    private List<javafx.scene.control.MenuItem> memberGutterItems(
-            EditorBuffer b, int line, com.editora.editor.debug.BreakpointManager.MemberMark mark) {
-        List<javafx.scene.control.MenuItem> rows = new ArrayList<>(memberBreakpoints.gutterRows(b, line, mark));
-        rows.addAll(List.of(
-                new javafx.scene.control.SeparatorMenuItem(),
-                menuItem("debug.breakpoints", null, this::showBreakpoints)));
-        return rows;
-    }
-
-    private void showGutterMenu(List<javafx.scene.control.MenuItem> items, javafx.scene.input.ContextMenuEvent e) {
-        gutterMenu().getItems().setAll(items);
-        Node source = e.getSource() instanceof Node n ? n : null;
-        if (source != null && source.getScene() != null && source.getScene().getWindow() != null) {
-            gutterMenu().show(source, e.getScreenX(), e.getScreenY());
-        } else if (host.window() != null) {
-            gutterMenu().show(host.window(), e.getScreenX(), e.getScreenY());
-        }
-    }
-
-    /** A breakpoint mark's right-click menu, made on the first such right-click (it is a popup window of its own). */
-    private javafx.scene.control.@Nullable ContextMenu gutterMenu;
-
-    javafx.scene.control.ContextMenu gutterMenu() {
-        if (gutterMenu == null) {
-            gutterMenu = new javafx.scene.control.ContextMenu();
-        }
-        return gutterMenu;
-    }
-
-    /**
-     * Whether the editor menu offers Debug File of its own for a file of {@code language}: one that Run File can't
-     * run ({@code runnable} false; a runnable file has Debug File beside Run File) but Debug can. That is a classic
-     * Java main class outside a Maven or Gradle project ({@code inJavaProject} false), a Go, Rust, C or C++ file
-     * without a program's {@code main} (a test file, a library file), and any C#, Ruby or PHP file, which only the
-     * debugger's own launch runs. Pure.
-     */
-    static boolean offersOwnDebugFile(String language, boolean runnable, boolean inJavaProject) {
-        if (runnable) {
-            return false;
-        }
-        return switch (language) {
-            case "java" -> !inJavaProject;
-            case "go", "rust", "c", "cpp", "csharp", "ruby", "php" -> true;
-            default -> false;
-        };
-    }
-
-    /**
-     * The editor's right-click debugger items (review C10): the Breakpoints submenu on a debuggable file, and while
-     * paused Run to Cursor, Show Value and Add to Watches for the name at the click. Empty when debugging is off.
-     */
-    List<javafx.scene.control.MenuItem> editorMenuItems(EditorBuffer b) {
-        List<javafx.scene.control.MenuItem> items = new ArrayList<>();
-        if (!debugSupportEnabled() || !isDebuggableBuffer(b)) {
-            return items;
-        }
-        Path menuPath = b.getPath();
-        if (menuPath != null
-                && offersDebugFile(b)
-                // Not while this file is being debugged or built for it: it offered a second launch of it (review 2
-                // C110). Another file's live launch is replaced only after asking (review 3, C202).
-                && !launchLiveFor(menuPath)) {
-            // Debug File sits beside Run File for a runnable file; a file Run File can't run but Debug can gets
-            // it here, or Debug was only in the Run menu and the palette.
-            javafx.scene.control.MenuItem debugFile = new javafx.scene.control.MenuItem(tr("editmenu.debugFile"));
-            debugFile.setGraphic(Icons.debug());
-            debugFile.setOnAction(e -> debugFile(b));
-            items.add(com.editora.editor.MenuChords.tag(debugFile, "debug.debugFile"));
-        }
-        items.add(breakpointsMenu(b));
-        if (dap().state() == DapManager.State.SUSPENDED) {
-            items.add(menuItem("debug.runToCursor", Icons.debugRunToCursor(), this::debugRunToCursor));
-            items.add(menuItem("debug.forceRunToCursor", Icons.debugRunToCursor(), this::debugForceRunToCursor));
-            items.add(menuItem("debug.showValue", Icons.find(), this::showValueAtCaret));
-            items.add(menuItem("debug.evaluate", Icons.debug(), this::evaluateExpression));
-            String expression = watchExpression(b);
-            if (expression != null) {
-                javafx.scene.control.MenuItem watch =
-                        new javafx.scene.control.MenuItem(tr("debugpanel.addToWatches", expression));
-                watch.setGraphic(Icons.newFile()); // as Add to Watches in the Variables menu
-                watch.setOnAction(ev -> addWatch(expression));
-                items.add(com.editora.editor.MenuChords.tag(watch, "debug.addWatchAtCaret"));
-            }
-        }
-        return items;
-    }
-
-    /**
-     * The commands behind the Debug window's right-click rows ({@link DebugRowCommands}): runs the row that
-     * {@code commandId} stands for on the window's selection, as choosing it would; says so when the window is closed
-     * (its selection is not something the user can see) or the row is not offered for the selection.
-     */
-    void runPanelRow(String commandId) {
-        if (!ops.isToolWindowOpen() || !panel().runMenuRow(commandId)) {
-            host.setStatus(
-                    ops.isToolWindowOpen()
-                            ? panel().rowRefusal(commandId)
-                            : tr("status.debug.rowNotOffered", DebugPanelText.bareTitle(tr("command." + commandId))));
-        }
-    }
-
-    /** Whether the editor menu offers Debug File for {@code b}: a file Debug can launch on its own. */
-    private boolean offersDebugFile(EditorBuffer b) {
-        Path path = b.getPath();
-        return path != null
-                && offersOwnDebugFile(
-                        b.getLanguage(),
-                        b.isRunnable(),
-                        "java".equals(b.getLanguage()) && JavaProjectRoot.inProjectOrUnknown(path));
-    }
-
-    /**
-     * Debug: Debug Current File ({@code debug.debugFile}): what the editor menu's Debug File row does, for the active
-     * file; says so when Debug File is not offered for it.
-     */
-    void debugActiveFile() {
-        EditorBuffer b = host.activeBuffer();
-        if (b != null && b.runScanPending()) { // whether it is runnable is the Run scan's, made off the FX thread
-            b.whenRunScanned(bound(() -> {
-                if (host.activeBuffer() == b) {
-                    debugActiveFile();
-                }
-            }));
-            return;
-        }
-        // A runnable file has the row beside Run File (the editor menu's own), any other one the Debug File of its own.
-        if (b == null || !isDebuggableBuffer(b) || !((b.isRunnable() && !b.isHttpFile()) || offersDebugFile(b))) {
-            host.setStatus(tr("status.debug.noDebugFile"));
-            return;
-        }
-        debugFile(b);
-    }
-
-    /**
-     * Debug: Debug Main Class at Caret ({@code debug.mainClassAtCaret}): what the editor menu's Debug row on a
-     * {@code main} method does; says so when the caret is on none.
-     */
-    void debugMainClassAtCaret() {
-        EditorBuffer b = host.activeBuffer();
-        if (b != null && b.runScanPending()) { // the load's scan runs off FX: decide once it has landed
-            b.whenRunScanned(bound(this::debugMainClassAtCaret));
-            return;
-        }
-        var main = b == null ? null : b.mainTargetAtCaret();
-        if (main == null) {
-            host.setStatus(tr("status.debug.noMainAtCaret"));
-            return;
-        }
-        debugMainClassNamed(main.fqn());
-    }
-
-    /** The expression the editor menu offers to watch in {@code b}: a one-line selection, else the one at the caret. */
-    private static @Nullable String watchExpression(EditorBuffer b) {
-        var area = b.getFocusedArea();
-        String selected = area.getSelectedText();
-        return selected != null && !selected.isBlank() && !selected.contains("\n")
-                ? selected.strip()
-                : com.editora.editor.debug.DebugExpressions.atCaret(area);
-    }
-
-    /** Opens the Debug window and asks to add {@code expression} to the watches, as Add to Watches rows do. */
-    private void addWatch(String expression) {
-        ops.openToolWindow();
-        panel().addWatchPrompt(expression);
-    }
-
-    /**
-     * Debug: Add Expression at Caret to Watches… ({@code debug.addWatchAtCaret}): what the editor menu's Add to
-     * Watches row does while the program is paused; says so when it is not, or the caret is on no expression.
-     */
-    void addWatchAtCaret() {
-        EditorBuffer b = host.activeBuffer();
-        String expression = b == null || dap().state() != DapManager.State.SUSPENDED ? null : watchExpression(b);
-        if (expression == null) {
-            host.setStatus(tr("status.debug.noWatchAtCaret"));
-            return;
-        }
-        addWatch(expression);
-    }
-
-    /**
-     * The editor menu's <b>Breakpoints</b> submenu: every breakpoint action for the right-clicked line (the caret is
-     * there by now), then the list and Mute Breakpoints. One row instead of four to six flat ones, which pushed the
-     * rest of the menu down on every debuggable file — the shape of the LSP and AI submenus.
-     */
-    private javafx.scene.control.Menu breakpointsMenu(EditorBuffer b) {
-        javafx.scene.control.Menu menu =
-                new javafx.scene.control.Menu(tr("editmenu.breakpoints"), breakpointGlyph()); // icons: review 2 C110
-        var items = menu.getItems();
-        items.add(menuItem("debug.toggleBreakpoint", breakpointGlyph(), this::toggleBreakpointAtCaret));
-        items.add(
-                menuItem("debug.toggleTemporaryBreakpoint", breakpointGlyph(), this::toggleTemporaryBreakpointAtCaret));
-        items.add(
-                menuItem("debug.toggleRecordingBreakpoint", breakpointGlyph(), this::toggleRecordingBreakpointAtCaret));
-        if (LambdaBreakpoints.caretLineHasLambdas(b)) {
-            items.add(menuItem("debug.toggleLambdaBreakpoint", breakpointGlyph(), this::toggleLambdaBreakpointAtCaret));
-        }
-        items.add(menuItem("debug.addLogpoint", logpointGlyph(), this::addLogpointAtCaret));
-        items.add(menuItem("debug.addTriggeredBreakpoint", breakpointGlyph(), this::addTriggeredBreakpointAtCaret));
-        items.add(menuItem("debug.editBreakpoint", Icons.edit(), this::editBreakpointAtCaret));
-        javafx.scene.control.MenuItem toGroup =
-                menuItem("debug.moveBreakpointToGroup", null, this::moveBreakpointToGroupAtCaret);
-        com.editora.editor.RowReasons.when(
-                toGroup, DebugPanelText.hasBreakpointAtCaret(b), "row.unavailable.noBreakpointHere");
-        items.add(toGroup);
-        javafx.scene.control.MenuItem flip =
-                menuItem("debug.toggleBreakpointEnabled", Icons.check(), this::toggleBreakpointEnabledAtCaret);
-        com.editora.editor.RowReasons.when(
-                flip, DebugPanelText.hasBreakpointAtCaret(b), "row.unavailable.noBreakpointHere");
-        items.add(flip);
-        items.add(new javafx.scene.control.SeparatorMenuItem());
-        items.add(menuItem("debug.breakpoints", Icons.outline(), this::showBreakpoints));
-        javafx.scene.control.CheckMenuItem mute =
-                new javafx.scene.control.CheckMenuItem(DebugPanelText.bareTitle(tr("command.debug.muteBreakpoints")));
-        mute.setGraphic(Icons.hidden());
-        mute.setSelected(breakpointsMuted);
-        mute.setOnAction(e -> toggleMuteBreakpoints());
-        com.editora.editor.MenuChords.tag(mute, "debug.muteBreakpoints");
-        items.add(mute);
-        return menu;
-    }
-
-    private static javafx.scene.control.MenuItem menuItem(String commandId, @Nullable Node icon, Runnable action) {
-        javafx.scene.control.MenuItem item =
-                new javafx.scene.control.MenuItem(DebugPanelText.bareTitle(tr("command." + commandId)));
-        com.editora.editor.MenuChords.tag(item, commandId);
-        item.setGraphic(icon);
-        item.setOnAction(e -> action.run());
-        return item;
-    }
-
-    /** A small breakpoint dot for Toggle Breakpoint in the editor menu (the gutter's red, from CSS). */
-    static Node breakpointGlyph() {
-        javafx.scene.shape.Circle dot = new javafx.scene.shape.Circle();
-        UiZoom.follow(dot, () -> dot.setRadius(UiZoom.px(4)));
-        dot.getStyleClass().add("debug-menu-breakpoint");
-        return dot;
-    }
-
-    /** Add Logpoint's mark in the same menu: the gutter's logpoint diamond, blue, at the dot's size. */
-    private static Node logpointGlyph() {
-        javafx.scene.shape.Polygon diamond = new javafx.scene.shape.Polygon();
-        UiZoom.follow(diamond, () -> {
-            double u = UiZoom.px(4);
-            diamond.getPoints().setAll(u, 0.0, 2 * u, u, u, 2 * u, 0.0, u);
-        });
-        diamond.getStyleClass().add("debug-menu-logpoint");
-        return diamond;
-    }
-
-    // --- follow-ups 5 and 6: completion in expression fields, the expandable value popup ----------------
-
-    /**
-     * What a debugger expression field completes against: the selected frame of a stopped session (DAP
-     * {@code completions}). {@code braces}: a log message, where only the {@code {expression}} at the caret is code.
-     */
-    DebugCompletion.Source completionSource(boolean braces) {
-        return new DebugCompletion.Source() {
-            @Override
-            public boolean paused() {
-                return dap().state() == DapManager.State.SUSPENDED && s().debugFrameId >= 0;
-            }
-
-            @Override
-            public void complete(String text, int caret, Consumer<List<DapModels.CompletionTarget>> cb) {
-                int from = braces ? DebugCompletionText.braceStart(text, caret) : 0;
-                if (from < 0) {
-                    cb.accept(List.of()); // outside {…}: plain log text
-                    return;
-                }
-                dap().completions(s().debugFrameId, text.substring(from, caret), caret - from, cb);
-            }
-        };
-    }
-
-    /** Add / Edit Watch: the window's one-field prompt, its field completing expressions in the stopped frame. */
-    private void expressionPrompt(String title, String label, String initial, Consumer<String> onAccept) {
-        Label promptLabel = new Label(label);
-        TextField field = new TextField(initial == null ? "" : initial);
-        field.setPrefColumnCount(32);
-        DebugCompletion.attach(field, completionSource(false));
-        com.editora.command.TextInputKeymap.installShared(field);
-        OverlayInput.show(
-                host.overlayHost(),
-                title,
-                UiZoom.spacing(new javafx.scene.layout.VBox(promptLabel, field), 6),
-                field,
-                tr("dialog.ok"),
-                null,
-                () -> onAccept.accept(field.getText()),
-                null,
-                false);
-    }
-
-    private @Nullable DebugValuePopup valuePopup;
-
-    /**
-     * What the editors show a value with: the {@link #valuePopup} (a popup window and two menus of its own),
-     * made the first time a value is shown, not with every editor of a window that may never debug.
-     */
-    private final com.editora.editor.debug.DebugValuePresenter valuePresenter =
-            new com.editora.editor.debug.DebugValuePresenter() {
-                @Override
-                public void show(org.fxmisc.richtext.CodeArea area, String expr, double x, double y, boolean key) {
-                    valuePopup().show(area, expr, x, y, key);
-                }
-
-                @Override
-                public void showEvaluated(org.fxmisc.richtext.CodeArea area, String expr, double x, double y) {
-                    valuePopup().showEvaluated(area, expr, x, y);
-                }
-
-                @Override
-                public void hide() {
-                    if (valuePopup != null) {
-                        valuePopup.hide();
-                    }
-                }
-
-                @Override
-                public void mouseLeft() {
-                    if (valuePopup != null) {
-                        valuePopup.mouseLeft();
-                    }
-                }
-
-                @Override
-                public boolean mouseInside() {
-                    return valuePopup != null && valuePopup.mouseInside();
-                }
-
-                @Override
-                public boolean isShowing() {
-                    return valuePopup != null && valuePopup.isShowing();
-                }
-            };
-
-    /** The hover / Show Value at Caret popup, shared by this window's editors. */
-    DebugValuePopup valuePopup() {
-        if (valuePopup == null) {
-            valuePopup = new DebugValuePopup(new DebugValuePopup.Source() {
-                @Override
-                public void evaluate(String expression, Consumer<DapModels.EvalResult> cb) {
-                    renderedEvaluate(expression, s().debugFrameId, "hover", cb);
-                }
-
-                @Override
-                public void children(
-                        int ref,
-                        @Nullable String filter,
-                        int start,
-                        int count,
-                        Consumer<List<DapModels.VariableInfo>> cb) {
-                    renderedVariables(ref, filter, start, count, cb);
-                }
-
-                @Override
-                public void addWatch(String expression) {
-                    ops.openToolWindow();
-                    panel().addWatchPrompt(expression);
-                }
-
-                @Override
-                public void evaluateCode(String expression, Consumer<DapModels.EvalResult> cb) {
-                    dap().evaluateFull(expression, s().debugFrameId, "repl", r -> {
-                        cb.accept(r);
-                        if (r != null && !r.failed()) {
-                            refreshStopValues(); // Quick Evaluate runs a call: what it changed shows (B205)
-                        }
-                    });
-                }
-
-                @Override
-                public void pin(org.fxmisc.richtext.CodeArea area, int line, String expression) {
-                    EditorBuffer[] owner = new EditorBuffer[1];
-                    host.forEachBuffer(b -> {
-                        if (owner[0] == null && (b.getArea() == area || b.getFocusedArea() == area)) {
-                            owner[0] = b;
-                        }
-                    });
-                    if (owner[0] != null) {
-                        pinnedValues.toggle(owner[0], line, expression);
-                    }
-                }
-            });
-            if (valuePopup.popup().getSkin() != null) {
-                DebugPanel.setPlainValueColours(valuePopup.popup().getSkin().getNode(), plainValueColours()); // C111
-            }
-            valuePopup.setMarks(value -> s().marks.labelOf(value)); // the focused session's marks
-        }
-        return valuePopup;
     }
 }

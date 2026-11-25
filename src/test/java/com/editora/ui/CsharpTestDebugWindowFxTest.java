@@ -91,7 +91,7 @@ class CsharpTestDebugWindowFxTest {
             s.setCsharpDebugPath(netcoredbg.toString());
             fx.shared.getTrustStore().trust(root);
             fx.shared.getTrustStore().trust(app);
-            debug.dotnetCommand = List.of(dotnet.toString());
+            debug.compiled.dotnetCommand = List.of(dotnet.toString());
             debug.applySupport();
         });
         await("C# debugging available", () -> call(() -> debug.debugEffectiveFor("csharp")));

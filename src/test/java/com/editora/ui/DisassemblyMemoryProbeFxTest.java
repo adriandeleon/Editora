@@ -196,10 +196,10 @@ class DisassemblyMemoryProbeFxTest {
                     "the instructions",
                     () -> call(() -> !disassembly.list().getItems().isEmpty()));
             assertEquals(
-                    DebugCoordinator.DISASSEMBLY_COUNT,
+                    DisassemblyMemoryViews.DISASSEMBLY_COUNT,
                     call(() -> disassembly.list().getItems().size()));
             assertEquals(
-                    DebugCoordinator.DISASSEMBLY_BEFORE,
+                    DisassemblyMemoryViews.DISASSEMBLY_BEFORE,
                     call(() -> disassembly.list().getSelectionModel().getSelectedIndex()),
                     "the instruction pointer's row is selected");
 

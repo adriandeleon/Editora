@@ -300,8 +300,8 @@ class NativeDebugWindowFxTest {
     @Test
     void attachToProcessAttachesCodelldbToANativeOrRustProgram() throws Exception {
         open(root.resolve("shelf.c"));
-        FxTestSupport.runOnFx(
-                () -> debug.attachToProcess(new LocalProcesses.Target(4242, LocalProcesses.Kind.NATIVE, "app", "", 0)));
+        FxTestSupport.runOnFx(() -> debug.attach.attachToProcess(
+                new LocalProcesses.Target(4242, LocalProcesses.Kind.NATIVE, "app", "", 0)));
         FakeDebugAdapter.Session session = next("attach");
         assertEquals(4242, ((Number) session.launchArgs.get("pid")).intValue());
         assertEquals(List.of("cpp"), session.launchArgs.get("sourceLanguages"));
@@ -309,8 +309,8 @@ class NativeDebugWindowFxTest {
         FxTestSupport.runOnFx(manager::stop);
         await("stopped", () -> !call(manager::isActive));
 
-        FxTestSupport.runOnFx(
-                () -> debug.attachToProcess(new LocalProcesses.Target(4343, LocalProcesses.Kind.RUST, "shelf", "", 0)));
+        FxTestSupport.runOnFx(() -> debug.attach.attachToProcess(
+                new LocalProcesses.Target(4343, LocalProcesses.Kind.RUST, "shelf", "", 0)));
         FakeDebugAdapter.Session rust = next("attach");
         assertEquals(List.of("rust"), rust.launchArgs.get("sourceLanguages"));
     }
@@ -322,8 +322,8 @@ class NativeDebugWindowFxTest {
             assertEquals(tr("status.debug.cppOff"), call(() -> debug.unavailableMessage("c", null)));
             FxTestSupport.runOnFx(debug::applySupport);
             await("C/C++ debugging off", () -> !call(() -> debug.debugEffectiveFor("cpp")));
-            FxTestSupport.runOnFx(() ->
-                    debug.attachToProcess(new LocalProcesses.Target(1, LocalProcesses.Kind.NATIVE, "app", "", 0)));
+            FxTestSupport.runOnFx(() -> debug.attach.attachToProcess(
+                    new LocalProcesses.Target(1, LocalProcesses.Kind.NATIVE, "app", "", 0)));
             assertEquals(tr("status.debug.cppOff"), status());
             assertFalse(call(manager::isActive), "nothing is attached");
         } finally {

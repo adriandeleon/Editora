@@ -2252,7 +2252,7 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("test.debugAtCaret", () -> host.runTestAtCaret(false, true)));
         host.registry().register(Command.of("test.debugClassAtCaret", () -> host.runTestAtCaret(true, true)));
         if (host.debugCoordinator() != null) { // Debug ▶ in a JUnit file debugs its test (review A102)
-            host.debugCoordinator().setTestDebugger(classLevel -> host.runTestAtCaret(classLevel, true));
+            host.debugCoordinator().fileLaunch.setTestDebugger(classLevel -> host.runTestAtCaret(classLevel, true));
         }
         host.registry().register(Command.of("test.rerun", host.testRunCoordinator()::rerun));
         host.registry().register(Command.of("test.rerunFailed", host.testRunCoordinator()::rerunFailed));
@@ -2292,7 +2292,7 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.mainClass",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugMainClass)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().javaLaunch::debugMainClass)));
         host.registry()
                 .register(Command.of(
                         "debug.viaBuild",
@@ -2306,17 +2306,18 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.startCompound",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::startCompound)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().launchJson::startCompound)));
         host.registry()
                 .register(Command.of(
                         "debug.editCompounds",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::editCompounds)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().launchJson::editCompounds)));
         host.registry()
                 .register(Command.of(
                         "debug.restart", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::restart)));
         host.registry()
                 .register(Command.of(
-                        "debug.attach", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugAttach)));
+                        "debug.attach",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().attach::debugAttach)));
         host.registry()
                 .register(Command.of(
                         "debug.continue", () -> host.debugCoordinator().ifDebug(host.dapManager()::resume)));
@@ -2342,7 +2343,7 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.attachToProcess",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugAttachToProcess)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().attach::debugAttachToProcess)));
         host.registry()
                 .register(Command.of(
                         "debug.browser",
@@ -2354,7 +2355,7 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.openCoreDump",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugOpenCoreDump)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().attach::debugOpenCoreDump)));
         host.registry()
                 .register(Command.of(
                         "debug.listenXdebug",
@@ -2362,7 +2363,7 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.reattach",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugReattach)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().attach::debugReattach)));
         host.registry()
                 .register(Command.of(
                         "debug.toggleHex", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleHex)));
@@ -2382,19 +2383,22 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.debugFile",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugActiveFile)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().breakpointMenus::debugActiveFile)));
         host.registry()
                 .register(Command.of(
                         "debug.mainClassAtCaret",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugMainClassAtCaret)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().breakpointMenus::debugMainClassAtCaret)));
         host.registry()
                 .register(Command.of(
                         "debug.addWatchAtCaret",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::addWatchAtCaret)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().breakpointMenus::addWatchAtCaret)));
         host.registry()
                 .register(Command.of(
                         "debug.threadDump",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::threadDump)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().stacks::threadDump)));
         host.registry()
                 .register(Command.of(
                         "debug.stepBack", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::stepBack)));
@@ -2409,11 +2413,11 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.parallelStacks",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::parallelStacks)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().stacks::parallelStacks)));
         host.registry()
                 .register(Command.of(
                         "debug.showException",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::showException)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().execLine::showException)));
         host.registry()
                 .register(Command.of(
                         "debug.pinValue",
@@ -2424,11 +2428,12 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.evaluate",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::evaluateExpression)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().valueWindows::evaluateExpression)));
         host.registry()
                 .register(Command.of(
                         "debug.focusEvaluate",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::focusEvaluate)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().valueWindows::focusEvaluate)));
         host.registry()
                 .register(Command.of(
                         "debug.endProgramInput",
@@ -2464,17 +2469,20 @@ final class WindowCommandRegistrar {
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::setSelectedValue)));
         host.registry()
                 .register(Command.of(
-                        "debug.stepOver", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::stepOver)));
+                        "debug.stepOver",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().lowLevel::stepOver)));
         host.registry()
                 .register(Command.of(
-                        "debug.stepInto", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::stepInto)));
+                        "debug.stepInto",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().lowLevel::stepInto)));
         host.registry()
                 .register(Command.of(
                         "debug.stepOut", () -> host.debugCoordinator().ifDebug(host.dapManager()::stepOut)));
         host.registry()
                 .register(Command.of(
                         "debug.startConfiguration",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::startLaunchConfiguration)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().launchJson::startLaunchConfiguration)));
         host.registry()
                 .register(Command.of(
                         "debug.historyBack",
@@ -2490,49 +2498,55 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.editCustomAdapters",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::editCustomAdapters)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().launchJson::editCustomAdapters)));
         host.registry()
                 .register(Command.of(
                         "debug.stepOverInstruction",
                         () -> host.debugCoordinator()
-                                .ifDebug(() -> host.debugCoordinator().stepInstruction(false))));
+                                .ifDebug(() -> host.debugCoordinator().lowLevel.stepInstruction(false))));
         host.registry()
                 .register(Command.of(
                         "debug.stepIntoInstruction",
                         () -> host.debugCoordinator()
-                                .ifDebug(() -> host.debugCoordinator().stepInstruction(true))));
+                                .ifDebug(() -> host.debugCoordinator().lowLevel.stepInstruction(true))));
         host.registry()
                 .register(Command.of(
                         "debug.showDisassembly",
                         () -> host.debugCoordinator()
-                                .ifDebug(() -> host.debugCoordinator().showLowLevelView(DebugPanel.AREA_DISASSEMBLY))));
+                                .ifDebug(() -> host.debugCoordinator()
+                                        .lowLevel
+                                        .showLowLevelView(DebugPanel.AREA_DISASSEMBLY))));
         host.registry()
                 .register(Command.of(
                         "debug.showMemory",
                         () -> host.debugCoordinator()
-                                .ifDebug(() -> host.debugCoordinator().showLowLevelView(DebugPanel.AREA_MEMORY))));
+                                .ifDebug(() ->
+                                        host.debugCoordinator().lowLevel.showLowLevelView(DebugPanel.AREA_MEMORY))));
         host.registry()
                 .register(Command.of(
                         "debug.toggleBreakpoint",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleBreakpointAtCaret)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().caretBreakpoints::toggleBreakpointAtCaret)));
         host.registry()
                 .register(Command.of(
                         "debug.toggleRecordingBreakpoint",
                         () -> host.debugCoordinator()
-                                .ifDebug(host.debugCoordinator()::toggleRecordingBreakpointAtCaret)));
+                                .ifDebug(host.debugCoordinator().breakpointMenus::toggleRecordingBreakpointAtCaret)));
         host.registry()
                 .register(Command.of(
                         "debug.addTriggeredBreakpoint",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::addTriggeredBreakpointAtCaret)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().caretBreakpoints::addTriggeredBreakpointAtCaret)));
         host.registry()
                 .register(Command.of(
                         "debug.toggleTemporaryBreakpoint",
                         () -> host.debugCoordinator()
-                                .ifDebug(host.debugCoordinator()::toggleTemporaryBreakpointAtCaret)));
+                                .ifDebug(host.debugCoordinator().breakpointMenus::toggleTemporaryBreakpointAtCaret)));
         host.registry()
                 .register(Command.of(
                         "debug.toggleLambdaBreakpoint",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleLambdaBreakpointAtCaret)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().breakpointMenus::toggleLambdaBreakpointAtCaret)));
         host.registry()
                 .register(Command.of(
                         "debug.toggleMethodBreakpoint",
@@ -2544,11 +2558,13 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.addLogpoint",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::addLogpointAtCaret)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().caretBreakpoints::addLogpointAtCaret)));
         host.registry()
                 .register(Command.of(
                         "debug.editBreakpoint",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::editBreakpointAtCaret)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().caretBreakpoints::editBreakpointAtCaret)));
         host.registry()
                 .register(Command.of(
                         "debug.toggleExceptionBreakpoints",
@@ -2561,19 +2577,19 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.applyCodeChanges",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::applyCodeChanges)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().javaCode::applyCodeChanges)));
         host.registry()
                 .register(Command.of(
                         "debug.restartFrame",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::restartFrame)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().javaCode::restartFrame)));
         host.registry()
                 .register(Command.of(
                         "debug.dontStepIntoFrame",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::dontStepIntoFrame)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().javaCode::dontStepIntoFrame)));
         host.registry()
                 .register(Command.of(
                         "debug.smartStepInto",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::smartStepInto)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().javaCode::smartStepInto)));
         host.registry()
                 .register(Command.of(
                         "tool.debug",
@@ -2584,23 +2600,28 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.breakpoints",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::showBreakpoints)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().breakpointMenus::showBreakpoints)));
         host.registry()
                 .register(Command.of(
                         "debug.moveBreakpointToGroup",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::moveBreakpointToGroupAtCaret)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().breakpointMenus::moveBreakpointToGroupAtCaret)));
         host.registry()
                 .register(Command.of(
                         "debug.toggleBreakpointGroup",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleBreakpointGroup)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().breakpointMenus::toggleBreakpointGroup)));
         host.registry()
                 .register(Command.of(
                         "debug.exportBreakpoints",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::exportBreakpoints)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().breakpointMenus::exportBreakpoints)));
         host.registry()
                 .register(Command.of(
                         "debug.importBreakpoints",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::importBreakpoints)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().breakpointMenus::importBreakpoints)));
         host.registry()
                 .register(Command.of(
                         "debug.loadedSources",
@@ -2612,20 +2633,23 @@ final class WindowCommandRegistrar {
                 .register(Command.toggle( // checked in the Run menu while muted
                         "debug.muteBreakpoints",
                         () -> host.debugCoordinator().breakpointsMuted(),
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleMuteBreakpoints)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().breakpointMenus::toggleMuteBreakpoints)));
         host.registry()
                 .register(Command.of(
                         "debug.toggleBreakpointEnabled",
                         () -> host.debugCoordinator()
-                                .ifDebug(host.debugCoordinator()::toggleBreakpointEnabledAtCaret)));
+                                .ifDebug(host.debugCoordinator().breakpointMenus::toggleBreakpointEnabledAtCaret)));
         host.registry()
                 .register(Command.of(
                         "debug.showValue",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::showValueAtCaret)));
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator().breakpointMenus::showValueAtCaret)));
         host.registry()
                 .register(Command.of(
                         "debug.stepIntoOrFullScreen",
                         () -> host.debugCoordinator()
+                                .breakpointMenus
                                 .stepIntoOrElse(() -> host.registry().run("window.fullScreen"))));
         // LSP. Gated by the "Enable LSP" setting (default off); commands no-op with a status when off.
         host.registry()

@@ -648,10 +648,16 @@ public class SettingsWindow {
     /**
      * Opens Settings focused on the page a Doctor row's "Settings…" action targets. The keys are the
      * Doctor check catalog's stable {@code settingsKey} strings, mapped here so the private
-     * {@link Category} enum never leaks; an unknown key just opens Settings unfocused.
+     * {@link Category} enum never leaks; an unknown key just opens Settings unfocused. A key may name one
+     * language after a colon ({@code lsp:powershell}, {@code debug:go}): the page's Language picker then shows that
+     * language's card. An unknown language leaves the picker where it was.
      */
-    public void showDoctorTarget(String key, Window owner) {
-        Category target = switch (key == null ? "" : key) {
+    public void showDoctorTarget(@Nullable String key, Window owner) {
+        String full = key == null ? "" : key;
+        int colon = full.indexOf(':');
+        String page = colon < 0 ? full : full.substring(0, colon);
+        String language = colon < 0 ? "" : full.substring(colon + 1);
+        Category target = switch (page) {
             case "git" -> Category.GIT;
             case "github" -> Category.GITHUB;
             case "search" -> Category.SEARCH;
@@ -670,6 +676,13 @@ public class SettingsWindow {
             default -> null;
         };
         showAt(target, owner);
+        if (!language.isEmpty()) {
+            SettingsLanguagePicker picker =
+                    target == Category.LSP ? lspPage.languages : target == Category.DEBUG ? debugPage.languages : null;
+            if (picker != null) {
+                picker.show(language);
+            }
+        }
     }
 
     /** Reads/mutates the trusted-workspace-root store for the Workspace page's Trusted Folders list. */
@@ -739,10 +752,7 @@ public class SettingsWindow {
         if (stage.isShowing()) {
             stage.toFront();
         } else {
-            if (!placed) { // later opens come back where the user left the window
-                centerOnOwner(owner);
-                placed = true;
-            }
+            centerOnOwner(owner); // every open, so Settings comes up over the editor wherever it has moved
             stage.show();
         }
         // A search left in the box is kept, but selected: typing replaces it rather than appending to it.
@@ -761,8 +771,6 @@ public class SettingsWindow {
             sidebar.getSelectionModel().select(target);
         }
     }
-
-    private boolean placed; // centred once; afterwards the window keeps the place the user gave it
 
     /** Centres on the owner using the size the window actually has, kept on the owner's screen. */
     private void centerOnOwner(Window owner) {
@@ -1302,6 +1310,9 @@ public class SettingsWindow {
         spellPage.buildControls();
 
         menuBarCheck = viewCheck(tr("settings.showMenuBar"), Settings::setShowMenuBar);
+        // Not offered on macOS either: the menu sits in the system menu bar at the top of the screen, which a
+        // window cannot hide, so the switch would do nothing. Disabled, not hidden, so its note says why.
+        menuBarCheck.setDisable(!ExtendedWindow.supportedOn(com.editora.Os.current()));
         toolbarCheck = viewCheck(tr("settings.showToolbar"), Settings::setShowToolbar);
         statusBarCheck = viewCheck(tr("settings.showStatusBar"), Settings::setShowStatusBar);
         tabBarCheck = viewCheck(tr("settings.showTabBar"), Settings::setShowTabBar);
@@ -2471,7 +2482,12 @@ public class SettingsWindow {
     private VBox interfacePage() {
         VBox p = page(tr("settings.cat.interface"), tr("settings.interface.subtitle"));
         Card chrome = card(p, tr("settings.section.chrome"));
-        checkRow(chrome, Category.INTERFACE, menuBarCheck, null, "menu bar menubar chrome");
+        checkRow(
+                chrome,
+                Category.INTERFACE,
+                menuBarCheck,
+                tr("settings.showMenuBar.note"),
+                "menu bar menubar chrome macos system menu bar");
         checkRow(chrome, Category.INTERFACE, toolbarCheck, null, "toolbar buttons chrome");
         checkRow(chrome, Category.INTERFACE, statusBarCheck, null, "status bar chrome");
         checkRow(chrome, Category.INTERFACE, tabBarCheck, null, "tab bar tabs chrome");

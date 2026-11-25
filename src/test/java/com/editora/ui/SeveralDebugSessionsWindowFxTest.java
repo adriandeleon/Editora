@@ -134,9 +134,9 @@ class SeveralDebugSessionsWindowFxTest {
 
         EditorBuffer client = open(second);
         List<Boolean> offered = new ArrayList<>();
-        debug.retargetChoice = (question, both) -> {
+        debug.fileLaunch.retargetChoice = (question, both) -> {
             offered.add(both);
-            return DebugCoordinator.Retarget.BOTH;
+            return DebugFileLaunch.Retarget.BOTH;
         };
         run("debug.start");
         FakeDebugAdapter.Session two = adapter.awaitSession();

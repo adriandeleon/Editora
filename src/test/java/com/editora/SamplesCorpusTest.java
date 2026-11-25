@@ -132,8 +132,18 @@ class SamplesCorpusTest {
     void everyBundledGrammarHasASample() throws IOException {
         Assumptions.assumeTrue(Files.isDirectory(SAMPLES), "samples/ not present (skipping)");
         Set<String> covered = new TreeSet<>();
+        java.util.Map<String, String> byExtension = GrammarRegistry.shared().extensionLanguages();
         for (String rel : committedSamples()) {
             covered.add(languageOf(rel));
+            // and the grammar its extension is coloured with: a .heex is an HTML Template, coloured by heex
+            String name = rel.substring(rel.lastIndexOf('/') + 1);
+            int dot = name.lastIndexOf('.');
+            if (dot > 0) {
+                String grammar = byExtension.get(name.substring(dot + 1).toLowerCase(Locale.ROOT));
+                if (grammar != null) {
+                    covered.add(grammar);
+                }
+            }
         }
         covered.add(LanguageRegistry.forFileName("README.md")); // the manifest itself is a Markdown sample
         Set<String> uncovered = new TreeSet<>(GrammarRegistry.shared().availableLanguageNames());

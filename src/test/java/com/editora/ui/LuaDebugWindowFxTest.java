@@ -166,8 +166,8 @@ class LuaDebugWindowFxTest {
                   "program": { "lua": "lua", "file": "${file}" } } ] }
                 """);
         LaunchJson.Configuration config = parsed.configurations().getFirst();
-        FxTestSupport.runOnFx(
-                () -> debug.runLaunchConfiguration(root.resolve(".vscode/launch.json"), root, parsed, config, b));
+        FxTestSupport.runOnFx(() ->
+                debug.launchJson.runLaunchConfiguration(root.resolve(".vscode/launch.json"), root, parsed, config, b));
         FakeDebugAdapter.Session session = adapter.awaitSession();
         session.awaitRequest("launch");
         assertEquals("lua-local", session.launchArgs.get("type"));

@@ -444,4 +444,66 @@ class LaunchRouteTest {
                 LaunchRoute.javaRunConfiguration("x", Map.of("javaExec", "/java"), Path.of("/w"))
                         .jdkHome());
     }
+
+    @Test
+    void cppdbgsSourceFileMapReachesGdbAndCodelldbInTheirOwnWords() {
+        Map<String, Object> map = Map.of("/build", "/here");
+        LaunchRoute.Route gdbRemote = LaunchRoute.of(
+                config(
+                        "type",
+                        "cppdbg",
+                        "request",
+                        "launch",
+                        "program",
+                        "/here/app",
+                        "miDebuggerServerAddress",
+                        "board:2345",
+                        "sourceFileMap",
+                        map),
+                Map.of());
+        assertEquals(LaunchRoute.Kind.GDB, gdbRemote.kind());
+        assertEquals(map, gdbRemote.request().get(RemoteNativeAttach.SOURCE_FILE_MAP));
+        LaunchRoute.Route lldbRemote = LaunchRoute.of(
+                config(
+                        "type",
+                        "cppdbg",
+                        "request",
+                        "launch",
+                        "program",
+                        "/here/app",
+                        "MIMode",
+                        "lldb",
+                        "miDebuggerServerAddress",
+                        "board:2345",
+                        "sourceFileMap",
+                        map),
+                Map.of());
+        assertEquals(map, lldbRemote.request().get("sourceMap"));
+        assertEquals(
+                map,
+                LaunchRoute.of(
+                                config(
+                                        "type",
+                                        "cppdbg",
+                                        "request",
+                                        "launch",
+                                        "program",
+                                        "/a",
+                                        "MIMode",
+                                        "lldb",
+                                        "sourceFileMap",
+                                        map),
+                                Map.of())
+                        .request()
+                        .get("sourceMap"),
+                "a local launch on LLDB too");
+        assertEquals(
+                map,
+                LaunchRoute.of(
+                                config("type", "gdb", "request", "launch", "program", "/a", "sourceFileMap", map),
+                                Map.of())
+                        .request()
+                        .get(RemoteNativeAttach.SOURCE_FILE_MAP),
+                "a gdb configuration keeps it for GDB's command line");
+    }
 }

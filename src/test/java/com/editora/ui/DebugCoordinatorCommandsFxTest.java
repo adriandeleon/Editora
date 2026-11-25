@@ -339,21 +339,22 @@ class DebugCoordinatorCommandsFxTest {
         EditorBuffer open = buffer(openFile, SOURCE);
         FxTestSupport.runOnFx(() -> {
             debug.wireBuffer(open);
-            assertTrue(debug.cardBreakpointsOn(closed), "a Java file with no tab");
-            assertTrue(debug.cardBreakpointsOn(openFile), "a Java tab");
-            assertFalse(debug.cardBreakpointsOn(project.resolve("notes.txt")), "a language that does not debug");
+            assertTrue(debug.mapFollow.cardBreakpointsOn(closed), "a Java file with no tab");
+            assertTrue(debug.mapFollow.cardBreakpointsOn(openFile), "a Java tab");
+            assertFalse(
+                    debug.mapFollow.cardBreakpointsOn(project.resolve("notes.txt")), "a language that does not debug");
 
             // A file with no tab: its stored breakpoints change, and the other windows are told.
-            debug.toggleCardBreakpoint(closed, 2, text);
+            debug.mapFollow.toggleCardBreakpoint(closed, 2, text);
             List<Breakpoint> set = store.get(key);
             assertEquals(List.of(2), set.stream().map(Breakpoint::line).toList());
             assertEquals("  int a = 1;", set.getFirst().lineText());
             assertTrue(stored.contains(key));
-            Map<Integer, com.editora.ui.MapCardGutter.Breakpoint> marks = debug.cardBreakpoints(closed);
+            Map<Integer, com.editora.ui.MapCardGutter.Breakpoint> marks = debug.mapFollow.cardBreakpoints(closed);
             assertEquals(java.util.Set.of(2), marks.keySet());
             assertNull(marks.get(2).classes(), "a plain breakpoint");
 
-            debug.toggleCardBreakpoint(closed, 1, text);
+            debug.mapFollow.toggleCardBreakpoint(closed, 1, text);
             assertTrue(log.contains("status:" + tr("status.debug.noCodeOnLine")), "a comment line has no code");
             assertEquals(1, store.get(key).size());
 
@@ -364,56 +365,59 @@ class DebugCoordinatorCommandsFxTest {
                             Breakpoint.plain(0, "class Closed {").withId("first"),
                             Breakpoint.plain(2, "  int a = 1;").withEnabled(false),
                             Breakpoint.plain(3, "  int b = 2;").withTriggeredBy("first"))));
-            marks = debug.cardBreakpoints(closed);
+            marks = debug.mapFollow.cardBreakpoints(closed);
             assertEquals("disabled", marks.get(2).classes());
             assertEquals("triggered", marks.get(3).classes());
             assertFalse(marks.get(3).tooltip().isBlank(), "it says what it waits for");
-            debug.toggleMuteBreakpoints();
-            marks = debug.cardBreakpoints(closed);
+            debug.breakpointMenus.toggleMuteBreakpoints();
+            marks = debug.mapFollow.cardBreakpoints(closed);
             assertEquals("muted", marks.get(0).classes());
             assertEquals("disabled muted", marks.get(2).classes());
             assertTrue(marks.get(0).tooltip().startsWith(tr("debug.breakpoint.muted")));
-            debug.toggleMuteBreakpoints();
+            debug.breakpointMenus.toggleMuteBreakpoints();
 
-            debug.toggleCardBreakpoint(closed, 2, text);
+            debug.mapFollow.toggleCardBreakpoint(closed, 2, text);
             assertEquals(
                     List.of(0, 3), store.get(key).stream().map(Breakpoint::line).toList(), "a second click removes it");
             store.remove(key);
 
             // A file with a tab: through the tab, as its gutter would.
-            debug.toggleCardBreakpoint(openFile, 2, SOURCE);
+            debug.mapFollow.toggleCardBreakpoint(openFile, 2, SOURCE);
             assertTrue(open.getBreakpointManager().isBreakpoint(2));
-            assertEquals(java.util.Set.of(2), debug.cardBreakpoints(openFile).keySet());
-            debug.toggleCardBreakpoint(openFile, 2, SOURCE);
+            assertEquals(
+                    java.util.Set.of(2),
+                    debug.mapFollow.cardBreakpoints(openFile).keySet());
+            debug.mapFollow.toggleCardBreakpoint(openFile, 2, SOURCE);
             assertFalse(open.getBreakpointManager().isBreakpoint(2));
 
             // A tab's breakpoints as its gutter draws them, muted ones too; a line with no code gets none.
-            debug.toggleCardBreakpoint(openFile, 3, SOURCE);
-            debug.toggleMuteBreakpoints();
-            assertEquals("muted", debug.cardBreakpoints(openFile).get(3).classes());
-            debug.toggleMuteBreakpoints();
-            debug.toggleCardBreakpoint(openFile, 6, SOURCE);
+            debug.mapFollow.toggleCardBreakpoint(openFile, 3, SOURCE);
+            debug.breakpointMenus.toggleMuteBreakpoints();
+            assertEquals(
+                    "muted", debug.mapFollow.cardBreakpoints(openFile).get(3).classes());
+            debug.breakpointMenus.toggleMuteBreakpoints();
+            debug.mapFollow.toggleCardBreakpoint(openFile, 6, SOURCE);
             assertFalse(open.getBreakpointManager().isBreakpoint(6), "the empty last line");
-            debug.toggleCardBreakpoint(openFile, 3, SOURCE);
+            debug.mapFollow.toggleCardBreakpoint(openFile, 3, SOURCE);
 
             // One that waits for a breakpoint there is none of yet is drawn as a plain one.
             store.put(
                     key,
                     new ArrayList<>(List.of(Breakpoint.plain(2, "  int a = 1;").withTriggeredBy("nobody"))));
-            assertNull(debug.cardBreakpoints(closed).get(2).classes());
+            assertNull(debug.mapFollow.cardBreakpoints(closed).get(2).classes());
             store.remove(key);
-            assertFalse(debug.cardBreakpointsOn(project.resolve("NOTICE")), "a file of no language");
+            assertFalse(debug.mapFollow.cardBreakpointsOn(project.resolve("NOTICE")), "a file of no language");
 
             // Debugging off: no strip, and a click does nothing.
             host.settings.setDebugSupport(false);
-            assertFalse(debug.cardBreakpointsOn(closed));
-            debug.toggleCardBreakpoint(closed, 2, text);
+            assertFalse(debug.mapFollow.cardBreakpointsOn(closed));
+            debug.mapFollow.toggleCardBreakpoint(closed, 2, text);
             assertNull(store.get(key));
             host.settings.setDebugSupport(true);
         });
-        assertEquals("b", DebugCoordinator.lineOf("a\r\nb\r\n", 1));
-        assertEquals("", DebugCoordinator.lineOf("a\nb", 5));
-        assertEquals("b", DebugCoordinator.lineOf("a\nb", 1));
+        assertEquals("b", MapDebugFollow.lineOf("a\r\nb\r\n", 1));
+        assertEquals("", MapDebugFollow.lineOf("a\nb", 5));
+        assertEquals("b", MapDebugFollow.lineOf("a\nb", 1));
     }
 
     // --- harness --------------------------------------------------------------------------------------
@@ -700,10 +704,10 @@ class DebugCoordinatorCommandsFxTest {
         FxTestSupport.runOnFx(() -> debug.memberBreakpoints().watchVariable(5, "local"));
         awaitStatus(tr("status.debug.notAField", "local"));
 
-        FxTestSupport.runOnFx(debug::toggleMuteBreakpoints);
+        FxTestSupport.runOnFx(debug.breakpointMenus::toggleMuteBreakpoints);
         assertEquals(List.of(), awaitNth(session.functionBreakpoints, 3), "muted: none");
         assertEquals(List.of(), awaitNth(session.dataBreakpoints, 3));
-        FxTestSupport.runOnFx(debug::toggleMuteBreakpoints);
+        FxTestSupport.runOnFx(debug.breakpointMenus::toggleMuteBreakpoints);
         assertEquals(List.of("demo.Args#run"), awaitNth(session.functionBreakpoints, 4));
         assertEquals(List.of("demo.Args#count/WRITE"), awaitNth(session.dataBreakpoints, 4));
 
@@ -809,8 +813,8 @@ class DebugCoordinatorCommandsFxTest {
         mainClasses("demo.Args");
         configs.add(config("Server", "java", "demo.Args", ""));
         configs.add(config("Client", "java", "demo.Args", ""));
-        FxTestSupport.runOnFx(() ->
-                debug.debugRunCompound(new com.editora.config.RunCompound("Both", List.of("Server", "Client"), true)));
+        FxTestSupport.runOnFx(() -> debug.launchJson.debugRunCompound(
+                new com.editora.config.RunCompound("Both", List.of("Server", "Client"), true)));
         FakeDebugAdapter.Session server = session("launch");
         FakeDebugAdapter.Session client = session("launch");
         assertEquals(2, FxTestSupport.callOnFx(() -> debug.sessions().size()), "a session each");
@@ -822,7 +826,7 @@ class DebugCoordinatorCommandsFxTest {
         assertTrue(server.disconnected.await(10, TimeUnit.SECONDS));
         assertTrue(client.disconnected.await(10, TimeUnit.SECONDS), "and the client stops with it");
 
-        FxTestSupport.runOnFx(() -> debug.debugRunCompound(
+        FxTestSupport.runOnFx(() -> debug.launchJson.debugRunCompound(
                 new com.editora.config.RunCompound("Missing", List.of("Server", "Gone"), false)));
         assertEquals(
                 tr("status.debug.compoundMissing", "Missing", "Gone"),
@@ -842,8 +846,8 @@ class DebugCoordinatorCommandsFxTest {
         configs.add(config("Client", "java", "demo.Args", ""));
         List<Runnable> held = new ArrayList<>();
         DebugPlanning.planner = (name, task) -> held.add(task); // read later, as the planner thread does
-        FxTestSupport.runOnFx(() ->
-                debug.debugRunCompound(new com.editora.config.RunCompound("Both", List.of("Server", "Client"), true)));
+        FxTestSupport.runOnFx(() -> debug.launchJson.debugRunCompound(
+                new com.editora.config.RunCompound("Both", List.of("Server", "Client"), true)));
         DebugPlanning.planner = (name, task) -> task.run();
         FxTestSupport.runOnFx(() -> {
             while (!held.isEmpty()) {
@@ -873,8 +877,8 @@ class DebugCoordinatorCommandsFxTest {
         configs.add(config("Server", "java", "demo.Args", ""));
         configs.add(config("Client", "java", "demo.Args", ""));
         heldSaves = new ArrayList<>();
-        FxTestSupport.runOnFx(() ->
-                debug.debugRunCompound(new com.editora.config.RunCompound("Both", List.of("Server", "Client"), true)));
+        FxTestSupport.runOnFx(() -> debug.launchJson.debugRunCompound(
+                new com.editora.config.RunCompound("Both", List.of("Server", "Client"), true)));
         List<Runnable> saves = heldSaves;
         heldSaves = null;
         FxTestSupport.runOnFx(() -> saves.forEach(Runnable::run));
@@ -993,7 +997,7 @@ class DebugCoordinatorCommandsFxTest {
         FxTestSupport.runOnFx(() -> debug.stop());
         assertTrue(first.disconnected.await(10, TimeUnit.SECONDS));
         clearLog();
-        FxTestSupport.runOnFx(() -> debug.debugMainClass());
+        FxTestSupport.runOnFx(() -> debug.javaLaunch.debugMainClass());
         FakeDebugAdapter.Session second = session("launch");
         assertEquals("Main", second.launchArgs.get("mainClass"));
         List<?> cp = (List<?>) second.launchArgs.get("classPaths");
@@ -1117,7 +1121,7 @@ class DebugCoordinatorCommandsFxTest {
         replies.put("vscode.java.resolveClasspath", List.of(List.of(), List.of(bin.toString())));
         replies.put("vscode.java.resolveJavaExecutable", javaExecutable());
 
-        FxTestSupport.runOnFx(() -> debug.debugMainClass());
+        FxTestSupport.runOnFx(() -> debug.javaLaunch.debugMainClass());
 
         FakeDebugAdapter.Session session = session("launch");
         assertEquals("demo.App", session.launchArgs.get("mainClass"));
@@ -1136,12 +1140,12 @@ class DebugCoordinatorCommandsFxTest {
     void anAttachedTestRunIsStoppedWithItsSessionAndItsOtherJvmsAreAttachedInTurn() throws Exception {
         Path test = open("src/main/java/demo/Args.java");
         List<String> owner = new java.util.concurrent.CopyOnWriteArrayList<>();
-        FxTestSupport.runOnFx(() -> debug.attachToPort(test, "localhost", 41001, () -> owner.add("stopped")));
+        FxTestSupport.runOnFx(() -> debug.attach.attachToPort(test, "localhost", 41001, () -> owner.add("stopped")));
         FakeDebugAdapter.Session first = session("attach");
         awaitState("debug.state.running");
 
         clearLog();
-        FxTestSupport.runOnFx(() -> debug.attachToPort(test, "localhost", 41002, () -> owner.add("stopped")));
+        FxTestSupport.runOnFx(() -> debug.attach.attachToPort(test, "localhost", 41002, () -> owner.add("stopped")));
         assertEquals(List.of(tr("status.debug.attachQueued", 41002)), statuses(), "the second fork waits its turn");
         assertEquals(1, adapter.sessionCount());
 
@@ -1236,7 +1240,7 @@ class DebugCoordinatorCommandsFxTest {
         assertEquals(List.of(tr("status.debug.alreadyRunning", "Args.java")), statuses(), "and it says so");
         Path other = open("src/main/java/demo/Other.java");
         List<String> asked = new java.util.ArrayList<>();
-        debug.confirmRetarget = question -> {
+        debug.fileLaunch.confirmRetarget = question -> {
             asked.add(question);
             return false; // "Cancel": a running program is not ended by a key pressed in another tab
         };
@@ -1244,7 +1248,7 @@ class DebugCoordinatorCommandsFxTest {
         // A running session can be kept beside the new one: the question offers Debug Both.
         assertEquals(List.of(tr("dialog.debug.retargetBothQuestion", "Args.java", "Other.java")), asked);
         assertEquals(1, first.disconnected.getCount(), "declined: the running session goes on");
-        debug.confirmRetarget = question -> true;
+        debug.fileLaunch.confirmRetarget = question -> true;
         FxTestSupport.runOnFx(() -> debug.debugStart());
 
         assertTrue(first.disconnected.await(10, TimeUnit.SECONDS), "the running session is replaced");
@@ -1295,18 +1299,18 @@ class DebugCoordinatorCommandsFxTest {
 
     @Test
     void attachParsesHostAndPortAndRestartAttachesAgain() throws Exception {
-        FxTestSupport.runOnFx(() -> debug.debugAttach());
+        FxTestSupport.runOnFx(() -> debug.attach.debugAttach());
         assertEquals(List.of(tr("status.debug.saveFirst")), statuses());
 
         clearLog();
         Path file = open("src/main/java/demo/Args.java");
         promptAnswer = " not-a-port ";
-        FxTestSupport.runOnFx(() -> debug.debugAttach());
+        FxTestSupport.runOnFx(() -> debug.attach.debugAttach());
         assertEquals(List.of(tr("status.debug.badAddress", "not-a-port")), statuses());
         assertEquals(0, adapter.sessionCount());
 
         promptAnswer = "build.example.test:8000";
-        FxTestSupport.runOnFx(() -> debug.debugAttach());
+        FxTestSupport.runOnFx(() -> debug.attach.debugAttach());
         FakeDebugAdapter.Session first = session("attach");
         assertEquals("build.example.test", first.launchArgs.get("hostName"));
         assertEquals("8000", String.valueOf(first.launchArgs.get("port")).replace(".0", ""));
@@ -1320,7 +1324,7 @@ class DebugCoordinatorCommandsFxTest {
         assertEquals("build.example.test", second.launchArgs.get("hostName"));
 
         promptAnswer = "5005"; // a bare port: this machine
-        FxTestSupport.runOnFx(() -> debug.debugAttach());
+        FxTestSupport.runOnFx(() -> debug.attach.debugAttach());
         assertEquals("localhost", session("attach").launchArgs.get("hostName"));
     }
 
@@ -1331,29 +1335,29 @@ class DebugCoordinatorCommandsFxTest {
     void attachRemembersItsAddressesAndReattachUsesTheLastOne() throws Exception {
         attachTargets = new ArrayList<>();
         Path file = open("src/main/java/demo/Args.java");
-        FxTestSupport.runOnFx(() -> debug.debugReattach());
+        FxTestSupport.runOnFx(() -> debug.attach.debugReattach());
         assertEquals(List.of(tr("status.debug.noEarlierAttach")), statuses());
 
         promptAnswer = "build.example.test:8000"; // nothing remembered yet: Attach asks
-        FxTestSupport.runOnFx(() -> debug.debugAttach());
+        FxTestSupport.runOnFx(() -> debug.attach.debugAttach());
         session("attach");
         awaitState("debug.state.running");
         assertEquals(List.of("build.example.test:8000"), attachTargets);
 
-        FxTestSupport.runOnFx(() -> debug.debugReattach());
+        FxTestSupport.runOnFx(() -> debug.attach.debugReattach());
         assertEquals("build.example.test", session("attach").launchArgs.get("hostName"));
         awaitState("debug.state.running");
 
         // With an address remembered, Attach offers it first and "Another address…" last.
         promptAnswer = "localhost:5006";
-        FxTestSupport.runOnFx(() -> debug.debugAttach());
+        FxTestSupport.runOnFx(() -> debug.attach.debugAttach());
         answerPicker(1, javafx.scene.input.KeyCode.ENTER);
         assertEquals(
                 "5006", String.valueOf(session("attach").launchArgs.get("port")).replace(".0", ""));
         awaitState("debug.state.running");
         assertEquals(List.of("localhost:5006", "build.example.test:8000"), attachTargets, "most recent first");
 
-        FxTestSupport.runOnFx(() -> debug.debugAttach());
+        FxTestSupport.runOnFx(() -> debug.attach.debugAttach());
         answerPicker(1, javafx.scene.input.KeyCode.ENTER); // the earlier one
         assertEquals("build.example.test", session("attach").launchArgs.get("hostName"));
         assertEquals(List.of("build.example.test:8000", "localhost:5006"), attachTargets);
@@ -1380,10 +1384,10 @@ class DebugCoordinatorCommandsFxTest {
         FxTestSupport.runOnFx(() -> {
             dap.setServerProvidesJavaDebug(false); // jdtls came up without java-debug
             promptAnswer = "5005";
-            debug.debugAttach();
-            debug.debugMainClass();
+            debug.attach.debugAttach();
+            debug.javaLaunch.debugMainClass();
             debug.debugConfig(config("App", "java", "demo.Args", ""));
-            debug.attachToPort(active.getPath(), "localhost", 5005);
+            debug.attach.attachToPort(active.getPath(), "localhost", 5005);
             debug.debugStart();
         });
         FxTestSupport.drainFx();
@@ -1429,23 +1433,23 @@ class DebugCoordinatorCommandsFxTest {
     @Test
     void debugMainClassNeedsAJavaFileOfAProjectWithAMainClass() throws Exception {
         buffer(loose.resolve("notes.txt"), "plain text\n");
-        FxTestSupport.runOnFx(() -> debug.debugMainClass());
+        FxTestSupport.runOnFx(() -> debug.javaLaunch.debugMainClass());
         assertEquals(List.of(tr("status.debug.needJavaFile")), statuses());
 
         clearLog();
         buffer(loose.resolve("Loose.java"), "public class Loose {}\n");
-        FxTestSupport.runOnFx(() -> debug.debugMainClass());
+        FxTestSupport.runOnFx(() -> debug.javaLaunch.debugMainClass());
         assertEquals(List.of(tr("status.debug.noProject")), statuses());
 
         clearLog();
         open("src/main/java/demo/Args.java");
         replies.put("vscode.java.resolveMainClass", List.of());
-        FxTestSupport.runOnFx(() -> debug.debugMainClass());
+        FxTestSupport.runOnFx(() -> debug.javaLaunch.debugMainClass());
         awaitStatus(tr("status.debug.noMainClass"));
 
         clearLog();
         mainClasses("demo.Args", "demo.Other");
-        FxTestSupport.runOnFx(() -> debug.debugMainClassNamed("demo.Missing"));
+        FxTestSupport.runOnFx(() -> debug.javaLaunch.debugMainClassNamed("demo.Missing"));
         awaitStatus(tr("status.debug.noMainClass"));
         assertEquals(0, adapter.sessionCount());
     }
@@ -1458,7 +1462,7 @@ class DebugCoordinatorCommandsFxTest {
 
         FxTestSupport.runOnFx(() -> {
             active.getFocusedArea().insertText(0, "// edited\n");
-            debug.debugMainClass();
+            debug.javaLaunch.debugMainClass();
         });
 
         FakeDebugAdapter.Session session = session("launch");
@@ -1834,7 +1838,7 @@ class DebugCoordinatorCommandsFxTest {
         mainClasses("demo.Args", "demo.Other");
         java.util.concurrent.CountDownLatch listed = new java.util.concurrent.CountDownLatch(1);
         FxTestSupport.runOnFx(() -> {
-            debug.debugMainClass();
+            debug.javaLaunch.debugMainClass();
             dap.resolveMainClasses(active.getPath(), options -> listed.countDown()); // answered after the first
         });
         assertTrue(listed.await(20, TimeUnit.SECONDS), "jdtls answered");
@@ -1952,11 +1956,12 @@ class DebugCoordinatorCommandsFxTest {
 
     @Test
     void aBreakpointIsToggledAtTheCaretOnlyWhereThereIsAGutterForIt() throws Exception {
-        FxTestSupport.runOnFx(() -> debug.toggleBreakpointAtCaret()); // no file in front: nothing to say
+        FxTestSupport.runOnFx(
+                () -> debug.caretBreakpoints.toggleBreakpointAtCaret()); // no file in front: nothing to say
         assertEquals(List.of(), statuses());
 
         buffer(loose.resolve("notes.txt"), "plain\ntext\n");
-        FxTestSupport.runOnFx(() -> debug.toggleBreakpointAtCaret());
+        FxTestSupport.runOnFx(() -> debug.caretBreakpoints.toggleBreakpointAtCaret());
         assertEquals(List.of(tr("status.debug.noBreakpointsHere")), statuses());
 
         clearLog();
@@ -1965,7 +1970,7 @@ class DebugCoordinatorCommandsFxTest {
         FxTestSupport.runOnFx(() -> {
             debug.wireBuffer(b);
             b.getFocusedArea().moveTo(3, 0);
-            debug.toggleBreakpointAtCaret();
+            debug.caretBreakpoints.toggleBreakpointAtCaret();
         });
         assertEquals(
                 List.of(3),
@@ -1976,13 +1981,13 @@ class DebugCoordinatorCommandsFxTest {
                 List.of(3),
                 store.get(b.getPath().toString()).stream().map(Breakpoint::line).toList());
 
-        FxTestSupport.runOnFx(() -> debug.toggleBreakpointAtCaret());
+        FxTestSupport.runOnFx(() -> debug.caretBreakpoints.toggleBreakpointAtCaret());
         assertNull(store.get(b.getPath().toString()), "the last breakpoint of a file takes its entry with it");
 
         FxTestSupport.runOnFx(() -> {
             host.settings.setDebugSupport(false);
-            debug.toggleBreakpointAtCaret();
-            debug.editBreakpointAtCaret();
+            debug.caretBreakpoints.toggleBreakpointAtCaret();
+            debug.caretBreakpoints.editBreakpointAtCaret();
         });
         assertEquals(List.of(tr("statusbar.tip.debugDisabled"), tr("statusbar.tip.debugDisabled")), statuses());
         assertEquals(
@@ -1997,9 +2002,9 @@ class DebugCoordinatorCommandsFxTest {
         FxTestSupport.runOnFx(() -> {
             debug.wireBuffer(b);
             b.getFocusedArea().moveTo(2, 0);
-            debug.toggleBreakpointAtCaret(); // an ordinary one on line 3
+            debug.caretBreakpoints.toggleBreakpointAtCaret(); // an ordinary one on line 3
             b.getFocusedArea().moveTo(3, 0);
-            debug.toggleTemporaryBreakpointAtCaret();
+            debug.breakpointMenus.toggleTemporaryBreakpointAtCaret();
         });
         assertEquals(List.of(tr("status.debug.temporaryAdded", 4)), statuses());
         assertTrue(FxTestSupport.callOnFx(() -> b.getBreakpointManager().get(3).temporary()));
@@ -2024,10 +2029,10 @@ class DebugCoordinatorCommandsFxTest {
         // Toggled on an ordinary breakpoint it makes that one temporary; on a temporary one it removes it.
         FxTestSupport.runOnFx(() -> {
             b.getFocusedArea().moveTo(2, 0);
-            debug.toggleTemporaryBreakpointAtCaret();
+            debug.breakpointMenus.toggleTemporaryBreakpointAtCaret();
         });
         assertTrue(FxTestSupport.callOnFx(() -> b.getBreakpointManager().get(2).temporary()));
-        FxTestSupport.runOnFx(() -> debug.toggleTemporaryBreakpointAtCaret());
+        FxTestSupport.runOnFx(() -> debug.breakpointMenus.toggleTemporaryBreakpointAtCaret());
         assertFalse(FxTestSupport.callOnFx(() -> b.getBreakpointManager().isBreakpoint(2)));
     }
 
@@ -2062,7 +2067,7 @@ class DebugCoordinatorCommandsFxTest {
 
         FxTestSupport.runOnFx(() -> {
             active.getFocusedArea().insertText(0, "// edited\n");
-            debug.debugMainClass();
+            debug.javaLaunch.debugMainClass();
             debug.debugConfig(config("App", "java", "demo.Args", ""));
         });
         FxTestSupport.drainFx();

@@ -79,7 +79,7 @@ class SeveralSessionsProbeFxTest {
                             && client.equals(c.activeBuffer().getPath())));
             EditorBuffer second = FxTestSupport.callOnFx(c::activeBuffer);
             FxTestSupport.runOnFx(() -> second.toggleBreakpoint(2));
-            debug.retargetChoice = (question, both) -> DebugCoordinator.Retarget.BOTH;
+            debug.fileLaunch.retargetChoice = (question, both) -> DebugFileLaunch.Retarget.BOTH;
             FxTestSupport.runOnFx(() -> debug.debugFile(second)); // Debug File: never continues the paused one
             await("a second session", 30, () -> call(() -> debug.sessions().size()) == 2);
             DebugSession b = call(() -> debug.sessions().focused());
@@ -140,8 +140,8 @@ class SeveralSessionsProbeFxTest {
             Path launchJson = app.resolve(".vscode/launch.json");
             com.editora.dap.LaunchJson.File parsed = com.editora.dap.LaunchJson.parse(Files.readString(launchJson));
             DebugCoordinator.LaunchFile launch = new DebugCoordinator.LaunchFile(launchJson, app, parsed);
-            FxTestSupport.runOnFx(
-                    () -> debug.runLaunchCompound(launch, parsed.compounds().getFirst(), first));
+            FxTestSupport.runOnFx(() -> debug.launchJson.runLaunchCompound(
+                    launch, parsed.compounds().getFirst(), first));
             await("two sessions", 30, () -> call(() -> debug.sessions().size()) == 2);
             List<DebugSession> both = call(() -> debug.sessions().all());
             DebugSession a = both.getFirst();

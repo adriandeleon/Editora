@@ -163,7 +163,7 @@ class DebugHistoryProbeFxTest {
             EditorBuffer b = FxTestSupport.callOnFx(c::activeBuffer);
             FxTestSupport.runOnFx(() -> {
                 b.getFocusedArea().moveTo(line, 0);
-                debug.toggleRecordingBreakpointAtCaret();
+                debug.breakpointMenus.toggleRecordingBreakpointAtCaret();
             });
             FxTestSupport.runOnFx(() -> ((CommandRegistry) FxTestSupport.field(c, "registry")).run("debug.start"));
             DebugPanel panel = call(debug::panel);

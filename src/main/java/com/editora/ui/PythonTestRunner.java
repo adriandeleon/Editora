@@ -58,7 +58,7 @@ final class PythonTestRunner {
 
         /**
          * Debugs tests by id in {@code cwd} under {@code anchor}'s interpreter (see {@code
-         * DebugCoordinator.debugPythonTests}); a no-op where there is no debugger.
+         * PythonDebugLaunch.debugPythonTests}); a no-op where there is no debugger.
          */
         default void debugTests(
                 Path anchor, Path cwd, List<String> pytestIds, List<String> unittestIds, @Nullable String label) {}

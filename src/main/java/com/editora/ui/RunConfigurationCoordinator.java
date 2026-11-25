@@ -846,7 +846,7 @@ final class RunConfigurationCoordinator {
             return;
         }
         java.nio.file.Path routing = b.getPath();
-        // A Kotlin file's program is attached by Editora's JVM adapter (DebugCoordinator.attachToPort), Java's by
+        // A Kotlin file's program is attached by Editora's JVM adapter (DebugAttach.attachToPort), Java's by
         // java-debug through jdtls.
         String language = b.getLanguage();
         if (!host.debugCoordinator().debugEffectiveFor(language, routing)) { // remote: the host's (review A9)
@@ -954,14 +954,14 @@ final class RunConfigurationCoordinator {
 
     /** Watches {@code c}'s next run's output for JDWP banners and attaches the debugger to each. */
     void armDebugAttach(BuildCoordinator c, java.nio.file.Path routing) {
-        // Every banner of the run is attached (one at a time — see DebugCoordinator.attachToPort), and Stop on
+        // Every banner of the run is attached (one at a time — see DebugAttach.attachToPort), and Stop on
         // the session ends the run (review A4, D11); the coordinator drops the watcher when the run is over.
         boolean[] seen = {false};
         c.setOutputWatcher((line, stderr) -> {
             int port = com.editora.test.TestDebug.jdwpPort(line);
             if (port > 0) {
                 seen[0] = true;
-                host.debugCoordinator().attachToPort(routing, "localhost", port, c::stop);
+                host.debugCoordinator().attach.attachToPort(routing, "localhost", port, c::stop);
             }
         });
         // No banner after a while with the build still running: the app most likely started without the
