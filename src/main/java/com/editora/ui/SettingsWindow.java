@@ -1302,6 +1302,9 @@ public class SettingsWindow {
         spellPage.buildControls();
 
         menuBarCheck = viewCheck(tr("settings.showMenuBar"), Settings::setShowMenuBar);
+        // Not offered on macOS either: the menu sits in the system menu bar at the top of the screen, which a
+        // window cannot hide, so the switch would do nothing. Disabled, not hidden, so its note says why.
+        menuBarCheck.setDisable(!ExtendedWindow.supportedOn(com.editora.Os.current()));
         toolbarCheck = viewCheck(tr("settings.showToolbar"), Settings::setShowToolbar);
         statusBarCheck = viewCheck(tr("settings.showStatusBar"), Settings::setShowStatusBar);
         tabBarCheck = viewCheck(tr("settings.showTabBar"), Settings::setShowTabBar);
@@ -2471,7 +2474,12 @@ public class SettingsWindow {
     private VBox interfacePage() {
         VBox p = page(tr("settings.cat.interface"), tr("settings.interface.subtitle"));
         Card chrome = card(p, tr("settings.section.chrome"));
-        checkRow(chrome, Category.INTERFACE, menuBarCheck, null, "menu bar menubar chrome");
+        checkRow(
+                chrome,
+                Category.INTERFACE,
+                menuBarCheck,
+                tr("settings.showMenuBar.note"),
+                "menu bar menubar chrome macos system menu bar");
         checkRow(chrome, Category.INTERFACE, toolbarCheck, null, "toolbar buttons chrome");
         checkRow(chrome, Category.INTERFACE, statusBarCheck, null, "status bar chrome");
         checkRow(chrome, Category.INTERFACE, tabBarCheck, null, "tab bar tabs chrome");

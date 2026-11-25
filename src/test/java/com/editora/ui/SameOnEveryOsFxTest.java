@@ -33,6 +33,7 @@ class SameOnEveryOsFxTest {
             List<String> menuRows,
             List<String> settingsRows,
             boolean extendedWindowOffered,
+            boolean menuBarOffered,
             boolean adminSaveOffered,
             String adminSaveReason,
             String adminSaveToggleReason) {}
@@ -73,6 +74,8 @@ class SameOnEveryOsFxTest {
                 // belongs to the system bar, so the window cannot draw its own title bar.
                 boolean offered = !FxTestSupport.<javafx.scene.Node>field(settings, "extendedWindowCheck")
                         .isDisable();
+                boolean menuBarRow = !FxTestSupport.<javafx.scene.Node>field(settings, "menuBarCheck")
+                        .isDisable();
                 boolean adminSave = !FxTestSupport.<javafx.scene.Node>field(settings, "adminSaveCheck")
                         .isDisable();
                 FxTestSupport.<Stage>field(settings, "stage").hide();
@@ -81,6 +84,7 @@ class SameOnEveryOsFxTest {
                         menuRows,
                         settingsRows,
                         offered,
+                        menuBarRow,
                         adminSave,
                         String.valueOf(fx.controller.disabledCommandReason("file.saveAsAdmin")),
                         String.valueOf(fx.controller.disabledCommandReason("view.toggleAdminSave")));
@@ -114,6 +118,10 @@ class SameOnEveryOsFxTest {
         assertEquals(true, by.get(Os.Kind.LINUX).extendedWindowOffered());
         assertEquals(true, by.get(Os.Kind.WINDOWS).extendedWindowOffered());
         assertEquals(false, by.get(Os.Kind.MAC).extendedWindowOffered(), "disabled on macOS, and still a row");
+        // Show menu bar: the system menu bar cannot be hidden by a window, so it is disabled on macOS too.
+        assertEquals(true, by.get(Os.Kind.LINUX).menuBarOffered());
+        assertEquals(true, by.get(Os.Kind.WINDOWS).menuBarOffered());
+        assertEquals(false, by.get(Os.Kind.MAC).menuBarOffered(), "disabled on macOS, and still a row");
         Surface linux = by.get(Os.Kind.LINUX);
         for (Os.Kind kind : List.of(Os.Kind.WINDOWS, Os.Kind.MAC)) {
             Surface other = by.get(kind);
