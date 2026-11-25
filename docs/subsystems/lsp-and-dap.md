@@ -1350,7 +1350,11 @@ beside it (`language_server.sh`, located by `install/ElixirServerInstall`: as co
 [`run/ElixirRun`](../../src/main/java/com/editora/run/ElixirRun.java) in the project (the nearest `mix.exs`): a test
 file `task: test`, `taskArgs: ["test/x_test.exs:<line>"]` (Debug Test at Caret's line, else the file), `startApps`, and
 `requireFiles` of `test/test_helper.exs` and the file, so a test's own module is interpreted too; another `.exs`
-`task: run` with the script; a module `task: run`, `--no-halt` when `mix.exs` names an application `mod:`. Without a
+`task: run` with the script; a module `task: run`, `--no-halt` when `mix.exs` names an application `mod:`, or in a
+Phoenix project (`{:phoenix, …}` among `mix.exs`'s deps; `ElixirRun.Kind.PHOENIX`) `task: phx.server` with
+`exitAfterTaskReturns: false` — `phx.server` returns once the endpoint is up, and without it ElixirLS reports
+`terminated`/`exited` right then while the server runs on (probed with ElixirLS 0.31.1 and Phoenix 1.8.17: a
+controller breakpoint stops on a request; Stop ends the BEAM). Without a
 Mix project ElixirLS fails the launch (`Mix.NoProjectError`): `ui/ElixirDebugLaunch` says so
 (`status.debug.elixirNeedsMix`) and Run File runs `elixir file`. Run File and F5 in a project ask the trust question
 first (`dialog.trust.item.mix`: Mix compiles the project and its dependencies). A launch.json `mix_task` configuration is

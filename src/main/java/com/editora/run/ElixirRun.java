@@ -16,8 +16,9 @@ import org.jspecify.annotations.Nullable;
  * <ul>
  *   <li>In a Mix project (the nearest folder with a {@code mix.exs}): a test file ({@code *_test.exs}) runs {@code mix
  *       test file}, or {@code :line} for the test or {@code describe} there; another script ({@code .exs}) runs {@code
- *       mix run file.exs} with the project loaded; a module ({@code .ex}) runs the project, {@code mix run} — with
- *       {@code --no-halt} when its application starts a supervision tree ({@code mod:} in {@code mix.exs}), which
+ *       mix run file.exs} with the project loaded; a module ({@code .ex}) runs the project: in a Phoenix project
+ *       ({@code :phoenix} among its dependencies) its web server, {@code mix phx.server}; otherwise {@code mix run} —
+ *       with {@code --no-halt} when its application starts a supervision tree ({@code mod:} in {@code mix.exs}), which
  *       would end at once otherwise.</li>
  *   <li>Outside one: {@code elixir file}. ElixirLS debugs Mix tasks alone, so such a file is not debugged
  *       ({@link #debuggable}).</li>
@@ -36,7 +37,9 @@ public final class ElixirRun {
         /** {@code mix test}. */
         TESTS,
         /** {@code mix run}, on a script or the project. */
-        MIX_RUN
+        MIX_RUN,
+        /** {@code mix phx.server}: a Phoenix project's web server, which runs until stopped. */
+        PHOENIX
     }
 
     /** The project's scripts that are not programs: its build, its formatter's settings, its configuration. */
@@ -52,6 +55,9 @@ public final class ElixirRun {
 
     /** {@code mod: {App.Application, []}} in a {@code mix.exs}'s {@code application}. */
     private static final Pattern MOD = Pattern.compile("\\bmod:\\s*\\{");
+
+    /** {@code {:phoenix, "~> 1.8"}} among a {@code mix.exs}'s dependencies: a Phoenix project (or umbrella web app). */
+    private static final Pattern PHOENIX_DEP = Pattern.compile("\\{\\s*:phoenix\\s*,");
 
     /**
      * How an Elixir file is run.
@@ -117,6 +123,18 @@ public final class ElixirRun {
             taskArgs.add(rel); // a script, run with the project loaded
         } else {
             String mixExs = read.apply(project.resolve("mix.exs"));
+            if (mixExs != null && PHOENIX_DEP.matcher(mixExs).find()) {
+                // a Phoenix project's module: its web server, as `mix phx.server` (code reloading and all)
+                List<String> serverArgs = new ArrayList<>(args);
+                return new Plan(
+                        Kind.PHOENIX,
+                        mix("phx.server", serverArgs),
+                        project,
+                        project,
+                        "phx.server",
+                        serverArgs,
+                        List.of());
+            }
             if (mixExs != null && MOD.matcher(mixExs).find()) {
                 taskArgs.add("--no-halt"); // the application's supervision tree runs until stopped
             }

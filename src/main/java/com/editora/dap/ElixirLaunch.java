@@ -25,7 +25,10 @@ public final class ElixirLaunch {
         return com.editora.Os.isWindows() ? "debug_adapter.bat" : "debug_adapter.sh";
     }
 
-    /** The {@code launch} for {@code plan}, a Mix task's ({@link ElixirRun.Kind#TESTS}, {@link ElixirRun.Kind#MIX_RUN}). */
+    /**
+     * The {@code launch} for {@code plan}, a Mix task's ({@link ElixirRun.Kind#TESTS}, {@link ElixirRun.Kind#MIX_RUN},
+     * {@link ElixirRun.Kind#PHOENIX}).
+     */
     public static Map<String, Object> launch(ElixirRun.Plan plan) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("type", TYPE);
@@ -38,6 +41,11 @@ public final class ElixirLaunch {
                 Objects.requireNonNull(plan.project(), "a Mix task needs its project")
                         .toString());
         m.put("startApps", plan.kind() == ElixirRun.Kind.TESTS); // mix test starts them; mix run does itself
+        if (plan.kind() == ElixirRun.Kind.PHOENIX) {
+            // phx.server returns once the endpoint is up; the server runs on. Without this ElixirLS reports the session
+            // ended right then (probed with ElixirLS 0.31.1 and Phoenix 1.8), and Editora would end it.
+            m.put("exitAfterTaskReturns", false);
+        }
         if (!plan.requireFiles().isEmpty()) {
             m.put("requireFiles", plan.requireFiles());
         }

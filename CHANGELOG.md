@@ -9,11 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phoenix: run and debug the web server.** F5 or Run File on a module of a Phoenix app runs `mix phx.server`; under
+  the debugger a breakpoint in a controller, LiveView or plug stops while the browser's request waits, and the server
+  runs until Stop.
 - **Editora says when it is drawing on the CPU.** When JavaFX cannot start its GPU pipeline (on Linux, typically a
   graphics driver updated without a reboot) it falls back to software rendering and the whole window lags. The
   status bar now says so once, Doctor gains a Graphics Rendering row with the reason and the fix, and menus drop
   their shadow in that mode, since redrawing the blur at every hover is what made them lag.
-
 - **Attach to a remote Go program.** Debug: Attach to Remote Delve… (also in Run ▸ Launch and Attach) debugs a Go
   program under Delve's headless server (`dlv debug --headless --listen=:2345`) on another machine, in a container or
   here, with no Delve needed on this machine. Give the folder it was built from over there and Delve maps your
@@ -29,9 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Doctor's Settings… opens the row's own language.** On a language server or debugger row (PowerShell, Go, …),
   Settings… opened Language Servers or Debugging on whichever language the page's Language picker last held; it now
   picks the row's language. ESLint, Prettier and Biome open the TypeScript card, Flutter the Dart card.
-
-### Fixed
-
 - **Attaching to a Python on another machine.** Debug: Attach (and a launch.json `debugpy` attach with a `connect`
   host) to a Python under `debugpy --listen` on another machine or in a container connected to this machine whatever
   host was given, so it never reached it. It now connects to that host.
