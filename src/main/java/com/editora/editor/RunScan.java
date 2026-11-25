@@ -166,7 +166,7 @@ final class RunScan {
         } else if (in.eligible()
                 && "powershell".equals(language)
                 && in.name() != null
-                && com.editora.dap.PowerShellLaunch.isScript(java.nio.file.Path.of(in.name()))) {
+                && in.name().toLowerCase(java.util.Locale.ROOT).endsWith(".ps1")) {
             // A .ps1 script runs from the top on pwsh; a module (.psm1) or data file (.psd1) has none.
             runnable = true;
             line = 0;

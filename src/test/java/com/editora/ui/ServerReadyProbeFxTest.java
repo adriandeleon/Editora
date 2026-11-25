@@ -66,8 +66,15 @@ class ServerReadyProbeFxTest {
     private static final Path HOME = Path.of(System.getProperty("user.home"));
 
     @BeforeAll
-    static void boot() throws Exception {
+    static void boot(@TempDir Path profile) throws Exception {
         FxTestSupport.bootToolkit();
+        // As BrowserDebugProbeFxTest: the browser's first start on a fresh runner can outlast what js-debug waits for a
+        // debugged browser, and js-debug then drops the launch without a word. CI failed so when this probe ran first.
+        String id = com.editora.dap.BrowserLaunch.pick(
+                Browsers.detect().stream().map(Browsers.Browser::id).toList(), null, null);
+        if (optedIn() && id != null && Browsers.executable(id) != null) {
+            BrowserDebugProbeFxTest.firstStart(Browsers.executable(id), profile);
+        }
     }
 
     private static boolean optedIn() {

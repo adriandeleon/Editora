@@ -5551,10 +5551,6 @@ public final class DapManager {
     // --- strings java-debug garbles (follow-up 4: emoji arrive as two wrong characters) -------------------
 
     /**
-     * Whether the session is java-debug's: its string values may need {@link JdwpStringRepair}, and it pauses and
-     * resumes threads one at a time unless asked for all of them.
-     */
-    /**
      * The {@code evaluate} context the adapter is sent for {@code context}: PSES answers a {@code repl} evaluation in
      * its console, which a debug session has none of (the result came back empty), so the Debug console asks it as a
      * {@code watch}, which returns the value — and still runs the expression, an assignment included.
@@ -5563,6 +5559,10 @@ public final class DapManager {
         return "repl".equals(context) && "powershell".equals(sessionLanguage) ? "watch" : context;
     }
 
+    /**
+     * Whether the session is java-debug's: its string values may need {@link JdwpStringRepair}, and it pauses and
+     * resumes threads one at a time unless asked for all of them.
+     */
     private boolean javaDebugSession() {
         return "java".equals(sessionLanguage);
     }
