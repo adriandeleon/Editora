@@ -2316,7 +2316,8 @@ final class WindowCommandRegistrar {
                         "debug.restart", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::restart)));
         host.registry()
                 .register(Command.of(
-                        "debug.attach", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugAttach)));
+                        "debug.attach",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().attach::debugAttach)));
         host.registry()
                 .register(Command.of(
                         "debug.continue", () -> host.debugCoordinator().ifDebug(host.dapManager()::resume)));
@@ -2342,7 +2343,7 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.attachToProcess",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugAttachToProcess)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().attach::debugAttachToProcess)));
         host.registry()
                 .register(Command.of(
                         "debug.browser",
@@ -2354,7 +2355,7 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.openCoreDump",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugOpenCoreDump)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().attach::debugOpenCoreDump)));
         host.registry()
                 .register(Command.of(
                         "debug.listenXdebug",
@@ -2362,7 +2363,7 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "debug.reattach",
-                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugReattach)));
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator().attach::debugReattach)));
         host.registry()
                 .register(Command.of(
                         "debug.toggleHex", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleHex)));

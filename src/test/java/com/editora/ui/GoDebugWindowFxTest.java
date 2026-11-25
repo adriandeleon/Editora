@@ -235,7 +235,7 @@ class GoDebugWindowFxTest {
     void attachToProcessAttachesDelveByProcessId() throws Exception {
         open(root.resolve("main.go"));
         var target = new LocalProcesses.Target(4242, LocalProcesses.Kind.GO, "server", "", 0);
-        FxTestSupport.runOnFx(() -> debug.attachToProcess(target));
+        FxTestSupport.runOnFx(() -> debug.attach.attachToProcess(target));
         FakeDebugAdapter.Session session = nextSession("attach");
         assertTrue(session.attached);
         assertEquals("local", session.launchArgs.get("mode"));
@@ -258,7 +258,7 @@ class GoDebugWindowFxTest {
             await("Delve not found", () -> !call(() -> debug.debugEffectiveFor("go")));
             assertEquals(tr("status.debug.delveMissing"), call(() -> debug.unavailableMessage("go", null)));
             var target = new LocalProcesses.Target(1, LocalProcesses.Kind.GO, "server", "", 0);
-            FxTestSupport.runOnFx(() -> debug.attachToProcess(target));
+            FxTestSupport.runOnFx(() -> debug.attach.attachToProcess(target));
             assertFalse(call(manager::isActive), "nothing is attached without Delve");
         } finally {
             FxTestSupport.runOnFx(() -> {

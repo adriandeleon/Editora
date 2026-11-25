@@ -531,7 +531,7 @@ final class DebugFileLaunch {
             // folder — and for a TypeScript file whatever Run runs for it (tsx, or the compiled file).
             Path launchedJs = path;
             d.s().relaunch = () -> d.javaLaunch.relaunchFor(launchedJs, again -> launchBuffer(again, nodeArgs));
-            d.debugJsFile(path, fileArgs, nodeArgs);
+            d.node.debugJsFile(path, fileArgs, nodeArgs);
             return;
         }
         if ("go".equals(language)) {

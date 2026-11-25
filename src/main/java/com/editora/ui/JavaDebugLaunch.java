@@ -271,7 +271,7 @@ final class JavaDebugLaunch {
         }
         if (com.editora.run.ScriptRunCommand.NODE.equals(cfg.type())
                 || com.editora.run.ScriptRunCommand.NPM.equals(cfg.type())) {
-            d.debugNodeConfig(cfg); // planned as Run plans it (NodeRunPlan / the package manager)
+            d.node.debugNodeConfig(cfg); // planned as Run plans it (NodeRunPlan / the package manager)
             return;
         }
         if (com.editora.run.ScriptRunCommand.isCompiled(cfg.type())) {
