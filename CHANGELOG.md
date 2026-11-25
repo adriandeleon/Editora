@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Editora says when it is drawing on the CPU.** When JavaFX cannot start its GPU pipeline (on Linux, typically a
+  graphics driver updated without a reboot) it falls back to software rendering and the whole window lags. The
+  status bar now says so once, Doctor gains a Graphics Rendering row with the reason and the fix, and menus drop
+  their shadow in that mode, since redrawing the blur at every hover is what made them lag.
+
 - **Attach to a remote Go program.** Debug: Attach to Remote Delve… (also in Run ▸ Launch and Attach) debugs a Go
   program under Delve's headless server (`dlv debug --headless --listen=:2345`) on another machine, in a container or
   here, with no Delve needed on this machine. Give the folder it was built from over there and Delve maps your

@@ -1119,6 +1119,12 @@ final class DoctorCoordinator {
             why = why != null ? why : com.editora.io.WatchServices.fallbackReason();
             return why == null ? base.ok(tr("doctor.fileWatch.native")) : base.warn(why, "doctor.tip.fileWatchPolling");
         }));
+        // JavaFX drawing on the CPU because its GPU pipeline could not start: the whole window lags, and says nothing.
+        DoctorCheck rendering = DoctorCheck.checking("rendering", "system", tr("doctor.label.rendering"), "");
+        specs.add(terminal(
+                RenderPipeline.softwareFallback()
+                        ? rendering.warn(tr("doctor.rendering.software"), "doctor.tip.renderingSoftware")
+                        : rendering.ok(tr("doctor.rendering.hardware"))));
         com.editora.Os.Kind os = com.editora.Os.current();
         if (s.isAdminSave() && ElevatedSave.supportedOnOs(os)) {
             DoctorCheck admin = DoctorCheck.checking(
