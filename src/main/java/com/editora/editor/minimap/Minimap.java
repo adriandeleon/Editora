@@ -124,6 +124,11 @@ public final class Minimap extends Region {
     /** Content renders run by all minimaps — the test seam for "one render per tab switch / resize drag". */
     static final java.util.concurrent.atomic.AtomicInteger RENDERS_FOR_TEST =
             new java.util.concurrent.atomic.AtomicInteger();
+    /**
+     * Content renders run by this minimap. A test that asserts "no render yet" reads this rather than
+     * {@link #RENDERS_FOR_TEST}, which also counts minimaps other tests left alive in the same JVM.
+     */
+    private int rendersForTest;
     /** Renders that found the cached image already right and skipped the draw and snapshot. */
     static final java.util.concurrent.atomic.AtomicInteger UNCHANGED_FOR_TEST =
             new java.util.concurrent.atomic.AtomicInteger();
@@ -254,6 +259,11 @@ public final class Minimap extends Region {
             infoStripe = palette.info();
             repaintStripes();
         });
+    }
+
+    /** Content renders this minimap has run (tests; FX thread). */
+    int rendersForTest() {
+        return rendersForTest;
     }
 
     /** Releases what this minimap holds outside itself: its retained pixels and its timers. */
@@ -868,6 +878,7 @@ public final class Minimap extends Region {
             return;
         }
         RENDERS_FOR_TEST.incrementAndGet();
+        rendersForTest++;
         lastRenderNanos = System.nanoTime();
         g.clearRect(0, 0, w, h);
         offscreen.setWidth(w);
