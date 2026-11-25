@@ -2650,7 +2650,19 @@ LSP (restarting jdtls when it changed), async-detects python/js, and gates each 
 gutter. `debugEffectiveFor(language)` gates start (java = the jdtls server enabled + available + plugin
 found, via `lspCoordinator.isServerAvailable("java")`; python/js = their enable + detected adapter).
 `DapManager` stays a `MainController` field (built on `lspManager`) and is passed in, mirroring the
-`lspManager`/`LspCoordinator` split. The coordinator holds it as the first session of
+`lspManager`/`LspCoordinator` split.
+
+The coordinator keeps the state and the event sink; the flows hang off it as package-private helpers that each hold it
+(`d`) and are fields of it, one per concern (2026-11-25 split, 9,998 → about 4,600 lines; `SourceFileSizeTest` fails a
+file at 10,000): `DebugFileLaunch` (F5, Debug File, the per-language dispatch, Debug Test at Caret routing),
+`CompiledDebugLaunch` (build-then-debug for Go, Rust, C/C++, C#), `JavaDebugLaunch` (main classes, run configurations,
+build before launch), `PythonDebugLaunch`, `NodeDebugLaunch`, `LaunchJsonSessions` (launch.json, compounds, user
+adapters), `DebugAttach` (Attach, Reattach, Attach to Process, core dumps), `RemoteAttachLaunch`/`RemoteDelveLaunch`,
+`CaretBreakpoints` and `BreakpointMenus` (breakpoint commands, the list, mute, gutter and editor menus),
+`ValuePopups`, `ValueWindows` (Evaluate, View as Table), `ExecutionLine` (the execution line and exception card),
+`DisassemblyMemoryViews`, `JavaCodeChanges` (hot code replace, Restart Frame, Smart Step Into), `MapDebugFollow` (the
+Project Map), and the per-language launches (`DartDebugLaunch`, `ElixirDebugLaunch`, `RubyDebugLaunch`, …). New flows
+go in a helper of their own, not in the coordinator. The coordinator holds it as the first session of
 [`ui/DebugSessions`](../../src/main/java/com/editora/ui/DebugSessions.java). Each
 [`ui/DebugSession`](../../src/main/java/com/editora/ui/DebugSession.java) has its manager, its own `DebugPanel`
 (console, call stack, variables, Debug History) and what the coordinator keeps about it: the launch in progress, its
