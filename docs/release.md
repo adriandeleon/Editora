@@ -282,7 +282,7 @@ their `.asc` files are attested too.
 Anyone can check a download with the GitHub CLI:
 
 ```bash
-gh attestation verify Editora-0.28.0-linux-x64.deb --repo adriandeleon/Editora --source-ref refs/tags/v0.28.0
+gh attestation verify Editora-0.29.0-linux-x64.deb --repo adriandeleon/Editora --source-ref refs/tags/v0.29.0
 ```
 
 - **Keyless.** Sigstore signs with the job's short-lived OIDC identity, so there is no key or secret
@@ -356,7 +356,7 @@ Users check a download with:
 
 ```bash
 gpg --import editora-signing-key.asc
-gpg --verify Editora-0.28.0-linux-x64.deb.asc Editora-0.28.0-linux-x64.deb
+gpg --verify Editora-0.29.0-linux-x64.deb.asc Editora-0.29.0-linux-x64.deb
 ```
 
 `sudo rpm --import editora-signing-key.asc` lets `rpm -K` and dnf check the `.rpm`'s own
