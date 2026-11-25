@@ -1099,7 +1099,7 @@ does:
 - `output` is a file of its own in the temporary folder. Left to Delve, it is `__debug_bin…` in the package, and it
   stays there when Stop kills Delve.
 
-`DebugCoordinator.debugGoFile` takes the `go` the Go build tool runs (`buildExecutable(GO, module)`) and puts its
+`CompiledDebugLaunch.debugGoFile` takes the `go` the Go build tool runs (`buildExecutable(GO, module)`) and puts its
 folder first on Delve's PATH, since Delve builds with it. Before each start and Restart it saves the folder's Go files,
 because Delve builds from disk. Restart repeats the same test wherever the caret is now. Debug Test at Caret on a Go
 test file (`debugGoTestAtCaret`) is the same launch.
@@ -1133,7 +1133,7 @@ nearest `Cargo.toml`):
 - **Otherwise:** the package's program (`cargo build`, or `--example x`).
 - **A library without a program:** the file's tests.
 
-`DebugCoordinator.debugRustFile` asks for the package's trust (`buildExecutable(CARGO, root)`), saves its Rust files,
+`CompiledDebugLaunch.debugRustFile` asks for the package's trust (`buildExecutable(CARGO, root)`), saves its Rust files,
 and runs the build as a before-launch step in the Debug console (Stop ends it). It then runs the same command again
 with `--message-format=json`, which builds nothing, and launches the executable whose target root is the file
 (`RustLaunch.artifacts` / `pick`). Test binaries carry a hash in their names, which is why they're found this way.
@@ -1171,7 +1171,7 @@ first:
 - **A lone file.** `cc` / `c++ -g -O0 -o <config>/cache/native-debug/<stem>-<hash>`. A lone header says to open
   its source.
 
-CMake and Make run the project's code, so `DebugCoordinator.debugNativeFile` asks the folder's trust first
+CMake and Make run the project's code, so `CompiledDebugLaunch.debugNativeFile` asks the folder's trust first
 (`Ops.trustBuild`, the build-trust prompt with one line about the build file). A compiler run asks nothing. The
 build steps run one after another as before-launch steps in the Debug console; later steps keep the earlier ones'
 output (`beforeLaunchConsole(false)`). Restart builds again.
@@ -1451,7 +1451,7 @@ shown, Flutter's device and Debug Test at Caret; `RunCoordinatorFlowsFxTest` cov
 
 `CsharpDebugProbeFxTest`, `RubyDebugProbeFxTest` and `PhpDebugProbeFxTest`, opt-in, run in CI with the pinned
 adapters (`setup-dotnet`, the runner's Ruby with the debug gem, `php-xdebug`). `PresetDebugWindowFxTest` drives the
-window against stand-ins for all three adapters and for `dotnet` (`DebugCoordinator.dotnetCommand`).
+window against stand-ins for all three adapters and for `dotnet` (`CompiledDebugLaunch.dotnetCommand`).
 
 **launch.json.** *Debug: Start Configuration…* (`DebugCoordinator.startLaunchConfiguration`) lists the configurations
 of the project's `.vscode/launch.json`, else the nearest one above the active file (`LaunchJson.find`). The one started

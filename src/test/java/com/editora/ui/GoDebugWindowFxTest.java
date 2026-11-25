@@ -148,7 +148,7 @@ class GoDebugWindowFxTest {
         EditorBuffer main = open(root.resolve("main.go"));
         assertTrue(call(main::isBreakpointsEnabled), "a Go file has the breakpoint gutter");
         FxTestSupport.runOnFx(() -> main.toggleBreakpoint(3));
-        assertFalse(call(() -> debug.debugGoTestAtCaret(main)), "main.go is no test file");
+        assertFalse(call(() -> debug.fileLaunch.debugGoTestAtCaret(main)), "main.go is no test file");
         run("debug.start");
         FakeDebugAdapter.Session session = nextSession("launch");
         Map<String, Object> launch = session.launchArgs;

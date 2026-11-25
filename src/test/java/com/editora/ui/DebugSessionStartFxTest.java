@@ -156,7 +156,7 @@ class DebugSessionStartFxTest {
         EditorBuffer alpha = FxTestSupport.callOnFx(fx.controller::activeBuffer);
         List<String> asked = new ArrayList<>();
         FxTestSupport.runOnFx(() -> {
-            debug.confirmRetarget = q -> {
+            debug.fileLaunch.confirmRetarget = q -> {
                 asked.add(q);
                 return false;
             };

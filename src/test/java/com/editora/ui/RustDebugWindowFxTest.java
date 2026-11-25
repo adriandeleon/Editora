@@ -224,7 +224,7 @@ class RustDebugWindowFxTest {
         assertEquals(List.of("tests::squares", "--exact"), again.launchArgs.get("args"), "Restart repeats the test");
         // The caret is in no test now: the scan (off the FX thread) finds none and the command goes on elsewhere.
         boolean[] elsewhere = {false};
-        boolean handled = call(() -> debug.debugRustTestAtCaret(main, () -> elsewhere[0] = true));
+        boolean handled = call(() -> debug.fileLaunch.debugRustTestAtCaret(main, () -> elsewhere[0] = true));
         if (handled) {
             SettingsRig.awaitFx("no test at the caret", () -> elsewhere[0]);
         }

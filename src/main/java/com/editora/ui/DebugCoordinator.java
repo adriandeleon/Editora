@@ -27,8 +27,6 @@ import com.editora.dap.CodeLessLines;
 import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
 import com.editora.dap.DapServerRegistry;
-import com.editora.dap.JsLaunch;
-import com.editora.dap.RustLaunch;
 import com.editora.dap.TypeRenderer;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.UiZoom;
@@ -307,7 +305,7 @@ final class DebugCoordinator {
 
     final CoordinatorHost host;
     /** The window's debug sessions; the focused one is shown and acted on ({@link #s()}). */
-    private final DebugSessions sessions;
+    final DebugSessions sessions;
 
     private final LspManager lspManager;
     private final LspCoordinator lsp;
@@ -430,18 +428,18 @@ final class DebugCoordinator {
      * Starts {@code work} on a virtual thread called {@code name}, given the session being handled now (read here, on
      * the FX thread) so that what it hands back runs as that session's ({@link #laterIn}).
      */
-    private void startOffFx(String name, Function<DebugSession, Runnable> work) {
+    void startOffFx(String name, Function<DebugSession, Runnable> work) {
         Runnable job = work.apply(s());
         Thread.ofVirtual().name(name).start(job);
     }
 
     /** Python launches: Run's plan for debugpy, and Debug of a Python run configuration. */
-    private final PythonDebugLaunch python = new PythonDebugLaunch(this);
+    final PythonDebugLaunch python = new PythonDebugLaunch(this);
 
     private final InstructionBreakpoints instructionBreakpoints = new InstructionBreakpoints(this);
     private final MemoryEdits memoryEdits = new MemoryEdits(this);
 
-    private final DartDebugLaunch dart = new DartDebugLaunch(this); // Dart, and a Flutter app's Dart
+    final DartDebugLaunch dart = new DartDebugLaunch(this); // Dart, and a Flutter app's Dart
     final ElixirDebugLaunch elixir = new ElixirDebugLaunch(this); // a Mix project's tests, scripts and app
     final PowerShellDebugLaunch powershell = new PowerShellDebugLaunch(this); // .ps1 on PowerShell Editor Services
     private final ElectronDebugLaunch electron = new ElectronDebugLaunch(this); // an Electron app: main + renderer
@@ -453,9 +451,11 @@ final class DebugCoordinator {
     final BrowserDebugLaunch browser = new BrowserDebugLaunch(this); // a page in Chrome, Edge, Firefox…
     final RubyDebugLaunch ruby = new RubyDebugLaunch(this); // Ruby scripts, RSpec, Minitest, a Rails app's server
     final PhpDebugLaunch php = new PhpDebugLaunch(this); // PHP files, web apps, PHPUnit tests, Listen for Xdebug
+    final DebugFileLaunch fileLaunch = new DebugFileLaunch(this); // F5, Debug File, Debug Test at Caret
+    final CompiledDebugLaunch compiled = new CompiledDebugLaunch(this); // Go, Rust, C/C++, C#: built, then debugged
 
     /** The build facts a launch asks: looked at off the FX thread first when not known ({@link DebugFacts}). */
-    private final DebugFacts facts = new DebugFacts(this::executableFacts, this::sayBusy, this::lookFailed);
+    final DebugFacts facts = new DebugFacts(this::executableFacts, this::sayBusy, this::lookFailed);
 
     /** The scans of a document a debug command decides by, made off the FX thread (PERF-01). */
     private final DebugTextScans scans = new DebugTextScans();
@@ -473,13 +473,13 @@ final class DebugCoordinator {
         host.setStatus(tr("status.run.busy"));
     }
 
-    private boolean factsKnown(String name, Runnable asks, Runnable again) {
+    boolean factsKnown(String name, Runnable asks, Runnable again) {
         DebugSession session = s();
         return facts.known(name, session, asks, () -> inSession(session, again));
     }
 
     /** Runs {@code r} later on the FX thread as {@code session}'s; callable from any thread. */
-    private void laterIn(DebugSession session, Runnable r) {
+    void laterIn(DebugSession session, Runnable r) {
         Platform.runLater(() -> inSession(session, r));
     }
 
@@ -502,7 +502,7 @@ final class DebugCoordinator {
      * {@code c}, run as the session being handled now ({@link #s()}) whenever it is called; not at all once that
      * session is gone (its tab closed, or made room for another), when a launch it was planning has no tab to run in.
      */
-    private <T extends @Nullable Object> Consumer<T> asThisSession(Consumer<T> c) {
+    <T extends @Nullable Object> Consumer<T> asThisSession(Consumer<T> c) {
         DebugSession session = s();
         return value -> {
             if (sessions.all().contains(session)) {
@@ -512,13 +512,13 @@ final class DebugCoordinator {
     }
 
     /** {@code r}, run as the session being handled now whenever it runs, as {@link #asThisSession} does. */
-    private Runnable bound(Runnable r) {
+    Runnable bound(Runnable r) {
         Consumer<Object> c = asThisSession(ignored -> r.run());
         return () -> c.accept(null);
     }
 
     /** {@link DebugTextScans#scan}, its retry run as the session that asked (a save, a plan may come between). */
-    private <T> DebugTextScans.@Nullable Known<T> scan(
+    <T> DebugTextScans.@Nullable Known<T> scan(
             EditorBuffer b, String what, Function<String, @Nullable T> fn, Runnable retry) {
         return scans.scan(b, what, fn, bound(retry));
     }
@@ -849,7 +849,7 @@ final class DebugCoordinator {
      * A session for a launch while the focused one is live ("Debug Both"), focused from now on: the launch that asked
      * for it is its own. Past {@link DebugSessions#MAX_SESSIONS}, the oldest session that has ended makes room.
      */
-    private DebugSession openSession() {
+    DebugSession openSession() {
         makeRoom();
         DebugSession session = new DebugSession(sessions.focused().dap.newSession());
         setUp(session);
@@ -1071,7 +1071,7 @@ final class DebugCoordinator {
     }
 
     /** Whether C and C++ are debugged on GDB (Settings → Debugging), not CodeLLDB. */
-    private boolean gdbForCpp() {
+    boolean gdbForCpp() {
         return "gdb".equals(host.settings().getCppDebugger());
     }
 
@@ -3737,7 +3737,7 @@ final class DebugCoordinator {
     }
 
     /** F5 on a file of one of the user's own adapters' languages: its {@code launch} template, variables put in. */
-    private void debugCustomFile(EditorBuffer b, Path path, com.editora.dap.DebugLanguage profile, List<String> args) {
+    void debugCustomFile(EditorBuffer b, Path path, com.editora.dap.DebugLanguage profile, List<String> args) {
         com.editora.dap.CustomAdapters.Adapter adapter = customAdapters.get(profile.id());
         if (adapter == null || adapter.launch().isEmpty()) {
             host.setStatus(tr("status.debug.customNoLaunch", profile.displayName()));
@@ -4763,258 +4763,10 @@ final class DebugCoordinator {
         }
     }
 
-    /**
-     * Debug ▸ Start for the active file (saving first, like Run) — or Continue, when the session there is
-     * paused or stepping.
-     */
-    void debugStart() {
-        EditorBuffer b = host.activeBuffer();
-        if (!clearToStart(b, true)) {
-            return;
-        }
-        if (b == null || testDebugger == null || !"java".equals(b.getLanguage())) {
-            launchBuffer(b);
-            return;
-        }
-        // The test lines are the Run scan's and the main class a parse: both made off the FX thread (PERF-01).
-        b.whenRunScanned(bound(() -> {
-            String text = b.getContent();
-            planOffFx("debug-own-main", () -> DebugPlanning.ownMainClass(text), a -> {
-                s().startCleared = true; // Debug Test's own check (clearToDebugTest) has been answered here
-                boolean test = debugsTest(b, a.value());
-                s().startCleared = false;
-                if (!test) {
-                    launchBuffer(b);
-                }
-            });
-        }));
-    }
-
-    /** Debug File (the editor menu, the Debug File handler): {@code b}, after the same check as F5's. */
-    void debugFile(EditorBuffer b) {
-        if (clearToStart(b, false)) {
-            launchBuffer(b);
-        }
-    }
-
-    /** Debug Test at the caret or from the editor menu: false when a live launch stays (said, or asked and kept). */
-    boolean clearToDebugTest() {
-        return s().startCleared || clearToStart(host.activeBuffer(), false);
-    }
-
-    /**
-     * The one check every way to start goes through (review 3, C202–C204, A208, A209). A launch is live — or still
-     * getting ready: a build before it, a before-launch step, a test run waiting for its JVM, a compile, the
-     * main-class picker. For F5 ({@code f5}) a paused (or mid-step) session is continued: never yank a paused
-     * session. Otherwise the same file is already being debugged (said so, in words that fit how far it has got),
-     * and another file replaces it — after asking, since that ends the program (review A106: a starting launch was
-     * replaced unasked; review 3 C202: the editor menu's Debug File ended a paused session unasked). True when
-     * {@code b} may be launched now.
-     */
-    private boolean clearToStart(@Nullable EditorBuffer b, boolean f5) {
-        Path path = b == null ? null : b.getPath();
-        if (path != null) {
-            for (DebugSession other : sessions.all()) {
-                if (other != s() && inSession(other, () -> launchLiveFor(path))) {
-                    focusSession(other); // the file is another session's: that one is shown, and asked about
-                    return clearToStart(b, f5);
-                }
-            }
-        }
-        boolean preparing = launchPreparing();
-        Path liveFile = preparing ? preparingFile() : dap().debugFile();
-        boolean differentFile = path != null && !samePath(path, liveFile);
-        boolean debuggable = b != null && path != null && debugEffectiveFor(b.getLanguage(), path);
-        boolean active = dap().isActive();
-        DapManager.State state = dap().state();
-        DebugStartChoice choice = f5
-                ? DebugStartChoice.of(active, state, dap().isStepping(), preparing, differentFile, debuggable)
-                : DebugStartChoice.forFile(active, state, preparing, differentFile);
-        DebugStartChoice.Phase phase = DebugStartChoice.Phase.of(active, state, dap().isStepping(), preparing);
-        String label = preparing && s().pendingBuild == null && s().pendingAttachFile != null
-                ? String.valueOf(s().pendingAttachFile.getFileName())
-                : s().sessionLabel;
-        switch (choice) {
-            case CONTINUE -> {
-                dap().resume(); // F5-style continue
-                return false;
-            }
-            case ALREADY_RUNNING -> {
-                host.setStatus(tr(phase.busyKey, label));
-                return false;
-            }
-            case ASK_RETARGET -> {
-                if (path == null) {
-                    return false;
-                }
-                // Both at once beside a session that has started; one still getting ready (a build, a test run's
-                // JVM) is replaced or kept, as before.
-                boolean both = active && !preparing;
-                Retarget answer = askRetarget(
-                        DebugRetargetPrompt.question(both, phase.retargetKey, label, path.getFileName()), both);
-                switch (answer) {
-                    case BOTH -> {
-                        openSession(); // the launch asked for is the new session's
-                        launching(path);
-                        return true;
-                    }
-                    case STOP -> {
-                        endLiveLaunch(); // retarget to the file asked for
-                        launching(path);
-                        return true;
-                    }
-                    default -> {
-                        return false;
-                    }
-                }
-            }
-            default -> {
-                launching(path); // getting ready while it saves and plans
-                return true; // nothing to end first
-            }
-        }
-    }
-
-    /**
-     * The longest a session's answers still to come (a save, a plan, a scan: off the FX thread since PERF-01) count
-     * as a launch getting ready: one that never answers (a save that failed) does not hold F5 for longer.
-     */
-    static final long STEPS_PENDING_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(15);
-
     /** A launch's plan could not be read (the disk, a remote host gone): says so, instead of doing nothing. */
-    private void planFailed(Path file, @Nullable Exception why) {
+    void planFailed(Path file, @Nullable Exception why) {
         String reason = why == null || why.getMessage() == null ? String.valueOf(why) : why.getMessage();
         host.setStatus(tr("status.debug.planFailed", file.getFileName(), reason));
-    }
-
-    /** {@code path}'s launch is let through: until its last save or plan has answered, it is getting ready. */
-    private void launching(@Nullable Path path) {
-        s().followUp = null; // another launch: what a launch.json configuration asked for is not its
-        s().launching = true;
-        s().launchAskedFile = path;
-    }
-
-    /**
-     * A launch let through is still saving its files or reading its plan: an answer is still to come, not long ago.
-     * A second F5 meanwhile launched the program twice.
-     */
-    private boolean launchAskedRecently() {
-        return s().launching
-                && s().stepsPending > 0
-                && dap().state() == DapManager.State.INACTIVE
-                && System.nanoTime() - s().stepsPendingSince < STEPS_PENDING_NANOS;
-    }
-
-    /**
-     * A launch is getting ready with no session yet: a jdtls build, a before-launch step, a test run's JVM, or one
-     * still saving its files or reading its plan.
-     */
-    private boolean launchPreparing() {
-        return !dap().isActive()
-                && (s().pendingBuild != null
-                        || beforeLaunchActive()
-                        || s().pendingAttachStop != null
-                        || launchAskedRecently());
-    }
-
-    /** The file the launch getting ready is for, when known. */
-    private @Nullable Path preparingFile() {
-        return s().pendingBuild != null
-                ? s().pendingBuildFile
-                : s().pendingAttachStop != null
-                        ? s().pendingAttachFile
-                        : launchAskedRecently() ? s().launchAskedFile : null;
-    }
-
-    /** A launch of {@code file} is live or getting ready. */
-    private boolean launchLiveFor(Path file) {
-        if (launchPreparing()) {
-            return samePath(file, preparingFile());
-        }
-        return dap().state() != DapManager.State.INACTIVE && samePath(file, dap().debugFile());
-    }
-
-    /** Ends whatever launch is live or getting ready, for a launch of another file. */
-    private void endLiveLaunch() {
-        if (beforeLaunchActive()) {
-            beforeLaunch().stop();
-        }
-        dropPendingBuild();
-        stop(); // the session, or a test run waiting for its JVM
-    }
-
-    /** Debugs a JUnit test at the caret ({@code true}: the whole class), as the gutter's Debug Test; set by the
-     *  window. Null: Debug ▶ launches a test file like any other. */
-    private @Nullable Consumer<Boolean> testDebugger;
-
-    void setTestDebugger(Consumer<Boolean> testDebugger) {
-        this.testDebugger = testDebugger;
-    }
-
-    /** Debug ▶ in a JUnit test file debugs the test at the caret, or its class (review A102); true when it did. */
-    private boolean debugsTest(EditorBuffer b, @Nullable String ownMain) {
-        DebugTestRoute.Route route = DebugTestRoute.route(
-                true,
-                b.isCompactSource(),
-                b.testClassTarget() != null,
-                ownMain != null,
-                b.testTargetAtCaret(false) != null);
-        if (route == DebugTestRoute.Route.LAUNCH) {
-            return false;
-        }
-        java.util.Objects.requireNonNull(testDebugger).accept(route == DebugTestRoute.Route.TEST_CLASS);
-        return true;
-    }
-
-    /**
-     * Asks before F5 in another tab ends the running session (review A13); a test replaces it. The answer is
-     * the user's: a running server is not stopped by a key pressed in the wrong tab.
-     */
-    @Nullable
-    Predicate<String> confirmRetarget;
-
-    /** What to do with the live launch when another file is asked to be debugged. */
-    enum Retarget {
-        /** Debug the other file in a session of its own, beside the live one. */
-        BOTH,
-        /** End the live launch and debug the other file instead. */
-        STOP,
-        /** Leave things as they are. */
-        CANCEL
-    }
-
-    /**
-     * Answers {@link #askRetarget} in tests: the question, and whether Debug Both was offered. Null: ask the user.
-     * When only {@link #confirmRetarget} is set, its yes is {@link Retarget#STOP}.
-     */
-    java.util.function.@Nullable BiFunction<String, Boolean, Retarget> retargetChoice;
-
-    /**
-     * Asks before F5 in another tab ends the live launch: Debug Both (when {@code bothOffered}: the default, a running
-     * server is not stopped by a key pressed in the wrong tab), Stop and Debug, or Cancel.
-     */
-    private Retarget askRetarget(String question, boolean bothOffered) {
-        if (retargetChoice != null) {
-            return retargetChoice.apply(question, bothOffered);
-        }
-        if (confirmRetarget != null) {
-            return confirmRetarget.test(question) ? Retarget.STOP : Retarget.CANCEL;
-        }
-        return DebugRetargetPrompt.ask(host.window(), question, bothOffered);
-    }
-
-    /** Saves {@code b} and launches a debug session for it; also what Restart repeats for such a session. */
-    private void launchBuffer(@Nullable EditorBuffer b) {
-        launchBuffer(b, List.of());
-    }
-
-    /**
-     * Debugs Go file {@code path} on Delve: in a test file the test at the caret (its package's tests outside any), else
-     * its package — the file alone outside a module — with {@code args} as the program's or the test binary's. Delve
-     * builds it with the {@code go} the Go build tool runs, after the module's trust as a Go task asks it.
-     */
-    private void debugGoFile(EditorBuffer b, Path path, List<String> args) {
-        debugGo(path, b.getContent(), caretLine(b), args, LaunchExtras.NONE);
     }
 
     /**
@@ -5022,464 +4774,13 @@ final class DebugCoordinator {
      * in (null: where Debug File runs it), and whether a before-launch step of its own has already written to the
      * Debug console, which the build's output then follows instead of replacing.
      */
-    private record LaunchExtras(
+    record LaunchExtras(
             java.util.Map<String, String> env, @Nullable Path cwd, boolean afterStep, boolean config) {
         static final LaunchExtras NONE = new LaunchExtras(java.util.Map.of(), null, false, false);
     }
 
-    /** Names the session and its Restart for a file's launch; a configuration's launch did both itself already. */
-    private void named(LaunchExtras extras, String name, Runnable relaunch) {
-        if (!extras.config()) {
-            nameSession(name);
-            s().relaunch = relaunch;
-        }
-    }
-
-    /** {@link #debugGoFile} for {@code path} with text {@code text} and the caret on {@code caret} (-1: nowhere). */
-    private void debugGo(Path path, String text, int caret, List<String> args, LaunchExtras extras) {
-        planOffFx( // the module is a folder walk, the test at the caret a scan: off the FX thread (PERF-01)
-                "debug-go-plan",
-                () -> {
-                    Path module = com.editora.dap.GoLaunch.moduleRoot(path);
-                    return new GoPlan(
-                            module,
-                            com.editora.dap.GoLaunch.launch(
-                                    path, text, caret, module != null, args, extras.env(), false, extras.cwd()),
-                            com.editora.dap.GoLaunch.sessionName(path, text, caret));
-                },
-                a -> {
-                    if (a.value() != null) {
-                        debugGoIn(path, extras, a.value());
-                    } else {
-                        planFailed(path, a.failure());
-                    }
-                });
-    }
-
-    /** A Go launch planned off the FX thread: its module (null: a loose file), launch arguments and session name. */
-    private record GoPlan(@Nullable Path module, java.util.Map<String, Object> launch, String name) {}
-
-    private void debugGoIn(Path path, LaunchExtras extras, GoPlan plan) {
-        Path module = plan.module();
-        if (module != null
-                && !factsKnown(
-                        "debug-go-trust-look",
-                        facts.executable(com.editora.build.BuildTool.GO, module),
-                        () -> debugGoIn(path, extras, plan))) {
-            return;
-        }
-        List<String> go = module != null
-                ? ops.buildExecutable(com.editora.build.BuildTool.GO, module)
-                : com.editora.build.BuildExecutable.resolve(
-                        List.of(), host.settings().getGoCommand(), "go");
-        if (go == null) {
-            return; // the module was not trusted: nothing is built
-        }
-        java.util.Map<String, Object> launch = plan.launch();
-        dap().setExternalPathDirs("go", goToolDirs(go));
-        Path built = module != null ? module : path.toAbsolutePath().getParent();
-        named(extras, plan.name(), () -> startGo(path, built, launch));
-        startGo(path, built, launch);
-    }
-
-    /**
-     * Saves the edited Go files under {@code built} (the module, or the loose file's folder: Delve builds them from
-     * disk), then starts {@code launch} for {@code path}.
-     */
-    private void startGo(Path path, @Nullable Path built, java.util.Map<String, Object> launch) {
-        if (!savedOrThen(buffersUnder(built, "go"), () -> startGo(path, built, launch))) {
-            return;
-        }
-        withClosedBreakpoints(() -> dap().startExternal(path, com.editora.dap.DebugLanguages.GO, launch));
-    }
-
-    /** The folder of {@code go} (its argv) when it is a path, for Delve's PATH: Delve builds with the {@code go} found there. */
-    static List<String> goToolDirs(List<String> go) {
-        if (go.isEmpty()) {
-            return List.of();
-        }
-        Path exe;
-        try {
-            exe = Path.of(go.getFirst());
-        } catch (java.nio.file.InvalidPathException e) {
-            return List.of();
-        }
-        Path dir = exe.isAbsolute() ? exe.getParent() : null;
-        return dir == null ? List.of() : List.of(dir.toString());
-    }
-
-    /**
-     * Debugs Rust file {@code path} on CodeLLDB: the test at the caret (its test binary, filtered to it), else in an
-     * integration test all its tests, else the package's program — or, in a library, the file's tests. Cargo builds
-     * it first in the Debug console (after the package's trust, as a Cargo task asks it); its JSON messages then say
-     * which executable to launch.
-     */
-    private void debugRustFile(EditorBuffer b, Path path, List<String> args) {
-        debugRust(path, b.getContent(), caretLine(b), args, LaunchExtras.NONE);
-    }
-
-    /** {@link #debugRustFile} for {@code path} with text {@code text} and the caret on {@code caret} (-1: nowhere). */
-    private void debugRust(Path path, String text, int caret, List<String> args, LaunchExtras extras) {
-        planOffFx( // the package and its programs are looked for off the FX thread (PERF-01)
-                "debug-rust-plan",
-                () -> {
-                    Path root = com.editora.dap.RustLaunch.packageRoot(path);
-                    boolean program = root != null
-                            && (java.nio.file.Files.isRegularFile(
-                                            root.resolve("src").resolve("main.rs"))
-                                    || java.nio.file.Files.isDirectory(
-                                            root.resolve("src").resolve("bin")));
-                    // and the plan, whose test at the caret is a scan of the text
-                    return root == null ? null : new Object[] {root, RustLaunch.plan(root, path, text, caret, program)};
-                },
-                a -> {
-                    Object[] found = a.value();
-                    debugRustIn(
-                            path,
-                            args,
-                            extras,
-                            found == null ? null : (Path) found[0],
-                            found == null ? null : (RustLaunch.Plan) found[1]);
-                });
-    }
-
-    private void debugRustIn(
-            Path path, List<String> args, LaunchExtras extras, @Nullable Path root, RustLaunch.@Nullable Plan plan) {
-        if (root == null || plan == null) {
-            host.setStatus(tr("status.debug.rustNoPackage", path.getFileName()));
-            return;
-        }
-        if (!factsKnown(
-                "debug-rust-trust-look",
-                facts.executable(com.editora.build.BuildTool.CARGO, root),
-                () -> debugRustIn(path, args, extras, root, plan))) {
-            return;
-        }
-        List<String> cargo = ops.buildExecutable(com.editora.build.BuildTool.CARGO, root);
-        if (cargo == null) {
-            return; // the package was not trusted: nothing is built
-        }
-        named(extras, plan.sessionName(), () -> startRust(path, root, cargo, plan, args, extras)); // the test again
-        startRust(path, root, cargo, plan, args, extras);
-    }
-
-    /**
-     * Saves the package's edited Rust files, builds {@code plan} with Cargo as a before-launch step (its output in the
-     * Debug console; Stop ends it), asks Cargo again for the executables it built (nothing is left to build), and
-     * launches the one for {@code path} on CodeLLDB.
-     */
-    private void startRust(
-            Path path,
-            Path root,
-            List<String> cargo,
-            com.editora.dap.RustLaunch.Plan plan,
-            List<String> args,
-            LaunchExtras extras) {
-        if (!savedOrThen(buffersUnder(root, "rust"), () -> startRust(path, root, cargo, plan, args, extras))) {
-            return;
-        }
-        if (beforeLaunchActive() || s().pendingBuild != null) {
-            host.setStatus(tr("status.run.busy"));
-            return;
-        }
-        List<String> build = new java.util.ArrayList<>(cargo);
-        build.addAll(plan.buildArgs());
-        List<String> json = new java.util.ArrayList<>(cargo);
-        json.addAll(plan.jsonArgs());
-        boolean terminal = host.settings().isDebugProgramConsole();
-        beforeLaunch()
-                .run(
-                        host,
-                        new BeforeLaunchStep.Command(
-                                String.valueOf(path.getFileName()), build, "status.run.cargoBuild"),
-                        root,
-                        java.util.Map.of(),
-                        beforeLaunchConsole(!extras.afterStep()),
-                        () -> startOffFx("editora-cargo-artifacts", session -> () -> {
-                            var listed = com.editora.dap.RustLaunch.listArtifacts(root, json, CARGO_LIST_TIMEOUT);
-                            laterIn(
-                                    session,
-                                    () -> launchRustArtifact(path, root, plan, args, terminal, listed, extras));
-                        }));
-        updateDebugAvailability();
-    }
-
     /** How long Cargo has to list what it just built. */
-    private static final java.time.Duration CARGO_LIST_TIMEOUT = java.time.Duration.ofMinutes(2);
-
-    /** Launches the executable Cargo's {@code listed} messages name for {@code path}, or says why there is none. */
-    private void launchRustArtifact(
-            Path path,
-            Path root,
-            com.editora.dap.RustLaunch.Plan plan,
-            List<String> args,
-            boolean terminal,
-            com.editora.process.ProcessRunner.Result listed,
-            LaunchExtras extras) {
-        if (!listed.ok()) {
-            String why = listed.err().strip();
-            host.setStatus(tr(
-                    "status.debug.rustBuildFailed",
-                    why.isEmpty()
-                            ? "exit " + listed.exit()
-                            : why.lines().reduce((a, z) -> z).orElse(why)));
-            return;
-        }
-        com.editora.dap.RustLaunch.Artifact artifact =
-                com.editora.dap.RustLaunch.pick(com.editora.dap.RustLaunch.artifacts(listed.out()), path, plan.mode());
-        if (artifact == null) {
-            host.setStatus(tr("status.debug.rustNoProgram", path.getFileName()));
-            return;
-        }
-        List<String> programArgs = new java.util.ArrayList<>(plan.testArgs());
-        programArgs.addAll(args);
-        java.util.Map<String, Object> launch = com.editora.dap.RustLaunch.launch(
-                artifact.executable(),
-                programArgs,
-                extras.cwd() != null ? extras.cwd() : root,
-                extras.env(),
-                false,
-                terminal);
-        ops.openToolWindow();
-        withClosedBreakpoints(() -> dap().startExternal(path, com.editora.dap.DebugLanguages.RUST, launch));
-    }
-
-    /**
-     * Debugs C or C++ file {@code path} on CodeLLDB: built first — its CMake project's Debug build, its Make project's
-     * default goal (each after the folder's trust: their build files are code), or the file alone by the C or C++
-     * compiler — then the executable that made is launched ({@link com.editora.dap.NativeBuild}).
-     */
-    private void debugNativeFile(EditorBuffer b, Path path, List<String> args) {
-        debugNative(path, "cpp".equals(b.getLanguage()), args, LaunchExtras.NONE);
-    }
-
-    /** {@link #debugNativeFile} for {@code path}, a lone file compiled as C++ ({@code cpp}) or as C. */
-    private void debugNative(Path path, boolean cpp, List<String> args, LaunchExtras extras) {
-        Path out = nativeOutputDir();
-        planOffFx( // the project's build files are looked for off the FX thread (PERF-01)
-                "debug-native-plan",
-                () -> {
-                    Path cmake = com.editora.dap.NativeBuild.cmakeRoot(path);
-                    Path make = cmake == null ? com.editora.dap.NativeBuild.makeRoot(path) : null;
-                    return java.util.Optional.ofNullable(com.editora.dap.NativeBuild.plan(path, cpp, cmake, make, out));
-                },
-                a -> debugNativePlanned(
-                        path, args, extras, a.value() == null ? null : a.value().orElse(null)));
-    }
-
-    private void debugNativePlanned(
-            Path path, List<String> args, LaunchExtras extras, com.editora.dap.NativeBuild.@Nullable Plan plan) {
-        if (plan == null) {
-            host.setStatus(tr("status.debug.nativeHeaderAlone", path.getFileName()));
-            return;
-        }
-        if (plan.tool() != com.editora.dap.NativeBuild.Tool.COMPILER) {
-            String buildFile = plan.tool() == com.editora.dap.NativeBuild.Tool.CMAKE ? "CMakeLists.txt" : "Makefile";
-            String key = plan.tool() == com.editora.dap.NativeBuild.Tool.CMAKE
-                    ? "dialog.trust.item.cmake"
-                    : "dialog.trust.item.make";
-            if (!ops.trustBuild(plan.root(), List.of(tr(key, buildFile)))) {
-                return; // not trusted: nothing is built
-            }
-        }
-        named(extras, plan.sessionName(), () -> startNative(path, plan, args, extras));
-        startNative(path, plan, args, extras);
-    }
-
-    /** Where a lone C or C++ file's program is compiled to: the config folder's cache, else the temporary folder. */
-    private Path nativeOutputDir() {
-        Path config = host.configDir();
-        return config != null
-                ? config.resolve("cache").resolve("native-debug")
-                : Path.of(System.getProperty("java.io.tmpdir"), "editora-native-debug");
-    }
-
-    /** Saves the project's C and C++ files, runs {@code plan}'s build steps in the Debug console, then launches. */
-    private void startNative(Path path, com.editora.dap.NativeBuild.Plan plan, List<String> args, LaunchExtras extras) {
-        List<EditorBuffer> sources = new ArrayList<>(buffersUnder(plan.root(), "c"));
-        sources.addAll(buffersUnder(plan.root(), "cpp"));
-        if (!savedOrThen(sources, () -> startNative(path, plan, args, extras))) {
-            return;
-        }
-        if (beforeLaunchActive() || s().pendingBuild != null) {
-            host.setStatus(tr("status.run.busy"));
-            return;
-        }
-        boolean terminal = host.settings().isDebugProgramConsole();
-        planOffFx( // CMake's codemodel request and the output folder are written off the FX thread
-                "debug-native-prepare",
-                () -> {
-                    if (plan.buildDir() != null) {
-                        com.editora.dap.NativeBuild.requestCodemodel(plan.buildDir());
-                    }
-                    if (plan.output() != null && plan.output().getParent() != null) {
-                        java.nio.file.Files.createDirectories(plan.output().getParent());
-                    }
-                    return plan;
-                },
-                a -> {
-                    if (a.failure() != null) {
-                        host.setStatus(tr("debug.error.startFailed", a.why()));
-                        return;
-                    }
-                    runNativeSteps(
-                            path, plan, 0, !extras.afterStep(), () -> launchNative(path, plan, args, terminal, extras));
-                });
-        updateDebugAvailability();
-    }
-
-    /**
-     * Runs {@code plan}'s build step {@code index} and those after it, then {@code then}; a failed one ends it. The
-     * first one starts the Debug console afresh when {@code fresh}.
-     */
-    private void runNativeSteps(
-            Path path, com.editora.dap.NativeBuild.Plan plan, int index, boolean fresh, Runnable then) {
-        if (index >= plan.steps().size()) {
-            then.run();
-            return;
-        }
-        beforeLaunch()
-                .run(
-                        host,
-                        new BeforeLaunchStep.Command(
-                                String.valueOf(path.getFileName()), plan.steps().get(index), "status.run.nativeBuild"),
-                        plan.root(),
-                        java.util.Map.of(),
-                        beforeLaunchConsole(fresh && index == 0),
-                        // after the step has ended: the next one is not refused as "still running"
-                        () -> later(() -> runNativeSteps(path, plan, index + 1, fresh, then)));
-    }
-
-    /** Finds the executable {@code plan} built (off the FX thread) and launches it, or says there is none. */
-    private void launchNative(
-            Path path,
-            com.editora.dap.NativeBuild.Plan plan,
-            List<String> args,
-            boolean terminal,
-            LaunchExtras extras) {
-        startOffFx("editora-native-executable", session -> () -> {
-            Path exe = com.editora.dap.NativeBuild.executable(plan, path);
-            laterIn(session, () -> {
-                if (exe == null) {
-                    host.setStatus(tr("status.debug.nativeNoProgram", path.getFileName()));
-                    return;
-                }
-                boolean gdb = gdbForCpp();
-                Path cwd = extras.cwd() != null ? extras.cwd() : plan.root();
-                java.util.Map<String, Object> launch = gdb
-                        ? com.editora.dap.NativeBuild.gdbLaunch(exe, args, cwd, extras.env())
-                        : com.editora.dap.NativeBuild.launch(exe, args, cwd, extras.env(), terminal);
-                com.editora.dap.DebugLanguage profile =
-                        gdb ? com.editora.dap.DebugLanguages.GDB : com.editora.dap.DebugLanguages.CPP;
-                ops.openToolWindow();
-                withClosedBreakpoints(() -> dap().startExternal(path, profile, launch));
-            });
-        });
-    }
-
-    /**
-     * Debugs C# file {@code path} on netcoredbg: its project — after the folder's trust, as MSBuild runs the project's
-     * targets — or, outside every project, the file as a .NET 10 file-based app, is built with {@code dotnet build} in
-     * the Debug console; the assembly that made is then launched in the project's folder
-     * ({@link com.editora.dap.DotnetLaunch}).
-     */
-    private void debugCsharpFile(Path path, List<String> args) {
-        planOffFx( // the project file is a folder walk with listings: off the FX thread (PERF-01)
-                "debug-dotnet-plan",
-                () -> com.editora.dap.DotnetLaunch.plan(path, com.editora.dap.DotnetLaunch.projectFile(path)),
-                a -> {
-                    if (a.value() != null) {
-                        debugCsharpPlanned(path, args, a.value());
-                    }
-                });
-    }
-
-    private void debugCsharpPlanned(Path path, List<String> args, com.editora.dap.DotnetLaunch.Plan plan) {
-        // A lone file too: the SDK's build of it imports the folders' Directory.Build.props / .targets, which are code.
-        if (!ops.trustBuild(
-                plan.root(),
-                List.of(tr("dialog.trust.item.dotnet", plan.target().getFileName())))) {
-            return; // not trusted: nothing is built
-        }
-        nameSession(plan.sessionName());
-        s().relaunch = () -> startCsharp(path, plan, args);
-        startCsharp(path, plan, args);
-    }
-
-    /** The .NET SDK's command (a test's stand-in replaces it). */
-    List<String> dotnetCommand = List.of("dotnet");
-
-    /** How long {@code dotnet} has to name the assembly it built (it only evaluates the project). */
-    private static final java.time.Duration DOTNET_QUERY_TIMEOUT = java.time.Duration.ofMinutes(2);
-
-    /** Saves the C# files under the project, builds it in the Debug console, then launches its assembly. */
-    private void startCsharp(Path path, com.editora.dap.DotnetLaunch.Plan plan, List<String> args) {
-        if (!savedOrThen(buffersUnder(plan.root(), "csharp"), () -> startCsharp(path, plan, args))) {
-            return;
-        }
-        if (beforeLaunchActive() || s().pendingBuild != null) {
-            host.setStatus(tr("status.run.busy"));
-            return;
-        }
-        List<String> dotnet = dotnetCommand;
-        List<String> build = new java.util.ArrayList<>(dotnet);
-        build.addAll(plan.buildArgs());
-        beforeLaunch()
-                .run(
-                        host,
-                        new BeforeLaunchStep.Command(
-                                String.valueOf(path.getFileName()), build, "status.run.dotnetBuild"),
-                        plan.root(),
-                        com.editora.dap.DotnetLaunch.BUILD_ENV,
-                        beforeLaunchConsole(),
-                        () -> startOffFx("editora-dotnet-target", session -> () -> {
-                            var listed =
-                                    com.editora.dap.DotnetLaunch.queryTargetPath(dotnet, plan, DOTNET_QUERY_TIMEOUT);
-                            Path built = listed.ok() ? com.editora.dap.DotnetLaunch.targetPath(listed.out()) : null;
-                            boolean there = built != null && java.nio.file.Files.isRegularFile(built); // off FX
-                            laterIn(session, () -> launchCsharpAssembly(path, plan, args, listed, there));
-                        }));
-        updateDebugAvailability();
-    }
-
-    /** Launches the assembly {@code listed} names for {@code path} on netcoredbg, or says why there is none. */
-    private void launchCsharpAssembly(
-            Path path,
-            com.editora.dap.DotnetLaunch.Plan plan,
-            List<String> args,
-            com.editora.process.ProcessRunner.Result listed,
-            boolean there) {
-        Path assembly = listed.ok() ? com.editora.dap.DotnetLaunch.targetPath(listed.out()) : null;
-        if (!listed.ok()) {
-            String why = (listed.err().isBlank() ? listed.out() : listed.err()).strip();
-            host.setStatus(tr(
-                    "status.debug.csharpBuildFailed",
-                    why.isEmpty()
-                            ? "exit " + listed.exit()
-                            : why.lines().reduce((a, z) -> z).orElse(why)));
-            return;
-        }
-        if (assembly == null || !there) {
-            host.setStatus(tr("status.debug.csharpNoProgram", path.getFileName()));
-            return;
-        }
-        java.util.Map<String, Object> launch = com.editora.dap.DotnetLaunch.launch(assembly, args, plan.root());
-        ops.openToolWindow();
-        withClosedBreakpoints(() -> dap().startExternal(path, com.editora.dap.DebugLanguages.CSHARP, launch));
-    }
-
-    /**
-     * Debugs a Ruby, Bash or Lua script {@code path} in its folder: under rdbg, the bashdb vscode-bash-debug ships, or
-     * Local Lua Debugger ({@link com.editora.dap.ScriptLaunch#plan}); a PHP file goes to {@link PhpDebugLaunch}.
-     */
-    private void debugScriptFile(Path path, String language, List<String> args) {
-        Path cwd = path.toAbsolutePath().getParent();
-        var plan = com.editora.dap.ScriptLaunch.plan(language, path, args, cwd != null ? cwd : path.toAbsolutePath());
-        Runnable start = () ->
-                withClosedBreakpoints(() -> dap().startExternal(path, plan.language(), plan.launch(), plan.tail()));
-        s().relaunch = start;
-        start.run();
-    }
+    static final java.time.Duration CARGO_LIST_TIMEOUT = java.time.Duration.ofMinutes(2);
 
     /** The edited buffers of {@code language} (null: of any) under {@code root}: a build reads them from disk. */
     List<EditorBuffer> buffersUnder(@Nullable Path root, @Nullable String language) {
@@ -5525,379 +4826,39 @@ final class DebugCoordinator {
                 + b.getBreakpointManager().regionFirstLine();
     }
 
-    /**
-     * Debug Test at Caret in a Rust file: the {@code #[test]} function at the caret, its test binary filtered to it
-     * ({@link #debugRustFile}). False — nothing done — outside a test, or for any other buffer.
-     */
-    boolean debugRustTestAtCaret(@Nullable EditorBuffer b, Runnable otherwise) {
-        if (b == null || b.getPath() == null || !"rust".equals(b.getLanguage())) {
-            return false;
-        }
-        int caret = caretLine(b); // the test is found off the FX thread (PERF-01): the command goes on once it is
-        var test = scan(b, "rustTest:" + caret, t -> RustLaunch.testAt(t, caret), () -> {
-            if (!debugRustTestAtCaret(b, otherwise)) {
-                otherwise.run();
-            }
-        });
-        if (test != null && test.value() == null) {
-            return false;
-        }
-        if (test != null) {
-            launchBuffer(b);
-        }
-        return true;
+    /** {@link DebugFileLaunch#debugStart}: F5. */
+    void debugStart() {
+        fileLaunch.debugStart();
     }
 
-    /**
-     * Debug Test at Caret in a C or C++ test file (GoogleTest, Catch2, doctest — {@link com.editora.test.CppTests}): its
-     * program built and debugged as Debug File debugs it, run with the filter of the test at the caret, or every test
-     * outside one. False — nothing done — for any other buffer.
-     */
-    boolean debugCppTestAtCaret(@Nullable EditorBuffer b, Runnable otherwise) {
-        if (b == null || b.getPath() == null || !("c".equals(b.getLanguage()) || "cpp".equals(b.getLanguage()))) {
-            return false;
-        }
-        int caret = caretLine(b); // the test is found off the FX thread (PERF-01): the command goes on once it is
-        var found = scan(b, "cppTest:" + caret, CppTestAt::of, () -> {
-            if (!debugCppTestAtCaret(b, otherwise)) {
-                otherwise.run();
-            }
-        });
-        if (found == null) {
-            return true; // asked again once the scan answers
-        }
-        CppTestAt at = found.value();
-        if (at == null) {
-            return false;
-        }
-        CppTestAt here = at.at(caret);
-        debugCppTests(b, here.kind(), here.filter());
-        return true;
+    /** {@link DebugFileLaunch#debugFile}: Debug File. */
+    void debugFile(EditorBuffer b) {
+        fileLaunch.debugFile(b);
     }
 
-    /** A C or C++ test file's framework and its tests, as scanned; {@link #at} the one a line is in. */
-    private record CppTestAt(
-            com.editora.test.ToolTestKind kind,
-            String text,
-            @Nullable String filter) {
-
-        static @Nullable CppTestAt of(String text) {
-            com.editora.test.ToolTestKind kind = com.editora.test.CppTests.framework(text);
-            return kind == null ? null : new CppTestAt(kind, text, null);
-        }
-
-        CppTestAt at(int line) {
-            com.editora.test.CppTests.Test t = com.editora.test.CppTests.at(kind, text, line);
-            return new CppTestAt(kind, text, t == null ? null : t.filter());
-        }
+    /** {@link DebugFileLaunch#launchLiveFor}: a launch of {@code file} is live or getting ready. */
+    boolean launchLiveFor(Path file) {
+        return fileLaunch.launchLiveFor(file);
     }
 
-    /** A C or C++ test's ▶ (its editor menu's Debug Test): that test, or every test of the file on its first line. */
-    void debugCppGlyph(EditorBuffer b, com.editora.test.JavaTestScanner.TestTarget target) {
-        String text = b.getContent();
-        com.editora.test.ToolTestKind kind = com.editora.test.CppTests.framework(text);
-        if (kind == null || b.getPath() == null) {
-            return;
-        }
-        String filter = null;
-        if (target.methodName() != null) {
-            for (com.editora.test.CppTests.Test t : com.editora.test.CppTests.scan(kind, text)) {
-                if (t.line() == target.line()) {
-                    filter = t.filter();
-                }
-            }
-        }
-        debugCppTests(b, kind, filter);
+    /** {@link DebugFileLaunch#launchBuffer}: saves {@code b} and launches a debug session for it. */
+    void launchBuffer(@Nullable EditorBuffer b) {
+        fileLaunch.launchBuffer(b);
     }
 
-    private void debugCppTests(EditorBuffer b, com.editora.test.ToolTestKind kind, @Nullable String filter) {
-        Path path = b.getPath();
-        if (path == null) {
-            return;
-        }
-        debugNative(
-                path,
-                "cpp".equals(b.getLanguage()),
-                com.editora.test.CppTests.filterArgs(kind, filter == null ? List.of() : List.of(filter)),
-                LaunchExtras.NONE);
+    /** {@link CompiledDebugLaunch#debugGo}. */
+    void debugGo(Path path, String text, int caret, List<String> args, LaunchExtras extras) {
+        compiled.debugGo(path, text, caret, args, extras);
     }
 
-    /**
-     * Debug Test at Caret on a Go test file ({@code *_test.go}): the test at the caret under Delve's test mode, the
-     * package's tests outside any. False — nothing done — for any other buffer.
-     */
-    boolean debugDartTestAtCaret(@Nullable EditorBuffer b) {
-        return dart.debugTestAtCaret(b); // its test or group, on the adapter's test mode
+    /** {@link CompiledDebugLaunch#debugRust}. */
+    void debugRust(Path path, String text, int caret, List<String> args, LaunchExtras extras) {
+        compiled.debugRust(path, text, caret, args, extras);
     }
 
-    boolean debugGoTestAtCaret(@Nullable EditorBuffer b) {
-        if (b == null
-                || b.getPath() == null
-                || !"go".equals(b.getLanguage())
-                || !com.editora.dap.GoLaunch.isTestFile(b.getPath())) {
-            return false;
-        }
-        launchBuffer(b);
-        return true;
-    }
-
-    /**
-     * Debug Test at Caret on a JavaScript/TypeScript test file ({@link com.editora.dap.JsLaunch#isTestFile}): the
-     * file runs under {@code node --test} (in a Deno project, {@code deno test}), narrowed to the test at the caret by
-     * name when there is one. False —
-     * nothing done — for any other buffer.
-     */
-    boolean debugJsTestAtCaret(@Nullable EditorBuffer b) {
-        if (b == null
-                || b.getPath() == null
-                || !"javascript".equals(DapServerRegistry.adapterLanguage(b.getLanguage()))
-                || !com.editora.dap.JsLaunch.isTestFile(b.getPath())) {
-            return false;
-        }
-        int caret = b.getFocusedArea().getCurrentParagraph()
-                + b.getBreakpointManager().regionFirstLine();
-        List<String> nodeArgs = new java.util.ArrayList<>(List.of("--test"));
-        var named = scan(b, "jsTest:" + caret, t -> JsLaunch.testArgsAt(t, caret), () -> debugJsTestAtCaret(b));
-        if (named == null) {
-            return true; // found off the FX thread (PERF-01): asked again once it is
-        }
-        nodeArgs.addAll(java.util.Objects.requireNonNull(named.value())); // Node's test pattern, Deno's test name
-        launchBuffer(b, nodeArgs);
-        return true;
-    }
-
-    /** {@link #launchBuffer(EditorBuffer)} with Node.js arguments for a JavaScript program ({@code --test}). */
-    private void launchBuffer(@Nullable EditorBuffer b, List<String> nodeArgs) {
-        if (b != null && b.isHttpFile()) {
-            ops.debugHttpRequest(); // its scripts, around the request at the caret
-            return;
-        }
-        // A file no adapter can debug is told so first: an untitled one used to get a Save As dialog, and then
-        // a shell script "Debugging is unavailable for this file (check Settings → Debugging)", which no
-        // setting can change.
-        if (b != null && b.isShell() && !com.editora.dap.ScriptLaunch.isBashScript(b.getPath(), b.getContent())) {
-            host.setStatus(tr("status.debug.shellNotBash")); // bashdb debugs Bash scripts alone
-            return;
-        }
-        if (b != null && b.getPath() == null && !DapServerRegistry.isDebuggable(b.getLanguage())) {
-            host.setStatus(tr("status.debug.languageNotDebuggable"));
-            return;
-        }
-        if (b != null && b.isHtml()) {
-            browser.debugHtmlPage(b); // its scripts run in a browser
-            return;
-        }
-        if (b == null || b.getPath() == null) { // an untitled file is saved first, off the FX thread (PERF-01)
-            savedOrThen(b == null ? List.of() : List.of(b), () -> launchBuffer(b, nodeArgs));
-            if (b == null) {
-                host.setStatus(tr("status.debug.saveFirst"));
-            }
-            return;
-        }
-        String language = DapServerRegistry.adapterLanguage(b.getLanguage()); // a .ts file: JavaScript
-        if (!debugEffectiveFor(language, b.getPath())) {
-            host.setStatus(unavailableMessage(language, b.getPath()));
-            return;
-        }
-        if (b.isDirty() || b.getPath() == null) { // saved off the FX thread, then launched (PERF-01, Pauta 6.2.0)
-            ops.saveThen(
-                    b,
-                    asThisSession(
-                            saved -> { // the session that asked, whichever is focused when it lands
-                                if (saved && b.getPath() != null && !b.isDirty()) {
-                                    launchBuffer(b, nodeArgs);
-                                } else if (saved) { // typed into while it saved: said, not dropped unseen
-                                    Path edited = b.getPath();
-                                    host.setStatus(tr(
-                                            "status.debug.editedWhileSaving",
-                                            edited == null ? "" : String.valueOf(edited.getFileName())));
-                                }
-                            }));
-            return;
-        }
-        Path path = java.util.Objects.requireNonNull(b.getPath()); // checked above
-        String text = b.getContent();
-        String settingsJdk = host.projectScope().jdkHome(host.settings());
-        // What the launch reads from the disk is looked at off the FX thread first (PERF-01): the trust gate's
-        // project files, the build root and its pom, the JDK's java, PATH's java. What follows answers from that.
-        planOffFx("debug-file-plan", () -> DebugPlanning.warmJavaLaunch(language, path, text, settingsJdk), a -> {
-            if (a.value() != null) {
-                launchBufferPlanned(b, path, language, nodeArgs, a.value());
-            } else {
-                planFailed(path, a.failure());
-            }
-        });
-    }
-
-    private void launchBufferPlanned(
-            EditorBuffer b, Path path, String language, List<String> nodeArgs, DebugPlanning.FileRead read) {
-        if (b.runScanPending()) { // compact-source detection is the Run scan, made off FX: decide from its result
-            b.whenRunScanned(bound(() -> launchBufferPlanned(b, path, language, nodeArgs, read)));
-            return;
-        }
-        // A Clojure file of a Leiningen, deps.edn or bb.edn project, a file of a Scala CLI project: its tool loads
-        // the project, not just the file — the workspace-trust gate first, as Run asks it, so "no" starts nothing.
-        // The gate's facts and a Java file's project are looked at off the FX thread first when not known (PERF-01).
-        if (!factsKnown(
-                        "debug-file-look",
-                        facts.fileLaunch(read.gate(), language, path),
-                        () -> launchBufferPlanned(b, path, language, nodeArgs, read))
-                || !trusted(read.gate())) {
-            return;
-        }
-        Integer shebangSource = b.getShebangJavaSource();
-        if ("java".equals(language) && b.isCompactSource() && shebangSource != null && shebangSource < 25) {
-            host.setStatus(tr("status.debug.needSource25", shebangSource));
-            return;
-        }
-        // The debuggee gets the same per-file program arguments the Run feature uses, read the same way.
-        List<String> fileArgs = debugArgs(ops.programArgs(path));
-        if (fileArgs == null) {
-            return;
-        }
-        ops.openToolWindow();
-        nameSession(path.getFileName().toString());
-        // Said once it runs: "Saved …" or the last run's exit stood in the status bar while it was paused (choice 12).
-        s().announceStart = true;
-        dap().setProgramArgs(fileArgs);
-        dap().setVmArgs(""); // no user VM args on a plain debug
-        dap().setHostJavaExec("");
-        if (b.isPython()) {
-            python.plan(path, PythonDebugLaunch.firstLine(b.getContent()));
-        }
-        dap().setJsProjectRoot(ops.projectRoot()); // a JavaScript file's Node.js, package root, workspace
-        dap().setJsNodeArgs(nodeArgs);
-        dap().setJsProgram(null); // the file itself, not a configuration's planned launch
-        if ("javascript".equals(language) && com.editora.process.ExecTargets.runsHere(path)) {
-            // Planned exactly as Run plans it (review D104, D106): the same Node.js, flags, environment and
-            // folder — and for a TypeScript file whatever Run runs for it (tsx, or the compiled file).
-            Path launchedJs = path;
-            s().relaunch = () -> relaunchFor(launchedJs, again -> launchBuffer(again, nodeArgs));
-            debugJsFile(path, fileArgs, nodeArgs);
-            return;
-        }
-        if ("go".equals(language)) {
-            debugGoFile(b, path, fileArgs);
-            return;
-        }
-        if ("rust".equals(language)) {
-            debugRustFile(b, path, fileArgs);
-            return;
-        }
-        if ("cpp".equals(language)) {
-            debugNativeFile(b, path, fileArgs);
-            return;
-        }
-        if ("csharp".equals(language)) {
-            debugCsharpFile(path, fileArgs);
-            return;
-        }
-        if ("php".equals(language)) {
-            php.debug(path, b.getContent(), fileArgs); // a script, a web app's server, a PHPUnit test file
-            return;
-        }
-        if ("ruby".equals(language)) {
-            ruby.debug(path, b.getContent(), fileArgs); // a script, a spec or test file, a Rails app's server
-            return;
-        }
-        if ("elixir".equals(language)) {
-            elixir.debug(path, b.getContent(), fileArgs); // a Mix project's tests, a script, the project
-            return;
-        }
-        if ("powershell".equals(language)) {
-            powershell.debug(path, fileArgs); // a .ps1 on PowerShell Editor Services
-            return;
-        }
-        if (java.util.Set.of("bash", "lua").contains(language)) {
-            debugScriptFile(path, language, fileArgs);
-            return;
-        }
-        if ("dart".equals(language)) {
-            dart.debug(path, fileArgs, java.util.Map.of(), null, false);
-            return;
-        }
-        com.editora.dap.DebugLanguage own = com.editora.dap.DebugLanguages.forLanguage(b.getLanguage());
-        if (own != null && com.editora.dap.DebugLanguages.custom().contains(own)) {
-            debugCustomFile(b, path, own, fileArgs);
-            return;
-        }
-        // Re-anchor closed files' breakpoints first (off-thread) so the initial setBreakpoints arms them too.
-        boolean java = "java".equals(language);
-        Path projectRoot = java ? JavaProjectRoot.find(path) : null;
-        boolean compactSource = java && b.isCompactSource();
-        // A plain-folder project window: its program runs in the project root, like Run's (review A16).
-        Path project = java ? JavaLaunchPrep.projectOf(path, projectRoot, ops.projectRoot()) : null;
-        if (java
-                && !savedOrThen(
-                        javaBuffers(path, project, false),
-                        () -> launchBufferPlanned(b, path, language, nodeArgs, read))) {
-            return; // the launched file was saved above; the others of the project first, off the FX thread
-        }
-        if (projectRoot != null && !compactSource) {
-            // A saved configuration for this class is how the project runs it — its before-launch build,
-            // arguments, environment, working directory — exactly as Run ▶ uses it (review D1).
-            String ownMain = read.ownMain(); // parsed with the plan, off the FX thread (PERF-01)
-            RunConfiguration configured = ownMain == null
-                    ? null
-                    : com.editora.run.JavaLaunchPlan.configurationFor(ownMain, ops.runConfigurations());
-            if (configured != null) {
-                debugConfig(configured);
-                return;
-            }
-        }
-        // A remote file's program runs on its host: none of this machine's JDK setting, PATH or JAVA_HOME.
-        // A Groovy script runs on the Settings JDK too (its JAVA_HOME), as Run runs it.
-        boolean jvmScript = com.editora.run.JvmScriptRun.supports(language);
-        String jdkHome = presentJdk(
-                !(java || jvmScript) || !com.editora.process.ExecTargets.runsHere(path)
-                        ? ""
-                        : compactSource || jvmScript
-                                ? host.projectScope().jdkHome(host.settings())
-                                : configuredJdkHome(projectRoot, null));
-        String selectedJava = com.editora.run.JdkToolchain.javaExecutable(jdkHome);
-        // A Java file without a build tool runs on Run's JDK: the Settings JDK, else PATH's java (review 2, B102).
-        String javaExec = java && projectRoot == null && com.editora.process.ExecTargets.runsHere(path)
-                ? looseJava(selectedJava)
-                : selectedJava;
-        dap().setEnv(com.editora.run.JdkToolchain.environment(
-                jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
-        Path launched = path;
-        s().relaunch = () -> relaunchFor(launched, again -> launchBuffer(again, nodeArgs));
-        if ("kotlin".equals(language)
-                && com.editora.run.KotlinRun.shape(launched.getFileName().toString())
-                        == com.editora.run.KotlinRun.Shape.PROGRAM) {
-            // Compiled first (into the Debug console), then `java -jar` with the agent: Restart compiles an edit.
-            debugKotlinProgram(
-                    launched,
-                    null,
-                    javaExec,
-                    com.editora.run.JdkToolchain.environment(
-                            jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
-            return;
-        }
-        Path looseCwd = projectRoot == null ? project : null;
-        Runnable start = () -> withClosedBreakpoints(() -> {
-            Path file = b.getPath(); // read when the launch starts, after any build
-            if (file == null) {
-                return;
-            }
-            if (compactSource && shebangSource != null) {
-                dap().startCompactShebang(file, shebangSource, javaExec);
-            } else if (compactSource && file.getFileName().toString().endsWith(".java")) {
-                dap().startCompactSource(file, javaExec);
-            } else if (java) {
-                dap().startLaunch(file, this::pickMainClass, javaExec, projectRoot, looseCwd);
-            } else {
-                dap().startLaunch(file, language, this::pickMainClass, javaExec, projectRoot);
-            }
-        });
-        if (projectRoot != null && !compactSource) {
-            buildThenLaunch(path, start);
-        } else if (java && !compactSource) {
-            looseBuildThenLaunch(path, start); // a loose file or a plain folder is built too (review 2, A101)
-        } else {
-            start.run();
-        }
+    /** {@link CompiledDebugLaunch#debugNative}. */
+    void debugNative(Path path, boolean cpp, List<String> args, LaunchExtras extras) {
+        compiled.debugNative(path, cpp, args, extras);
     }
 
     // --- Java launch preparation (review A2, B3, D1) ------------------------------------------------------
@@ -5907,7 +4868,7 @@ final class DebugCoordinator {
      * status bar say so and where to choose another, where java-debug's raw "Cannot run program" stood beside an
      * empty console (review 3, A206).
      */
-    private String presentJdk(String home) {
+    String presentJdk(String home) {
         if (!com.editora.run.JdkToolchain.isGone(home)) {
             return home;
         }
@@ -5920,7 +4881,7 @@ final class DebugCoordinator {
     }
 
     /** The {@code java} a file without a build tool runs on: {@code selected} (the Settings JDK's), else PATH's. */
-    private static String looseJava(String selected) {
+    static String looseJava(String selected) {
         if (selected != null && !selected.isBlank()) {
             return selected;
         }
@@ -5937,7 +4898,7 @@ final class DebugCoordinator {
      * ({@link DapManager#setLooseClassesBuilt}); any other compiles the file with javac from its declared source
      * root, and javac's errors — only those the program reaches — stop it ({@link JavaLaunchPrep#afterBuild}).
      */
-    private void looseBuildThenLaunch(Path routing, Runnable launch) {
+    void looseBuildThenLaunch(Path routing, Runnable launch) {
         lsp.ensureManaged(routing);
         Object token = new Object();
         s().pendingBuild = token;
@@ -5975,7 +4936,7 @@ final class DebugCoordinator {
     }
 
     /** Drops the build before a launch, if one is running: it finishes on its own, but nothing is launched. */
-    private void dropPendingBuild() {
+    void dropPendingBuild() {
         if (s().pendingBuild == null) {
             return;
         }
@@ -5991,7 +4952,7 @@ final class DebugCoordinator {
      * launch: the program is compiled from what is on disk, and a breakpoint in an unsaved file would sit on lines
      * the program does not have (review B3).
      */
-    private List<EditorBuffer> javaBuffers(Path launched, @Nullable Path project, boolean includeLaunched) {
+    List<EditorBuffer> javaBuffers(Path launched, @Nullable Path project, boolean includeLaunched) {
         List<EditorBuffer> dirty = new ArrayList<>();
         host.forEachBuffer(buf -> {
             if (buf.isDirty()
@@ -6011,12 +4972,12 @@ final class DebugCoordinator {
      * listed in the Debug console (each a link to its line) and nothing is launched. A build that cannot run
      * launches anyway; the launch then checks the class files itself (missing: refused; older: a warning).
      */
-    private void buildThenLaunch(Path routing, Runnable launch) {
+    void buildThenLaunch(Path routing, Runnable launch) {
         buildThenLaunch(routing, launch, false);
     }
 
     /** As above; {@code loose}: a file without a build tool, whose launch is told whether its build succeeded. */
-    private void buildThenLaunch(Path routing, Runnable launch, boolean loose) {
+    void buildThenLaunch(Path routing, Runnable launch, boolean loose) {
         Object token = new Object();
         s().pendingBuild = token;
         lsp.ensureManaged(routing);
@@ -6297,7 +5258,7 @@ final class DebugCoordinator {
     }
 
     /** Restart of a session started from {@code file}'s tab: repeat it there, or plainly if the tab is gone. */
-    private void relaunchFor(Path file, Consumer<EditorBuffer> launch) {
+    void relaunchFor(Path file, Consumer<EditorBuffer> launch) {
         EditorBuffer b = ops.bufferForPath(file);
         if (b != null) {
             launch.accept(b);
@@ -6540,7 +5501,7 @@ final class DebugCoordinator {
      * trust as it would before its own build ({@link Ops#buildExecutable}), as Run does
      * ({@code RunCoordinator.trusted}). True when there is no gate. Declining starts nothing; the gate said why.
      */
-    private boolean trusted(com.editora.run.RunTrust.@Nullable Gate gate) {
+    boolean trusted(com.editora.run.RunTrust.@Nullable Gate gate) {
         return gate == null || ops.buildExecutable(gate.tool(), gate.root()) != null;
     }
 
@@ -6755,7 +5716,7 @@ final class DebugCoordinator {
      * debugger's agent, in {@code cwd} (null: its folder), on {@code java}. The arguments, VM arguments and
      * environment are already set on the session.
      */
-    private void debugKotlinProgram(Path source, @Nullable Path cwd, String java, java.util.Map<String, String> env) {
+    void debugKotlinProgram(Path source, @Nullable Path cwd, String java, java.util.Map<String, String> env) {
         Path config = host.configDir(); // the compiler, the source's hash and the jar cache: off the FX thread
         planOffFx("debug-kotlin-plan", () -> DebugPlanning.readKotlin(source, config), a -> {
             var read = a.value();
@@ -6945,7 +5906,7 @@ final class DebugCoordinator {
     }
 
     /** The default JDK for a loose file or Maven project; a saved configuration may override it. */
-    private String configuredJdkHome(@Nullable Path root, @Nullable RunConfiguration cfg) {
+    String configuredJdkHome(@Nullable Path root, @Nullable RunConfiguration cfg) {
         if (root != null && !com.editora.process.ExecTargets.runsHere(root)) {
             return ""; // a JDK setting names a folder on this machine; the jdtls where it runs resolves its own
         }
@@ -6984,7 +5945,7 @@ final class DebugCoordinator {
     }
 
     /** Whether two paths refer to the same file (normalized absolute comparison; null-safe). */
-    private static boolean samePath(@Nullable Path a, @Nullable Path b) {
+    static boolean samePath(@Nullable Path a, @Nullable Path b) {
         return a != null && b != null && PathKeys.sameNormalized(a, b);
     }
 
@@ -7752,7 +6713,7 @@ final class DebugCoordinator {
      * into js-debug's launch ({@link NodeDebugConfigs#fromRunPlan}). A plan js-debug cannot launch — a shebang
      * naming Deno or Bun — falls back to the file under the resolved Node.js.
      */
-    private void debugJsFile(Path file, List<String> fileArgs, List<String> nodeArgs) {
+    void debugJsFile(Path file, List<String> fileArgs, List<String> nodeArgs) {
         if (nodeArgs.isEmpty()) { // an Electron app's main-process file starts the app, else Node.js runs the file
             electron.debugOr(file, fileArgs, () -> debugNodeFile(file, fileArgs, nodeArgs));
         } else {
@@ -7810,7 +6771,7 @@ final class DebugCoordinator {
     }
 
     /** Main-class chooser (QuickOpen) when jdtls finds several. */
-    private void pickMainClass(
+    void pickMainClass(
             List<DapManager.MainClassOption> options, Consumer<DapManager.@Nullable MainClassOption> chosen) {
         closeMainClassPicker();
         QuickOpen<DapManager.MainClassOption> picker = new QuickOpen<>(

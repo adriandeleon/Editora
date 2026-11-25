@@ -86,7 +86,7 @@ final class DebugSession {
     java.nio.file.@Nullable Path launchAskedFile;
 
     /**
-     * A launch was let through ({@code DebugCoordinator.clearToStart}) and has not started or stopped yet: only its
+     * A launch was let through ({@code DebugFileLaunch.clearToStart}) and has not started or stopped yet: only its
      * saves and plans count as getting ready, not a plan the window reads for something else.
      */
     boolean launching;
@@ -156,7 +156,7 @@ final class DebugSession {
     /** Bumped when a session starts or ends, so a slow runtime probe cannot label the next one. */
     long runtimeGeneration;
 
-    /** F5 is starting a test: its check has been made ({@code DebugCoordinator.clearToDebugTest}). */
+    /** F5 is starting a test: its check has been made ({@code DebugFileLaunch.clearToDebugTest}). */
     boolean startCleared;
 
     /** The build before a project launch in flight; replaced or cleared to drop its result (Stop). */

@@ -90,7 +90,7 @@ class PresetDebugWindowFxTest {
             s.setRubyDebugPath(rdbg.toString());
             s.setPhpDebugPath(phpDebug.toString());
             fx.shared.getTrustStore().trust(root);
-            debug.dotnetCommand = List.of(dotnet.toString());
+            debug.compiled.dotnetCommand = List.of(dotnet.toString());
             debug.applySupport();
         });
         for (String language : List.of("csharp", "ruby", "php")) {

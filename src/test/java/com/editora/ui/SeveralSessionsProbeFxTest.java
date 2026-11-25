@@ -79,7 +79,7 @@ class SeveralSessionsProbeFxTest {
                             && client.equals(c.activeBuffer().getPath())));
             EditorBuffer second = FxTestSupport.callOnFx(c::activeBuffer);
             FxTestSupport.runOnFx(() -> second.toggleBreakpoint(2));
-            debug.retargetChoice = (question, both) -> DebugCoordinator.Retarget.BOTH;
+            debug.fileLaunch.retargetChoice = (question, both) -> DebugFileLaunch.Retarget.BOTH;
             FxTestSupport.runOnFx(() -> debug.debugFile(second)); // Debug File: never continues the paused one
             await("a second session", 30, () -> call(() -> debug.sessions().size()) == 2);
             DebugSession b = call(() -> debug.sessions().focused());

@@ -37,9 +37,9 @@ class AttachToProcessTextTest {
         java.nio.file.Path go = java.nio.file.Path.of("/opt/go/bin/go").toAbsolutePath();
         assertEquals(
                 java.util.List.of(go.getParent().toString()),
-                DebugCoordinator.goToolDirs(java.util.List.of(go.toString(), "-x")));
-        assertEquals(java.util.List.of(), DebugCoordinator.goToolDirs(java.util.List.of("go")), "found on the PATH");
-        assertEquals(java.util.List.of(), DebugCoordinator.goToolDirs(java.util.List.of()));
+                CompiledDebugLaunch.goToolDirs(java.util.List.of(go.toString(), "-x")));
+        assertEquals(java.util.List.of(), CompiledDebugLaunch.goToolDirs(java.util.List.of("go")), "found on the PATH");
+        assertEquals(java.util.List.of(), CompiledDebugLaunch.goToolDirs(java.util.List.of()));
     }
 
     @Test

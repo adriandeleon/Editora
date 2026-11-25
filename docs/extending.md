@@ -116,8 +116,8 @@ standard streams, a port passed as `{port}`, or a port it announces, matched by 
 `DapManager.configureExternal` / `startExternal` find it, start it and send the `launch` the language shapes
 (`ExternalAdapter.launchRequest`). Go is the worked example: the `GO` profile (Delve, announced port),
 `dap/GoLaunch` for its requests, a `DebugAdapterSettings` binding and a `SettingsDebugPage` card, and
-`DebugCoordinator.debugGoFile` for F5. Rust adds a build first: `dap/RustLaunch` plans Cargo's build and picks the
-executable from its JSON messages (`DebugCoordinator.debugRustFile`). C# (`dap/DotnetLaunch`) is the same shape on
+`CompiledDebugLaunch.debugGoFile` for F5. Rust adds a build first: `dap/RustLaunch` plans Cargo's build and picks the
+executable from its JSON messages (`CompiledDebugLaunch.debugRustFile`). C# (`dap/DotnetLaunch`) is the same shape on
 netcoredbg, and an adapter Editora installs is found through an `dap/InstalledAdapter` (its install folder, the VS
 Code extension that ships it) and a pinned `InstallCatalog` recipe. Ruby's rdbg is the program itself: its file goes
 after the adapter's command (`startExternal`'s `adapterTail`). PHP's adapter is a `.js` file, run on Node.js, and its F5 is a `DebugCoordinator` part of its own (`ui/PhpDebugLaunch`, planned by `run/PhpApps` as Run File is). Dart's file picks one of two profiles (`dap/DartLaunch`: `dart debug_adapter`, or

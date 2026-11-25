@@ -1236,7 +1236,7 @@ class DebugCoordinatorCommandsFxTest {
         assertEquals(List.of(tr("status.debug.alreadyRunning", "Args.java")), statuses(), "and it says so");
         Path other = open("src/main/java/demo/Other.java");
         List<String> asked = new java.util.ArrayList<>();
-        debug.confirmRetarget = question -> {
+        debug.fileLaunch.confirmRetarget = question -> {
             asked.add(question);
             return false; // "Cancel": a running program is not ended by a key pressed in another tab
         };
@@ -1244,7 +1244,7 @@ class DebugCoordinatorCommandsFxTest {
         // A running session can be kept beside the new one: the question offers Debug Both.
         assertEquals(List.of(tr("dialog.debug.retargetBothQuestion", "Args.java", "Other.java")), asked);
         assertEquals(1, first.disconnected.getCount(), "declined: the running session goes on");
-        debug.confirmRetarget = question -> true;
+        debug.fileLaunch.confirmRetarget = question -> true;
         FxTestSupport.runOnFx(() -> debug.debugStart());
 
         assertTrue(first.disconnected.await(10, TimeUnit.SECONDS), "the running session is replaced");
