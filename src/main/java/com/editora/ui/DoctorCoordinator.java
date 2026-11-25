@@ -945,6 +945,19 @@ final class DoctorCoordinator {
                     return found != null ? base.ok(found) : base.missing("doctor.tip.missing", "ElixirLS");
                 }));
             }
+            if (s.isPowershellDebugEnabled()) {
+                String configured = scope.debugTool("powershell", s.getPowershellDebugPath());
+                DoctorCheck check = DoctorCheck.checking(
+                                "debug.powershell", "debug", tr("doctor.label.powershellDebug"), "")
+                        .withSettings("debug");
+                specs.add(probe(check, base -> {
+                    String found = com.editora.dap.DapManager.locateExternal(
+                            com.editora.dap.DebugLanguages.POWERSHELL, configured);
+                    return found != null
+                            ? base.ok(found)
+                            : base.missing("doctor.tip.missing", "PowerShell Editor Services");
+                }));
+            }
             if (s.isPhpDebugEnabled()) {
                 String configured = scope.debugTool("php", s.getPhpDebugPath());
                 DoctorCheck check = DoctorCheck.checking("debug.php", "debug", tr("doctor.label.phpDebug"), "")

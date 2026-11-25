@@ -308,4 +308,13 @@ class RunScanTest {
         assertTrue(plain.testLines().isEmpty(), "a program: its main's ▶ only");
         assertEquals(0, plain.line());
     }
+
+    @Test
+    void aPowerShellScriptRunsFromTheTopAndAModuleDoesNot() {
+        RunScan.Result script = RunScan.scan(inputs("powershell", "build.ps1"), "param($x)\nWrite-Output $x\n");
+        assertTrue(script.runnable());
+        assertEquals(0, script.line());
+        assertFalse(RunScan.scan(inputs("powershell", "Tools.psm1"), "function A {}\n")
+                .runnable());
+    }
 }

@@ -2047,6 +2047,7 @@ final class LspCoordinator {
             case "lua" -> s.isLuaLspEnabled();
             case "dart" -> s.isDartLspEnabled();
             case "elixir" -> s.isElixirLspEnabled();
+            case "powershell" -> s.isPowershellLspEnabled();
             case "dockerfile" -> s.isDockerfileLspEnabled();
             case "sql" -> s.isSqlLspEnabled();
             case "terraform" -> s.isTerraformLspEnabled();
@@ -2672,6 +2673,7 @@ final class LspCoordinator {
             case "lua" -> s.setLuaLspCommand(command);
             case "dart" -> s.setDartLspCommand(command);
             case "elixir" -> s.setElixirLspCommand(command);
+            case "powershell" -> s.setPowershellLspCommand(command);
             case "dockerfile" -> s.setDockerfileLspCommand(command);
             case "sql" -> s.setSqlLspCommand(command);
             case "terraform" -> s.setTerraformLspCommand(command);

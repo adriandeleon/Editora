@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **PowerShell: code intelligence and debugging.** PowerShell Editor Services (VS Code's PowerShell engine, on `pwsh`)
+  is PowerShell's language server — PSScriptAnalyzer's diagnostics, completion, hover, definitions, rename, formatting
+  — and its debugger: F5 on a `.ps1` (or a launch.json `PowerShell` configuration) stops at breakpoints with
+  PowerShell's scopes in Variables, and the script's output, warnings and errors reach the Debug console. Run File runs
+  a script on `pwsh`. Editora finds PSES in its own `plugins/dap/powershell`, at the path in Settings → Debugging, or in
+  VS Code's PowerShell extension.
 - **C and C++ tests: GoogleTest, Catch2 and doctest.** A C or C++ test file has a ▶ per test and one for the whole
   file. Run File, Run Test at Caret and a test's ▶ build its program and run it with the test's filter
   (`--gtest_filter`, a Catch2 test spec, `--test-case`), into Test Results: each test passed, failed or skipped, a

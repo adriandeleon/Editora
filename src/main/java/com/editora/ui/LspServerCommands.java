@@ -39,6 +39,7 @@ final class LspServerCommands {
         "astro",
         "dart",
         "elixir",
+        "powershell",
         com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID
     };
 
@@ -91,6 +92,7 @@ final class LspServerCommands {
             case "lua" -> s.getLuaLspCommand();
             case "dart" -> s.getDartLspCommand();
             case "elixir" -> s.getElixirLspCommand();
+            case "powershell" -> s.getPowershellLspCommand();
             case "dockerfile" -> s.getDockerfileLspCommand();
             case "sql" -> s.getSqlLspCommand();
             case "terraform" -> s.getTerraformLspCommand();
@@ -128,6 +130,7 @@ final class LspServerCommands {
             case "lua" -> s.setLuaLspEnabled(on);
             case "dart" -> s.setDartLspEnabled(on);
             case "elixir" -> s.setElixirLspEnabled(on);
+            case "powershell" -> s.setPowershellLspEnabled(on);
             case "dockerfile" -> s.setDockerfileLspEnabled(on);
             case "sql" -> s.setSqlLspEnabled(on);
             case "terraform" -> s.setTerraformLspEnabled(on);
@@ -221,6 +224,9 @@ final class LspServerCommands {
         if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId) && raw.isBlank()) {
             String own = com.editora.install.MavenServerInstall.effectiveCommand(raw, configDir);
             return own.isBlank() ? raw : com.editora.lsp.JvmServerCommand.withJdk(own, jdk);
+        }
+        if (com.editora.install.PowerShellServerInstall.SERVER_ID.equals(serverId)) {
+            return com.editora.install.PowerShellServerInstall.effectiveCommand(raw, configDir); // PSES's start script
         }
         if (com.editora.install.ElixirServerInstall.SERVER_ID.equals(serverId)) {
             return com.editora.install.ElixirServerInstall.effectiveCommand(raw, configDir); // ElixirLS's own install

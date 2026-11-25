@@ -2494,6 +2494,9 @@ public final class DapManager {
         if (DebugLanguages.LUA.equals(language)) {
             return InstalledAdapter.LUA_DEBUG;
         }
+        if (DebugLanguages.POWERSHELL.equals(language)) {
+            return InstalledAdapter.POWERSHELL;
+        }
         if (DebugLanguages.ELIXIR.equals(language)) {
             return InstalledAdapter.ELIXIR_LS;
         }
@@ -2647,6 +2650,16 @@ public final class DapManager {
                                         .getFirst())
                         : request;
         List<String> argv = new ArrayList<>(external.argv(executable, port));
+        boolean powershell = DebugLanguages.POWERSHELL.equals(language) && executable != null;
+        if (powershell) { // PSES's start script, on pwsh, as a debug adapter on stdio
+            argv = new ArrayList<>(List.of(PowerShellLaunch.executable(
+                    name -> Path.of(ProcessRunner.resolveExecutable(List.of(name))
+                                    .getFirst())
+                            .isAbsolute(),
+                    com.editora.Os.isWindows())));
+            argv.addAll(PowerShellLaunch.serviceArgs(
+                    Path.of(executable), Path.of(System.getProperty("java.io.tmpdir")), true, epoch));
+        }
         if (language == DebugLanguages.GDB) {
             argv.addAll(1, EvaluationLimits.gdbArguments(shared.evaluationTimeLimit)); // before -i dap
         }
@@ -2697,8 +2710,12 @@ public final class DapManager {
         java.util.concurrent.CompletableFuture<org.eclipse.lsp4j.debug.Capabilities> connected;
         switch (external.transport()) {
             case STDIO -> {
-                // DAP is on stdin/stdout; an undrained PIPE deadlocks
-                stderr = adapterStderr(epoch, AdapterStderr.drain(proc));
+                // DAP is on stdin/stdout; an undrained PIPE deadlocks. PSES writes the script's output there.
+                stderr = adapterStderr(
+                        epoch,
+                        powershell
+                                ? AdapterStderr.drain(proc, line -> onOutput(epoch, line + "\n", "stdout"))
+                                : AdapterStderr.drain(proc));
                 if (!publishClient(epoch, c)) {
                     com.editora.process.ProcessRegistry.killTree(proc);
                     c.dispose();
@@ -5537,6 +5554,15 @@ public final class DapManager {
      * Whether the session is java-debug's: its string values may need {@link JdwpStringRepair}, and it pauses and
      * resumes threads one at a time unless asked for all of them.
      */
+    /**
+     * The {@code evaluate} context the adapter is sent for {@code context}: PSES answers a {@code repl} evaluation in
+     * its console, which a debug session has none of (the result came back empty), so the Debug console asks it as a
+     * {@code watch}, which returns the value — and still runs the expression, an assignment included.
+     */
+    private String adapterContext(String context) {
+        return "repl".equals(context) && "powershell".equals(sessionLanguage) ? "watch" : context;
+    }
+
     private boolean javaDebugSession() {
         return "java".equals(sessionLanguage);
     }
@@ -5564,7 +5590,10 @@ public final class DapManager {
         if (console) {
             consoleEvaluations++;
         }
-        c.evaluateFull(adapterExpression(expression), frameId, context) // the full answer: a string can be repaired
+        c.evaluateFull(
+                        adapterExpression(expression),
+                        frameId,
+                        adapterContext(context)) // the full answer: a string can be repaired
                 .thenCompose(full -> repairString(c, full))
                 .whenComplete((full, e) -> fx(() -> {
                     if (console && client == c) {
@@ -5656,7 +5685,7 @@ public final class DapManager {
         if (code) {
             consoleEvaluations++;
         }
-        c.evaluateFull(adapterExpression(expression), frameId, context)
+        c.evaluateFull(adapterExpression(expression), frameId, adapterContext(context))
                 .thenCompose(r -> repairString(c, r))
                 .whenComplete((r, e) -> fx(() -> {
                     if (code && client == c) {

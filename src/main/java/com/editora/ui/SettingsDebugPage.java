@@ -812,7 +812,15 @@ final class SettingsDebugPage {
                         v -> config.getSettings().setElixirDebugEnabled(v),
                         () -> config.getSettings().isElixirDebugEnabled(),
                         v -> config.getSettings().setElixirDebugPath(v),
-                        () -> config.getSettings().getElixirDebugPath()));
+                        () -> config.getSettings().getElixirDebugPath()),
+                externalAdapterUi(
+                        com.editora.dap.DebugLanguages.POWERSHELL,
+                        com.editora.dap.PowerShellLaunch.START_SCRIPT,
+                        "debug powershell pwsh ps1 pses editor services path found",
+                        v -> config.getSettings().setPowershellDebugEnabled(v),
+                        () -> config.getSettings().isPowershellDebugEnabled(),
+                        v -> config.getSettings().setPowershellDebugPath(v),
+                        () -> config.getSettings().getPowershellDebugPath()));
     }
 
     /**

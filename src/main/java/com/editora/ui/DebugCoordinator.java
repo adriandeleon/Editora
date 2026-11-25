@@ -443,6 +443,7 @@ final class DebugCoordinator {
 
     private final DartDebugLaunch dart = new DartDebugLaunch(this); // Dart, and a Flutter app's Dart
     final ElixirDebugLaunch elixir = new ElixirDebugLaunch(this); // a Mix project's tests, scripts and app
+    final PowerShellDebugLaunch powershell = new PowerShellDebugLaunch(this); // .ps1 on PowerShell Editor Services
     private final ElectronDebugLaunch electron = new ElectronDebugLaunch(this); // an Electron app: main + renderer
     final RemoteAttachLaunch remote = new RemoteAttachLaunch(this); // a native program under a debug server elsewhere
     /** launch.json's serverReadyAction and postDebugTask ({@link LaunchFollowUps}). */
@@ -1416,6 +1417,7 @@ final class DebugCoordinator {
                         found -> applyGating());
         dart.configure(on, s, scope, this::applyGating); // dart, and flutter for a Flutter app's file
         elixir.configure(on, s, scope, this::applyGating); // ElixirLS
+        powershell.configure(on, s, scope, this::applyGating); // PowerShell Editor Services
         browser.configure(on, s, scope, this::applyGating); // vscode-firefox-debug, for Firefox
         // C and C++: the same CodeLLDB as Rust's.
         dap().configureExternal(
@@ -4259,7 +4261,17 @@ final class DebugCoordinator {
                 }
             }
             case FIREFOX -> browser.startConfigured(workspace, name, anchor, route.request());
-            case DELVE, CODELLDB, NETCOREDBG, RDBG, PHP_DEBUG, BASH_DEBUG, LUA_DEBUG, ELIXIR_LS, GDB, CUSTOM -> {
+            case DELVE,
+                    CODELLDB,
+                    NETCOREDBG,
+                    RDBG,
+                    PHP_DEBUG,
+                    BASH_DEBUG,
+                    LUA_DEBUG,
+                    ELIXIR_LS,
+                    POWERSHELL,
+                    GDB,
+                    CUSTOM -> {
                 if (profile == null) {
                     return;
                 }
@@ -5788,6 +5800,10 @@ final class DebugCoordinator {
         }
         if ("elixir".equals(language)) {
             elixir.debug(path, b.getContent(), fileArgs); // a Mix project's tests, a script, the project
+            return;
+        }
+        if ("powershell".equals(language)) {
+            powershell.debug(path, fileArgs); // a .ps1 on PowerShell Editor Services
             return;
         }
         if (java.util.Set.of("bash", "lua").contains(language)) {

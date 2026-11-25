@@ -458,6 +458,30 @@ public final class DebugLanguages {
             "debug.error.elixirUnavailable",
             new ExternalAdapter(List.of(ElixirLaunch.adapterFile()), ExternalAdapter.Transport.STDIO, null));
 
+    /**
+     * PowerShell Editor Services' debug adapter (Microsoft, MIT): its {@code Start-EditorServices.ps1} run on {@code
+     * pwsh} with {@code -DebugServiceOnly -Stdio} ({@link PowerShellLaunch}), from its release zip or VS Code's
+     * PowerShell extension ({@link InstalledAdapter#POWERSHELL}). A script runs wrapped, its output on the adapter's
+     * standard error, which the Debug console shows. No exception filters.
+     */
+    public static final DebugLanguage POWERSHELL = new DebugLanguage(
+            "powershell",
+            "PowerShell",
+            Set.of("powershell"),
+            Kind.EXTERNAL,
+            PowerShellLaunch.TYPE,
+            PowerShellLaunch.TYPE,
+            "",
+            List.of(),
+            null,
+            Availability.LOCATED,
+            List.of(),
+            null,
+            null,
+            false,
+            "debug.error.powershellUnavailable",
+            new ExternalAdapter(List.of(PowerShellLaunch.START_SCRIPT), ExternalAdapter.Transport.STDIO, null));
+
     private static final List<DebugLanguage> ALL = List.of(
             JAVA,
             PYTHON,
@@ -475,7 +499,8 @@ public final class DebugLanguages {
             BASH,
             DART,
             LUA,
-            ELIXIR);
+            ELIXIR,
+            POWERSHELL);
 
     /**
      * GDB's own DAP mode ({@code gdb -i dap}, GDB 14 and later), over its standard streams: C and C++'s other debugger
