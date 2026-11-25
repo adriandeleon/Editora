@@ -5,9 +5,10 @@ import java.nio.file.Path;
 import org.jspecify.annotations.Nullable;
 
 /**
- * One installed JDK, Maven or Gradle that a project can be matched to.
+ * One installed JDK, Maven, Gradle or sbt that a project can be matched to. A GraalVM is a JDK
+ * ({@link #graalvm()}).
  *
- * @param tool {@code jdk}, {@code maven} or {@code gradle}
+ * @param tool {@code jdk}, {@code maven}, {@code gradle} or {@code sbt}
  * @param version as its installer names it: jkit's {@code 21.0.9+10}, SDKMAN's {@code 21.0.9}, a
  *     {@code release} file's {@code 21.0.9}
  * @param vendor jkit's vendor name ({@code temurin}, {@code zulu}, {@code corretto}, …); null for Maven and
@@ -24,6 +25,9 @@ public record ToolInstall(
     public static final String JDK = "jdk";
     public static final String MAVEN = "maven";
     public static final String GRADLE = "gradle";
+    public static final String SBT = "sbt";
+    /** jkit's GraalVM slot: a JDK whose vendor is GraalVM-based ({@link #graalvm()}), kept apart for native work. */
+    public static final String GRAALVM = "graalvm";
 
     public static final String JKIT = "jkit";
     public static final String SDKMAN = "sdkman";
@@ -51,9 +55,35 @@ public record ToolInstall(
         }
     }
 
+    /** Whether this is a GraalVM-based JDK (GraalVM CE, Oracle GraalVM, Liberica NIK, Mandrel, Gluon). */
+    public boolean graalvm() {
+        return JDK.equals(tool) && graalvmVendor(vendor);
+    }
+
+    /** Whether {@code vendor} (jkit's name) builds GraalVM. Pure. */
+    public static boolean graalvmVendor(@Nullable String vendor) {
+        return vendor != null
+                && switch (vendor) {
+                    case "graalvm", "graalvm-ce", "liberica-nik", "mandrel", "gluon-graalvm" -> true;
+                    default -> false;
+                };
+    }
+
+    /** The name a person reads for {@code tool}: JDK, Maven, Gradle, sbt, GraalVM. */
+    public static String toolName(String tool) {
+        return switch (tool) {
+            case JDK -> "JDK";
+            case MAVEN -> "Maven";
+            case GRADLE -> "Gradle";
+            case SBT -> "sbt";
+            case GRAALVM -> "GraalVM";
+            default -> tool;
+        };
+    }
+
     /** {@code JDK 21.0.9+10 · temurin · jkit}, for a picker row. */
     public String label() {
-        StringBuilder sb = new StringBuilder(JDK.equals(tool) ? "JDK" : MAVEN.equals(tool) ? "Maven" : "Gradle");
+        StringBuilder sb = new StringBuilder(toolName(tool));
         sb.append(' ').append(version);
         if (vendor != null) {
             sb.append(" · ").append(vendor);

@@ -2082,10 +2082,7 @@ final class LspCoordinator {
                 projectScope.toolchain().missing();
         List<String> names = new java.util.ArrayList<>();
         for (com.editora.toolchain.ProjectToolchain.Choice c : missing) {
-            String file = c.origin() == com.editora.toolchain.ProjectToolchain.Origin.SDKMANRC
-                    ? com.editora.toolchain.SdkmanRc.FILE
-                    : ".editora/settings.json";
-            names.add(ToolchainCommands.toolName(c.tool()) + " " + c.request().raw() + " (" + file + ")");
+            names.add(ToolchainCommands.toolName(c.tool()) + " " + c.request().raw() + " (" + c.file() + ")");
         }
         String now = String.join(", ", names);
         if (!now.isEmpty() && !now.equals(saidMissing)) {
@@ -2517,8 +2514,9 @@ final class LspCoordinator {
     }
 
     /**
-     * Whether {@code file} is this window's project {@code .editora/settings.json} or its {@code .sdkmanrc}, whose
-     * saving changes what applies here.
+     * Whether {@code file} is this window's project {@code .editora/settings.json} or one of its project files
+     * ({@code jkit.toml}, {@code .sdkmanrc}, {@code .tool-versions}, {@code .java-version}), whose saving changes
+     * what applies here.
      */
     private boolean isProjectSettingsFile(@Nullable Path file) {
         Path root = ops.lspProjectRoot();
@@ -2526,8 +2524,9 @@ final class LspCoordinator {
                 && root != null
                 && com.editora.vfs.Vfs.isLocal(file)
                 && (com.editora.config.PathKeys.sameNormalized(file, com.editora.config.ProjectSettings.fileFor(root))
-                        || com.editora.config.PathKeys.sameNormalized(
-                                file, com.editora.toolchain.SdkmanRc.fileFor(root)));
+                        || (com.editora.toolchain.ProjectFiles.isProjectFile(file)
+                                && file.getParent() != null
+                                && com.editora.config.PathKeys.sameNormalized(file.getParent(), root)));
     }
 
     /** The overrides in force when {@link #applySupport} last configured the manager. */

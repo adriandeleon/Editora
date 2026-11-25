@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`--gtest_filter`, a Catch2 test spec, `--test-case`), into Test Results: each test passed, failed or skipped, a
   failed check with its values, a row that opens the failing line. Rerun Failed builds again first. Debug Test at
   Caret debugs the program on CodeLLDB or GDB, filtered to the test.
+- **Full jkit support.** Editora drives [jkit](https://jkit-project.dev/) for every command it has: the project's pins
+  come from jkit itself (`jkit status`: `jkit.toml`, `.sdkmanrc`, `.tool-versions`, `.java-version`), **Set Project
+  JDK…** can keep the choice in `jkit.toml` (`jkit pin`), and sbt and GraalVM join JDK, Maven and Gradle. New **Java
+  Toolchain** commands sync the project (`jkit sync`), show jkit's status, check its setup (`jkit doctor`), remove
+  older builds (`jkit prune`), browse installs, set jkit's default vendors and switching on `cd` (`jkit config`), add
+  jkit's hook to your shell, and update jkit. **Settings → Build Tools → jkit** names the jkit program and opens jkit's
+  own settings; Doctor has a jkit row.
 - **Run File runs single-file Java programs.** A `.java` outside a Maven or Gradle project whose first class has a
   `static void main(String[] args)` gets a ▶ on that `main`, and Run File runs it with the source launcher
   (`java Hello.java`): no project, no build. A `public` main runs on JDK 11 or newer; Run File says when the JDK is
