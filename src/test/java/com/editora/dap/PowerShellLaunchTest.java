@@ -23,7 +23,7 @@ class PowerShellLaunchTest {
         assertEquals(List.of("-NoLogo", "-NoProfile", "-NonInteractive", "-File", START.toString()), lsp.subList(0, 5));
         assertTrue(lsp.containsAll(List.of("-LanguageServiceOnly", "-Stdio")), lsp.toString());
         assertEquals(
-                Path.of("/pses").toString(),
+                Path.of("/pses").toAbsolutePath().toString(), // with its drive on Windows
                 lsp.get(lsp.indexOf("-BundledModulesPath") + 1),
                 "PSScriptAnalyzer and PSReadLine sit beside PSES's own folder");
         assertEquals(tmp.resolve("editora-pses-lsp-7.log").toString(), lsp.get(lsp.indexOf("-LogPath") + 1));
