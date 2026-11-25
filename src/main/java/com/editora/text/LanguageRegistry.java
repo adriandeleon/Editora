@@ -170,6 +170,7 @@ public final class LanguageRegistry {
             Map.entry("bzl", "starlark"),
             Map.entry("star", "starlark"),
             Map.entry("rb", "ruby"),
+            Map.entry("ru", "ruby"), // a Rack app's config.ru
             Map.entry("rake", "ruby"),
             Map.entry("gemspec", "ruby"),
             Map.entry("ex", "elixir"),

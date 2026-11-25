@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Rack and Sinatra apps: run and debug the server.** In a Ruby project with a `config.ru` (Sinatra, Roda, a bare Rack
+  app), Run File and F5 on the `config.ru`, a Ruby file at the project's top such as `app.rb`, or a file under `app/` or
+  `config/` start the app under rackup on the first free port from 9292; under the debugger a request stops in your
+  routes. A `config.ru` opens as Ruby.
 - **Attach to a remote Go program.** Debug: Attach to Remote Delve… (also in Run ▸ Launch and Attach) debugs a Go
   program under Delve's headless server (`dlv debug --headless --listen=:2345`) on another machine, in a container or
   here, with no Delve needed on this machine. Give the folder it was built from over there and Delve maps your

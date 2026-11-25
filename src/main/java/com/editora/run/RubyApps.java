@@ -21,6 +21,9 @@ import org.jspecify.annotations.Nullable;
  *       file[:line]}, else {@code ruby -Itest file}, or {@code -n name} for one test;</li>
  *   <li>a Rails app's file under {@code app/} or {@code config/}, its {@code config.ru} or {@code bin/rails}: the app's
  *       development server, {@code bin/rails server} on the first free port from 3000;</li>
+ *   <li>another app with a {@code config.ru} (Sinatra, Roda, a bare Rack app): its {@code config.ru}, a Ruby file at
+ *       its top or under {@code app/} or {@code config/} runs its server, rackup ({@link #RACKUP}) on the first free
+ *       port from 9292;</li>
  *   <li>anything else: {@code ruby file}.</li>
  * </ul>
  *
@@ -46,11 +49,26 @@ public final class RubyApps {
         /** Minitest on a test file ({@code bin/rails test} in a Rails app). */
         MINITEST,
         /** A Rails app's development server. */
-        RAILS_SERVER
+        RAILS_SERVER,
+        /** A Rack app's server ({@code rackup}): Sinatra, Roda, Hanami, a bare Rack app — a {@code config.ru}. */
+        RACK_SERVER
     }
 
     /** The port a Rails server is tried on first. */
     public static final int FIRST_PORT = 3000;
+
+    /**
+     * {@code rackup}, run by {@code ruby} itself (rackup 2's {@code Rackup::Server}, else rack 2's {@code Rack::Server}),
+     * with the options after {@code --}: under {@code bundle exec}, the {@code rackup} executable is loaded into Bundler's
+     * own process, where rdbg's breakpoints never stopped (probed with rdbg 1.11, Ruby 4.0, rackup 2.3, Sinatra 4.2),
+     * while {@code ruby} runs as a program of its own, as {@code ruby bin/rails} does. Nor does it need the gem's
+     * executable on the {@code PATH}.
+     */
+    static final String RACKUP = "begin; require \"rackup\"; Rackup::Server.start;"
+            + " rescue LoadError; require \"rack\"; Rack::Server.start; end";
+
+    /** The port a Rack server is tried on first ({@code rackup}'s own default). */
+    public static final int RACK_FIRST_PORT = 9292;
 
     /** How many ports from {@link #FIRST_PORT} are tried. */
     static final int PORTS_TRIED = 100;
@@ -149,6 +167,15 @@ public final class RubyApps {
             command.addAll(args);
             return new Plan(Kind.RAILS_SERVER, command, app, "http://" + address);
         }
+        if (app == null && root != null && look.isFile().test(root.resolve("config.ru")) && servesRack(root, abs)) {
+            int port = port(look.portFree(), RACK_FIRST_PORT);
+            if (bundled) {
+                command.addAll(List.of("bundle", "exec"));
+            }
+            command.addAll(List.of("ruby", "-e", RACKUP, "--", "-p", String.valueOf(port), "-o", HOST));
+            command.addAll(args);
+            return new Plan(Kind.RACK_SERVER, command, root, "http://" + HOST + ":" + port);
+        }
         if (bundled) {
             command.addAll(List.of("bundle", "exec"));
         }
@@ -179,6 +206,23 @@ public final class RubyApps {
                 || first.equals("config")
                 || rel.toString().equals("config.ru")
                 || rel.equals(Path.of("bin", "rails"));
+    }
+
+    /**
+     * Whether {@code file} of the Rack app in {@code root} (it has a {@code config.ru}) serves it: its {@code config.ru},
+     * a Ruby file at its top ({@code app.rb}, as Sinatra apps are laid out), or one under {@code app/} or
+     * {@code config/}. Its scripts, specs and tests elsewhere run as themselves.
+     */
+    static boolean servesRack(Path root, Path file) {
+        if (!file.startsWith(root)) {
+            return false;
+        }
+        Path rel = root.relativize(file);
+        String first = rel.getNameCount() > 0 ? rel.getName(0).toString() : "";
+        return rel.toString().equals("config.ru")
+                || (rel.getNameCount() == 1 && first.endsWith(".rb"))
+                || first.equals("app")
+                || first.equals("config");
     }
 
     /** The nearest folder from {@code dir} up (to {@code top}) with a {@code Gemfile}, or null. */
@@ -221,11 +265,16 @@ public final class RubyApps {
 
     /** The first port from {@link #FIRST_PORT} that {@code free} says is free, else {@link #FIRST_PORT}. */
     static int port(IntPredicate free) {
-        for (int p = FIRST_PORT; p < FIRST_PORT + PORTS_TRIED; p++) {
+        return port(free, FIRST_PORT);
+    }
+
+    /** The first port from {@code first} that {@code free} says is free, else {@code first}. */
+    static int port(IntPredicate free, int first) {
+        for (int p = first; p < first + PORTS_TRIED; p++) {
             if (free.test(p)) {
                 return p;
             }
         }
-        return FIRST_PORT;
+        return first;
     }
 }

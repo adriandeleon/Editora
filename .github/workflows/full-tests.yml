@@ -430,8 +430,10 @@ jobs:
           ruby --version
           gem install --user-install --no-document debug -v 1.11.0
           # RSpec, Minitest and a Rails app for RubyAppsProbeFxTest: the user gems' programs on the PATH, and a
-          # minimal app with its bundle installed where the probe copies it from.
-          gem install --user-install --no-document bundler rspec minitest sqlite3 'rails:8.1.4.1'
+          # minimal app with its bundle installed where the probe copies it from. Sinatra, rackup and Puma for its
+          # Sinatra case, which bundles an app of its own from the gems here (bundle install --local).
+          gem install --user-install --no-document bundler rspec minitest sqlite3 'rails:8.1.4.1' \
+            sinatra rackup puma
           gems_bin="$(ruby -e 'print Gem.user_dir')/bin"
           echo "$gems_bin" >> "$GITHUB_PATH"
           export PATH="$gems_bin:$PATH"
@@ -537,7 +539,8 @@ jobs:
       # module with its values; F5 on a project script runs it under mix run; a script with no Mix project is run, not
       # debugged; Run File on a test file runs its tests.
       # RubyAppsProbeFxTest: under rdbg, Debug Test at Caret runs an RSpec example and a Minitest test alone and stops
-      # in them, a Rails test stops in its controller, and F5 in a Rails controller serves the app and a request stops.
+      # in them, a Rails test stops in its controller, F5 in a Rails controller serves the app and a request stops, and
+      # F5 in a Sinatra app.rb serves it under rackup and a request stops in its route.
       # CppTestsProbeFxTest: GoogleTest, Catch2 3 and doctest in a CMake project: a ▶ per test, Run File into Test
       # Results, Rerun Failed (built again), Run Test at Caret, and Debug Test at Caret stopping on GDB.
       # RemoteNativeAttachProbeFxTest: a C program under gdbserver, attached to by Attach to Remote Program on GDB and

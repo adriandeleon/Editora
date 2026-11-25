@@ -1276,14 +1276,23 @@ file[:line]`; a Minitest file (`*_test.rb`, `test_*.rb` with a test class) under
 Rails app (`config/application.rb` and `bin/rails`), else `ruby -Itest file [-n name]`
 ([`run/RubyTests`](../../src/main/java/com/editora/run/RubyTests.java): `def test_…`, or ActiveSupport's `test "…"`
 made `test_` + its words joined by `_`); a Rails app's file under `app/` or `config/`, its `config.ru` or `bin/rails`
-under `ruby bin/rails server -p <first free from 3000> -b 127.0.0.1`; anything else `ruby file`.
+under `ruby bin/rails server -p <first free from 3000> -b 127.0.0.1`; in another Rack app (a `config.ru` in the
+project's folder, no Rails) its `config.ru`, a `.rb` at the project's top (Sinatra's `app.rb`) or a file under `app/` or
+`config/` under `ruby -e <RubyApps.RACKUP> -- -p <first free from 9292> -o 127.0.0.1` (`Rackup::Server.start`, else rack
+2's `Rack::Server`); anything else `ruby file`. `.ru` is Ruby (language and grammar).
 [`run/RubyRunLines`](../../src/main/java/com/editora/run/RubyRunLines.java) puts the ▶ on specs (their `describe`),
 tests (their class), `config.ru`, `bin/rails`, `Rakefile` and a script with a statement at the left margin that is not a
 declaration; a file of classes, modules and methods has none. Probed under rdbg 1.11 with Ruby 4.0, RSpec 3.13 and Rails
 8.1: a spec's example by `file:line`, `bundle exec` with no `debug` gem in the bundle (rdbg loads it itself), a
 controller under `bin/rails test file:line` and in a request to `bin/rails server` all stop; Stop ends the server.
+Rack (round 6 item 9; rackup 2.3, Sinatra 4.2, Puma 8.1): `bundle exec rackup` loads the `rackup` executable into
+Bundler's own process, and there a route's breakpoint never stopped (with or without `debug` in the bundle); `ruby -e`
+runs as a program of its own, as `ruby bin/rails` does, and stops, and needs no `rackup` on the `PATH`. On Ruby 4.0 a
+server under `bundle exec` needs `debug` in the bundle: rdbg's DAP server (`server_dap.rb`) requires `irb/completion`,
+and irb left the default gems; without it rdbg disconnects at once with a `LoadError` (a Rails Gemfile lists `debug`).
 `RubyAppsProbeFxTest` (opt-in) drives each, the Rails cases on a copy of a prepared app (`~/.cache/editora/rails-probe`,
-which the full-tests job makes with `rails new --minimal`).
+which the full-tests job makes with `rails new --minimal`), the Sinatra case on an app it writes and bundles with
+`bundle install --local`.
 
 **PHP.** The `php` profile is Xdebug through vscode-php-debug (MIT), `phpDebug.js` on Node.js 20.18 or later over
 stdio. `InstalledAdapter.PHP_DEBUG` finds it as configured (`Settings.phpDebugPath`: the file or its unpacked
