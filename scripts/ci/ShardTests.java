@@ -64,6 +64,21 @@ public final class ShardTests {
 
     private ShardTests() {}
 
+    /**
+     * Classes that run in a JVM of their own, after a shard's (the {@code alone} list, run by shard 1): their numbers
+     * depend on what the JVM ran before them. {@code PerfBudgetFxTest} counts what the FX thread allocates per
+     * keystroke, and JavaFX's headless window copies its pixels per frame through {@code ByteBuffer.asIntBuffer()},
+     * one view object per pixel. The JIT removes those objects only while {@code HeapByteBuffer.asIntBuffer}'s
+     * byte-order branch has seen one order; a test before it that used the other (AWT, JDI) leaves 34 MB a frame,
+     * 41 MB a key against a 2.7 MB budget.
+     */
+    static final List<String> ALONE = List.of("com/editora/ui/PerfBudgetFxTest.java");
+
+    /** {@code classes} without the ones that run alone. */
+    static List<String> withoutAlone(List<String> classes) {
+        return classes.stream().filter(c -> !ALONE.contains(c)).toList();
+    }
+
     static Path testRoot() {
         return Repo.root().resolve("src/test/java");
     }
@@ -233,12 +248,17 @@ public final class ShardTests {
                 err.println("shard " + index + " of " + count + " does not exist");
                 return 2;
             }
-            out.println(String.join("\n", shard(testClasses(testRoot()), index, count, timings(timingsFile()))));
+            out.println(String.join(
+                    "\n", shard(withoutAlone(testClasses(testRoot())), index, count, timings(timingsFile()))));
+            return 0;
+        }
+        if (args.length == 1 && args[0].equals("alone")) {
+            out.println(String.join("\n", testClasses(testRoot()).stream().filter(ALONE::contains).toList()));
             return 0;
         }
         if (args.length == 2 && args[0].equals("loads")) {
             int count = Integer.parseInt(args[1]);
-            var classes = testClasses(testRoot());
+            var classes = withoutAlone(testClasses(testRoot()));
             var seconds = timings(timingsFile());
             for (int index = 1; index <= count; index++) {
                 var shard = shard(classes, index, count, seconds);
@@ -279,6 +299,7 @@ public final class ShardTests {
             return 0;
         }
         err.println("usage: java scripts/ci/ShardTests.java list <index> <count>");
+        err.println("       java scripts/ci/ShardTests.java alone");
         err.println("       java scripts/ci/ShardTests.java loads <count>");
         err.println("       java scripts/ci/ShardTests.java timings <surefire-reports-dir>...");
         err.println("       java scripts/ci/ShardTests.java check <surefire-reports-dir>");
