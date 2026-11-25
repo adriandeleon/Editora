@@ -31,9 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Doctor's Settings… opens the row's own language.** On a language server or debugger row (PowerShell, Go, …),
   Settings… opened Language Servers or Debugging on whichever language the page's Language picker last held; it now
   picks the row's language. ESLint, Prettier and Biome open the TypeScript card, Flutter the Dart card.
-
-### Fixed
-
 - **Attaching to a Python on another machine.** Debug: Attach (and a launch.json `debugpy` attach with a `connect`
   host) to a Python under `debugpy --listen` on another machine or in a container connected to this machine whatever
   host was given, so it never reached it. It now connects to that host.
