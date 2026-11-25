@@ -6,7 +6,7 @@ import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
-/** Pure: the words Editora uses for a hot code replace (see {@code DebugCoordinator.applyCodeChanges}). */
+/** Pure: the words Editora uses for a hot code replace (see {@code JavaCodeChanges.applyCodeChanges}). */
 final class CodeReplaceText {
 
     /** At most this many class names are listed; the rest are counted. */

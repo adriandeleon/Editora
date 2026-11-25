@@ -300,13 +300,15 @@ class DebugReviewCWindowFxTest {
         Path util = file("util.py", UTIL);
         open(util);
         List<MapDebugStop> told = new java.util.concurrent.CopyOnWriteArrayList<>();
-        FxTestSupport.runOnFx(() -> debug.setOnMapStop(told::add));
+        FxTestSupport.runOnFx(() -> debug.mapFollow.setOnMapStop(told::add));
         assertEquals(1, told.size(), "told what holds now at once");
         try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
             FakeDebugAdapter.Session session = connect(adapter, util);
             stopAt(session, util, 3, "breakpoint");
-            await("the Map was not told the stop", () -> debug.mapStop().frame() != null);
-            MapDebugStop stop = FxTestSupport.callOnFx(debug::mapStop);
+            await(
+                    "the Map was not told the stop",
+                    () -> debug.mapFollow.mapStop().frame() != null);
+            MapDebugStop stop = FxTestSupport.callOnFx(debug.mapFollow::mapStop);
             assertEquals("util.py", stop.frame().file().getFileName().toString());
             assertEquals(2, stop.frame().line());
             assertFalse(stop.exception());
@@ -314,21 +316,23 @@ class DebugReviewCWindowFxTest {
             assertEquals(stop, told.getLast());
 
             int before = told.size();
-            FxTestSupport.runOnFx(() -> debug.selectFrameFromMap(stop.frame())); // listed: shown again
+            FxTestSupport.runOnFx(() -> debug.mapFollow.selectFrameFromMap(stop.frame())); // listed: shown again
             await("picking a frame on the Map shows it", () -> told.size() > before);
             assertEquals(stop.frame(), told.getLast().frame());
-            FxTestSupport.runOnFx(() -> debug.selectFrameFromMap(new com.editora.dap.DapModels.StackFrameInfo(
+            FxTestSupport.runOnFx(() -> debug.mapFollow.selectFrameFromMap(new com.editora.dap.DapModels.StackFrameInfo(
                     987_654, "gone", null, 0, 0, null, "", null, null))); // not listed: said, nothing shown
 
             FxTestSupport.runOnFx(manager::resume);
             session.awaitRequest("continue");
-            await("the Map was not told it runs", () -> debug.mapStop().frame() == null);
+            await(
+                    "the Map was not told it runs",
+                    () -> debug.mapFollow.mapStop().frame() == null);
             assertEquals(MapDebugStop.RUNNING, told.getLast());
             int running = told.size();
-            FxTestSupport.runOnFx(() -> debug.selectFrameFromMap(stop.frame())); // running: nothing to pick
+            FxTestSupport.runOnFx(() -> debug.mapFollow.selectFrameFromMap(stop.frame())); // running: nothing to pick
             assertEquals(running, told.size());
         } finally {
-            FxTestSupport.runOnFx(() -> debug.setOnMapStop(ignored -> {}));
+            FxTestSupport.runOnFx(() -> debug.mapFollow.setOnMapStop(ignored -> {}));
         }
     }
 
@@ -636,13 +640,13 @@ class DebugReviewCWindowFxTest {
             b.toggleBreakpoint(2);
             mgr.setCondition(2, "x > 1");
             b.getArea().moveTo(2, 0);
-            debug.addLogpointAtCaret();
+            debug.caretBreakpoints.addLogpointAtCaret();
         });
         FxTestSupport.drainFx();
         FxTestSupport.runOnFx(() -> OverlayDriver.answer(fx.controller, "y = {y}"));
         assertEquals("y = {y}", FxTestSupport.callOnFx(() -> mgr.get(2).logMessage()));
         assertEquals("x > 1", FxTestSupport.callOnFx(() -> mgr.get(2).condition()));
-        FxTestSupport.runOnFx(() -> debug.addLogpointAtCaret());
+        FxTestSupport.runOnFx(() -> debug.caretBreakpoints.addLogpointAtCaret());
         FxTestSupport.drainFx();
         assertEquals("y = {y}", FxTestSupport.callOnFx(() -> OverlayDriver.promptText(fx.controller)));
         FxTestSupport.runOnFx(() -> OverlayDriver.dismiss(fx.controller));
@@ -650,7 +654,7 @@ class DebugReviewCWindowFxTest {
         // A blank line has no code to log from: no form.
         FxTestSupport.runOnFx(() -> {
             b.getArea().moveTo(4, 0);
-            debug.addLogpointAtCaret();
+            debug.caretBreakpoints.addLogpointAtCaret();
         });
         assertFalse(OverlayDriver.showing(fx.controller));
         FxTestSupport.runOnFx(() -> b.toggleBreakpoint(2));
@@ -1145,7 +1149,7 @@ class DebugReviewCWindowFxTest {
         OverlayHost overlay = FxTestSupport.field(fx.controller, "overlayHost");
         FxTestSupport.runOnFx(() -> {
             b.getArea().moveTo(1, 0);
-            debug.editBreakpointAtCaret();
+            debug.caretBreakpoints.editBreakpointAtCaret();
         });
         // The card is laid out on a later pulse (macOS CI measured it before any: 0 px wide).
         await(
@@ -1196,7 +1200,7 @@ class DebugReviewCWindowFxTest {
         FxTestSupport.runOnFx(overlay::hide);
         FxTestSupport.runOnFx(() -> {
             b.getArea().moveTo(1, 0);
-            debug.editBreakpointAtCaret();
+            debug.caretBreakpoints.editBreakpointAtCaret();
         });
         FxTestSupport.drainFx();
         assertEquals(2, FxTestSupport.callOnFx(this::completingFields).size(), "the condition and the log message");

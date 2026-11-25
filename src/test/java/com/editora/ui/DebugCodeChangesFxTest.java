@@ -341,9 +341,9 @@ class DebugCodeChangesFxTest {
         DapModels.StackFrameInfo bottom = new DapModels.StackFrameInfo(12, "App.main(String[])", file, 1, 1);
 
         List<javafx.scene.control.MenuItem> onTop =
-                FxTestSupport.callOnFx(() -> debug.stackMenuItems(top, List.of(top, bottom)));
+                FxTestSupport.callOnFx(() -> debug.javaCode.stackMenuItems(top, List.of(top, bottom)));
         List<javafx.scene.control.MenuItem> onBottom =
-                FxTestSupport.callOnFx(() -> debug.stackMenuItems(bottom, List.of(top, bottom)));
+                FxTestSupport.callOnFx(() -> debug.javaCode.stackMenuItems(bottom, List.of(top, bottom)));
 
         assertEquals(tr("debugpanel.restartFrame"), onTop.get(0).getText());
         assertFalse(onTop.get(0).isDisable());
@@ -373,7 +373,7 @@ class DebugCodeChangesFxTest {
         QuickOpen<DapModels.StepTarget>[] picker = new QuickOpen[1];
         await(
                 "the picker",
-                () -> (picker[0] = FxTestSupport.field(debug, "smartStepPicker")) != null
+                () -> (picker[0] = FxTestSupport.field(debug.javaCode, "smartStepPicker")) != null
                         && FxTestSupport.callOnFx(picker[0]::isShown));
         java.util.function.Supplier<List<DapModels.StepTarget>> items = FxTestSupport.field(picker[0], "itemsSupplier");
         List<DapModels.StepTarget> rows = FxTestSupport.callOnFx(items::get);
@@ -406,7 +406,7 @@ class DebugCodeChangesFxTest {
         QuickOpen<DapModels.StepTarget>[] picker = new QuickOpen[1];
         await(
                 "the picker",
-                () -> (picker[0] = FxTestSupport.field(debug, "smartStepPicker")) != null
+                () -> (picker[0] = FxTestSupport.field(debug.javaCode, "smartStepPicker")) != null
                         && FxTestSupport.callOnFx(picker[0]::isShown));
         java.util.function.Supplier<List<DapModels.StepTarget>> items = FxTestSupport.field(picker[0], "itemsSupplier");
         assertEquals(

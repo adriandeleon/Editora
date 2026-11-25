@@ -239,7 +239,8 @@ class SplitViewFxTest {
         // debug.toggleBreakpoint is gated on the debugger feature (off by default), and so is the toggle itself.
         FxTestSupport.runOnFx(() -> fx.shared.getSettings().setDebugSupport(true));
         Object debug = FxTestSupport.field(fx.controller, "debugCoordinator");
-        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(debug, "toggleBreakpointAtCaret"));
+        FxTestSupport.runOnFx(
+                () -> FxTestSupport.invoke(FxTestSupport.field(debug, "caretBreakpoints"), "toggleBreakpointAtCaret"));
         assertTrue(FxTestSupport.callOnFx(() -> b.getBreakpointManager().isBreakpoint(30)));
         assertFalse(FxTestSupport.callOnFx(() -> b.getBreakpointManager().isBreakpoint(5)));
         assertEquals(30, (int)

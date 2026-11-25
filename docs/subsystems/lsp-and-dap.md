@@ -2203,7 +2203,7 @@ earlier stop shows what it kept. Each adapter quotes a string its own way (measu
 text as it is, debugpy and js-debug as a literal of their language, escapes and all (`StringViews.content`).
 `ObjectMarksTest`, `StringViewsTest`, `MarkObjectWindowFxTest` (a fake adapter) and the opt-in
 `MarkObjectProbeFxTest` (java-debug, debugpy) cover it.
-**Add Logpoint** (`DebugCoordinator.addLogpoint`): *Debug: Add Logpoint…* and a Shift+click on the breakpoint strip
+**Add Logpoint** (`CaretBreakpoints.addLogpoint`): *Debug: Add Logpoint…* and a Shift+click on the breakpoint strip
 (`FoldManager.setBreakpointShiftClick` → `EditorBuffer.setGutterLogpointClick`; unset, a Shift+click toggles like a
 plain click) open a one-field form for the log message, with the `{expression}` completion of the full form. OK is
 disabled while the message is blank, so it never leaves a breakpoint that stops; the breakpoint is created only on OK,

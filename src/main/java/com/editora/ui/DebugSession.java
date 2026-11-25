@@ -314,7 +314,7 @@ final class DebugSession {
     /** java-debug's last ERROR notice, so a failed replace does not print the same reason twice. */
     String lastCodeReplaceError = "";
 
-    /** The replace whose old-code hint waits for the next stack ({@code DebugCoordinator.explainOldCode}); 0: none. */
+    /** The replace whose old-code hint waits for the next stack ({@code JavaCodeChanges.explainOldCode}); 0: none. */
     long oldCodeHintPending;
 
     /** Counts the old-code hints asked for, so that each waits under its own number. */

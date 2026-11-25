@@ -23,7 +23,6 @@ import com.editora.config.Breakpoint;
 import com.editora.config.BreakpointStore;
 import com.editora.config.PathKeys;
 import com.editora.config.RunConfiguration;
-import com.editora.dap.CodeLessLines;
 import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
 import com.editora.dap.DapServerRegistry;
@@ -455,6 +454,9 @@ final class DebugCoordinator {
     final LaunchJsonSessions launchJson = new LaunchJsonSessions(this); // launch.json, compounds, own adapters
     final DebugAttach attach = new DebugAttach(this); // Attach, Reattach, Attach to Process, Open Core Dump
     final NodeDebugLaunch node = new NodeDebugLaunch(this); // a .js or .ts file, a node or npm configuration
+    final MapDebugFollow mapFollow = new MapDebugFollow(this); // the Project Map: stops, card breakpoint strips
+    final CaretBreakpoints caretBreakpoints = new CaretBreakpoints(this); // breakpoint commands on the caret line
+    final JavaCodeChanges javaCode = new JavaCodeChanges(this); // hot code replace, Restart Frame, Smart Step Into
 
     /** The build facts a launch asks: looked at off the FX thread first when not known ({@link DebugFacts}). */
     final DebugFacts facts = new DebugFacts(this::executableFacts, this::sayBusy, this::lookFailed);
@@ -549,7 +551,7 @@ final class DebugCoordinator {
         session.dap.setListener(inSessionProxy(DapManager.Listener.class, events, session));
         session.dap.setCallbackWrapper(r -> () -> inSession(session, r));
         session.dap.setCodeReplaceNotices(
-                (type, message) -> inSession(session, () -> codeReplaceNotice(type, message)));
+                (type, message) -> inSession(session, () -> javaCode.codeReplaceNotice(type, message)));
         session.dap.setBreakpointsSupplier(this::collectBreakpoints);
     }
 
@@ -650,7 +652,7 @@ final class DebugCoordinator {
     }
 
     /** Method breakpoints and field watchpoints. */
-    private final MemberBreakpointCommands memberBreakpoints;
+    final MemberBreakpointCommands memberBreakpoints;
 
     /** Their marks on the declaration lines of the open files. */
     private final MemberBreakpointMarks memberMarks;
@@ -685,10 +687,10 @@ final class DebugCoordinator {
     }
 
     /** Breakpoints that wait for another to be hit (see {@link TriggeredBreakpoints}). */
-    private final TriggeredBreakpoints triggered;
+    final TriggeredBreakpoints triggered;
 
     /** Breakpoint groups, and breakpoints exported to a file and imported (see {@link BreakpointGroups}). */
-    private final BreakpointGroups groups;
+    final BreakpointGroups groups;
 
     BreakpointGroups groups() {
         return groups;
@@ -826,10 +828,10 @@ final class DebugCoordinator {
         }
         inSession(before, () -> {
             closeMainClassPicker(); // it chose for that session's launch
-            closeSmartStepPicker(DapManager.State.INACTIVE);
+            javaCode.closeSmartStepPicker(DapManager.State.INACTIVE);
             clearExecHighlight();
             clearDebugEditorSurfaces();
-            mapStop(MapDebugStop.RUNNING); // the target's own stop, if it has one, is shown next
+            mapFollow.mapStop(MapDebugStop.RUNNING); // the target's own stop, if it has one, is shown next
         });
         sessions.focus(target);
         inSession(target, () -> {
@@ -2061,7 +2063,7 @@ final class DebugCoordinator {
 
     /**
      * {@link #rebaselineLines(Path)} for each of {@code files}: after a hot code replace, the Java files saved
-     * since the last successful replace (see {@link #codeReplaced}).
+     * since the last successful replace (see {@link JavaCodeChanges#codeReplaced}).
      */
     void rebaselineLines(Set<Path> files) {
         if (files != null) {
@@ -2329,7 +2331,7 @@ final class DebugCoordinator {
                     s().suspendsShown++;
                 }
                 s().uiState = state;
-                closeSmartStepPicker(state); // review E108
+                javaCode.closeSmartStepPicker(state); // review E108
                 timeRun(state);
                 if (state != DapManager.State.SUSPENDED) {
                     hideExceptionCard(); // Continue, a step, the session's end: the stop it described is over
@@ -2401,8 +2403,8 @@ final class DebugCoordinator {
                     }
                 }
                 updateDebugStatus(state);
-                forgetCodeReplace(state);
-                primeCodeReplace(state);
+                javaCode.forgetCodeReplace(state);
+                javaCode.primeCodeReplace(state);
                 if (state == DapManager.State.STARTING || state == DapManager.State.INACTIVE) {
                     closeMainClassPicker(); // it chose for a launch that has been replaced or has ended (A106)
                 }
@@ -2427,7 +2429,7 @@ final class DebugCoordinator {
                     clearExecHighlight();
                     clearDebugEditorSurfaces(); // inline values + hover live only while suspended
                     if (shown()) {
-                        mapStop(MapDebugStop.RUNNING);
+                        mapFollow.mapStop(MapDebugStop.RUNNING);
                     }
                 }
                 if (state == DapManager.State.INACTIVE
@@ -2494,7 +2496,7 @@ final class DebugCoordinator {
                 } else if (stepFilters().stop(reason, frames)) {
                     return; // a step into code the user does not step into: out of it again
                 }
-                oldCodeHintFrom(stopFrames); // B209: the stack after a replace names the old-code frames
+                javaCode.oldCodeHintFrom(stopFrames); // B209: the stack after a replace names the old-code frames
                 // A recording breakpoint: the stop is kept in Debug History and the program goes on, so the editor
                 // is not taken to it (recordAndContinue).
                 boolean recording = recordingHit(reason, frames);
@@ -2699,7 +2701,7 @@ final class DebugCoordinator {
             @Override
             public List<javafx.scene.control.MenuItem> stackMenuItems(
                     DapModels.StackFrameInfo frame, List<DapModels.StackFrameInfo> frames) {
-                return DebugCoordinator.this.stackMenuItems(frame, frames);
+                return javaCode.stackMenuItems(frame, frames);
             }
 
             @Override
@@ -2778,7 +2780,7 @@ final class DebugCoordinator {
                             clearExecHighlight();
                             clearDebugEditorSurfaces();
                             if (shown()) {
-                                mapStop(MapDebugStop.RUNNING);
+                                mapFollow.mapStop(MapDebugStop.RUNNING);
                             }
                         }
                     });
@@ -3842,11 +3844,11 @@ final class DebugCoordinator {
         }
         clearExecHighlight();
         if (frame == null) {
-            mapStop(MapDebugStop.RUNNING);
+            mapFollow.mapStop(MapDebugStop.RUNNING);
             return;
         }
         DebugPanel stackPanel = s().panel;
-        mapStop(new MapDebugStop(
+        mapFollow.mapStop(new MapDebugStop(
                 frame, stackPanel == null ? List.of() : stackPanel.callStack(), frame.id() == s().exceptionFrameId));
         if (!hasSource(frame)) {
             if (frame.sourceUri() != null && dap().debugFile() != null) {
@@ -4408,337 +4410,18 @@ final class DebugCoordinator {
         javaLaunch.closeMainClassPicker();
     }
 
-    // --- The Project Map follows the debugger (Map gaps round 3, item 2) ---
-
-    /** Told each frame the editor shows, and when nothing is paused any more. */
-    private Consumer<MapDebugStop> onMapStop = stop -> {};
-
-    private MapDebugStop mapStop = MapDebugStop.RUNNING;
-
-    /** Where the Project Map hears of each stop; told the current one at once. */
-    void setOnMapStop(Consumer<MapDebugStop> listener) {
-        onMapStop = listener;
-        listener.accept(mapStop);
+    // The shared caret-line checks ({@link CaretBreakpoints}), used by many breakpoint commands here.
+    Runnable onSameLine(EditorBuffer b, int line, Runnable command) {
+        return caretBreakpoints.onSameLine(b, line, command);
     }
 
-    private void mapStop(MapDebugStop stop) {
-        mapStop = stop;
-        onMapStop.accept(stop);
+    boolean breakpointAllowed(EditorBuffer b, int line, Runnable retry) {
+        return caretBreakpoints.breakpointAllowed(b, line, retry);
     }
 
-    /** What the Map was last told. For tests. */
-    MapDebugStop mapStop() {
-        return mapStop;
-    }
-
-    /**
-     * A frame picked in the Map's call stack: shown as a click on it in the Debug window would show it; when the stack
-     * there no longer lists it (folded runtime frames, a newer stop), the status says so.
-     */
-    void selectFrameFromMap(DapModels.StackFrameInfo frame) {
-        if (dap().state() != DapManager.State.SUSPENDED || s().panel == null) {
-            return;
-        }
-        DapModels.StackFrameInfo shown = s().shownFrame;
-        if (shown != null && shown.id() == frame.id()) {
-            mapStop(mapStop); // the frame on show: the Map shows it again, as it was picked there
-            return;
-        }
-        if (!panel().selectFrameById(frame.id())) {
-            host.setStatus(tr("status.debug.frameNotListed", frame.name()));
-        }
-    }
-
-    // --- Project Map cards' gutters (Map gaps round 3, item 1) ---
-
-    /**
-     * Whether a Map card of {@code file} has a breakpoint strip: debugging is on, and the file's language debugs where
-     * the file's tools run — as its tab's gutter would have one.
-     */
-    boolean cardBreakpointsOn(Path file) {
-        if (!debugSupportEnabled()) {
-            return false;
-        }
-        EditorBuffer open = ops.bufferForPath(file);
-        if (open != null) {
-            return isDebuggableBuffer(open);
-        }
-        String language = com.editora.editor.debug.LineFunctions.languageOf(file);
-        if (language == null || !DapServerRegistry.isDebuggable(language)) {
-            return false;
-        }
-        return Vfs.isLocal(file) && com.editora.process.ExecTargets.runsHere(file)
-                || DapManager.debuggableOnHost(language) && RemoteExec.runsFor(file);
-    }
-
-    /**
-     * {@code file}'s breakpoint glyphs by 0-based line, for a Map card's gutter: its tab's, with what a live session
-     * says of them, or the stored ones of a file with no tab (or a narrowed one).
-     */
-    Map<Integer, MapCardGutter.Breakpoint> cardBreakpoints(Path file) {
-        Map<Integer, MapCardGutter.Breakpoint> out = new java.util.HashMap<>();
-        EditorBuffer open = ops.bufferForPath(file);
-        if (open != null && !open.isNarrowed()) {
-            var manager = open.getBreakpointManager();
-            Set<Integer> lines = new HashSet<>(manager.memberMarks().keySet());
-            manager.snapshot().forEach(bp -> lines.add(bp.line()));
-            for (int line : lines) {
-                if (manager.hasGlyph(line)) {
-                    String tip = manager.glyphTooltip(line);
-                    out.put(line, new MapCardGutter.Breakpoint(manager.glyphClasses(line), tip == null ? "" : tip));
-                }
-            }
-            return out;
-        }
-        String muted = breakpointsMuted ? tr("debug.breakpoint.muted") : null;
-        for (Breakpoint bp : ops.breakpointMap().getOrDefault(key(file), List.of())) {
-            boolean waits = bp.isTriggered() && triggered.labelOf(bp.triggeredBy()) != null;
-            String classes = com.editora.editor.debug.BreakpointManager.kindClasses(bp, waits);
-            if (muted != null) {
-                classes = classes == null ? "muted" : classes + " muted";
-            }
-            String tip = com.editora.editor.debug.BreakpointDescription.tooltip(bp, null, triggered::labelOf);
-            tip = muted == null ? tip : tip == null || tip.isBlank() ? muted : muted + "\n" + tip;
-            out.put(bp.line(), new MapCardGutter.Breakpoint(classes, tip == null ? "" : tip));
-        }
-        return out;
-    }
-
-    /**
-     * A click in a Map card's breakpoint strip on {@code line} of {@code file}, whose text is {@code text}: what a
-     * click in its tab's gutter does — through that tab when it has one — else the stored breakpoints of the file are
-     * changed and a live session is told. A line with no code to stop on gets none, and the status says so.
-     */
-    void toggleCardBreakpoint(Path file, int line, String text) {
-        if (!cardBreakpointsOn(file)) {
-            return;
-        }
-        EditorBuffer open = ops.bufferForPath(file);
-        if (open != null && !open.isNarrowed()) {
-            var manager = open.getBreakpointManager();
-            var mark = manager.isBreakpoint(line) ? null : manager.memberMark(line);
-            if (mark != null) {
-                mark.members().forEach(memberBreakpoints::toggle); // a method breakpoint's mark: removes it
-            } else if (breakpointAllowed(open, line, () -> toggleCardBreakpoint(file, line, text))) {
-                open.toggleBreakpoint(line);
-            }
-            return;
-        }
-        String key = key(file);
-        boolean set = ops.breakpointMap().getOrDefault(key, List.of()).stream().anyMatch(bp -> bp.line() == line);
-        String language = com.editora.editor.debug.LineFunctions.languageOf(file);
-        if (!set && com.editora.dap.CodeLessLines.isCodeLess(text, line, language == null ? "" : language)) {
-            host.setStatus(tr("status.debug.noCodeOnLine"));
-            return;
-        }
-        breakpointsPicker().rewriteClosed(file, key, line, set ? null : Breakpoint.plain(line, lineOf(text, line)));
-    }
-
-    /** Line {@code line} (0-based) of {@code text}, or "" past its end. */
-    static String lineOf(String text, int line) {
-        int start = 0;
-        for (int i = 0; i < line; i++) {
-            int next = text.indexOf('\n', start);
-            if (next < 0) {
-                return "";
-            }
-            start = next + 1;
-        }
-        int end = text.indexOf('\n', start);
-        String found = end < 0 ? text.substring(start) : text.substring(start, end);
-        return found.endsWith("\r") ? found.substring(0, found.length() - 1) : found;
-    }
-
-    /** Toggles a breakpoint on the active buffer's caret line. */
-    void toggleBreakpointAtCaret() {
-        if (s().panel != null && s().panel.disassemblyView().hasFocus()) {
-            s().panel.disassemblyView().toggleSelected(); // the selected instruction's (InstructionBreakpoints)
-            return;
-        }
-        EditorBuffer b = breakpointBuffer();
-        if (b != null) {
-            toggleBreakpointOn(b, b.getFocusedArea().getCurrentParagraph());
-        }
-    }
-
-    /** Toggles a breakpoint on {@code line}, the caret's when pressed: a check landing later acts on that line. */
-    private void toggleBreakpointOn(EditorBuffer b, int line) {
-        if (!b.isDisposed() && breakpointAllowed(b, line, () -> toggleBreakpointOn(b, line))) {
-            b.toggleBreakpoint(line);
-        }
-    }
-
-    /** {@code command} asked again once a check lands, only while the caret is still on {@code line}. */
-    private Runnable onSameLine(EditorBuffer b, int line, Runnable command) {
-        return () -> { // the command reads the active tab: still the one it was given, its caret on the same line
-            if (!b.isDisposed() && breakpointBuffer() == b && b.getFocusedArea().getCurrentParagraph() == line) {
-                command.run();
-            }
-        };
-    }
-
-    /**
-     * Whether a breakpoint may go on {@code line} of {@code b}: anywhere a debugger can stop, which in a {@code .http}
-     * file is only a script line (adl, 2026-10-16) — else says so. Removing one is always allowed.
-     */
-    private boolean breakpointAllowed(EditorBuffer b, int line, Runnable retry) {
-        if (b.getBreakpointManager().isBreakpoint(line)) {
-            return true;
-        }
-        if (b.isHttpFile()) {
-            com.editora.http.HttpScriptLines.Map scripts = b.httpScriptMap();
-            if (scripts == null) {
-                b.whenHttpScriptMap(retry); // its script lines are parsed off FX: the command goes on when they land
-                return false;
-            }
-            if (scripts.isScriptLine(line)) {
-                return true;
-            }
-            host.setStatus(tr("status.debug.httpScriptLinesOnly"));
-            return false;
-        }
-        // B8: a blank or comment-only line has no code to stop on. java-debug even called such a breakpoint
-        // verified, and it never stopped.
-        String language = b.getLanguage(); // the text is scanned off the FX thread (PERF-01): asked again once known
-        var codeLess = scan(b, "codeLess:" + line, t -> CodeLessLines.isCodeLess(t, line, language), retry);
-        if (codeLess == null) {
-            return false;
-        }
-        if (Boolean.TRUE.equals(codeLess.value())) {
-            host.setStatus(tr("status.debug.noCodeOnLine"));
-            return false;
-        }
-        return true;
-    }
-
-    /**
-     * The active buffer if breakpoints can be set in it, else {@code null} after saying why. A file with no
-     * debug adapter has no breakpoint gutter: a breakpoint toggled there by key was invisible, could only be
-     * removed by pressing the key again on the same line, and was still sent to the adapter in every session.
-     */
-    private @Nullable EditorBuffer breakpointBuffer() {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null) {
-            return null;
-        }
-        if (!debugSupportEnabled()) {
-            host.setStatus(tr("statusbar.tip.debugDisabled"));
-            return null;
-        }
-        if (!isDebuggableBuffer(b)) {
-            host.setStatus(tr("status.debug.noBreakpointsHere"));
-            return null;
-        }
-        return b;
-    }
-
-    /**
-     * Edits the caret line's breakpoint (creating one if absent): its condition, its log message — which
-     * makes it a logpoint: the adapter logs and does not suspend — and whether it is enabled. All three
-     * already persist, re-anchor and reach the adapter; this form is what reaches them.
-     */
-    void editBreakpointAtCaret() {
-        EditorBuffer b = breakpointBuffer();
-        if (b == null) {
-            return;
-        }
-        int line = b.getFocusedArea().getCurrentParagraph();
-        if (!breakpointAllowed(b, line, onSameLine(b, line, this::editBreakpointAtCaret))) {
-            return;
-        }
-        BreakpointEditForm.show(
-                host.overlayHost(),
-                b,
-                line,
-                completionSource(false),
-                completionSource(true),
-                groups,
-                triggered,
-                s().marks.labels());
-    }
-
-    /**
-     * Debug: Add Triggered Breakpoint — a breakpoint on the caret line that waits, in each debug session, until the
-     * breakpoint chosen from a list is hit (VS Code's Add Triggered Breakpoint, IntelliJ's "Disable until hitting the
-     * following breakpoint"). On a line with a breakpoint it makes that one wait; choosing the one it waits for
-     * already makes it wait for none.
-     */
-    void addTriggeredBreakpointAtCaret() {
-        EditorBuffer b = breakpointBuffer();
-        if (b == null || b.getPath() == null) {
-            return;
-        }
-        int line = b.getFocusedArea().getCurrentParagraph();
-        if (!breakpointAllowed(b, line, onSameLine(b, line, this::addTriggeredBreakpointAtCaret))) {
-            return;
-        }
-        var mgr = b.getBreakpointManager();
-        Breakpoint existing = mgr.get(line);
-        String selfId = existing == null ? "" : existing.id();
-        String waitsFor = existing == null ? "" : existing.triggeredBy();
-        List<BreakpointsPicker.Entry> choices = TriggeredBreakpoints.choices(
-                key(b.getPath()), line + mgr.regionFirstLine(), selfId, triggered.entries());
-        if (choices.isEmpty()) {
-            host.setStatus(tr("status.debug.noTriggerChoices"));
-            return;
-        }
-        QuickOpen<BreakpointsPicker.Entry> picker = new QuickOpen<>(
-                tr("command.debug.addTriggeredBreakpoint"),
-                tr("debug.triggered.prompt", line + 1),
-                () -> choices,
-                e -> (!waitsFor.isEmpty() && waitsFor.equals(e.breakpoint().id()) ? "✓ " : "    ")
-                        + BreakpointsPicker.label(e),
-                e -> String.join("  ·  ", com.editora.editor.debug.BreakpointDescription.lines(e.breakpoint())),
-                e -> {
-                    if (e != null) {
-                        linkTriggered(b, line, e);
-                    }
-                });
-        picker.setOverlayHost(host.overlayHost());
-        picker.show(host.window());
-    }
-
-    /**
-     * Makes the breakpoint on {@code line} of {@code b} (setting one when there is none) wait for {@code trigger}'s,
-     * or — when it waits for that one already — for none; says which.
-     */
-    void linkTriggered(EditorBuffer b, int line, BreakpointsPicker.Entry trigger) {
-        var mgr = b.getBreakpointManager();
-        if (!mgr.isBreakpoint(line)) {
-            b.toggleBreakpoint(line);
-        }
-        Breakpoint bp = mgr.get(line);
-        if (bp == null) {
-            return;
-        }
-        if (bp.isTriggered() && bp.triggeredBy().equals(trigger.breakpoint().id())) {
-            triggered.link(b, line, null);
-            host.setStatus(tr("status.debug.triggeredRemoved", line + 1));
-            return;
-        }
-        triggered.link(b, line, trigger);
-        host.setStatus(tr("status.debug.triggeredAdded", line + 1, TriggeredBreakpoints.place(trigger)));
-    }
-
-    /**
-     * Debug: Add Logpoint — asks for the message to log on the caret line and makes that line a logpoint: the
-     * adapter logs the message each time the line runs and the program never suspends (VS Code's Add Logpoint,
-     * IntelliJ's Shift+click in the gutter). On a line that already has a breakpoint it edits that one's message,
-     * keeping its condition and hit count.
-     */
-    void addLogpointAtCaret() {
-        EditorBuffer b = breakpointBuffer();
-        if (b != null) {
-            addLogpoint(b, b.getFocusedArea().getCurrentParagraph());
-        }
-    }
-
-    /** {@link #addLogpointAtCaret} for {@code line} of {@code b} — also what a Shift+click in the gutter runs. */
-    void addLogpoint(EditorBuffer b, int line) {
-        if (!breakpointAllowed(b, line, () -> addLogpoint(b, line))) {
-            return;
-        }
-        BreakpointEditForm.showLogpoint(host.overlayHost(), b, line, completionSource(true), host::setStatus);
+    @Nullable
+    EditorBuffer breakpointBuffer() {
+        return caretBreakpoints.breakpointBuffer();
     }
 
     /**
@@ -4964,7 +4647,8 @@ final class DebugCoordinator {
         buffer.setGutterLogpointClick((b, line) -> {
             if (b.getBreakpointManager().isBreakpoint(line)
                     || b.getBreakpointManager().memberMark(line) == null) {
-                addLogpoint(b, line); // IntelliJ's Shift+click: a breakpoint that logs and does not suspend
+                // IntelliJ's Shift+click: a breakpoint that logs and does not suspend
+                caretBreakpoints.addLogpoint(b, line);
             }
         });
         buffer.setGutterRunToHere(new EditorBuffer.GutterRunToHere() {
@@ -5437,308 +5121,6 @@ final class DebugCoordinator {
         panel().setSelectedValue();
     }
 
-    // --- Java code changes and frame control: hot code replace, restart frame, smart step into -----------
-
-    private DapManager.CodeReplaceMode codeReplaceMode() {
-        return DapManager.CodeReplaceMode.of(host.settings().getDebugHotCodeReplace());
-    }
-
-    private static boolean isJavaSource(@Nullable Path file) {
-        return file != null
-                && file.getFileName() != null
-                && file.getFileName()
-                        .toString()
-                        .toLowerCase(java.util.Locale.ROOT)
-                        .endsWith(".java");
-    }
-
-    /**
-     * A user save (not an autosave) reached the language server. During a Java session in {@code auto} mode
-     * the change goes into the running program at once and the console says what happened; in {@code manual}
-     * mode the status bar says how to apply it. Every Java session that can take it, not only the one shown (a
-     * client and its server). FX thread.
-     */
-    void sourceSaved(EditorBuffer buffer) {
-        Path file = buffer == null ? null : buffer.getPath();
-        if (!isJavaSource(file)) {
-            return;
-        }
-        forEachSession(() -> {
-            if (!dap().canReplaceCode()) {
-                return;
-            }
-            s().savedSinceReplace.add(file);
-            switch (codeReplaceMode()) {
-                case AUTO -> requestCodeReplace(file, false);
-                case MANUAL -> host.setStatus(tr("debug.hcr.manualHint"));
-                case OFF -> {
-                    // the user chose to keep the running code as it is
-                }
-            }
-        });
-    }
-
-    /**
-     * A session started or ended: a replace still running belongs to the one before, and so do the saves it has
-     * not applied. Left set, the running flag held every later save and Apply Code Changes of the window, which
-     * then did nothing at all (review D101).
-     */
-    private void forgetCodeReplace(DapManager.State state) {
-        if (state != DapManager.State.STARTING && state != DapManager.State.INACTIVE) {
-            return;
-        }
-        s().codeReplaceSession++;
-        s().codeReplaceRunning = false;
-        s().codeReplaceAgain = null;
-        s().savedSinceReplace.clear();
-        s().lastCodeReplaceError = "";
-    }
-
-    /**
-     * A reasonless refusal said with its likely reason ({@link CodeReplaceJdk}): the program's Java (its runtime
-     * chip) and the one jdtls builds a file without a build tool for; null when that cannot be told.
-     */
-    private @Nullable String explainCodeReplace(@Nullable String message) {
-        Path file = dap().sessionFile();
-        if (!CodeReplaceJdk.reasonless(message) || file == null) {
-            return null;
-        }
-        if (!com.editora.perf.Looked.allKnown(() -> JavaProjectRoot.find(file))) {
-            JavaProjectRoot.warmLater(file); // not looked at yet: the reason is told once it is (PERF-01)
-            return null;
-        }
-        if (JavaProjectRoot.find(file) != null) {
-            return null; // a build project is compiled for its own release, not jdtls's default
-        }
-        return CodeReplaceJdk.explain(
-                message, CodeReplaceJdk.programMajor(panel().runtimeText()), lspManager.javaDefaultMajor(file));
-    }
-
-    /** A Java session started running: let jdtls build what it will compare saved changes with. */
-    private void primeCodeReplace(DapManager.State state) {
-        if (state == DapManager.State.RUNNING && codeReplaceMode() != DapManager.CodeReplaceMode.OFF) {
-            dap().primeCodeReplace();
-        }
-    }
-
-    /** {@code debug.applyCodeChanges}: loads what is saved into the running program (auto and manual modes). */
-    void applyCodeChanges() {
-        if (!dap().canReplaceCode()) {
-            host.setStatus(tr("debug.hcr.noSession"));
-            return;
-        }
-        if (codeReplaceMode() == DapManager.CodeReplaceMode.OFF) {
-            host.setStatus(tr("debug.hcr.off"));
-            return;
-        }
-        EditorBuffer active = host.activeBuffer();
-        Path file = active != null && isJavaSource(active.getPath()) ? active.getPath() : dap().sessionFile();
-        if (active != null && active.isDirty() && isJavaSource(active.getPath())) {
-            panel().appendNotice(tr("debug.hcr.unsavedNote")); // only saved files are compiled
-        }
-        requestCodeReplace(file, true);
-    }
-
-    /** Starts a replace, or folds this request into the one running (one more round once it ends). */
-    private void requestCodeReplace(@Nullable Path file, boolean asked) {
-        if (s().codeReplaceRunning) {
-            s().codeReplaceAgain = file;
-            return;
-        }
-        s().codeReplaceRunning = true;
-        s().lastCodeReplaceError = "";
-        Set<Path> covered = new LinkedHashSet<>(s().savedSinceReplace);
-        long session = s().codeReplaceSession;
-        host.setStatus(tr("debug.hcr.applying"));
-        dap().applyCodeChanges(
-                        file,
-                        asThisSession(
-                                outcome -> { // answered as the session that asked
-                                    if (session != s().codeReplaceSession) {
-                                        return; // its session ended meanwhile, which reset all of this (review D101)
-                                    }
-                                    s().codeReplaceRunning = false;
-                                    reportCodeReplace(outcome, covered, asked);
-                                    Path again = s().codeReplaceAgain;
-                                    s().codeReplaceAgain = null;
-                                    if (again != null && dap().canReplaceCode()) {
-                                        requestCodeReplace(again, false);
-                                    }
-                                }));
-    }
-
-    /** Says how a replace ended: status bar always, Debug console for anything the user must act on. */
-    private void reportCodeReplace(DapManager.CodeReplaceOutcome outcome, Set<Path> covered, boolean asked) {
-        switch (outcome.result()) {
-            case APPLIED -> {
-                String names = CodeReplaceText.appliedNames(outcome.classes(), covered);
-                panel().appendNotice(tr("debug.hcr.applied", names));
-                if (outcome.message() == null || outcome.message().isEmpty()) {
-                    host.setStatus(tr("debug.hcr.appliedStatus", names));
-                } else {
-                    // Methods that were running keep their old code (java-debug's "obsolete methods"): say how to
-                    // run one again with the new code (review 2, B103).
-                    explainOldCode();
-                    host.setStatus(tr("debug.hcr.appliedOldStatus", names));
-                }
-                s().savedSinceReplace.removeAll(covered);
-                codeReplaced(covered);
-            }
-            case NOTHING_CHANGED -> {
-                s().savedSinceReplace.removeAll(covered); // the program already runs what these files say
-                codeReplaced(covered);
-                host.setStatus(tr(asked ? "debug.hcr.nothing" : "debug.hcr.nothingQuiet"));
-            }
-            case COMPILE_ERRORS -> {
-                panel().appendNotice(tr("debug.hcr.compileErrors"));
-                host.setStatus(tr("debug.hcr.compileErrors"));
-            }
-            case JAVAC_CLASSES -> {
-                panel().appendNotice(tr("debug.hcr.javacClasses"));
-                host.setStatus(tr("debug.hcr.javacClassesStatus"));
-            }
-            case FAILED -> {
-                String explained = explainCodeReplace(outcome.message());
-                if (explained != null && !explained.equals(s().lastCodeReplaceError)) {
-                    panel().appendNotice(tr("debug.hcr.notice", explained));
-                } else if (explained != null
-                        || CodeReplaceText.saidAlready(outcome.message(), s().lastCodeReplaceError)) {
-                    panel().appendNotice(tr("debug.hcr.restartNeeded")); // the adapter's event gave the reason
-                } else {
-                    panel().appendNotice(tr("debug.hcr.failed", outcome.message()));
-                }
-                host.setStatus(tr("debug.hcr.failedStatus"));
-            }
-            case BUILD_FAILED -> {
-                panel().appendNotice(tr("debug.hcr.buildFailed"));
-                host.setStatus(tr("debug.hcr.buildFailed"));
-            }
-            case NO_SESSION -> host.setStatus(tr("debug.hcr.noSession"));
-        }
-    }
-
-    /**
-     * Says how to run a method left on its old code again — Restart Frame, or, when the only such method is the
-     * thread's first one ({@code main}), restarting the program (review 3, B209). java-debug names an old-code frame
-     * {@code Obsolete method()} only in the stack it stops on after the replace, so the hint waits for that stack (a
-     * second at most; then it reads the stack shown).
-     */
-    private void explainOldCode() {
-        // While java-debug replaces, the program reads as running: the stack it stops on again names the frames.
-        List<String> shown =
-                panel().callStack().stream().map(DapModels.StackFrameInfo::name).toList();
-        if (shown.stream().anyMatch(DebugPanelText::isObsoleteFrame)) {
-            panel().appendNotice(CodeReplaceText.oldCodeHint(shown)); // that stack came before the answer
-            return;
-        }
-        long asked = ++s().oldCodeHintAsked;
-        s().oldCodeHintPending = asked;
-        javafx.animation.PauseTransition wait = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(1));
-        wait.setOnFinished(e -> {
-            if (s().oldCodeHintPending == asked) {
-                s().oldCodeHintPending = 0;
-                panel().appendNotice(CodeReplaceText.oldCodeHint(panel().callStack().stream()
-                        .map(DapModels.StackFrameInfo::name)
-                        .toList()));
-            }
-        });
-        wait.play();
-    }
-
-    /** A stack arrived: say the waiting old-code hint from it (B209). */
-    private void oldCodeHintFrom(List<DapModels.StackFrameInfo> frames) {
-        if (s().oldCodeHintPending != 0) {
-            s().oldCodeHintPending = 0;
-            panel().appendNotice(CodeReplaceText.oldCodeHint(
-                    frames.stream().map(DapModels.StackFrameInfo::name).toList()));
-        }
-    }
-
-    /**
-     * The running program now runs what {@code files} say on disk: a successful replace, or one that found
-     * nothing to change. Breakpoint and frame lines of these files no longer need mapping to launch-time lines.
-     */
-    private void codeReplaced(Set<Path> files) {
-        rebaselineLines(files); // B1: the code that runs matches the saved file again
-    }
-
-    /**
-     * java-debug's own hot code replace events. A replace it could not finish leaves the program on the old code
-     * somewhere: that is said in the console. Progress events need no words — Editora reports the outcome.
-     */
-    private void codeReplaceNotice(String changeType, String rawMessage) {
-        String explained = "ERROR".equals(changeType) ? explainCodeReplace(rawMessage) : null;
-        String message = explained != null ? explained : rawMessage;
-        String text = CodeReplaceText.notice(changeType, message);
-        if ("ERROR".equals(changeType)) {
-            s().lastCodeReplaceError = message == null ? "" : message.strip();
-        }
-        if (text != null) {
-            panel().appendNotice(tr("debug.hcr.notice", text));
-        }
-    }
-
-    /**
-     * {@code debug.restartFrame}: runs the selected call-stack frame's method again from its start (the top frame
-     * when none is selected). Paused Java sessions only; the adapter says when a frame cannot be restarted.
-     */
-    void restartFrame() {
-        restartFrame(s().shownFrame);
-    }
-
-    private void restartFrame(DapModels.@Nullable StackFrameInfo frame) {
-        if (dap().state() != DapManager.State.SUSPENDED || frame == null) {
-            host.setStatus(tr("debug.frame.notPaused"));
-            return;
-        }
-        if (!dap().supportsRestartFrame()) {
-            host.setStatus(tr("debug.restartFrame.unsupported"));
-            return;
-        }
-        List<DapModels.StackFrameInfo> frames = panel().callStack();
-        if (frames.contains(frame) && !canRestartFrame(true, true, frame, frames)) {
-            // The thread's first method: nothing called it, so nothing can call it again (review 3, B209).
-            host.setStatus(tr("debug.restartFrame.bottom"));
-            return;
-        }
-        dap().restartFrame(frame.id());
-    }
-
-    /**
-     * Whether the call-stack menu offers Restart Frame for {@code frame} of {@code frames}: a paused session whose
-     * adapter restarts frames, and not the bottom frame of a complete stack (nothing called it, so nothing can
-     * call it again).
-     */
-    static boolean canRestartFrame(
-            boolean suspended,
-            boolean supported,
-            DapModels.StackFrameInfo frame,
-            List<DapModels.StackFrameInfo> frames) {
-        if (!suspended || !supported || frame == null || frames == null || frames.isEmpty()) {
-            return false;
-        }
-        int index = frames.indexOf(frame);
-        return index >= 0 && index < frames.size() - 1;
-    }
-
-    /** The call-stack context menu for {@code frame} (Restart Frame). */
-    List<javafx.scene.control.MenuItem> stackMenuItems(
-            DapModels.StackFrameInfo frame, List<DapModels.StackFrameInfo> frames) {
-        javafx.scene.control.MenuItem restart = new javafx.scene.control.MenuItem(tr("debugpanel.restartFrame"));
-        com.editora.editor.RowReasons.because(
-                restart,
-                DebugPanelText.restartFrameReason(
-                        dap().state() == DapManager.State.SUSPENDED, dap().supportsRestartFrame(), frame, frames));
-        restart.setOnAction(e -> restartFrame(frame));
-        com.editora.editor.MenuChords.tag(restart, "debug.restartFrame"); // the selected frame is the shown one
-        return List.of(restart, stepFilters().menuItem(frame));
-    }
-
-    /** Debug: Don't Step Into This… ({@code debug.dontStepIntoFrame}), for the frame shown. */
-    void dontStepIntoFrame() {
-        stepFilters().dontStepInto(null);
-    }
-
     private @Nullable StepFilterCommands stepFilterCommands;
 
     private @Nullable GoroutineCommands goroutineCommands;
@@ -5766,68 +5148,6 @@ final class DebugCoordinator {
             stepFilterCommands = c;
         }
         return c;
-    }
-
-    /** The last Smart Step Into picker shown (null before the first). */
-    private @Nullable QuickOpen<DapModels.StepTarget> smartStepPicker;
-
-    /**
-     * {@code debug.smartStepInto}: lists the calls on the current line and steps into the one picked — straight
-     * into it when there is only one. Plain Step Into is unchanged.
-     */
-    void smartStepInto() {
-        if (dap().state() != DapManager.State.SUSPENDED) {
-            host.setStatus(tr("debug.frame.notPaused"));
-            return;
-        }
-        if (!dap().supportsStepInTargets()) {
-            host.setStatus(tr("debug.smartStep.unsupported"));
-            return;
-        }
-        String lineText = shownLineText();
-        dap().stepInTargets(found -> {
-            List<DapModels.StepTarget> targets = StepTargetOrder.sort(found, lineText);
-            if (targets.isEmpty()) {
-                host.setStatus(tr("debug.smartStep.none"));
-            } else if (targets.size() == 1) {
-                dap().stepIntoTarget(targets.get(0).id());
-            } else {
-                QuickOpen<DapModels.StepTarget> picker = smartStepPicker = new QuickOpen<>(
-                        tr("debug.smartStep.title"),
-                        tr("debug.smartStep.prompt"),
-                        () -> targets,
-                        DapModels.StepTarget::label,
-                        t -> t.line() >= 0 ? tr("debug.smartStep.line", t.line() + 1) : "",
-                        t -> dap().stepIntoTarget(t.id()));
-                picker.setOverlayHost(host.overlayHost());
-                picker.show(host.window());
-            }
-        });
-    }
-
-    /** The text of the stopped line Smart Step Into lists the calls of ("" when its file is not open). */
-    private String shownLineText() {
-        DapModels.StackFrameInfo frame = s().shownFrame;
-        if (frame == null || frame.file() == null) {
-            return "";
-        }
-        EditorBuffer b = ops.bufferForPath(frame.file());
-        int line = frame.line();
-        return b == null || line < 0 || line >= b.getArea().getParagraphs().size()
-                ? ""
-                : b.getArea().getParagraph(line).getText();
-    }
-
-    /** A Smart Step Into list belongs to one stop: it closes once the program runs on or the session ends. */
-    private void closeSmartStepPicker(DapManager.State state) {
-        if (!shown()) {
-            return; // another session's: the editor shows the focused one's
-        }
-        QuickOpen<DapModels.StepTarget> picker = smartStepPicker;
-        if (picker != null && state != DapManager.State.SUSPENDED) {
-            smartStepPicker = null;
-            picker.hide();
-        }
     }
 
     // --- review C: breakpoints list, mute, gutter and editor menus, Show Value -----------------------------
@@ -6121,7 +5441,7 @@ final class DebugCoordinator {
         // review 2 C110).
         javafx.scene.control.MenuItem edit = menuItem("debug.editBreakpoint", Icons.edit(), () -> {
             b.getFocusedArea().moveTo(line, 0);
-            editBreakpointAtCaret();
+            caretBreakpoints.editBreakpointAtCaret();
         });
         boolean enabled = bp.enabled();
         javafx.scene.control.MenuItem flip =
@@ -6138,14 +5458,14 @@ final class DebugCoordinator {
         remove.setOnAction(ev -> {
             if (mgr.isBreakpoint(line)) {
                 b.getFocusedArea().moveTo(line, 0);
-                toggleBreakpointAtCaret();
+                caretBreakpoints.toggleBreakpointAtCaret();
             }
         });
         com.editora.editor.MenuChords.tag(remove, "debug.toggleBreakpoint");
         javafx.scene.control.MenuItem list = menuItem("debug.breakpoints", null, this::showBreakpoints);
         javafx.scene.control.MenuItem waitFor = menuItem("debug.addTriggeredBreakpoint", null, () -> {
             b.getFocusedArea().moveTo(line, 0);
-            addTriggeredBreakpointAtCaret();
+            caretBreakpoints.addTriggeredBreakpointAtCaret();
         });
         javafx.scene.control.MenuItem toGroup = menuItem("debug.moveBreakpointToGroup", null, () -> {
             b.getFocusedArea().moveTo(line, 0);
@@ -6351,7 +5671,7 @@ final class DebugCoordinator {
         javafx.scene.control.Menu menu =
                 new javafx.scene.control.Menu(tr("editmenu.breakpoints"), breakpointGlyph()); // icons: review 2 C110
         var items = menu.getItems();
-        items.add(menuItem("debug.toggleBreakpoint", breakpointGlyph(), this::toggleBreakpointAtCaret));
+        items.add(menuItem("debug.toggleBreakpoint", breakpointGlyph(), caretBreakpoints::toggleBreakpointAtCaret));
         items.add(
                 menuItem("debug.toggleTemporaryBreakpoint", breakpointGlyph(), this::toggleTemporaryBreakpointAtCaret));
         items.add(
@@ -6359,9 +5679,10 @@ final class DebugCoordinator {
         if (LambdaBreakpoints.caretLineHasLambdas(b)) {
             items.add(menuItem("debug.toggleLambdaBreakpoint", breakpointGlyph(), this::toggleLambdaBreakpointAtCaret));
         }
-        items.add(menuItem("debug.addLogpoint", logpointGlyph(), this::addLogpointAtCaret));
-        items.add(menuItem("debug.addTriggeredBreakpoint", breakpointGlyph(), this::addTriggeredBreakpointAtCaret));
-        items.add(menuItem("debug.editBreakpoint", Icons.edit(), this::editBreakpointAtCaret));
+        items.add(menuItem("debug.addLogpoint", logpointGlyph(), caretBreakpoints::addLogpointAtCaret));
+        items.add(menuItem(
+                "debug.addTriggeredBreakpoint", breakpointGlyph(), caretBreakpoints::addTriggeredBreakpointAtCaret));
+        items.add(menuItem("debug.editBreakpoint", Icons.edit(), caretBreakpoints::editBreakpointAtCaret));
         javafx.scene.control.MenuItem toGroup =
                 menuItem("debug.moveBreakpointToGroup", null, this::moveBreakpointToGroupAtCaret);
         com.editora.editor.RowReasons.when(
