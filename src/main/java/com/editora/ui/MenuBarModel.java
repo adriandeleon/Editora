@@ -376,6 +376,7 @@ final class MenuBarModel {
                                                 SEPARATOR,
                                                 "debug.attachToProcess",
                                                 "debug.attachRemote",
+                                                "debug.attachRemoteGo",
                                                 "debug.reattach",
                                                 "debug.openCoreDump",
                                                 "debug.listenXdebug",

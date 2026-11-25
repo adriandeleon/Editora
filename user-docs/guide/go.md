@@ -47,6 +47,9 @@ program's output reaches the Debug console.
 
 [Attach to Process](/docs/debugging#attach-to-process) attaches Delve to a Go program that is
 already running, on Linux and macOS. Stop leaves that program running.
+[Attach to Remote Delve](/docs/debugging#attach-to-a-remote-go-program) debugs a Go program
+under Delve's headless server (`dlv debug --headless --listen=:2345`) on another machine or in a
+container, as does a launch.json `go` configuration with `"mode": "remote"`.
 [Open Core Dump](/docs/debugging#opening-a-core-dump) opens the core a crashed Go program
 left in Delve.
 

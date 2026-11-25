@@ -58,7 +58,17 @@ class LaunchRouteTest {
                 LaunchRoute.of(config("type", "go", "mode", "exec"), none).kind());
         assertEquals(
                 LaunchRoute.Kind.UNSUPPORTED,
-                LaunchRoute.of(config("type", "go", "mode", "remote"), none).kind());
+                LaunchRoute.of(config("type", "go", "mode", "remote"), none).kind(),
+                "a remote attach needs the server's port");
+        LaunchRoute.Route remote = LaunchRoute.of(
+                config("type", "go", "request", "attach", "mode", "remote", "port", 2345, "preLaunchTask", "b"), none);
+        assertEquals(LaunchRoute.Kind.DELVE_REMOTE, remote.kind());
+        assertSame(DebugLanguages.GO, remote.profile());
+        assertTrue(remote.attach());
+        assertEquals(
+                Map.of("type", "go", "request", "attach", "mode", "remote", "port", 2345),
+                remote.request(),
+                "VS Code's own out; the rest goes to Delve as written");
         LaunchRoute.Route py = LaunchRoute.of(config("type", "debugpy", "request", "attach"), none);
         assertEquals(LaunchRoute.Kind.DEBUGPY, py.kind());
         assertTrue(py.attach());
