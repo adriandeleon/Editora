@@ -50,7 +50,11 @@ class HtmlProjectSettingsAtOpenFxTest {
             w.open(page);
 
             String said = tr("status.html.projectKeysIgnored", "format.wrapAtributes");
-            w.await("the ignored key said at open", () -> messages(w).contains(said));
+            try {
+                w.await("the ignored key said at open", () -> messages(w).contains(said));
+            } catch (AssertionError e) {
+                throw new AssertionError(e.getMessage() + "; " + FxTestSupport.callOnFx(() -> state(w)), e);
+            }
             LspCoordinator coordinator = w.field("lspCoordinator");
             LspManager manager = FxTestSupport.field(coordinator, "lspManager");
             Function<Path, HtmlServerSettings> settings = FxTestSupport.field(manager, "htmlSettings");
@@ -62,6 +66,27 @@ class HtmlProjectSettingsAtOpenFxTest {
                             .intValue(),
                     "the project's wrap column for its own root"));
         }
+    }
+
+    /**
+     * What decides whether the ignored key is said, for a failure's message: the project the window and its servers
+     * have, the project file as read, whether the language servers' commands are known yet, and what was said. FX
+     * thread.
+     */
+    private static String state(WindowRig w) {
+        LspCoordinator lsp = w.field("lspCoordinator");
+        ProjectScope scope = lsp.projectScope();
+        return "lsp=" + w.controller.lspEnabled()
+                + ", window root=" + w.controller.windowProjectRoot()
+                + ", servers' root=" + FxTestSupport.field(lsp, "appliedProjectRoot")
+                + ", read root=" + FxTestSupport.field(scope, "cachedRoot")
+                + ", reading=" + FxTestSupport.field(scope, "readingRoot")
+                + ", project html as read="
+                + ((com.editora.config.ProjectSettings) FxTestSupport.field(scope, "cache")).getHtml()
+                + ", said=" + FxTestSupport.field(FxTestSupport.field(lsp, "html"), "reportedIgnored")
+                + ", looking at commands=" + FxTestSupport.field(lsp, "lookingAtLaunchCommands")
+                + ", active=" + (w.active() == null ? null : w.active().getPath())
+                + ", messages=" + messages(w);
     }
 
     private static List<String> messages(WindowRig w) {
