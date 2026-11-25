@@ -993,7 +993,7 @@ class DebugCoordinatorCommandsFxTest {
         FxTestSupport.runOnFx(() -> debug.stop());
         assertTrue(first.disconnected.await(10, TimeUnit.SECONDS));
         clearLog();
-        FxTestSupport.runOnFx(() -> debug.debugMainClass());
+        FxTestSupport.runOnFx(() -> debug.javaLaunch.debugMainClass());
         FakeDebugAdapter.Session second = session("launch");
         assertEquals("Main", second.launchArgs.get("mainClass"));
         List<?> cp = (List<?>) second.launchArgs.get("classPaths");
@@ -1117,7 +1117,7 @@ class DebugCoordinatorCommandsFxTest {
         replies.put("vscode.java.resolveClasspath", List.of(List.of(), List.of(bin.toString())));
         replies.put("vscode.java.resolveJavaExecutable", javaExecutable());
 
-        FxTestSupport.runOnFx(() -> debug.debugMainClass());
+        FxTestSupport.runOnFx(() -> debug.javaLaunch.debugMainClass());
 
         FakeDebugAdapter.Session session = session("launch");
         assertEquals("demo.App", session.launchArgs.get("mainClass"));
@@ -1381,7 +1381,7 @@ class DebugCoordinatorCommandsFxTest {
             dap.setServerProvidesJavaDebug(false); // jdtls came up without java-debug
             promptAnswer = "5005";
             debug.debugAttach();
-            debug.debugMainClass();
+            debug.javaLaunch.debugMainClass();
             debug.debugConfig(config("App", "java", "demo.Args", ""));
             debug.attachToPort(active.getPath(), "localhost", 5005);
             debug.debugStart();
@@ -1429,23 +1429,23 @@ class DebugCoordinatorCommandsFxTest {
     @Test
     void debugMainClassNeedsAJavaFileOfAProjectWithAMainClass() throws Exception {
         buffer(loose.resolve("notes.txt"), "plain text\n");
-        FxTestSupport.runOnFx(() -> debug.debugMainClass());
+        FxTestSupport.runOnFx(() -> debug.javaLaunch.debugMainClass());
         assertEquals(List.of(tr("status.debug.needJavaFile")), statuses());
 
         clearLog();
         buffer(loose.resolve("Loose.java"), "public class Loose {}\n");
-        FxTestSupport.runOnFx(() -> debug.debugMainClass());
+        FxTestSupport.runOnFx(() -> debug.javaLaunch.debugMainClass());
         assertEquals(List.of(tr("status.debug.noProject")), statuses());
 
         clearLog();
         open("src/main/java/demo/Args.java");
         replies.put("vscode.java.resolveMainClass", List.of());
-        FxTestSupport.runOnFx(() -> debug.debugMainClass());
+        FxTestSupport.runOnFx(() -> debug.javaLaunch.debugMainClass());
         awaitStatus(tr("status.debug.noMainClass"));
 
         clearLog();
         mainClasses("demo.Args", "demo.Other");
-        FxTestSupport.runOnFx(() -> debug.debugMainClassNamed("demo.Missing"));
+        FxTestSupport.runOnFx(() -> debug.javaLaunch.debugMainClassNamed("demo.Missing"));
         awaitStatus(tr("status.debug.noMainClass"));
         assertEquals(0, adapter.sessionCount());
     }
@@ -1458,7 +1458,7 @@ class DebugCoordinatorCommandsFxTest {
 
         FxTestSupport.runOnFx(() -> {
             active.getFocusedArea().insertText(0, "// edited\n");
-            debug.debugMainClass();
+            debug.javaLaunch.debugMainClass();
         });
 
         FakeDebugAdapter.Session session = session("launch");
@@ -1834,7 +1834,7 @@ class DebugCoordinatorCommandsFxTest {
         mainClasses("demo.Args", "demo.Other");
         java.util.concurrent.CountDownLatch listed = new java.util.concurrent.CountDownLatch(1);
         FxTestSupport.runOnFx(() -> {
-            debug.debugMainClass();
+            debug.javaLaunch.debugMainClass();
             dap.resolveMainClasses(active.getPath(), options -> listed.countDown()); // answered after the first
         });
         assertTrue(listed.await(20, TimeUnit.SECONDS), "jdtls answered");
@@ -2062,7 +2062,7 @@ class DebugCoordinatorCommandsFxTest {
 
         FxTestSupport.runOnFx(() -> {
             active.getFocusedArea().insertText(0, "// edited\n");
-            debug.debugMainClass();
+            debug.javaLaunch.debugMainClass();
             debug.debugConfig(config("App", "java", "demo.Args", ""));
         });
         FxTestSupport.drainFx();

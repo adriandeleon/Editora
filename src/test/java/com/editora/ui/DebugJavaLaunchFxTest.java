@@ -230,7 +230,7 @@ class DebugJavaLaunchFxTest {
                         "filePath",
                         file.toString())));
 
-        FxTestSupport.runOnFx(() -> debug.debugMainClassNamed("app.core.ModMain"));
+        FxTestSupport.runOnFx(() -> debug.javaLaunch.debugMainClassNamed("app.core.ModMain"));
 
         Map<String, Object> launch = request("launch");
         assertEquals(

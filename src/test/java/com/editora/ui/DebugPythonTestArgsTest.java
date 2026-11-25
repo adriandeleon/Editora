@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-/** {@link DebugCoordinator#unittestFallback}: what runs a test under {@code python -m unittest} when pytest is missing. */
+/** {@link PythonDebugLaunch#unittestFallback}: what runs a test under {@code python -m unittest} when pytest is missing. */
 class DebugPythonTestArgsTest {
 
     private static final String SOURCE = """
@@ -36,17 +36,17 @@ class DebugPythonTestArgsTest {
     void aTestCaseMethodOrClassIsNamedAsADottedPath() {
         assertEquals(
                 List.of("tests.test_math.TestMath.test_add"),
-                DebugCoordinator.unittestFallback(SOURCE, "tests/test_math.py", at(5)));
+                PythonDebugLaunch.unittestFallback(SOURCE, "tests/test_math.py", at(5)));
         assertEquals(
                 List.of("test_math.TestMath"),
-                DebugCoordinator.unittestFallback(
+                PythonDebugLaunch.unittestFallback(
                         SOURCE, "test_math.py", new PytestScanner.TestTarget(3, 5, "TestMath", null)));
     }
 
     @Test
     void pytestStyleTestsHaveNoUnittestForm() {
-        assertEquals(List.of(), DebugCoordinator.unittestFallback(SOURCE, "test_math.py", at(10)));
-        assertEquals(List.of(), DebugCoordinator.unittestFallback(SOURCE, "test_math.py", at(14)));
-        assertEquals(List.of(), DebugCoordinator.unittestFallback(SOURCE, "test_math.py", null));
+        assertEquals(List.of(), PythonDebugLaunch.unittestFallback(SOURCE, "test_math.py", at(10)));
+        assertEquals(List.of(), PythonDebugLaunch.unittestFallback(SOURCE, "test_math.py", at(14)));
+        assertEquals(List.of(), PythonDebugLaunch.unittestFallback(SOURCE, "test_math.py", null));
     }
 }

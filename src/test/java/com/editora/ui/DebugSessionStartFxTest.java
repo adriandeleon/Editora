@@ -90,7 +90,8 @@ class DebugSessionStartFxTest {
 
     @SuppressWarnings("unchecked")
     private void pick(List<DapManager.MainClassOption> options, Consumer<DapManager.MainClassOption> chosen) {
-        FxTestSupport.call(debug, "pickMainClass", new Class<?>[] {List.class, Consumer.class}, options, chosen);
+        FxTestSupport.call(
+                debug.javaLaunch, "pickMainClass", new Class<?>[] {List.class, Consumer.class}, options, chosen);
     }
 
     private void setState(DapManager.State state) {
@@ -106,9 +107,9 @@ class DebugSessionStartFxTest {
             FxTestSupport.runOnFx(() -> {
                 setState(DapManager.State.STARTING);
                 pick(options, answers::add);
-                assertNotNull(debug.openMainClassPicker(), "the picker is open");
+                assertNotNull(debug.javaLaunch.openMainClassPicker(), "the picker is open");
                 setState(next); // a new launch begins, or this one is stopped
-                assertNull(debug.openMainClassPicker(), "the picker closed on " + next);
+                assertNull(debug.javaLaunch.openMainClassPicker(), "the picker closed on " + next);
             });
             FxTestSupport.drainFx();
             assertEquals(java.util.Arrays.asList((Object) null), answers, "the launch was told: no choice");
@@ -125,13 +126,13 @@ class DebugSessionStartFxTest {
                         new DapManager.MainClassOption("a.Two", "p", null)),
                 answers::add));
         FxTestSupport.runOnFx(() -> {
-            QuickOpen<DapManager.MainClassOption> picker = debug.openMainClassPicker();
+            QuickOpen<DapManager.MainClassOption> picker = debug.javaLaunch.openMainClassPicker();
             assertNotNull(picker);
             picker.hide(); // what Esc does
         });
         EventuallyFx.holdsWithin(Duration.ofSeconds(5), () -> FxTestSupport.callOnFx(() -> !answers.isEmpty()));
         assertEquals(java.util.Arrays.asList((Object) null), answers);
-        assertFalse(FxTestSupport.callOnFx(() -> debug.openMainClassPicker() != null));
+        assertFalse(FxTestSupport.callOnFx(() -> debug.javaLaunch.openMainClassPicker() != null));
     }
 
     private static void set(Object target, String name, Object value) throws Exception {
@@ -166,7 +167,7 @@ class DebugSessionStartFxTest {
             } catch (Exception e) {
                 throw new IllegalStateException(e);
             }
-            FxTestSupport.call(debug, "showPreparing", new Class<?>[] {Path.class}, a);
+            FxTestSupport.call(debug.javaLaunch, "showPreparing", new Class<?>[] {Path.class}, a);
         });
         FxTestSupport.runOnFx(() -> {
             DebugPanel panel = debug.panel();
