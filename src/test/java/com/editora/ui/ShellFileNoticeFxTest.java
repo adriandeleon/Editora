@@ -7,6 +7,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
 import javafx.scene.control.Tab;
 
 import com.editora.command.CommandRegistry;
@@ -122,8 +123,13 @@ class ShellFileNoticeFxTest {
             String text = FxTestSupport.callOnFx(b::fileNoticeText);
             assertNotNull(text, "a Java file with a BOM gets the notice");
             assertTrue(text.contains("Hello.java") && text.contains("javac") && text.contains("'\\ufeff'"), text);
+            StatusBar status = FxTestSupport.field(fx.controller, "statusBar");
+            Label encoding = FxTestSupport.field(status, "encoding");
+            assertTrue(FxTestSupport.callOnFx(encoding::getText).contains("BOM"), "the status bar says BOM");
             pressNoticeAction(b);
             assertNull(FxTestSupport.callOnFx(b::fileNoticeText), "the action closes the notice");
+            // Read as it stands, not refreshed here: it said "UTF-8 BOM" until another tab was picked.
+            assertFalse(FxTestSupport.callOnFx(encoding::getText).contains("BOM"), "the status bar follows at once");
             save(async, fx, b);
             assertEquals(source, Files.readString(bom), "no mark, CRLF kept");
 
