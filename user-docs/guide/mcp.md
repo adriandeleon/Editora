@@ -95,13 +95,34 @@ Every tool validates its arguments before doing anything:
 
 1. Turn it on in **Settings → MCP Server** (or run **View: Toggle MCP Server**,
    `view.toggleMcp`), and accept the security notice.
-2. A status-bar **MCP** indicator shows while it's running. Click it, run
-   **MCP: Copy Endpoint Command** (`mcp.copyEndpoint`), or click **Copy Endpoint
-   Command** on the Settings page, to copy a ready-to-paste `claude mcp add`
-   command with the endpoint URL and token. The page's **Server** row shows
-   **Running at** the endpoint URL, or **Off**.
-3. The endpoint is also written to `mcp-endpoint.json` in your
+2. Click **Copy Connect Command** on the Settings page, click the status-bar
+   **MCP** indicator, or run **MCP: Copy Connect Command** (`mcp.copyEndpoint`).
+   It copies a line like this one, with your install's launcher:
+
+   ```bash
+   claude mcp add --scope user editora -- editora mcp
+   ```
+
+   Paste it in a terminal once. Claude Code then starts
+   [`editora mcp`](/docs/cli#connecting-an-agent-over-mcp), which relays to the
+   running editor and finds it again after a restart or a new token, so there
+   is nothing to set up again. With `--scope user` it works in every folder you
+   run Claude Code in.
+3. The page's **Server** row shows **Running at** the endpoint URL, or **Off**.
+   The endpoint is also written to `mcp-endpoint.json` in your
    [config folder](/docs/configuration) for discovery.
+
+If Claude Code starts before Editora, or the server is off, it still sees the
+tools, and each call answers that Editora has to be started with its MCP server
+on.
+
+### Connecting over HTTP
+
+For an agent that connects to a URL instead of starting a program, **Copy HTTP
+Command** (**MCP: Copy HTTP Command**, `mcp.copyHttpEndpoint`) copies a
+`claude mcp add --transport http` command with the endpoint URL and token. That
+command is valid only until the server stops or gets a new token: copy it again
+after a restart.
 
 ![Settings on the MCP Server page: the Enable MCP server switch on, and the Server row reading Running at an http://127.0.0.1 endpoint with Copy Endpoint Command and New Token buttons](/screenshots/docs/settings-mcp.png "Settings → MCP Server while the server runs, with the button that copies the connect command.")
 
@@ -123,12 +144,17 @@ filesystem supports POSIX permissions (so not on Windows), Editora restricts the
 file to your user account. It deletes the file when the server stops and leaves
 it out of Export Configuration. The token is the only thing that stops another
 program on your computer from driving the editor, so any program that can read
-that file can connect. The port and token are new each time the server starts:
-after restarting Editora or toggling the server, copy the connection command
-again.
+that file can connect. The port and token are new each time the server starts.
+`editora mcp` reads them from the file for every message, so an agent set up
+with the connect command keeps working; one set up with the HTTP command needs
+it again. The connect command itself holds no token.
 
 **New Token** on Settings → MCP Server replaces the token while the server keeps
 running on the same port, and rewrites `mcp-endpoint.json`. Every agent set up
-with the old token is refused from then on; give it the new command.
+with the HTTP command is refused from then on; give it the new command. Agents
+connected through `editora mcp` pick up the new token by themselves.
 
-Commands: `view.toggleMcp`, `mcp.copyEndpoint`.
+`editora mcp` sends the token only to a plain `http://` address on this
+computer's loopback interface; it ignores an endpoint file that names any other.
+
+Commands: `view.toggleMcp`, `mcp.copyEndpoint`, `mcp.copyHttpEndpoint`.

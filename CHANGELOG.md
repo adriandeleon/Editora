@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Set up Claude Code once with `editora mcp`.** A new command serves Editora's MCP tools over standard input and
+  output and finds the running editor by itself, so an agent added with
+  `claude mcp add --scope user editora -- editora mcp` keeps working after Editora restarts, after the server is
+  switched off and on, and after New Token. Settings → MCP Server's **Copy Connect Command** copies that line with
+  this install's launcher; the old command with the port and token is **Copy HTTP Command**. An agent started before
+  Editora still starts and sees the tools, and each call says to turn the server on.
 - **EEx and HEEx templates.** Phoenix's `.html.eex`, `.leex` and `.heex` files colour their Elixir as Elixir and their
   HTML as HTML (HEEx's `{@assigns}`, `:if={…}` attributes and `<.component>` tags included), and open as HTML templates
   (tag auto-close, Structure, the HTML language server, `<%# %>` comments). The Elixir inside an Elixir file's `~H` and
