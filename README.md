@@ -18,8 +18,8 @@ command, reachable from an Emacs-style keymap or a fuzzy command palette.
 🌐 **[editora-project.dev](https://editora-project.dev)** — [features](https://editora-project.dev/#features),
 [user docs](https://editora-project.dev/docs/), [screenshots](https://editora-project.dev/screenshots/),
 [every command](https://editora-project.dev/commands/), [keybindings](https://editora-project.dev/keybindings/),
-[plugins](https://editora-project.dev/plugins/), [what's new](https://editora-project.dev/whats-new/),
-[roadmap](https://editora-project.dev/roadmap/) and the [blog](https://editora-project.dev/blog/).
+[plugins](https://editora-project.dev/plugins/), [what's new](https://editora-project.dev/whats-new/)
+and the [news](https://editora-project.dev/news/).
 The site's source is [adriandeleon/editora-website](https://github.com/adriandeleon/editora-website).
 
 <a href="https://editora-project.dev/screenshots/"><picture>
