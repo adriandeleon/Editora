@@ -2,7 +2,7 @@
 title: "XML & pom.xml"
 description: "The lemminx XML server, its settings, working without it, and the Maven-aware pom.xml server."
 category: Languages
-order: 5
+order: 22
 ---
 
 XML files get code intelligence from lemminx, and a Maven `pom.xml` from lemminx with its Maven extension.

@@ -1,8 +1,8 @@
 ---
 title: Keymaps & keybindings
 description: Switch between five built-in keymaps and rebind any command.
-category: Customization
-order: 2
+category: Getting started
+order: 3
 ---
 
 Editora is keyboard-first, and every action is a command, so the keyboard layer

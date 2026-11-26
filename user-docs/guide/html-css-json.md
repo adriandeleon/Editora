@@ -2,7 +2,7 @@
 title: "HTML, CSS & JSON"
 description: "The HTML, CSS and JSON language servers from vscode-langservers-extracted."
 category: Languages
-order: 4
+order: 9
 ---
 
 HTML, CSS and JSON share one set of language servers. Editing HTML itself (tag completion, the preview, Emmet) is on the [HTML](/docs/html) page.
@@ -13,26 +13,19 @@ HTML, CSS and JSON files use **vscode-html-language-server**,
 **vscode-css-language-server** and **vscode-json-language-server**, the servers
 taken out of VS Code and published together in the npm package
 **vscode-langservers-extracted**. They are Node.js programs, so they need
-**Node.js**. The first HTML or CSS file a window opens asks **Turn on HTML code
-intelligence?** (or CSS), with **Turn on** and **Not now**, like the
-[Python offer](/docs/python#language-server).
+**Node.js**. If language servers are off, the first HTML or CSS file a window
+opens asks **Turn on HTML code intelligence?** (or CSS), with **Turn on** and
+**Not now**, like the [Python offer](/docs/python#language-server).
 
-**Install** on the banner, **Install…** on any of the three cards in Settings →
-LSP, Doctor's **Install…** or **Install: Language Server…** installs
-vscode-langservers-extracted **4.10.0**, the version Editora is tested with,
-with npm into `plugins/lsp/web` under Editora's config folder rather than
-globally. It also links the TypeScript libraries the HTML server needs for the
-DOM and standard library in `<script>`. With the three commands left blank,
-Editora runs that copy first, then one on your `PATH`.
-[Doctor](/docs/troubleshooting#doctor) checks the installed version against
-4.10.0, and warns, with **Update**, about a copy that cannot load the
-TypeScript libraries; the first HTML page a window opens offers the same
-**Update** on a banner.
-
-The three servers run on the Node.js chosen on the **Node.js** card under
-**Settings → Build Tools**, else `node` on your `PATH`. A project's `.nvmrc` or
-`.node-version` does not change them; it picks only the TypeScript server's
-Node.js. When a Node.js is chosen there, Install uses the npm beside it.
+One install gives all three servers. **Install** on the banner, **Install…**
+on any of the three cards in Settings → LSP, Doctor's **Install…** or
+**Install: Language Server…** puts vscode-langservers-extracted **4.10.0** into
+Editora's own folder; where it goes, which npm and Node.js it uses, and how an
+older copy is updated are under
+[Installing it](/docs/html#installing-it) on the HTML page. The CSS and JSON
+servers run on the same Node.js as the HTML server: the one chosen on the
+**Node.js** card under **Settings → Build Tools**, else `node` on your `PATH`,
+never a project's `.nvmrc`.
 
 **JSON with comments.** These files allow comments and trailing commas:
 `tsconfig.json` and `jsconfig.json` (and their `tsconfig.*.json` variants),

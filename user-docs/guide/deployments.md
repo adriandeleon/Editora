@@ -1,8 +1,8 @@
 ---
 title: Deployments
-description: Keep a project on this machine and run it on an SSH host. Before each run, Editora copies what changed to a folder there, then runs, builds and debugs the program in that copy.
+description: Keep a project on this machine and run, build and debug it on an SSH host, with what changed copied there before each run.
 category: Run & debug
-order: 4
+order: 5
 beta: true
 ---
 

@@ -17,7 +17,7 @@ and a right-edge overview of the whole document.
 
 ![A side-by-side diff of Themes.java, HEAD on the left and the working tree on the right, with one changed line highlighted, word-level emphasis inside it, and the unchanged lines folded](/screenshots/features/diff-merge.png "The diff viewer, side by side, with unchanged lines folded away.")
 
-| Compare | Command | Default key |
+| Compare | Command | Emacs key |
 | --- | --- | --- |
 | Against HEAD | `diff.vsHead` | `C-x v =` |
 | Against a commit | `diff.vsCommit` | (palette) |
@@ -29,6 +29,9 @@ and a right-edge overview of the whole document.
 | All staged changes | `diff.reviewStaged` | (palette / Commit window) |
 | All unstaged and untracked changes | `diff.reviewUnstaged` | (palette / Commit window) |
 | Open a `.patch`/`.diff` in the viewer | `diff.openPatchFile` | (palette) |
+
+The other keymaps bind none of these by default; the
+[keybindings reference](/keybindings) lists every keymap.
 
 When a file is open, its live (possibly unsaved) text is used as the working
 side. A unified `.patch`/`.diff` file opens as one navigable multi-file review
