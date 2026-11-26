@@ -56,11 +56,19 @@ class ReviewCoordinatorFxTest {
     private SharedConfig shared;
     private ReviewCoordinator coordinator;
     private EditorBuffer active;
+    private DiffViewerPane activeDiff;
     private final List<EditorBuffer> created = new ArrayList<>();
     private final List<String> events = new ArrayList<>();
     private String promptAnswer = "";
 
+    private final com.editora.config.Settings settings = new com.editora.config.Settings();
+
     private final CoordinatorHostStub host = new CoordinatorHostStub() {
+        @Override
+        public com.editora.config.Settings settings() {
+            return settings;
+        }
+
         @Override
         public EditorBuffer activeBuffer() {
             return active;
@@ -109,6 +117,11 @@ class ReviewCoordinatorFxTest {
 
         @Override
         public void installEmacsKeys(javafx.scene.control.TextInputControl control) {}
+
+        @Override
+        public DiffViewerPane activeDiffPane() {
+            return activeDiff;
+        }
     };
 
     @BeforeAll
@@ -136,6 +149,7 @@ class ReviewCoordinatorFxTest {
         shared = new SharedConfig(Files.createDirectories(dir.resolve("config")), false);
         shared.load();
         events.clear();
+        settings.setReviewsInProject(false);
         coordinator = FxTestSupport.callOnFx(() -> new ReviewCoordinator(host, shared, ops));
     }
 
@@ -255,7 +269,8 @@ class ReviewCoordinatorFxTest {
         assertEquals(2, t.anchor().endLine(), "the marker goes after the last line");
         assertEquals(1, labelsOn(b, 2).size());
 
-        fx(() -> coordinator.applySuggestion(b, repoKey(), t, t.root().suggestion()));
+        fx(() -> coordinator.applySuggestion(
+                b, coordinator.placeOf(b), t, t.root().suggestion()));
         assertEquals("class A {\n    int ab = 12;\n    int c = 3;\n}\n", FxTestSupport.callOnFx(b::getContent));
         assertEquals(ReviewThread.State.RESOLVED, stored().get(0).state());
         assertEquals(List.of(), labelsOn(b, 1), "a resolved thread has no marker");
@@ -271,7 +286,8 @@ class ReviewCoordinatorFxTest {
         answer("```suggestion\n    int b = 20;\n```", tr("review.dialog.save"));
         ReviewThread t = stored().get(0);
         fx(() -> b.getArea().replaceText(b.getContent().replace("int b = 2;", "int b = 3;")));
-        fx(() -> coordinator.applySuggestion(b, repoKey(), t, t.root().suggestion()));
+        fx(() -> coordinator.applySuggestion(
+                b, coordinator.placeOf(b), t, t.root().suggestion()));
         assertTrue(events.contains("status: " + tr("status.review.outdated")), events.toString());
         assertTrue(FxTestSupport.callOnFx(b::getContent).contains("int b = 3;"));
         assertEquals(ReviewThread.State.OPEN, stored().get(0).state());
@@ -392,5 +408,84 @@ class ReviewCoordinatorFxTest {
         assertFalse(ReviewsPanel.matches(stored().get(0), "nothing like it"));
         assertTrue(ReviewsPanel.matches(stored().get(0), "rename"));
         assertNotNull(ReviewCoordinator.deleteQuestion());
+    }
+
+    @Test
+    void aCommentInADiffGoesOnTheLocalFilesLinesAndIsMarkedInItsGutter() throws Exception {
+        Path file = repo.resolve("src/A.java");
+        Files.writeString(file, TEXT);
+        String base = TEXT.replace("int b = 2;", "int b = 1;");
+        var model = com.editora.diff.DiffEngine.compute(base, TEXT, com.editora.diff.DiffEngine.DiffOptions.DEFAULT);
+        DiffViewerPane pane = FxTestSupport.callOnFx(() -> new DiffViewerPane(
+                "A.java",
+                "HEAD",
+                "Working tree",
+                "A.java",
+                "A.java",
+                base,
+                TEXT,
+                model,
+                "Monospaced",
+                13,
+                true,
+                "A.java"));
+        fx(() -> {
+            pane.setEditable(DiffViewerPane.EditableSide.RIGHT, text -> {}, () -> {}, () -> {});
+            coordinator.prepareDiff(pane, file);
+            root.getChildren().add(0, pane.node());
+            root.applyCss();
+            root.layout();
+        });
+        active = null;
+        activeDiff = pane;
+        org.fxmisc.richtext.CodeArea right = FxTestSupport.field(pane, "rightArea");
+        fx(() -> {
+            right.requestFocus();
+            right.moveTo(2, 0);
+        });
+        assertEquals(List.of(2, 2), FxTestSupport.callOnFx(() -> {
+            int[] lines = pane.localSelectionLines();
+            return lines == null ? List.<Integer>of() : List.of(lines[0], lines[1]);
+        }));
+        fx(coordinator::addComment);
+        answer("Why 2 now?", tr("review.dialog.save"));
+        ReviewThread t = stored().get(0);
+        assertEquals("src/A.java", t.path());
+        assertEquals(2, t.anchor().line());
+        DiffViewerPane.ReviewHook hook = FxTestSupport.field(pane, "reviewHook");
+        assertEquals(java.util.Set.of(2), FxTestSupport.callOnFx(hook::commentedLines), "marked in the gutter");
+        fx(() -> hook.open(2));
+        assertTrue(events.contains("open A.java:2"), "a mark opens the thread in the editor: " + events);
+        fx(() -> root.getChildren().remove(pane.node()));
+    }
+
+    @Test
+    void aDiffRowRangeMapsToTheFilesLinesSkippingFillers() {
+        int[] nos = {1, 2, -1, -1, 3, 4};
+        assertEquals(List.of(1, 2), toList(DiffViewerPane.sourceLines(nos, 1, 4)));
+        assertNull(DiffViewerPane.sourceLines(nos, 2, 3), "only filler rows");
+        assertEquals(List.of(0, 0), toList(DiffViewerPane.sourceLines(nos, 0, 0)));
+    }
+
+    private static List<Integer> toList(int[] a) {
+        return a == null ? null : List.of(a[0], a[1]);
+    }
+
+    @Test
+    void keptInTheProjectAThreadIsWrittenToTheRepositoryAndReadBackByAnotherWindow() throws Exception {
+        settings.setReviewsInProject(true);
+        EditorBuffer b = open(TEXT);
+        fx(() -> b.getArea().moveTo(2, 0));
+        fx(coordinator::addComment);
+        answer("Shared with the team.", tr("review.dialog.save"));
+        coordinator.awaitWritesForTest();
+        Path file = com.editora.config.ProjectReviewFile.file(repo);
+        assertTrue(Files.readString(file).contains("Shared with the team."), "in the repository");
+        assertTrue(shared.allReviewThreads().isEmpty(), "and not in the config folder");
+
+        ReviewCoordinator other = FxTestSupport.callOnFx(() -> new ReviewCoordinator(host, shared, ops));
+        EditorBuffer again = open(TEXT);
+        fx(() -> other.restore(again));
+        assertEquals(List.of("💬 1 · Shared with the team."), labelsOn(again, 2), "a new window reads it");
     }
 }

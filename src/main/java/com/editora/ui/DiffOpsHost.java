@@ -75,6 +75,11 @@ final class DiffOpsHost implements DiffCoordinator.Ops {
     }
 
     @Override
+    public void prepareReview(DiffViewerPane pane, java.nio.file.Path target) {
+        mc.reviewCoordinator.prepareDiff(pane, target);
+    }
+
+    @Override
     public @Nullable DiffViewerPane activeDiffPane() {
         Tab t = mc.editorArea.selectedTab();
         if (t == null) {

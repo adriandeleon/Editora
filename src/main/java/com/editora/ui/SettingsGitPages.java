@@ -195,6 +195,14 @@ final class SettingsGitPages {
                 SettingsWindow.settingRow(
                         tr("settings.git.pullMode"), tr("settings.git.pullMode.desc"), gitPullModeCombo),
                 "git pull mode fast-forward ff-only rebase merge diverged");
+        w.switchRow(
+                c2,
+                Category.GIT,
+                "reviewsInProject",
+                true,
+                Settings::isReviewsInProject,
+                Settings::setReviewsInProject,
+                "review comments threads keep store project repository share commit .editora reviews.json");
         Label autoFetchUnit = new Label(tr("settings.git.autoFetchMinutes"));
         autoFetchUnit.setLabelFor(gitAutoFetchSpinner);
         w.cardRow(

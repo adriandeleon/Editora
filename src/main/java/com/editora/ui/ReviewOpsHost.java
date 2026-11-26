@@ -36,6 +36,11 @@ final class ReviewOpsHost implements ReviewCoordinator.Ops {
     }
 
     @Override
+    public @Nullable DiffViewerPane activeDiffPane() {
+        return new DiffOpsHost(mc).activeDiffPane(); // the same lookup the diff commands use
+    }
+
+    @Override
     public void installEmacsKeys(javafx.scene.control.TextInputControl control) {
         com.editora.command.TextInputKeymap.install(control, mc.keymap);
     }

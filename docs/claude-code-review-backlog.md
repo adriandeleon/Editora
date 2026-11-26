@@ -1,6 +1,6 @@
 # Backlog: Claude Code integration and first-class code review
 
-Status: 2026-11-26. Decisions D1–D6 answered. Items 1 and 2 shipped (#1823); item 6 (the comment model) is built and waits for item 7 to ship with it. See [code review](subsystems/code-review.md).
+Status: 2026-11-26. Decisions D1–D6 answered. Items 1 and 2 shipped (#1823); items 6 and 7 (the comment model and line comments in the editor and diffs) ship together. See [code review](subsystems/code-review.md).
 
 **Goal.** Editora becomes the place where you review code, whoever wrote it: you, a teammate's pull
 request, or Claude Code. Claude can see what you see, propose changes you accept or reject hunk by

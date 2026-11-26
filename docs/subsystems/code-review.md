@@ -49,8 +49,45 @@ writes the file through the store writer, merged with another process's write) a
 accessors. An empty repository is dropped from the file. A configuration import puts the file with bookmarks and
 notes (`ConfigImport.Part.BOOKMARKS_NOTES`): paths of another computer, not ticked by default.
 
+## In the window
+
+`ui/ReviewCoordinator` (one per window, built in `MainController` beside the Notes coordinator) ties buffers to
+their repository and runs the commands:
+
+- **Markers.** A thread is drawn after its last line as a review lens (`EditorBuffer.ReviewLens`), through the
+  code-lens machinery in `editor/BufferInlays`: its own map beside the code lenses, shifted with them on each edit
+  (`CodeLensShift.afterChanges`, one empty-map check per edit for a file without threads), merged after them on the
+  line (style `review-lens`), clickable and lit on hover. The gutter is not used: a mark that follows edits there
+  would repaint the gutter on every keystroke (docs/performance.md).
+- **Where a file is.** Opening a file asks nothing of Git: `restore` matches it against the repositories that have
+  threads (`placeAmong`, canonical paths, off the FX thread). Starting a thread asks the window's Git
+  (`GitCoordinator.withRepositoryOf`), which reports a file outside any repository.
+- **Following edits.** Between saves only the markers move. `saved` (from `FileWorkflowHost.sourceSaved`) finds each
+  thread again in the saved text and stores where it is; `showThread` and the card find it again too.
+- **The card.** `ui/ReviewThreadCard` is an in-scene overlay shown at the lines (`OverlayHost.showAt`, as
+  `GitHunkPopup`); a thread off screen is scrolled to and the card opens a pulse later. Its buttons run after it
+  closes, on the thread it showed. Apply Suggestion replaces the lines in the buffer as one undoable edit and
+  resolves the thread, and is refused (status line) for an outdated thread or a read-only buffer.
+- **Diffs.** `DiffCoordinator.buildDiffPane` hands every diff with an editable local side to `prepareDiff`, which
+  sets a `DiffViewerPane.ReviewHook`: that side's gutter (side by side only) gets a slot marking the lines threads end
+  on, a click opens the thread in the editor, and Add Review Comment there comments on the local file's lines
+  (`localSelectionLines`, filler rows skipped). The anchor is taken from `editableBaselineText()`.
+- **The tool window.** `ui/ReviewsPanel` (`tool.reviews`, stripe off by default) shows the active file's
+  repository's threads by file, filtered by path, text or author, closed ones on request
+  (`review.toggleShowClosed`). Its row commands (`review.openSelected`, `review.toggleSelectedResolved`,
+  `review.deleteSelected`) are registered in `PanelRowCommands`.
+- **Commands.** `review.addComment`, `review.suggestChange`, `review.showThread`, `review.next`,
+  `review.previous`; the first two are also in the editor's context menu.
+
+## Keeping threads in the project
+
+With `Settings.reviewsInProject` (schema 187, Settings → Git) the threads of a repository live in its
+`.editora/reviews.json` (`config/ProjectReviewFile`, the same `ReviewStore` shape under the key `.`) instead of the
+config folder. `ui/ReviewStorage` picks the place: reads come from memory, a repository's file is loaded off the FX
+thread when a file of it opens or a thread starts there (`findPlace`, `whenLoaded`), and writes go to one writer
+thread in order. Turning the setting on or off does not move threads already written.
+
 ## Not built yet
 
-- The editor and diff UI: adding, showing and answering comments (backlog item 7), and the setting that keeps a
-  repository's threads in the project instead.
-- GitHub pull request threads (item 8), MCP tools for agents (item 9), and the findings view (item 10).
+- Comments on the base side of a diff (they need its revision), and GitHub pull request threads (backlog item 8).
+- MCP tools for agents (item 9) and the findings view (item 10).

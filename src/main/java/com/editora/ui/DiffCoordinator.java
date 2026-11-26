@@ -100,6 +100,9 @@ final class DiffCoordinator {
         /** Applies window-specific affordances to every diff pane, including panes nested in a review. */
         default void prepareDiffPane(DiffViewerPane pane) {}
 
+        /** A diff whose editable side is the local file {@code target}: its review threads can be shown there. */
+        default void prepareReview(DiffViewerPane pane, Path target) {}
+
         /** The open buffer for {@code target} (canonical-path match), or {@code null} if not open. */
         @Nullable
         EditorBuffer openBufferFor(Path target);
@@ -352,6 +355,9 @@ final class DiffCoordinator {
                 pane.setMutationAllowed(leftContent.applicable() && rightContent.applicable());
                 pane.setSideFormats(leftContent.format(), rightContent.format());
                 ops.prepareDiffPane(pane);
+                if (target != null && editableSide != DiffViewerPane.EditableSide.NONE) {
+                    ops.prepareReview(pane, target);
+                }
                 pane.setOnExportPatch(this::exportPatch);
                 pane.setOptions(lastDiffOptions);
                 AtomicLong generation = new AtomicLong();

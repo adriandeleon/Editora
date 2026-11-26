@@ -198,6 +198,7 @@ change the same setting or entry, the one saved last wins.
 | `projects.json` + `projects/<id>.json` | Project index and each project's session, including the [Python interpreter](/docs/python#the-python-interpreter) picked for it |
 | `bookmarks.json` | Bookmarks (per project) |
 | `notes.json` | Personal notes (per project) |
+| `reviews.json` | [Code review](/docs/code-review) threads (per repository) |
 | `breakpoints.json` | Debugger breakpoints (per project) |
 | `debug-adapters.json` | Your own [debug adapters](/docs/debugging#debug-adapters-of-your-own), opened by **Debug: Edit Debug Adapters** |
 | `connections.json` | Saved SFTP connections (no secrets), with whether each host may [run commands](/docs/remote) and its tool commands, and which containers and WSL distributions may run a project's tools |

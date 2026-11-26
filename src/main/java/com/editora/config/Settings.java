@@ -46,7 +46,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 186;
+    public static final int SCHEMA_VERSION = 187;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -155,6 +155,8 @@ public class Settings {
     /** Personal Notes gutter markers + in-editor highlight; on by default (only effective when
      *  {@link #notesSupport} is on). */
     private boolean showNoteIndicators = true;
+    /** Review threads in each repository's {@code .editora/reviews.json} (shareable) instead of the config folder. */
+    private boolean reviewsInProject = false;
     /** Markdown preview color theme, independent of the app/editor theme: "" = follow app (until first
      *  toggled), then "light" or "dark". Toggled via the preview's floating sun/moon control. */
     private String markdownPreviewTheme = "";
@@ -2118,6 +2120,14 @@ public class Settings {
 
     public void setNotesSupport(boolean notesSupport) {
         this.notesSupport = notesSupport;
+    }
+
+    public boolean isReviewsInProject() {
+        return reviewsInProject;
+    }
+
+    public void setReviewsInProject(boolean reviewsInProject) {
+        this.reviewsInProject = reviewsInProject;
     }
 
     public boolean isShowNoteIndicators() {

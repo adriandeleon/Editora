@@ -52,6 +52,10 @@ final class ReviewCoordinator {
         EditorBuffer bufferForPath(Path file);
 
         void installEmacsKeys(javafx.scene.control.TextInputControl control);
+
+        /** The active tab's diff pane, or null when the active tab is not a diff. */
+        @Nullable
+        DiffViewerPane activeDiffPane();
     }
 
     /** Where a buffer's file is in its repository. */
@@ -61,7 +65,12 @@ final class ReviewCoordinator {
     private final SharedConfig shared;
     private final Ops ops;
     private final ReviewThreads threads = ReviewThreads.now();
+    private final ReviewStorage storage;
     private final Map<EditorBuffer, Place> places = new WeakHashMap<>();
+    /** The diffs whose local side is a file, by pane: the file, and its place once known. */
+    private final Map<DiffViewerPane, Path> diffTargets = new WeakHashMap<>();
+
+    private final Map<DiffViewerPane, Place> diffPlaces = new WeakHashMap<>();
     private @Nullable ReviewThreadCard card;
     private @Nullable ReviewsPanel panel;
 
@@ -69,6 +78,7 @@ final class ReviewCoordinator {
         this.host = host;
         this.shared = shared;
         this.ops = ops;
+        this.storage = new ReviewStorage(shared, () -> host.settings().isReviewsInProject());
     }
 
     // --- buffers -----------------------------------------------------------------------------------
@@ -95,13 +105,11 @@ final class ReviewCoordinator {
      */
     void restore(EditorBuffer buffer) {
         Path file = buffer.getPath();
-        if (file == null || shared.allReviewThreads().isEmpty()) {
+        if (file == null) {
             return;
         }
-        List<String> repoKeys = new ArrayList<>(shared.allReviewThreads().keySet());
-        com.editora.perf.OffFx.then("review-place", () -> placeAmong(file, repoKeys), found -> {
-            Place place = found.value();
-            if (place != null && file.equals(buffer.getPath())) {
+        findPlace(file, place -> {
+            if (file.equals(buffer.getPath())) {
                 places.put(buffer, place);
                 showMarkers(buffer, false);
             }
@@ -114,6 +122,61 @@ final class ReviewCoordinator {
         if (place != null) {
             showMarkers(buffer, true);
         }
+    }
+
+    /** What a project file held, read off the FX thread. */
+    private record Found(Place place, @Nullable List<ReviewThread> projectThreads) {}
+
+    /**
+     * Finds {@code file}'s place among the repositories with threads, off the FX thread, and runs {@code then} with
+     * it on the FX thread (not at all when it is in none). With threads kept in the project, that is the nearest
+     * repository above it with a {@code .editora/reviews.json}, which is read too.
+     */
+    private void findPlace(Path file, Consumer<Place> then) {
+        boolean project = storage.inProject();
+        List<String> repoKeys = storage.repoKeys();
+        if (!project && repoKeys.isEmpty()) {
+            return;
+        }
+        com.editora.perf.OffFx.then(
+                "review-place",
+                () -> {
+                    if (!project) {
+                        Place p = placeAmong(file, repoKeys);
+                        return p == null ? null : new Found(p, null);
+                    }
+                    Path root = com.editora.config.ProjectReviewFile.rootAbove(file);
+                    String rel = root == null ? null : ReviewKeys.relativePath(root, file);
+                    if (root == null || rel == null) {
+                        return null;
+                    }
+                    Place p = new Place(root, ReviewKeys.repoKey(root), rel);
+                    return new Found(p, com.editora.config.ProjectReviewFile.read(root));
+                },
+                found -> {
+                    Found f = found.value();
+                    if (f == null) {
+                        return;
+                    }
+                    if (f.projectThreads() != null) {
+                        storage.loaded(f.place().repoKey(), f.place().root(), f.projectThreads());
+                    }
+                    then.accept(f.place());
+                });
+    }
+
+    /** Runs {@code then} once {@code place}'s threads are in memory (a project file is read off the FX thread). */
+    private void whenLoaded(Place place, Runnable then) {
+        if (storage.isLoaded(place.repoKey())) {
+            then.run();
+            return;
+        }
+        com.editora.perf.OffFx.then(
+                "review-load", () -> com.editora.config.ProjectReviewFile.read(place.root()), read -> {
+                    List<ReviewThread> loaded = read.value();
+                    storage.loaded(place.repoKey(), place.root(), loaded == null ? List.of() : loaded);
+                    then.run();
+                });
     }
 
     /** {@code file}'s place in the repository among {@code repoKeys} that holds it (the deepest), or null. */
@@ -139,12 +202,12 @@ final class ReviewCoordinator {
             buffer.setReviewLenses(null);
             return;
         }
-        List<ReviewThread> all = shared.reviewThreads(place.repoKey());
+        List<ReviewThread> all = storage.threads(place.repoKey());
         String text = buffer.getContent();
         if (persist) {
             List<ReviewThread> moved = ReviewThreads.reanchored(all, place.path(), text);
             if (!moved.equals(all)) {
-                shared.setReviewThreads(place.repoKey(), moved);
+                storage.set(place.repoKey(), place.root(), moved);
                 all = moved;
                 activeBufferChanged();
             }
@@ -173,8 +236,90 @@ final class ReviewCoordinator {
         buffer.setReviewLenses(lenses);
     }
 
+    // --- diffs ------------------------------------------------------------------------------------
+
+    /**
+     * A diff whose local side is {@code target}: its threads are marked in that side's gutter, a mark opens the
+     * thread in the editor, and Add Review Comment there comments on the file's lines.
+     */
+    void prepareDiff(DiffViewerPane pane, Path target) {
+        diffTargets.put(pane, target);
+        pane.setReviewHook(new DiffViewerPane.ReviewHook() {
+            @Override
+            public java.util.Set<Integer> commentedLines() {
+                return diffLines(pane);
+            }
+
+            @Override
+            public void open(int line) {
+                Place place = diffPlaces.get(pane);
+                String text = pane.editableBaselineText();
+                if (place == null || text == null) {
+                    return;
+                }
+                for (ReviewThread t : ReviewThreads.openOn(storage.threads(place.repoKey()), place.path())) {
+                    if (t.side() == ReviewThread.Side.NEW
+                            && ReviewAnchors.locate(t, text).endLine() == line) {
+                        ReviewCoordinator.this.open(place, t);
+                        return;
+                    }
+                }
+            }
+        });
+        findPlace(target, place -> {
+            diffPlaces.put(pane, place);
+            pane.refreshReviewMarks();
+        });
+    }
+
+    /** The 0-based lines of a diff's local file after which an open thread ends. */
+    private java.util.Set<Integer> diffLines(DiffViewerPane pane) {
+        Place place = diffPlaces.get(pane);
+        String text = pane.editableBaselineText();
+        if (place == null || text == null) {
+            return java.util.Set.of();
+        }
+        java.util.Set<Integer> lines = new java.util.HashSet<>();
+        for (ReviewThread t : ReviewThreads.openOn(storage.threads(place.repoKey()), place.path())) {
+            if (t.side() == ReviewThread.Side.NEW) {
+                lines.add(ReviewAnchors.locate(t, text).endLine());
+            }
+        }
+        return lines;
+    }
+
+    /** Add Review Comment in a diff: on the local file's lines the selection covers on its side. */
+    private void startDiffThread(DiffViewerPane pane, Path target, boolean suggest) {
+        int[] lines = pane.localSelectionLines();
+        String text = pane.editableBaselineText();
+        if (lines == null || text == null) {
+            host.setStatus(tr("status.review.diffSide"));
+            return;
+        }
+        TextAnchor anchor = ReviewAnchors.capture(text, lines[0], lines[1]);
+        ops.inRepositoryOf(target, root -> {
+            String rel = ReviewKeys.relativePath(root, target);
+            if (rel == null) {
+                host.setStatus(tr("status.notARepo"));
+                return;
+            }
+            Place place = new Place(root, ReviewKeys.repoKey(root), rel);
+            diffPlaces.put(pane, place);
+            EditorBuffer open = ops.bufferForPath(target);
+            if (open != null) {
+                places.put(open, place);
+            }
+            whenLoaded(place, () -> newThreadDialog(place, anchor, suggest));
+        });
+    }
+
     /** Every open buffer of the repository {@code repoKey} draws its markers again (its threads changed). */
     private void refresh(String repoKey) {
+        diffPlaces.forEach((pane, p) -> {
+            if (p.repoKey().equals(repoKey)) {
+                pane.refreshReviewMarks();
+            }
+        });
         host.forEachBuffer(b -> {
             Place p = places.get(b);
             if (p != null && p.repoKey().equals(repoKey)) {
@@ -198,6 +343,14 @@ final class ReviewCoordinator {
 
     private void startThread(boolean suggest) {
         EditorBuffer buffer = host.activeBuffer();
+        if (buffer == null) {
+            DiffViewerPane pane = ops.activeDiffPane();
+            Path target = pane == null ? null : diffTargets.get(pane);
+            if (pane != null && target != null) {
+                startDiffThread(pane, target, suggest);
+                return;
+            }
+        }
         Path file = buffer == null ? null : buffer.getPath();
         if (buffer == null || file == null) {
             host.setStatus(tr("status.review.needsFile"));
@@ -214,7 +367,6 @@ final class ReviewCoordinator {
                 .getMajor();
         String text = buffer.getContent();
         TextAnchor anchor = ReviewAnchors.capture(text, first, last);
-        String initial = suggest ? ReviewText.suggestionTemplate(anchor.selectedText()) : "";
         ops.inRepositoryOf(file, root -> {
             String rel = ReviewKeys.relativePath(root, file);
             if (rel == null) {
@@ -222,19 +374,25 @@ final class ReviewCoordinator {
                 return;
             }
             Place place = new Place(root, ReviewKeys.repoKey(root), rel);
-            commentDialog(tr("review.dialog.newTitle", lineRange(anchor.line(), anchor.endLine())), initial, body -> {
-                ReviewText.Parsed parsed = ReviewText.parse(body);
-                List<ReviewThread> next = threads.start(
-                        shared.reviewThreads(place.repoKey()),
-                        ReviewThreads.Start.onFile(place.path(), anchor),
-                        ReviewAuthor.user(),
-                        parsed.body(),
-                        parsed.suggestion());
-                shared.setReviewThreads(place.repoKey(), next);
-                places.put(buffer, place);
-                refresh(place.repoKey());
-                host.setStatus(tr("status.review.added"));
-            });
+            places.put(buffer, place);
+            whenLoaded(place, () -> newThreadDialog(place, anchor, suggest));
+        });
+    }
+
+    /** The dialog that starts a thread on {@code anchor}'s lines of {@code place}'s file. */
+    private void newThreadDialog(Place place, TextAnchor anchor, boolean suggest) {
+        String initial = suggest ? ReviewText.suggestionTemplate(anchor.selectedText()) : "";
+        commentDialog(tr("review.dialog.newTitle", lineRange(anchor.line(), anchor.endLine())), initial, body -> {
+            ReviewText.Parsed parsed = ReviewText.parse(body);
+            List<ReviewThread> next = threads.start(
+                    storage.threads(place.repoKey()),
+                    ReviewThreads.Start.onFile(place.path(), anchor),
+                    ReviewAuthor.user(),
+                    parsed.body(),
+                    parsed.suggestion());
+            storage.set(place.repoKey(), place.root(), next);
+            refresh(place.repoKey());
+            host.setStatus(tr("status.review.added"));
         });
     }
 
@@ -284,7 +442,7 @@ final class ReviewCoordinator {
         int caret = buffer.getFocusedArea().getCurrentParagraph();
         String text = buffer.getContent();
         ReviewThread onLine = null;
-        for (ReviewThread t : ReviewThreads.openOn(shared.reviewThreads(place.repoKey()), place.path())) {
+        for (ReviewThread t : ReviewThreads.openOn(storage.threads(place.repoKey()), place.path())) {
             ReviewAnchors.Located at = ReviewAnchors.locate(t, text);
             if (caret >= at.startLine() && caret <= at.endLine()) {
                 return t;
@@ -298,7 +456,7 @@ final class ReviewCoordinator {
     }
 
     private @Nullable ReviewThread find(String repoKey, String threadId) {
-        for (ReviewThread t : shared.reviewThreads(repoKey)) {
+        for (ReviewThread t : storage.threads(repoKey)) {
             if (t.id().equals(threadId)) {
                 return t;
             }
@@ -351,9 +509,9 @@ final class ReviewCoordinator {
             public void reply(ReviewThread t, String body) {
                 ReviewText.Parsed parsed = ReviewText.parse(body);
                 change(
-                        repoKey,
+                        place,
                         threads.reply(
-                                shared.reviewThreads(repoKey),
+                                storage.threads(repoKey),
                                 t.id(),
                                 ReviewAuthor.user(),
                                 parsed.body(),
@@ -363,19 +521,19 @@ final class ReviewCoordinator {
 
             @Override
             public void resolve(ReviewThread t) {
-                change(repoKey, threads.resolve(shared.reviewThreads(repoKey), t.id(), null));
+                change(place, threads.resolve(storage.threads(repoKey), t.id(), null));
                 host.setStatus(tr("status.review.resolved"));
             }
 
             @Override
             public void reopen(ReviewThread t) {
-                change(repoKey, threads.reopen(shared.reviewThreads(repoKey), t.id()));
+                change(place, threads.reopen(storage.threads(repoKey), t.id()));
             }
 
             @Override
             public void dismiss(ReviewThread t) {
                 host.promptText(tr("review.dismiss.title"), tr("review.dismiss.label"), "", reason -> {
-                    change(repoKey, threads.dismiss(shared.reviewThreads(repoKey), t.id(), reason.strip()));
+                    change(place, threads.dismiss(storage.threads(repoKey), t.id(), reason.strip()));
                     host.setStatus(tr("status.review.dismissed"));
                 });
             }
@@ -385,23 +543,22 @@ final class ReviewCoordinator {
                 commentDialog(tr("review.dialog.editTitle"), ReviewText.editable(c), body -> {
                     ReviewText.Parsed parsed = ReviewText.parse(body);
                     change(
-                            repoKey,
-                            threads.edit(
-                                    shared.reviewThreads(repoKey), t.id(), c.id(), parsed.body(), parsed.suggestion()));
+                            place,
+                            threads.edit(storage.threads(repoKey), t.id(), c.id(), parsed.body(), parsed.suggestion()));
                 });
             }
 
             @Override
             public void delete(ReviewThread t) {
                 if (Confirm.ask(host.window(), deleteQuestion())) {
-                    change(repoKey, threads.delete(shared.reviewThreads(repoKey), t.id()));
+                    change(place, threads.delete(storage.threads(repoKey), t.id()));
                     host.setStatus(tr("status.review.deleted"));
                 }
             }
 
             @Override
             public void applySuggestion(ReviewThread t, String suggestion) {
-                ReviewCoordinator.this.applySuggestion(buffer, repoKey, t, suggestion);
+                ReviewCoordinator.this.applySuggestion(buffer, place, t, suggestion);
             }
         };
     }
@@ -412,16 +569,16 @@ final class ReviewCoordinator {
                 tr("review.delete.title"), null, tr("review.delete.content"), tr("confirm.action.delete"));
     }
 
-    private void change(String repoKey, List<ReviewThread> next) {
-        shared.setReviewThreads(repoKey, next);
-        refresh(repoKey);
+    private void change(Place place, List<ReviewThread> next) {
+        storage.set(place.repoKey(), place.root(), next);
+        refresh(place.repoKey());
     }
 
     /**
      * Replaces the thread's lines with {@code suggestion} in the buffer, as one undoable edit (nothing is saved),
      * and resolves the thread. Refused, with the reason, when its lines have changed since it was written.
      */
-    void applySuggestion(EditorBuffer buffer, String repoKey, ReviewThread t, String suggestion) {
+    void applySuggestion(EditorBuffer buffer, Place place, ReviewThread t, String suggestion) {
         if (buffer.isReadOnly()) {
             host.setStatus(tr("status.review.readOnly"));
             return;
@@ -437,7 +594,7 @@ final class ReviewCoordinator {
         int from = area.getAbsolutePosition(at.startLine(), 0);
         int to = area.getAbsolutePosition(at.endLine(), area.getParagraphLength(at.endLine()));
         area.replaceText(from, to, suggestion);
-        change(repoKey, threads.resolve(shared.reviewThreads(repoKey), t.id(), tr("review.note.applied")));
+        change(place, threads.resolve(storage.threads(place.repoKey()), t.id(), tr("review.note.applied")));
         host.setStatus(tr("status.review.applied"));
     }
 
@@ -492,7 +649,18 @@ final class ReviewCoordinator {
 
     /** The threads of {@code repoKey}. */
     List<ReviewThread> threadsOf(String repoKey) {
-        return shared.reviewThreads(repoKey);
+        return storage.threads(repoKey);
+    }
+
+    /** {@code buffer}'s place in its repository, once known. */
+    @Nullable
+    Place placeOf(EditorBuffer buffer) {
+        return places.get(buffer);
+    }
+
+    /** TEST SEAM — waits for the queued project-file writes. */
+    void awaitWritesForTest() throws Exception {
+        storage.awaitWritesForTest();
     }
 
     /** Opens thread {@code t} of {@code place}'s repository: its file at its lines, then its card. */
@@ -513,15 +681,15 @@ final class ReviewCoordinator {
     /** Changes a thread from the tool window: resolve, reopen, delete. */
     void resolve(Place place, ReviewThread t, boolean resolved) {
         change(
-                place.repoKey(),
+                place,
                 resolved
-                        ? threads.resolve(shared.reviewThreads(place.repoKey()), t.id(), null)
-                        : threads.reopen(shared.reviewThreads(place.repoKey()), t.id()));
+                        ? threads.resolve(storage.threads(place.repoKey()), t.id(), null)
+                        : threads.reopen(storage.threads(place.repoKey()), t.id()));
     }
 
     void delete(Place place, ReviewThread t) {
         if (Confirm.ask(host.window(), deleteQuestion())) {
-            change(place.repoKey(), threads.delete(shared.reviewThreads(place.repoKey()), t.id()));
+            change(place, threads.delete(storage.threads(place.repoKey()), t.id()));
         }
     }
 
