@@ -1,8 +1,8 @@
 ---
 title: Encrypted files
 description: Open, edit and save GnuPG-encrypted .gpg, .pgp and .asc files as the text inside them, choose who can read them, and sign and verify text, with your own gpg.
-category: Workspace
-order: 10
+category: Tools
+order: 5
 ---
 
 Editora opens files encrypted with [GnuPG](https://gnupg.org/) as the text

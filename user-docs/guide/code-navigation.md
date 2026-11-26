@@ -23,9 +23,9 @@ every language that ships a grammar but has no server. A project in a
 
 ![The Go to Symbol in Project picker listing classes and methods whose names match Keymap, each with its file and line](/screenshots/features/code-navigation.png "Go to Symbol in Project, with no language server running.")
 
-Nineteen language ids are covered: Java, Kotlin, Groovy, Scala, Clojure, C#,
-Python, JavaScript, JSX, TypeScript, TSX, Go, Rust, C, C++, Ruby, PHP, shell and
-Lua. It records
+It covers Java, Kotlin, Groovy, Scala, Clojure, C#, Python, JavaScript, JSX,
+TypeScript, TSX, Go, Dart, Rust, C, C++, Ruby, Elixir, PHP, shell and Lua. It
+records
 the kinds of symbol a pattern can identify reliably: type, interface, enum,
 method, function, field, variable and module. LSP has twenty-six kinds, and most
 of them need real type resolution to tell apart.
@@ -120,7 +120,8 @@ symbol under the mouse is underlined and the pointer becomes a hand when Go to
 Definition can take you somewhere from there, that is a symbol the language
 server resolves, or an HTML page's `href` or `src`. Click to go there; let go
 of the key and the underline goes away. Nothing is underlined where a click
-would find nothing.
+would find nothing, nor in a Markdown file (its links are styled as links
+already) or a file open in large-file mode.
 
 ## Sticky scroll
 

@@ -2,7 +2,7 @@
 title: HTTP client
 description: Send HTTP requests from .http and .rest files, with environments, variables, and request chaining.
 category: Run & debug
-order: 2
+order: 4
 ---
 
 Open a `.http` or `.rest` file and click the green ▶ next to a request to send
@@ -362,7 +362,7 @@ sends the request.
 
 **HTTP: Debug Request at Caret** (`http.debugRequest`) sends the request at the
 caret with its pre-request scripts and response handlers under the
-[JavaScript debugger](/docs/debugging). It is also **Debug Request** in
+[JavaScript debugger](/docs/javascript-typescript#debugging). It is also **Debug Request** in
 a `.http` file's right-click menu, and what Debug does in a `.http` file. A
 script stops at its breakpoints with the call stack, variables, watches and
 stepping of any JavaScript session. When you continue, the request goes on.
@@ -431,25 +431,30 @@ chosen by an earlier response or a script.
 **Settings → Web** turns scripts off, picks the Node.js to use and sets the
 timeout. Left empty, scripts run on the same Node.js as Run: a project's
 `.nvmrc` or `.node-version`, then the **Node.js** setting, then `node` on the
-`PATH` (see [Which Node.js runs](/docs/javascript-typescript#running-nodejs-scripts)). A Detected line
+`PATH` (see [Which Node.js runs](/docs/javascript-typescript#running)). A Detected line
 under **Node.js for HTTP scripts** says whether that node is there (*node: found
 (/usr/bin/node)* or *node: not found*), and the script rows are greyed out while
 the HTTP client or its scripts are off. The
-[Doctor](/docs/troubleshooting#doctor) shows which Node.js runs them and whether the permission
+[Doctor](/docs/doctor) shows which Node.js runs them and whether the permission
 model is on.
 
 ## Running and the response
 
-| Action | Command | Default key |
-| --- | --- | --- |
-| Run the request at the caret | `http.runRequest` | `C-c C-c` (or the gutter ▶) |
-| Run every request in the file | `http.runFile` | `C-c C-r` |
-| Cancel the running request | `http.cancelRequest` | `C-c C-k` |
-| Select environment | `http.selectEnvironment` | (palette, Env pill or status bar) |
-| Show or hide the results after request lines | `http.toggleInlineResults` | (palette) |
-| Copy the request as a curl command | `http.copyAsCurl` | (Copy as cURL icon) |
-| Turn a curl command on the clipboard into a request | `http.importCurl` | (palette) |
-| Open the response body in its own tab | `http.openResponseInTab` | (Open in tab icon) |
+| Action | Command | Emacs key | Other keymaps |
+| --- | --- | --- | --- |
+| Run the request at the caret | `http.runRequest` | `C-c C-c` (or the gutter ▶) | CUA, Sublime Text, VS Code, IntelliJ: Ctrl+Alt+R |
+| Run every request in the file | `http.runFile` | `C-c C-r` | CUA, Sublime Text, VS Code, IntelliJ: Ctrl+Alt+Shift+Enter |
+| Cancel the running request | `http.cancelRequest` | `C-c C-k` | CUA, Sublime Text, VS Code, IntelliJ: Ctrl+Alt+K |
+| Select environment | `http.selectEnvironment` | (palette, Env pill or status bar) | — |
+| Show or hide the results after request lines | `http.toggleInlineResults` | (palette) | — |
+| Copy the request as a curl command | `http.copyAsCurl` | (Copy as cURL icon) | — |
+| Turn a curl command on the clipboard into a request | `http.importCurl` | (palette) | — |
+| Open the response body in its own tab | `http.openResponseInTab` | (Open in tab icon) | — |
+
+The **Emacs key** column is the default Emacs keymap; **Other keymaps** gives
+the chords the CUA, Sublime Text, VS Code and IntelliJ IDEA keymaps bind (— where
+none does). On macOS those mostly use ⌘ for Ctrl; the
+[keybindings reference](/keybindings) lists every keymap.
 
 ![An .http file with a GET request and its response handler, and the response pane beside it: a Run button, a 200 OK status pill, the response picker, Body, Headers, Request and Notes tabs, and the formatted JSON body](/screenshots/docs/http-response.png "Running a request: the response opens beside the file.")
 

@@ -50,6 +50,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * {@code PATH} stands in for a secret: every platform has it.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class HttpSecretGateRound3FxTest {
 
@@ -95,7 +96,7 @@ class HttpSecretGateRound3FxTest {
             otherHits.add(URLDecoder.decode(
                     ex.getRequestURI().getRawQuery() == null
                             ? ""
-                            : ex.getRequestURI().getRawQuery(),
+                            : ex.getRequestURI().getRawQuery().replace("+", "%2B"), // a plus, not a space
                     StandardCharsets.UTF_8));
             ex.sendResponseHeaders(204, -1);
             ex.close();
@@ -188,7 +189,9 @@ class HttpSecretGateRound3FxTest {
         runAll(b);
         assertEquals(List.of(List.of(tr("dialog.httpTrust.dynamicHost"))), ops.askedHosts, "never the stale host");
         assertEquals(1, otherHits.size(), otherHits.toString());
-        assertTrue(otherHits.get(0).contains(SECRET), "approved: it went where the response said");
+        assertTrue(
+                otherHits.get(0).contains(SECRET),
+                "approved: it went where the response said: " + otherHits.get(0) + " / " + SECRET);
     }
 
     // --- G3 ---------------------------------------------------------------------------------------------------

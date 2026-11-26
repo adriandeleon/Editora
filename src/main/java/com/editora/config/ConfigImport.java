@@ -462,7 +462,8 @@ public final class ConfigImport {
     public static final String BACKUPS_DIR = "backups";
 
     /**
-     * Copies the whole configuration of {@code configDir} (API keys and HTTP history included) to
+     * Copies the configuration of {@code configDir} (HTTP history included; never the AI API keys, which export leaves
+     * out with {@code keys/}) to
      * {@code backups/config.before-import-<stamp>.zip} there, owner-only, before anything is replaced.
      */
     public static Path backup(Path configDir, LocalDateTime now) throws IOException {

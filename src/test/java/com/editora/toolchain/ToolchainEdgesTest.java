@@ -218,4 +218,23 @@ class ToolchainEdgesTest {
         JkitCli.Available fx = new JkitCli.Available("jdk", "21.0.9", 21, null, true, false, true, false, false);
         assertEquals(List.of("install", "jdk@21.0.9", "--fx"), fx.installArgs());
     }
+
+    /**
+     * On Windows jkit's {@code global/jdk} is a directory junction, which is not a symbolic link to Java, and jkit
+     * writes the target into {@code global/.jdk.target}: the default is read from there. A target that is gone is
+     * no default.
+     */
+    @Test
+    void jkitsGlobalDefaultIsReadFromItsTargetFileWhenTheLinkIsNotASymlink() throws Exception {
+        Path jkit = tmp.resolve("jkit");
+        Path install = Files.createDirectories(jkit.resolve("tools/jdk/25.0.5+8-temurin"));
+        Path global = Files.createDirectories(jkit.resolve("global"));
+        Files.createDirectories(global.resolve("jdk")); // stands in for the junction: a plain folder here
+        Files.writeString(global.resolve(".jdk.target"), install + "\r\n");
+        assertEquals(install.toAbsolutePath().normalize(), JkitInstalls.global(jkit, "jdk"));
+
+        Files.writeString(global.resolve(".jdk.target"), jkit.resolve("tools/jdk/gone") + "\n");
+        assertNull(JkitInstalls.global(jkit, "jdk"), "a target that is gone");
+        assertNull(JkitInstalls.global(jkit, "maven"), "no link, no target file");
+    }
 }

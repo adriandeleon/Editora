@@ -2,122 +2,22 @@
 title: "Java"
 description: "The Java language server and its refactorings, Java projects, and debugging Java: hot code replace, threads, and debugging through Maven or Gradle."
 category: Languages
-order: 1
+order: 10
 ---
 
 Java gets code intelligence from Eclipse JDT LS (`jdtls`), runs a compact source file, a single-file program or any main class from the gutter, and debugs with the Java debug adapter. What every language shares is on the [language servers](/docs/lsp), [running](/docs/run-debug) and [debugging](/docs/debugging) pages; this page is what is particular to Java.
 
-## Java refactorings that ask a question
+## Language server
 
-Three refactorings in the Code Actions menu need more than the caret position,
-so each one asks before it runs. They need the Java language server.
-
-**Move** depends on what the caret is on:
-
-| On | Moves it to |
-| --- | --- |
-| A class | another package, chosen from a list |
-| A nested class | its own new file, or another class |
-| A static member | another class |
-| An instance method | one of its parameters or fields |
-
-Moving a class lists the packages of its own source folders (a class in main
-code: the main packages only), and ends with **New package…**: type a package that does not exist yet and its folder
-is created under the current source folder. A Move Instance Method that jdtls
-finds problems with shows them first and moves only if you continue.
-
-**Extract Interface** shows the class's methods as a checkbox list, then asks
-for the interface's name and its package.
-
-**Change Signature** presents the method's signature as one line of text to
-edit:
-
-```java
-public String greet(Helper helper, int n)
-```
-
-In that line you can rename the method, change its visibility or return type,
-and reorder, rename, retype or remove parameters. To **add** a parameter, write
-it as `type name = value`; the value is what existing callers pass for it:
-
-```java
-public String greet(Helper helper, int n, boolean loud = false)
-```
-
-A line that cannot be read as a method signature is rejected and nothing
-changes. When Change Signature or Move changes other files, they are listed
-first, ticked, the way a [rename](/docs/lsp#rename-preview) is, and a file you untick is
-left alone.
-
-## Java-only assists
-
-**Pasted code imports itself.** Paste a snippet into a Java file and the server
-is asked which imports the pasted text needs; they are added for you, and only
-for names the pasted text uses. Only the
-language server can do this, because it needs the type resolver. An answer that
-lost a race with your typing is dropped rather than applied to text it wasn't
-computed for. In the Emacs keymap, a yank (`C-y`) and each `M-y` get the imports
-their text needs, each kill ring entry with the file it was killed from, and `M-y`
-keeps working after those imports land.
-
-**Pasting into a string escapes the text.** Pasted between the quotes of a Java
-string, `C:\temp "x"` becomes `C:\\temp \"x\"`, and pasted lines become
-concatenated strings, each ending in `\n`. Text copied from inside a string
-literal pastes as it is, already escaped. In a text block only backslashes (and a
-`"""`) are escaped, and in a char literal its backslash and quote. One Undo takes
-the paste back.
-
-**Smart semicolon placement.** Typing `;` part-way through an expression puts it
-at the end of the statement: `compute(1, 2|)` becomes `compute(1, 2);|`. The
-semicolon is never held back waiting for the server, since that would make a
-keystroke wait on a round trip. It lands where you typed it and moves afterwards
-if the server disagrees, as a single undo step. If you keep typing (the very
-common `;` then Enter), the document has moved past the answer, so the
-correction is skipped rather than applied late.
-
-Both need the Java language server running. Pasted-code imports are **on by
-default**; smart semicolon placement is **off by default**. Switch either in
-Settings → Code Completion, or with `view.togglePasteImports` and
-`view.toggleSmartSemicolon`.
-
-**Re-indent as you type** does the same on `;`, `}` and Enter. It is indentation
-only, never a reformat of the line under you, and the local auto-indent still
-acts first, so nothing feels slower and the server only corrects the cases the
-heuristic gets wrong. Off by default: turn it on in Settings → Code Completion or
-with `view.toggleOnTypeFormatting`.
-
-**A Javadoc for the declaration below.** Typing `/**` above a method or class
-closes the comment and offers the server's **Javadoc comment** template, with
-`@param`, `@return` and `@throws` for that declaration. Pressing Enter instead
-splits the comment as usual.
-
-**Organize imports and format on save.** **Organize imports on save (Java)** and
-**Format on save (Java)** in Settings → Code Completion → Language server
-features tidy a Java file after you save it, and save it again when that changed
-it, as IntelliJ's Actions on Save do. Both are off by default. Autosave never
-runs them, since organizing imports while you type would remove one you have
-just added, and an ambiguous import is left out rather than asked about. While
-Organize Imports is asking you which class to import, a save runs none of them,
-so your answer still applies.
-
-**Clean-ups.** **Code → Clean Up File** applies the jdtls clean-ups you tick
-under **Java clean-ups → Choose…** on the same Settings page: add `@Override`
-and `@Deprecated`, remove redundant modifiers and `super()` calls, qualify
-members, add `final`, use pattern-matching `instanceof`, switch expressions,
-lambdas, try-with-resources and text blocks, and more (19 in all). The first
-four are on by default; the others rewrite code, so they are yours to pick.
-**Clean up on save (Java)** runs them after an explicit save, before Organize
-Imports and Format.
-
-## The Java server and your project
+<a id="the-java-server-and-your-project"></a>
 
 - **Untrusted folders.** In a folder you have not trusted, jdtls starts
   without the project's Maven or Gradle build, and the file says so with
   **Trust Folder**; see
   [Servers that load a project's build](/docs/lsp#servers-that-load-a-projects-build).
-- **Which jdtls.** Install fetches jdtls **1.63.0**. [Doctor](/docs/troubleshooting#doctor)
+- **Which jdtls.** Install fetches jdtls **1.63.0**. [Doctor](/docs/doctor)
   names the installed version and warns when it is older, with an
-  [Update…](/docs/troubleshooting#update-for-servers-older-than-editoras)
+  [Update…](/docs/doctor#update-for-servers-older-than-editoras)
   button that installs 1.63.0 and restarts the server on it.
 - **Which JDK.** jdtls itself needs a recent Java (25 for jdtls 1.63, read from
   the installed jdtls), and is given one Editora finds even when `JAVA_HOME` is
@@ -201,6 +101,124 @@ Imports and Format.
   (`lsp.cleanJavaWorkspace`) deletes the project's jdtls index and the
   classpath it worked out, then imports the project again: the cure for a stale
   or corrupt index.
+
+### Java refactorings that ask a question
+
+Three refactorings in the Code Actions menu need more than the caret position,
+so each one asks before it runs. They need the Java language server.
+
+**Move** depends on what the caret is on:
+
+| On | Moves it to |
+| --- | --- |
+| A class | another package, chosen from a list |
+| A nested class | its own new file, or another class |
+| A static member | another class |
+| An instance method | one of its parameters or fields |
+
+Moving a class lists the packages of its own source folders (a class in main
+code: the main packages only), and ends with **New package…**: type a package that does not exist yet and its folder
+is created under the current source folder. A Move Instance Method that jdtls
+finds problems with shows them first and moves only if you continue.
+
+**Extract Interface** shows the class's methods as a checkbox list, then asks
+for the interface's name and its package.
+
+**Change Signature** presents the method's signature as one line of text to
+edit:
+
+```java
+public String greet(Helper helper, int n)
+```
+
+In that line you can rename the method, change its visibility or return type,
+and reorder, rename, retype or remove parameters. To **add** a parameter, write
+it as `type name = value`; the value is what existing callers pass for it:
+
+```java
+public String greet(Helper helper, int n, boolean loud = false)
+```
+
+A line that cannot be read as a method signature is rejected and nothing
+changes. When Change Signature or Move changes other files, they are listed
+first, ticked, the way a [rename](/docs/lsp#rename-preview) is, and a file you untick is
+left alone.
+
+### Java-only assists
+
+**Pasted code imports itself.** Paste a snippet into a Java file and the server
+is asked which imports the pasted text needs; they are added for you, and only
+for names the pasted text uses. Only the
+language server can do this, because it needs the type resolver. An answer that
+lost a race with your typing is dropped rather than applied to text it wasn't
+computed for. In the Emacs keymap, a yank (`C-y`) and each `M-y` get the imports
+their text needs, each kill ring entry with the file it was killed from, and `M-y`
+keeps working after those imports land.
+
+**Pasting into a string escapes the text.** Pasted between the quotes of a Java
+string, `C:\temp "x"` becomes `C:\\temp \"x\"`, and pasted lines become
+concatenated strings, each ending in `\n`. Text copied from inside a string
+literal pastes as it is, already escaped. In a text block only backslashes (and a
+`"""`) are escaped, and in a char literal its backslash and quote. One Undo takes
+the paste back.
+
+**Smart semicolon placement.** Typing `;` part-way through an expression puts it
+at the end of the statement: `compute(1, 2|)` becomes `compute(1, 2);|`. The
+semicolon is never held back waiting for the server, since that would make a
+keystroke wait on a round trip. It lands where you typed it and moves afterwards
+if the server disagrees, as a single undo step. If you keep typing (the very
+common `;` then Enter), the document has moved past the answer, so the
+correction is skipped rather than applied late.
+
+Both need the Java language server running. Pasted-code imports are **on by
+default**; smart semicolon placement is **off by default**. Switch either in
+Settings → Code Completion, or with `view.togglePasteImports` and
+`view.toggleSmartSemicolon`.
+
+**Re-indent as you type** does the same on `;`, `}` and Enter. It is indentation
+only, never a reformat of the line under you, and the local auto-indent still
+acts first, so nothing feels slower and the server only corrects the cases the
+heuristic gets wrong. Off by default: turn it on in Settings → Code Completion or
+with `view.toggleOnTypeFormatting`.
+
+**A Javadoc for the declaration below.** Typing `/**` above a method or class
+closes the comment and offers the server's **Javadoc comment** template, with
+`@param`, `@return` and `@throws` for that declaration. Pressing Enter instead
+splits the comment as usual.
+
+**Organize imports and format on save.** **Organize imports on save (Java)** and
+**Format on save (Java)** in Settings → Code Completion → Language server
+features tidy a Java file after you save it, and save it again when that changed
+it, as IntelliJ's Actions on Save do. Both are off by default. Autosave never
+runs them, since organizing imports while you type would remove one you have
+just added, and an ambiguous import is left out rather than asked about. While
+Organize Imports is asking you which class to import, a save runs none of them,
+so your answer still applies.
+
+**Clean-ups.** **Code → Clean Up File** applies the jdtls clean-ups you tick
+under **Java clean-ups → Choose…** on the same Settings page: add `@Override`
+and `@Deprecated`, remove redundant modifiers and `super()` calls, qualify
+members, add `final`, use pattern-matching `instanceof`, switch expressions,
+lambdas, try-with-resources and text blocks, and more (19 in all). The first
+four are on by default; the others rewrite code, so they are yours to pick.
+**Clean up on save (Java)** runs them after an explicit save, before Organize
+Imports and Format.
+
+## Running
+
+**Run File** (`file.run`: `C-c r` in the Emacs keymap, Ctrl+Shift+B (⌘⇧B on macOS) in VS Code) runs a compact source
+file, a single-file program (`java File.java`) or a `java --source` shebang
+script. In a Maven or Gradle project, every `main` gets a ▶ in the gutter and
+runs with the project's classpath. See
+[Running files](/docs/run-debug#running-files) and
+[Running a project's main class](/docs/run-debug#running-a-projects-main-class).
+
+## Tests
+
+JUnit tests in a Maven or Gradle project get a ▶ in the gutter on each test
+and test class. **Run Test at Caret** (`test.runAtCaret`) runs the test the
+caret is in through the build tool, and the results fill Test Results; see the
+[test runner](/docs/build-tools#test-runner).
 
 ## Debugging
 

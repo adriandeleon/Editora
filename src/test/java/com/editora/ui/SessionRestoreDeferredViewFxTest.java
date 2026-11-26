@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * lays out a screenful of paragraph cells on every document update, one that is not cannot.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class SessionRestoreDeferredViewFxTest {
 
@@ -49,9 +50,11 @@ class SessionRestoreDeferredViewFxTest {
         // Line 1 opens method m0's block; a saved collapsed region must survive the deferral.
         Files.writeString(
                 dir.resolve("workspace-state.json"),
-                "{\"schemaVersion\":1,\"openFiles\":[{\"path\":\"" + background + "\",\"caret\":" + caret
-                        + "},{\"path\":\"" + active + "\"}],\"activeFile\":\"" + active
-                        + "\",\"foldedRegions\":{\"" + background + "\":[1]}}");
+                "{\"schemaVersion\":1,\"openFiles\":[{\"path\":\"" + FxTestSupport.json(background) + "\",\"caret\":"
+                        + caret
+                        + "},{\"path\":\"" + FxTestSupport.json(active) + "\"}],\"activeFile\":\""
+                        + FxTestSupport.json(active)
+                        + "\",\"foldedRegions\":{\"" + FxTestSupport.json(background) + "\":[1]}}");
 
         FxWindowFixture fx = FxWindowFixture.create(dir, false, false, false, List.of(), c -> {});
         try {
@@ -112,8 +115,8 @@ class SessionRestoreDeferredViewFxTest {
         Path active = Files.writeString(dir.resolve("active.txt"), "active\n");
         Files.writeString(
                 dir.resolve("workspace-state.json"),
-                "{\"schemaVersion\":1,\"openFiles\":[{\"path\":\"" + first + "\"},{\"path\":\"" + active
-                        + "\"}],\"activeFile\":\"" + active + "\"}");
+                "{\"schemaVersion\":1,\"openFiles\":[{\"path\":\"" + FxTestSupport.json(first) + "\"},{\"path\":\""
+                        + FxTestSupport.json(active) + "\"}],\"activeFile\":\"" + FxTestSupport.json(active) + "\"}");
         List<List<Tab>> mruAtBuild = new java.util.ArrayList<>();
         FxWindowFixture fx = FxWindowFixture.create(
                 dir,

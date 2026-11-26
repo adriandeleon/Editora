@@ -83,9 +83,25 @@ public final class LinkPaths {
             // which is how ls --hyperlink and every OSC 7 spell a local file.
             if (host != null && !ShellIntegration.isThisMachine(host)) return null;
             if (uri.getPath() == null) return null;
-            return Paths.get(uri.getPath()).normalize();
+            return Paths.get(uriPath(uri.getPath(), com.editora.Os.isWindows())).normalize();
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * The path part of a {@code file:} URL as this system names it. On Windows {@code file:///C:/x} has the path
+     * {@code /C:/x}, which no Windows path parses (so the link was taken for a web address): the slash before a
+     * drive letter is dropped.
+     */
+    static String uriPath(String path, boolean windows) {
+        if (windows
+                && path.length() >= 3
+                && path.charAt(0) == '/'
+                && Character.isLetter(path.charAt(1))
+                && path.charAt(2) == ':') {
+            return path.substring(1);
+        }
+        return path;
     }
 }

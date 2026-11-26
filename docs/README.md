@@ -22,6 +22,8 @@ architecture and contributor guidance; the exhaustive historical notes are prese
 - [diff.md](diff.md) — concise guide to opening, reviewing, applying, and testing comparisons.
 - [pauta.md](pauta.md) — the Pauta edition Editora works toward, `pauta.json` and its exceptions, the
   conformance helper and the Pauta window, and what a change that touches a rule must update.
+- [claude-code-review-backlog.md](claude-code-review-backlog.md) — the ranked backlog for Claude Code
+  integration and first-class code review, with the decisions taken so far.
 
 ## How-to
 

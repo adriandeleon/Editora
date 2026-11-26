@@ -30,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * History before the edit, or refuses the edit when it cannot. Driven against the real window.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class NoUndoGuardFxTest {
 

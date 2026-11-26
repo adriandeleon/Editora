@@ -29,6 +29,11 @@ final class FxTestSupport {
 
     private FxTestSupport() {}
 
+    /** {@code path} as the inside of a JSON string: a Windows path's backslashes escaped. */
+    static String json(Object path) {
+        return path.toString().replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
     /** Idempotently start the FX toolkit + the static singletons a window build needs. */
     static synchronized void bootToolkit() throws Exception {
         if (booted) {

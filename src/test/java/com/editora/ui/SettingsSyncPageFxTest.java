@@ -45,6 +45,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * driven by the engine.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class SettingsSyncPageFxTest {
 
     @TempDir

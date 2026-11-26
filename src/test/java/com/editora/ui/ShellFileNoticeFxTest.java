@@ -7,6 +7,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
 import javafx.scene.control.Tab;
 
 import com.editora.command.CommandRegistry;
@@ -102,6 +103,37 @@ class ShellFileNoticeFxTest {
 
             assertNull(FxTestSupport.callOnFx(open(async, fx, ok)::fileNoticeText), "nothing to say about LF");
             assertNull(FxTestSupport.callOnFx(open(async, fx, dos)::fileNoticeText), "only shell scripts");
+        }
+    }
+
+    /**
+     * A Java file with a byte-order mark gets a notice — javac stops at the mark — whose action drops the mark and
+     * keeps the CRLF line endings, which javac reads. Found on Windows, where PowerShell 5 writes UTF-8 with a BOM:
+     * Run failed with "illegal character: '﻿'" and nothing in Editora had said why.
+     */
+    @Test
+    void aJavaFileWithABomGetsANoticeThatDropsOnlyTheMark(@TempDir Path dir) throws Exception {
+        String source = "public class Hello {\r\n    public static void main(String[] a) {}\r\n}\r\n";
+        Path bom = Files.write(dir.resolve("Hello.java"), ("﻿" + source).getBytes(StandardCharsets.UTF_8));
+        Path plain = Files.writeString(dir.resolve("Plain.java"), source);
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+
+            EditorBuffer b = open(async, fx, bom);
+            String text = FxTestSupport.callOnFx(b::fileNoticeText);
+            assertNotNull(text, "a Java file with a BOM gets the notice");
+            assertTrue(text.contains("Hello.java") && text.contains("javac") && text.contains("'\\ufeff'"), text);
+            StatusBar status = FxTestSupport.field(fx.controller, "statusBar");
+            Label encoding = FxTestSupport.field(status, "encoding");
+            assertTrue(FxTestSupport.callOnFx(encoding::getText).contains("BOM"), "the status bar says BOM");
+            pressNoticeAction(b);
+            assertNull(FxTestSupport.callOnFx(b::fileNoticeText), "the action closes the notice");
+            // Read as it stands, not refreshed here: it said "UTF-8 BOM" until another tab was picked.
+            assertFalse(FxTestSupport.callOnFx(encoding::getText).contains("BOM"), "the status bar follows at once");
+            save(async, fx, b);
+            assertEquals(source, Files.readString(bom), "no mark, CRLF kept");
+
+            assertNull(FxTestSupport.callOnFx(open(async, fx, plain)::fileNoticeText), "nothing to say without one");
         }
     }
 

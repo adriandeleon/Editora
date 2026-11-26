@@ -28,6 +28,15 @@ public final class GitWorktrees {
             boolean prunable) {}
 
     public static List<Worktree> parse(String porcelain) {
+        return parse(porcelain, java.io.File.separatorChar);
+    }
+
+    /**
+     * {@link #parse(String)} for a system whose separator is {@code separator}. Git for Windows writes a work
+     * tree as {@code C:/Users/…}; on Windows it is turned into the {@code C:\Users\…} every other path is shown
+     * as (and compared against).
+     */
+    static List<Worktree> parse(String porcelain, char separator) {
         List<Worktree> out = new ArrayList<>();
         if (porcelain == null) {
             return out;
@@ -59,7 +68,7 @@ public final class GitWorktrees {
             String key = space < 0 ? line : line.substring(0, space);
             String value = space < 0 ? "" : line.substring(space + 1);
             switch (key) {
-                case "worktree" -> path = value;
+                case "worktree" -> path = separator == '/' ? value : value.replace('/', separator);
                 case "HEAD" -> head = value;
                 case "branch" ->
                     branch = value.startsWith("refs/heads/") ? value.substring("refs/heads/".length()) : value;

@@ -41,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * streamed uploads, connection reuse, {@code @no-log}, and plain-language connection errors.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class HttpEngineIntegrationTest {
 
     private HttpServer server;
@@ -490,7 +491,7 @@ class HttpEngineIntegrationTest {
         assertEquals("big.bin", blob.filename());
         assertTrue(
                 CurlExport.toCurl(ex)
-                        .contains("blob=@\"" + dir.resolve("big.bin").toAbsolutePath() + "\""),
+                        .contains("blob=@\"" + curlQuoted(dir.resolve("big.bin").toAbsolutePath()) + "\""),
                 CurlExport.toCurl(ex));
     }
 
@@ -599,5 +600,10 @@ class HttpEngineIntegrationTest {
         } finally {
             quick.shutdown();
         }
+    }
+
+    /** A path as curl's -F reads it inside double quotes: backslashes (a Windows path's) escaped. */
+    static String curlQuoted(Path path) {
+        return path.toString().replace("\\", "\\\\");
     }
 }

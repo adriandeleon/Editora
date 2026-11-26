@@ -40,8 +40,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bottom consoles) keeps its size when the main window grows or shrinks, and the editor takes the difference; before,
   the panel scaled with the window, so maximizing on a wide screen turned a narrow Project tree into a third of it.
   Sizes are remembered in pixels, so a window that starts maximized opens its panels at the size you left them.
+- **F5 in an Elixir project that has not been compiled yet no longer fails after 30 s.** ElixirLS compiles the project
+  and its dependencies before it starts the program, and Editora gave up waiting with "The debugger did not answer
+  within 30 s." — on a fresh Phoenix app, every first F5. It now waits up to 10 minutes while the compiler's output
+  scrolls in the Debug console; Stop ends the wait.
+- **An agent that refuses a session is stopped.** When an agent answered a new chat or a resumed one with an error
+  (not logged in, an unknown session), its process was left running, even after the window closed.
+- **Windows fixes found by running the whole test suite there.** A terminal's `file:///C:/…` link (OSC 8, `ls
+  --hyperlink`) opens the file instead of being taken for a web address. Git work trees are named `C:\…` like every
+  other path, so Remove Work Tree's question matches the folder you see. A refused SSH connection says the host could
+  not be reached instead of "connection failed". A save in a folder Windows reports as modified (`.editora\`, a
+  collapsed folder) no longer makes the Markdown link index and the symbol index walk the whole project again.
+  A case-only rename from a language server (`Httpclient.java` → `HttpClient.java`) no longer says its tab could
+  not follow it.
+  Doctor drops a command its path already names (`jdtls` beside `~\…\bin\jdtls`). The jkit settings dialog and its
+  reports are named for a screen reader.
+- **Go: Run Test at Caret on a benchmark, and its Rerun.** With the caret in a `func Benchmark…`, Run Test at Caret
+  ran `-test.run ^BenchmarkX$`, which matches no test, so nothing ran; it now runs the benchmark alone
+  (`-test.run ^$ -test.bench ^BenchmarkX$`). Rerun Last after Run Test at Caret ran the whole package; it now runs the
+  same test again.
 - **Doctor's Settings… opens the row's own language.** On a language server or debugger row (PowerShell, Go, …),
-  Settings… opened Language Servers or Debugging on whichever language the page's Language picker last held; it now
+  Settings… opened LSP or Debugging on whichever language the page's Language picker last held; it now
   picks the row's language. ESLint, Prettier and Biome open the TypeScript card, Flutter the Dart card.
 - **Attaching to a Python on another machine.** Debug: Attach (and a launch.json `debugpy` attach with a `connect`
   host) to a Python under `debugpy --listen` on another machine or in a container connected to this machine whatever
@@ -182,7 +201,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dart and Flutter.** Editora now knows Dart: syntax colouring, comments, indenting and folding, the
   Structure panel and Go to Symbol, snippets, a New File template and its file icon. With the Dart SDK (or
   Flutter's) installed, Dart's own analysis server gives errors, completion, navigation, rename and formatting
-  (Settings ▸ Language Servers ▸ Dart); in a folder you haven't trusted it waits when the package names analyzer
+  (Settings ▸ LSP ▸ Dart); in a folder you haven't trusted it waits when the package names analyzer
   plugins, which run its code. Run File on a Dart file with a `main` runs `dart run` in its package's folder; on a
   Flutter app's file it runs `flutter run` on this computer's desktop, or on the device named in Settings ▸
   Debugging ▸ Dart. F5 debugs either on the SDK's own debugger (`dart debug_adapter`, `flutter debug_adapter`):
@@ -252,10 +271,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Settings shows one language at a time on Language Servers and Debugging.** Each page has a **Language** picker and
+- **Settings shows one language at a time on LSP and Debugging.** Each page has a **Language** picker and
   shows only that language's cards, instead of a wall of 27 servers and 9 adapters. A search ignores the pick and
   shows every language with a hit. Go's Goroutines card now sits with Go, and Build Tools' "pom.xml editing" link opens
-  Language Servers with Maven picked.
+  LSP with Maven picked.
 - **Run File says why a Java file does not run on its own.** On a `.java` that is neither a single-file program nor a
   compact source file (a library class, a class of a Maven or Gradle project), Run File now says what runs as one
   file and that a project class's `main` runs from its ▶. Its other "Not a runnable file" message no longer lists a

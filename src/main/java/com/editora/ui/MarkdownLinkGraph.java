@@ -361,7 +361,11 @@ final class MarkdownLinkGraph {
                 if (change.kind() == ProjectPanel.FsKind.DELETED) {
                     ix.remove(p);
                 } else if (Files.isDirectory(p)) {
-                    stale = true; // its contents were not reported
+                    // Only a new folder hides unreported files. A folder's own "modified" (Windows' watcher and the
+                    // polling one, for any change inside it) rebuilt the graph at every save in .editora/.
+                    if (change.kind() == ProjectPanel.FsKind.CREATED) {
+                        stale = true;
+                    }
                 } else if (MarkdownProjectFiles.isMarkdown(p)) {
                     String text = MarkdownProjectFiles.read(p);
                     if (text != null) {

@@ -164,4 +164,27 @@ class IndexCoordinatorExternalChangeFxTest {
             FxTestSupport.runOnFx(c::dispose);
         }
     }
+
+    /**
+     * Windows' watcher and the polling one report a folder as modified whenever something inside it changes (a
+     * save in {@code .editora/}). That is no new folder: the index stays, and the file reported beside it is
+     * read in place. It was taken for one, and the whole project was walked again at every such save.
+     */
+    @Test
+    void aFoldersOwnModifiedEventIsNoReasonToWalkAgain(@TempDir Path root) throws Exception {
+        Path pkg = Files.createDirectory(root.resolve("pkg"));
+        Files.writeString(pkg.resolve("Inner.java"), "class Inner {}\n");
+        IndexCoordinator c = coordinator(root);
+        try {
+            ensureBuilt(c);
+            Path fresh = Files.writeString(pkg.resolve("Fresh.java"), "class Fresh {}\n");
+            FxTestSupport.runOnFx(() -> c.onExternalChanges(
+                    List.of(new FsChange(pkg, FsKind.CHANGED), new FsChange(fresh, FsKind.CREATED)), true));
+            settle(c);
+            assertTrue(FxTestSupport.callOnFx(c::isBuilt), "a modified folder is not a new one");
+            assertEquals(List.of("Fresh"), symbols(c, "Fresh"), "the file beside it was read in place");
+        } finally {
+            FxTestSupport.runOnFx(c::dispose);
+        }
+    }
 }

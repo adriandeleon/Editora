@@ -519,6 +519,9 @@ public class App extends Application {
         // editor, and once the FX toolkit is up the cost has already been paid. On macOS the equivalent
         // routing is done by the OS (Finder's openFiles Apple Event → MacOpenFiles), so this covers the
         // platforms where a file manager can only pass argv.
+        // `editora DIR` opens DIR as a project: rewritten once here, so the hand-off and the window see the same.
+        args = folderAsProject(java.util.List.of(args), java.nio.file.Files::isDirectory)
+                .toArray(String[]::new);
         java.util.List<String> argList = java.util.List.of(args);
         if (disablePluginsFlag(argList)) {
             com.editora.plugin.PluginManager.disableForSession(); // before the prefetch thread discovers them
@@ -893,11 +896,48 @@ public class App extends Application {
                 An option not listed here is an error: nothing starts and the exit status is 2.
 
                 Arguments:
-                  FILE                  Open FILE
+                  FILE                  Open FILE (a folder opens as a project, like --project)
                   FILE:LINE             Open FILE and jump to LINE
                   FILE:LINE:COLUMN      Open FILE and jump to LINE and COLUMN
                   -- FILE ...           Every argument after -- is a file, also one whose name starts
                                         with a dash""".formatted(AppInfo.NAME);
+    }
+
+    /**
+     * {@code editora DIR} — {@code code .}'s habit, and what a file manager's "Open with" passes for a folder —
+     * opens {@code DIR} as a project: the first target that is a folder becomes {@code --project=DIR}. It used to
+     * be opened as a file and reported "Failed to open". Not when {@code --project} is given (that names the
+     * project; a folder beside it stays a target), nor for {@code --diff-ui}, whose operands may be folders.
+     */
+    static java.util.List<String> folderAsProject(
+            java.util.List<String> args, java.util.function.Predicate<java.nio.file.Path> isDirectory) {
+        if (args == null || projectArg(args) != null || diffUiFlag(args)) {
+            return args;
+        }
+        for (com.editora.ui.MainController.OpenTarget t : fileTargets(args)) {
+            if (t.line() > 0 || !isDirectory.test(t.file())) {
+                continue;
+            }
+            for (int i = 0; i < args.size(); i++) {
+                String a = args.get(i);
+                if (a != null && !a.startsWith("--") && !a.isEmpty() && pathOf(a, t.file())) {
+                    java.util.List<String> out = new java.util.ArrayList<>(args);
+                    out.remove(i);
+                    out.add(0, "--project=" + a);
+                    return java.util.List.copyOf(out);
+                }
+            }
+        }
+        return args;
+    }
+
+    /** Whether the token {@code a} names {@code file}, as {@link #fileTargets} parsed it. */
+    private static boolean pathOf(String a, java.nio.file.Path file) {
+        try {
+            return java.nio.file.Path.of(a).normalize().equals(file.normalize());
+        } catch (RuntimeException notAPath) {
+            return false;
+        }
     }
 
     /** The {@code --project=DIR} / {@code --project DIR} value, or {@code null} when not given. */

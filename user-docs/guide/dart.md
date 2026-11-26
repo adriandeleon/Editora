@@ -2,7 +2,7 @@
 title: "Dart"
 description: "Dart and Flutter: code intelligence from Dart's analysis server, Run File, tests, and debugging on the SDK's own debugger."
 category: Languages
-order: 19
+order: 4
 ---
 
 Editora knows Dart: syntax colouring, comments, indenting and folding, the
@@ -15,11 +15,11 @@ A file belongs to the **package** in the nearest folder above it with a
 **Flutter app**; one that only names `flutter_test` among its dev dependencies
 is not.
 
-## Code intelligence
+## Language server
 
-Dart's own analysis server (`dart language-server`) is Dart's
+<a id="code-intelligence"></a>Dart's own analysis server (`dart language-server`) is Dart's
 [language server](/docs/lsp): errors and warnings, completion, navigation,
-rename and formatting. Its card is **Dart** on **Settings → Language Servers**;
+rename and formatting. Its card is **Dart** on **Settings → LSP**;
 a blank command runs the `dart` on your `PATH`.
 
 An `analysis_options.yaml` can name analyzer plugins, which the server runs, so
@@ -29,7 +29,8 @@ waits while the folder has one
 
 ## Running
 
-A Dart file with a top-level `main` has a ▶ on that line. **Run File** runs it:
+A Dart file with a top-level `main` has a ▶ on that line. **Run File**
+(`file.run`: `C-c r` in the Emacs keymap, Ctrl+Shift+B (⌘⇧B on macOS) in VS Code) runs it:
 
 - a plain Dart program with `dart run`, in its package's folder (or the file's
   own folder outside a package);
@@ -51,8 +52,9 @@ file.
 
 ## Debugging
 
-**Debug: Start / Continue** (`debug.start`, F5) or **Debug File** debugs a Dart
-file on the SDK's own debugger: `dart debug_adapter` for a Dart program,
+**Debug: Start / Continue** (`debug.start`: `C-c C-d d` in the Emacs keymap,
+F5 in the VS Code, CUA and Sublime Text keymaps, Shift+F9 (⌃D on macOS) in the IntelliJ IDEA keymap) or **Debug File** debugs a
+Dart file on the SDK's own debugger: `dart debug_adapter` for a Dart program,
 `flutter debug_adapter` for a Flutter app's file, on the same device as Run
 File.
 
@@ -67,9 +69,13 @@ File.
 or `group` the caret is in, alone, on Dart's (or Flutter's) test runner;
 outside them, every test of the file.
 
-The Dart card of **Settings → Debugging**, **Dart and Flutter (dart
-debug_adapter)**, has the **dart path** and **flutter path** fields (blank:
-the one on your `PATH`), **Flutter device**, and **Enable Dart and Flutter
-debugging**. The debugger comes with the SDK, so the card has no Install
-button. [Doctor](/docs/troubleshooting#doctor) has rows for `dart` and
+## Installing
+
+The Dart SDK, or Flutter's, brings the language server and the debugger: put
+`dart` (and `flutter`) on your `PATH`, or set their paths. The Dart card of
+**Settings → Debugging**, **Dart and Flutter (dart debug_adapter)**, has the
+**dart path** and **flutter path** fields (blank: the one on your `PATH`),
+**Flutter device**, and **Enable Dart and Flutter debugging**. Neither it nor
+the Dart card of Settings → LSP has an Install button.
+[Doctor](/docs/doctor) has rows for `dart` and
 `flutter`.

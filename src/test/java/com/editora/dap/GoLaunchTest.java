@@ -135,6 +135,16 @@ class GoLaunchTest {
     }
 
     @Test
+    void runTestAtCaretRunsABenchmarkWithBenchNotRun() {
+        // Regression: Run Test at Caret ran a benchmark with -test.run ^BenchmarkAdd$, which matches no test.
+        assertEquals(
+                List.of("-test.run", "^$", "-test.bench", "^BenchmarkAdd$", "-test.v"),
+                GoLaunch.testAtCaretArgs(TESTS, 14));
+        assertEquals(List.of("-test.run", "^TestAdd$", "-test.v"), GoLaunch.testAtCaretArgs(TESTS, 8));
+        assertEquals(List.of("-test.v"), GoLaunch.testAtCaretArgs(TESTS, 4), "in no test: the whole file's tests");
+    }
+
+    @Test
     void aModulesFileDebugsItsPackageAndAnotherFileItself(@TempDir Path dir) throws Exception {
         Path pkg = Files.createDirectories(dir.resolve("mod/cmd/app"));
         Files.writeString(dir.resolve("mod/go.mod"), "module example.com/mod\n");

@@ -60,6 +60,12 @@ public record ConnectFailure(Kind kind, String detail) {
             }
         }
         String text = detail.toLowerCase(Locale.ROOT);
+        if (WINDOWS_UNREACHABLE.stream().anyMatch(text::contains)) {
+            // Windows' asynchronous sockets (MINA's NIO2 transport) fail a connect with a plain IOException
+            // carrying the system's text, not a ConnectException: ERROR_CONNECTION_REFUSED (1225),
+            // ERROR_NETWORK_UNREACHABLE (1231), ERROR_HOST_UNREACHABLE (1232)
+            return new ConnectFailure(Kind.UNREACHABLE, detail);
+        }
         if (text.contains("within specified timeout") || text.contains("timed out") || text.contains("timeout")) {
             return new ConnectFailure(Kind.TIMED_OUT, detail);
         }
@@ -71,6 +77,12 @@ public record ConnectFailure(Kind kind, String detail) {
         }
         return new ConnectFailure(Kind.OTHER, detail);
     }
+
+    /** The English system messages for a refused or unreachable connect on Windows, lower-cased. */
+    private static final java.util.List<String> WINDOWS_UNREACHABLE = java.util.List.of(
+            "refused the network connection",
+            "the network location cannot be reached",
+            "the remote system is not reachable by the transport");
 
     private static String detail(Throwable t) {
         String m = t.getMessage();

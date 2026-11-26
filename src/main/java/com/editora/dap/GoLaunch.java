@@ -123,6 +123,18 @@ public final class GoLaunch {
         return List.of("-test.run", exact);
     }
 
+    /**
+     * Run Test at Caret's test binary arguments in test file {@code text} at 0-based {@code line}: the test function
+     * there run alone ({@link #testArgs}: a benchmark with {@code -test.bench}, no test), verbose; the whole file's
+     * tests, verbose, when the line is in no test function.
+     */
+    public static List<String> testAtCaretArgs(String text, int line) {
+        String test = testAt(text, line);
+        List<String> args = new ArrayList<>(test == null ? List.of() : testArgs(test));
+        args.add("-test.v");
+        return List.copyOf(args);
+    }
+
     /** The folder holding {@code file}'s {@code go.mod}, the file's own or an enclosing one's; null outside a module. */
     public static @Nullable Path moduleRoot(Path file) {
         Path abs = file.toAbsolutePath();

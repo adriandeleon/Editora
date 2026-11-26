@@ -123,6 +123,17 @@ is only hashed, never rewritten.
 `MainController.bufferOf(Tab)` (returns the buffer or `null`), and make tab-switch consumers
 null-safe. See [architecture.md](architecture.md#tabs-are-tabcontent-not-always-buffers).
 
+## Rendered frames are not a count of Editora's work on a slow macOS runner
+
+`PerfBudgetFxTest` once budgeted the frames JavaFX rendered (`PerformanceTracker`'s rendered-frame task). On
+GitHub's macOS runners (an Apple M1 virtual machine with 3 cores) the same commit measured 1.05 rendered frames per
+keystroke on one runner and 1.24–1.45 on another. A fresh runner could land on either side, so the cause was not
+other tests, Spotlight or what the suite left on disk. A trace of the scene's dirty nodes in every pulse found about
+700 pulses after the keys' own pulses with nothing dirty. The slow run still rendered 0.3 frames a key more: JavaFX
+re-rendering unchanged frames on its own, with slightly more pulses (4.6 a key against 4.45). The budgets now count
+pulses whose scene has dirty nodes or dirty bits after layout. That counts the work a change adds, and measures
+1.045–1.080 on macOS and 1.020 on Linux. Rendered frames are still printed, without a budget.
+
 ## The `NO_ROOT` sentinel `Path` must not contain a NUL
 
 **Symptom:** a corrupt/throwing static initializer if the git repo-root cache sentinel were built

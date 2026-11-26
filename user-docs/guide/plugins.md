@@ -1,8 +1,8 @@
 ---
 title: Plugins
 description: Install plugins from the registry, fix one that does not work, and write your own to extend Editora.
-category: Customization
-order: 4
+category: Integrations
+order: 3
 ---
 
 Editora can be extended with **plugins**, which add commands, keybindings, tool

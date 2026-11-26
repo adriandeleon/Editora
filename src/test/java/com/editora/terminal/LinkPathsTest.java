@@ -73,6 +73,17 @@ class LinkPathsTest {
     }
 
     @Test
+    void aWindowsFileUrlLosesTheSlashBeforeItsDrive() {
+        // file:///C:/x has the path /C:/x, which Windows refuses to parse: the link was opened as a web address.
+        assertEquals("C:/Users/me/Bar.java", LinkPaths.uriPath("/C:/Users/me/Bar.java", true));
+        assertEquals("/C:/odd", LinkPaths.uriPath("/C:/odd", false), "elsewhere it is a folder called C:");
+        assertEquals("/tmp/x", LinkPaths.uriPath("/tmp/x", true));
+        if (com.editora.Os.isWindows()) {
+            assertEquals(Path.of("C:\\Users\\me\\Bar.java"), LinkPaths.fromFileUri("file:///C:/Users/me/Bar.java"));
+        }
+    }
+
+    @Test
     void anotherHostsFileUrlIsNotOursToOpen() {
         assertNull(LinkPaths.fromFileUri("file://fileserver/share/x"));
     }

@@ -41,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * where the running ■ goes when the requests move.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class HttpHistoryRound2FxTest {
 
     private static final long WAIT_SECONDS = 30;
@@ -219,7 +220,13 @@ class HttpHistoryRound2FxTest {
         assertTrue(put.contains("--data-binary '@" + work.resolve("big.bin").toAbsolutePath()), put);
         assertTrue(put.contains("--http1.1"), put);
         assertFalse(put.contains("(body from"), "never the summary as the body: " + put);
-        assertTrue(form.contains("-F 'f=@\"" + work.resolve("pic.bin").toAbsolutePath()), form);
+        assertTrue(
+                form.contains("-F 'f=@\""
+                        + work.resolve("pic.bin")
+                                .toAbsolutePath()
+                                .toString()
+                                .replace("\\", "\\\\")), // as curl reads it in quotes
+                form);
         assertFalse(form.contains("--data-raw"), form);
     }
 

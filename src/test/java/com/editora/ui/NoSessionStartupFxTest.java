@@ -28,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * it back on quit would replace the user's saved tabs with the single file they opened from the file manager.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class NoSessionStartupFxTest {
 
@@ -42,12 +43,14 @@ class NoSessionStartupFxTest {
             if (!open.isEmpty()) {
                 open.append(',');
             }
-            open.append("{\"path\":\"").append(f.toAbsolutePath()).append("\"}");
+            open.append("{\"path\":\"")
+                    .append(FxTestSupport.json(f.toAbsolutePath()))
+                    .append("\"}");
         }
         Files.writeString(
                 dir.resolve("workspace-state.json"),
-                "{\"schemaVersion\":1,\"openFiles\":[" + open + "],\"activeFile\":\"" + files[0].toAbsolutePath()
-                        + "\"}");
+                "{\"schemaVersion\":1,\"openFiles\":[" + open + "],\"activeFile\":\""
+                        + FxTestSupport.json(files[0].toAbsolutePath()) + "\"}");
         return dir;
     }
 

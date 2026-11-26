@@ -38,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * folder's parts use each other, opened from ⋯, a row's menu or a file card's menu, read from the files' imports.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class MapDependencyCardFxTest {
 
@@ -325,7 +326,8 @@ class MapDependencyCardFxTest {
         ProjectMapDependencyCard card = FxTestSupport.callOnFx(() -> {
             ProjectMapDependencyCard made = new ProjectMapDependencyCard();
             made.setOnReveal(path -> revealed.add(project.relativize(path).toString()));
-            made.setOnOpen((path, line) -> opened.add(project.relativize(path) + ":" + line));
+            made.setOnOpen((path, line) -> opened.add(
+                    project.relativize(path).toString().replace(java.io.File.separatorChar, '/') + ":" + line));
             javafx.scene.layout.Pane host = new javafx.scene.layout.Pane(made);
             Scene scene = new Scene(host, 1000, 800);
             scene.getStylesheets()

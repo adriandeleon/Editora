@@ -1,8 +1,8 @@
 ---
 title: HTML
 description: Tag auto-close and rename, comments and indentation inside style and script, links you can follow, markup checks, templates, the HTML language server, and a live preview in your browser.
-category: Editing
-order: 3.5
+category: Languages
+order: 8
 ---
 
 Files ending in `.html`, `.htm` and `.xhtml` open as HTML. Most of what this
@@ -451,7 +451,7 @@ says so on a banner, once:
 
 Its **Update** installs Editora's copy and moves the running servers to it.
 The banner is not shown when the HTML command is your own.
-[Doctor](/docs/troubleshooting#doctor)'s HTML row warns about such a copy too
+[Doctor](/docs/doctor)'s HTML row warns about such a copy too
 and offers **Update**.
 
 With the HTML, CSS and JSON commands left blank in Settings → LSP, Editora

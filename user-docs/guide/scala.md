@@ -2,7 +2,7 @@
 title: "Scala"
 description: "Metals, running Scala programs and scripts, and debugging Scala."
 category: Languages
-order: 9
+order: 19
 ---
 
 Scala gets code intelligence from Metals, runs programs and `.sc` scripts from the gutter, and debugs through Metals.
@@ -21,7 +21,7 @@ Metals works on the build it finds at the workspace root: an sbt build
 CLI project (`project.scala`), a build already exported over BSP (`.bsp/`), or a
 Gradle or Maven build. The first time it sees one it asks whether to **import
 the build**; the question appears as a dialog, and the editor stays usable while
-it is open. An import runs the build tool and compiles the project, which takes
+it is open. Any server's question with buttons gets the same dialog. An import runs the build tool and compiles the project, which takes
 a minute or more the first time. Metals shows its progress in the status bar.
 In a folder you have not trusted, Metals waits until you trust it (see
 [Servers that load a project's build](/docs/lsp#servers-that-load-a-projects-build)).
@@ -31,13 +31,11 @@ references, rename, the outline and formatting (with a `.scalafmt.conf`). When
 Metals asks for a value or a choice of its own, a text field or a picker opens.
 
 A `build.sbt`, `build.mill`, `build.sc` or `project.scala` at a project's root
-makes [Doctor](/docs/troubleshooting#doctor) expect Metals.
+makes [Doctor](/docs/doctor) expect Metals.
 
-Any server's question with buttons gets the same dialog.
+## Running
 
-## Running Scala files
-
-How a Scala file runs depends on the build it belongs to:
+<a id="running-scala-files"></a>How a Scala file runs depends on the build it belongs to:
 
 - A file of an **sbt** build (a `build.sbt` above it) runs its main class
   through sbt, in the sbt console of the [Output window](/docs/build-tools):
@@ -67,6 +65,14 @@ passes as `JAVA_HOME`. Editora finds it as `scala-cli` on your `PATH`, then
 `scalacli` and `scala`. When there is none, Run says Scala CLI is not installed
 instead of starting anything. The first run of a Scala version downloads its
 compiler, so it takes longer.
+
+## Tests
+
+Scala tests run with the build's own test task from its
+[tasks window](/docs/build-tools): `test` in sbt, `__.test` in Mill, `test` in
+Scala CLI. Their output stays in the Output console, since the
+[Test Results](/docs/build-tools#test-runner) window does not read it yet, and a
+Scala test file has no ▶ per test.
 
 ## Debugging
 

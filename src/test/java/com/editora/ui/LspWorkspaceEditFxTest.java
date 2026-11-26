@@ -60,6 +60,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * merely by checking the returned boolean.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class LspWorkspaceEditFxTest {
 
@@ -502,7 +503,9 @@ class LspWorkspaceEditFxTest {
                 List.of(),
                 List.of());
 
-        assertTrue(FxTestSupport.callOnFx(() -> coordinator.applyWorkspaceEdits(mapped)));
+        assertTrue(
+                FxTestSupport.callOnFx(() -> coordinator.applyWorkspaceEdits(mapped)),
+                () -> "refused: " + host.status + " / " + host.error);
 
         assertEquals("class HttpClient {}\n", FxTestSupport.callOnFx(b::getContent));
         try (var files = Files.list(root)) {

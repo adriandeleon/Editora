@@ -23,6 +23,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * nothing and the item was hidden.
  */
 @Tag("fx")
+@org.junit.jupiter.api.condition.DisabledOnOs(
+        value = org.junit.jupiter.api.condition.OS.WINDOWS,
+        disabledReason =
+                "the embedded host runs commands with this machine's /bin/sh (EmbeddedSftpFixture.startWithShell)")
 class PythonInterpreterRemoteFxTest {
 
     @TempDir

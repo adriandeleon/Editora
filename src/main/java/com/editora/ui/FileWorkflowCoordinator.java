@@ -1620,7 +1620,12 @@ final class FileWorkflowCoordinator {
                             ? load.document().lineEnding()
                             : com.editora.editops.LineEndings.dominant(text),
                     buffer.getEffectiveCharset(),
-                    host::setStatus);
+                    converted -> {
+                        // The tab and the status bar's line ending and encoding say what the next save writes.
+                        host.updateTabMeta(host.tabFor(buffer), buffer);
+                        host.editorSettings().refreshStatusBarFor(buffer);
+                        host.setStatus(converted);
+                    });
         }
         if (load.truncated() && com.editora.io.GzipText.isGzip(load.file())) {
             String name = String.valueOf(load.file().getFileName());

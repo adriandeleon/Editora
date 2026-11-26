@@ -2530,6 +2530,18 @@ final class LspCoordinator {
                                 && com.editora.config.PathKeys.sameNormalized(file.getParent(), root)));
     }
 
+    /**
+     * Something outside Editora changed files in the project (a terminal's {@code jkit pin}, another editor, a
+     * {@code git checkout}): when that touched one of its project files, or the watcher lost events and cannot say
+     * ({@code complete} false), what applies is read again. Only a save from Editora itself used to do that, so a
+     * {@code jkit.toml} created beside the window was ignored until a restart and Run kept using PATH's java.
+     */
+    void projectFilesChanged(List<ProjectPanel.FsChange> changes, boolean complete) {
+        if (!complete || changes.stream().anyMatch(c -> isProjectSettingsFile(c.path()))) {
+            reloadProjectSettings();
+        }
+    }
+
     /** The overrides in force when {@link #applySupport} last configured the manager. */
     private String appliedProjectOverrides = "";
 

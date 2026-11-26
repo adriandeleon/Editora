@@ -89,7 +89,30 @@ class RunTestAtCaretProbeFxTest {
                 	if Add(2, 3) != 5 { t.Fail() }
                 }
                 """);
-        runAtCaret(dir, test, 9, "--- PASS: TestAddsMore", "--- PASS: TestAdds ", 300);
+        runAtCaret(dir, test, 9, "--- PASS: TestAddsMore", "--- PASS: TestAdds ", 300, true);
+    }
+
+    @Test
+    void goBenchmark(@TempDir Path dir) throws Exception {
+        needs("go");
+        Path pkg = Files.createDirectories(dir.resolve("calc")).toRealPath();
+        Files.writeString(pkg.resolve("go.mod"), "module calc\n\ngo 1.21\n");
+        Files.writeString(pkg.resolve("calc.go"), "package calc\n\nfunc Add(a, b int) int { return a + b }\n");
+        Path test = Files.writeString(pkg.resolve("calc_test.go"), """
+                package calc
+
+                import "testing"
+
+                func TestAdds(t *testing.T) {
+                	if Add(2, 2) != 4 { t.Fail() }
+                }
+
+                func BenchmarkAdd(b *testing.B) {
+                	for i := 0; i < b.N; i++ { Add(2, 3) }
+                }
+                """);
+        // Regression: the benchmark ran as -test.run ^BenchmarkAdd$, which ran nothing ("no tests to run").
+        runAtCaret(dir, test, 9, "ns/op", "--- PASS: TestAdds", 200);
     }
 
     @Test
@@ -236,6 +259,12 @@ class RunTestAtCaretProbeFxTest {
      */
     private static void runAtCaret(Path dir, Path file, int line, String ran, String other, int seconds)
             throws Exception {
+        runAtCaret(dir, file, line, ran, other, seconds, false);
+    }
+
+    /** As above; with {@code rerun}, Rerun afterwards must run the same test alone again (it ran the whole file). */
+    private static void runAtCaret(Path dir, Path file, int line, String ran, String other, int seconds, boolean rerun)
+            throws Exception {
         Path configDir = Files.createDirectory(dir.resolve("config"));
         SharedConfig seed = new SharedConfig(configDir, false);
         seed.load();
@@ -263,6 +292,18 @@ class RunTestAtCaretProbeFxTest {
                 assertFalse(output(c).contains(other), "the other test ran too:\n" + output(c));
             }
             await("the run's end", 120, () -> !call(() -> c.runCoordinator.isRunning()));
+            if (rerun) {
+                FxTestSupport.runOnFx(() -> {
+                    c.runCoordinator.clearConsole();
+                    c.runCoordinator.rerunLast();
+                });
+                await("the rerun's " + ran, seconds, () -> output(c).contains(ran));
+                await("the rerun's end", 120, () -> !call(() -> c.runCoordinator.isRunning()));
+                if (other != null) {
+                    // Regression: Rerun dropped the test's filter and ran the whole package.
+                    assertFalse(output(c).contains(other), "Rerun ran the other test too:\n" + output(c));
+                }
+            }
         } finally {
             fx.dispose();
         }

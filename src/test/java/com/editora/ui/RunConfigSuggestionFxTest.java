@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
  * is which buffers count as a source of a main class at all.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class RunConfigSuggestionFxTest {
 

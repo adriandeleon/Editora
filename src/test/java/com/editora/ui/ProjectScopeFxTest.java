@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
  * trusted; until then the user's own values apply.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class ProjectScopeFxTest {
 
     private FxWindowFixture fx;
@@ -106,7 +107,10 @@ class ProjectScopeFxTest {
             scope.filePins = r -> com.editora.toolchain.ProjectToolchain.sdkmanrcPins(
                     com.editora.toolchain.SdkmanRc.read(r)); // as without jkit, whatever this machine has
             scope.reload();
-            assertEquals("/jk/jdk21", scope.jdkHome(config.getSettings()), "untrusted: .sdkmanrc's java=");
+            assertEquals(
+                    Path.of("/jk/jdk21").toString(),
+                    scope.jdkHome(config.getSettings()),
+                    "untrusted: .sdkmanrc's java=");
             assertEquals(
                     Path.of("/jk/mvn", "bin", com.editora.Os.isWindows() ? "mvn.cmd" : "mvn")
                             .toString(),
@@ -115,7 +119,10 @@ class ProjectScopeFxTest {
 
             config.getTrustStore().trust(project);
             scope.reload();
-            assertEquals("/jk/jdk25", scope.jdkHome(config.getSettings()), "trusted: the project file's toolchain.jdk");
+            assertEquals(
+                    Path.of("/jk/jdk25").toString(),
+                    scope.jdkHome(config.getSettings()),
+                    "trusted: the project file's toolchain.jdk");
             assertEquals("./tools/mvn", scope.buildCommand(com.editora.build.BuildTool.MAVEN, config.getSettings()));
         });
         Files.delete(project.resolve(".sdkmanrc"));
@@ -158,7 +165,7 @@ class ProjectScopeFxTest {
                             "jkit.toml",
                             null));
             scope.reload();
-            assertEquals("/jk/zulu21", scope.jdkHome(config.getSettings()), "the JDK jkit picked");
+            assertEquals(Path.of("/jk/zulu21").toString(), scope.jdkHome(config.getSettings()), "the JDK jkit picked");
             assertEquals(
                     Path.of("/jk/sbt", "bin", com.editora.Os.isWindows() ? "sbt.bat" : "sbt")
                             .toString(),
@@ -243,6 +250,46 @@ class ProjectScopeFxTest {
                 MarkdownLintActions.configExec = look;
             }
             assertEquals("# Title\n\nword  after\n", buffer.getContent(), "two spaces: the project's tab size");
+        });
+    }
+
+    /**
+     * A project file written outside Editora — {@code jkit pin} in a terminal, another editor — is read as soon as
+     * the project's watcher reports it, not at the next restart. Found on Windows: a {@code jkit.toml} created
+     * beside an open window left Run on PATH's java (there was none) until Editora was restarted.
+     */
+    @Test
+    void aProjectFileWrittenElsewhereAppliesWhenTheWatcherSeesIt() throws Exception {
+        com.editora.toolchain.ToolInstall jdk21 = new com.editora.toolchain.ToolInstall(
+                "jdk", "21.0.9+10", "temurin", false, Path.of("/jk/jdk21"), "jkit", "21.0.9+10-temurin");
+        FxTestSupport.runOnFx(() -> {
+            config.getSettings().setMavenJdkHome("/mine/jdk");
+            ProjectScope scope = scope();
+            scope.reads = Runnable::run;
+            scope.toolchainReads = Runnable::run;
+            scope.installs =
+                    () -> new com.editora.toolchain.ProjectToolchain.Installs(List.of(jdk21), List.of(), List.of());
+            scope.filePins =
+                    r -> com.editora.toolchain.ProjectToolchain.sdkmanrcPins(com.editora.toolchain.SdkmanRc.read(r));
+            scope.reload();
+            assertEquals("/mine/jdk", scope.jdkHome(config.getSettings()), "nothing named yet: the Default JDK");
+        });
+        Path sdkmanrc = project.resolve(".sdkmanrc");
+        Files.writeString(sdkmanrc, "java=21.0.9-tem\n"); // by another program: Editora saved nothing
+        FxTestSupport.runOnFx(() -> {
+            ProjectPanel panel = FxTestSupport.field(fx.controller, "projectPanel");
+            java.util.function.Consumer<ProjectWatchChanges.Plan> watcher =
+                    FxTestSupport.field(panel, "onExternalChange");
+            watcher.accept(new ProjectWatchChanges.Plan(
+                    false,
+                    java.util.Set.of(project),
+                    List.of(),
+                    List.of(new ProjectPanel.FsChange(sdkmanrc, ProjectPanel.FsKind.CREATED)),
+                    false));
+            assertEquals(
+                    Path.of("/jk/jdk21").toString(),
+                    scope().jdkHome(config.getSettings()),
+                    "the new .sdkmanrc's java=");
         });
     }
 }

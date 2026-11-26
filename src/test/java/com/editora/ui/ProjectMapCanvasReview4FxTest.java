@@ -34,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * long folder (D3) and the label elision's cache (D5).
  */
 @Tag("fx")
+@Tag("windows-fx")
 class ProjectMapCanvasReview4FxTest {
 
     @TempDir
@@ -263,7 +264,8 @@ class ProjectMapCanvasReview4FxTest {
         Path project = project();
         Path names = Files.createDirectory(project.resolve("names"));
         Path longName = Files.writeString(names.resolve("x".repeat(200) + ".txt"), "");
-        Files.writeString(names.resolve("a&b<c>.txt"), "");
+        Files.writeString(
+                names.resolve(com.editora.Os.isWindows() ? "a&b'c'.txt" : "a&b<c>.txt"), ""); // no <> on Windows
         Files.writeString(names.resolve("über Ω.txt"), "");
         Files.writeString(names.resolve("emoji😀.txt"), "");
         try (Harness h = open(project, 1000, 700)) {

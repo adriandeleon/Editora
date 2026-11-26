@@ -2,25 +2,32 @@
 title: "Lua"
 description: "Lua code intelligence with lua-language-server, and debugging with Local Lua Debugger."
 category: Languages
-order: 20
+order: 13
 ---
 
 Lua gets code intelligence from **lua-language-server** and debugging from
 **Local Lua Debugger**, the debugger of VS Code's Local Lua Debugger extension.
 
-## Code intelligence
+## Language server
 
-`lua-language-server` is Lua's [language server](/docs/lsp): diagnostics,
+<a id="code-intelligence"></a>`lua-language-server` is Lua's [language server](/docs/lsp): diagnostics,
 completion, hover, go to definition, references, rename and document symbols.
 Editora finds it on your `PATH`, or at the command set on the Lua card of
-**Settings → Language Servers**; the card's **Install…** downloads its release
+**Settings → LSP**; the card's **Install…** downloads its release
 for your system into your config folder
 (see [One-click install](/docs/lsp#one-click-install)).
 
+## Running
+
+A Lua file has no ▶ and no Run File. Run a script under the debugger with
+**Debug: Start / Continue** (see [Debugging](#debugging)), or with `lua` in the
+[Terminal](/docs/terminal).
+
 ## Debugging
 
-**Debug: Start / Continue** (`debug.start`, F5) on a `.lua` script debugs it,
-in its folder, with the arguments set by **File: Run with Arguments…**:
+**Debug: Start / Continue** (`debug.start`: `C-c C-d d` in the Emacs keymap,
+F5 in the VS Code, CUA and Sublime Text keymaps, Shift+F9 (⌃D on macOS) in the IntelliJ IDEA keymap) on a `.lua`
+script debugs it, in its folder, with the arguments set by **File: Run with Arguments…**:
 
 - **Breakpoints**, with conditions.
 - **Stepping** and the **call stack**.
@@ -39,6 +46,8 @@ works too, as it does in VS Code: its `program` names the `lua` interpreter and
 the `file` to run, with its `args` and `cwd`. Local Lua Debugger only launches
 scripts, so a `lua-local` attach is not supported.
 
+## Installing Local Lua Debugger
+
 Editora finds Local Lua Debugger's `debugAdapter.js`:
 
 - at the path set on the **Lua (local-lua-debugger)** card of
@@ -50,4 +59,4 @@ Editora finds Local Lua Debugger's `debugAdapter.js`:
 
 The debugger runs on **Node.js**, which must be on your `PATH`. The card's
 **Enable Lua debugging** switch turns Lua debugging off and on, and
-[Doctor](/docs/troubleshooting#doctor) has a row for it.
+[Doctor](/docs/doctor) has a row for it.

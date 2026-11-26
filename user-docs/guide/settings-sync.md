@@ -2,7 +2,7 @@
 title: Settings sync
 description: Keep snippets, abbreviations, templates, your personal dictionary, and your shortcuts the same on every computer, through a private Git repository you own.
 category: Customization
-order: 8
+order: 2
 beta: true
 ---
 

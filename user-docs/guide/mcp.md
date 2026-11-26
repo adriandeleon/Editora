@@ -1,8 +1,8 @@
 ---
 title: MCP server
 description: Let an LLM agent observe editor state and run commands through an embedded Model Context Protocol server.
-category: Customization
-order: 5
+category: Integrations
+order: 2
 beta: true
 ---
 

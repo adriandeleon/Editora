@@ -353,8 +353,28 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
     }
 
     private static String remotePath(Path path) {
+        String drive = drivePath(path.normalize().toString());
+        if (drive != null) {
+            return drive;
+        }
         String value = path.toAbsolutePath().normalize().toString();
         return value.startsWith("/") ? value : "/" + value;
+    }
+
+    /**
+     * {@code C:/Users/me} as {@code /C:/Users/me}, or null when {@code value} does not start with a drive. A
+     * Windows host can name its home that way (Apache MINA's server does), which the SFTP client takes for a
+     * relative path: making it absolute asked the server, and a durable URI could not be had once the connection
+     * was gone (a reconnect, a session saved after a drop).
+     */
+    static @Nullable String drivePath(String value) {
+        if (value.length() >= 3
+                && Character.isLetter(value.charAt(0))
+                && value.charAt(1) == ':'
+                && (value.charAt(2) == '/' || value.charAt(2) == '\\')) {
+            return "/" + value.replace('\\', '/');
+        }
+        return null;
     }
 
     /** Connects (off-thread) and posts the {@link Result} on the FX thread; {@code secret} (a password or

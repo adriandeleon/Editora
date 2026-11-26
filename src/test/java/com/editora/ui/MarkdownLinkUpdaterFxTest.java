@@ -336,6 +336,10 @@ class MarkdownLinkUpdaterFxTest {
         Path fresh = Files.writeString(root.resolve("fresh.md"), "[[c]]\n");
         FxTestSupport.runOnFx(() ->
                 graph.onExternalChanges(List.of(new ProjectPanel.FsChange(fresh, ProjectPanel.FsKind.CREATED)), true));
+        // A folder reported as modified (Windows' and the polling watcher's account of a change inside it) is not a
+        // new folder whose files nobody reported: no walk. It used to mark the whole graph stale.
+        FxTestSupport.runOnFx(() -> graph.onExternalChanges(
+                List.of(new ProjectPanel.FsChange(root.resolve("sub"), ProjectPanel.FsKind.CHANGED)), true));
         EditorBuffer saved = open(host, Files.writeString(root.resolve("saved.md"), "nothing yet\n"));
         FxTestSupport.runOnFx(() -> {
             saved.setContent("[c](sub/c.md)\n");

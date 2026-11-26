@@ -317,7 +317,10 @@ final class LspWorkspaceEdits {
             lsp.clearDiagnostics(rename.from());
             ops.fileRenamed(from, to); // remaps the open buffer's path + tab + session state
             if (open != null) {
-                if (from.equals(lsp.lspPath(open))) {
+                // By spelling: on Windows Path.equals ignores case, so after a case-only rename
+                // (Httpclient.java → HttpClient.java) a tab that did follow its file compared equal to the old path.
+                Path now = lsp.lspPath(open);
+                if (now != null && from.toString().equals(now.toString())) {
                     orphaned.add(from);
                 } else {
                     lsp.syncBufferWhenShown(open); // re-open the document under its NEW uri

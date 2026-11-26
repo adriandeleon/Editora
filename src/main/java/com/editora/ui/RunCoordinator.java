@@ -1161,7 +1161,8 @@ final class RunCoordinator {
             @Nullable Path dir,
             Runnable again,
             boolean configured,
-            int testLine) {} // the 0-based line a Rust test file's run is narrowed to (Run Test at Caret), else -1
+            int testLine) {} // the 0-based line a Go or Rust test file's run is narrowed to (Run Test at Caret),
+    // else -1
 
     /** A built program found for a {@link CompiledRun}, or why there is none ({@code problem}, said as it is). */
     private record Built(
@@ -1230,7 +1231,10 @@ final class RunCoordinator {
         launchCompiledFile(language, path, args, -1);
     }
 
-    /** As above; a Rust test file's run narrowed to the test at 0-based {@code testLine} (-1: every test). */
+    /**
+     * As above; a Go or Rust test file's run narrowed to the test at 0-based {@code testLine} (-1: every test). The
+     * line, not the test's arguments, is what Rerun keeps: it reads the file again and runs the same test.
+     */
     private void launchCompiledFile(String language, Path path, List<String> args, int testLine) {
         if (!com.editora.process.ExecTargets.runsHere(path)) {
             host.setStatus(tr("status.run.compiledFileRemote", path.getFileName()));
@@ -1423,18 +1427,31 @@ final class RunCoordinator {
                             declared = null; // unreadable: go says so
                         }
                     }
+                    List<String> testArgs = List.of();
+                    if (run.testLine() >= 0) { // Run Test at Caret (or its Rerun): the test at that line, read again
+                        String text;
+                        try {
+                            text = java.nio.file.Files.readString(source);
+                        } catch (java.io.IOException e) {
+                            text = ""; // unreadable: go says so
+                        }
+                        testArgs = com.editora.dap.GoLaunch.testAtCaretArgs(text, run.testLine());
+                    }
                     Path module = com.editora.dap.GoLaunch.moduleRoot(source);
                     if (module != null) {
                         ops.buildExecutableFacts(com.editora.build.BuildTool.GO, module);
                     }
-                    return new GoPlan(declared, module);
+                    return new GoPlan(declared, module, testArgs);
                 },
                 plan -> runGoPlanned(run, source, folder, plan));
     }
 
-    /** What a Go Run read off the FX thread: the file's package clause and its module's root. */
+    /**
+     * What a Go Run read off the FX thread: the file's package clause, its module's root, and the test binary's
+     * arguments for Run Test at Caret's test (empty for any other run).
+     */
     private record GoPlan(
-            @Nullable String declared, @Nullable Path module) {}
+            @Nullable String declared, @Nullable Path module, List<String> testArgs) {}
 
     private void runGoPlanned(CompiledRun run, Path source, Path folder, GoPlan planned) {
         String declared = planned.declared();
@@ -1480,12 +1497,9 @@ final class RunCoordinator {
                             "status.run.compiledBuild",
                             // A program, not a package's archive (what go writes for a package whose clause was not
                             // read).
-                            () -> Built.of(
-                                    java.nio.file.Files.isRegularFile(output)
-                                                    && java.nio.file.Files.isExecutable(output)
-                                            ? output
-                                            : null,
-                                    missing),
+                            () -> java.nio.file.Files.isRegularFile(output) && java.nio.file.Files.isExecutable(output)
+                                    ? new Built(output, planned.testArgs(), null)
+                                    : Built.of(null, missing),
                             folder));
         });
     }
@@ -3294,7 +3308,8 @@ final class RunCoordinator {
             com.editora.run.PythonWebApps.@Nullable Server web,
             com.editora.run.PhpApps.@Nullable Plan php,
             com.editora.run.RubyApps.@Nullable Plan ruby,
-            com.editora.run.ElixirRun.@Nullable Plan elixir) {}
+            com.editora.run.ElixirRun.@Nullable Plan elixir,
+            String fallbackJdk) {}
 
     private FilePlan planFile(
             String language,
@@ -3368,8 +3383,30 @@ final class RunCoordinator {
                                 project,
                                 java.nio.file.Files::isRegularFile,
                                 ElixirDebugLaunch::read)
-                        : null);
+                        : null,
+                fallbackJdk(language, path));
     }
+
+    /**
+     * The JDK a local Java or JVM-script run falls back to when none is chosen and PATH has no {@code java}: jkit's
+     * default ({@code jkit use --global}); blank when PATH has one, there is no such default, or the file runs on a
+     * host. Reads the disk: with the plan, off the FX thread.
+     */
+    private static String fallbackJdk(String language, Path path) {
+        boolean jvm = "java".equals(language) || com.editora.run.JvmScriptRun.supports(language);
+        if (!jvm || !com.editora.process.ExecTargets.runsHere(path)) {
+            return "";
+        }
+        boolean onPath = JdkToolchain.javaOnPath(processPathForFallback.get());
+        return JdkToolchain.fallbackHome(onPath, onPath ? null : jkitDefaultJdk.get());
+    }
+
+    /** This process's PATH, as {@link #fallbackJdk} reads it (a seam: a test stands in a PATH without java). */
+    static java.util.function.Supplier<@Nullable String> processPathForFallback = () -> System.getenv("PATH");
+
+    /** jkit's default JDK ({@code jkit use --global}), or null (a seam: a test stands in for jkit's folder). */
+    static java.util.function.Supplier<@Nullable Path> jkitDefaultJdk =
+            () -> com.editora.toolchain.JkitInstalls.global(com.editora.toolchain.JkitInstalls.home(), "jdk");
 
     /**
      * A PHP file's run ({@link com.editora.run.PhpApps}): a script, a web app's server, its PHPUnit tests. A file on
@@ -3438,8 +3475,10 @@ final class RunCoordinator {
         // On a remote host the program runs with the host's own java and environment: this machine's JDK
         // setting is a path here, and its PATH means nothing there. A host can name its JDK (jdk.home).
         boolean remote = !com.editora.process.ExecTargets.runsHere(path);
-        String jdkHome =
+        String chosenJdk =
                 !onJdk ? "" : remote ? remoteJdkHome(path) : host.projectScope().jdkHome(host.settings());
+        // Nothing chosen and no java on PATH (Windows has no system Java): jkit's default, found with the plan.
+        String jdkHome = onJdk && !remote && chosenJdk.isBlank() ? plan.fallbackJdk() : chosenJdk;
         String selectedJava = JdkToolchain.javaExecutable(jdkHome);
         String javaExecutable = selectedJava.isBlank() ? "java" : selectedJava;
         java.util.Map<String, String> launchEnv = !onJdk
@@ -3472,7 +3511,10 @@ final class RunCoordinator {
             }
             service.detectJavaMajor(javaExecutable, remote ? path.getParent() : null, major -> {
                 if (major < 0) {
-                    host.setStatus(tr("status.run.javaVersionUnreadable", javaExecutable));
+                    host.setStatus(
+                            selectedJava.isBlank() && !remote
+                                    ? tr("status.run.noJava") // nothing chosen, nothing on PATH, no jkit default
+                                    : tr("status.run.javaVersionUnreadable", javaExecutable));
                     return;
                 }
                 // A compact source needs JDK 25; a classic class with a public static main runs on 11 (JEP 330).
@@ -4321,11 +4363,9 @@ final class RunCoordinator {
         String label = path.getFileName() + ":" + (caret + 1);
         switch (language) {
             case "go" -> {
-                String test = com.editora.dap.GoLaunch.testAt(text, caret);
-                launchCompiledFile(
-                        ScriptRunCommand.GO,
-                        path,
-                        test == null ? List.of("-test.v") : List.of("-test.run", "^" + test + "$", "-test.v"));
+                // The test's arguments are read at the line when it runs, and again on Rerun
+                // (GoLaunch.testAtCaretArgs).
+                launchCompiledFile(ScriptRunCommand.GO, path, List.of(), caret);
             }
             case "rust" -> launchCompiledFile(ScriptRunCommand.RUST, path, List.of(), caret);
             case "c", "cpp" -> {

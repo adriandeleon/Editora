@@ -102,19 +102,31 @@ public final class JkitInstalls {
 
     /**
      * Where jkit's global link for {@code slot} ({@code jdk}, {@code maven}, {@code gradle}, {@code graalvm})
-     * points, or null when there is none.
+     * points, or null when there is none. A symbolic link on Linux and macOS; on Windows jkit makes a directory
+     * junction, which {@link Files#isSymbolicLink} does not report, and writes the target into
+     * {@code global/.<slot>.target} beside it, which is read when the link itself says nothing.
      */
     public static @Nullable Path global(Path jkitHome, String slot) {
-        Path link = jkitHome.resolve("global").resolve(slot);
+        Path dir = jkitHome.resolve("global");
+        Path link = dir.resolve(slot);
         try {
-            if (!Files.isSymbolicLink(link)) {
-                return null;
+            if (Files.isSymbolicLink(link)) {
+                Path target = Files.readSymbolicLink(link);
+                return dir.resolve(target).toAbsolutePath().normalize();
             }
-            Path parent = link.getParent();
-            Path target = Files.readSymbolicLink(link);
-            return (parent == null ? target : parent.resolve(target))
-                    .toAbsolutePath()
-                    .normalize();
+            Path targetFile = dir.resolve("." + slot + ".target");
+            if (Files.isRegularFile(targetFile)) {
+                String named = Files.readString(targetFile).strip();
+                if (!named.isEmpty()) {
+                    Path target = dir.resolve(named).toAbsolutePath().normalize();
+                    return Files.isDirectory(target) ? target : null;
+                }
+            }
+            if (Files.isDirectory(link)) { // a junction without its target file: where it really leads
+                Path real = link.toRealPath();
+                return real.equals(link.toAbsolutePath().normalize()) ? null : real;
+            }
+            return null;
         } catch (IOException | RuntimeException e) {
             return null;
         }
