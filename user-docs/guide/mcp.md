@@ -26,6 +26,35 @@ So an agent can observe live state, make **undoable edits**, and drive the edito
 through the same command registry the palette uses. It runs on the JDK's built-in
 HTTP server, so there's no new dependency.
 
+Each tool says whether it only reads (`readOnlyHint`), and the ones that change
+something say whether the change can be lost (`destructiveHint`): `save_buffer`
+writes a file and `execute_command` can run anything, while `edit_buffer` is
+undoable and stays in the buffer. An agent can use this to decide what to ask
+you before calling a tool.
+
+### Resources
+
+Besides tools, the server offers **resources**, which an agent can list, read
+and watch:
+
+| Resource | What it reads |
+| --- | --- |
+| `file:///…` | The live text of each file open in the window, unsaved changes included |
+| `editora://diagnostics` | The language-server diagnostics of every open file, by path (JSON) |
+| `editora://git/status` | The window's Git status: branch, upstream, ahead/behind, changed files (JSON) |
+
+Only open files are resources: a file that isn't open in Editora can't be read
+this way. An agent that watches resources is told when you open or close a file
+and when a watched file, the diagnostics or the Git status change. Editora looks
+once a second, and only while an agent is listening.
+
+### Protocol versions
+
+The server speaks the current MCP revision, **2026-07-28**, and the earlier
+ones from **2024-11-05** to **2025-11-25**. An agent on an older revision starts
+with `initialize` and gets the revision it asked for; one on the current
+revision asks with `server/discover`. Claude Code finds the right one by itself.
+
 ### Editing and saving
 
 `edit_buffer` replaces `old_text` with `new_text` in an open buffer, through the
@@ -156,5 +185,9 @@ connected through `editora mcp` pick up the new token by themselves.
 
 `editora mcp` sends the token only to a plain `http://` address on this
 computer's loopback interface; it ignores an endpoint file that names any other.
+
+A request sent by a web page (one whose `Origin` is not this computer) is
+refused, even with the token, so a site open in your browser can't reach the
+editor.
 
 Commands: `view.toggleMcp`, `mcp.copyEndpoint`, `mcp.copyHttpEndpoint`.

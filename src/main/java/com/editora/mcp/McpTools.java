@@ -16,9 +16,6 @@ import org.jspecify.annotations.Nullable;
  */
 final class McpTools {
 
-    /** The MCP protocol revision this server implements. */
-    static final String PROTOCOL_VERSION = "2024-11-05";
-
     private final McpBridge bridge;
     private final ObjectMapper m;
 
@@ -39,18 +36,190 @@ final class McpTools {
 
     // --- initialize + tools/list (the catalog: no bridge needed) --------------------------------
 
-    ObjectNode initializeResult() {
-        return new McpToolCatalog(m).initializeResult();
+    ObjectNode initializeResult(@Nullable String requested) {
+        return new McpToolCatalog(m).initializeResult(requested);
+    }
+
+    ObjectNode discoverResult() {
+        return new McpToolCatalog(m).discoverResult();
     }
 
     ObjectNode listToolsResult() {
         return new McpToolCatalog(m).listToolsResult();
     }
 
+    // --- resources ------------------------------------------------------------------------------
+
+    /** The diagnostics of every open file, as one JSON resource. */
+    static final String DIAGNOSTICS_URI = "editora://diagnostics";
+
+    /** The window's Git status, as one JSON resource. */
+    static final String GIT_STATUS_URI = "editora://git/status";
+
+    /** A resource that is not there, or not one this client may read; the dispatcher picks the era's code. */
+    static final class ResourceNotFound extends RuntimeException {
+        ResourceNotFound(String message) {
+            super(message);
+        }
+    }
+
+    /** Each open file's change stamp, by path (see {@link McpBridge#bufferStamps}). */
+    java.util.Map<String, Long> bufferStamps() {
+        return bridge.bufferStamps();
+    }
+
+    /** {@code resources/list}: each open file that has a path (its live text), the diagnostics, the Git status. */
+    ObjectNode listResourcesResult() {
+        ArrayNode list = m.createArrayNode();
+        for (McpBridge.OpenFile f : bridge.listOpenFiles()) {
+            if (f.path() == null) {
+                continue; // an untitled buffer has no URI; read_buffer still reaches it
+            }
+            ObjectNode r = list.addObject();
+            r.put("uri", fileUri(f.path()));
+            r.put("name", f.title());
+            r.put("title", f.title());
+            r.put("description", "The live text of this open file" + (f.dirty() ? ", with unsaved changes" : ""));
+            r.put("mimeType", mimeType(f.language()));
+        }
+        ObjectNode d = list.addObject();
+        d.put("uri", DIAGNOSTICS_URI);
+        d.put("name", "diagnostics");
+        d.put("title", "Diagnostics");
+        d.put("description", "Language-server diagnostics of every open file, by path.");
+        d.put("mimeType", "application/json");
+        ObjectNode g = list.addObject();
+        g.put("uri", GIT_STATUS_URI);
+        g.put("name", "git-status");
+        g.put("title", "Git Status");
+        g.put("description", "Branch, upstream, ahead/behind and changed files of the window's repository.");
+        g.put("mimeType", "application/json");
+        ObjectNode r = m.createObjectNode();
+        r.set("resources", list);
+        return r;
+    }
+
+    /** {@code resources/read}: an open file's live text, or one of the JSON resources. */
+    ObjectNode readResourceResult(@Nullable String uri) {
+        if (uri == null || uri.isEmpty()) {
+            throw new ResourceNotFound("Missing resource uri.");
+        }
+        String mimeType;
+        String text;
+        if (uri.equals(DIAGNOSTICS_URI)) {
+            mimeType = "application/json";
+            text = pretty(allDiagnostics());
+        } else if (uri.equals(GIT_STATUS_URI)) {
+            mimeType = "application/json";
+            text = contentText(gitStatusResult());
+        } else {
+            String path = filePath(uri);
+            if (path == null) {
+                throw new ResourceNotFound("Unknown resource: " + uri);
+            }
+            McpBridge.BufferContent b = bridge.readBuffer(path);
+            if (b == null) {
+                throw new ResourceNotFound("Not an open file: " + uri + ". Only files open in Editora are resources.");
+            }
+            mimeType = mimeType(b.language());
+            text = b.text();
+        }
+        ObjectNode c = m.createObjectNode();
+        c.put("uri", uri);
+        c.put("mimeType", mimeType);
+        c.put("text", text);
+        ObjectNode r = m.createObjectNode();
+        r.putArray("contents").add(c);
+        return r;
+    }
+
+    private ObjectNode allDiagnostics() {
+        ObjectNode byPath = m.createObjectNode();
+        for (McpBridge.OpenFile f : bridge.listOpenFiles()) {
+            if (f.path() != null) {
+                ArrayNode arr = byPath.putArray(f.path());
+                for (McpBridge.Diagnostic d : bridge.getDiagnostics(f.path())) {
+                    ObjectNode o = arr.addObject();
+                    o.put("line", d.line());
+                    o.put("col", d.col());
+                    o.put("severity", d.severity());
+                    o.put("message", d.message());
+                    o.put("origin", d.origin());
+                }
+            }
+        }
+        return byPath;
+    }
+
+    /** A digest of what {@code uri} reads now, cheap for an open file (its change stamp, not its text). */
+    @Nullable
+    String resourceStamp(String uri, java.util.Map<String, Long> bufferStamps) {
+        if (uri.equals(DIAGNOSTICS_URI)) {
+            return pretty(allDiagnostics());
+        }
+        if (uri.equals(GIT_STATUS_URI)) {
+            return contentText(gitStatusResult());
+        }
+        String path = filePath(uri);
+        Long stamp = path == null ? null : bufferStamps.get(path);
+        return stamp == null ? null : Long.toString(stamp);
+    }
+
+    /** The open files' URIs, as {@code resources/list} lists them (for telling when the list changed). */
+    java.util.Set<String> resourceUris(java.util.Map<String, Long> bufferStamps) {
+        java.util.Set<String> uris = new java.util.TreeSet<>();
+        bufferStamps.keySet().forEach(p -> uris.add(fileUri(p)));
+        uris.add(DIAGNOSTICS_URI);
+        uris.add(GIT_STATUS_URI);
+        return uris;
+    }
+
+    static String fileUri(String path) {
+        return java.nio.file.Path.of(path).toUri().toString();
+    }
+
+    /** The absolute path a {@code file:} URI names, or null for any other URI. */
+    static @Nullable String filePath(String uri) {
+        try {
+            java.net.URI u = java.net.URI.create(uri);
+            if (!"file".equalsIgnoreCase(u.getScheme())) {
+                return null;
+            }
+            return java.nio.file.Path.of(u).toString();
+        } catch (IllegalArgumentException | java.nio.file.FileSystemNotFoundException e) {
+            return null;
+        }
+    }
+
+    static String mimeType(String language) {
+        return switch (language) {
+            case "markdown" -> "text/markdown";
+            case "json" -> "application/json";
+            case "html" -> "text/html";
+            case "xml" -> "application/xml";
+            case "css" -> "text/css";
+            case "javascript" -> "text/javascript";
+            case "yaml" -> "application/yaml";
+            default -> "text/plain";
+        };
+    }
+
+    private String pretty(JsonNode node) {
+        try {
+            return m.writerWithDefaultPrettyPrinter().writeValueAsString(node);
+        } catch (Exception e) {
+            return node.toString();
+        }
+    }
+
+    private static String contentText(ObjectNode toolResult) {
+        return toolResult.path("content").path(0).path("text").asText();
+    }
+
     // --- tools/call -------------------------------------------------------------------------------
 
     /** Dispatches {@code tools/call} params {@code {name, arguments}} → an MCP tool result node. */
-    ObjectNode callTool(JsonNode params) {
+    ObjectNode callTool(@Nullable JsonNode params) {
         if (params == null || !params.hasNonNull("name")) {
             return errorResult("Missing tool name.");
         }

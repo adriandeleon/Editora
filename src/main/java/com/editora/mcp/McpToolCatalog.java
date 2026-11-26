@@ -17,19 +17,42 @@ final class McpToolCatalog {
         this.m = m;
     }
 
-    // --- initialize -------------------------------------------------------------------------------
+    /** What the server tells a client it is for (both eras). */
+    static final String INSTRUCTIONS = "Editora is the user's text editor, running on this computer. These tools see"
+            + " what the user has open (unsaved text included) and act through the editor: edit_buffer changes are"
+            + " undoable and stay in the buffer until save_buffer writes them. Resources are the open files, their"
+            + " diagnostics and the Git status.";
 
-    ObjectNode initializeResult() {
+    // --- initialize (legacy) and server/discover (modern) ----------------------------------------
+
+    /** The legacy handshake's answer: the revision agreed on from the one {@code requested}. */
+    ObjectNode initializeResult(@org.jspecify.annotations.Nullable String requested) {
         ObjectNode r = m.createObjectNode();
-        r.put("protocolVersion", McpTools.PROTOCOL_VERSION);
-        ObjectNode caps = m.createObjectNode();
-        caps.set("tools", m.createObjectNode()); // we offer tools; no list-changed notifications
-        r.set("capabilities", caps);
-        ObjectNode info = m.createObjectNode();
-        info.put("name", "editora");
-        info.put("version", com.editora.AppInfo.VERSION);
-        r.set("serverInfo", info);
+        r.put("protocolVersion", McpProtocol.negotiateLegacy(requested));
+        r.set("capabilities", capabilities());
+        r.set("serverInfo", McpProtocol.serverInfo(m));
+        r.put("instructions", INSTRUCTIONS);
         return r;
+    }
+
+    /** The modern {@code server/discover} result, before {@link McpProtocol#modernResult} completes it. */
+    ObjectNode discoverResult() {
+        ObjectNode r = m.createObjectNode();
+        ArrayNode versions = r.putArray("supportedVersions");
+        McpProtocol.SUPPORTED.forEach(versions::add);
+        r.set("capabilities", capabilities());
+        r.put("instructions", INSTRUCTIONS);
+        return r;
+    }
+
+    /** Tools (a fixed list), and resources that can be listed, read and watched. */
+    ObjectNode capabilities() {
+        ObjectNode caps = m.createObjectNode();
+        caps.putObject("tools");
+        ObjectNode resources = caps.putObject("resources");
+        resources.put("subscribe", true);
+        resources.put("listChanged", true);
+        return caps;
     }
 
     // --- tools/list -------------------------------------------------------------------------------
@@ -127,9 +150,57 @@ final class McpToolCatalog {
                 "Scan the active project (and open buffers' unsaved text) for TODO/FIXME-style highlight"
                         + " patterns; returns each match's file, line/col, keyword, tag, priority, and line text.",
                 obj()));
+        for (com.fasterxml.jackson.databind.JsonNode t : tools) {
+            annotate((ObjectNode) t);
+        }
         ObjectNode r = m.createObjectNode();
         r.set("tools", tools);
         return r;
+    }
+
+    /** How a tool behaves, for a client deciding what to ask the user first. */
+    private enum Kind {
+        /** Only reads. */
+        READ,
+        /** Changes what the editor shows, nothing in a file. */
+        VIEW,
+        /** Changes a buffer, undoably; nothing reaches the disk. */
+        EDIT,
+        /** Writes a file. */
+        WRITE,
+        /** Runs any command: may change anything, reach the network. */
+        COMMAND
+    }
+
+    private void annotate(ObjectNode tool) {
+        String name = tool.get("name").asText();
+        record Info(String title, Kind kind) {}
+        Info info = switch (name) {
+            case "list_open_files" -> new Info("List Open Files", Kind.READ);
+            case "read_buffer" -> new Info("Read Buffer", Kind.READ);
+            case "get_diagnostics" -> new Info("Get Diagnostics", Kind.READ);
+            case "find_in_files" -> new Info("Find in Files", Kind.READ);
+            case "list_commands" -> new Info("List Commands", Kind.READ);
+            case "execute_command" -> new Info("Run Command", Kind.COMMAND);
+            case "open_file" -> new Info("Open File", Kind.VIEW);
+            case "edit_buffer" -> new Info("Edit Buffer", Kind.EDIT);
+            case "save_buffer" -> new Info("Save Buffer", Kind.WRITE);
+            case "get_selection" -> new Info("Get Selection", Kind.READ);
+            case "document_symbols" -> new Info("Document Symbols", Kind.READ);
+            case "git_status" -> new Info("Git Status", Kind.READ);
+            case "list_tabs" -> new Info("List Tabs", Kind.READ);
+            case "todo_scan" -> new Info("Scan TODOs", Kind.READ);
+            default -> throw new IllegalStateException("No annotations for tool " + name);
+        };
+        tool.put("title", info.title());
+        ObjectNode a = tool.putObject("annotations");
+        a.put("title", info.title());
+        a.put("readOnlyHint", info.kind() == Kind.READ);
+        if (info.kind() != Kind.READ) {
+            a.put("destructiveHint", info.kind() == Kind.WRITE || info.kind() == Kind.COMMAND);
+            a.put("idempotentHint", info.kind() == Kind.VIEW || info.kind() == Kind.WRITE);
+        }
+        a.put("openWorldHint", info.kind() == Kind.COMMAND);
     }
 
     private ObjectNode tool(String name, String description, ObjectNode properties) {
