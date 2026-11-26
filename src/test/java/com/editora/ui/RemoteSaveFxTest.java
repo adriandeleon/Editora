@@ -47,6 +47,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * file.save} workflow against the chrooted embedded server. Each case is one a local file already survived.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class RemoteSaveFxTest {
 
@@ -241,6 +242,11 @@ class RemoteSaveFxTest {
             } catch (UnsupportedOperationException | java.io.IOException noHardLinks) {
                 Assumptions.abort("no hard links here: " + noHardLinks);
             }
+            // MINA's server reads a file's link count from the "unix" attribute view, which Windows has not: it
+            // sends none, so the client cannot know of the second name (a Windows SSH host is not what this covers).
+            Assumptions.assumeTrue(
+                    first.getFileSystem().supportedFileAttributeViews().contains("unix"),
+                    "the embedded server reports link counts only where unix:nlink is read");
             Object aloneKey = Files.readAttributes(alone, java.nio.file.attribute.BasicFileAttributes.class)
                     .fileKey();
             switch (server) {

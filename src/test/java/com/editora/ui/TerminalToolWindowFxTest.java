@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@code tool.terminal} hides it, {@code terminal.new} adds a tab, and closing the window ends every shell.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class TerminalToolWindowFxTest {
 
     @BeforeAll
@@ -73,7 +74,8 @@ class TerminalToolWindowFxTest {
                             com.editora.terminal.ProcessCwd.of(shell).orElse(""));
                 }
             } finally {
-                java.nio.file.Files.deleteIfExists(folder);
+                // Deleted once its shell has ended, below: Windows cannot delete a process's working folder.
+                folder.toFile().deleteOnExit();
             }
 
             // A file:line:col clicked in a terminal opens in the editor at that place (1-based on the wire).
@@ -125,6 +127,7 @@ class TerminalToolWindowFxTest {
                 }
                 assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false), "shell " + pid + " ended");
             }
+            java.nio.file.Files.deleteIfExists(folder);
         }
     }
 

@@ -18,7 +18,6 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
  * What the shared {@code process.OutputPump} must guarantee to the services on it, driven through
@@ -26,6 +25,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * delivered, and a listener that throws does not end delivery.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class OutputPumpContractFxTest {
 
     @BeforeAll
@@ -65,9 +65,48 @@ class OutputPumpContractFxTest {
         }
     }
 
-    private static List<String> sh(String script) {
-        assumeFalse(System.getProperty("os.name", "").toLowerCase().contains("win"), "needs a POSIX sh");
-        return List.of("sh", "-c", script);
+    /**
+     * A command that writes {@code what} to stdout: the lines given, each ended by LF, or one of the canned
+     * outputs ({@code "progress"}, {@code "count"}). A JVM rather than {@code sh}, so it runs on Windows too.
+     */
+    private static List<String> emit(String... what) {
+        String java = ProcessHandle.current().info().command().orElse("java");
+        String classes;
+        try {
+            classes = Path.of(Emit.class
+                            .getProtectionDomain()
+                            .getCodeSource()
+                            .getLocation()
+                            .toURI())
+                    .toString();
+        } catch (java.net.URISyntaxException e) {
+            throw new IllegalStateException(e);
+        }
+        List<String> argv = new ArrayList<>(List.of(java, "-cp", classes, Emit.class.getName()));
+        argv.addAll(List.of(what));
+        return argv;
+    }
+
+    /** The program {@link #emit} runs. It uses nothing but {@code java.base}. */
+    static final class Emit {
+        public static void main(String[] args) throws java.io.IOException {
+            java.io.OutputStream out = System.out;
+            if (args.length == 1 && args[0].equals("progress")) {
+                out.write("Progress 1/3\rProgress 2/3\rDownloaded\r\n[ERROR] after crlf\nma\u00f1ana\n"
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            } else if (args.length == 1 && args[0].equals("count")) {
+                StringBuilder lines = new StringBuilder();
+                for (int i = 0; i < 1000; i++) {
+                    lines.append("line ").append(i).append('\n');
+                }
+                out.write(lines.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            } else {
+                for (String line : args) {
+                    out.write((line + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                }
+            }
+            out.flush();
+        }
     }
 
     /**
@@ -80,11 +119,7 @@ class OutputPumpContractFxTest {
         BuildService service = new BuildService();
         Recorder recorder = new Recorder();
         try {
-            FxTestSupport.runOnFx(() -> service.run(
-                    Path.of("."),
-                    sh(
-                            "printf 'Progress 1/3\\rProgress 2/3\\rDownloaded\\r\\n[ERROR] after crlf\\nma\\303\\261ana\\n'"),
-                    recorder));
+            FxTestSupport.runOnFx(() -> service.run(Path.of("."), emit("progress"), recorder));
             assertTrue(recorder.exited.await(30, TimeUnit.SECONDS));
             assertEquals(
                     List.of("Progress 1/3", "Progress 2/3", "Downloaded", "[ERROR] after crlf", "mañana", "exit:0"),
@@ -107,7 +142,7 @@ class OutputPumpContractFxTest {
         CountDownLatch releaseFx = new CountDownLatch(1);
         try {
             Platform.runLater(() -> {
-                service.run(Path.of("."), sh("echo one; echo two"), first);
+                service.run(Path.of("."), emit("one", "two"), first);
                 awaitQuietly(releaseFx);
             });
             Process process = awaitCurrent(service); // started off the FX thread, which is busy
@@ -115,7 +150,7 @@ class OutputPumpContractFxTest {
             awaitWaiters(); // the waiter has joined the readers and queued the exit behind the busy UI
 
             assertTrue(service.isRunning(), "not over until the exit has been reported");
-            service.run(Path.of("."), sh("echo other"), second);
+            service.run(Path.of("."), emit("other"), second);
             assertEquals(1, second.started.getCount(), "the second run is refused, not started over the first");
 
             releaseFx.countDown();
@@ -142,8 +177,7 @@ class OutputPumpContractFxTest {
         try {
             // Hold the UI until everything is queued, so the throwing callback has later batches behind it.
             Platform.runLater(() -> {
-                service.run(
-                        Path.of("."), sh("i=0; while [ $i -lt 1000 ]; do echo line $i; i=$((i+1)); done"), recorder);
+                service.run(Path.of("."), emit("count"), recorder);
                 awaitQuietly(releaseFx);
             });
             Process process = awaitCurrent(service); // started off the FX thread, which is busy
@@ -155,7 +189,7 @@ class OutputPumpContractFxTest {
             assertEquals(1_001, recorder.events.size(), "and so does every line");
 
             Recorder next = new Recorder();
-            FxTestSupport.runOnFx(() -> service.run(Path.of("."), sh("echo again"), next));
+            FxTestSupport.runOnFx(() -> service.run(Path.of("."), emit("again"), next));
             assertTrue(next.exited.await(30, TimeUnit.SECONDS), "a later run on the same service works");
             assertEquals(List.of("again", "exit:0"), List.copyOf(next.events));
         } finally {

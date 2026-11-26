@@ -28,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * wrapping: in a narrow Split pane the column fits the viewport and only the wide block is scaled down.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class MarkdownWideBlockFxTest {
 
     @BeforeAll
@@ -115,8 +116,10 @@ class MarkdownWideBlockFxTest {
                 // Prose wraps inside the pane, and the formula is scaled into it.
                 for (Node n : wrap.lookupAll(".md-paragraph")) {
                     TextFlow paragraph = (TextFlow) n;
+                    // Its layout box, where it wraps: the drawn glyphs may overhang it by a pixel or two (Windows'
+                    // text renderer does), which scrolls nothing.
                     double right =
-                            paragraph.localToScene(paragraph.getBoundsInLocal()).getMaxX();
+                            paragraph.localToScene(paragraph.getLayoutBounds()).getMaxX();
                     assertTrue(right <= scene.getWidth() + 0.5, "paragraph runs to " + right);
                 }
                 StackPane formulaWrap = (StackPane) wrap.lookup(".md-math-block-wrap");

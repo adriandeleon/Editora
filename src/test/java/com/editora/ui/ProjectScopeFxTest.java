@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
  * trusted; until then the user's own values apply.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class ProjectScopeFxTest {
 
     private FxWindowFixture fx;
@@ -106,7 +107,10 @@ class ProjectScopeFxTest {
             scope.filePins = r -> com.editora.toolchain.ProjectToolchain.sdkmanrcPins(
                     com.editora.toolchain.SdkmanRc.read(r)); // as without jkit, whatever this machine has
             scope.reload();
-            assertEquals("/jk/jdk21", scope.jdkHome(config.getSettings()), "untrusted: .sdkmanrc's java=");
+            assertEquals(
+                    Path.of("/jk/jdk21").toString(),
+                    scope.jdkHome(config.getSettings()),
+                    "untrusted: .sdkmanrc's java=");
             assertEquals(
                     Path.of("/jk/mvn", "bin", com.editora.Os.isWindows() ? "mvn.cmd" : "mvn")
                             .toString(),
@@ -115,7 +119,10 @@ class ProjectScopeFxTest {
 
             config.getTrustStore().trust(project);
             scope.reload();
-            assertEquals("/jk/jdk25", scope.jdkHome(config.getSettings()), "trusted: the project file's toolchain.jdk");
+            assertEquals(
+                    Path.of("/jk/jdk25").toString(),
+                    scope.jdkHome(config.getSettings()),
+                    "trusted: the project file's toolchain.jdk");
             assertEquals("./tools/mvn", scope.buildCommand(com.editora.build.BuildTool.MAVEN, config.getSettings()));
         });
         Files.delete(project.resolve(".sdkmanrc"));
@@ -158,7 +165,7 @@ class ProjectScopeFxTest {
                             "jkit.toml",
                             null));
             scope.reload();
-            assertEquals("/jk/zulu21", scope.jdkHome(config.getSettings()), "the JDK jkit picked");
+            assertEquals(Path.of("/jk/zulu21").toString(), scope.jdkHome(config.getSettings()), "the JDK jkit picked");
             assertEquals(
                     Path.of("/jk/sbt", "bin", com.editora.Os.isWindows() ? "sbt.bat" : "sbt")
                             .toString(),
@@ -279,7 +286,10 @@ class ProjectScopeFxTest {
                     List.of(),
                     List.of(new ProjectPanel.FsChange(sdkmanrc, ProjectPanel.FsKind.CREATED)),
                     false));
-            assertEquals("/jk/jdk21", scope().jdkHome(config.getSettings()), "the new .sdkmanrc's java=");
+            assertEquals(
+                    Path.of("/jk/jdk21").toString(),
+                    scope().jdkHome(config.getSettings()),
+                    "the new .sdkmanrc's java=");
         });
     }
 }

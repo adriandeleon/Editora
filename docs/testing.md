@@ -382,7 +382,8 @@ CI runs in two tiers. **`ci.yml`** is the fast lane, about ten minutes: formatti
 Linux (six shards, coverage floors) and the scripts' own tests. It runs on every pull request and every
 push to `master`, and the two checks `master` requires come from it. **`full-tests.yml`** holds the rest:
 the pure suite (`-DexcludedGroups=fx`) on `windows-latest` and `macos-15`, the FX suite (`-Dgroups=fx`) on
-`macos-15` in three shards, and the probes against real tools (JDT LS and java-debug, the TypeScript
+`macos-15` in three shards, the FX classes tagged `windows-fx` (`-Dgroups=windows-fx`) on `windows-latest`,
+and the probes against real tools (JDT LS and java-debug, the TypeScript
 server and js-debug, a terminal on an SSH host and in a container). It runs once a day on `master`, on a
 pull request labelled `full-ci`, on demand (`gh workflow run full-tests.yml --ref <branch>`), and before
 every release, whose preflight requires it to be green on the tagged commit ([release](release.md)).
@@ -393,6 +394,23 @@ line endings, process spawning, keychains, fonts, key modifiers) or touches the 
 server or a debug adapter. Until 19 October 2026 every pull request ran all of it; each job takes about
 ten minutes, but with five macOS runners for the account and several pull requests open at once a run took
 13 to 35 minutes, and every merge waited for the slowest macOS shard.
+
+The whole FX suite takes about two hours on a 2-vCPU Windows machine, so CI runs only a slice of it there: the
+classes tagged `@Tag("windows-fx")` beside `@Tag("fx")` (`FxTestTagsTest` checks that every one has both), the
+ones that touch paths, Git, processes, sessions and the terminal, chosen from the 55 that failed on Windows before
+#1815. Tag a new FX class `windows-fx` when what it tests behaves differently on Windows, and keep the job under
+about 25 minutes. To run the slice or the whole FX suite on a Windows machine: `mvn test -Djacoco.skip=true
+-Dgroups=windows-fx` (or `-Dgroups=fx`). The FX suite on Windows fails for reasons Linux never shows. A test that ends right after a save or an open used to
+fail to delete its `@TempDir`: the `git` the editor starts to ask about the folder runs *in* it, and Windows cannot
+delete a process's working folder. Every `@TempDir` is now deleted by `testkit/PatientTempDirDeletion` (the
+default in `junit-platform.properties`), which tries again for ten seconds; a folder still held after that is a real
+leak. A terminal shell left in a folder holds it the same way, for good: close it first. Git for Windows checks files
+out with CRLF (`core.autocrlf=true` system-wide): a test repository that compares bytes sets `core.autocrlf
+false`. Paths in expected strings are built with `Path.of(…).toString()` or `File.separator`, a session file a
+test writes escapes them (`FxTestSupport.json`), `<`, `>`, `"`, `:` and newlines are not allowed in a Windows file
+name, `java` is `java.exe`, and a folder made unwritable for a test needs `testkit/UnwritableDirs` (a deny ACL;
+Windows ignores a folder's read-only flag). A test that needs `/bin/sh` runs a JVM instead where it can
+(`OutputPumpContractFxTest`), and is `@DisabledOnOs(WINDOWS)` only when the feature itself is POSIX-only.
 
 A Map FX test that fails only on macOS is often font metrics: the Map measures its columns in the UI font CSS gives
 it, so a column, and everything placed from it, is a few pixels narrower on macOS than on Linux. Reproduce it on

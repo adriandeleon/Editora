@@ -36,6 +36,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An agent that refuses a session is stopped.** When an agent answered a new chat or a resumed one with an error
+  (not logged in, an unknown session), its process was left running, even after the window closed.
+- **Windows fixes found by running the whole test suite there.** A terminal's `file:///C:/…` link (OSC 8, `ls
+  --hyperlink`) opens the file instead of being taken for a web address. Git work trees are named `C:\…` like every
+  other path, so Remove Work Tree's question matches the folder you see. A refused SSH connection says the host could
+  not be reached instead of "connection failed". A save in a folder Windows reports as modified (`.editora\`, a
+  collapsed folder) no longer makes the Markdown link index and the symbol index walk the whole project again.
+  A case-only rename from a language server (`Httpclient.java` → `HttpClient.java`) no longer says its tab could
+  not follow it.
+  Doctor drops a command its path already names (`jdtls` beside `~\…\bin\jdtls`). The jkit settings dialog and its
+  reports are named for a screen reader.
 - **Go: Run Test at Caret on a benchmark, and its Rerun.** With the caret in a `func Benchmark…`, Run Test at Caret
   ran `-test.run ^BenchmarkX$`, which matches no test, so nothing ran; it now runs the benchmark alone
   (`-test.run ^$ -test.bench ^BenchmarkX$`). Rerun Last after Run Test at Caret ran the whole package; it now runs the

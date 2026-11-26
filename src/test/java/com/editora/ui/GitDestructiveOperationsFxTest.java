@@ -39,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Integration coverage for destructive Git commands crossing the editor's live-buffer/save boundary. */
 @Tag("fx")
+@Tag("windows-fx")
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class GitDestructiveOperationsFxTest {
 
@@ -906,11 +907,18 @@ class GitDestructiveOperationsFxTest {
         git(repo, "init", "-q", "-b", "main");
         git(repo, "config", "user.email", "editora-test@example.invalid");
         git(repo, "config", "user.name", "Editora Test");
+        // Git for Windows converts LF to CRLF on checkout by default; these tests compare bytes.
+        git(repo, "config", "core.autocrlf", "false");
         return repo;
     }
 
     private static boolean supportsNewlineFileName(Path repo) throws IOException {
-        Path probe = repo.resolve("newline\nprobe.txt");
+        Path probe;
+        try {
+            probe = repo.resolve("newline\nprobe.txt");
+        } catch (java.nio.file.InvalidPathException unsupported) {
+            return false; // Windows refuses the name before anything touches the disk
+        }
         try {
             Files.writeString(probe, "probe");
             return true;

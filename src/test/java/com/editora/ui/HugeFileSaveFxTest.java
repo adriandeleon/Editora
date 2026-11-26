@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
  * the part that actually destroyed files — is what these tests drive, through the real command.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class HugeFileSaveFxTest {
 

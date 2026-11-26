@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the inline blame, requested after every refresh, is not recomputed for a file and a HEAD that did not change.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class GitSlowStatusAndBlameFxTest {
 
     @BeforeAll
@@ -46,6 +47,7 @@ class GitSlowStatusAndBlameFxTest {
 
     @Test
     void aStatusThatTimesOutKeepsTheLastStateAndBacksOff(@TempDir Path dir) throws Exception {
+        Assumptions.assumeFalse(GitTestRepo.windows(), "the stand-in git is a /bin/sh script");
         GitTestRepo repo = GitTestRepo.init(dir);
         Path file = repo.write("notes.txt", "one\n");
         repo.commitAll("init");

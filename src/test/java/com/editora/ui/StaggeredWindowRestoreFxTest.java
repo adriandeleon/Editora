@@ -30,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * exact statement about state rather than a race against animation frames.
  */
 @Tag("fx")
+@Tag("windows-fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class StaggeredWindowRestoreFxTest {
 
@@ -62,7 +63,8 @@ class StaggeredWindowRestoreFxTest {
     }
 
     private static String session(Path file) {
-        return "{\"schemaVersion\":1,\"openFiles\":[{\"path\":\"" + file + "\"}],\"activeFile\":\"" + file + "\"}";
+        return "{\"schemaVersion\":1,\"openFiles\":[{\"path\":\"" + FxTestSupport.json(file) + "\"}],\"activeFile\":\""
+                + FxTestSupport.json(file) + "\"}";
     }
 
     /** A launched window manager whose restore queue only advances when {@link #step} is called. */

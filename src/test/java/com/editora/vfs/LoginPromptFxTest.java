@@ -45,6 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * comes from), a password, and an encrypted key's passphrase — and what a connect that fails says about why.
  */
 @Tag("fx")
+@Tag("windows-fx")
 class LoginPromptFxTest {
 
     @BeforeAll

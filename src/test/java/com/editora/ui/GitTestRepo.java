@@ -76,10 +76,16 @@ final class GitTestRepo {
         return new Output(process.waitFor(), out, err);
     }
 
-    /** Writes an executable {@code /bin/sh} script and returns its path. */
+    /**
+     * Writes an executable {@code /bin/sh} script and returns its path. On Windows there are no modes to set: a
+     * hook still runs (Git for Windows starts it with its own sh, from the #! line), but a script run as a
+     * program does not.
+     */
     static Path script(Path file, String body) throws IOException {
         Files.writeString(file, "#!/bin/sh\n" + body + "\n");
-        Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rwxr-xr-x"));
+        if (file.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+            Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rwxr-xr-x"));
+        }
         return file;
     }
 

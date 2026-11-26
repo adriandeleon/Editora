@@ -94,6 +94,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * </ul>
  */
 @Tag("fx")
+@Tag("windows-fx")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @org.junit.jupiter.api.extension.ExtendWith(OffFxInPlace.class)
 class CommandSweepFxTest {
@@ -608,6 +609,9 @@ class CommandSweepFxTest {
             settings.setGoCommand(missing);
             settings.setAgentCommand(missing);
             settings.setPythonDebugCommand(missing);
+            // Never the developer's own jkit: its searches and doctor go to the network, and Enable Auto-switch
+            // (toolchain.jkit.installHook) writes its config.
+            settings.setJkitPath(missing);
             settings.setHtmlPreviewBrowser(missing);
             settings.setUpdateCheck(false); // the start-up check asks the release server
             // Off by default today. Said here so that a changed default cannot make the sweep start an agent,
@@ -916,21 +920,32 @@ class CommandSweepFxTest {
             if (command.contains("__EDITORA_PATH_BEGIN__")) {
                 return null;
             }
+            // User Git commands start under setsid (no controlling terminal to prompt on): judge the git behind it.
+            String run = command.strip().replaceFirst("^\\S*/setsid\\s+", "");
+            // The recorded command line is argv joined by spaces, so a Windows program in C:\Program Files\… is
+            // cut at its .exe, not at the first space.
+            int exe = run.toLowerCase(java.util.Locale.ROOT).indexOf(".exe ");
+            String program = exe > 0 && run.substring(0, exe).contains("\\")
+                    ? run.substring(0, exe + 4)
+                    : run.split("\\s+", 2)[0];
+            String name = program.substring(Math.max(program.lastIndexOf('/'), program.lastIndexOf('\\')) + 1);
+            String named = name + run.substring(program.length()); // the command with its program's bare name
             // A snapshot build asks git which commit and branch it was built from (AppInfo.gitCommitAsync /
             // gitBranchAsync, for About), in its own code-source folder: a read-only question about Editora
             // itself, like a version probe. It runs once per JVM, so it shows only when this class runs first.
-            if (command.matches("\\S*git(\\.exe)? rev-parse (--short|--abbrev-ref) HEAD")) {
+            if (named.matches("git(\\.exe)? rev-parse (--short|--abbrev-ref) HEAD")) {
+                return null;
+            }
+            // On Windows a network command asks Git for Windows where it lives, to name its own ssh in batch
+            // mode (GitService.batchSsh): a read-only question, like a version probe.
+            if (named.matches("git(\\.exe)? --exec-path")) {
                 return null;
             }
             // The container engine asked which containers run (Containers: Run This Project's Tools in a
             // Container… lists them): a read-only question, like a version probe.
-            if (command.matches("\\S*(docker|podman)(\\.exe)? (ps|inspect)\\b.*")) {
+            if (named.matches("(docker|podman)(\\.exe)? (ps|inspect)\\b.*")) {
                 return null;
             }
-            // User Git commands start under setsid (no controlling terminal to prompt on): judge the git behind it.
-            String run = command.strip().replaceFirst("^\\S*/setsid\\s+", "");
-            String program = run.split("\\s+", 2)[0];
-            String name = program.substring(Math.max(program.lastIndexOf('/'), program.lastIndexOf('\\')) + 1);
             if (!name.equals("git") && !name.equals("git.exe")) {
                 return "started a program";
             }

@@ -521,10 +521,26 @@ final class AgentCoordinator implements AcpClient.Host {
             return CompletableFuture.completedFuture(sid);
         }
         Path cwd = sessionCwd();
+        return openSession(cwd, fresh -> fresh.newSession(cwd));
+    }
+
+    /**
+     * Spawns an agent, initializes it and opens a session on it with {@code open}, then adopts it. An agent whose
+     * initialize or session request fails is stopped: it used to be dropped still running (a refused
+     * {@code session/new} or {@code session/resume} left its process for good, even past {@link #shutdown}, and on
+     * Windows its working folder could not be deleted).
+     */
+    private CompletableFuture<String> openSession(
+            Path cwd, java.util.function.Function<AcpClient, CompletableFuture<AcpJson.SessionInfo>> open) {
         return spawnClient(cwd)
                 .thenCompose(fresh -> fresh.initialize()
-                        .thenCompose(init -> fresh.newSession(cwd))
-                        .thenApply(info -> adoptSession(fresh, info)));
+                        .thenCompose(init -> open.apply(fresh))
+                        .thenApply(info -> adoptSession(fresh, info))
+                        .whenComplete((sid, error) -> {
+                            if (error != null && client != fresh) {
+                                fresh.dispose();
+                            }
+                        }));
     }
 
     /** Spawns + starts a fresh ACP process (off the FX thread, on {@link #lifecycleExec}); completes
@@ -620,10 +636,7 @@ final class AgentCoordinator implements AcpClient.Host {
         panel().clearTranscript();
         panel().setBusy(true);
         Path cwd = Path.of(entry.cwd());
-        spawnClient(cwd)
-                .thenCompose(fresh -> fresh.initialize()
-                        .thenCompose(init -> fresh.resumeSession(entry.sessionId(), cwd))
-                        .thenApply(info -> adoptSession(fresh, info)))
+        openSession(cwd, fresh -> fresh.resumeSession(entry.sessionId(), cwd))
                 .whenComplete((sid, error) -> Platform.runLater(() -> {
                     panel().setBusy(false);
                     if (error != null) {

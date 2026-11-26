@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @Tag("fx")
+@Tag("windows-fx")
 class ThreeWayMergeIntegrationFxTest {
 
     @BeforeAll
@@ -60,6 +61,8 @@ class ThreeWayMergeIntegrationFxTest {
         git(repo, true, "init", "-q");
         git(repo, true, "config", "user.email", "editora-test@example.invalid");
         git(repo, true, "config", "user.name", "Editora Test");
+        // Git for Windows converts LF to CRLF on checkout by default; these tests compare bytes.
+        git(repo, true, "config", "core.autocrlf", "false");
         Files.writeString(file, "before\nbase\nafter\n");
         git(repo, true, "add", "story.txt");
         git(repo, true, "commit", "-q", "-m", "base");
