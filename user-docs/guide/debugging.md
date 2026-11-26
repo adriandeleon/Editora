@@ -2082,7 +2082,7 @@ there.
 
 ![The Language picker of Settings → Debugging set to Go (Delve), and under it the Go (Delve) card: Enable Go debugging (Delve) on, an empty Delve (dlv) path field with Browse…, and Detected dlv: found (/home/ada/go/bin/dlv) with the Install button reading Installed](/screenshots/docs/debug-settings-go.png "The Go card: Delve found where go install puts it.")
 
-![The Language picker of Settings → Debugging open, listing Java, Python, JavaScript (Node.js), Go (Delve), Rust, C and C++ (CodeLLDB), C# (netcoredbg), Ruby (rdbg), PHP (Xdebug) and Bash (bashdb), with C# picked; behind it the C# (netcoredbg) card with its Enable switch, netcoredbg path field and an Install… button](/screenshots/docs/debug-settings-languages.png "One language at a time: the Language picker lists every language with a debugger.")
+![The Language picker of Settings → Debugging open, listing Java, Python, JavaScript (Node.js), Go (Delve), Rust, C and C++ (CodeLLDB), C# (netcoredbg), Ruby (rdbg), PHP (Xdebug), Bash (bashdb), Dart and Flutter, Lua (local-lua-debugger), Firefox, Elixir (ElixirLS) and PowerShell (PowerShell Editor Services), with C# picked; behind it the C# (netcoredbg) card with its Enable switch, netcoredbg path field and an Install… button](/screenshots/docs/debug-settings-languages.png "One language at a time: the Language picker lists every language with a debugger.")
 
 ### Debug adapters of your own
 
