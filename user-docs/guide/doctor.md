@@ -1,6 +1,6 @@
 ---
 title: Doctor
-description: The Doctor health report: what it checks, how to read and act on a row, language server rows, and updating pinned servers and tools.
+description: "The Doctor health report: what it checks, how to read and act on a row, language server rows, and updating pinned servers and tools."
 category: Help
 order: 3
 ---
