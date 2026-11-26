@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Maximizing the window no longer blows up the tool windows.** A docked tool window (Project, Structure, the
+  bottom consoles) keeps its size when the main window grows or shrinks, and the editor takes the difference; before,
+  the panel scaled with the window, so maximizing on a wide screen turned a narrow Project tree into a third of it.
+  Sizes are remembered in pixels, so a window that starts maximized opens its panels at the size you left them.
 - **Doctor's Settings… opens the row's own language.** On a language server or debugger row (PowerShell, Go, …),
   Settings… opened Language Servers or Debugging on whichever language the page's Language picker last held; it now
   picks the row's language. ESLint, Prettier and Biome open the TypeScript card, Flutter the Dart card.
