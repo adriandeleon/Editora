@@ -86,6 +86,7 @@ final class ColumnRuler extends Group implements SecondaryPane.Followed {
     }
 
     private void show(@Nullable Double zeroX, double viewportWidth) {
+        boolean added = false;
         if (zeroX != null) {
             while (lines.size() < columns.size()) {
                 Line line = new Line();
@@ -94,7 +95,14 @@ final class ColumnRuler extends Group implements SecondaryPane.Followed {
                 line.endYProperty().bind(height);
                 lines.add(line);
                 getChildren().add(line);
+                added = true;
             }
+        }
+        if (added) {
+            // The rulers are placed after the pulse's layout, which is after its CSS pass: a new line would be
+            // rendered once in Line's default stroke (black) before the next pulse styles it. That is the
+            // first time each tab is shown. Style it now; a no-op before the group is in a scene.
+            applyCss();
         }
         boolean any = false;
         for (int i = 0; i < lines.size(); i++) {
